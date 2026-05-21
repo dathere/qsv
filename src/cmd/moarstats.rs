@@ -342,7 +342,7 @@ use core::hint::cold_path;
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     sync::Arc,
     time::Instant,
 };
@@ -637,34 +637,60 @@ fn join_datasets_internal(
             intermediate_temps.push(intermediate);
             s
         };
-        args.push("--output");
-        args.push(&output_path_str);
+        // qsv `join` writes the joined CSV to stdout. Redirect that stdout
+        // straight into a file the PARENT opens and owns, instead of the
+        // old `--output <path>` round-trip where the child created and
+        // closed the file and the parent then re-opened it blind by path.
+        // With a parent-owned handle we can `sync_all()` a descriptor we
+        // KNOW refers to the finished file before any follow-up subprocess
+        // opens the path — closing the read-after-write window that
+        // intermittently produced short reads / silent "primary-only"
+        // joined output under heavy parallel CI load.
+        let output_path = Path::new(&output_path_str);
+        let join_out_file = fs::File::create(output_path).map_err(|e| {
+            CliError::Other(format!(
+                "Failed to create join output file ({}): {e}",
+                output_path.display()
+            ))
+        })?;
+        let join_out_for_child = join_out_file
+            .try_clone()
+            .map_err(|e| CliError::Other(format!("Failed to clone join output handle: {e}")))?;
 
         // Construct join command directly since it doesn't fit run_qsv_cmd pattern
         // (join takes two input files, not one)
         let mut cmd = Command::new(&qsv_path);
-        cmd.arg("join").args(&args);
+        cmd.arg("join")
+            .args(&args)
+            .stdout(Stdio::from(join_out_for_child))
+            .stderr(Stdio::piped());
 
-        let output = cmd
-            .output()
+        let child = cmd
+            .spawn()
+            .map_err(|e| CliError::Other(format!("Error while spawning join command: {e:?}")))?;
+        let output = child
+            .wait_with_output()
             .map_err(|e| CliError::Other(format!("Error while executing join command: {e:?}")))?;
 
         if !output.status.success() {
             return fail_clierror!(
-                "Command join failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
+                "Command join failed: Output {{ status: {:?}, stderr: {:?} }}",
                 output.status,
-                String::from_utf8_lossy(&output.stdout),
                 String::from_utf8_lossy(&output.stderr)
             );
         }
 
-        // After the child exits successfully, force the OS to flush its
-        // dirty pages and validate the file is non-empty. Without this,
-        // macOS APFS under heavy parallel test load has been observed to
-        // hand a follow-up `qsv stats` subprocess a short/empty file,
-        // causing silent "primary-only" bivariate output.
-        let output_path = Path::new(&output_path_str);
-        util::sync_subprocess_output(output_path)?;
+        // The child has exited, so every byte it produced has gone through
+        // our cloned handle. fsync the parent's own descriptor — guaranteed
+        // to refer to the fully-written file — and close it before the
+        // header is read or the next subprocess opens the path.
+        join_out_file.sync_all().map_err(|e| {
+            CliError::Other(format!(
+                "Failed to sync join output ({}): {e}",
+                output_path.display()
+            ))
+        })?;
+        drop(join_out_file);
 
         // Validate that the joined output's header contains every column
         // from the secondary input. qsv's `join` (without --cross or merge
@@ -3375,17 +3401,102 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // short) further below.
     let mut prevalidated_stats_content: Option<String> = None;
     let stats_csv_path = if temp_joined_path.is_some() {
-        // For joined datasets, generate stats for the joined dataset
-        // Use a temp stats CSV file
+        // Joined datasets: compute stats on the joined CSV. Run `qsv stats`
+        // and capture its CSV output straight from the child's stdout pipe
+        // rather than routing it through a `--output <tmpfile>` round-trip.
+        // `Command::output()` drains the pipe to EOF before returning, so
+        // the bytes handed back are guaranteed complete — there is no
+        // filesystem read-after-write window for a follow-up open() to
+        // observe short. This replaces the old fsync-and-retry loop.
         let actual_input_path_str = actual_input_path
             .to_str()
             .ok_or_else(|| CliError::Other("Invalid joined path".to_string()))?
             .to_string();
-        // Use into_temp_path().keep() rather than NamedTempFile + drop, for
-        // the same reason as in `join_datasets_internal`: NamedTempFile's
-        // Drop deletes the file from disk. We want the path reserved as a
-        // normal file so the spawned `qsv stats` writes into a known slot.
-        let temp_stats_path = tempfile::Builder::new()
+
+        let qsv_path = env::current_exe()
+            .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
+            .to_string_lossy()
+            .to_string();
+
+        // `qsv stats` writes the stats CSV to stdout when no --output is
+        // given; capture it in memory.
+        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
+        let mut cmd = Command::new(&qsv_path);
+        cmd.arg("stats")
+            .args(&stats_args_vec)
+            .arg(&actual_input_path_str);
+        let output = cmd
+            .output()
+            .map_err(|e| CliError::Other(format!("Error while executing stats command: {e:?}")))?;
+        if !output.status.success() {
+            return fail_clierror!(
+                "Command stats failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
+                output.status,
+                String::from_utf8_lossy(&output.stdout),
+                String::from_utf8_lossy(&output.stderr)
+            );
+        }
+        let stats_content = String::from_utf8(output.stdout)
+            .map_err(|e| CliError::Other(format!("Joined-stats output is not valid UTF-8: {e}")))?;
+
+        // Verify the stats output has a record for every column of the
+        // joined CSV. `joined_csv_header` was read and validated inside
+        // `join_datasets_internal`. Because `stats_content` is the
+        // complete, pipe-drained subprocess output (not a possibly-short
+        // file re-read), a missing column here is a genuine join/stats
+        // failure — fail loudly, no retry needed.
+        let mut rdr = csv::ReaderBuilder::new()
+            .has_headers(true)
+            .from_reader(stats_content.as_bytes());
+        let hdrs: Vec<String> = rdr
+            .headers()
+            .map_err(|e| CliError::Other(format!("Failed to read joined-stats header: {e}")))?
+            .iter()
+            .map(std::string::ToString::to_string)
+            .collect();
+        let field_idx = hdrs.iter().position(|h| h == "field").ok_or_else(|| {
+            CliError::Other(format!(
+                "Joined-stats output missing 'field' column: got headers {hdrs:?}"
+            ))
+        })?;
+        // Propagate CSV parse errors instead of silently dropping them — a
+        // malformed stats row must surface as "failed to parse row N"
+        // rather than as a downstream "missing columns" assertion.
+        let mut stats_field_values: std::collections::HashSet<String> =
+            std::collections::HashSet::new();
+        for (row_idx, rec) in rdr.records().enumerate() {
+            let rec = rec.map_err(|e| {
+                CliError::Other(format!(
+                    "Failed to parse joined-stats row {row}: {e}",
+                    row = row_idx + 1, // +1 so numbering matches a human reader (header is row 0)
+                ))
+            })?;
+            if let Some(v) = rec.get(field_idx) {
+                stats_field_values.insert(v.to_string());
+            }
+        }
+        let missing: Vec<String> = joined_csv_header
+            .iter()
+            .filter(|h| !stats_field_values.contains(h.as_str()))
+            .cloned()
+            .collect();
+        if !missing.is_empty() {
+            return fail_clierror!(
+                "Joined-stats subprocess output is missing stats records for columns {missing:?}: \
+                 the joined CSV has {} column(s) ({joined_csv_header:?}), but the stats output's \
+                 `field` column only covers {} of them ({stats_field_values:?})",
+                joined_csv_header.len(),
+                stats_field_values.len()
+            );
+        }
+
+        prevalidated_stats_content = Some(stats_content);
+
+        // Reserve a unique temp path for the augmented-stats main output
+        // (written further below; it defaults here when the user gave no
+        // --output). Nothing reads this path as input, so only the path —
+        // not a populated file — matters.
+        tempfile::Builder::new()
             .suffix(".stats.csv")
             .tempfile_in(
                 crate::config::TEMP_FILE_DIR
@@ -3393,138 +3504,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             )?
             .into_temp_path()
             .keep()
-            .map_err(|e| CliError::Other(format!("Failed to persist temp stats path: {e}")))?;
-
-        // Generate stats for joined dataset
-        let stats_args_vec: Vec<&str> = args.flag_stats_options.split_whitespace().collect();
-        let mut stats_cmd_args = stats_args_vec.clone();
-        stats_cmd_args.push("--output");
-        let temp_stats_path_str = temp_stats_path
-            .to_str()
-            .ok_or_else(|| CliError::Other("Invalid temp stats path".to_string()))?;
-        stats_cmd_args.push(temp_stats_path_str);
-
-        let qsv_path = env::current_exe()
-            .map_err(|e| CliError::Other(format!("Failed to get current executable path: {e:?}")))?
-            .to_string_lossy()
-            .to_string();
-
-        // Run `qsv stats` on the joined CSV, fsync its output, then read the
-        // ENTIRE stats CSV back as one string. The `field`-column coverage
-        // set is parsed from that same string, so the validated set and the
-        // content handed downstream are guaranteed to be the same snapshot —
-        // there is no separate, unvalidated re-read that could observe a
-        // short file.
-        let run_stats_subprocess = || -> CliResult<(String, std::collections::HashSet<String>)> {
-            let mut cmd = Command::new(&qsv_path);
-            cmd.arg("stats")
-                .args(&stats_cmd_args)
-                .arg(&actual_input_path_str);
-            let output = cmd.output().map_err(|e| {
-                CliError::Other(format!("Error while executing stats command: {e:?}"))
-            })?;
-            if !output.status.success() {
-                return fail_clierror!(
-                    "Command stats failed: Output {{ status: {:?}, stdout: {:?}, stderr: {:?} }}",
-                    output.status,
-                    String::from_utf8_lossy(&output.stdout),
-                    String::from_utf8_lossy(&output.stderr)
-                );
-            }
-            // Force a flush of the stats subprocess output to disk before
-            // reading it back. Same rationale as in `join_datasets_internal`:
-            // under heavy parallel load a follow-up open() has been observed
-            // to hand back a short/empty file without this fsync.
-            util::sync_subprocess_output(&temp_stats_path)?;
-
-            let content = fs::read_to_string(&temp_stats_path).map_err(|e| {
-                CliError::Other(format!(
-                    "Failed to read joined-stats output ({}): {e}",
-                    temp_stats_path.display()
-                ))
-            })?;
-            let mut rdr = csv::ReaderBuilder::new()
-                .has_headers(true)
-                .from_reader(content.as_bytes());
-            let hdrs: Vec<String> = rdr
-                .headers()
-                .map_err(|e| CliError::Other(format!("Failed to read joined-stats header: {e}")))?
-                .iter()
-                .map(std::string::ToString::to_string)
-                .collect();
-            let field_idx = hdrs.iter().position(|h| h == "field").ok_or_else(|| {
-                CliError::Other(format!(
-                    "Joined-stats output missing 'field' column: got headers {hdrs:?}"
-                ))
-            })?;
-            // Propagate CSV parse errors instead of silently dropping
-            // them — a malformed/truncated stats row must surface as
-            // "failed to parse row N" rather than as a downstream
-            // "missing columns" assertion (which is exactly the
-            // confusing diagnostic mode this fix is trying to eliminate).
-            let mut field_values: std::collections::HashSet<String> =
-                std::collections::HashSet::new();
-            for (row_idx, rec) in rdr.records().enumerate() {
-                let rec = rec.map_err(|e| {
-                    CliError::Other(format!(
-                        "Failed to parse joined-stats row {row} from {path}: {e}",
-                        row = row_idx + 1, /* +1 so row numbering matches a human reader (header
-                                            * is row 0) */
-                        path = temp_stats_path.display()
-                    ))
-                })?;
-                if let Some(v) = rec.get(field_idx) {
-                    field_values.insert(v.to_string());
-                }
-            }
-            Ok((content, field_values))
-        };
-
-        // Verify the stats output has a record for every column of the joined
-        // CSV. `joined_csv_header` is the header `join_datasets_internal`
-        // already read AND validated, so it is a trustworthy reference —
-        // unlike a fresh re-read of the joined temp file, which under heavy
-        // parallel load has been observed to come back short (CI runs
-        // 25545197594, 26137827735). Retry up to 3x — re-syncing the joined
-        // CSV and re-running stats — so a transient short read is absorbed
-        // rather than silently producing primary-only bivariate output. If a
-        // column is still missing after the retries, fail loud.
-        let missing_cols = |found: &std::collections::HashSet<String>| -> Vec<String> {
-            joined_csv_header
-                .iter()
-                .filter(|h| !found.contains(h.as_str()))
-                .cloned()
-                .collect()
-        };
-        let (mut validated_content, mut stats_field_values) = run_stats_subprocess()?;
-        let mut missing = missing_cols(&stats_field_values);
-        let mut attempt = 1u32;
-        while !missing.is_empty() && attempt < 3 {
-            log::warn!(
-                "Joined-stats output missing columns {missing:?} after attempt {attempt}; \
-                 re-syncing joined CSV and re-running stats"
-            );
-            util::sync_subprocess_output(actual_input_path)?;
-            let (content, field_values) = run_stats_subprocess()?;
-            validated_content = content;
-            stats_field_values = field_values;
-            missing = missing_cols(&stats_field_values);
-            attempt += 1;
-        }
-        if !missing.is_empty() {
-            return fail_clierror!(
-                "Joined-stats subprocess output is still missing stats records for columns \
-                 {missing:?} after {attempt} attempts: the joined CSV has {} column(s) \
-                 ({joined_csv_header:?}), but the stats output's `field` column only covers {} of \
-                 them ({stats_field_values:?}). Stats output: {}",
-                joined_csv_header.len(),
-                stats_field_values.len(),
-                temp_stats_path.display()
-            );
-        }
-
-        prevalidated_stats_content = Some(validated_content);
-        temp_stats_path
+            .map_err(|e| CliError::Other(format!("Failed to persist temp stats path: {e}")))?
     } else {
         // For single dataset, use normal stats CSV path
         let path = get_stats_csv_path(input_path)?;

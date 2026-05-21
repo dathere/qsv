@@ -843,7 +843,7 @@ macro_rules! update_cache_info {
         use cached::Cached;
         use indicatif::HumanCount;
 
-        let cache = $cache_instance.lock();
+        let cache = $cache_instance.read();
         let size = cache.cache_size();
         if size > 0 {
             let hits = cache.cache_hits().unwrap_or_default();

@@ -551,7 +551,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use cached::{DiskCache, IOCached, SizedCache, proc_macro::cached, stores::DiskCacheBuilder};
+use cached::{ConcurrentCached, DiskCache, DiskCacheBuilder, LruCache, macros::cached};
 use dynfmt2::Format;
 use geosuggest_core::{
     Engine, EngineData,
@@ -1785,9 +1785,9 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         None
     } else {
         let cache = DiskCacheBuilder::new("geocode-opencage")
-            .set_disk_directory(cache_dir)
-            .set_lifespan(std::time::Duration::from_secs(args.flag_cache_ttl))
-            .set_refresh(false)
+            .disk_directory(cache_dir)
+            .ttl(std::time::Duration::from_secs(args.flag_cache_ttl))
+            .refresh(false)
             .build()
             .map_err(|e| CliError::Other(format!("Error building OpenCage disk cache: {e}")))?;
         if let Err(e) = cache.remove_expired_entries() {
@@ -1958,7 +1958,7 @@ fn parse_relative_age(input: &str) -> Option<Duration> {
 }
 
 /// Resolve a `--older-than` value into an age threshold (the lifespan handed to
-/// `DiskCacheBuilder::set_lifespan`). Accepts a relative age (30d, 2w, ...) or an
+/// `DiskCacheBuilder::ttl`). Accepts a relative age (30d, 2w, ...) or an
 /// absolute date/datetime parsed by `qsv_dateparser`. A future cutoff is rejected.
 fn resolve_older_than(value: &str) -> CliResult<Duration> {
     if let Some(age) = parse_relative_age(value) {
@@ -2028,12 +2028,12 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     };
 
     let mut builder = DiskCacheBuilder::new(OPENCAGE_CACHE_NAME)
-        .set_disk_directory(cache_dir)
-        .set_lifespan(lifespan)
-        .set_refresh(false);
+        .disk_directory(cache_dir)
+        .ttl(lifespan)
+        .refresh(false);
     if mode == GeocodeSubCmd::CachePrune {
         // remove_expired_entries() only persists to disk when this is set
-        builder = builder.set_sync_to_disk_on_cache_change(true);
+        builder = builder.sync_to_disk_on_cache_change(true);
     }
     let cache: DiskCache<String, String> = builder
         .build()
@@ -2321,9 +2321,9 @@ async fn load_engine_data(
 /// search_index_no_cache() is automatically derived from search_index() by the cached macro.
 /// search_index_no_cache() is used in dyncols mode, and as the name implies, does not use a cache.
 #[cached(
-    ty = "SizedCache<String, String>",
-    create = "{ SizedCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
-              SizedCache::with_size(FALLBACK_CACHE_SIZE)) }",
+    ty = "LruCache<String, String>",
+    create = "{ LruCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
+              LruCache::with_size(FALLBACK_CACHE_SIZE)) }",
     key = "String",
     convert = r#"{ cell.to_owned() }"#,
     option = true
@@ -2560,9 +2560,9 @@ fn search_index(
 }
 
 #[cached(
-    ty = "SizedCache<String, Option<IpAddr>>",
-    create = "{ SizedCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
-              SizedCache::with_size(FALLBACK_CACHE_SIZE)) }",
+    ty = "LruCache<String, Option<IpAddr>>",
+    create = "{ LruCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
+              LruCache::with_size(FALLBACK_CACHE_SIZE)) }",
     key = "String",
     convert = r#"{ host.to_owned() }"#
 )]

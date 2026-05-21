@@ -652,7 +652,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             | OptFlags::FAST_PROJECTION;
     }
 
-    optflags.set(OptFlags::NEW_STREAMING, args.flag_streaming);
+    optflags.set(OptFlags::STREAMING, args.flag_streaming);
 
     // check if the input is a SQL script (ends with .sql)
     let is_sql_script = std::path::Path::new(&args.arg_sql)

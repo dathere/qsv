@@ -568,7 +568,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
                 | OptFlags::COMM_SUBPLAN_ELIM
                 | OptFlags::COMM_SUBEXPR_ELIM
                 | OptFlags::FAST_PROJECTION
-                | OptFlags::NEW_STREAMING;
+                | OptFlags::STREAMING;
             ctx.register("sql_lf", lazy_df.with_optimizations(optflags));
             "SELECT COUNT(*) FROM sql_lf".to_string()
         };

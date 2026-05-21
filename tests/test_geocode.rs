@@ -2143,18 +2143,28 @@ fn geocode_opencage_dyncols_invalid_key_rejected() {
 fn geocode_opencage_dyncols_bare_prefix_rejected() {
     // this runs in CI: a bare "components."/"annotations." prefix with no
     // field suffix is rejected before any API call - it has no field to
-    // resolve and would otherwise silently yield an empty column
-    let wrk = Workdir::new("geocode_opencage_dyncols_bare_prefix_rejected");
-    let mut cmd = wrk.command("geocode");
-    cmd.arg("opencagenow")
-        .arg("Brooklyn, NY")
-        .args(["--api-key", "dummy-key-for-arg-validation"])
-        .args(["-f", "%dyncols: {bad:components.}, {worse:annotations.}"]);
+    // resolve and would otherwise silently yield an empty column. The
+    // components. and annotations. branches are checked independently
+    // because validation short-circuits on the first invalid key.
+    for bad_key in ["components.", "annotations."] {
+        let wrk = Workdir::new("geocode_opencage_dyncols_bare_prefix_rejected");
+        let mut cmd = wrk.command("geocode");
+        cmd.arg("opencagenow")
+            .arg("Brooklyn, NY")
+            .args(["--api-key", "dummy-key-for-arg-validation"])
+            .args(["-f", &format!("%dyncols: {{bad:{bad_key}}}")]);
 
-    let output = wrk.output(&mut cmd);
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(stderr.contains("Invalid '%dyncols:' key"));
+        let output = wrk.output(&mut cmd);
+        assert!(
+            !output.status.success(),
+            "bare prefix '{bad_key}' should be rejected"
+        );
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            stderr.contains("Invalid '%dyncols:' key"),
+            "bare prefix '{bad_key}' should fail with \"Invalid '%dyncols:' key\", got: {stderr}"
+        );
+    }
 }
 
 #[test]

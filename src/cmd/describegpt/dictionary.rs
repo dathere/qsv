@@ -751,16 +751,36 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
     }
 }
 
+/// Group usable raw frequency values by field name — every value except the
+/// rank-0 "Other" bucket and the `<ALL_UNIQUE>` sentinel (a `(NULL)` row has an
+/// empty rank, parsed as `0.0`, so it is excluded too). Borrows from
+/// `frequency_records`.
+fn usable_samples_by_field(frequency_records: &[FrequencyRecord]) -> HashMap<&str, Vec<&str>> {
+    let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
+    for rec in frequency_records {
+        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+            continue;
+        }
+        samples_by_field
+            .entry(rec.field.as_str())
+            .or_default()
+            .push(rec.value.as_str());
+    }
+    samples_by_field
+}
+
 /// Semantically validate the LLM-inferred strftime `:<fmt>` suffix on every
-/// `date`/`datetime` entry against a real on-disk sample value.
+/// `date`/`datetime` entry against the real on-disk sample values.
 ///
 /// `normalize_datetime_token` only checks the suffix is *syntactically* valid
 /// chrono strftime; a well-formed format can still mismatch the data (the LLM
 /// guesses `%m/%d/%Y` for `%d/%m/%Y` data). For each date/datetime entry that
-/// carries a suffix, this picks the first usable raw value from the frequency
-/// records — skipping the rank-0 "Other" bucket and the `<ALL_UNIQUE>`
-/// sentinel — and attempts to parse it with the inferred format. On failure
-/// the suffix is stripped back to the bare token.
+/// carries a suffix, this attempts to parse EVERY usable raw value from the
+/// frequency records — skipping the rank-0 "Other" bucket and the
+/// `<ALL_UNIQUE>` sentinel — with the inferred format. An ambiguous format can
+/// parse an early sample (`01/02/2020`) yet be disproven by a later one
+/// (`13/02/2020`), so all samples must parse; if any fails, the suffix is
+/// stripped back to the bare token.
 ///
 /// Entries with no usable sample (an ALL_UNIQUE date column, or one whose only
 /// frequency row is the "Other" bucket) keep their suffix unchanged — there is
@@ -769,15 +789,7 @@ pub(super) fn validate_date_formats(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
 ) {
-    let mut sample_by_field: HashMap<&str, &str> = HashMap::new();
-    for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
-            continue;
-        }
-        sample_by_field
-            .entry(rec.field.as_str())
-            .or_insert(rec.value.as_str());
-    }
+    let samples_by_field = usable_samples_by_field(frequency_records);
 
     for entry in entries {
         let base = content_type_base(&entry.content_type);
@@ -791,10 +803,16 @@ pub(super) fn validate_date_formats(
         else {
             continue; // bare token, nothing to validate
         };
-        let Some(sample) = sample_by_field.get(entry.name.as_str()) else {
+        let Some(samples) = samples_by_field.get(entry.name.as_str()) else {
             continue; // no usable sample (e.g. ALL_UNIQUE) - accept as-is
         };
-        if !sample_parses_with_format(sample, fmt, base == "datetime") {
+        // Every usable sample must parse: an ambiguous format can match the
+        // first sample yet be disproven by a later one. If any fails, the
+        // inferred format is wrong for this column - strip back to bare token.
+        if !samples
+            .iter()
+            .all(|s| sample_parses_with_format(s, fmt, base == "datetime"))
+        {
             entry.content_type = base.to_string();
         }
     }
@@ -886,16 +904,7 @@ pub(super) fn downgrade_all_midnight_datetime_columns(
     entries: &mut [DictionaryEntry],
     frequency_records: &[FrequencyRecord],
 ) {
-    let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
-    for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
-            continue;
-        }
-        samples_by_field
-            .entry(rec.field.as_str())
-            .or_default()
-            .push(rec.value.as_str());
-    }
+    let samples_by_field = usable_samples_by_field(frequency_records);
 
     for entry in entries {
         let Some(fmt) = entry.content_type.strip_prefix("datetime:") else {
@@ -2148,5 +2157,31 @@ mod tests {
         }];
         downgrade_all_midnight_datetime_columns(&mut entries, &freqs);
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn validate_date_formats_checks_all_samples_not_just_first() {
+        // `%m/%d/%Y` parses the first sample `01/02/2020` but a later sample
+        // `13/02/2020` (unambiguously day-first) disproves it — validating
+        // against only the first sample would wrongly keep the suffix.
+        let mut entries = vec![entry_with_content_type("d", "date:%m/%d/%Y")];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "01/02/2020".to_string(),
+                count:      5,
+                percentage: 10.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "13/02/2020".to_string(),
+                count:      4,
+                percentage: 8.0,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs);
+        assert_eq!(entries[0].content_type, "date");
     }
 }

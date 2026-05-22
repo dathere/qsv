@@ -85,7 +85,7 @@ impl SerializableItem for csv::ByteRecord {
             )
         })?;
         w.write_u32::<LittleEndian>(field_count)?;
-        for field in self.iter() {
+        for field in self {
             let len = u32::try_from(field.len()).map_err(|e| {
                 io::Error::new(
                     io::ErrorKind::InvalidData,

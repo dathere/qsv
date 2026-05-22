@@ -182,7 +182,6 @@ describegpt options:
                            The columns must be present in the Summary Statistics.
                            If the columns are not present in the Summary Statistics or already in the
                            dictionary, they will be ignored.
-                           CONVENIENCE VALUES:
                            These values are case-insensitive and automatically set the --addl-cols option to true.
                            "everything" can be used to add all 45 "available" statistics columns.
                            You can adjust the available columns with --stats-options.

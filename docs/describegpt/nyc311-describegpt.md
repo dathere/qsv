@@ -1,81 +1,77 @@
-Generated using a Local LLM (openai/gpt-oss-20b) on LM Studio 0.4.2+2 running on a Macbook Pro M4 Max 64gb/Tahoe 26.3:
+Generated using a Local LLM (openai/gpt-oss-20b) on LM Studio 0.4.14-beta+3 running on a Macbook Pro M4 Max 64gb/Tahoe 26.5:
 
 ```bash
-$ QSV_LLM_BASE_URL=http://localhost:1234/v1 qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all \
-     --output nyc311-describegpt.md
+qsv describegpt --all --two-pass /tmp/NYC_311_SR_2010-2020-sample-1M.csv -o /tmp/nyc311-describegpt.md --fresh --infer-content-type
 ```
 ---
 # Dictionary
-| Name | Type | Label | Description | Min | Max | Cardinality | Enumeration | Null Count | Examples |
-|------|------|-------|-------------|-----|-----|-------------|-------------|------------|----------|
-| **Unique Key** | Integer | Record Identifier | A unique numeric identifier for each complaint record. It is the primary key in the dataset and has 1,000,000 distinct values (100% uniqueness). | 11465364 | 48478173 | 1,000,000 |  | 0 | <ALL_UNIQUE> |
-| **Created Date** | DateTime | Complaint Creation Timestamp | UTC timestamp indicating when a 311 service request was logged. The dates span from January 1 2010 to December 23 2020 with a mean around November 10 2015. Approximately 84% of records have missing values. | 2010-01-01T00:00:00+00:00 | 2020-12-23T01:25:51+00:00 | 841,014 |  | 0 | Other… [997,333]<br>01/24/2013 12:00:00 AM [347]<br>01/07/2014 12:00:00 AM [315]<br>01/08/2015 12:00:00 AM [283]<br>02/16/2015 12:00:00 AM [269] |
-| **Closed Date** | DateTime | Complaint Closure Timestamp | UTC timestamp marking the final resolution or closure of the complaint. Valid dates range from January 1 1900 to January 1 2100, but most entries are null (≈99% missing). The top recorded dates show that complaints were frequently closed in 2010–2020. | 1900-01-01T00:00:00+00:00 | 2100-01-01T00:00:00+00:00 | 688,837 |  | 28,619 | Other… [968,671]<br>(NULL) [28,619]<br>11/15/2010 12:00:00 AM [384]<br>11/07/2012 12:00:00 AM [329]<br>12/09/2010 12:00:00 AM [267] |
-| **Agency** | String | Agency Code | Two‑ or three‑character code identifying the city agency responsible for handling the complaint. The most common codes are NYPD (26.5 %), HPD (25.8 %), DOT (13.2 %) and DSNY (8.2 %). A small proportion of records have an "Other" code. | 3-1-1 | TLC | 28 |  | 0 | NYPD [265,116]<br>HPD [258,033]<br>DOT [132,462]<br>DSNY [81,606]<br>DEP [75,895] |
-| **Agency Name** | String | Agency Full Name | Full name of the agency that processed or responded to the complaint. The top agencies include New York City Police Department, Department of Housing Preservation and Development, Department of Transportation, etc., together accounting for about 70 % of records. | 3-1-1 | Valuation Policy | 553 |  | 0 | New York City Police Depa… [265,038]<br>Department of Housing Pre… [258,019]<br>Department of Transportat… [132,462]<br>Other… [103,974]<br>Department of Environment… [75,895] |
-| **Complaint Type** | String | Complaint Category | High‑level classification of the reported issue, such as Noise - Residential, HEAT/HOT WATER, Illegal Parking, Blocked Driveway, Street Condition, etc. The majority of complaints (≈56 %) fall under an "Other" category, while the top ten categories represent roughly 43 % of all records. | ../../WEB-INF/web.xml;x= | ZTESTINT | 287 |  | 0 | Other… [563,561]<br>Noise - Residential [89,439]<br>HEAT/HOT WATER [56,639]<br>Illegal Parking [45,032]<br>Blocked Driveway [42,356] |
-| **Descriptor** | String | Complaint Detail | Fine‑grained description within a complaint type (e.g., Loud Music/Party, Heat, No Access). The most frequent descriptors include Loud Music/Party (~9.4 %) and other subcategories, with about 67 % of entries labeled as "Other". | 1 Missed Collection | unknown odor/taste in drinking water (QA6) | 1,392 |  | 3,001 | Other… [671,870]<br>Loud Music/Party [93,646]<br>ENTIRE BUILDING [36,885]<br>HEAT [35,088]<br>No Access [31,631] |
-| **Location Type** | String | Location Category | General classification of where the incident occurred—Residential Building, Street/Sidewalk, etc. Residential Building accounts for ~34 %, Street/Sidewalk ~19 %, and many records are missing. | 1-, 2- and 3- Family Home | Wooded Area | 162 |  | 239,131 | RESIDENTIAL BUILDING [255,562]<br>(NULL) [239,131]<br>Street/Sidewalk [145,653]<br>Residential Building/Hous… [92,765]<br>Street [92,190] |
-| **Incident Zip** | String | Incident ZIP Code | Five‑digit ZIP code indicating the area of the complaint. The most common ZIP codes include 11226 (~1.8 %), 10467 (~1.5 %), etc., while 86 % of records have a valid ZIP; about 6 % are missing. | * | XXXXX | 535 |  | 54,978 | Other… [815,988]<br>(NULL) [54,978]<br>11226 [17,114]<br>10467 [14,495]<br>11207 [12,872] |
-| **Incident Address** | String | Incident Address | Full street address or intersection where the issue was reported. The dataset contains many distinct addresses, with the top ten appearing in ~0.2 % each; nearly all records fall into the "Other" bucket indicating a high level of uniqueness. | * * | west 155 street and edgecombe avenue | 341,996 |  | 174,700 | Other… [819,046]<br>(NULL) [174,700]<br>655 EAST  230 STREET [1,538]<br>78-15 PARSONS BOULEVARD [694]<br>672 EAST  231 STREET [663] |
-| **Street Name** | String | Street Name | Name of the primary street involved in the incident. Broadway is the most common (≈1.2 %) followed by other major streets; about 95 % of values are unique or appear rarely. | * | wyckoff avenue | 14,837 |  | 174,720 | Other… [784,684]<br>(NULL) [174,720]<br>BROADWAY [9,702]<br>GRAND CONCOURSE [5,851]<br>OCEAN AVENUE [3,946] |
-| **Cross Street 1** | String | Cross Street 1 | First cross street at an intersection complaint location, e.g., BEND or BROADWAY. The top values account for roughly 18 % of entries; the field is null in many records that are not intersections. | 1 AVE | mermaid | 16,238 |  | 320,401 | Other… [619,743]<br>(NULL) [320,401]<br>BEND [12,562]<br>BROADWAY [8,548]<br>3 AVENUE [6,154] |
-| **Cross Street 2** | String | Cross Street 2 | Second cross street at an intersection. Distribution mirrors Cross Street 1, with BEND and BROADWAY again among the most frequent values. | 1 AVE | surf | 16,486 |  | 323,644 | Other… [623,363]<br>(NULL) [323,644]<br>BEND [12,390]<br>BROADWAY [8,833]<br>DEAD END [5,626] |
-| **Intersection Street 1** | String | Intersection Street 1 | First street forming an intersection where a complaint was reported; common values include BROADWAY (~3.6 %) and other major streets. The field is often null for non‑intersection complaints. | 1 AVE | flatlands AVE | 11,237 |  | 767,422 | (NULL) [767,422]<br>Other… [214,544]<br>BROADWAY [3,761]<br>CARPENTER AVENUE [2,918]<br>BEND [2,009] |
-| **Intersection Street 2** | String | Intersection Street 2 | Second street of the intersection, with similar distribution to Intersection Street 1. | 1 AVE | glenwood RD | 11,674 |  | 767,709 | (NULL) [767,709]<br>Other… [215,667]<br>BROADWAY [3,462]<br>BEND [1,942]<br>2 AVENUE [1,690] |
-| **Address Type** | String | Address Format | Specifies how the incident location was recorded—ADDRESS, INTERSECTION, BLOCKFACE, LATLONG, or PLACENAME. ADDRESS dominates at ~81 %, followed by INTERSECTION (~15 %). | ADDRESS | PLACENAME | 6 |  | 125,802 | ADDRESS [710,380]<br>INTERSECTION [133,361]<br>(NULL) [125,802]<br>BLOCKFACE [22,620]<br>LATLONG [7,421] |
-| **City** | String | City/Borough | Name of the borough where the complaint occurred (Brooklyn, Queens, Manhattan, Bronx, Staten Island). Brooklyn is the most frequent borough (~32 %), with many records missing. | * | YORKTOWN HEIGHTS | 382 |  | 61,963 | BROOKLYN [296,254]<br>NEW YORK [189,069]<br>BRONX [181,168]<br>Other… [163,936]<br>(NULL) [61,963] |
-| **Landmark** | String | Nearby Landmark | Notable landmark or street close to the incident location, e.g., EAST 230 STREET, BROADWAY. The field is null for ~91 % of records; the top landmarks represent a small portion of the data. | 1 AVENUE | ZULETTE AVENUE | 5,915 |  | 912,779 | (NULL) [912,779]<br>Other… [80,165]<br>EAST  230 STREET [1,545]<br>EAST  231 STREET [1,291]<br>BROADWAY [1,148] |
-| **Facility Type** | String | Facility Category | Type of facility involved in the complaint (e.g., DSNY Garage, Precinct). N/A accounts for 73 % of entries; Precinct appears in about 23 %; other categories are rare. | DSNY Garage | School District | 6 |  | 145,478 | N/A [628,279]<br>Precinct [193,259]<br>(NULL) [145,478]<br>DSNY Garage [32,310]<br>School [617] |
-| **Status** | String | Complaint Status | Current processing status—Closed, Pending, Open, etc. Closed complaints dominate (~95 %), with small percentages remaining pending or open. | Assigned | Unspecified | 10 | Assigned<br>Closed<br>Closed - Testing<br>Email Sent<br>In Progress<br>Open<br>Pending<br>Started<br>Unassigned<br>Unspecified | 0 | Closed [952,522]<br>Pending [20,119]<br>Open [12,340]<br>In Progress [7,841]<br>Assigned [6,651] |
-| **Due Date** | DateTime | Resolution Deadline | Target date set by the agency to resolve the complaint, ranging from 2010 to 2021. Many records have missing values (≈65 %); among those present, the most common dates cluster in mid‑2015. | 1900-01-02T00:00:00+00:00 | 2021-06-17T16:34:13+00:00 | 345,077 |  | 647,794 | (NULL) [647,794]<br>Other… [350,746]<br>04/08/2015 10:00:58 AM [214]<br>05/02/2014 03:32:17 PM [183]<br>03/30/2018 10:10:39 AM [172] |
-| **Resolution Description** | String | Resolution Narrative | Textual account of how the complaint was resolved—actions taken or outcome noted. The top narratives involve police response or HPD inspections; about 52 % of entries fall under an "Other" category. | A DOB violation was issued for failing to comply with an existing Stop Work Order. | Your request was submitted to the Department of Homeless Services. The City?s outreach team will assess the homeless individual and offer appropriate assistance within 2 hours. If you asked to know the outcome of your request, you will get a call within 2 hours. No further status will be available through the NYC 311 App, 311, or 311 Online. | 1,216 |  | 20,480 | Other… [511,739]<br>The Police Department res… [91,408]<br>The Department of Housing… [72,962]<br>The Police Department res… [63,868]<br>Service Request status fo… [52,155] |
-| **Resolution Action Updated Date** | DateTime | Last Update Timestamp | UTC timestamp indicating when the resolution action was last updated. The field has a high proportion of nulls (~99 %) and, where present, dates span from 2010 to 2020. | 2009-12-31T01:35:00+00:00 | 2020-12-23T06:56:14+00:00 | 690,314 |  | 15,072 | Other… [982,148]<br>(NULL) [15,072]<br>11/15/2010 12:00:00 AM [385]<br>11/07/2012 12:00:00 AM [336]<br>12/09/2010 12:00:00 AM [273] |
-| **Community Board** | String | Community Board | Borough‑level community board responsible for the area (e.g., 12 MANHATTAN). Most records are unspecified; when specified, they range across all boroughs with varying frequencies. | 0 Unspecified | Unspecified STATEN ISLAND | 77 |  | 0 | Other… [751,635]<br>0 Unspecified [49,878]<br>12 MANHATTAN [29,845]<br>12 QUEENS [23,570]<br>01 BROOKLYN [21,714] |
-| **BBL** | String | BBL (Borough‑Block‑Lot) | Numeric identifier unique to NYC property parcels. The dataset contains many distinct values; about 24 % of entries are missing. The top ten BBLs account for roughly 0.2 % each. | 0140694020 | 0140694020 | 268,383 |  | 243,046 | Other… [750,668]<br>(NULL) [243,046]<br>2048330028 [1,566]<br>4068290001 [696]<br>4015110001 [664] |
-| **Borough** | String | Borough | One of the five NYC boroughs or Unspecified. Brooklyn is the most common (≈30 %), followed by Queens, Manhattan, Bronx, and Staten Island. | BRONX | Unspecified | 6 | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified | 0 | BROOKLYN [296,081]<br>QUEENS [228,818]<br>MANHATTAN [195,488]<br>BRONX [180,142]<br>Unspecified [49,878] |
-| **X Coordinate (State Plane)** | Integer | X Coordinate (State Plane) | Easting coordinate in the New York State Plane coordinate system, used for precise mapping of complaint locations. Most values cluster around 1,020,000 m; about 10 % of records are missing. | 913281 | 1067220 | 102,556 |  | 85,327 | Other… [908,535]<br>(NULL) [85,327]<br>1022911 [1,568]<br>1037000 [701]<br>1023174 [675] |
-| **Y Coordinate (State Plane)** | Integer | Y Coordinate (State Plane) | Northing coordinate in the State Plane system. Values typically fall near 200,000 m; a small portion of entries are null. | 121152 | 271876 | 116,092 |  | 85,327 | Other… [908,538]<br>(NULL) [85,327]<br>264242 [1,566]<br>202363 [706]<br>211606 [665] |
-| **Open Data Channel Type** | String | Submission Channel | Method used to submit the complaint—PHONE, UNKNOWN, ONLINE, MOBILE, or OTHER. PHONE is by far the most common channel (~50 %), followed by UNKNOWN (~23 %) and ONLINE (~18 %). | MOBILE | UNKNOWN | 5 | MOBILE<br>ONLINE<br>OTHER<br>PHONE<br>UNKNOWN | 0 | PHONE [497,606]<br>UNKNOWN [230,402]<br>ONLINE [177,334]<br>MOBILE [79,892]<br>OTHER [14,766] |
-| **Park Facility Name** | String | Park Facility Name | Name of a park or playground if the incident occurred within a park; the majority of records are Unspecified, with Central Park, Riverside Park, etc., appearing in the minority. | "Uncle" Vito F. Maranzano Glendale Playground | Zimmerman Playground | 1,889 |  | 0 | Unspecified [993,141]<br>Other… [5,964]<br>Central Park [261]<br>Riverside Park [136]<br>Prospect Park [129] |
-| **Park Borough** | String | Park Borough | Borough where the park is located; distribution mirrors that of Borough (Brooklyn ~30 %, Queens ~23 %, Manhattan ~20 %). | BRONX | Unspecified | 6 | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified | 0 | BROOKLYN [296,081]<br>QUEENS [228,818]<br>MANHATTAN [195,488]<br>BRONX [180,142]<br>Unspecified [49,878] |
-| **Vehicle Type** | String | Vehicle Type | Type of vehicle involved in the complaint, such as Car Service or Green Taxi. The field is largely null (~99.9 %); among non‑null values, Car Service dominates (~91 %). | Ambulette / Paratransit | Green Taxi | 5 |  | 999,652 | (NULL) [999,652]<br>Car Service [317]<br>Ambulette / Paratransit [19]<br>Commuter Van [11]<br>Green Taxi [1] |
-| **Taxi Company Borough** | String | Taxi Company Borough | Borough affiliation of the taxi company that issued the ticket or was involved. Most records are unspecified; when specified, they map to the five boroughs with varying frequencies. | BRONX | Staten Island | 11 |  | 999,156 | (NULL) [999,156]<br>BROOKLYN [207]<br>QUEENS [194]<br>MANHATTAN [171]<br>BRONX [127] |
-| **Taxi Pick Up Location** | String | Taxi Pickup Location | Origin point for a taxi pickup—common values include JFK Airport, intersection, etc.; the field is null in many cases and "Other" represents the majority of non‑null entries. | 1 5 AVENUE MANHATTAN | YORK AVENUE AND EAST 70 STREET | 1,903 |  | 992,129 | (NULL) [992,129]<br>Other… [4,091]<br>Other [2,006]<br>JFK Airport [562]<br>Intersection [486] |
-| **Bridge Highway Name** | String | Bridge/Highway Name | Name of bridge or highway associated with the complaint (e.g., Belt Pkwy, BQE/Gowanus Expwy). A handful of names cover most records; a large proportion are labeled as "Other". | 145th St. Br - Lenox Ave | Willis Ave Br - 125th St/1st Ave | 68 |  | 997,711 | (NULL) [997,711]<br>Other… [779]<br>Belt Pkwy [276]<br>BQE/Gowanus Expwy [254]<br>Grand Central Pkwy [186] |
-| **Bridge Highway Direction** | String | Bridge/Highway Direction | Direction of travel on the bridge or highway—East/Long Island Bound, North/Bronx Bound, etc.; the field has a high prevalence of nulls. | Bronx Bound | Westbound/To Goethals Br | 50 |  | 997,691 | (NULL) [997,691]<br>Other… [987]<br>East/Long Island Bound [210]<br>North/Bronx Bound [208]<br>East/Queens Bound [197] |
-| **Road Ramp** | String | Road Ramp Type | Indicates whether a ramp is present at the complaint location (Roadway, Ramp, N/A). Most records have "Roadway" (~75 %), followed by "Ramp" (~24 %). | N/A | Roadway | 4 |  | 997,693 | (NULL) [997,693]<br>Roadway [1,731]<br>Ramp [555]<br>N/A [21] |
-| **Bridge Highway Segment** | String | Bridge/Highway Segment | Specific segment identifier of the bridge or highway involved; most entries are labeled as "Other". | 1-1-1265963747 | Wythe Ave/Kent Ave (Exit 31) | 937 |  | 997,556 | (NULL) [997,556]<br>Other… [2,144]<br>Ramp [92]<br>Roadway [54]<br>Clove Rd/Richmond Rd (Exi… [23] |
-| **Latitude** | Float | Latitude | Decimal degree latitude coordinate for the complaint location, ranging from about 40.1° to 41.0°. The majority of points lie between 40.1 and 40.9. | 40.1123853 | 40.9128688 | 353,694 |  | 254,695 | Other… [739,329]<br>(NULL) [254,695]<br>40.89187241649303 [1,538]<br>40.1123853 [1,153]<br>40.89238451539139 [663] |
-| **Longitude** | Float | Longitude | Decimal degree longitude coordinate, typically between -77.5° and -73.7°. Most locations are in the range -74 to -73.8. | -77.5195844 | -73.7005968 | 353,996 |  | 254,695 | Other… [739,329]<br>(NULL) [254,695]<br>-73.86016845296459 [1,538]<br>-77.5195844 [1,153]<br>-73.8592161325675 [663] |
-| **Location** | String | Location (LatLon) | Textual representation of latitude and longitude as a comma‑separated pair enclosed in parentheses, e.g., "(40.89187241649303, -73.86016845296459)". The field is null for about 25 % of records. | (40.1123853, -77.5195844) | (40.9128688, -73.9024731) | 375,772 |  | 254,695 | Other… [739,329]<br>(NULL) [254,695]<br>(40.89187241649303, -73.8… [1,538]<br>(40.1123853, -77.5195844) [1,153]<br>(40.89238451539139, -73.8… [663] |
+| Name | Type | Label | Description | Content Type | Min | Max | Cardinality | Enumeration | Null Count | Examples |
+|------|------|-------|-------------|--------------|-----|-----|-------------|-------------|------------|----------|
+| **Unique Key** | Integer | Unique Complaint Identifier | A system‑generated numeric identifier that uniquely distinguishes each complaint record. | unique_id | 11465364 | 48478173 | 1,000,000 |  | 0 | <ALL_UNIQUE> |
+| **Created Date** | DateTime | Complaint Creation Timestamp | The exact date and time when the complaint was created or submitted by a user. | date:%m/%d/%Y | 2010-01-01T00:00:00+00:00 | 2020-12-23T01:25:51+00:00 | 841,014 |  | 0 | Other… [997,333]<br>01/24/2013 12:00:00 AM [347]<br>01/07/2014 12:00:00 AM [315]<br>01/08/2015 12:00:00 AM [283]<br>02/16/2015 12:00:00 AM [269] |
+| **Closed Date** | DateTime | Complaint Closure Timestamp | The date and time when the complaint was closed or resolved. May be null if still open. | date:%m/%d/%Y | 1900-01-01T00:00:00+00:00 | 2100-01-01T00:00:00+00:00 | 688,837 |  | 28,619 | Other… [968,671]<br>(NULL)… [28,619]<br>11/15/2010 12:00:00 AM [384]<br>11/07/2012 12:00:00 AM [329]<br>12/09/2010 12:00:00 AM [267] |
+| **Agency** | String | Complaint Agency Abbreviation | Two‑ to four‑letter abbreviation of the agency responsible for handling the complaint (e.g., NYPD, HPD). | category | 3-1-1 | TLC | 28 |  | 0 | NYPD [265,116]<br>HPD [258,033]<br>DOT [132,462]<br>DSNY [81,606]<br>DEP [75,895] |
+| **Agency Name** | String | Complaint Agency Full Name | Full legal name of the agency tasked with addressing the complaint. | company_name | 3-1-1 | Valuation Policy | 553 |  | 0 | New York City Police Depa… [265,038]<br>Department of Housing Pre… [258,019]<br>Department of Transportat… [132,462]<br>Other… [103,974]<br>Department of Environment… [75,895] |
+| **Complaint Type** | String | Primary Complaint Category | Broad category describing the nature of the complaint (e.g., Noise, Water System). | category | ../../WEB-INF/web.xml;x= | ZTESTINT | 287 |  | 0 | Other… [563,561]<br>Noise - Residential [89,439]<br>HEAT/HOT WATER [56,639]<br>Illegal Parking [45,032]<br>Blocked Driveway [42,356] |
+| **Descriptor** | String | Specific Issue Descriptor | A more detailed description of the issue within the broader complaint type. | category | 1 Missed Collection | unknown odor/taste in drinking water (QA6) | 1,392 |  | 3,001 | Other… [671,870]<br>Loud Music/Party [93,646]<br>ENTIRE BUILDING [36,885]<br>HEAT [35,088]<br>No Access [31,631] |
+| **Location Type** | String | Incident Location Classification | Classification of where the incident occurred (e.g., Residential Building, Street/Sidewalk). | category | 1-, 2- and 3- Family Home | Wooded Area | 162 |  | 239,131 | RESIDENTIAL BUILDING [255,562]<br>(NULL)… [239,131]<br>Street/Sidewalk [145,653]<br>Residential Building/Hous… [92,765]<br>Street [92,190] |
+| **Incident Zip** | String | Incident ZIP Code | The five‑digit postal code of the location where the incident took place. | zip_code | * | XXXXX | 535 |  | 54,978 | Other… [815,988]<br>(NULL)… [54,978]<br>11226 [17,114]<br>10467 [14,495]<br>11207 [12,872] |
+| **Incident Address** | String | Incident Street Address | Full street address of the incident location, including building number and street name. This is one component of the complete mailing address. | street_address | * * | west 155 street and edgecombe avenue | 341,996 |  | 174,700 | Other… [819,046]<br>(NULL)… [174,700]<br>655 EAST  230 STREET [1,538]<br>78-15 PARSONS BOULEVARD [694]<br>672 EAST  231 STREET [663] |
+| **Street Name** | String | Primary Incident Street Name | Name of the main street where the incident occurred; part of the full address when combined with Incident Address, City, Borough and ZIP Code. | street_name | * | wyckoff avenue | 14,837 |  | 174,720 | Other… [784,684]<br>(NULL)… [174,720]<br>BROADWAY [9,702]<br>GRAND CONCOURSE [5,851]<br>OCEAN AVENUE [3,946] |
+| **Cross Street 1** | String | First Cross Street (if applicable) | First cross street at an intersection near the incident location; part of the intersection context for address resolution. | street_name | 1 AVE | mermaid | 16,238 |  | 320,401 | Other… [619,743]<br>(NULL)… [320,401]<br>BEND [12,562]<br>BROADWAY [8,548]<br>3 AVENUE [6,154] |
+| **Cross Street 2** | String | Second Cross Street (if applicable) | Second cross street at an intersection near the incident location; used when the incident involves a multi‑intersection area. | street_name | 1 AVE | surf | 16,486 |  | 323,644 | Other… [623,363]<br>(NULL)… [323,644]<br>BEND [12,390]<br>BROADWAY [8,833]<br>DEAD END [5,626] |
+| **Intersection Street 1** | String | First Intersection Street | One of the streets that form the intersection where the incident occurred. Useful for mapping incidents to grid intersections. | street_name | 1 AVE | flatlands AVE | 11,237 |  | 767,422 | (NULL)… [767,422]<br>Other… [214,544]<br>BROADWAY [3,761]<br>CARPENTER AVENUE [2,918]<br>BEND [2,009] |
+| **Intersection Street 2** | String | Second Intersection Street | The other street forming the intersection at the incident location. | street_name | 1 AVE | glenwood RD | 11,674 |  | 767,709 | (NULL)… [767,709]<br>Other… [215,667]<br>BROADWAY [3,462]<br>BEND [1,942]<br>2 AVENUE [1,690] |
+| **Address Type** | String | Type of Address Provided | Indicates how the address was supplied (e.g., ADDRESS, INTERSECTION, BLOCKFACE). | category | ADDRESS | PLACENAME | 6 |  | 125,802 | ADDRESS [710,380]<br>INTERSECTION [133,361]<br>(NULL)… [125,802]<br>BLOCKFACE [22,620]<br>LATLONG [7,421] |
+| **City** | String | Incident City | Name of the city where the incident took place. For NYC data this is typically a borough name but can be “New York” or other municipalities. | city | * | YORKTOWN HEIGHTS | 382 |  | 61,963 | BROOKLYN [296,254]<br>NEW YORK [189,069]<br>BRONX [181,168]<br>Other… [163,936]<br>(NULL)… [61,963] |
+| **Landmark** | String | Nearby Landmark (if any) | Notable landmark near or at the incident location; used for contextual navigation and mapping. | category | 1 AVENUE | ZULETTE AVENUE | 5,915 |  | 912,779 | (NULL)… [912,779]<br>Other… [80,165]<br>EAST  230 STREET [1,545]<br>EAST  231 STREET [1,291]<br>BROADWAY [1,148] |
+| **Facility Type** | String | Incident Facility Category | Type of facility where the incident occurred (e.g., DSNY Garage, School). | category | DSNY Garage | School District | 6 |  | 145,478 | N/A [628,279]<br>Precinct [193,259]<br>(NULL)… [145,478]<br>DSNY Garage [32,310]<br>School [617] |
+| **Status** | String | Current Complaint Status | Real‑time status of the complaint (Closed, Pending, Open, etc.). | category | Assigned | Unspecified | 10 | Assigned<br>Closed<br>Closed - Testing<br>Email Sent<br>In Progress<br>Open<br>Pending<br>Started<br>Unassigned<br>Unspecified | 0 | Closed [952,522]<br>Pending [20,119]<br>Open [12,340]<br>In Progress [7,841]<br>Assigned [6,651] |
+| **Due Date** | DateTime | Resolution Deadline Timestamp | The deadline date and time by which the complaint should be resolved. | datetime:%m/%d/%Y %I:%M:%S %p | 1900-01-02T00:00:00+00:00 | 2021-06-17T16:34:13+00:00 | 345,077 |  | 647,794 | (NULL)… [647,794]<br>Other… [350,746]<br>04/08/2015 10:00:58 AM [214]<br>05/02/2014 03:32:17 PM [183]<br>03/30/2018 10:10:39 AM [172] |
+| **Resolution Description** | String | Resolution Narrative | Narrative description of actions taken or resolution details for the complaint. | free_text | A DOB violation was issued for failing to comply with an existing Stop Work Order. | Your request was submitted to the Department of Homeless Services. The City?s outreach team will assess the homeless individual and offer appropriate assistance within 2 hours. If you asked to know the outcome of your request, you will get a call within 2 hours. No further status will be available through the NYC 311 App, 311, or 311 Online. | 1,216 |  | 20,480 | Other… [511,739]<br>The Police Department res… [91,408]<br>The Department of Housing… [72,962]<br>The Police Department res… [63,868]<br>Service Request status fo… [52,155] |
+| **Resolution Action Updated Date** | DateTime | Last Resolution Update Timestamp | Timestamp when the resolution action was last updated. | date:%m/%d/%Y | 2009-12-31T01:35:00+00:00 | 2020-12-23T06:56:14+00:00 | 690,314 |  | 15,072 | Other… [982,148]<br>(NULL)… [15,072]<br>11/15/2010 12:00:00 AM [385]<br>11/07/2012 12:00:00 AM [336]<br>12/09/2010 12:00:00 AM [273] |
+| **Community Board** | String | Associated Community Board | Community board number or designation linked to the incident location. | category | 0 Unspecified | Unspecified STATEN ISLAND | 77 |  | 0 | Other… [751,635]<br>0 Unspecified [49,878]<br>12 MANHATTAN [29,845]<br>12 QUEENS [23,570]<br>01 BROOKLYN [21,714] |
+| **BBL** | String | Borough‑Block‑Lot Identifier | Standard NYPD BBL code identifying the borough, block, and lot of the property involved in the complaint. | unknown | 0000000000 | 5080470043 | 268,383 |  | 243,046 | Other… [750,668]<br>(NULL)… [243,046]<br>2048330028 [1,566]<br>4068290001 [696]<br>4015110001 [664] |
+| **Borough** | String | Incident Borough | Name of the borough where the incident occurred. | category | BRONX | Unspecified | 6 | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified | 0 | BROOKLYN [296,081]<br>QUEENS [228,818]<br>MANHATTAN [195,488]<br>BRONX [180,142]<br>Unspecified [49,878] |
+| **X Coordinate (State Plane)** | Integer | Easting (State Plane) | East‑ing coordinate in the New York State Plane coordinate system for the incident location; forms part of a state‑plane coordinate pair with Y Coordinate. | unknown | 913281 | 1067220 | 102,556 |  | 85,327 | Other… [908,535]<br>(NULL)… [85,327]<br>1022911 [1,568]<br>1037000 [701]<br>1023174 [675] |
+| **Y Coordinate (State Plane)** | Integer | Northing (State Plane) | North‑ing coordinate in the New York State Plane coordinate system for the incident location; pairs with X Coordinate to locate the point precisely. | unknown | 121152 | 271876 | 116,092 |  | 85,327 | Other… [908,538]<br>(NULL)… [85,327]<br>264242 [1,566]<br>202363 [706]<br>211606 [665] |
+| **Open Data Channel Type** | String | Submission Channel | Channel through which the complaint was submitted (e.g., PHONE, ONLINE). | category | MOBILE | UNKNOWN | 5 | MOBILE<br>ONLINE<br>OTHER<br>PHONE<br>UNKNOWN | 0 | PHONE [497,606]<br>UNKNOWN [230,402]<br>ONLINE [177,334]<br>MOBILE [79,892]<br>OTHER [14,766] |
+| **Park Facility Name** | String | Park Facility Name | Name of the park facility involved in the incident. | free_text | "Uncle" Vito F. Maranzano Glendale Playground | Zimmerman Playground | 1,889 |  | 0 | Unspecified [993,141]<br>Other… [5,964]<br>Central Park [261]<br>Riverside Park [136]<br>Prospect Park [129] |
+| **Park Borough** | String | Park Borough | Borough where the park facility is located. | category | BRONX | Unspecified | 6 | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified | 0 | BROOKLYN [296,081]<br>QUEENS [228,818]<br>MANHATTAN [195,488]<br>BRONX [180,142]<br>Unspecified [49,878] |
+| **Vehicle Type** | String | Vehicle Category (if applicable) | Type of vehicle involved in the incident (e.g., Car Service, Green Taxi). | category | Ambulette / Paratransit | Green Taxi | 5 |  | 999,652 | (NULL)… [999,652]<br>Car Service [317]<br>Ambulette / Paratransit [19]<br>Commuter Van [11]<br>Green Taxi [1] |
+| **Taxi Company Borough** | String | Taxi Company Operating Borough | Borough where the taxi company operates. | category | BRONX | Staten Island | 11 |  | 999,156 | (NULL)… [999,156]<br>BROOKLYN [207]<br>QUEENS [194]<br>MANHATTAN [171]<br>BRONX [127] |
+| **Taxi Pick Up Location** | String | Taxi Pickup Description | Textual description of the location where a taxi was picked up. | free_text | 1 5 AVENUE MANHATTAN | YORK AVENUE AND EAST 70 STREET | 1,903 |  | 992,129 | (NULL)… [992,129]<br>Other [4,091]<br>Other… [2,006]<br>JFK Airport [562]<br>Intersection [486] |
+| **Bridge Highway Name** | String | Bridge/Highway Name (if applicable) | Name of the bridge or highway involved in the incident. | category | 145th St. Br - Lenox Ave | Willis Ave Br - 125th St/1st Ave | 68 |  | 997,711 | (NULL)… [997,711]<br>Other… [779]<br>Belt Pkwy [276]<br>BQE/Gowanus Expwy [254]<br>Grand Central Pkwy [186] |
+| **Bridge Highway Direction** | String | Bridge/Highway Traffic Direction | Direction of traffic on the bridge or highway (e.g., East/Long Island Bound). | category | Bronx Bound | Westbound/To Goethals Br | 50 |  | 997,691 | (NULL)… [997,691]<br>Other… [987]<br>East/Long Island Bound [210]<br>North/Bronx Bound [208]<br>East/Queens Bound [197] |
+| **Road Ramp** | String | Ramp Type (if applicable) | Type of ramp at the incident location (e.g., Roadway, N/A). | category | N/A | Roadway | 4 |  | 997,693 | (NULL)… [997,693]<br>Roadway [1,731]<br>Ramp [555]<br>N/A [21] |
+| **Bridge Highway Segment** | String | Bridge/Highway Segment Identifier | Specific segment or exit number on the bridge or highway. | category | 1-1-1265963747 | Wythe Ave/Kent Ave (Exit 31) | 937 |  | 997,556 | (NULL)… [997,556]<br>Other… [2,144]<br>Ramp [92]<br>Roadway [54]<br>Clove Rd/Richmond Rd (Exi… [23] |
+| **Latitude** | Float | Geographic Latitude | Geographic latitude coordinate of the incident location; used with Longitude to form a geographic point. | latitude | 40.1123853 | 40.9128688 | 353,694 |  | 254,695 | Other… [739,329]<br>(NULL)… [254,695]<br>40.89187241649303 [1,538]<br>40.1123853 [1,153]<br>40.89238451539139 [663] |
+| **Longitude** | Float | Geographic Longitude | Geographic longitude coordinate of the incident location; pairs with Latitude to locate the point precisely. | longitude | -77.5195844 | -73.7005968 | 353,996 |  | 254,695 | Other… [739,329]<br>(NULL)… [254,695]<br>-73.86016845296459 [1,538]<br>-77.5195844 [1,153]<br>-73.8592161325675 [663] |
+| **Location** | String | Coordinate Textual Representation | Textual representation of the geographic coordinates in parentheses (e.g., "(40.1123853, -77.5195844)"). | free_text | (40.1123853, -77.5195844) | (40.9128688, -73.9024731) | 375,772 |  | 254,695 | Other… [739,329]<br>(NULL)… [254,695]<br>(40.89187241649303, -73.8… [1,538]<br>(40.1123853, -77.5195844) [1,153]<br>(40.89238451539139, -73.8… [663] |
 
-*Attribution: Generated by qsv v16.0.0 describegpt
-Command line: target/debug/qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv --all --output /tmp/nyc311-describegpt.md
-Prompt file: Default v7.0.0
+*Attribution: Generated by qsv v20.1.0 describegpt
+Command line: target/debug/qsv describegpt --all --two-pass /tmp/NYC_311_SR_2010-2020-sample-1M.csv -o /tmp/nyc311-describegpt.md --fresh --infer-content-type
+Prompt file: Default v7.1.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-02-10T21:48:35.892529+00:00
+Timestamp: 2026-05-22T01:16:02.725245+00:00
 
 WARNING: Label and Description generated by an LLM and may contain inaccuracies. Verify before using!
 *
 
 ## REASONING
 
-We need to generate Labels and Descriptions for all 41 fields using summary stats and freq distribution.
+FIRST PASS REASONING:
+We need to produce JSON mapping field names to label, description, content_type.
 
-Goal: Provide JSON with each field name as key; value has "label" and "description".
+We have 41 fields.
 
-Need human-friendly labels and descriptions. Use domain knowledge. Provide full description referencing dataset context, meaning, typical values etc. Should use data from frequency distributions to add details about common values or categories.
+We must use summary stats and frequency distribution for context.
 
-We need to think step by step: For each field, craft label same as name but maybe better: e.g., "Unique Key" -> "Record Identifier". Provide description: unique integer identifier for complaint record; primary key; non-null; cardinality 1 million; etc. Use summary stats like uniqueness ratio (100%) and cardinality.
+We must assign content_type tokens from allowed list; with special suffixes for date/datetime and duration if applicable. Need to examine each field:
 
-We have many fields with null counts etc. We can mention typical values, data types, usage.
-
-Need to produce JSON object with 41 entries. Provide label and description for each.
-
-Let's list fields:
+List fields:
 
 1 Unique Key
 2 Created Date
@@ -119,244 +115,361 @@ Let's list fields:
 40 Longitude
 41 Location
 
-We need to use summary stats and frequency distribution for context.
+We must pick content types.
 
-Also note that dataset appears to be NYC 311 complaints dataset. Provide description accordingly.
+From allowed tokens list: first_name, last_name, full_name, username, password, email, phone, street_address, street_name, building_number, secondary_address, city, state, state_abbr, zip_code, country, country_code, latitude, longitude, time_zone, company_name, industry, job_title, profession, unique_id, uuid, credit_card, currency_code, isbn, ip_address, ipv6_address, mac_address, url, user_agent, file_name, file_path, mime_type, color_hex, license_plate, date, datetime, time, duration, category, lorem_word, lorem_sentence, lorem_paragraph, free_text, unknown
 
-We'll produce JSON with keys exactly as field names: "Unique Key" etc.
+We must consider each field semantics.
 
-Let's craft each:
+Unique Key: integer unique id. cardinality equals row count 1M. deterministic type is Integer; but content_type "unique_id" reserved? Actually spec says unique_id is reserved for when cardinality equals row count and qsv overrides. But we can't use unique_id ourselves; we should pick a more specific token if possible. For a key, maybe "uuid" or "unknown". The field likely an integer surrogate key. There's no hint it's uuid. So choose "unique_id"? but instruction: DO NOT use "unique_id" yourself - it will be ignored if you do. For such fields, pick the most specific other token that fits (e.g., "uuid", "isbn"); the deterministic override replaces it only when the row-count check matches.
 
-1. Unique Key: integer unique ID. Label: "Record Identifier". Description: unique numeric key assigned to each complaint; primary key; cardinality equal to number of records; all values unique; used for linking and referencing.
+Thus we should not set content_type to unique_id; we could set "unknown". Maybe "unknown" is safe. But maybe choose "unique_id" would be ignored. So use "unknown".
 
-2. Created Date: datetime when complaint was created. Label: "Complaint Creation Timestamp". Description: timestamp (UTC) indicating when 311 service request was logged; covers dates from 2010-01-01 to 2020-12-23; majority around 2015; high uniqueness ratio? Not fully unique.
+Created Date: Type DateTime per summary stats. Format? Frequency distribution shows format "MM/DD/YYYY hh:mm:ss AM/PM"? Actually values like "01/24/2013 12:00:00 AM". So date-time format is "%m/%d/%Y %I:%M:%S %p" maybe. We need suffix: datetime:<fmt>. So content_type: datetime:%m/%d/%Y %I:%M:%S %p.
 
-3. Closed Date: datetime when complaint closed. Label: "Complaint Closure Timestamp". Description: UTC timestamp of final resolution or closure; ranges 1900-2100 due to placeholder values; most records have null or placeholder; 99% missing; typical distribution shows top dates etc.
+Closed Date similar; same format. Use same suffix.
 
-4. Agency: short code for agency responsible. Label: "Agency Code". Description: two- or three-character code representing the city agency that handled the complaint (e.g., NYPD, HPD). Most common codes: NYPD, HPD, DOT. Many nulls? Not indicated; but frequency shows top 10.
+Agency: String, values like "NYPD", etc. Category of agency. Content type: category? The allowed token includes 'category' for classification labels. Yes use "category".
 
-5. Agency Name: full name of responsible agency. Label: "Agency Name". Description: full descriptive name for the agency that responded to or processed complaint; most frequent are NYC Police Department, Dept of Housing Preservation and Development etc.
+Agency Name: full name of agency. Could be company_name or organization? Probably "company_name" fits. Or maybe "free_text". But more specific: company_name.
 
-6. Complaint Type: category of issue reported (e.g., Noise - Residential). Label: "Complaint Category". Description: primary classification of problem; top categories include noise, heat/hot water, illegal parking, blocked driveway, street condition, etc.; majority classified as other.
+Complaint Type: categories like "Noise - Residential", etc. So category.
 
-7. Descriptor: more detailed subcategory within complaint type (e.g., Loud Music/Party). Label: "Detailed Complaint Descriptor". Description: finer-grained description of issue; common descriptors include Loud Music/Party, Heat, No Access, Street Light Out, Pothole, etc.; majority labeled as other.
+Descriptor: descriptors describing complaint; maybe free_text? It's a description of issue. Might be category as well but many values; could treat as category (since it's a type). We'll use category.
 
-8. Location Type: classification of the location where complaint occurred (e.g., Residential Building, Street). Label: "Location Category". Description: indicates general type of place for incident; most frequent are residential building, street/sidewalk, etc.; many nulls.
+Location Type: categories like RESIDENTIAL BUILDING, STREET/Sidewalk etc. Category.
 
-9. Incident Zip: ZIP code of incident. Label: "Incident ZIP Code". Description: 5-digit ZIP code where complaint was reported; top zip codes include 11226, 10467, etc.; majority present but some missing.
+Incident Zip: zip codes string or numeric. Use zip_code.
 
-10. Incident Address: full address string. Label: "Incident Address". Description: textual street address or intersection where issue occurred; includes many addresses such as "655 EAST 230 STREET" etc.; high proportion of 'Other'.
+Incident Address: full address. Could be street_address? But includes number, street name, maybe city etc. So "street_address".
 
-11. Street Name: name of the street involved in incident. Label: "Street Name". Description: common street names like Broadway, Grand Concourse; majority of records have a valid street.
+Street Name: just street name. Use street_name.
 
-12. Cross Street 1: first cross street at intersection. Label: "Cross Street 1". Description: if complaint occurred at an intersection, this field lists the first cross street; top values include BEND, BROADWAY etc.; some nulls.
+Cross Street 1: cross street names; could be street_name. Might also include "N/A". We'll use street_name.
 
-13. Cross Street 2: second cross street. Label: "Cross Street 2". Description: second cross street in intersection; similar distribution to Cross Street 1.
+Cross Street 2: same.
 
-14. Intersection Street 1: one of streets forming the intersection. Label: "Intersection Street 1". Description: first street in an intersection complaint; many values, common ones like BROADWAY etc.
+Intersection Street 1: street_name.
 
-15. Intersection Street 2: second street in intersection. Label: "Intersection Street 2". Description: second street of intersection.
+Intersection Street 2: street_name.
 
-16. Address Type: type of address used (e.g., ADDRESS, INTERSECTION). Label: "Address Type". Description: indicates format of incident address; most common are ADDRESS and INTERSECTION; small proportion BLOCKFACE etc.; some nulls.
+Address Type: type of address like ADDRESS, INTERSECTION, BLOCKFACE, LATLONG, PLACENAME. Category maybe? It's a classification; could be category.
 
-17. City: city or borough where complaint occurred. Label: "City/Borough". Description: name of NYC borough (Brooklyn, Queens, Manhattan, Bronx, Staten Island) or other cities; majority in Brooklyn.
+City: city name. Use city.
 
-18. Landmark: notable landmark near incident. Label: "Nearby Landmark". Description: common landmarks such as EAST 230 STREET, BROADWAY, etc.; many nulls.
+Landmark: landmark names. Could be free_text but maybe category. But it's a descriptor of location. Might use free_text? But allowed token "lorem_word" etc not relevant. I'd choose category or free_text? The values are names like "EAST 230 STREET". It's likely category, but we could treat as free_text. I'll pick category.
 
-19. Facility Type: type of facility involved (e.g., DSNY Garage). Label: "Facility Type". Description: indicates building or structure type; majority are N/A; some are Precinct, DSNY Garage, School.
+Facility Type: type of facility; categories. Use category.
 
-20. Status: current status of complaint (Closed, Pending, Open, etc.). Label: "Complaint Status". Description: indicates processing stage; 95% closed, rest pending/open/in progress.
+Status: status of complaint; category.
 
-21. Due Date: due date for resolution. Label: "Due Date". Description: target resolution date set by agency; ranges across years; many missing.
+Due Date: date/time format similar to Created and Closed? Format "MM/DD/YYYY hh:mm:ss AM/PM"? Yes frequency shows "04/08/2015 10:00:58 AM". So datetime with same fmt.
 
-22. Resolution Description: narrative description of resolution. Label: "Resolution Narrative". Description: textual account of actions taken or outcome; common phrases include police responded, HPD inspected etc.; majority 'Other'.
+Resolution Description: free text description. Use free_text.
 
-23. Resolution Action Updated Date: timestamp of last update to resolution action. Label: "Last Resolution Update Timestamp". Description: UTC time when resolution was last updated; high frequency of nulls.
+Resolution Action Updated Date: date/time same format as others. datetime suffix.
 
-24. Community Board: community board number or Unspecified. Label: "Community Board". Description: borough-level community board responsible for area (e.g., 12 MANHATTAN); majority unspecified.
+Community Board: string like "0 Unspecified" etc; category? Could be numeric board ID or name. Use category.
 
-25. BBL: Borough, Block, Lot number unique to NYC property parcels. Label: "BBL (Borough-Block-Lot)". Description: numeric identifier representing parcel; many nulls; some top values.
+BBL: BBL (Borough, Block, Lot). It is an integer ID of 10 digits. It's unique key for property. But not necessarily surrogate. We'll use unknown or maybe category? Since it's identifier but not globally unique? Could be unique_id? cardinality about 1M? The summary says cardinality 1M. Unique values: BBL column has many distinct; but not all rows unique? It seems many duplicates. So content_type unknown.
 
-26. Borough: borough where incident occurred. Label: "Borough". Description: one of Brooklyn, Queens, Manhattan, Bronx, Staten Island, Unspecified; majority Brooklyn.
+Borough: borough name; category or state_abbr? It's borough names like "BRONX". Use category or maybe state_abbr? But it's not abbreviation. So category.
 
-27. X Coordinate (State Plane): X coordinate in State Plane metric system. Label: "X Coordinate (State Plane)". Description: numeric Easting coordinate in US state plane units; used for mapping.
+X Coordinate (State Plane): integer coordinate. Not location coordinate but numeric value. Should be unknown.
 
-28. Y Coordinate (State Plane): Y coordinate in State Plane. Label: "Y Coordinate (State Plane)". Description: numeric Northing coordinate.
+Y Coordinate (State Plane): same.
 
-29. Open Data Channel Type: channel used to submit complaint. Label: "Open Data Channel". Description: indicates method of submission: PHONE, UNKNOWN, ONLINE, MOBILE, OTHER; majority phone.
+Open Data Channel Type: type of channel; category.
 
-30. Park Facility Name: name of park facility if incident in a park. Label: "Park Facility Name". Description: name of park or playground; majority unspecified; some parks like Central Park, Riverside Park etc.
+Park Facility Name: name of park facility; free_text or category. Many unique values. Use free_text maybe? But category might be fine. I'll use free_text because it's names like "Central Park". Could treat as category but many distinct. I'd choose free_text.
 
-31. Park Borough: borough where park is located. Label: "Park Borough". Description: borough of the park; same distribution as Borough.
+Park Borough: same as borough, category.
 
-32. Vehicle Type: type of vehicle in complaint (e.g., Car Service). Label: "Vehicle Type". Description: indicates vehicle involved if relevant; majority null, few Car Service etc.
+Vehicle Type: categories like Car Service etc. Category.
 
-33. Taxi Company Borough: borough where taxi company operates. Label: "Taxi Company Borough". Description: borough association of taxi company; mostly unspecified.
+Taxi Company Borough: borough; category.
 
-34. Taxi Pick Up Location: pickup location for taxis. Label: "Taxi Pickup Location". Description: indicates origin point such as JFK Airport, intersection, etc.; majority 'Other'.
+Taxi Pick Up Location: location description; could be free_text. Use free_text.
 
-35. Bridge Highway Name: name of bridge or highway involved. Label: "Bridge/Highway Name". Description: name of bridge or highway; many values, e.g., Belt Pkwy, BQE/Gowanus Expwy.
+Bridge Highway Name: name of bridge or highway; category.
 
-36. Bridge Highway Direction: direction of travel on bridge/highway. Label: "Bridge/Highway Direction". Description: indicates cardinal direction of traffic (East/Long Island Bound etc.).
+Bridge Highway Direction: direction; category.
 
-37. Road Ramp: type of road ramp. Label: "Road Ramp Type". Description: indicates presence of ramp; values like Roadway, Ramp, N/A.
+Road Ramp: type of ramp; category.
 
-38. Bridge Highway Segment: specific segment of bridge or highway. Label: "Bridge/Highway Segment". Description: identifier for segment (e.g., 1-1-1265963747).
+Bridge Highway Segment: segment names; category.
 
-39. Latitude: geographic latitude coordinate. Label: "Latitude". Description: decimal degrees; distribution across NYC; majority between 40.1 and 41.0.
+Latitude: coordinate value. content_type latitude.
 
-40. Longitude: geographic longitude coordinate. Label: "Longitude". Description: decimal degrees; majority -73 to -77.
+Longitude: coordinate value. longitude.
 
-41. Location: combined lat/long string. Label: "Location (LatLon)". Description: textual representation of coordinates, e.g., "(40.89187241649303, -73.86016845296459)".
+Location: location string of lat/long pair. Could be free_text or maybe "street_address"? It's coordinates in parentheses. Use free_text? But could treat as latitude/longitude but we already have separate fields. So use free_text.
 
-Need to incorporate frequency distribution context where relevant: mention top values and percentages; e.g., for Agency code top 10 codes with percentages; for Complaint Type etc.
+Now ensure suffix for date/datetime: Created Date, Closed Date, Due Date, Resolution Action Updated Date: all same format "%m/%d/%Y %I:%M:%S %p". Need to check if any times include AM/PM. Yes.
 
-Also include null count and uniqueness ratio from summary stats where possible.
+Also maybe other datetime fields? No.
 
-Let's check summary stats for some fields: e.g., Unique Key has sum, min, max, cardinality 1000000, uniqueness_ratio 1. Created Date: nullcount 841014 (approx 84% missing). For others, we can mention approximate null counts etc.
+Check cardinality unique for Unique Key; we use unknown.
 
-But the instruction says "Use the Summary Statistics and Frequency Distribution to understand context". So we should incorporate numeric details like percentages of top values maybe.
+We must also consider "Unique Key" may be integer but no further context; unknown.
 
-Ok produce JSON with each field mapping.
+Ok produce JSON mapping field names exactly as in dataset: e.g., "Unique Key", "Created Date" etc. Ensure keys are strings with same case.
 
-We need to ensure output is valid JSON. The keys are strings; but JSON can't have spaces? Actually keys can be strings with spaces, as long as quoted. We'll use the field names exactly as given: "Unique Key", etc. Provide label and description. Ensure no trailing commas.
+Let's craft description for each field:
 
-Let's craft.
+- Unique Key: unique numeric identifier for each complaint record.
 
-Also we might want to escape quotes inside description properly for JSON. Use double quotes and escape internal double quotes with \".
+- Created Date: timestamp when the complaint was created/submitted by user.
 
-We must produce final answer only with JSON, not any other commentary.
+- Closed Date: timestamp when the complaint was closed/resolved; may be null.
 
-Let's build the JSON object gradually.
+- Agency: abbreviation of agency responsible for handling complaint (e.g., NYPD, HPD).
 
-We'll include each field as key: e.g., "Unique Key": { ... }.
+- Agency Name: full name of agency.
 
-Will we need to use backticks? No.
+- Complaint Type: broad category describing nature of complaint (Noise, Water System etc.)
 
-Make sure no trailing comma after last entry.
+- Descriptor: more specific description of issue within complaint type.
 
-Ok.
+- Location Type: classification of location where incident occurred (Residential Building, Street/Sidewalk etc.)
 
-I'll craft descriptions now.
+- Incident Zip: ZIP code of incident location.
 
-1. Unique Key: label "Record Identifier". Description: "A unique numeric identifier for each complaint record. It is the primary key in the dataset and has 1,000,000 distinct values (100% uniqueness)."
+- Incident Address: full street address of incident location.
 
-2. Created Date: label "Complaint Creation Timestamp". Description: "UTC timestamp indicating when a 311 service request was logged. The dates span from January 1 2010 to December 23 2020 with a mean around November 10 2015. Approximately 84% of records have missing values."
+- Street Name: name of the street where incident occurred.
 
-3. Closed Date: label "Complaint Closure Timestamp". Description: "UTC timestamp marking the final resolution or closure of the complaint. Valid dates range from January 1 1900 to January 1 2100, but most entries are null (≈99% missing). The top recorded dates show that complaints were frequently closed in 2010–2020."
+- Cross Street 1: first cross street at intersection.
 
-4. Agency: label "Agency Code". Description: "Two- or three-character code identifying the city agency responsible for handling the complaint. The most common codes are NYPD (26.5 %), HPD (25.8 %), DOT (13.2 %) and DSNY (8.2 %). A small proportion of records have an 'Other' code."
+- Cross Street 2: second cross street.
 
-5. Agency Name: label "Agency Full Name". Description: "Full name of the agency that processed or responded to the complaint. The top agencies include New York City Police Department, Department of Housing Preservation and Development, Department of Transportation, etc., together accounting for about 70 % of records."
+- Intersection Street 1: one street in intersection.
 
-6. Complaint Type: label "Complaint Category". Description: "High-level classification of the reported issue, such as Noise - Residential, HEAT/HOT WATER, Illegal Parking, Blocked Driveway, Street Condition, etc. The majority of complaints (≈56 %) fall under an 'Other' category, while the top ten categories represent roughly 43 % of all records."
+- Intersection Street 2: other street.
 
-7. Descriptor: label "Complaint Detail". Description: "Fine-grained description within a complaint type (e.g., Loud Music/Party, Heat, No Access). The most frequent descriptors include Loud Music/Party (~9.4 %) and other subcategories, with about 67 % of entries labeled as 'Other'."
+- Address Type: type descriptor for address field (ADDRESS, INTERSECTION etc.)
 
-8. Location Type: label "Location Category". Description: "General classification of where the incident occurred—Residential Building, Street/Sidewalk, etc. Residential Building accounts for ~34 %, Street/Sidewalk ~19 %, and many records are missing."
+- City: city of incident location.
 
-9. Incident Zip: label "Incident ZIP Code". Description: "Five-digit ZIP code indicating the area of the complaint. The most common ZIP codes include 11226 (~1.8 %), 10467 (~1.5 %), etc., while 86 % of records have a valid ZIP; about 6 % are missing."
+- Landmark: notable landmark near incident location.
 
-10. Incident Address: label "Incident Address". Description: "Full street address or intersection where the issue was reported. The dataset contains many distinct addresses, with the top ten appearing in ~0.2 % each; nearly all records fall into the 'Other' bucket indicating a high level of uniqueness."
+- Facility Type: type of facility where incident occurred.
 
-11. Street Name: label "Street Name". Description: "Name of the primary street involved in the incident. Broadway is the most common (≈1.2 %) followed by other major streets; about 95 % of values are unique or appear rarely."
+- Status: current status of complaint (Closed, Pending, etc.)
 
-12. Cross Street 1: label "Cross Street 1". Description: "First cross street at an intersection complaint location, e.g., BEND or BROADWAY. The top values account for roughly 18 % of entries; the field is null in many records that are not intersections."
+- Due Date: deadline date/time to resolve complaint.
 
-13. Cross Street 2: label "Cross Street 2". Description: "Second cross street at an intersection. Distribution mirrors Cross Street 1, with BEND and BROADWAY again among the most frequent values."
+- Resolution Description: narrative description of actions taken/resolution.
 
-14. Intersection Street 1: label "Intersection Street 1". Description: "First street forming an intersection where a complaint was reported; common values include BROADWAY (~3.6 %) and other major streets. The field is often null for non-intersection complaints."
+- Resolution Action Updated Date: timestamp when resolution action was last updated.
 
-15. Intersection Street 2: label "Intersection Street 2". Description: "Second street of the intersection, with similar distribution to Intersection Street 1."
+- Community Board: community board number or name for location.
 
-16. Address Type: label "Address Format". Description: "Specifies how the incident location was recorded—ADDRESS, INTERSECTION, BLOCKFACE, LATLONG, or PLACENAME. ADDRESS dominates at ~81 %, followed by INTERSECTION (~15 %)."
+- BBL: Borough Block Lot identifier.
 
-17. City: label "City/Borough". Description: "Name of the borough where the complaint occurred (Brooklyn, Queens, Manhattan, Bronx, Staten Island). Brooklyn is the most frequent borough (~32 %), with many records missing."
+- Borough: borough of incident location.
 
-18. Landmark: label "Nearby Landmark". Description: "Notable landmark or street close to the incident location, e.g., EAST 230 STREET, BROADWAY. The field is null for ~91 % of records; the top landmarks represent a small portion of the data."
+- X Coordinate (State Plane): easting coordinate in state plane system.
 
-19. Facility Type: label "Facility Category". Description: "Type of facility involved in the complaint (e.g., DSNY Garage, Precinct). N/A accounts for 73 % of entries; Precinct appears in about 23 %; other categories are rare."
+- Y Coordinate (State Plane): northing coordinate.
 
-20. Status: label "Complaint Status". Description: "Current processing status—Closed, Pending, Open, etc. Closed complaints dominate (~95 %), with small percentages remaining pending or open."
+- Open Data Channel Type: channel through which complaint was submitted (PHONE, ONLINE etc.)
 
-21. Due Date: label "Resolution Deadline". Description: "Target date set by the agency to resolve the complaint, ranging from 2010 to 2021. Many records have missing values (≈65 %); among those present, the most common dates cluster in mid‑2015."
+- Park Facility Name: name of park facility involved.
 
-22. Resolution Description: label "Resolution Narrative". Description: "Textual account of how the complaint was resolved—actions taken or outcome noted. The top narratives involve police response or HPD inspections; about 52 % of entries fall under an 'Other' category."
+- Park Borough: borough where park is located.
 
-23. Resolution Action Updated Date: label "Last Update Timestamp". Description: "UTC timestamp indicating when the resolution action was last updated. The field has a high proportion of nulls (~99 %) and, where present, dates span from 2010 to 2020."
+- Vehicle Type: type of vehicle involved in incident.
 
-24. Community Board: label "Community Board". Description: "Borough-level community board responsible for the area (e.g., 12 MANHATTAN). Most records are unspecified; when specified, they range across all boroughs with varying frequencies."
+- Taxi Company Borough: borough of taxi company.
 
-25. BBL: label "BBL (Borough‑Block‑Lot)". Description: "Numeric identifier unique to NYC property parcels. The dataset contains many distinct values; about 24 % of entries are missing. The top ten BBLs account for roughly 0.2 % each."
+- Taxi Pick Up Location: location description of taxi pickup.
 
-26. Borough: label "Borough". Description: "One of the five NYC boroughs or Unspecified. Brooklyn is the most common (≈30 %), followed by Queens, Manhattan, Bronx, and Staten Island."
+- Bridge Highway Name: name of bridge or highway.
 
-27. X Coordinate (State Plane): label "X Coordinate (State Plane)". Description: "Easting coordinate in the New York State Plane coordinate system, used for precise mapping of complaint locations. Most values cluster around 1,020,000 m; about 10 % of records are missing."
+- Bridge Highway Direction: direction of traffic on bridge/highway.
 
-28. Y Coordinate (State Plane): label "Y Coordinate (State Plane)". Description: "Northing coordinate in the State Plane system. Values typically fall near 200,000 m; a small portion of entries are null."
+- Road Ramp: type of ramp (Roadway, N/A etc.)
 
-29. Open Data Channel Type: label "Submission Channel". Description: "Method used to submit the complaint—PHONE, UNKNOWN, ONLINE, MOBILE, or OTHER. PHONE is by far the most common channel (~50 %), followed by UNKNOWN (~23 %) and ONLINE (~18 %)."
+- Bridge Highway Segment: specific segment identifier.
 
-30. Park Facility Name: label "Park Facility Name". Description: "Name of a park or playground if the incident occurred within a park; the majority of records are Unspecified, with Central Park, Riverside Park, etc., appearing in the minority."
+- Latitude: geographic latitude coordinate.
 
-31. Park Borough: label "Park Borough". Description: "Borough where the park is located; distribution mirrors that of Borough (Brooklyn ~30 %, Queens ~23 %, Manhattan ~20 %)."
+- Longitude: longitude coordinate.
 
-32. Vehicle Type: label "Vehicle Type". Description: "Type of vehicle involved in the complaint, such as Car Service or Green Taxi. The field is largely null (~99.9 %); among non‑null values, Car Service dominates (~91 %)."
+- Location: textual representation of coordinates.
 
-33. Taxi Company Borough: label "Taxi Company Borough". Description: "Borough affiliation of the taxi company that issued the ticket or was involved. Most records are unspecified; when specified, they map to the five boroughs with varying frequencies."
+Now produce JSON mapping. Use proper escaping for quotes in keys? In JSON string values we need to escape quotes inside strings. Eg "Park Facility Name" key; value "Park Facility Name". But the key string includes space, fine. For values like description containing commas etc; just use double quotes and escape internal quotes if any.
 
-34. Taxi Pick Up Location: label "Taxi Pickup Location". Description: "Origin point for a taxi pickup—common values include JFK Airport, intersection, etc.; the field is null in many cases and 'Other' represents the majority of non‑null entries."
+Also for content_type: string token maybe with suffix e.g., "datetime:%m/%d/%Y %I:%M:%S %p".
 
-35. Bridge Highway Name: label "Bridge/Highway Name". Description: "Name of bridge or highway associated with the complaint (e.g., Belt Pkwy, BQE/Gowanus Expwy). A handful of names cover most records; a large proportion are labeled as 'Other'."
+Now produce final JSON object.
 
-36. Bridge Highway Direction: label "Bridge/Highway Direction". Description: "Direction of travel on the bridge or highway—East/Long Island Bound, North/Bronx Bound, etc.; the field has a high prevalence of nulls."
+Check field names exactly: we have fields list. Ensure each key matches original column names, including parentheses, spaces, etc.
 
-37. Road Ramp: label "Road Ramp Type". Description: "Indicates whether a ramp is present at the complaint location (Roadway, Ramp, N/A). Most records have 'Roadway' (~75 %), followed by 'Ramp' (~24 %)."
+Edge cases: 'X Coordinate (State Plane)' and 'Y Coordinate (State Plane)' include parentheses; okay as key.
 
-38. Bridge Highway Segment: label "Bridge/Highway Segment". Description: "Specific segment identifier of the bridge or highway involved; most entries are labeled as 'Other'."
+Also note that the dataset may use backticks or quotes? We'll use as provided.
 
-39. Latitude: label "Latitude". Description: "Decimal degree latitude coordinate for the complaint location, ranging from about 40.1 ° to 41.0 °. The majority of points lie between 40.1 and 40.9."
+Now craft JSON.
 
-40. Longitude: label "Longitude". Description: "Decimal degree longitude coordinate, typically between -77.5 ° and -73.7 °. Most locations are in the range -74 to -73.8."
+Let's produce mapping.
 
-41. Location: label "Location (LatLon)". Description: "Textual representation of latitude and longitude as a comma‑separated pair enclosed in parentheses, e.g., '(40.89187241649303, -73.86016845296459)'. The field is null for about 25 % of records."
+REFINE PASS REASONING:
+We need to produce refined data dictionary for all 41 fields. We must adjust labels/descriptions and content types, especially grouping composite concepts.
 
-Need to ensure JSON syntax: double quotes around keys; description string may contain apostrophes etc; we need escape double quotes inside. Use \".
+First pass had each field individually; now we refine cross-field relationships.
+
+Need to output JSON with keys being the original field names? The first pass uses "fields": list of objects each has name. But new format expects top-level keys mapping field names to object with label, description, content_type. So we need to produce that shape.
+
+We must also adjust content types: if unique_id, omit key. Unique Key is unique numeric identifier; first-pass content_type omitted? Actually they set "content_type": "unique_id" but instruction says for unique_id omit the key entirely from output. So for Unique Key field we should not include content_type. Also maybe other fields could be unique id? Only that.
+
+Also refine others: e.g., Created Date and Closed Date: date-time tokens with suffix. Provided first-pass had content_type "date:%m/%d/%Y". But values show times: "01/24/2013 12:00:00 AM". So datetime format is "%m/%d/%Y %I:%M:%S %p" maybe. They set date; we should use datetime token with suffix. Similarly for Due Date and Resolution Action Updated Date: same.
+
+Also refine labels: e.g., "Agency" -> "Complaint Agency Abbreviation", "Agency Name" -> "Complaint Agency Full Name". Good.
+
+Combine address fields: Street Name, Cross Street 1/2, Intersection Street 1/2, Incident Address, etc. Provide description referencing composite.
+
+Latitude/Longitude: group as geographic coordinate pair; maybe mention latitude and longitude separately but note they form coordinate.
+
+Also maybe X/Y coordinates (State Plane) can be combined as state plane coordinate pair.
+
+Bridge Highway fields: Name, Direction, Segment, Road Ramp: could describe as "Bridge/Highway Incident Details".
+
+Park Facility Name and Park Borough: combine.
+
+Vehicle Type, Taxi Company Borough, Taxi Pick Up Location: group as taxi incident details.
+
+Also some fields may not need changes.
+
+We must produce JSON with each field key. For content_type we need to pick appropriate token from allowed list or leave out if unique_id.
+
+Let's go through each field:
+
+1. Unique Key -> keep label maybe "Unique Complaint Identifier" but no content_type.
+
+2. Created Date: datetime. Content_type: datetime:%m/%d/%Y %I:%M:%S %p
+
+3. Closed Date: same.
+
+4. Agency: abbreviation of agency. content_type: category (since limited set). Keep.
+
+5. Agency Name: full name; content_type: company_name.
+
+6. Complaint Type: category.
+
+7. Descriptor: category.
+
+8. Location Type: category.
+
+9. Incident Zip: zip_code.
+
+10. Incident Address: street_address? They had content_type street_address. But refine: "Incident Street Address" maybe.
+
+11. Street Name: street_name; but mention part of address.
+
+12. Cross Street 1: street_name (but could be "Cross Street 1" label). Keep.
+
+13. Cross Street 2: same.
+
+14. Intersection Street 1: street_name.
+
+15. Intersection Street 2: street_name.
+
+16. Address Type: category.
+
+17. City: city.
+
+18. Landmark: free_text? They had category; maybe keep category.
+
+19. Facility Type: category.
+
+20. Status: category.
+
+21. Due Date: datetime:%m/%d/%Y %I:%M:%S %p
+
+22. Resolution Description: free_text.
+
+23. Resolution Action Updated Date: datetime:%m/%d/%Y %I:%M:%S %p
+
+24. Community Board: category.
+
+25. BBL: unknown? content_type unknown; keep as unknown maybe. But could be string but treat as unknown.
+
+26. Borough: category (state_abbr? Actually borough names). Keep category.
+
+27. X Coordinate (State Plane): integer coordinate; we might set "unknown" or maybe use numeric. Allowed tokens don't include numeric type; use unknown.
+
+28. Y Coordinate (State Plane): same.
+
+29. Open Data Channel Type: category.
+
+30. Park Facility Name: free_text? Could be category but treat as free_text or category? Might keep category, but earlier had free_text. Keep free_text maybe but not needed.
+
+31. Park Borough: category.
+
+32. Vehicle Type: category.
+
+33. Taxi Company Borough: category.
+
+34. Taxi Pick Up Location: free_text.
+
+35. Bridge Highway Name: category.
+
+36. Bridge Highway Direction: category.
+
+37. Road Ramp: category.
+
+38. Bridge Highway Segment: category.
+
+39. Latitude: latitude
+
+40. Longitude: longitude
+
+41. Location: free_text (textual representation of coordinates). But we might not need content_type; keep free_text.
+
+Also we may adjust labels to reflect composite relationships: e.g., for Street Name, Cross Street 1/2 etc. Add description referencing address.
+
+We also may note that Incident Address includes building number and street name but cross streets may be missing.
+
+Also X/Y coordinates maybe part of state plane coordinate pair; mention in description.
 
 Let's craft final JSON.
+
+Need to output each field as key: string field name (exact). Value object with label, description, content_type optionally. For Unique Key omit content_type.
+
+Make sure to use allowed tokens.
+
+Check if any other fields may be unique_id? BBL maybe unique? But cardinality 268383 vs records 1M; not unique. So keep unknown.
+
+Now produce JSON.
+
+
 ## TOKEN USAGE
 
-TokenUsage { prompt: 13666, completion: 7403, total: 21069, elapsed: 97959 }
+TokenUsage { prompt: 22662, completion: 7424, total: 30086, elapsed: 104306 }
 ---
 # Description
-**Dataset Description**
+**Description**  
+The dataset contains one million unique complaints filed in New York City between January 2010 and December 2020. Each complaint is identified by a system‑generated integer key and includes timestamps for creation, closure, and resolution updates, with 28 % of records missing a closure date. The majority of complaints (≈70 %) originate from the NYPD or HPD agencies, while the remaining are distributed across 27 other city departments. Geospatial fields provide state‑plane coordinates, latitude/longitude pairs, and address components, enabling precise mapping of incidents throughout all five boroughs. Narrative fields capture complaint descriptors and resolution descriptions, with a substantial proportion of complaints (≈60 %) falling into an “Other” category for both type and descriptor.
 
-This NYC 311 service‑request dataset contains one million unique complaint records spanning from January 2010 to December 2020. Each record is identified by a globally unique integer key and includes timestamps for when the request was created, closed, or last updated (though most of these dates are missing). The majority of complaints fall under broad “Other” categories in both *Complaint Type* and *Descriptor*, with Noise‑Residential and HEAT/HOT WATER representing only a small fraction of the total. Geographic information is provided through ZIP codes, street names, intersection data, and State Plane coordinates that cluster around New York City’s five boroughs.
+**Notable Characteristics**
 
----
+- **Central tendency & spread** – Created dates are tightly clustered around early‑2013–2015, with the 25th, 50th, and 75th percentiles at 2010‑08‑10, 2011‑03‑15, and 2015‑01‑21 respectively; the range spans roughly 11 years.  
+- **Distribution shape** – Most categorical fields exhibit a long‑tailed “Other” bucket (e.g., Complaint Type: 56 % Other, Descriptor: 67 % Other), indicating high sparsity in fine‑grained categories.  
+- **Missing values** – 28 k records lack a Closed Date; 648 k are missing a Due Date; 204 k have no Resolution Description; latitude/longitude and coordinate strings are null for about 25 % of rows.  
+- **Outliers & anomalies** – State‑plane coordinates include extreme values (e.g., X ≈ 1,067,220) that fall outside the typical NYC range, suggesting data entry errors or boundary cases.  
+- **Duplicate records** – The Unique Key is guaranteed distinct; no record duplicates exist at the primary key level.  
+- **PII/PHI concerns** – The dataset contains full street addresses, latitude/longitude, and borough identifiers that can be used to pinpoint individuals’ residences or workplaces; these fields should be treated as sensitive under privacy regulations.  
+- **Data quality issues** – A large proportion of entries are labeled “Other (N)” for several fields, which obscures the underlying variety and hampers downstream analytics without additional disaggregation.  
 
-### Notable Characteristics
-
-- **High cardinality**: The *Unique Key* field is 100% unique (no duplicates).  
-- **Missingness**: Created Date, Closed Date, and many location fields have very high null rates (≈84–99%).  
-- **Skewed categorical distributions**: Over half of complaints are labeled “Other” in both *Complaint Type* (56%) and *Descriptor* (67%), indicating a large number of rare or unclassified issues.  
-- **Spatial concentration**: Latitude/Longitude values cluster around major NYC boroughs, with the Bronx and Manhattan having the highest densities.  
-- **Outliers & range**: Created Date spans 4,009 days (~11 years) while Closed Date covers 73,049 days (~200 years), though most dates fall between 2010–2020. State Plane coordinates lie within expected ranges for NYC.  
-- **Data quality issues**: Numerous “Other (N)” categories in categorical fields mask underlying heterogeneity; top ten values cover a small percentage of records.  
-- **Potential PII**: Address, ZIP code, and coordinate fields can be used to triangulate individual locations, so care should be taken when sharing the data publicly.  
-- **No direct personal identifiers (PII/PHI/PCI)** are present beyond location information.
-
----
-
-**Attribution**
-
-Generated by qsv v16.0.0 describegpt
-Command line: target/debug/qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv --all --output /tmp/nyc311-describegpt.md
-Prompt file: Default v7.0.0
+Generated by qsv v20.1.0 describegpt
+Command line: target/debug/qsv describegpt --all --two-pass /tmp/NYC_311_SR_2010-2020-sample-1M.csv -o /tmp/nyc311-describegpt.md --fresh --infer-content-type
+Prompt file: Default v7.1.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-02-10T21:49:01.086845+00:00
+Timestamp: 2026-05-22T01:16:22.828105+00:00
 
 WARNING: Description generated by an LLM and may contain inaccuracies. Verify before using!
 
@@ -364,53 +477,40 @@ WARNING: Description generated by an LLM and may contain inaccuracies. Verify be
 
 ## REASONING
 
-We need to produce a dataset description based on summary statistics and frequency distribution, but not per field. Provide 1-8 sentence description overall. Then Notable Characteristics bullet list. Avoid field-level data. Use aggregated insights: high missingness for dates etc; majority of complaints 'Other'; unique key all unique; distribution skewness in complaint type, descriptor etc.
+We need to produce a description of dataset as whole, 1-8 sentences. Then Notable Characteristics bulleted list. Use summary statistics and frequency distribution but not per field. Use data dictionary maybe for context. Avoid listing each field stats individually. Provide overall dataset details: 1 million records unique key; date ranges etc. Mention high cardinality fields, missing values, duplicates? Unique key is unique. Some fields have many nulls (Closed Date, Due Date, Resolution Description). Many categorical fields with many distinct values but only few high frequency categories. There are outliers maybe in coordinates extreme? Provide distribution shapes: e.g., Created Date has 841k distinct dates over ~11 years; heavy clustering at certain months. Mention that the dataset is NYC complaints from various agencies.
 
-Also note that many fields have "Other" categories covering large proportions (e.g., Complaint Type 56%, Descriptor 67%). Many null values for Created Date (~84% missing). Unique Key is unique. There are duplicates? Uniqueness ratio =1 so no duplicates. PII/PHI: likely contains personal addresses, but maybe not personally identifying; still location data.
+Also mention PII/PHI? Contains addresses, lat/lon, etc. So yes location data may be considered sensitive. Also contains agency names and complaint types. The dataset includes unique key but still could link to other data. Provide data quality: many missing values in date fields, some coordinates null, some addresses null; high number of "Other" categories indicating sparse categories.
 
-Also mention spatial coordinates distribution across NYC with many points in Bronx etc.
+Also mention duplicates? Unique Key ensures uniqueness, so no duplicates at record level.
 
-Add attribution placeholder. Provide Markdown.
+Ok produce description.
 
-Let's craft description 3-4 sentences.
+Let's craft 5 sentences. Then bullet list. Use placeholders for signature.
 
-Notable characteristics bullet list:
-
-- Unique key ensures one-to-one record.
-- Created Date missing ~84% ; Closed Date missing ~99.7%; majority of dates in 2010-2020.
-- Complaint Type skewed heavily to 'Other' (56%) and Noise Residential (9%).
-- Descriptor also dominated by Other (~67%).
-- Location fields: Incident Zip with 86% other; many addresses unique but top 10 cover ~1.8%.
-- Spatial coordinates concentrated in Bronx/Manhattan, etc.
-- Missing values high in Address Type, City, Landmarks.
-- 'Other' categories capture majority of categorical data indicating low granularity or many rare categories.
-- Outliers: Created Date has 4009 days range; closed date 73049 days; coordinate ranges typical for NYC State Plane.
-- No duplicates (unique key). Data includes addresses and coordinates that could be PII but no direct personal identifiers.
-
-Let's produce.
+Proceed.
 ## TOKEN USAGE
 
-TokenUsage { prompt: 15990, completion: 809, total: 16799, elapsed: 25192 }
+TokenUsage { prompt: 20002, completion: 787, total: 20789, elapsed: 20097 }
 ---
 # Tags
-- nyc_311_complaints  
-- city_government_data  
-- public_service_requests  
-- urban_infrastructure  
-- transportation_incidents  
-- housing_and_building_inspections  
-- police_and_public_safety  
-- noise_reports  
-- geospatial_data  
-- citizen_engagement  
+- nyc_311_service_requests  
+- noise_complaints  
+- building_and_structural_issues  
+- street_and_pavement_problems  
+- parking_violations  
+- water_system_disruptions  
+- geospatial_coordinates  
+- boroughs_of_new_york_city  
+- public_safety_incidents  
+- city_government_agencies  
 
-Generated by qsv v16.0.0 describegpt
-Command line: target/debug/qsv describegpt /tmp/NYC_311_SR_2010-2020-sample-1M.csv --all --output /tmp/nyc311-describegpt.md
-Prompt file: Default v7.0.0
+Generated by qsv v20.1.0 describegpt
+Command line: target/debug/qsv describegpt --all --two-pass /tmp/NYC_311_SR_2010-2020-sample-1M.csv -o /tmp/nyc311-describegpt.md --fresh --infer-content-type
+Prompt file: Default v7.1.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-02-10T21:49:20.370763+00:00
+Timestamp: 2026-05-22T01:17:01.356744+00:00
 
 WARNING: Tags generated by an LLM and may contain inaccuracies. Verify before using!
 
@@ -418,43 +518,86 @@ WARNING: Tags generated by an LLM and may contain inaccuracies. Verify before us
 
 ## REASONING
 
-We need to output tags in markdown format, no field names. We have dataset about NYC 311 complaints. Should choose up to 10 unique tags, lowercase and underscores.
+We need to produce a list of no more than 10 unique tags in markdown format, lowercase only with underscores. Based on the dataset content: NYC complaints data covering various categories like complaint type, location types, boroughs, etc.
 
-Need descending importance based on summary stats/frequency distribution. So pick most prominent aspects: city data, complaints, NYC, 311, public service requests, infrastructure issues, transportation, noise, housing, police, emergency services? Also include geospatial coordinates. Maybe "nyc_311_service_requests" but tag must be lowercase with underscore. We need up to 10 tags.
+Let's think about most important topics:
 
-Consider importance: dataset is about NYC 311 complaints; high cardinality and many categories. So top tags: nyc_311_complaints, public_safety_incidents? Actually includes police (NYPD), housing, transportation, etc. Let's think of general tags that help find similar datasets: city_government_data, civic_engagement, public_service_requests, urban_planning, infrastructure_management, transport_services, noise_reports, building_inspections, emergency_response.
+- public safety / city services
+- noise complaints
+- building maintenance
+- street/road issues
+- parking violations
+- water system problems
+- NYC (New York City)
+- boroughs: Brooklyn, Manhattan, Queens, Bronx, Staten Island
+- 311 service requests
+- geospatial data
 
-But we need to pick up to 10 unique tags in descending importance. Use underscores.
+But we need tags in descending importance. We should choose up to 10.
 
 Possible tags:
 
-1. nyc_311_complaints
-2. city_government_data
-3. public_service_requests
-4. urban_infrastructure
-5. transportation_incidents
-6. housing_and_building_inspections
-7. police_and_public_safety
-8. noise_reports
-9. geospatial_data
-10. citizen_engagement
+1. nyc_311_service_requests
+2. noise_complaints
+3. building_and_structural_issues
+4. street_and_pavement_problems
+5. parking_violations
+6. water_system_disruptions
+7. geospatial_coordinates
+8. boroughs_of_new_york_city
+9. public_safety_incidents
+10. city_government_agencies
 
-Make sure no field names used; these are generic.
+But maybe "city_government_agencies" is less important than "boroughs". Also we need no more than 10 unique tags.
 
-Check if "city_government_data" maybe too generic? But okay.
+We might choose:
 
-Return as markdown list with bullet points? The instruction: "Add an Attribution with the placeholder "{GENERATED_BY_SIGNATURE}" after the Tags." It doesn't say format, but says tags in Markdown format. So we can produce a bullet list or just comma separated? Probably bullet list is fine.
+- nyc_311_service_requests (most)
+- noise_complaints
+- building_and_structural_issues
+- street_and_pavement_problems
+- parking_violations
+- water_system_disruptions
+- geospatial_coordinates
+- boroughs_of_new_york_city
+- public_safety_incidents
+- city_government_agencies
 
-Thus output:
+Yes 10.
 
-- nyc_311_complaints
-- city_government_data
+But ensure lowercase only, underscores.
+
+Check for duplicates: "public_safety_incidents" vs "city_government_agencies". Acceptable.
+
+We should order by importance: 311 service requests highest. Then noise complaints maybe high frequency. Building issues next. Street problems, parking violations, water system, geospatial coordinates (since many lat/lon fields), boroughs of NYC (maybe high cardinality). Public safety incidents? maybe same as city_government_agencies. Let's decide order:
+
+1. nyc_311_service_requests
+2. noise_complaints
+3. building_and_structural_issues
+4. street_and_pavement_problems
+5. parking_violations
+6. water_system_disruptions
+7. geospatial_coordinates
+8. boroughs_of_new_york_city
+9. public_safety_incidents
+10. city_government_agencies
+
+Add attribution placeholder.
+
+Return markdown list:
+
+- nyc_311_service_requests
+- noise_complaints
 ...
 
-At bottom add attribution line: "{GENERATED_BY_SIGNATURE}"
+Wrap as bullet points? The instruction: "in Markdown format". Could be a list or comma separated. Use bullet list.
 
-Let's do that.
+After tags add attribution line: "{GENERATED_BY_SIGNATURE}". Possibly on new line after tags.
+
+Let's produce.
+
+
 ## TOKEN USAGE
 
-TokenUsage { prompt: 15965, completion: 489, total: 16454, elapsed: 19276 }
+TokenUsage { prompt: 19977, completion: 667, total: 20644, elapsed: 21028 }
 ---

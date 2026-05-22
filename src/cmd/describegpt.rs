@@ -2684,14 +2684,11 @@ fn configured_null_text(freq_options: &str) -> &str {
     "(NULL)"
 }
 
-/// Run the shared dictionary-entry build pipeline used by both dictionary output
-/// paths: parse the stats + frequency CSVs, merge code-generated entries with any
-/// LLM-provided labels / descriptions, and return the combined list.
 fn build_combined_dictionary_entries(
     args: &Args,
     analysis_results: &AnalysisResults,
     completion_response: &CompletionResponse,
-) -> CliResult<Vec<dictionary::DictionaryEntry>> {
+) -> CliResult<(Vec<dictionary::DictionaryEntry>, Vec<serde_json::Value>)> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
     let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
@@ -2727,19 +2724,27 @@ fn build_combined_dictionary_entries(
             null_text,
         );
     }
-    Ok(entries)
+    // LLM-inferred inter-column relationships, validated structurally against the
+    // real field names. `synthesize` re-validates them against the data.
+    let relationships =
+        dictionary::parse_llm_relationships(&completion_response.response, &field_names);
+    Ok((entries, relationships))
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
 /// (second-pass) LLM responses, then merge via `combine_dictionary_entries_with_baseline`
 /// so the final entries inherit baseline Label/Description for any field the refine pass
 /// omitted. Used by `run_dictionary_phase`'s `--two-pass` branch.
+///
+/// Relationships are taken from the FIRST-PASS response: the first pass renders the
+/// relationship-aware `dictionary_prompt`, while the refine prompt only revisits
+/// per-field Label/Description/Content Type.
 fn build_combined_dictionary_entries_two_pass(
     args: &Args,
     analysis_results: &AnalysisResults,
     baseline_completion: &CompletionResponse,
     refine_completion: &CompletionResponse,
-) -> CliResult<Vec<dictionary::DictionaryEntry>> {
+) -> CliResult<(Vec<dictionary::DictionaryEntry>, Vec<serde_json::Value>)> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
     let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
@@ -2785,7 +2790,9 @@ fn build_combined_dictionary_entries_two_pass(
             null_text,
         );
     }
-    Ok(entries)
+    let relationships =
+        dictionary::parse_llm_relationships(&baseline_completion.response, &field_names);
+    Ok((entries, relationships))
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
@@ -2809,12 +2816,15 @@ fn build_first_pass_dictionary_json_string(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
 ) -> String {
+    // The intermediate first-pass JSON the refine prompt sees never carries
+    // relationships — they are inferred once and emitted only in the final output.
     let mut dictionary_json = formatters::format_dictionary_json(
         combined_entries,
         args.flag_enum_threshold,
         args.flag_num_examples,
         args.flag_truncate_str,
         args.flag_infer_content_type,
+        &[],
     );
     if let Some(obj) = dictionary_json.as_object_mut() {
         obj.remove("attribution");
@@ -2822,13 +2832,10 @@ fn build_first_pass_dictionary_json_string(
     serde_json::to_string_pretty(&dictionary_json).unwrap_or_default()
 }
 
-/// Dictionary phase when `--prompt` is active: build the dictionary JSON from pre-built
-/// `combined_entries`, stash it in `DATA_DICTIONARY_JSON` for later prompt rendering, but
-/// emit no user-visible output. Takes pre-built entries so the two-pass flow can hand in
-/// merged baseline+refine entries without re-parsing a single completion response.
 fn emit_dictionary_context_only(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
+    relationships: &[serde_json::Value],
     model: &str,
     base_url: &str,
 ) -> CliResult<()> {
@@ -2838,6 +2845,7 @@ fn emit_dictionary_context_only(
         args.flag_num_examples,
         args.flag_truncate_str,
         args.flag_infer_content_type,
+        relationships,
     );
     if let Some(attribution) = dictionary_json.get_mut("attribution")
         && let Some(attr_str) = attribution.as_str()
@@ -2862,11 +2870,15 @@ fn emit_dictionary_context_only(
 /// (`process_phase_output` builds entries from one completion) and the two-pass flow
 /// (`run_dictionary_phase` builds entries by merging baseline + refine completions via
 /// `combine_dictionary_entries_with_baseline`).
+///
+/// `relationships` carries the LLM-inferred inter-column relationships; it is empty
+/// unless the dictionary prompt inferred any.
 #[allow(clippy::too_many_arguments)]
 fn format_dictionary_phase(
     kind: PromptType,
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
+    relationships: &[serde_json::Value],
     completion_response: &CompletionResponse,
     total_json_output: &mut serde_json::Value,
     model: &str,
@@ -2925,6 +2937,7 @@ fn format_dictionary_phase(
             args.flag_num_examples,
             args.flag_truncate_str,
             args.flag_infer_content_type,
+            relationships,
         );
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
@@ -2940,6 +2953,7 @@ fn format_dictionary_phase(
             args.flag_num_examples,
             args.flag_truncate_str,
             args.flag_infer_content_type,
+            relationships,
         );
         if let Some(attribution) = dictionary_json.get_mut("attribution")
             && let Some(attr_str) = attribution.as_str()
@@ -2973,6 +2987,7 @@ fn format_dictionary_phase(
             args.flag_num_examples,
             args.flag_truncate_str,
             args.flag_infer_content_type,
+            relationships,
         );
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
@@ -3021,6 +3036,7 @@ fn format_dictionary_phase(
             args.flag_num_examples,
             args.flag_truncate_str,
             args.flag_infer_content_type,
+            relationships,
         );
         DATA_DICTIONARY_JSON
             .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
@@ -3274,18 +3290,25 @@ fn process_phase_output(
 ) -> CliResult<()> {
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        let combined_entries =
+        let (combined_entries, relationships) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
-        return emit_dictionary_context_only(args, &combined_entries, model, base_url);
+        return emit_dictionary_context_only(
+            args,
+            &combined_entries,
+            &relationships,
+            model,
+            base_url,
+        );
     }
 
     if kind == PromptType::Dictionary {
-        let combined_entries =
+        let (combined_entries, relationships) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return format_dictionary_phase(
             kind,
             args,
             &combined_entries,
+            &relationships,
             completion_response,
             total_json_output,
             model,
@@ -3542,7 +3565,10 @@ fn run_dictionary_phase(
 
     // --- Two-pass: build first-pass entries (without emitting), seed
     // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
-    let first_pass_entries = build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
+    // First-pass relationships are discarded here; the final ones are re-parsed
+    // from the (relationship-aware) first-pass response by the two-pass builder.
+    let (first_pass_entries, _) =
+        build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
     let first_pass_json = build_first_pass_dictionary_json_string(args, &first_pass_entries);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
     // The returned guard's `Drop` impl clears `FIRST_PASS_DICT_JSON` on ALL exit paths from
@@ -3587,7 +3613,7 @@ fn run_dictionary_phase(
     // don't wipe first-pass Label/Description. Then emit using the SAME format functions
     // the single-pass flow uses — process_phase_output is bypassed here because routing
     // back through it would re-parse only the refine response and lose the baseline.
-    let merged_entries = build_combined_dictionary_entries_two_pass(
+    let (merged_entries, relationships) = build_combined_dictionary_entries_two_pass(
         args,
         analysis_results,
         &data_dict,
@@ -3615,12 +3641,13 @@ fn run_dictionary_phase(
     if args.flag_prompt.is_some() {
         // --prompt mode: stash refined dictionary JSON for downstream SQL RAG context, no
         // user-visible dictionary output.
-        emit_dictionary_context_only(args, &merged_entries, model, base_url)?;
+        emit_dictionary_context_only(args, &merged_entries, &relationships, model, base_url)?;
     } else {
         format_dictionary_phase(
             PromptType::Dictionary,
             args,
             &merged_entries,
+            &relationships,
             &combined_completion,
             total_json_output,
             model,

@@ -1075,6 +1075,69 @@ pub(super) fn parse_llm_dictionary_response(
     Ok(result)
 }
 
+/// Extract the optional top-level `relationships` array from the LLM's dictionary
+/// response, validated against `field_names`. Each surviving entry is a clean
+/// JSON object `{kind, members[, anchor]}` ready to embed in the dictionary
+/// output and consume from `synthesize`.
+///
+/// An entry is dropped when its `kind` is not one of `joint` / `ordered` /
+/// `correlated`, when it has fewer than two members, or when any member (or an
+/// `ordered` anchor) names a column not in `field_names`. Anything that isn't
+/// well-formed JSON yields an empty list — relationship inference is best-effort
+/// and never fails the dictionary phase. `synthesize` re-validates every
+/// relationship against the real data before using it, so this stage only needs
+/// to guarantee structural soundness.
+pub(super) fn parse_llm_relationships(
+    llm_response: &str,
+    field_names: &[String],
+) -> Vec<serde_json::Value> {
+    let Ok(json_value) = extract_json_from_output(llm_response) else {
+        return Vec::new();
+    };
+    let Some(raw) = json_value.get("relationships").and_then(|v| v.as_array()) else {
+        return Vec::new();
+    };
+    let in_fields = |name: &str| field_names.iter().any(|f| f == name);
+
+    let mut result = Vec::new();
+    for entry in raw {
+        let Some(obj) = entry.as_object() else {
+            continue;
+        };
+        let kind = obj.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+        if !matches!(kind, "joint" | "ordered" | "correlated") {
+            continue;
+        }
+        let members: Vec<String> = obj
+            .get("members")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|m| m.as_str())
+                    .map(ToString::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        if members.len() < 2 || !members.iter().all(|m| in_fields(m)) {
+            continue;
+        }
+
+        let mut clean = serde_json::Map::new();
+        clean.insert("kind".to_string(), serde_json::json!(kind));
+        clean.insert("members".to_string(), serde_json::json!(members));
+        // `anchor` is meaningful only for `ordered` groups; keep it when the LLM
+        // supplied one that names a real column.
+        if kind == "ordered"
+            && let Some(anchor) = obj.get("anchor").and_then(|v| v.as_str())
+            && in_fields(anchor)
+        {
+            clean.insert("anchor".to_string(), serde_json::json!(anchor));
+        }
+        result.push(serde_json::Value::Object(clean));
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1811,6 +1874,59 @@ mod tests {
         );
         // token prefix case-folded, format suffix preserved verbatim
         assert_eq!(parsed.get("born").unwrap().content_type, "date:%Y-%m-%d");
+    }
+
+    #[test]
+    fn parse_llm_relationships_extracts_and_validates() {
+        let field_names = vec![
+            "created_date".to_string(),
+            "closed_date".to_string(),
+            "city".to_string(),
+            "state".to_string(),
+        ];
+        let response = r#"{
+            "created_date": {"label": "Created", "description": "x"},
+            "relationships": [
+                {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"},
+                {"kind": "joint", "members": ["city", "state"]},
+                {"kind": "bogus", "members": ["city", "state"]},
+                {"kind": "joint", "members": ["city", "missing_col"]},
+                {"kind": "correlated", "members": ["city"]}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        // bogus kind, unknown member, and the 1-member group are all dropped.
+        assert_eq!(rels.len(), 2);
+        assert_eq!(rels[0]["kind"], "ordered");
+        assert_eq!(
+            rels[0]["members"],
+            serde_json::json!(["created_date", "closed_date"])
+        );
+        assert_eq!(rels[0]["anchor"], "created_date");
+        assert_eq!(rels[1]["kind"], "joint");
+        // `anchor` is only kept for `ordered` groups.
+        assert!(rels[1].get("anchor").is_none());
+    }
+
+    #[test]
+    fn parse_llm_relationships_absent_is_empty() {
+        let field_names = vec!["a".to_string(), "b".to_string()];
+        let response = r#"{"a": {"label": "A", "description": "x"}}"#;
+        assert!(parse_llm_relationships(response, &field_names).is_empty());
+    }
+
+    #[test]
+    fn parse_llm_relationships_drops_invalid_anchor() {
+        let field_names = vec!["lo".to_string(), "hi".to_string()];
+        let response = r#"{
+            "relationships": [
+                {"kind": "ordered", "members": ["lo", "hi"], "anchor": "not_a_column"}
+            ]
+        }"#;
+        let rels = parse_llm_relationships(response, &field_names);
+        // The relationship survives (members are valid) but the bad anchor is dropped.
+        assert_eq!(rels.len(), 1);
+        assert!(rels[0].get("anchor").is_none());
     }
 
     #[test]

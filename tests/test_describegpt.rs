@@ -272,6 +272,82 @@ fn describegpt_dictionary_flag() {
     wrk.assert_success(&mut cmd);
 }
 
+// Test that --dictionary --infer-content-type infers inter-column relationships
+// and emits them as a structurally-valid `relationships` array (consumed by
+// `synthesize` to preserve inter-column structure).
+#[test]
+#[serial]
+fn describegpt_dictionary_relationships() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt");
+
+    // A dataset with three obvious inter-column relationships: a date ordering
+    // (created <= closed), a numeric ordering (subtotal <= total), and a
+    // categorical functional dependency (city -> state).
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec![
+                "created_date",
+                "closed_date",
+                "city",
+                "state",
+                "subtotal",
+                "total"
+            ],
+            svec!["2023-01-05", "2023-01-20", "Boston", "MA", "100", "108"],
+            svec!["2023-02-10", "2023-03-15", "Chicago", "IL", "250", "270"],
+            svec!["2023-03-01", "2023-03-05", "Boston", "MA", "50", "54"],
+            svec!["2023-04-12", "2023-06-01", "Chicago", "IL", "500", "540"],
+            svec!["2023-05-20", "2023-05-28", "Boston", "MA", "75", "81"],
+            svec!["2023-06-15", "2023-08-22", "Chicago", "IL", "320", "346"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--infer-content-type")
+        .args(["--format", "JSON"])
+        .arg("--no-cache");
+
+    let stdout: String = wrk.stdout(&mut cmd);
+    let parsed: serde_json::Value =
+        serde_json::from_str(&stdout).expect("describegpt JSON output should parse");
+    let response = parsed
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .expect("describegpt JSON should have Dictionary.response");
+    let relationships = response
+        .get("relationships")
+        .and_then(|v| v.as_array())
+        .expect("dictionary should carry a relationships array for an obviously-related dataset");
+
+    assert!(
+        !relationships.is_empty(),
+        "the LLM should infer at least one relationship for this dataset"
+    );
+    for rel in relationships {
+        let kind = rel.get("kind").and_then(|v| v.as_str()).unwrap_or_default();
+        assert!(
+            matches!(kind, "joint" | "ordered" | "correlated"),
+            "unexpected relationship kind in {rel}"
+        );
+        let members = rel
+            .get("members")
+            .and_then(|v| v.as_array())
+            .expect("every relationship must have a members array");
+        assert!(members.len() >= 2, "relationship needs >= 2 members: {rel}");
+        assert!(
+            members.iter().all(serde_json::Value::is_string),
+            "relationship members must be strings: {rel}"
+        );
+    }
+}
+
 // Test individual flags: --tags
 #[test]
 #[serial]

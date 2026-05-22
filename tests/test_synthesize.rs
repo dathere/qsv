@@ -146,6 +146,56 @@ fn synthesize_with_dictionary_uses_faker_for_email_column() {
 }
 
 #[test]
+fn synthesize_with_dictionary_applies_inferred_date_format() {
+    // A describegpt dictionary can tag a Date/DateTime column with a chrono
+    // strftime suffix (datetime:<fmt>); synthesize must emit generated values
+    // in that format instead of its hardcoded RFC 3339 / %Y-%m-%d output.
+    let wrk = Workdir::new("synthesize_date_format");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["event_ts"],
+            svec!["2019-03-04T12:00:00"],
+            svec!["2020-07-15T08:30:00"],
+            svec!["2021-01-22T23:45:00"],
+            svec!["2018-11-30T06:00:00"],
+            svec!["2022-05-09T17:10:00"],
+            svec!["2017-09-01T00:00:00"],
+            svec!["2023-12-25T14:20:00"],
+            svec!["2016-02-29T09:05:00"],
+        ],
+    );
+
+    let dict_json = r#"{
+        "fields": [
+            {"name": "event_ts", "type": "DateTime", "content_type": "datetime:%m/%d/%Y"}
+        ],
+        "enum_threshold": 10
+    }"#;
+    wrk.create_from_string("dict.json", dict_json);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "25", "--seed", "13", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 26);
+    for row in &got[1..] {
+        let v = &row[0];
+        // %m/%d/%Y → "MM/DD/YYYY": 10 chars, two slashes, all other chars
+        // digits, and crucially NOT the default RFC 3339 (which contains 'T').
+        assert!(
+            v.len() == 10
+                && v.matches('/').count() == 2
+                && v.chars().all(|c| c.is_ascii_digit() || c == '/')
+                && !v.contains('T'),
+            "event_ts '{v}' is not in the inferred %m/%d/%Y format"
+        );
+    }
+}
+
+#[test]
 fn synthesize_null_ratio_is_approximately_reproduced() {
     let wrk = Workdir::new("synthesize_nulls");
     // Build a 100-row fixture where the `note` column is ~30% empty.

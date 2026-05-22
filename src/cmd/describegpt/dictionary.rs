@@ -14,16 +14,33 @@ use super::{CliError, CliResult, extract_json_from_output};
 /// Curated, documented vocabulary of semantic Content Type tokens. Each token is
 /// intended to map cleanly to a `fake-rs` faker for a future `synthesize` command.
 ///
-/// Primitive types (`integer`, `decimal`, `boolean`, `date`, `datetime`) are
+/// Primitive numeric/boolean types (`integer`, `decimal`, `boolean`) are
 /// deliberately excluded — they are redundant with the dictionary's deterministic
 /// `type` column. `synthesize` falls back to `type` + `min`/`max` for plain
-/// numeric/date/datetime fields whose `content_type` is `unknown`.
+/// numeric fields whose `content_type` is `unknown`.
 ///
 /// `time` (time-of-day, e.g. `HH:MM:SS`) and `duration` (elapsed time) ARE
 /// included because qsv's stats reports them as `String`, so the deterministic
 /// `type` column doesn't cover them; without these tokens `synthesize` would
 /// fall through to lorem text for fields that are clearly temporal. They map
 /// to `fake::faker::time::en::Time` and `Duration` respectively.
+///
+/// `date` and `datetime` are stamped DETERMINISTICALLY by
+/// `generate_code_based_dictionary` from the stats `Type` column (`Date` /
+/// `DateTime`); the LLM never classifies them. They carry an optional `:<fmt>`
+/// suffix holding an LLM-inferred chrono strftime format (e.g.
+/// `"datetime:%m/%d/%Y %I:%M:%S %p"`) describing the column's on-disk format.
+/// The suffix is syntactically validated by `normalize_datetime_token`,
+/// semantically validated against real frequency samples by
+/// `validate_date_formats`, and consumed by
+/// `synthesize::faker_map::parse_date_format`. A bare `date`/`datetime` falls
+/// back to `synthesize`'s hardcoded `%Y-%m-%d` / RFC3339 output.
+///
+/// `downgrade_all_midnight_datetime_columns` reclassifies a `datetime` column
+/// as `date` (stripping the time specifiers from `<fmt>`) when every
+/// frequency-sampled value falls on midnight — `stats` reports `DateTime`
+/// whenever any single value carries a time, which over-reports columns that
+/// are plainly dates stored with a zero time-of-day.
 ///
 /// `duration` accepts an optional `:N` suffix carrying an LLM-inferred
 /// upper bound in seconds (e.g. `"duration:3600"` for an hour cap). The
@@ -93,8 +110,11 @@ pub(crate) const CONTENT_TYPE_VOCAB: &[&str] = &[
     "mime_type",
     "color_hex",
     "license_plate",
-    // temporal (time-of-day and durations; plain date/datetime fields stay
-    // "unknown" so synthesize's build_date() can use real min/max bounds)
+    // temporal (`date`/`datetime` carry an optional LLM-inferred chrono
+    // strftime `:<fmt>` suffix and are stamped deterministically from the
+    // stats `Type` column - see `normalize_datetime_token`)
+    "date",
+    "datetime",
     "time",
     "duration",
     // generic / fallback
@@ -134,6 +154,56 @@ pub(super) fn normalize_duration_token(raw: &str) -> Option<String> {
         Ok(n) if n > 0 => Some(format!("duration:{n}")),
         _ => Some("duration".to_string()),
     }
+}
+
+/// True if `fmt` is a syntactically valid chrono strftime format string, i.e.
+/// it contains no unrecognized `%` specifiers. A plain literal with no `%` is
+/// considered valid here; semantic mismatches are caught later by
+/// `validate_date_formats` parsing a real sample value.
+pub(crate) fn is_valid_strftime(fmt: &str) -> bool {
+    use chrono::format::{Item, StrftimeItems};
+    StrftimeItems::new(fmt).all(|item| !matches!(item, Item::Error))
+}
+
+/// Normalize a `date` / `datetime` content type, optionally carrying an
+/// LLM-inferred chrono strftime format suffix.
+///
+/// Accepts:
+///   * `"date"` / `"datetime"` → returns the bare token
+///   * `"date:<fmt>"` / `"datetime:<fmt>"` → returns the token verbatim when `<fmt>` is a
+///     syntactically valid chrono strftime string; an empty or malformed `<fmt>` degrades to the
+///     bare token (mirroring how `normalize_duration_token` degrades a bad `:N`)
+///
+/// Returns `None` for anything that is not a date/datetime token, so the caller
+/// can fall back to the regular `CONTENT_TYPE_VOCAB` membership check.
+///
+/// Unlike `normalize_duration_token`, the input must NOT be fully lowercased by
+/// the caller: chrono strftime specifiers are case-sensitive (`%m` month vs
+/// `%M` minute, `%p` AM/PM). Only the token prefix (before the first `:`) is
+/// case-folded here; the `<fmt>` suffix is preserved verbatim. Splitting on the
+/// first `:` keeps colons inside the format (e.g. `%H:%M:%S`) intact.
+pub(super) fn normalize_datetime_token(raw: &str) -> Option<String> {
+    let raw = raw.trim();
+    let (head, fmt) = match raw.split_once(':') {
+        Some((h, f)) => (h, Some(f)),
+        None => (raw, None),
+    };
+    let token = match head.to_ascii_lowercase().as_str() {
+        "date" => "date",
+        "datetime" => "datetime",
+        _ => return None,
+    };
+    match fmt {
+        Some(fmt) if !fmt.is_empty() && is_valid_strftime(fmt) => Some(format!("{token}:{fmt}")),
+        _ => Some(token.to_string()),
+    }
+}
+
+/// Returns the bare-token prefix of a content_type, i.e. the part before the
+/// first `:` (`"datetime:%F"` → `"datetime"`, `"duration:3600"` → `"duration"`).
+/// Non-suffixed tokens are returned unchanged.
+pub(super) fn content_type_base(token: &str) -> &str {
+    token.split(':').next().unwrap_or(token)
 }
 
 /// LLM-inferred fields for a single dictionary column, keyed by field name in the
@@ -514,10 +584,21 @@ pub(super) fn generate_code_based_dictionary(
             && stats_record.nullcount == 0
             && field_frequencies.len() == 1
             && field_frequencies[0].count == stats_record.cardinality;
-        let content_type = if infer_content_type && is_all_unique {
+        // Deterministically stamp the bare `content_type` token. `unique_id`
+        // keeps priority over `date`/`datetime` (a unique timestamp key is
+        // still a key). `date`/`datetime` are derived from the stats `Type`
+        // column; the LLM later supplies only the optional strftime `:<fmt>`
+        // suffix (merged in `combine_dictionary_entries`).
+        let content_type = if !infer_content_type {
+            String::new()
+        } else if is_all_unique {
             "unique_id".to_string()
         } else {
-            String::new()
+            match stats_record.r#type.as_str() {
+                "Date" => "date".to_string(),
+                "DateTime" => "datetime".to_string(),
+                _ => String::new(),
+            }
         };
 
         dictionary_entries.push(DictionaryEntry {
@@ -540,16 +621,50 @@ pub(super) fn generate_code_based_dictionary(
     dictionary_entries
 }
 
+/// Merge a single LLM-supplied `content_type` onto the (possibly
+/// deterministically pre-stamped) `current` value, returning the value the
+/// entry should hold. Encodes the whole `content_type` merge contract:
+///
+/// * A code-stamped `date`/`datetime` column (`current` base is `date`/`datetime`) only accepts an
+///   LLM value that agrees on the base token AND carries a strftime `:<fmt>` suffix — the LLM may
+///   add or correct the format but never reclassify the column or wipe a known format back to bare.
+/// * `unique_id` is deterministic — the LLM can never override it.
+/// * The LLM may never introduce a `date`/`datetime` token onto a column the stats did not type as
+///   such (only the deterministic stamp may), and never supply `unique_id`.
+/// * Otherwise an LLM token is written into an empty slot; when `allow_override` is set (the refine
+///   pass) it may also replace an existing non-`unique_id`, non-date token.
+fn merge_content_type(current: &str, llm: &str, allow_override: bool) -> String {
+    let current_base = content_type_base(current);
+    if current_base == "date" || current_base == "datetime" {
+        if llm.contains(':') && content_type_base(llm) == current_base {
+            return llm.to_string();
+        }
+        return current.to_string();
+    }
+    if current == "unique_id" {
+        return current.to_string();
+    }
+    if !llm.is_empty()
+        && llm != "unique_id"
+        && !matches!(content_type_base(llm), "date" | "datetime")
+        && (current.is_empty() || allow_override)
+    {
+        return llm.to_string();
+    }
+    current.to_string()
+}
+
 /// Merge code-generated dictionary entries with the LLM-generated fields (Label,
 /// Description and, when `--infer-content-type` is set, Content Type) keyed by
 /// field name.
 ///
-/// Code-derived `content_type` always wins over the LLM-supplied value. Today
-/// the only code-derived value is the `"unique_id"` token that
-/// `generate_code_based_dictionary` stamps on fields with the `<ALL_UNIQUE>`
-/// frequency sentinel. The LLM is also blocked from supplying `"unique_id"`
-/// itself (both here and in `parse_llm_dictionary_response`) so non-ALL_UNIQUE
-/// fields cannot be misclassified.
+/// `content_type` merge contract — see `merge_content_type`:
+/// - Code-derived `content_type` always wins. `generate_code_based_dictionary` stamps `"unique_id"`
+///   on `<ALL_UNIQUE>` fields and bare `"date"`/`"datetime"` on `Date`/`DateTime`-typed fields.
+/// - For a code-stamped `date`/`datetime` field the LLM may only contribute the strftime `:<fmt>`
+///   suffix; it can neither reclassify the column nor introduce a `date`/`datetime` token on a
+///   non-date column.
+/// - LLM-supplied `"unique_id"` is refused (defense in depth — the parser also strips it).
 ///
 /// When `infer_content_type` is set, this is the single point that guarantees
 /// every entry has a non-empty `content_type`: any field the LLM classified
@@ -564,20 +679,7 @@ pub(super) fn combine_dictionary_entries(
         if let Some(llm) = llm_fields.get(&entry.name) {
             entry.label = llm.label.clone();
             entry.description = llm.description.clone();
-            // Preserve any deterministically pre-set content_type (e.g. the
-            // `"unique_id"` classification stamped by
-            // `generate_code_based_dictionary` for fields with the
-            // `<ALL_UNIQUE>` sentinel). Code-derived facts always win over
-            // the LLM's guess.
-            //
-            // Defense in depth: also refuse to copy `"unique_id"` from the
-            // LLM. `parse_llm_dictionary_response` already strips it from
-            // LLM output, but rejecting it here too means any future caller
-            // that bypasses the parser still can't smuggle in a fabricated
-            // `unique_id` for a non-ALL_UNIQUE field.
-            if entry.content_type.is_empty() && llm.content_type != "unique_id" {
-                entry.content_type = llm.content_type.clone();
-            }
+            entry.content_type = merge_content_type(&entry.content_type, &llm.content_type, false);
         }
         if infer_content_type && entry.content_type.is_empty() {
             entry.content_type = "unknown".to_string();
@@ -593,13 +695,13 @@ pub(super) fn combine_dictionary_entries(
 /// refine response that returns a subset of fields would silently wipe the first-pass
 /// human-friendly fields back to code-derived defaults.
 ///
-/// The `"unique_id"` defenses from `combine_dictionary_entries` are preserved:
-/// - Code-derived `content_type` (the `"unique_id"` stamp from `generate_code_based_dictionary` for
-///   `<ALL_UNIQUE>` fields) always wins over both baseline and refine LLM values.
-/// - `parse_llm_dictionary_response` strips LLM-supplied `"unique_id"` from both passes, so neither
-///   `baseline_llm_fields` nor `refine_llm_fields` can carry it.
-/// - When `infer_content_type` is set, any still-empty `content_type` falls back to `"unknown"`
-///   exactly as in the single-pass path.
+/// The `content_type` merge contract from `combine_dictionary_entries` is preserved via
+/// `merge_content_type`, applied once per pass. The baseline pass may only fill an empty
+/// slot (`allow_override = false`); the refine pass may additionally upgrade an existing
+/// non-`unique_id`, non-date token (`allow_override = true`). Neither pass can override the
+/// deterministic `"unique_id"` stamp, reclassify a `date`/`datetime` column, or introduce a
+/// `date`/`datetime` token onto a non-date column — only the strftime `:<fmt>` suffix may
+/// be added or corrected on an already-date-typed column.
 pub(super) fn combine_dictionary_entries_with_baseline(
     mut code_entries: Vec<DictionaryEntry>,
     baseline_llm_fields: &HashMap<String, LlmDictField>,
@@ -612,13 +714,8 @@ pub(super) fn combine_dictionary_entries_with_baseline(
         if let Some(baseline) = baseline_llm_fields.get(&entry.name) {
             entry.label = baseline.label.clone();
             entry.description = baseline.description.clone();
-            // `parse_llm_dictionary_response` already strips "unique_id" from LLM output,
-            // but mirror `combine_dictionary_entries`'s defense-in-depth check so future
-            // callers that bypass the parser still can't smuggle "unique_id" into a
-            // non-ALL_UNIQUE field.
-            if entry.content_type.is_empty() && baseline.content_type != "unique_id" {
-                entry.content_type = baseline.content_type.clone();
-            }
+            entry.content_type =
+                merge_content_type(&entry.content_type, &baseline.content_type, false);
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -629,16 +726,8 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             if !refine.description.is_empty() {
                 entry.description = refine.description.clone();
             }
-            // Refine pass may upgrade a baseline content_type to a better vocab token
-            // (e.g. "free_text" -> "address_street" once cross-field context is visible).
-            // It cannot override the deterministic "unique_id" stamp because (a) the
-            // parser strips LLM-supplied "unique_id" and (b) we check here too.
-            if !refine.content_type.is_empty()
-                && refine.content_type != "unique_id"
-                && entry.content_type != "unique_id"
-            {
-                entry.content_type = refine.content_type.clone();
-            }
+            entry.content_type =
+                merge_content_type(&entry.content_type, &refine.content_type, true);
         }
         // Stage 3: same final "unknown" coercion as `combine_dictionary_entries` so the
         // two-pass output matches single-pass invariants for the Content Type column.
@@ -649,13 +738,251 @@ pub(super) fn combine_dictionary_entries_with_baseline(
     code_entries
 }
 
+/// True if `sample` parses cleanly with the chrono strftime `fmt`. For
+/// `datetime`, an offset-naive parse is tried first, then an offset-aware one
+/// (`%z` / `%:z` formats are rejected by `NaiveDateTime`).
+fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool {
+    use chrono::{DateTime, NaiveDate, NaiveDateTime};
+    if is_datetime {
+        NaiveDateTime::parse_from_str(sample, fmt).is_ok()
+            || DateTime::parse_from_str(sample, fmt).is_ok()
+    } else {
+        NaiveDate::parse_from_str(sample, fmt).is_ok()
+    }
+}
+
+/// Group usable raw frequency values by field name — every value except the
+/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the emitted null row.
+///
+/// The null row is identified by BOTH signals `frequency` guarantees for it,
+/// never by either one alone:
+///   * its `value` equals the configured `--null-text` (`null_text`, default `(NULL)`), and
+///   * its `count` equals the column's null count (carried on `DictionaryEntry.null_count`).
+///
+/// Value alone is too broad — `frequency`'s null text is configurable, and a
+/// real datum that merely reads as the null label would be dropped. Count
+/// alone is also too broad — a real value that merely shares the column's null
+/// count would be dropped, which can keep a bad date suffix or wrongly
+/// downgrade a `datetime` column. Requiring both confines the exclusion to the
+/// genuine null sentinel, even when `frequency --pct-nulls` gives that row a
+/// real (non-zero) rank that a rank check alone would let through.
+///
+/// Borrows the sample strings from `frequency_records`.
+fn usable_samples_by_field<'a>(
+    frequency_records: &'a [FrequencyRecord],
+    entries: &[DictionaryEntry],
+    null_text: &str,
+) -> HashMap<&'a str, Vec<&'a str>> {
+    let null_count_by_field: HashMap<&str, u64> = entries
+        .iter()
+        .filter(|e| e.null_count > 0)
+        .map(|e| (e.name.as_str(), e.null_count))
+        .collect();
+
+    let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
+    for rec in frequency_records {
+        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+            continue;
+        }
+        // the emitted null row: `frequency` writes it with `--null-text` as
+        // its value AND a count equal to the column's null count
+        if rec.value == null_text && null_count_by_field.get(rec.field.as_str()) == Some(&rec.count)
+        {
+            continue;
+        }
+        samples_by_field
+            .entry(rec.field.as_str())
+            .or_default()
+            .push(rec.value.as_str());
+    }
+    samples_by_field
+}
+
+/// Semantically validate the LLM-inferred strftime `:<fmt>` suffix on every
+/// `date`/`datetime` entry against the real on-disk sample values.
+///
+/// `normalize_datetime_token` only checks the suffix is *syntactically* valid
+/// chrono strftime; a well-formed format can still mismatch the data (the LLM
+/// guesses `%m/%d/%Y` for `%d/%m/%Y` data). For each date/datetime entry that
+/// carries a suffix, this attempts to parse EVERY usable raw value from the
+/// frequency records — skipping the rank-0 "Other" bucket and the
+/// `<ALL_UNIQUE>` sentinel — with the inferred format. An ambiguous format can
+/// parse an early sample (`01/02/2020`) yet be disproven by a later one
+/// (`13/02/2020`), so all samples must parse; if any fails, the suffix is
+/// stripped back to the bare token.
+///
+/// Entries with no usable sample (an ALL_UNIQUE date column, or one whose only
+/// frequency row is the "Other" bucket) keep their suffix unchanged — there is
+/// nothing to validate them against.
+pub(super) fn validate_date_formats(
+    entries: &mut [DictionaryEntry],
+    frequency_records: &[FrequencyRecord],
+    null_text: &str,
+) {
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
+
+    for entry in entries {
+        let base = content_type_base(&entry.content_type);
+        if base != "date" && base != "datetime" {
+            continue;
+        }
+        let Some(fmt) = entry
+            .content_type
+            .strip_prefix("datetime:")
+            .or_else(|| entry.content_type.strip_prefix("date:"))
+        else {
+            continue; // bare token, nothing to validate
+        };
+        let Some(samples) = samples_by_field.get(entry.name.as_str()) else {
+            continue; // no usable sample (e.g. ALL_UNIQUE) - accept as-is
+        };
+        // Every usable sample must parse: an ambiguous format can match the
+        // first sample yet be disproven by a later one. If any fails, the
+        // inferred format is wrong for this column - strip back to bare token.
+        if !samples
+            .iter()
+            .all(|s| sample_parses_with_format(s, fmt, base == "datetime"))
+        {
+            entry.content_type = base.to_string();
+        }
+    }
+}
+
+/// Produce the date-only portion of a chrono strftime format by truncating at
+/// the first time-related specifier (`%H`, `%I`, `%M`, `%S`, `%p`, `%z`, …).
+///
+/// Used when an all-midnight `datetime` column is reclassified as `date`: the
+/// on-disk format `%m/%d/%Y %I:%M:%S %p` becomes the date-only `%m/%d/%Y`.
+///
+/// Returns `None` when there is no clean date-only prefix — a datetime-compound
+/// specifier (`%c`, `%+`, `%s`) or a time-first layout — so the caller falls
+/// back to a bare `date` token.
+fn strip_time_from_format(fmt: &str) -> Option<String> {
+    let bytes = fmt.as_bytes();
+    let mut i = 0;
+    let mut cut: Option<usize> = None;
+    while i < bytes.len() {
+        if bytes[i] != b'%' {
+            i += 1;
+            continue;
+        }
+        let pct = i;
+        i += 1; // past '%'
+        if i >= bytes.len() {
+            break;
+        }
+        if bytes[i] == b'%' {
+            i += 1; // literal "%%"
+            continue;
+        }
+        // skip modifier chars (`-_0.:#` and digits) to reach the specifier letter
+        while i < bytes.len() && matches!(bytes[i], b'-' | b'_' | b'0'..=b'9' | b'.' | b':' | b'#')
+        {
+            i += 1;
+        }
+        if i >= bytes.len() {
+            break;
+        }
+        let letter = bytes[i] as char;
+        i += 1;
+        match letter {
+            // datetime-compound: no clean date-only prefix
+            'c' | '+' | 's' => return None,
+            // time-related specifier: the date part ends at this `%`
+            'H' | 'k' | 'I' | 'l' | 'P' | 'p' | 'M' | 'S' | 'f' | 'R' | 'T' | 'X' | 'r' | 'Z'
+            | 'z' => {
+                cut = Some(pct);
+                break;
+            },
+            // date specifier (or a harmless literal like `%n`/`%t`) — keep scanning
+            _ => {},
+        }
+    }
+    let date_part = cut.map_or(fmt, |c| &fmt[..c]);
+    // trim the trailing date/time separator literal (whitespace, the ISO `T`,
+    // or punctuation like `-` `/` `.` `:` `,` `_`) so a format such as
+    // `%Y-%m-%d-%H:%M:%S` yields `%Y-%m-%d`, not `%Y-%m-%d-`
+    let trimmed = date_part.trim_end_matches(|c: char| {
+        c.is_whitespace() || matches!(c, 'T' | '-' | '/' | '.' | ':' | ',' | '_')
+    });
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+/// `Some(true)` if `sample` parses with the chrono strftime `fmt` AND its
+/// time-of-day is exactly midnight; `Some(false)` if it parses with a
+/// non-midnight time; `None` if it does not parse at all (so the caller can
+/// ignore it rather than treat it as evidence either way).
+fn sample_time_at_midnight(sample: &str, fmt: &str) -> Option<bool> {
+    use chrono::{DateTime, NaiveDateTime, Timelike};
+    let time = NaiveDateTime::parse_from_str(sample, fmt)
+        .map(|dt| dt.time())
+        .or_else(|_| DateTime::parse_from_str(sample, fmt).map(|dt| dt.time()))
+        .ok()?;
+    Some(time.num_seconds_from_midnight() == 0 && time.nanosecond() == 0)
+}
+
+/// Reclassify a `datetime` column as `date` when every usable frequency sample
+/// parses with the inferred format AND falls exactly on midnight — i.e. the
+/// column holds dates stored with a zero time-of-day. `qsv stats` types a
+/// column `DateTime` whenever ANY value has a non-midnight time, which
+/// over-reports columns whose dominant pattern (per the frequency
+/// distribution) is plainly a date.
+///
+/// Runs after `validate_date_formats`, so a surviving `datetime:<fmt>` suffix
+/// is already format-validated. On downgrade the time specifiers are stripped
+/// from `<fmt>` via `strip_time_from_format`, yielding `date:<date-fmt>` (or a
+/// bare `date` when the format has no clean date-only prefix).
+///
+/// Bare `datetime` (no inferred format) is left unchanged — there is no format
+/// to test the samples against. A sample that does NOT parse with the format
+/// blocks the downgrade (the column stays `datetime`): a non-parsing real
+/// value could carry a non-midnight time, so ignoring it would risk a wrong
+/// downgrade. The emitted null row never reaches here — `usable_samples_by_field`
+/// excludes it by `--null-text` value plus null count, even when
+/// `frequency --pct-nulls` gives it a real rank.
+pub(super) fn downgrade_all_midnight_datetime_columns(
+    entries: &mut [DictionaryEntry],
+    frequency_records: &[FrequencyRecord],
+    null_text: &str,
+) {
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
+
+    for entry in entries {
+        let Some(fmt) = entry.content_type.strip_prefix("datetime:") else {
+            continue; // bare `datetime`, or not a datetime column
+        };
+        let Some(samples) = samples_by_field.get(entry.name.as_str()) else {
+            continue; // no usable sample to judge by
+        };
+        // EVERY usable sample must parse with the format: collecting into an
+        // `Option<Vec<_>>` yields `None` if any sample fails to parse, which
+        // keeps the column `datetime` rather than silently dropping a value
+        // that might carry a non-midnight time.
+        let Some(midnight_flags) = samples
+            .iter()
+            .map(|s| sample_time_at_midnight(s, fmt))
+            .collect::<Option<Vec<bool>>>()
+        else {
+            continue;
+        };
+        if !midnight_flags.is_empty() && midnight_flags.iter().all(|&midnight| midnight) {
+            entry.content_type = strip_time_from_format(fmt)
+                .map_or_else(|| "date".to_string(), |date_fmt| format!("date:{date_fmt}"));
+        }
+    }
+}
+
 /// Extract the `{field_name: {label, description[, content_type]}}` map from the
 /// LLM's JSON response, restricted to the given `field_names`. When
-/// `infer_content_type` is set, `content_type` is lowercased and validated against
+/// `infer_content_type` is set, `content_type` is validated against
 /// `CONTENT_TYPE_VOCAB`; a missing, empty, or out-of-vocabulary value is left empty
 /// here — `combine_dictionary_entries` is the single point that coerces any
 /// still-empty `content_type` to `"unknown"`. When the flag is unset, `content_type`
 /// is always empty.
+///
+/// Most tokens are lowercased before the vocab lookup, but `date`/`datetime` are
+/// matched case-preserving via `normalize_datetime_token` because their optional
+/// `:<fmt>` chrono strftime suffix is case-sensitive.
 ///
 /// `unique_id` is in the vocab but is REJECTED from LLM input here: it is set
 /// deterministically based on the `<ALL_UNIQUE>` frequency sentinel and the LLM
@@ -688,36 +1015,46 @@ pub(super) fn parse_llm_dictionary_response(
                     .to_string();
 
                 let content_type = if infer_content_type {
-                    // Normalize to lowercase before the vocab lookup — `CONTENT_TYPE_VOCAB` is
-                    // all lowercase, and LLMs don't reliably echo casing exactly (e.g. "Email",
-                    // "First_Name") even when given an explicit token list. A missing, empty, or
-                    // out-of-vocabulary value is left empty here; `combine_dictionary_entries`
-                    // coerces any still-empty content_type to "unknown" when the flag is set.
+                    // `CONTENT_TYPE_VOCAB` is all lowercase and LLMs don't reliably echo
+                    // casing (e.g. "Email", "First_Name"), so most tokens are case-folded
+                    // before the vocab lookup. A missing, empty, or out-of-vocabulary value
+                    // is left empty here; `combine_dictionary_entries` coerces any
+                    // still-empty content_type to "unknown" when the flag is set.
+                    //
+                    // `date`/`datetime` are handled FIRST and case-preserving: they may
+                    // carry a `:<fmt>` chrono strftime suffix (e.g. "datetime:%m/%d/%Y
+                    // %I:%M:%S %p") whose specifiers are case-sensitive (%m vs %M, %p), so
+                    // `normalize_datetime_token` lowercases only the token prefix.
                     //
                     // `duration` is special: the LLM may append an upper-bound suffix (e.g.
-                    // "duration:3600") that isn't in `CONTENT_TYPE_VOCAB` literally, so route
-                    // it through `normalize_duration_token` first.
+                    // "duration:3600") that isn't in `CONTENT_TYPE_VOCAB` literally, so
+                    // route it through `normalize_duration_token`.
                     //
                     // `unique_id` is REJECTED here even though it is in the vocab: it is set
                     // deterministically by `generate_code_based_dictionary` based on the
-                    // `<ALL_UNIQUE>` frequency sentinel (`cardinality == rowcount`), and the LLM
-                    // has no way to verify that condition. Accepting it from LLM output would let
-                    // non-ALL_UNIQUE fields be misclassified as `unique_id`, breaking the
-                    // deterministic-only contract documented on `CONTENT_TYPE_VOCAB`.
-                    let raw = field_map
+                    // `<ALL_UNIQUE>` frequency sentinel (`cardinality == rowcount`), and the
+                    // LLM has no way to verify that condition. Accepting it from LLM output
+                    // would let non-ALL_UNIQUE fields be misclassified as `unique_id`,
+                    // breaking the deterministic-only contract documented on
+                    // `CONTENT_TYPE_VOCAB`.
+                    let raw_trimmed = field_map
                         .get("content_type")
                         .and_then(|v| v.as_str())
                         .unwrap_or("")
-                        .trim()
-                        .to_ascii_lowercase();
-                    if let Some(normalized) = normalize_duration_token(&raw) {
+                        .trim();
+                    if let Some(normalized) = normalize_datetime_token(raw_trimmed) {
                         normalized
-                    } else if raw == "unique_id" {
-                        String::new()
-                    } else if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
-                        raw
                     } else {
-                        String::new()
+                        let raw = raw_trimmed.to_ascii_lowercase();
+                        if let Some(normalized) = normalize_duration_token(&raw) {
+                            normalized
+                        } else if raw == "unique_id" {
+                            String::new()
+                        } else if CONTENT_TYPE_VOCAB.contains(&raw.as_str()) {
+                            raw
+                        } else {
+                            String::new()
+                        }
                     }
                 } else {
                     String::new()
@@ -1411,5 +1748,624 @@ mod tests {
             assert_eq!(a.description, b.description);
             assert_eq!(a.content_type, b.content_type);
         }
+    }
+
+    fn entry_with_content_type(name: &str, content_type: &str) -> DictionaryEntry {
+        DictionaryEntry {
+            content_type: content_type.to_string(),
+            ..blank_entry(name)
+        }
+    }
+
+    #[test]
+    fn normalize_datetime_token_handles_all_forms() {
+        // Bare tokens accepted.
+        assert_eq!(normalize_datetime_token("date").as_deref(), Some("date"));
+        assert_eq!(
+            normalize_datetime_token("datetime").as_deref(),
+            Some("datetime")
+        );
+        // The token prefix is case-folded.
+        assert_eq!(
+            normalize_datetime_token("DateTime").as_deref(),
+            Some("datetime")
+        );
+        // A valid strftime suffix is preserved verbatim, including its case.
+        assert_eq!(
+            normalize_datetime_token("date:%Y-%m-%d").as_deref(),
+            Some("date:%Y-%m-%d")
+        );
+        assert_eq!(
+            normalize_datetime_token("datetime:%m/%d/%Y %I:%M:%S %p").as_deref(),
+            Some("datetime:%m/%d/%Y %I:%M:%S %p")
+        );
+        // Colons inside the format survive — split_once only consumes the first ':'.
+        assert_eq!(
+            normalize_datetime_token("datetime:%H:%M:%S").as_deref(),
+            Some("datetime:%H:%M:%S")
+        );
+        // A malformed strftime suffix degrades to the bare token.
+        assert_eq!(normalize_datetime_token("date:%Q").as_deref(), Some("date"));
+        // An empty suffix degrades to the bare token.
+        assert_eq!(normalize_datetime_token("date:").as_deref(), Some("date"));
+        // Non-date tokens return None so the caller falls through to the vocab check.
+        assert_eq!(normalize_datetime_token("time"), None);
+        assert_eq!(normalize_datetime_token("duration:3600"), None);
+        assert_eq!(normalize_datetime_token("email"), None);
+        assert_eq!(normalize_datetime_token(""), None);
+    }
+
+    #[test]
+    fn parse_llm_response_preserves_date_format_casing() {
+        // The date/datetime <fmt> suffix is case-sensitive (%m month vs %M minute,
+        // %p AM/PM) and must survive the parser's general lowercasing.
+        let json = r#"{
+            "created": {"label": "C", "description": "d", "content_type": "datetime:%m/%d/%Y %I:%M:%S %p"},
+            "born":    {"label": "B", "description": "d", "content_type": "DATE:%Y-%m-%d"}
+        }"#;
+        let fields = vec!["created".to_string(), "born".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(
+            parsed.get("created").unwrap().content_type,
+            "datetime:%m/%d/%Y %I:%M:%S %p"
+        );
+        // token prefix case-folded, format suffix preserved verbatim
+        assert_eq!(parsed.get("born").unwrap().content_type, "date:%Y-%m-%d");
+    }
+
+    #[test]
+    fn generate_stamps_date_datetime_from_stats_type() {
+        let stats = vec![
+            StatsRecord {
+                field:       "created".to_string(),
+                r#type:      "DateTime".to_string(),
+                cardinality: 50,
+                nullcount:   0,
+                min:         "2020-01-01T00:00:00+00:00".to_string(),
+                max:         "2020-12-31T00:00:00+00:00".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+            StatsRecord {
+                field:       "born".to_string(),
+                r#type:      "Date".to_string(),
+                cardinality: 50,
+                nullcount:   0,
+                min:         "1990-01-01".to_string(),
+                max:         "1999-12-31".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+            StatsRecord {
+                field:       "name".to_string(),
+                r#type:      "String".to_string(),
+                cardinality: 50,
+                nullcount:   0,
+                min:         "a".to_string(),
+                max:         "z".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+        ];
+        // non-ALL_UNIQUE frequency rows so nothing is stamped unique_id
+        let frequencies = vec![
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "x".to_string(),
+                count:      10,
+                percentage: 20.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "born".to_string(),
+                value:      "y".to_string(),
+                count:      10,
+                percentage: 20.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "name".to_string(),
+                value:      "z".to_string(),
+                count:      10,
+                percentage: 20.0,
+                rank:       1.0,
+            },
+        ];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(entries[0].content_type, "datetime");
+        assert_eq!(entries[1].content_type, "date");
+        assert!(entries[2].content_type.is_empty());
+
+        // with infer_content_type off, nothing is stamped
+        let off = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], false);
+        assert!(off.iter().all(|e| e.content_type.is_empty()));
+    }
+
+    #[test]
+    fn generate_unique_id_wins_over_date_stamp() {
+        // An ALL_UNIQUE DateTime column (a unique timestamp key) is stamped
+        // `unique_id`, not `datetime` — the `unique_id` stamp keeps priority.
+        let stats = vec![StatsRecord {
+            field:       "ts_pk".to_string(),
+            r#type:      "DateTime".to_string(),
+            cardinality: 1000,
+            nullcount:   0,
+            min:         "2020-01-01T00:00:00+00:00".to_string(),
+            max:         "2020-12-31T00:00:00+00:00".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        let frequencies = vec![FrequencyRecord {
+            field:      "ts_pk".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      1000,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(entries[0].content_type, "unique_id");
+    }
+
+    #[test]
+    fn combine_merges_date_format_suffix_onto_stamped_token() {
+        // code stamped a bare "datetime"; the LLM contributes the strftime suffix
+        let code = vec![entry_with_content_type("created", "datetime")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "created".to_string(),
+            LlmDictField {
+                label:        "Created".to_string(),
+                description:  "d".to_string(),
+                content_type: "datetime:%m/%d/%Y".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].content_type, "datetime:%m/%d/%Y");
+    }
+
+    #[test]
+    fn combine_keeps_bare_date_token_when_llm_base_mismatches() {
+        // code stamped bare "date"; the LLM disagrees on the base token —
+        // the deterministic classification wins, the mismatched suffix is dropped
+        let code = vec![entry_with_content_type("born", "date")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "born".to_string(),
+            LlmDictField {
+                label:        "Born".to_string(),
+                description:  "d".to_string(),
+                content_type: "datetime:%Y-%m-%dT%H:%M:%S".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].content_type, "date");
+    }
+
+    #[test]
+    fn combine_drops_llm_date_token_on_non_date_column() {
+        // the LLM may not introduce a date/datetime token onto a column the
+        // stats did not type as such — only the deterministic stamp may
+        let code = vec![entry_with_content_type("note", "")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "note".to_string(),
+            LlmDictField {
+                label:        "Note".to_string(),
+                description:  "d".to_string(),
+                content_type: "date:%Y-%m-%d".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        // dropped → falls back to "unknown"
+        assert_eq!(combined[0].content_type, "unknown");
+    }
+
+    #[test]
+    fn combine_with_baseline_refine_corrects_date_format() {
+        // the refine pass may correct the <fmt> suffix on an already-date-typed column
+        let code = vec![entry_with_content_type("created", "datetime")];
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "created".to_string(),
+            LlmDictField {
+                label:        "C".to_string(),
+                description:  "d".to_string(),
+                content_type: "datetime:%Y/%m/%d".to_string(),
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "created".to_string(),
+            LlmDictField {
+                label:        "C".to_string(),
+                description:  "d".to_string(),
+                content_type: "datetime:%m/%d/%Y".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
+        assert_eq!(combined[0].content_type, "datetime:%m/%d/%Y");
+    }
+
+    #[test]
+    fn validate_date_formats_strips_mismatched_suffix() {
+        // the entry claims %m/%d/%Y but the real sample is ISO → suffix stripped
+        let mut entries = vec![entry_with_content_type("d", "date:%m/%d/%Y")];
+        let freqs = vec![FrequencyRecord {
+            field:      "d".to_string(),
+            value:      "2020-01-15".to_string(),
+            count:      5,
+            percentage: 10.0,
+            rank:       1.0,
+        }];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date");
+    }
+
+    #[test]
+    fn validate_date_formats_keeps_matching_suffix() {
+        let mut entries = vec![entry_with_content_type(
+            "d",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![FrequencyRecord {
+            field:      "d".to_string(),
+            value:      "01/24/2013 12:00:00 AM".to_string(),
+            count:      5,
+            percentage: 10.0,
+            rank:       1.0,
+        }];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn validate_date_formats_accepts_offset_datetime() {
+        // %z offset datetimes: NaiveDateTime rejects them, DateTime::parse_from_str accepts
+        let mut entries = vec![entry_with_content_type("d", "datetime:%Y-%m-%dT%H:%M:%S%z")];
+        let freqs = vec![FrequencyRecord {
+            field:      "d".to_string(),
+            value:      "2020-01-15T08:30:00+0000".to_string(),
+            count:      5,
+            percentage: 10.0,
+            rank:       1.0,
+        }];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%Y-%m-%dT%H:%M:%S%z");
+    }
+
+    #[test]
+    fn validate_date_formats_keeps_suffix_when_no_sample() {
+        // an ALL_UNIQUE column has only the <ALL_UNIQUE> sentinel row — there is
+        // nothing to validate against, so the suffix is left unchanged
+        let mut entries = vec![entry_with_content_type("d", "date:%d/%m/%Y")];
+        let freqs = vec![FrequencyRecord {
+            field:      "d".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      100,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date:%d/%m/%Y");
+    }
+
+    #[test]
+    fn strip_time_from_format_keeps_date_drops_time() {
+        assert_eq!(
+            strip_time_from_format("%m/%d/%Y %I:%M:%S %p").as_deref(),
+            Some("%m/%d/%Y")
+        );
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%dT%H:%M:%S").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        assert_eq!(
+            strip_time_from_format("%d-%b-%Y %H:%M").as_deref(),
+            Some("%d-%b-%Y")
+        );
+        // a timezone-bearing time part still truncates cleanly
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%dT%H:%M:%S%z").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        // a `-` date/time separator is trimmed, not left dangling
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%d-%H:%M:%S").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        // a pure-date format is returned unchanged
+        assert_eq!(
+            strip_time_from_format("%Y-%m-%d").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        // a pure-time format has no date prefix
+        assert_eq!(strip_time_from_format("%H:%M:%S"), None);
+        // datetime-compound specifiers have no clean date-only prefix
+        assert_eq!(strip_time_from_format("%+"), None);
+    }
+
+    #[test]
+    fn downgrade_reclassifies_all_midnight_datetime_as_date() {
+        let mut entries = vec![entry_with_content_type(
+            "created",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "01/24/2013 12:00:00 AM".to_string(),
+                count:      347,
+                percentage: 0.03,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "01/07/2014 12:00:00 AM".to_string(),
+                count:      315,
+                percentage: 0.03,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        // every sample is at midnight → date, with the time stripped from <fmt>
+        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_a_sample_has_a_real_time() {
+        let mut entries = vec![entry_with_content_type(
+            "due",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "due".to_string(),
+                value:      "04/08/2015 10:00:58 AM".to_string(),
+                count:      214,
+                percentage: 0.06,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "due".to_string(),
+                value:      "05/02/2014 12:00:00 AM".to_string(),
+                count:      183,
+                percentage: 0.05,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        // one sample carries a non-midnight time → stays datetime
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_a_sample_is_unparsable() {
+        // a usable frequency value that does not parse with the inferred
+        // format blocks the downgrade — a non-parsing real value could carry
+        // a non-midnight time, so it must not be silently dropped
+        let mut entries = vec![entry_with_content_type(
+            "closed",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      384,
+                percentage: 0.04,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "not-a-date".to_string(),
+                count:      28619,
+                percentage: 2.0,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn downgrade_leaves_non_datetime_entries_alone() {
+        let mut entries = vec![
+            entry_with_content_type("bare_dt", "datetime"),
+            entry_with_content_type("a_date", "date:%Y-%m-%d"),
+            entry_with_content_type("contact", "email"),
+        ];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "bare_dt".to_string(),
+                value:      "01/24/2013 12:00:00 AM".to_string(),
+                count:      1,
+                percentage: 0.1,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "a_date".to_string(),
+                value:      "2013-01-24".to_string(),
+                count:      1,
+                percentage: 0.1,
+                rank:       1.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        // bare `datetime` has no format to test against → unchanged
+        assert_eq!(entries[0].content_type, "datetime");
+        // an already-`date` entry → unchanged
+        assert_eq!(entries[1].content_type, "date:%Y-%m-%d");
+        // a non-date token → unchanged
+        assert_eq!(entries[2].content_type, "email");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_no_usable_sample() {
+        // an ALL_UNIQUE datetime column has no usable frequency sample
+        let mut entries = vec![entry_with_content_type(
+            "ts",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+        )];
+        let freqs = vec![FrequencyRecord {
+            field:      "ts".to_string(),
+            value:      "<ALL_UNIQUE>".to_string(),
+            count:      1000,
+            percentage: 100.0,
+            rank:       1.0,
+        }];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn validate_date_formats_checks_all_samples_not_just_first() {
+        // `%m/%d/%Y` parses the first sample `01/02/2020` but a later sample
+        // `13/02/2020` (unambiguously day-first) disproves it — validating
+        // against only the first sample would wrongly keep the suffix.
+        let mut entries = vec![entry_with_content_type("d", "date:%m/%d/%Y")];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "01/02/2020".to_string(),
+                count:      5,
+                percentage: 10.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "13/02/2020".to_string(),
+                count:      4,
+                percentage: 8.0,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date");
+    }
+
+    #[test]
+    fn validate_date_formats_ignores_ranked_null_rows() {
+        // `frequency --pct-nulls` emits the null row with a real (non-zero)
+        // rank. It is identified by its `--null-text` value AND a count equal
+        // to the column's null count, so it does not count as a sample —
+        // otherwise it fails to parse and strips an otherwise-valid format.
+        // The null label here is custom (`<MISSING>`), threaded in as
+        // `null_text`, proving the check honors a configured `--null-text`.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("d", "date:%Y-%m-%d")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "2020-01-15".to_string(),
+                count:      8,
+                percentage: 61.5,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "<MISSING>".to_string(),
+                count:      5,
+                percentage: 38.5,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs, "<MISSING>");
+        assert_eq!(entries[0].content_type, "date:%Y-%m-%d");
+    }
+
+    #[test]
+    fn downgrade_ignores_ranked_null_rows() {
+        // a ranked null row — its `--null-text` value plus a count equal to
+        // the column's null count — must not count as a sample: it would fail
+        // to parse and block the downgrade of an otherwise all-midnight
+        // datetime column.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("closed", "datetime:%m/%d/%Y %I:%M:%S %p")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      8,
+                percentage: 61.5,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 38.5,
+                rank:       2.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date:%m/%d/%Y");
+    }
+
+    #[test]
+    fn validate_date_formats_keeps_real_sample_sharing_null_count() {
+        // a real, non-null value whose count merely equals the column's null
+        // count must still be validated — identifying the null row by count
+        // alone would drop it. Here that sample (`2020-01-15`, ISO) disproves
+        // the inferred `%m/%d/%Y` suffix; only the genuine `(NULL)` row, which
+        // also matches `--null-text`, is excluded.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("d", "date:%m/%d/%Y")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "2020-01-15".to_string(),
+                count:      5,
+                percentage: 35.7,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "d".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 35.7,
+                rank:       2.0,
+            },
+        ];
+        validate_date_formats(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "date");
+    }
+
+    #[test]
+    fn downgrade_keeps_datetime_when_non_midnight_sample_shares_null_count() {
+        // a real non-midnight value whose count merely equals the column's
+        // null count must still block the downgrade — identifying the null row
+        // by count alone would drop it and wrongly reclassify the column as
+        // `date`. Only the genuine `(NULL)` row is excluded.
+        let mut entries = vec![DictionaryEntry {
+            null_count: 5,
+            ..entry_with_content_type("closed", "datetime:%m/%d/%Y %I:%M:%S %p")
+        }];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "11/15/2010 12:00:00 AM".to_string(),
+                count:      8,
+                percentage: 44.4,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "04/08/2015 10:00:58 AM".to_string(),
+                count:      5,
+                percentage: 27.8,
+                rank:       2.0,
+            },
+            FrequencyRecord {
+                field:      "closed".to_string(),
+                value:      "(NULL)".to_string(),
+                count:      5,
+                percentage: 27.8,
+                rank:       3.0,
+            },
+        ];
+        downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
+        assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
     }
 }

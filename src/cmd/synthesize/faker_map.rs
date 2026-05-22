@@ -289,7 +289,12 @@ define_locales! {
 /// generator (e.g. counter-backed for integers, UUIDv4 for strings) to honor
 /// the `unique_id` contract; today the classification round-trips through the
 /// dictionary but synthesize's output is not guaranteed unique.
-const NON_FAKER_TOKENS: &[&str] = &["category", "unique_id", "unknown"];
+///
+/// `date` and `datetime` are here because date columns are reproduced from the
+/// stats `Type` + min/max bounds via `build_date`, not a faker. Their optional
+/// `:<fmt>` strftime suffix only sets `build_date`'s output format (see
+/// `parse_date_format`); `is_faker_token` rejects the suffixed forms too.
+const NON_FAKER_TOKENS: &[&str] = &["category", "date", "datetime", "unique_id", "unknown"];
 
 /// Parse the duration cap (in seconds) from a `content_type` token.
 ///
@@ -320,10 +325,38 @@ pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
     }
 }
 
+/// Extract the chrono strftime output format from a `date:<fmt>` /
+/// `datetime:<fmt>` content_type token.
+///
+/// Returns `Some(fmt)` only when the `:<fmt>` suffix is present AND a
+/// syntactically valid chrono strftime string. Returns `None` for the bare
+/// `date` / `datetime` tokens (the caller — `build_date` via `next()` — then
+/// falls back to the hardcoded `%Y-%m-%d` / RFC 3339 output), for an empty or
+/// malformed suffix, and for any non-date token.
+///
+/// describegpt's `normalize_datetime_token` already validates the suffix before
+/// it reaches the dictionary, but synthesize also accepts hand-crafted
+/// dictionary input, so strftime validity is re-checked here — an invalid
+/// format would otherwise panic chrono's `format()` at render time.
+pub(crate) fn parse_date_format(content_type: &str) -> Option<String> {
+    let fmt = content_type
+        .strip_prefix("datetime:")
+        .or_else(|| content_type.strip_prefix("date:"))?;
+    if fmt.is_empty() || !crate::cmd::describegpt::dictionary::is_valid_strftime(fmt) {
+        return None;
+    }
+    Some(fmt.to_string())
+}
+
 /// Whether `content_type` maps to a faker (i.e. `content_type_to_value` would
 /// return `Some`). Used at generator-construction time to avoid a wasted RNG
 /// draw. Locale-agnostic: every faker token resolves under every locale
 /// (sparse locales fall back to EN data inside fake-rs).
+///
+/// `date` / `datetime` (bare or with a `:<fmt>` suffix) are never fakers —
+/// synthesize reproduces them via `build_date` from the stats `Type` + min/max
+/// bounds, so they are rejected up front before the vocab lookup (the suffixed
+/// forms are not in `CONTENT_TYPE_VOCAB` literally anyway).
 ///
 /// Also recognizes every form `parse_duration_cap` accepts — including
 /// malformed `duration:N` suffixes that degrade to the default cap — so the
@@ -332,6 +365,10 @@ pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
 pub(crate) fn is_faker_token(content_type: &str) -> bool {
     use crate::cmd::describegpt::dictionary::CONTENT_TYPE_VOCAB;
 
+    let base = content_type.split(':').next().unwrap_or(content_type);
+    if base == "date" || base == "datetime" {
+        return false;
+    }
     if parse_duration_cap(content_type).is_some() {
         return true;
     }
@@ -538,6 +575,42 @@ mod tests {
         // Non-duration tokens that just happen to start with "duration"
         // (no colon, no exact match) are NOT faker tokens.
         assert!(!is_faker_token("durationfoo"));
+    }
+
+    #[test]
+    fn parse_date_format_extracts_strftime_suffix() {
+        assert_eq!(
+            parse_date_format("date:%Y-%m-%d").as_deref(),
+            Some("%Y-%m-%d")
+        );
+        assert_eq!(
+            parse_date_format("datetime:%m/%d/%Y %I:%M:%S %p").as_deref(),
+            Some("%m/%d/%Y %I:%M:%S %p")
+        );
+        // colons inside the format survive — only the first prefix ':' is consumed
+        assert_eq!(
+            parse_date_format("datetime:%H:%M:%S").as_deref(),
+            Some("%H:%M:%S")
+        );
+        // bare tokens carry no format → None (caller uses the hardcoded fallback)
+        assert_eq!(parse_date_format("date"), None);
+        assert_eq!(parse_date_format("datetime"), None);
+        // a malformed strftime → None (would otherwise panic chrono's format())
+        assert_eq!(parse_date_format("date:%Q"), None);
+        // empty suffix → None
+        assert_eq!(parse_date_format("date:"), None);
+        // non-date tokens → None
+        assert_eq!(parse_date_format("email"), None);
+        assert_eq!(parse_date_format("duration:3600"), None);
+    }
+
+    #[test]
+    fn is_faker_token_rejects_date_tokens() {
+        // date/datetime are NOT fakers — synthesize reproduces them via build_date
+        assert!(!is_faker_token("date"));
+        assert!(!is_faker_token("datetime"));
+        assert!(!is_faker_token("date:%Y-%m-%d"));
+        assert!(!is_faker_token("datetime:%m/%d/%Y %I:%M:%S %p"));
     }
 
     #[test]

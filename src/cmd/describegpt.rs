@@ -227,6 +227,9 @@ describegpt options:
                            If it starts with "file:" prefix, the frequency data is read from the
                            specified CSV file instead of running the frequency command.
                            e.g. "file:my_custom_frequency.csv"
+                           A "file:"-backed CSV is assumed to use frequency's default "(NULL)"
+                           null text; a custom --null-text in a file-supplied CSV is not
+                           recognized when validating inferred date/datetime formats.
                            [default: --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
@@ -1129,8 +1132,13 @@ FIRST-PASS DATA DICTIONARY (JSON):
 {{ first_pass_dictionary }}
 
 {% if infer_content_type %}For Content Type, the same rules from the first pass apply:
-- Choose exactly ONE token from the fixed vocabulary, lowercased.
+- Choose exactly ONE token from the fixed vocabulary (lowercased; the ":<fmt>" suffix on
+  date/datetime tokens is case-sensitive chrono strftime syntax).
 - The `duration:N` suffix form is allowed (seconds upper bound).
+- "date"/"datetime" tokens carry a chrono strftime ":<fmt>" suffix matching the column's raw
+  values (e.g. "datetime:%m/%d/%Y %I:%M:%S %p"). The token itself is re-derived deterministically
+  by qsv from the Type column; you may correct or add the ":<fmt>" suffix using cross-field
+  context, but must NOT reclassify a Date/DateTime column to a non-date token.
 - "unique_id" is RESERVED and set deterministically by qsv based on cardinality; for any field
   whose first-pass Content Type is "unique_id", OMIT the `content_type` key entirely from your
   output for that field — qsv will re-apply the deterministic value. Do not echo "unique_id"
@@ -1139,7 +1147,8 @@ FIRST-PASS DATA DICTIONARY (JSON):
   "street1" originally classified as "free_text" should become "address_street" once you see
   the sibling city / state / zip columns.
 - If you genuinely cannot improve a field's Content Type, keep the first-pass value verbatim.
-Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" form).
+Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" and
+"date:<fmt>" / "datetime:<fmt>" suffix forms).
 
 {% endif %}Return the results in the SAME JSON shape as the first pass:
 {% raw %}{
@@ -2651,6 +2660,31 @@ fn unescape_llm_output_str(s: &str) -> String {
         + "\n\n"
 }
 
+/// The `--null-text` configured for the `frequency` command via `--freq-options`,
+/// or `frequency`'s default (`(NULL)`) when none is set. `frequency` writes the
+/// null row's `value` with exactly this text; the dictionary date-format checks
+/// pair it with the column null count to recognize that row.
+///
+/// When frequency data is supplied via a `file:`, the configured null text is
+/// unknown, so the default `(NULL)` is assumed. A `file:`-backed CSV generated
+/// with BOTH a custom `--null-text` AND `--pct-nulls` may therefore leave its
+/// ranked null row among the date-format samples — a documented limitation of
+/// `file:` input (see the `--freq-options` help).
+fn configured_null_text(freq_options: &str) -> &str {
+    let mut tokens = freq_options.split_whitespace();
+    while let Some(tok) = tokens.next() {
+        if let Some(val) = tok.strip_prefix("--null-text=") {
+            return val;
+        }
+        if tok == "--null-text" {
+            if let Some(val) = tokens.next() {
+                return val;
+            }
+        }
+    }
+    "(NULL)"
+}
+
 /// Run the shared dictionary-entry build pipeline used by both dictionary output
 /// paths: parse the stats + frequency CSVs, merge code-generated entries with any
 /// LLM-provided labels / descriptions, and return the combined list.
@@ -2679,11 +2713,22 @@ fn build_combined_dictionary_entries(
         args.flag_infer_content_type,
     )
     .unwrap_or_default();
-    Ok(combine_dictionary_entries(
-        code_entries,
-        &llm_fields,
-        args.flag_infer_content_type,
-    ))
+    let mut entries =
+        combine_dictionary_entries(code_entries, &llm_fields, args.flag_infer_content_type);
+    if args.flag_infer_content_type {
+        let null_text = configured_null_text(&args.flag_freq_options);
+        // strip any LLM-inferred date/datetime strftime suffix that does not
+        // actually parse the column's real values
+        dictionary::validate_date_formats(&mut entries, &frequency_records, null_text);
+        // reclassify a datetime column as date when its frequency-sampled
+        // values are all at midnight (a date stored with a zero time-of-day)
+        dictionary::downgrade_all_midnight_datetime_columns(
+            &mut entries,
+            &frequency_records,
+            null_text,
+        );
+    }
+    Ok(entries)
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
@@ -2722,12 +2767,26 @@ fn build_combined_dictionary_entries_two_pass(
         args.flag_infer_content_type,
     )
     .unwrap_or_default();
-    Ok(combine_dictionary_entries_with_baseline(
+    let mut entries = combine_dictionary_entries_with_baseline(
         code_entries,
         &baseline_fields,
         &refine_fields,
         args.flag_infer_content_type,
-    ))
+    );
+    if args.flag_infer_content_type {
+        let null_text = configured_null_text(&args.flag_freq_options);
+        // strip any LLM-inferred date/datetime strftime suffix that does not
+        // actually parse the column's real values
+        dictionary::validate_date_formats(&mut entries, &frequency_records, null_text);
+        // reclassify a datetime column as date when its frequency-sampled
+        // values are all at midnight (a date stored with a zero time-of-day)
+        dictionary::downgrade_all_midnight_datetime_columns(
+            &mut entries,
+            &frequency_records,
+            null_text,
+        );
+    }
+    Ok(entries)
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`

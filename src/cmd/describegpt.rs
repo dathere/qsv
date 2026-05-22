@@ -227,6 +227,9 @@ describegpt options:
                            If it starts with "file:" prefix, the frequency data is read from the
                            specified CSV file instead of running the frequency command.
                            e.g. "file:my_custom_frequency.csv"
+                           A "file:"-backed CSV is assumed to use frequency's default "(NULL)"
+                           null text; a custom --null-text in a file-supplied CSV is not
+                           recognized when validating inferred date/datetime formats.
                            [default: --rank-strategy dense]
     --enum-threshold <n>   The threshold for compiling Enumerations with the frequency command
                            before bucketing other unique values into the "Other" category.
@@ -2660,9 +2663,13 @@ fn unescape_llm_output_str(s: &str) -> String {
 /// The `--null-text` configured for the `frequency` command via `--freq-options`,
 /// or `frequency`'s default (`(NULL)`) when none is set. `frequency` writes the
 /// null row's `value` with exactly this text; the dictionary date-format checks
-/// pair it with the column null count to recognize that row. When frequency
-/// data is supplied via a `file:`, the null text is unknown and the default is
-/// assumed.
+/// pair it with the column null count to recognize that row.
+///
+/// When frequency data is supplied via a `file:`, the configured null text is
+/// unknown, so the default `(NULL)` is assumed. A `file:`-backed CSV generated
+/// with BOTH a custom `--null-text` AND `--pct-nulls` may therefore leave its
+/// ranked null row among the date-format samples — a documented limitation of
+/// `file:` input (see the `--freq-options` help).
 fn configured_null_text(freq_options: &str) -> &str {
     let mut tokens = freq_options.split_whitespace();
     while let Some(tok) = tokens.next() {

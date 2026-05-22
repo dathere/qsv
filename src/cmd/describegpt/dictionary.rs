@@ -2135,7 +2135,7 @@ mod tests {
     }
 
     #[test]
-    fn downgrade_keeps_datetime_when_a_sample_is_unparseable() {
+    fn downgrade_keeps_datetime_when_a_sample_is_unparsable() {
         // a usable frequency value that does not parse with the inferred
         // format blocks the downgrade — a non-parsing real value could carry
         // a non-midnight time, so it must not be silently dropped

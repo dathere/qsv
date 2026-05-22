@@ -314,7 +314,15 @@ fn describegpt_dictionary_relationships() {
         .args(["--format", "JSON"])
         .arg("--no-cache");
 
-    let stdout: String = wrk.stdout(&mut cmd);
+    // Capture and assert success on the same run, so a non-zero exit that
+    // still emits parseable JSON on stdout cannot mask a failure.
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        output.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let stdout = String::from_utf8(output.stdout).expect("describegpt stdout should be UTF-8");
     let parsed: serde_json::Value =
         serde_json::from_str(&stdout).expect("describegpt JSON output should parse");
     let response = parsed

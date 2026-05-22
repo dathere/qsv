@@ -10,13 +10,15 @@ use rand::{RngExt, rngs::StdRng};
 
 use super::generator::draw_null;
 
-/// Numeric domain an `ordered` relationship group operates in. Date values are
-/// carried as whole days since the UNIX epoch, datetimes as seconds — matching
-/// `generator::parse_epoch`.
+/// The value domain an `ordered` relationship group is generated in. Date
+/// values are carried as whole days since the UNIX epoch, datetimes as seconds
+/// — matching `generator::parse_epoch`. `Numeric` covers both Integer and Float
+/// members; per-member integer-vs-float formatting is tracked separately (see
+/// `Ordered::is_int`) so a mixed group never drifts an Integer column to a
+/// float string.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OrderedKind {
-    Integer,
-    Float,
+    Numeric,
     Date,
     DateTime,
 }
@@ -47,6 +49,10 @@ pub(crate) enum GroupGenerator {
         /// `member_cols[0]` is the anchor.
         member_cols:    Vec<usize>,
         kind:           OrderedKind,
+        /// Per-member flag (`Numeric` groups only): format the member as an
+        /// integer when true, a float when false. Lets a mixed Integer/Float
+        /// group keep each column's declared type. Ignored for Date/DateTime.
+        is_int:         Vec<bool>,
         /// describegpt-inferred chrono strftime format for date members.
         date_format:    Option<String>,
         /// Anchor quartile buckets, in the numeric domain.
@@ -73,9 +79,9 @@ pub(crate) enum GroupGenerator {
         marginals:   Vec<Vec<(f64, f64)>>,
         /// Per-member flag: round the emitted value to an integer.
         is_int:      Vec<bool>,
-        /// Mean null ratio of the members — when the group draws null, every
-        /// member is emitted null.
-        null_ratio:  f64,
+        /// Per-member null ratio. Each member draws null independently, so its
+        /// marginal null ratio is preserved and nulls do not all co-occur.
+        null_ratios: Vec<f64>,
     },
 }
 
@@ -114,25 +120,31 @@ impl GroupGenerator {
             GroupGenerator::Ordered {
                 member_cols,
                 kind,
+                is_int,
                 date_format,
                 anchor_buckets,
                 gap_buckets,
                 null_ratio,
             } => {
-                // A null anchor nulls the whole chain.
+                // A null anchor nulls the whole chain — a monotonic chain
+                // `m[i] = m[i-1] + gap` cannot have a non-null member sitting
+                // after a null predecessor.
                 if draw_null(*null_ratio, rng) {
                     return member_cols.iter().map(|&c| (c, String::new())).collect();
                 }
                 let mut value = sample_bucket(anchor_buckets, rng);
                 let mut out = Vec::with_capacity(member_cols.len());
-                out.push((member_cols[0], format_ordered(value, *kind, date_format)));
+                out.push((
+                    member_cols[0],
+                    format_ordered(value, *kind, is_int[0], date_format),
+                ));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
                     // Gap buckets are clamped to >= 0, so `value` is
                     // non-decreasing along the chain.
                     value += sample_bucket(gaps, rng);
                     out.push((
                         member_cols[i + 1],
-                        format_ordered(value, *kind, date_format),
+                        format_ordered(value, *kind, is_int[i + 1], date_format),
                     ));
                 }
                 out
@@ -143,11 +155,8 @@ impl GroupGenerator {
                 cholesky_l,
                 marginals,
                 is_int,
-                null_ratio,
+                null_ratios,
             } => {
-                if draw_null(*null_ratio, rng) {
-                    return col_indices.iter().map(|&c| (c, String::new())).collect();
-                }
                 let k = col_indices.len();
                 // k iid standard normals.
                 let z: Vec<f64> = (0..k).map(|_| standard_normal(rng)).collect();
@@ -161,7 +170,13 @@ impl GroupGenerator {
                         x += cholesky_l[i][j] * z_j;
                     }
                     let value = quantile_value(&marginals[i], normal_cdf(x));
-                    let text = if is_int[i] {
+                    // Each member draws null independently (after the copula
+                    // values are computed, so the RNG sequence stays fixed) —
+                    // its marginal null ratio is preserved and nulls do not
+                    // all co-occur.
+                    let text = if draw_null(null_ratios[i], rng) {
+                        String::new()
+                    } else if is_int[i] {
                         #[allow(clippy::cast_possible_truncation)]
                         {
                             (value.round() as i64).to_string()
@@ -188,11 +203,23 @@ fn sample_bucket(buckets: &[(f64, f64)], rng: &mut StdRng) -> f64 {
 }
 
 /// Format a numeric-domain value back into the member column's textual form.
-fn format_ordered(value: f64, kind: OrderedKind, date_format: &Option<String>) -> String {
+/// `is_int` selects integer vs float rendering for a `Numeric` member; it is
+/// ignored for Date/DateTime.
+fn format_ordered(
+    value: f64,
+    kind: OrderedKind,
+    is_int: bool,
+    date_format: &Option<String>,
+) -> String {
     #[allow(clippy::cast_possible_truncation)]
     match kind {
-        OrderedKind::Integer => (value.round() as i64).to_string(),
-        OrderedKind::Float => value.to_string(),
+        OrderedKind::Numeric => {
+            if is_int {
+                (value.round() as i64).to_string()
+            } else {
+                value.to_string()
+            }
+        },
         OrderedKind::Date | OrderedKind::DateTime => {
             let is_datetime = kind == OrderedKind::DateTime;
             // Date values are whole days since the epoch; datetimes are seconds.

@@ -121,18 +121,16 @@ synthesize options:
     --no-relationships     Disable inter-column relationship modeling. Every
                            column is generated independently even when the
                            dictionary declares a `relationships` array.
-    --joint-cardinality-cap <n>
-                           Maximum number of distinct value-tuples a `joint`
-                           relationship may have. A joint group above this cap
-                           falls back to independent generation (or aborts
-                           under --strict-relationships). 0 means unlimited.
-                           [default: 100000]
-    --correlation-threshold <f>
-                           Minimum absolute Spearman correlation for a pair of
-                           columns to stay in a `correlated` relationship.
-                           Weakly-correlated members are dropped. [default: 0.3]
-    --strict-relationships
-                           Abort instead of warning-and-degrading when a
+    --joint-cardinality-cap <n>  Maximum number of distinct value-tuples a
+                           `joint` relationship may have. A joint group above
+                           this cap falls back to independent generation (or
+                           aborts under --strict-relationships). 0 means
+                           unlimited. [default: 100000]
+    --correlation-threshold <f>  Minimum absolute Spearman correlation for a
+                           pair of columns to stay in a `correlated`
+                           relationship. Weakly-correlated members are dropped.
+                           [default: 0.3]
+    --strict-relationships  Abort instead of warning-and-degrading when a
                            declared relationship fails validation.
     -j, --jobs <arg>       Number of jobs to use for the internal `stats` and
                            `frequency` runs.

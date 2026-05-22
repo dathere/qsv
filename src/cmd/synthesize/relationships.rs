@@ -365,11 +365,14 @@ fn resolve_ordered(
         );
         return Ok(None);
     };
+    // Per-member integer formatting — keeps an Integer column emitting integers
+    // even in a mixed Integer/Float ordered group.
+    let is_int: Vec<bool> = types.iter().map(|t| *t == "Integer").collect();
 
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
     let anchor_buckets: Vec<(f64, f64)> = match kind {
-        OrderedKind::Integer | OrderedKind::Float => match numeric_quartile_buckets(anchor_stats) {
+        OrderedKind::Numeric => match numeric_quartile_buckets(anchor_stats) {
             Some(buckets) => buckets,
             None => {
                 log::warn!(
@@ -448,6 +451,7 @@ fn resolve_ordered(
     Ok(Some(GroupGenerator::Ordered {
         member_cols,
         kind,
+        is_int,
         date_format,
         anchor_buckets,
         gap_buckets,
@@ -455,13 +459,13 @@ fn resolve_ordered(
     }))
 }
 
-/// Classify the shared domain of an ordered group's member columns. Returns
-/// `None` for a mixed or non-orderable set of `stats` types.
+/// Classify the shared domain of an ordered group's member columns. Numeric
+/// members (Integer and/or Float) share the `Numeric` domain — per-member
+/// integer formatting is tracked separately. Returns `None` for a mixed or
+/// non-orderable set of `stats` types.
 fn classify_ordered_kind(types: &[&str]) -> Option<OrderedKind> {
-    if types.iter().all(|t| *t == "Integer") {
-        Some(OrderedKind::Integer)
-    } else if types.iter().all(|t| matches!(*t, "Integer" | "Float")) {
-        Some(OrderedKind::Float)
+    if types.iter().all(|t| matches!(*t, "Integer" | "Float")) {
+        Some(OrderedKind::Numeric)
     } else if types.iter().all(|t| *t == "Date") {
         Some(OrderedKind::Date)
     } else if types.iter().all(|t| *t == "DateTime") {
@@ -624,10 +628,12 @@ fn resolve_correlated(
         .map(|&a| kept.iter().map(|&b| corr[a][b]).collect())
         .collect();
 
-    // Per-column marginals (quartile buckets) and integer flags.
+    // Per-column marginals (quartile buckets), integer flags, and null ratios.
+    // Each member keeps its own marginal null ratio — the copula couples the
+    // non-null values without forcing nulls to co-occur.
     let mut marginals = Vec::with_capacity(kept_cols.len());
     let mut is_int = Vec::with_capacity(kept_cols.len());
-    let mut null_sum = 0.0_f64;
+    let mut null_ratios = Vec::with_capacity(kept_cols.len());
     for &col in &kept_cols {
         let sr = &stats[col];
         let Some(buckets) = numeric_quartile_buckets(sr) else {
@@ -640,10 +646,8 @@ fn resolve_correlated(
         };
         marginals.push(buckets);
         is_int.push(sr.r#type == "Integer");
-        null_sum += compute_null_ratio(sr.nullcount, params.total_rows);
+        null_ratios.push(compute_null_ratio(sr.nullcount, params.total_rows));
     }
-    #[allow(clippy::cast_precision_loss)]
-    let null_ratio = null_sum / kept_cols.len() as f64;
 
     let cholesky_l = cholesky_ridge(&kept_corr);
 
@@ -654,7 +658,7 @@ fn resolve_correlated(
         cholesky_l,
         marginals,
         is_int,
-        null_ratio,
+        null_ratios,
     }))
 }
 

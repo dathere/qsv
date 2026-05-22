@@ -1,7 +1,7 @@
 {
   "name": "qsv-synthesize",
   "version": "20.1.0",
-  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. Fully reproducible with `--seed`.",
+  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`.",
   "category": "generation",
   "command": {
     "subcommand": "synthesize",
@@ -22,7 +22,7 @@
       {
         "flag": "--correlation-threshold",
         "type": "string",
-        "description": "",
+        "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped.",
         "default": "0.3"
       },
       {
@@ -49,7 +49,7 @@
       {
         "flag": "--joint-cardinality-cap",
         "type": "string",
-        "description": "",
+        "description": "Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited.",
         "default": "100000"
       },
       {
@@ -87,7 +87,7 @@
       {
         "flag": "--strict-relationships",
         "type": "flag",
-        "description": ""
+        "description": "Abort instead of warning-and-degrading when a declared relationship fails validation."
       }
     ]
   },

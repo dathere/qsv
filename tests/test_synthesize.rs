@@ -932,7 +932,7 @@ fn synthesize_joint_categorical_only_real_tuples() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 201);
     assert_eq!(got[0], svec!["city", "state", "zip"]);
 
@@ -990,7 +990,7 @@ fn synthesize_joint_cardinality_cap_degrades() {
     .arg(wrk.path("dict.json"))
     .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 26, "should degrade gracefully, not abort");
 }
 
@@ -1089,7 +1089,7 @@ fn synthesize_relationship_invalid_member_dropped() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 16);
 }
 
@@ -1135,7 +1135,7 @@ fn synthesize_ordered_dates_preserves_order() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 301);
     assert_eq!(got[0], svec!["created_date", "closed_date"]);
 
@@ -1194,7 +1194,7 @@ fn synthesize_ordered_numeric_offset() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 301);
     for (i, row) in got[1..].iter().enumerate() {
         let subtotal: i64 = row[0].parse().expect("subtotal should be an integer");
@@ -1202,6 +1202,62 @@ fn synthesize_ordered_numeric_offset() {
         assert!(
             total >= subtotal,
             "row {i}: total {total} is less than subtotal {subtotal}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_ordered_mixed_int_float_keeps_per_member_type() {
+    // An ordered group with a mix of Integer and Float members must keep each
+    // column's declared type — the Integer member must not drift to a float
+    // string just because the group also contains a Float member.
+    let wrk = Workdir::new("synthesize_ordered_mixed");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["count", "amount"],
+            svec!["3", "10.5"],
+            svec!["7", "25.2"],
+            svec!["2", "8.1"],
+            svec!["12", "40.9"],
+            svec!["5", "18.3"],
+            svec!["9", "33.7"],
+            svec!["4", "14.0"],
+            svec!["11", "38.5"],
+        ],
+    );
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "count", "type": "Integer"},
+                {"name": "amount", "type": "Float"}
+            ],
+            "relationships": [
+                {"kind": "ordered", "members": ["count", "amount"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 201);
+    for (i, row) in got[1..].iter().enumerate() {
+        // The Integer member must render as an integer — no decimal point.
+        assert!(
+            !row[0].contains('.') && row[0].parse::<i64>().is_ok(),
+            "row {i}: count '{}' should be an integer, not a float string",
+            row[0]
+        );
+        // The Float member parses as a float.
+        assert!(
+            row[1].parse::<f64>().is_ok(),
+            "row {i}: amount '{}' should parse as a float",
+            row[1]
         );
     }
 }
@@ -1256,7 +1312,7 @@ fn synthesize_ordered_clamps_source_violations() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 101);
     for (i, row) in got[1..].iter().enumerate() {
         assert!(
@@ -1348,7 +1404,7 @@ fn synthesize_correlated_numeric_preserves_correlation() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 601);
 
     let xs: Vec<f64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
@@ -1373,7 +1429,7 @@ fn synthesize_correlated_marginals_unchanged() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let xs: Vec<f64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
     let ys: Vec<f64> = got[1..].iter().map(|r| r[1].parse().unwrap()).collect();
 

@@ -14,27 +14,29 @@ use crate::{CliError, CliResult, util};
 
 /// The whole data-dictionary JSON file produced by
 /// `describegpt --dictionary --infer-content-type --format JSON`.
-/// Only `fields[].name` and `fields[].content_type` are consumed; every other
-/// key is ignored.
+/// `fields[].name` / `fields[].content_type` drive faker selection;
+/// `relationships` drives inter-column joint generation. Every other key is
+/// ignored.
 #[derive(Debug, Deserialize)]
 struct DictionaryFile {
-    fields: Vec<SynthDictField>,
+    fields:        Vec<SynthDictField>,
+    #[serde(default)]
+    relationships: Vec<SynthRelationship>,
 }
 
-/// Extract the `fields` array from a describegpt JSON payload. `describegpt
+/// Extract the dictionary payload from a describegpt JSON document. `describegpt
 /// --format JSON` wraps its output as `{"Dictionary": {"response": {"fields":
 /// [...], ...}, ...}}`, so peel that wrapper when present. Also accept a raw
 /// `{"fields": [...]}` payload so users can hand-author / pre-extract a
 /// dictionary file without going through describegpt.
-fn parse_dictionary_payload(raw: &str) -> Result<Vec<SynthDictField>, serde_json::Error> {
+fn parse_dictionary_payload(raw: &str) -> Result<DictionaryFile, serde_json::Error> {
     let value: serde_json::Value = serde_json::from_str(raw)?;
     let inner = value
         .get("Dictionary")
         .and_then(|d| d.get("response"))
         .cloned()
         .unwrap_or(value);
-    let dict: DictionaryFile = serde_json::from_value(inner)?;
-    Ok(dict.fields)
+    serde_json::from_value(inner)
 }
 
 /// One field entry in the dictionary. Deliberately lenient: `content_type` is
@@ -45,6 +47,22 @@ struct SynthDictField {
     name:         String,
     #[serde(default)]
     content_type: Option<String>,
+}
+
+/// One inter-column relationship declared in the data dictionary. Deliberately
+/// lenient, like `SynthDictField`: a relationship with an unrecognized `kind`,
+/// fewer than two members, or members that don't exist in the source is
+/// dropped while the row-emission schedule is built (see `relationships.rs`).
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct SynthRelationship {
+    /// Relationship class: `"joint"`, `"ordered"`, or `"correlated"`.
+    pub(crate) kind:    String,
+    /// Member column names. For `ordered` groups they are listed low-to-high.
+    pub(crate) members: Vec<String>,
+    /// Anchor column for `ordered` groups; defaults to `members[0]` when absent.
+    /// Unused by other kinds.
+    #[serde(default)]
+    pub(crate) anchor:  Option<String>,
 }
 
 /// Build the field-name → `content_type` map from parsed dictionary fields.
@@ -62,10 +80,14 @@ fn fields_to_map(fields: Vec<SynthDictField>) -> HashMap<String, String> {
         .collect()
 }
 
-pub(crate) fn load_content_types(path: &str) -> CliResult<HashMap<String, String>> {
+/// Load the field-name → `content_type` map and the declared inter-column
+/// relationships from a dictionary file on disk.
+pub(crate) fn load_dictionary(
+    path: &str,
+) -> CliResult<(HashMap<String, String>, Vec<SynthRelationship>)> {
     let contents = fs::read_to_string(path)
         .map_err(|e| CliError::Other(format!("Failed to read dictionary file '{path}': {e}")))?;
-    let fields = parse_dictionary_payload(&contents).map_err(|e| {
+    let dict = parse_dictionary_payload(&contents).map_err(|e| {
         CliError::Other(format!(
             "Failed to parse dictionary file '{path}' as JSON. `synthesize` expects a dictionary \
              produced with `describegpt --dictionary --infer-content-type --format JSON` (the \
@@ -73,17 +95,22 @@ pub(crate) fn load_content_types(path: &str) -> CliResult<HashMap<String, String
              `{{\"fields\": [...]}}` payload). Parser error: {e}"
         ))
     })?;
-    Ok(fields_to_map(fields))
+    Ok((fields_to_map(dict.fields), dict.relationships))
 }
 
-pub(crate) fn infer_content_types(input_path: &str) -> CliResult<HashMap<String, String>> {
+/// Infer the field-name → `content_type` map and inter-column relationships by
+/// invoking `describegpt` on the input. Relationships are only populated when
+/// `describegpt` emits a `relationships` array (two-pass dictionary mode).
+pub(crate) fn infer_dictionary(
+    input_path: &str,
+) -> CliResult<(HashMap<String, String>, Vec<SynthRelationship>)> {
     let (stdout, _stderr) = util::run_qsv_cmd(
         "describegpt",
         &["--dictionary", "--infer-content-type", "--format", "JSON"],
         input_path,
         "  Inferred Content Types via describegpt",
     )?;
-    let fields = parse_dictionary_payload(&stdout).map_err(|e| {
+    let dict = parse_dictionary_payload(&stdout).map_err(|e| {
         CliError::Other(format!(
             "Failed to parse describegpt dictionary output as JSON: {e}. Make sure an LLM is \
              configured — either set `QSV_LLM_APIKEY` (or `--api-key`) for a hosted provider, or \
@@ -91,7 +118,7 @@ pub(crate) fn infer_content_types(input_path: &str) -> CliResult<HashMap<String,
              (e.g. LM Studio, Ollama)."
         ))
     })?;
-    Ok(fields_to_map(fields))
+    Ok((fields_to_map(dict.fields), dict.relationships))
 }
 
 #[cfg(test)]
@@ -107,8 +134,8 @@ mod tests {
             ],
             "enum_threshold": 10
         }"#;
-        let fields = parse_dictionary_payload(json).unwrap();
-        let map = fields_to_map(fields);
+        let dict = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(dict.fields);
         assert_eq!(map.get("email").unwrap(), "email");
         assert_eq!(map.get("age").unwrap(), "unknown");
     }
@@ -122,8 +149,8 @@ mod tests {
                 {"name": "c", "type": "String", "content_type": "  "}
             ]
         }"#;
-        let fields = parse_dictionary_payload(json).unwrap();
-        let map = fields_to_map(fields);
+        let dict = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(dict.fields);
         assert_eq!(map.get("a").unwrap(), "unknown");
         assert_eq!(map.get("b").unwrap(), "unknown");
         assert_eq!(map.get("c").unwrap(), "unknown");
@@ -148,9 +175,37 @@ mod tests {
                 "token_usage": {"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3}
             }
         }"#;
-        let fields = parse_dictionary_payload(json).unwrap();
-        let map = fields_to_map(fields);
+        let dict = parse_dictionary_payload(json).unwrap();
+        let map = fields_to_map(dict.fields);
         assert_eq!(map.get("email").unwrap(), "email");
         assert_eq!(map.get("zip").unwrap(), "postal_code");
+    }
+
+    #[test]
+    fn parses_relationships_array() {
+        let json = r#"{
+            "fields": [
+                {"name": "city", "type": "String"},
+                {"name": "state", "type": "String"}
+            ],
+            "relationships": [
+                {"kind": "joint", "members": ["city", "state"]},
+                {"kind": "ordered", "members": ["start", "end"], "anchor": "start"}
+            ]
+        }"#;
+        let dict = parse_dictionary_payload(json).unwrap();
+        assert_eq!(dict.relationships.len(), 2);
+        assert_eq!(dict.relationships[0].kind, "joint");
+        assert_eq!(dict.relationships[0].members, vec!["city", "state"]);
+        assert!(dict.relationships[0].anchor.is_none());
+        assert_eq!(dict.relationships[1].kind, "ordered");
+        assert_eq!(dict.relationships[1].anchor.as_deref(), Some("start"));
+    }
+
+    #[test]
+    fn missing_relationships_defaults_to_empty() {
+        let json = r#"{"fields": [{"name": "a", "type": "String"}]}"#;
+        let dict = parse_dictionary_payload(json).unwrap();
+        assert!(dict.relationships.is_empty());
     }
 }

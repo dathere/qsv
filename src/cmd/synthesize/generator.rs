@@ -438,7 +438,7 @@ impl ColumnGenerator {
 }
 
 /// `nullcount / total_rows`, clamped to `[0.0, 1.0]`.
-fn compute_null_ratio(nullcount: u64, total_rows: u64) -> f64 {
+pub(crate) fn compute_null_ratio(nullcount: u64, total_rows: u64) -> f64 {
     if total_rows == 0 {
         return 0.0;
     }
@@ -448,7 +448,7 @@ fn compute_null_ratio(nullcount: u64, total_rows: u64) -> f64 {
 }
 
 /// Decide whether this cell should be null, given the column's null ratio.
-fn draw_null(null_ratio: f64, rng: &mut StdRng) -> bool {
+pub(crate) fn draw_null(null_ratio: f64, rng: &mut StdRng) -> bool {
     if null_ratio <= 0.0 {
         false
     } else if null_ratio >= 1.0 {
@@ -661,35 +661,37 @@ fn build_faker_pool(
     if pool.is_empty() { None } else { Some(pool) }
 }
 
-/// Build a quartile-bucketed numeric generator. Falls back to a single
-/// `[min, max]` bucket when quartiles are missing/inconsistent, and to `Empty`
-/// when there is no usable numeric range at all.
+/// Build a quartile-bucketed numeric generator. Falls back to `Empty` when
+/// there is no usable numeric range at all.
 fn build_numeric(stats: &StatsRecord, is_int: bool, null_ratio: f64) -> ColumnGenerator {
-    let min = parse_f64(&stats.min);
-    let max = parse_f64(&stats.max);
-    let (Some(lo), Some(hi)) = (min, max) else {
-        return ColumnGenerator::Empty;
-    };
-    if hi < lo {
-        return ColumnGenerator::Empty;
+    match numeric_quartile_buckets(stats) {
+        Some(buckets) => ColumnGenerator::NumericQuantile {
+            buckets,
+            is_int,
+            null_ratio,
+        },
+        None => ColumnGenerator::Empty,
     }
+}
 
+/// Quartile buckets for a numeric column, derived from its `stats` min/max and
+/// quartiles. Falls back to a single `[min, max]` bucket when quartiles are
+/// missing/inconsistent; returns `None` when there is no usable numeric range.
+pub(crate) fn numeric_quartile_buckets(stats: &StatsRecord) -> Option<Vec<(f64, f64)>> {
+    let lo = parse_f64(&stats.min)?;
+    let hi = parse_f64(&stats.max)?;
+    if hi < lo {
+        return None;
+    }
     let q1 = stats.addl_cols.get("q1").and_then(|s| parse_f64(s));
     let q2 = stats.addl_cols.get("q2_median").and_then(|s| parse_f64(s));
     let q3 = stats.addl_cols.get("q3").and_then(|s| parse_f64(s));
-
-    let buckets = match (q1, q2, q3) {
+    Some(match (q1, q2, q3) {
         (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
             vec![(lo, a), (a, b), (b, c), (c, hi)]
         },
         _ => vec![(lo, hi)],
-    };
-
-    ColumnGenerator::NumericQuantile {
-        buckets,
-        is_int,
-        null_ratio,
-    }
+    })
 }
 
 /// Build a quartile-bucketed date/datetime generator. Bucket bounds are
@@ -705,15 +707,30 @@ fn build_date(
     null_ratio: f64,
     date_format: Option<String>,
 ) -> ColumnGenerator {
-    let min = parse_epoch(&stats.min, is_datetime);
-    let max = parse_epoch(&stats.max, is_datetime);
-    let (Some(lo), Some(hi)) = (min, max) else {
-        return ColumnGenerator::Empty;
-    };
-    if hi < lo {
-        return ColumnGenerator::Empty;
+    match date_quartile_buckets(stats, is_datetime) {
+        Some(buckets) => ColumnGenerator::DateQuantile {
+            buckets,
+            is_datetime,
+            date_format,
+            null_ratio,
+        },
+        None => ColumnGenerator::Empty,
     }
+}
 
+/// Quartile buckets for a date/datetime column. Bounds are *days since the UNIX
+/// epoch* for `Date` and *seconds since the UNIX epoch* for `DateTime` — see
+/// `parse_epoch`. Falls back to a single `[min, max]` bucket when quartiles are
+/// missing/inconsistent; returns `None` when there is no usable range.
+pub(crate) fn date_quartile_buckets(
+    stats: &StatsRecord,
+    is_datetime: bool,
+) -> Option<Vec<(i64, i64)>> {
+    let lo = parse_epoch(&stats.min, is_datetime)?;
+    let hi = parse_epoch(&stats.max, is_datetime)?;
+    if hi < lo {
+        return None;
+    }
     let q1 = stats
         .addl_cols
         .get("q1")
@@ -726,20 +743,12 @@ fn build_date(
         .addl_cols
         .get("q3")
         .and_then(|s| parse_epoch(s, is_datetime));
-
-    let buckets = match (q1, q2, q3) {
+    Some(match (q1, q2, q3) {
         (Some(a), Some(b), Some(c)) if lo <= a && a <= b && b <= c && c <= hi => {
             vec![(lo, a), (a, b), (b, c), (c, hi)]
         },
         _ => vec![(lo, hi)],
-    };
-
-    ColumnGenerator::DateQuantile {
-        buckets,
-        is_datetime,
-        date_format,
-        null_ratio,
-    }
+    })
 }
 
 /// Build a boolean generator, deriving the true/false ratio from the frequency
@@ -772,7 +781,7 @@ fn build_boolean(freqs: &[&FrequencyRecord], null_ratio: f64) -> ColumnGenerator
 /// Parse a numeric stats value; empty string and non-finite (NaN/±∞) values
 /// return `None`. Non-finite endpoints would make `rng.random_range(lo..hi)`
 /// panic, so they must be rejected here.
-fn parse_f64(s: &str) -> Option<f64> {
+pub(crate) fn parse_f64(s: &str) -> Option<f64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         None
@@ -787,7 +796,7 @@ fn parse_f64(s: &str) -> Option<f64> {
 /// max date (stats min/max/q* values are always at midnight, so sampling over
 /// seconds gives the max-day a single tick out of an 86,400-tick day). For
 /// `DateTime` columns we keep seconds since the UNIX epoch.
-fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
+pub(crate) fn parse_epoch(s: &str, is_datetime: bool) -> Option<i64> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
         return None;

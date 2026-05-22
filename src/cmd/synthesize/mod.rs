@@ -32,7 +32,26 @@ uuid, phone, address parts, etc.) ignore these stats — truncating them would
 corrupt their format, so their pools are reproduced verbatim. Frequency-
 enumerated values are always reproduced verbatim and are never truncated.
 
-Columns are generated independently — cross-column correlation is not modeled.
+When the Data Dictionary declares `relationships`, the named columns are
+generated *jointly* so inter-column structure survives into each output row:
+
+  * joint      — categorical / functional-dependency groups (e.g.
+                 city/state/zip). Whole value-tuples are sampled from the
+                 source by frequency, so only real co-occurring combinations
+                 are emitted.
+  * ordered    — columns that must keep a monotonic order within a row (e.g.
+                 created_date <= closed_date). The anchor column is generated
+                 from its own distribution; each later column is the anchor
+                 plus a non-negative gap drawn from the gap distribution
+                 learned from the source.
+  * correlated — numeric columns whose correlation should be preserved. A
+                 Gaussian copula couples the columns while leaving each
+                 column's own distribution unchanged.
+
+Relationships are read from the dictionary's `relationships` array — inferred
+by `describegpt` or hand-authored. Columns not named by any relationship are
+still generated independently. Pass --no-relationships to disable relationship
+modeling entirely.
 
 With --seed, output is fully reproducible.
 
@@ -48,6 +67,10 @@ Examples:
 
   # Let synthesize build the dictionary itself (needs an LLM API key)
   $ qsv synthesize data.csv --infer-content-type -n 1000 > synthetic.csv
+
+  # Preserve inter-column relationships declared in the dictionary
+  # (e.g. city/state/zip, created_date <= closed_date)
+  $ qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs.
 
@@ -95,6 +118,22 @@ synthesize options:
                            all-unique columns, or non-faker columns. Useful for
                            deidentified synthesis where you want stable joins
                            on the faked columns.
+    --no-relationships     Disable inter-column relationship modeling. Every
+                           column is generated independently even when the
+                           dictionary declares a `relationships` array.
+    --joint-cardinality-cap <n>
+                           Maximum number of distinct value-tuples a `joint`
+                           relationship may have. A joint group above this cap
+                           falls back to independent generation (or aborts
+                           under --strict-relationships). 0 means unlimited.
+                           [default: 100000]
+    --correlation-threshold <f>
+                           Minimum absolute Spearman correlation for a pair of
+                           columns to stay in a `correlated` relationship.
+                           Weakly-correlated members are dropped. [default: 0.3]
+    --strict-relationships
+                           Abort instead of warning-and-degrading when a
+                           declared relationship fails validation.
     -j, --jobs <arg>       Number of jobs to use for the internal `stats` and
                            `frequency` runs.
 
@@ -112,7 +151,7 @@ use serde::Deserialize;
 
 use crate::{
     CliError, CliResult,
-    cmd::describegpt::dictionary::{FrequencyRecord, parse_frequency_csv, parse_stats_csv},
+    cmd::describegpt::dictionary::{parse_frequency_csv, parse_stats_csv},
     config::{Config, Delimiter},
     util,
 };
@@ -120,24 +159,30 @@ use crate::{
 mod dictionary;
 mod faker_map;
 mod generator;
+mod group_generator;
+mod relationships;
 
 use faker_map::Locale;
-use generator::ColumnGenerator;
+use relationships::{EmitUnit, ScheduleParams, build_emit_schedule};
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input:               String,
-    flag_dictionary:         Option<String>,
-    flag_infer_content_type: bool,
-    flag_rows:               u64,
-    flag_seed:               Option<u64>,
-    flag_locale:             String,
-    flag_freq_limit:         usize,
-    flag_stats_options:      Option<String>,
-    flag_consistent_fakes:   bool,
-    flag_jobs:               Option<usize>,
-    flag_output:             Option<String>,
-    flag_delimiter:          Option<Delimiter>,
+    arg_input:                  String,
+    flag_dictionary:            Option<String>,
+    flag_infer_content_type:    bool,
+    flag_rows:                  u64,
+    flag_seed:                  Option<u64>,
+    flag_locale:                String,
+    flag_freq_limit:            usize,
+    flag_stats_options:         Option<String>,
+    flag_consistent_fakes:      bool,
+    flag_no_relationships:      bool,
+    flag_joint_cardinality_cap: u64,
+    flag_correlation_threshold: f64,
+    flag_strict_relationships:  bool,
+    flag_jobs:                  Option<usize>,
+    flag_output:                Option<String>,
+    flag_delimiter:             Option<Delimiter>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -248,46 +293,40 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return fail_clierror!("No columns found in '{input_path}'.");
     }
 
-    // --- 3. Dictionary (optional) → field-name -> content_type map ---------
-    let content_types: HashMap<String, String> = if let Some(ref dict_path) = args.flag_dictionary {
-        dictionary::load_content_types(dict_path)?
+    // --- 3. Dictionary (optional) → content types + relationships ----------
+    let (content_types, relationships) = if let Some(ref dict_path) = args.flag_dictionary {
+        dictionary::load_dictionary(dict_path)?
     } else if args.flag_infer_content_type {
-        dictionary::infer_content_types(input_path)?
+        dictionary::infer_dictionary(input_path)?
     } else {
-        HashMap::new()
+        (HashMap::new(), Vec::new())
+    };
+    // --no-relationships forces fully independent generation (legacy behavior).
+    let relationships = if args.flag_no_relationships {
+        Vec::new()
+    } else {
+        relationships
     };
 
-    // --- 4. Build one ColumnGenerator per column ---------------------------
-    let mut freq_by_field: HashMap<&str, Vec<&FrequencyRecord>> = HashMap::new();
-    for freq_record in &frequency_records {
-        freq_by_field
-            .entry(freq_record.field.as_str())
-            .or_default()
-            .push(freq_record);
-    }
-
-    let generators: Vec<ColumnGenerator> = stats_records
-        .iter()
-        .map(|stats_record| {
-            let freqs = freq_by_field
-                .get(stats_record.field.as_str())
-                .map(Vec::as_slice)
-                .unwrap_or_default();
-            let content_type = content_types
-                .get(&stats_record.field)
-                .map_or("unknown", String::as_str);
-            ColumnGenerator::build(
-                stats_record,
-                freqs,
-                content_type,
-                total_rows,
-                args.flag_rows,
-                locale,
-                args.flag_consistent_fakes,
-                &mut rng,
-            )
-        })
-        .collect();
+    // --- 4. Build the row-emission schedule --------------------------------
+    // Ungrouped columns get one ColumnGenerator each; columns named by a valid
+    // `relationship` are grouped under a GroupGenerator that emits them jointly.
+    let schedule_params = ScheduleParams {
+        stats_records: &stats_records,
+        frequency_records: &frequency_records,
+        content_types: &content_types,
+        relationships: &relationships,
+        total_rows,
+        requested_rows: args.flag_rows,
+        locale,
+        consistent_fakes: args.flag_consistent_fakes,
+        joint_cardinality_cap: args.flag_joint_cardinality_cap,
+        correlation_threshold: args.flag_correlation_threshold,
+        strict: args.flag_strict_relationships,
+        input_path,
+        delimiter: args.flag_delimiter,
+    };
+    let schedule = build_emit_schedule(&schedule_params, &mut rng)?;
 
     // --- 5. Emit -----------------------------------------------------------
     let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
@@ -298,11 +337,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .collect();
     wtr.write_record(&header)?;
 
+    // One reusable row buffer: each EmitUnit writes into its own column slot(s)
+    // by index, so the schedule can be walked in any fixed order per row.
+    let ncols = stats_records.len();
+    let mut row: Vec<String> = vec![String::new(); ncols];
     let mut record = csv::StringRecord::new();
     for _ in 0..args.flag_rows {
+        for unit in &schedule {
+            match unit {
+                EmitUnit::Independent { col_idx, generator } => {
+                    row[*col_idx] = generator.next(&mut rng);
+                },
+                EmitUnit::Group(group) => {
+                    for (col_idx, value) in group.next(&mut rng) {
+                        row[col_idx] = value;
+                    }
+                },
+            }
+        }
         record.clear();
-        for generator in &generators {
-            record.push_field(&generator.next(&mut rng));
+        for value in &row {
+            record.push_field(value);
         }
         wtr.write_record(&record)?;
     }

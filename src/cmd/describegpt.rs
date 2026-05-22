@@ -655,7 +655,13 @@ impl MarkdownTemplateOverride {
     }
 }
 
-const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+// MUST stay byte-identical to the `--base-url` docopt `[default: ...]`. It is
+// the sentinel `get_prompt_file` / the api-key resolver compare `flag_base_url`
+// against to distinguish "user explicitly passed --base-url" from "docopt
+// default in effect". If it drifts from the real default, that comparison is
+// always true and the `QSV_LLM_BASE_URL` env-var precedence branch becomes dead
+// code (the env var is silently ignored).
+const DEFAULT_BASE_URL: &str = "http://localhost:1234/v1";
 const DEFAULT_MODEL: &str = "openai/gpt-oss-20b";
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
 Either set `--base-url` to an address with "localhost" in it (indicating a local LLM), or set `--api-key`.

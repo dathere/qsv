@@ -1014,7 +1014,7 @@ fn describegpt_special_characters() {
     wrk.assert_success(&mut cmd);
 }
 
-// Test with empty dataset
+// Test with empty dataset (header row only, zero data rows)
 #[test]
 #[serial]
 fn describegpt_empty_dataset() {
@@ -1031,8 +1031,9 @@ fn describegpt_empty_dataset() {
     set_describegpt_testing_envvars(&mut cmd);
     cmd.arg("in.csv").arg("--description").arg("--no-cache");
 
-    // Check that the command ran successfully
-    wrk.assert_success(&mut cmd);
+    // describegpt must reject a dataset with no data rows: its first step is to
+    // run `stats`, which cannot compile summary statistics for an empty file.
+    wrk.assert_err(&mut cmd);
 }
 
 // Test with dataset containing null values
@@ -1648,8 +1649,8 @@ fn describegpt_stats_options_file_prefix() {
 
     // Create a pre-existing stats file
     let stats_content = r#"field,type,is_ascii,sum,min,max,range,sort_order,min_length,max_length,sum_length,avg_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,max_precision,sparsity,mad,lower_outer_fence,lower_inner_fence,q1,q2_median,q3,iqr,upper_inner_fence,upper_outer_fence,skewness,cardinality,mode,mode_count,mode_occurrences,antimode,antimode_count,antimode_occurrences,sortiness
-letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
-number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
+letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,0,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
+number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,0,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
 "#;
     wrk.create_from_string("stats.csv", stats_content);
 
@@ -1722,8 +1723,8 @@ fn describegpt_both_file_prefixes() {
 
     // Create pre-existing stats file
     let stats_content = r#"field,type,is_ascii,sum,min,max,range,sort_order,min_length,max_length,sum_length,avg_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,max_precision,sparsity,mad,lower_outer_fence,lower_inner_fence,q1,q2_median,q3,iqr,upper_inner_fence,upper_outer_fence,skewness,cardinality,mode,mode_count,mode_occurrences,antimode,antimode_count,antimode_occurrences,sortiness
-letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
-number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
+letter,String,true,,alpha,gamma,,Ascending,4,5,14,4.67,,,,,,,,0,0,0,0,,,,,,,,,,3,alpha,1,1,alpha,1,1,1
+number,Integer,true,74,13,37,24,Ascending,2,2,6,2,24.67,6.94,22.66,20.54,12.01,144.33,0.49,0,0,0,0,-25.5,-7.5,10.5,24,34.5,24,70.5,106.5,0.1,3,13,1,1,13,1,1,1
 "#;
     wrk.create_from_string("stats.csv", stats_content);
 
@@ -2324,11 +2325,18 @@ fn describegpt_score_high_threshold_triggers_retries() {
         stderr.contains("[attempt 1]"),
         "Expected attempt 1 in output, stderr: {stderr}"
     );
-    // Should see the warning about best score below threshold or a second attempt
-    let has_retry_or_warning = stderr.contains("[attempt 2]") || stderr.contains("below threshold");
+    // With threshold 101, attempt 1 can never be accepted, so the loop always
+    // starts a second iteration. Any of these messages proves the retry path
+    // ran — which exact one appears depends on the (non-deterministic) refined
+    // query: it may score ([attempt 2] / below threshold), fail to validate
+    // (scoresql failed on all attempts), or come back with no SQL block.
+    let has_retry_or_warning = stderr.contains("[attempt 2]")
+        || stderr.contains("below threshold")
+        || stderr.contains("scoresql failed on all attempts")
+        || stderr.contains("LLM refinement had no SQL block");
     assert!(
         has_retry_or_warning,
-        "Expected retry or threshold warning with score-threshold 101, stderr: {stderr}"
+        "Expected retry/threshold evidence with score-threshold 101, stderr: {stderr}"
     );
 }
 

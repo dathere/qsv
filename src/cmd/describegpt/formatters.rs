@@ -284,6 +284,14 @@ fn build_property_schema(
 
     // examples: parse the "val [cnt]\nval [cnt]" form to bare typed values.
     // "<ALL_UNIQUE>" sentinel and the empty case both skip emitting `examples`.
+    //
+    // Every emitted example must validate against the property's own `type`:
+    // the `frequency` "Other"/"(NULL)" aggregation-bucket rows (rendered as
+    // "Other…"/"(NULL)…") are not real data values, and `coerce_value` keeps
+    // them as JSON strings when the column is numeric/boolean. The
+    // `value_matches_json_type` filter drops those so they can't leak into a
+    // numeric/boolean property's `examples` array and fail validation against
+    // that property's subschema.
     if !entry.examples.is_empty() && entry.examples != "<ALL_UNIQUE>" {
         let example_vals: Vec<Value> = entry
             .examples
@@ -291,10 +299,10 @@ fn build_property_schema(
             .filter_map(|line| {
                 let bare = strip_count_suffix(line);
                 if bare.is_empty() {
-                    None
-                } else {
-                    Some(coerce_value(bare, qsv_type))
+                    return None;
                 }
+                let value = coerce_value(bare, qsv_type);
+                value_matches_json_type(&value, json_type).then_some(value)
             })
             .collect();
         if !example_vals.is_empty() {
@@ -391,6 +399,27 @@ fn coerce_value(s: &str, qsv_type: &str) -> Value {
             _ => Value::String(s.to_string()),
         },
         _ => Value::String(s.to_string()),
+    }
+}
+
+/// Whether a `coerce_value` result is a valid instance of the given JSON Schema
+/// scalar `type` keyword.
+///
+/// `coerce_value` falls back to a JSON string when a stats-derived value can't
+/// be parsed as the column's inferred numeric/boolean type — most notably the
+/// `frequency` "Other"/"(NULL)" aggregation-bucket sentinels (rendered as
+/// "Other…"/"(NULL)…"). This guard keeps such strings out of a numeric/boolean
+/// property's `examples` array, where they would otherwise fail validation
+/// against the property's own subschema. `"number"` accepts integer-valued
+/// numbers; an unknown `json_type` passes through unfiltered.
+fn value_matches_json_type(value: &Value, json_type: &str) -> bool {
+    match json_type {
+        "integer" => value.is_i64() || value.is_u64(),
+        "number" => value.is_number(),
+        "boolean" => value.is_boolean(),
+        "string" => value.is_string(),
+        "null" => value.is_null(),
+        _ => true,
     }
 }
 
@@ -554,5 +583,76 @@ mod tests {
             row.contains("Label\tDesc\temail\t"),
             "row missing content_type cell: {row}"
         );
+    }
+
+    #[test]
+    fn jsonschema_drops_non_numeric_examples_from_numeric_property() {
+        // A numeric column whose `frequency` examples lead with the "Other" and
+        // "(NULL)" aggregation-bucket sentinels. Those coerce to JSON strings
+        // and must be filtered so the property's `examples` array validates
+        // against its own (`integer`/`null`) `type`.
+        let entry = DictionaryEntry {
+            name:         "X Coordinate".to_string(),
+            r#type:       "Integer".to_string(),
+            label:        "X".to_string(),
+            description:  "Desc".to_string(),
+            content_type: String::new(),
+            min:          "100".to_string(),
+            max:          "999".to_string(),
+            cardinality:  500,
+            enumeration:  String::new(),
+            null_count:   10,
+            addl_cols:    Default::default(),
+            examples:     "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
+        };
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&entry),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+        );
+        let examples = schema["properties"]["X Coordinate"]["examples"]
+            .as_array()
+            .expect("numeric property should still emit its real examples");
+        assert_eq!(
+            examples.len(),
+            2,
+            "Other…/(NULL)… bucket sentinels must be dropped: {examples:?}"
+        );
+        assert!(
+            examples.iter().all(serde_json::Value::is_number),
+            "every example of a numeric property must be a number: {examples:?}"
+        );
+    }
+
+    #[test]
+    fn jsonschema_keeps_examples_for_string_property() {
+        // String columns must not be over-filtered: any string is a valid
+        // instance of a `string`-typed property.
+        let mut entry = sample_entry("name", "");
+        entry.examples = "Other… [9]\nAlice [3]\nBob [2]".to_string();
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&entry),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+        );
+        let examples = schema["properties"]["name"]["examples"]
+            .as_array()
+            .expect("string property should emit examples");
+        assert_eq!(
+            examples.len(),
+            3,
+            "string examples must be preserved: {examples:?}"
+        );
+        assert!(examples.iter().all(serde_json::Value::is_string));
     }
 }

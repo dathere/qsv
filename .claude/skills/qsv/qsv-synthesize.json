@@ -1,7 +1,7 @@
 {
   "name": "qsv-synthesize",
   "version": "20.1.0",
-  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. Fully reproducible with `--seed`.",
+  "description": "Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic fake-rs fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`.",
   "category": "generation",
   "command": {
     "subcommand": "synthesize",
@@ -18,6 +18,12 @@
         "flag": "--consistent-fakes",
         "type": "flag",
         "description": "For structured-faker columns with bounded cardinality (cardinality fully captured by `frequency`), build a stable source-value -> fake-value mapping so the same source value always produces the same fake in the output. Preserves the source frequency distribution and overrides the default \"emit real values when frequency-enumerated\" behavior for structured fakers (names, emails, addresses, etc.). Has no effect on unstructured columns (lorem_*, free_text, unknown), all-unique columns, or non-faker columns. Useful for deidentified synthesis where you want stable joins on the faked columns."
+      },
+      {
+        "flag": "--correlation-threshold",
+        "type": "string",
+        "description": "Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped.",
+        "default": "0.3"
       },
       {
         "flag": "--delimiter",
@@ -41,10 +47,21 @@
         "description": "Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given."
       },
       {
+        "flag": "--joint-cardinality-cap",
+        "type": "string",
+        "description": "Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited.",
+        "default": "100000"
+      },
+      {
         "flag": "--locale",
         "type": "string",
         "description": "Locale for faker-backed columns. Case-insensitive. Supported: en, fr_fr, de_de, it_it, pt_br, pt_pt, ja_jp, zh_cn, zh_tw, ar_sa, cy_gb, fa_ir, nl_nl, tr_tr. Sparse locales (those without per-category data in fake-rs) silently fall back to en data for the missing categories — e.g. lorem text under a non-en locale is still English, since only zh_cn has localized lorem data.",
         "default": "en"
+      },
+      {
+        "flag": "--no-relationships",
+        "type": "flag",
+        "description": "Disable inter-column relationship modeling. Every column is generated independently even when the dictionary declares a `relationships` array."
       },
       {
         "flag": "--output",
@@ -66,6 +83,11 @@
         "flag": "--stats-options",
         "type": "string",
         "description": "Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here."
+      },
+      {
+        "flag": "--strict-relationships",
+        "type": "flag",
+        "description": "Abort instead of warning-and-degrading when a declared relationship fails validation."
       }
     ]
   },
@@ -89,6 +111,10 @@
     {
       "description": "Let synthesize build the dictionary itself (needs an LLM API key)",
       "command": "qsv synthesize data.csv --infer-content-type -n 1000 > synthetic.csv"
+    },
+    {
+      "description": "Preserve inter-column relationships declared in the dictionary (e.g. city/state/zip, created_date <= closed_date)",
+      "command": "qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv"
     }
   ]
 }

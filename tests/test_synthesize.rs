@@ -880,3 +880,599 @@ fn synthesize_date_column_ignores_time_content_type() {
         );
     }
 }
+
+// ---- Relationships: joint (categorical / functional dependency) ----------
+
+/// city/state/zip data with a functional dependency: only six (city, state,
+/// zip) triples co-occur. "Springfield" appears in both IL and MA, so city
+/// alone does not determine state — only the whole triple is meaningful.
+fn geo_fixture() -> Vec<Vec<String>> {
+    vec![
+        svec!["city", "state", "zip"],
+        svec!["Springfield", "IL", "62701"],
+        svec!["Springfield", "MA", "01101"],
+        svec!["Chicago", "IL", "60601"],
+        svec!["Boston", "MA", "02101"],
+        svec!["Portland", "OR", "97201"],
+        svec!["Portland", "ME", "04101"],
+        svec!["Springfield", "IL", "62701"],
+        svec!["Chicago", "IL", "60601"],
+        svec!["Boston", "MA", "02101"],
+        svec!["Portland", "OR", "97201"],
+    ]
+}
+
+/// The six valid (city, state, zip) triples in `geo_fixture`.
+fn geo_valid_triples() -> std::collections::HashSet<(String, String, String)> {
+    geo_fixture()[1..]
+        .iter()
+        .map(|r| (r[0].clone(), r[1].clone(), r[2].clone()))
+        .collect()
+}
+
+const GEO_JOINT_DICT: &str = r#"{
+    "fields": [
+        {"name": "city", "type": "String"},
+        {"name": "state", "type": "String"},
+        {"name": "zip", "type": "String"}
+    ],
+    "relationships": [
+        {"kind": "joint", "members": ["city", "state", "zip"]}
+    ]
+}"#;
+
+#[test]
+fn synthesize_joint_categorical_only_real_tuples() {
+    let wrk = Workdir::new("synthesize_joint_real_tuples");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 201);
+    assert_eq!(got[0], svec!["city", "state", "zip"]);
+
+    let valid = geo_valid_triples();
+    for row in &got[1..] {
+        let triple = (row[0].clone(), row[1].clone(), row[2].clone());
+        assert!(
+            valid.contains(&triple),
+            "joint synthesis emitted an invented combination: {triple:?}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_relationships_seed_reproducible() {
+    let wrk = Workdir::new("synthesize_joint_seed");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut first = wrk.command("synthesize");
+    first
+        .args(["-n", "60", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run1: String = wrk.stdout(&mut first);
+
+    let mut second = wrk.command("synthesize");
+    second
+        .args(["-n", "60", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run2: String = wrk.stdout(&mut second);
+
+    assert_eq!(run1, run2, "joint synthesis must be seed-reproducible");
+}
+
+#[test]
+fn synthesize_joint_cardinality_cap_degrades() {
+    // Six distinct triples, cap of 3 → the joint group degrades to independent
+    // generation. Synthesis must still succeed and produce the requested rows.
+    let wrk = Workdir::new("synthesize_joint_cap_degrade");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "25",
+        "--seed",
+        "42",
+        "--joint-cardinality-cap",
+        "3",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 26, "should degrade gracefully, not abort");
+}
+
+#[test]
+fn synthesize_joint_cardinality_cap_strict_aborts() {
+    // Same over-cap situation, but --strict-relationships turns the degrade
+    // into a hard error.
+    let wrk = Workdir::new("synthesize_joint_cap_strict");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict.json", GEO_JOINT_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "25",
+        "--seed",
+        "42",
+        "--joint-cardinality-cap",
+        "3",
+        "--strict-relationships",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn synthesize_no_relationships_flag_disables_joint() {
+    // --no-relationships must make a joint dictionary behave exactly like a
+    // dictionary with no relationships at all.
+    let wrk = Workdir::new("synthesize_no_relationships");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string("dict_joint.json", GEO_JOINT_DICT);
+    wrk.create_from_string(
+        "dict_plain.json",
+        r#"{
+            "fields": [
+                {"name": "city", "type": "String"},
+                {"name": "state", "type": "String"},
+                {"name": "zip", "type": "String"}
+            ]
+        }"#,
+    );
+
+    let mut joint_off = wrk.command("synthesize");
+    joint_off
+        .args([
+            "-n",
+            "40",
+            "--seed",
+            "9",
+            "--no-relationships",
+            "--dictionary",
+        ])
+        .arg(wrk.path("dict_joint.json"))
+        .arg("data.csv");
+    let with_flag: String = wrk.stdout(&mut joint_off);
+
+    let mut plain = wrk.command("synthesize");
+    plain
+        .args(["-n", "40", "--seed", "9", "--dictionary"])
+        .arg(wrk.path("dict_plain.json"))
+        .arg("data.csv");
+    let plain_out: String = wrk.stdout(&mut plain);
+
+    assert_eq!(
+        with_flag, plain_out,
+        "--no-relationships should match a relationship-free dictionary"
+    );
+}
+
+#[test]
+fn synthesize_relationship_invalid_member_dropped() {
+    // A relationship that names a column which does not exist is silently
+    // dropped; synthesis still succeeds.
+    let wrk = Workdir::new("synthesize_rel_bad_member");
+    wrk.create("data.csv", geo_fixture());
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "city", "type": "String"},
+                {"name": "state", "type": "String"},
+                {"name": "zip", "type": "String"}
+            ],
+            "relationships": [
+                {"kind": "joint", "members": ["city", "does_not_exist"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "15", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 16);
+}
+
+// ---- Relationships: ordered (anchor + learned gap) -----------------------
+
+/// Ticket data where `created_date <= closed_date` holds in every row.
+fn ticket_fixture() -> Vec<Vec<String>> {
+    vec![
+        svec!["created_date", "closed_date"],
+        svec!["2020-01-10", "2020-01-25"],
+        svec!["2020-02-05", "2020-03-10"],
+        svec!["2020-03-15", "2020-03-20"],
+        svec!["2020-04-01", "2020-05-15"],
+        svec!["2020-05-20", "2020-06-01"],
+        svec!["2020-06-10", "2020-08-22"],
+        svec!["2020-07-04", "2020-07-30"],
+        svec!["2020-08-18", "2020-09-09"],
+        svec!["2020-09-25", "2020-11-01"],
+        svec!["2020-10-30", "2020-12-15"],
+        svec!["2020-11-11", "2020-11-29"],
+        svec!["2020-12-01", "2021-01-20"],
+    ]
+}
+
+const TICKET_ORDERED_DICT: &str = r#"{
+    "fields": [
+        {"name": "created_date", "type": "Date"},
+        {"name": "closed_date", "type": "Date"}
+    ],
+    "relationships": [
+        {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"}
+    ]
+}"#;
+
+#[test]
+fn synthesize_ordered_dates_preserves_order() {
+    let wrk = Workdir::new("synthesize_ordered_dates");
+    wrk.create("data.csv", ticket_fixture());
+    wrk.create_from_string("dict.json", TICKET_ORDERED_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "300", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 301);
+    assert_eq!(got[0], svec!["created_date", "closed_date"]);
+
+    for (i, row) in got[1..].iter().enumerate() {
+        // ISO `%Y-%m-%d` dates compare chronologically as strings.
+        assert!(
+            row[0].len() == 10 && row[1].len() == 10,
+            "row {i}: expected YYYY-MM-DD dates, got {row:?}"
+        );
+        assert!(
+            row[0] <= row[1],
+            "row {i}: created_date '{}' is after closed_date '{}'",
+            row[0],
+            row[1]
+        );
+    }
+}
+
+#[test]
+fn synthesize_ordered_numeric_offset() {
+    // total = subtotal + tax, so total >= subtotal in every source row.
+    let wrk = Workdir::new("synthesize_ordered_numeric");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["subtotal", "total"],
+            svec!["100", "108"],
+            svec!["250", "270"],
+            svec!["50", "54"],
+            svec!["500", "540"],
+            svec!["75", "81"],
+            svec!["320", "346"],
+            svec!["180", "194"],
+            svec!["90", "97"],
+            svec!["410", "443"],
+            svec!["260", "281"],
+            svec!["140", "151"],
+            svec!["600", "648"],
+        ],
+    );
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "subtotal", "type": "Integer"},
+                {"name": "total", "type": "Integer"}
+            ],
+            "relationships": [
+                {"kind": "ordered", "members": ["subtotal", "total"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "300", "--seed", "7", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 301);
+    for (i, row) in got[1..].iter().enumerate() {
+        let subtotal: i64 = row[0].parse().expect("subtotal should be an integer");
+        let total: i64 = row[1].parse().expect("total should be an integer");
+        assert!(
+            total >= subtotal,
+            "row {i}: total {total} is less than subtotal {subtotal}"
+        );
+    }
+}
+
+#[test]
+fn synthesize_ordered_mixed_int_float_keeps_per_member_type() {
+    // An ordered group with a mix of Integer and Float members must keep each
+    // column's declared type — the Integer member must not drift to a float
+    // string just because the group also contains a Float member.
+    let wrk = Workdir::new("synthesize_ordered_mixed");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["count", "amount"],
+            svec!["3", "10.5"],
+            svec!["7", "25.2"],
+            svec!["2", "8.1"],
+            svec!["12", "40.9"],
+            svec!["5", "18.3"],
+            svec!["9", "33.7"],
+            svec!["4", "14.0"],
+            svec!["11", "38.5"],
+        ],
+    );
+    wrk.create_from_string(
+        "dict.json",
+        r#"{
+            "fields": [
+                {"name": "count", "type": "Integer"},
+                {"name": "amount", "type": "Float"}
+            ],
+            "relationships": [
+                {"kind": "ordered", "members": ["count", "amount"]}
+            ]
+        }"#,
+    );
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "200", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 201);
+    for (i, row) in got[1..].iter().enumerate() {
+        // The Integer member must render as an integer — no decimal point.
+        assert!(
+            !row[0].contains('.') && row[0].parse::<i64>().is_ok(),
+            "row {i}: count '{}' should be an integer, not a float string",
+            row[0]
+        );
+        // The Float member parses as a float.
+        assert!(
+            row[1].parse::<f64>().is_ok(),
+            "row {i}: amount '{}' should parse as a float",
+            row[1]
+        );
+    }
+}
+
+/// Ticket data where the source itself violates the declared order — every
+/// `closed_date` precedes its `created_date`.
+fn out_of_order_fixture() -> Vec<Vec<String>> {
+    vec![
+        svec!["created_date", "closed_date"],
+        svec!["2020-06-01", "2020-01-01"],
+        svec!["2020-07-01", "2020-02-01"],
+        svec!["2020-08-01", "2020-03-01"],
+        svec!["2020-09-01", "2020-04-01"],
+        svec!["2020-10-01", "2020-05-01"],
+        svec!["2020-11-01", "2020-06-01"],
+        svec!["2020-12-01", "2020-07-01"],
+        svec!["2021-01-01", "2020-08-01"],
+    ]
+}
+
+#[test]
+fn synthesize_ordered_strict_aborts_on_violation() {
+    let wrk = Workdir::new("synthesize_ordered_strict");
+    wrk.create("data.csv", out_of_order_fixture());
+    wrk.create_from_string("dict.json", TICKET_ORDERED_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args([
+        "-n",
+        "20",
+        "--seed",
+        "42",
+        "--strict-relationships",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.json"))
+    .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn synthesize_ordered_clamps_source_violations() {
+    // Without --strict-relationships, a source that violates the declared
+    // order still yields ordered output: negative gaps are clamped to zero.
+    let wrk = Workdir::new("synthesize_ordered_clamp");
+    wrk.create("data.csv", out_of_order_fixture());
+    wrk.create_from_string("dict.json", TICKET_ORDERED_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "100", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 101);
+    for (i, row) in got[1..].iter().enumerate() {
+        assert!(
+            row[0] <= row[1],
+            "row {i}: created_date '{}' is after closed_date '{}' despite clamping",
+            row[0],
+            row[1]
+        );
+    }
+}
+
+// ---- Relationships: correlated (Gaussian copula) -------------------------
+
+/// Spearman rank correlation of two equal-length samples — used to check that
+/// synthesized output preserves the source's correlation structure.
+fn spearman(a: &[f64], b: &[f64]) -> f64 {
+    fn ranks(v: &[f64]) -> Vec<f64> {
+        let n = v.len();
+        let mut idx: Vec<usize> = (0..n).collect();
+        idx.sort_by(|&i, &j| v[i].total_cmp(&v[j]));
+        let mut r = vec![0.0_f64; n];
+        let mut i = 0;
+        while i < n {
+            let mut j = i;
+            while j + 1 < n && v[idx[j + 1]] == v[idx[i]] {
+                j += 1;
+            }
+            let avg = (i + j) as f64 / 2.0 + 1.0;
+            for &o in &idx[i..=j] {
+                r[o] = avg;
+            }
+            i = j + 1;
+        }
+        r
+    }
+    let (ra, rb) = (ranks(a), ranks(b));
+    let n = a.len() as f64;
+    let ma = ra.iter().sum::<f64>() / n;
+    let mb = rb.iter().sum::<f64>() / n;
+    let (mut cov, mut va, mut vb) = (0.0_f64, 0.0_f64, 0.0_f64);
+    for (x, y) in ra.iter().zip(&rb) {
+        cov += (x - ma) * (y - mb);
+        va += (x - ma).powi(2);
+        vb += (y - mb).powi(2);
+    }
+    cov / (va.sqrt() * vb.sqrt())
+}
+
+/// Two strongly positively correlated numeric columns.
+fn correlated_fixture() -> Vec<Vec<String>> {
+    vec![
+        svec!["x", "y"],
+        svec!["10", "12"],
+        svec!["20", "19"],
+        svec!["30", "35"],
+        svec!["40", "38"],
+        svec!["50", "55"],
+        svec!["60", "58"],
+        svec!["70", "76"],
+        svec!["80", "79"],
+        svec!["90", "95"],
+        svec!["100", "102"],
+        svec!["15", "14"],
+        svec!["35", "40"],
+        svec!["55", "51"],
+        svec!["75", "80"],
+        svec!["95", "90"],
+    ]
+}
+
+const CORRELATED_DICT: &str = r#"{
+    "fields": [
+        {"name": "x", "type": "Integer"},
+        {"name": "y", "type": "Integer"}
+    ],
+    "relationships": [
+        {"kind": "correlated", "members": ["x", "y"]}
+    ]
+}"#;
+
+#[test]
+fn synthesize_correlated_numeric_preserves_correlation() {
+    let wrk = Workdir::new("synthesize_correlated_corr");
+    wrk.create("data.csv", correlated_fixture());
+    wrk.create_from_string("dict.json", CORRELATED_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "600", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got.len(), 601);
+
+    let xs: Vec<f64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
+    let ys: Vec<f64> = got[1..].iter().map(|r| r[1].parse().unwrap()).collect();
+    let rho = spearman(&xs, &ys);
+    assert!(
+        rho > 0.5,
+        "copula should preserve the strong positive correlation; got Spearman {rho}"
+    );
+}
+
+#[test]
+fn synthesize_correlated_marginals_unchanged() {
+    // The copula couples columns without distorting either marginal: each
+    // column stays inside its source [min, max] and still spans the range.
+    let wrk = Workdir::new("synthesize_correlated_marginals");
+    wrk.create("data.csv", correlated_fixture());
+    wrk.create_from_string("dict.json", CORRELATED_DICT);
+
+    let mut cmd = wrk.command("synthesize");
+    cmd.args(["-n", "500", "--seed", "7", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let xs: Vec<f64> = got[1..].iter().map(|r| r[0].parse().unwrap()).collect();
+    let ys: Vec<f64> = got[1..].iter().map(|r| r[1].parse().unwrap()).collect();
+
+    for (i, &x) in xs.iter().enumerate() {
+        assert!(
+            (10.0..=100.0).contains(&x),
+            "row {i}: x {x} out of source range"
+        );
+    }
+    for (i, &y) in ys.iter().enumerate() {
+        assert!(
+            (12.0..=102.0).contains(&y),
+            "row {i}: y {y} out of source range"
+        );
+    }
+    // The marginal must still cover the range, not collapse to a point.
+    let x_min = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let x_max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    assert!(
+        x_min < 30.0 && x_max > 80.0,
+        "x marginal collapsed: observed [{x_min}, {x_max}]"
+    );
+}
+
+#[test]
+fn synthesize_correlated_seed_reproducible() {
+    let wrk = Workdir::new("synthesize_correlated_seed");
+    wrk.create("data.csv", correlated_fixture());
+    wrk.create_from_string("dict.json", CORRELATED_DICT);
+
+    let mut first = wrk.command("synthesize");
+    first
+        .args(["-n", "80", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run1: String = wrk.stdout(&mut first);
+
+    let mut second = wrk.command("synthesize");
+    second
+        .args(["-n", "80", "--seed", "42", "--dictionary"])
+        .arg(wrk.path("dict.json"))
+        .arg("data.csv");
+    let run2: String = wrk.stdout(&mut second);
+
+    assert_eq!(run1, run2, "copula synthesis must be seed-reproducible");
+}

@@ -1,6 +1,6 @@
 # synthesize
 
-> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. Fully reproducible with `--seed`.
+> Generate a synthetic CSV that is statistically faithful to a source CSV. Runs `stats` + `frequency` on the source so synthesized columns reproduce its per-column attributes — frequency-weighted sampling for categorical columns, quartile-bucketed numeric/date generation, null-ratio preservation. With a Data Dictionary from `describegpt --dictionary --infer-content-type`, semantic Content Types pick realistic [fake-rs](https://github.com/cksac/fake-rs) fakers (names, emails, addresses, UUIDs, etc.) for non-enumerable columns. A dictionary `relationships` array preserves inter-column structure within each row — `joint` (functional dependencies like city/state/zip), `ordered` (monotonic chains like created_date ≤ closed_date) and `correlated` (numeric correlation via a Gaussian copula). Fully reproducible with `--seed`.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/synthesize/mod.rs](https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/mod.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")🎲[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")
 
@@ -44,7 +44,26 @@ uuid, phone, address parts, etc.) ignore these stats — truncating them would
 corrupt their format, so their pools are reproduced verbatim. Frequency-
 enumerated values are always reproduced verbatim and are never truncated.
 
-Columns are generated independently — cross-column correlation is not modeled.
+When the Data Dictionary declares `relationships`, the named columns are
+generated *jointly* so inter-column structure survives into each output row:  
+
+* joint      — categorical / functional-dependency groups (e.g.
+city/state/zip). Whole value-tuples are sampled from the
+source by frequency, so only real co-occurring combinations
+are emitted.
+* ordered    — columns that must keep a monotonic order within a row (e.g.
+created_date <= closed_date). The anchor column is generated
+from its own distribution; each later column is the anchor
+plus a non-negative gap drawn from the gap distribution
+learned from the source.
+* correlated — numeric columns whose correlation should be preserved. A
+Gaussian copula couples the columns while leaving each
+column's own distribution unchanged.
+
+Relationships are read from the dictionary's `relationships` array — inferred
+by `describegpt` or hand-authored. Columns not named by any relationship are
+still generated independently. Pass --no-relationships to disable relationship
+modeling entirely.
 
 With --seed, output is fully reproducible.
 
@@ -77,6 +96,13 @@ qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
 qsv synthesize data.csv --infer-content-type -n 1000 > synthetic.csv
 ```
 
+> Preserve inter-column relationships declared in the dictionary
+> (e.g. city/state/zip, created_date <= closed_date)
+
+```console
+qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs).
 
 
@@ -93,7 +119,7 @@ qsv synthesize --help
 
 ## Synthesize Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑dictionary`&nbsp; | string | Data Dictionary JSON file produced by `describegpt --dictionary --infer-content-type --format JSON`. Layers semantic Content Types onto generation. If omitted, generation is purely type/frequency-based. |  |
 | &nbsp;`‑‑infer‑content‑type`&nbsp; | flag | Generate the Data Dictionary on the fly by invoking `describegpt --dictionary --infer-content-type` on <input>. Requires an LLM API key (QSV_LLM_APIKEY). Ignored if --dictionary is given. |  |
@@ -103,6 +129,10 @@ qsv synthesize --help
 | &nbsp;`‑‑freq‑limit`&nbsp; | integer | Frequency pool depth passed to the internal `frequency` run as --limit. A column is reproduced via exact frequency-weighted sampling only when its cardinality is fully captured within this limit; higher values reproduce more columns verbatim. 0 means unlimited. | `100` |
 | &nbsp;`‑‑stats‑options`&nbsp; | string | Extra options appended to the internal `stats` run. Note: cardinality, quartiles and date inference are always enabled — do not re-specify them here. |  |
 | &nbsp;`‑‑consistent‑fakes`&nbsp; | flag | For structured-faker columns with bounded cardinality (cardinality fully captured by `frequency`), build a stable source-value -> fake-value mapping so the same source value always produces the same fake in the output. Preserves the source frequency distribution and overrides the default "emit real values when frequency-enumerated" behavior for structured fakers (names, emails, addresses, etc.). Has no effect on unstructured columns (lorem_*, free_text, unknown), all-unique columns, or non-faker columns. Useful for deidentified synthesis where you want stable joins on the faked columns. |  |
+| &nbsp;`‑‑no‑relationships`&nbsp; | flag | Disable inter-column relationship modeling. Every column is generated independently even when the dictionary declares a `relationships` array. |  |
+| &nbsp;`‑‑joint‑cardinality‑cap`&nbsp; | integer | Maximum number of distinct value-tuples a `joint` relationship may have. A joint group above this cap falls back to independent generation (or aborts under --strict-relationships). 0 means unlimited. | `100000` |
+| &nbsp;`‑‑correlation‑threshold`&nbsp; | float | Minimum absolute Spearman correlation for a pair of columns to stay in a `correlated` relationship. Weakly-correlated members are dropped. | `0.3` |
+| &nbsp;`‑‑strict‑relationships`&nbsp; | flag | Abort instead of warning-and-degrading when a declared relationship fails validation. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | Number of jobs to use for the internal `stats` and `frequency` runs. |  |
 
 <a name="common-options"></a>

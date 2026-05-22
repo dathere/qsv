@@ -31,12 +31,18 @@ pub(super) fn extract_ordered_addl_cols(entries: &[DictionaryEntry]) -> Vec<Stri
 ///
 /// When `infer_content_type` is true, a `content_type` key is added to each field
 /// object; when false, the output is unchanged from the legacy format.
+///
+/// `relationships` carries the LLM-inferred inter-column relationships (see
+/// `dictionary::parse_llm_relationships`). A top-level `relationships` array is
+/// emitted only when it is non-empty, so dictionaries without relationships stay
+/// byte-identical to the legacy output.
 pub(super) fn format_dictionary_json(
     entries: &[DictionaryEntry],
     enum_threshold: usize,
     num_examples: u16,
     truncate_str: usize,
     infer_content_type: bool,
+    relationships: &[Value],
 ) -> Value {
     let entries_json: Vec<Value> = entries
         .iter()
@@ -74,13 +80,19 @@ pub(super) fn format_dictionary_json(
         })
         .collect();
 
-    json!({
+    let mut doc = json!({
         "fields": entries_json,
         "enum_threshold": enum_threshold,
         "num_examples": num_examples,
         "truncate_str": truncate_str,
         "attribution": "{GENERATED_BY_SIGNATURE}",
-    })
+    });
+    if !relationships.is_empty()
+        && let Some(obj) = doc.as_object_mut()
+    {
+        obj.insert("relationships".to_string(), json!(relationships));
+    }
+    doc
 }
 
 /// Format dictionary entries as a JSON Schema (draft 2020-12) document.
@@ -536,7 +548,7 @@ mod tests {
     #[test]
     fn json_omits_content_type_when_flag_off() {
         let entries = vec![sample_entry("col", "email")];
-        let json = format_dictionary_json(&entries, 10, 5, 25, false);
+        let json = format_dictionary_json(&entries, 10, 5, 25, false, &[]);
         assert!(
             json["fields"][0].get("content_type").is_none(),
             "content_type must be absent when infer_content_type is false"
@@ -546,7 +558,7 @@ mod tests {
     #[test]
     fn json_includes_content_type_when_flag_on() {
         let entries = vec![sample_entry("col", "email")];
-        let json = format_dictionary_json(&entries, 10, 5, 25, true);
+        let json = format_dictionary_json(&entries, 10, 5, 25, true, &[]);
         assert_eq!(json["fields"][0]["content_type"], "email");
     }
 

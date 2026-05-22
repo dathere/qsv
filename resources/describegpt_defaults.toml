@@ -120,7 +120,29 @@ For each field, provide:
   "date:<fmt>" / "datetime:<fmt>" suffix forms described above)
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties:
+{%- if infer_content_type %}
+After the per-field analysis, identify INTER-COLUMN RELATIONSHIPS - groups of fields
+that are NOT independent of each other. Consider ALL fields together as a whole dataset.
+Emit a top-level "relationships" array; each element is an object with:
+  - "kind": exactly one of
+      "joint"      - fields whose values only occur in fixed real-world combinations,
+                     so a value in one constrains the others (e.g. city + state + zip,
+                     or category + subcategory).
+      "ordered"    - numeric or date/datetime fields that must keep a monotonic order
+                     within every row (e.g. created_date <= closed_date, or
+                     subtotal <= total). List "members" from lowest to highest.
+      "correlated" - numeric fields that move together, positively or negatively
+                     (e.g. height and weight, quantity and total_price).
+  - "members": an array of 2 or more field names in the group, spelled exactly as the
+               field names above. For "ordered", list them in ascending order.
+  - "anchor": ("ordered" only) the field the others are measured from - normally the
+              first/earliest member.
+Only emit relationships you are confident about from the field names, the Labels and
+Descriptions you produced, and the Summary Statistics. Do NOT place a field in more
+than one relationship. If you find none, emit an empty array.
+{%- endif %}
+
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties{% if infer_content_type %}, plus an optional top-level "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
@@ -131,7 +153,11 @@ Return the results in JSON format where each field name is a key, and the value 
     "label": "Another label",
     "description": "Another description"{% endraw %}{% if infer_content_type %},
     "content_type": "city"{% endif %}{% raw %}
-  }
+  }{% endraw %}{% if infer_content_type %},
+  "relationships": [
+{% raw %}    {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"},
+    {"kind": "joint", "members": ["city", "state", "zip"]}{% endraw %}
+  ]{% endif %}{% raw %}
 }{% endraw %}
 
 Let's think step by step, correcting yourself as needed.

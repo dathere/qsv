@@ -179,7 +179,7 @@ fn synthesize_with_dictionary_applies_inferred_date_format() {
         .arg(wrk.path("dict.json"))
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 26);
     for row in &got[1..] {
         let v = &row[0];

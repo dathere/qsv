@@ -15,7 +15,7 @@
 
 ### Adding a new MCP tool
 
-Common commands go in the `COMMON_COMMANDS` array in `mcp-tools.ts` and use `handleGenericCommand` automatically. Specialized tools need a dedicated definition function, an entry in `toolDispatchMap` in `mcp-server.ts`, and a handler function.
+Common commands go in the `COMMON_COMMANDS` array in `tool-constants.ts` (re-exported via the `mcp-tools.ts` barrel) and use `handleGenericCommand` automatically. Specialized tools need a dedicated definition function, an entry in `toolDispatchMap` in `mcp-server.ts`, and a handler function.
 
 Both types need a `COMMAND_GUIDANCE` entry with `whenToUse`, `commonPattern`, and optionally `errorPrevention`.
 
@@ -43,15 +43,15 @@ Prefer reading `.stats.csv` and `.freq.csv` directly over their `.data.jsonl` co
 
 ## Operational limits (quick reference)
 
-> Values verified 2026-03-18. If in doubt, grep the source files below for current values.
+> Values verified 2026-05-23. If in doubt, grep the source files below for current values.
 
 | Constant | Value | Location |
 |----------|-------|----------|
-| `MAX_MCP_RESPONSE_SIZE` | 850 KB | `mcp-tools.ts` — safe for Claude Desktop (< 1MB) |
-| `LARGE_FILE_THRESHOLD_BYTES` | 10 MB | `mcp-tools.ts` — triggers large-file handling |
-| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `mcp-tools.ts` — messages beyond this are truncated and suffixed with "…" |
-| `MAX_OUTPUT_SIZE` | 50 MB | `executor.ts` — stdout/stderr cap per execution |
-| Default timeout | 10 min | `executor.ts` — configurable via params or config |
+| `MAX_MCP_RESPONSE_SIZE` | 850 KB | `tool-constants.ts` — safe for Claude Desktop (< 1MB) |
+| `LARGE_FILE_THRESHOLD_BYTES` | 10 MB | `tool-constants.ts` — triggers large-file handling |
+| `MAX_LOG_MESSAGE_LEN` | 4096 chars | `tool-constants.ts` — messages beyond this are truncated and suffixed with "…" |
+| `DEFAULT_MAX_OUTPUT_SIZE` | 50 MB | `tool-constants.ts` — stdout/stderr cap per execution (consumed by `executor.ts` and `spawn-utils.ts`) |
+| Default timeout | 10 min | `executor.ts` — inline fallback (`10 * 60 * 1000`), configurable via params or config |
 
 See `config.ts` for the full configuration system (`QSV_MCP_*` env vars).
 
@@ -67,7 +67,7 @@ Only `qsvmcp` (preferred) and `qsv` (full) are supported. `qsvlite` and `qsvdp` 
 
 ### Plugin mode
 
-`.claude-plugin/marketplace.json` declares the plugin for the marketplace, while `.claude/skills/.claude-plugin/plugin.json` configures the plugin locally and points to `.mcp.json` (server key `"qsv"`, tools become `mcp__qsv__qsv_*`). Uses `QSV_MCP_EXPOSE_ALL_TOOLS=true` since Claude Code/Cowork handle large tool lists well. Three agents (data-analyst, data-wrangler, policy-analyst) for clear boundaries.
+The repo-root `.claude-plugin/marketplace.json` (at `qsv/.claude-plugin/marketplace.json`) declares the plugin for the marketplace and points its `source` at `./.claude/skills`. The plugin-local `.claude/skills/.claude-plugin/plugin.json` carries the plugin manifest (name, version, author, keywords) but does NOT embed an MCP-server config or set `QSV_MCP_EXPOSE_ALL_TOOLS`. The MCP server starts via the MCPB `manifest.json` (`server.mcp_config`); MCP tool names become `mcp__qsv__qsv_*`. Three agents (data-analyst, data-wrangler, policy-analyst) for clear boundaries.
 
 ### Skills auto-generation
 

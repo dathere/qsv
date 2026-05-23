@@ -44,6 +44,15 @@ Examples:
 
   $ qsv sqlp data.csv 'SELECT col1, count(*) AS cnt FROM data GROUP BY col1 ORDER BY cnt DESC, col1 ASC'
 
+  # FILTER clause on aggregates (SQL-standard) — apply a per-aggregate predicate without
+  # filtering the whole group. Useful for computing conditional sums/counts side by side
+  # with the unconditional aggregate in a single GROUP BY query.
+  # See https://github.com/pola-rs/polars/pull/27564.
+  $ qsv sqlp sales.csv "SELECT region, SUM(amount) AS total, \
+       SUM(amount) FILTER (WHERE amount > 100) AS total_over_100, \
+       COUNT(*) FILTER (WHERE status = 'refunded') AS refund_count \
+     FROM sales GROUP BY region ORDER BY region"
+
   $ qsv sqlp data.csv "select lower(col1), substr(col2, 2, 4) from data WHERE starts_with(col1, 'foo')"
 
   $ qsv sqlp data.csv "select COALESCE(NULLIF(col2, ''), 'foo') from data"

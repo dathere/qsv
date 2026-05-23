@@ -296,6 +296,44 @@ fn sqlp_boston311_groupby_orderby_all() {
     assert_eq!(got, expected);
 }
 
+// Verify the SQL-standard FILTER (WHERE …) aggregate modifier added in
+// Polars PR https://github.com/pola-rs/polars/pull/27564 works through
+// sqlp. The data + assertions mirror that PR's docstring example so the
+// expected numbers are easy to cross-check: for group "aa" the
+// unfiltered SUM(x) is 105.375 and SUM(x) FILTER (WHERE y > 250) is
+// 44.875 (only the rows where y > 250 contribute); for "bb" the
+// unfiltered SUM(x) is -43.75 and the filtered SUM is 6.5.
+#[test]
+fn sqlp_aggregate_filter() {
+    let wrk = Workdir::new("sqlp_aggregate_filter");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["grp", "x", "y"],
+            svec!["aa", "60.5", "100"],
+            svec!["bb", "-50.25", "200"],
+            svec!["aa", "42.75", "300"],
+            svec!["bb", "-3.5", "400"],
+            svec!["aa", "2.125", "500"],
+            svec!["bb", "10.0", "600"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sqlp");
+    cmd.arg("data.csv").arg(
+        "SELECT grp, SUM(x) AS sum_x, SUM(x) FILTER (WHERE y > 250) AS sum_x_when_y_gt_250, \
+         COUNT(*) FILTER (WHERE y > 250) AS n_y_gt_250 FROM data GROUP BY grp ORDER BY grp",
+    );
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["grp", "sum_x", "sum_x_when_y_gt_250", "n_y_gt_250"],
+        svec!["aa", "105.375", "44.875", "2"],
+        svec!["bb", "-43.75", "6.5", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
 #[test]
 // #[ignore = "temporarily disable due to a bug in polars aliasing"]
 fn sqlp_boston311_groupby_orderby_with_table_alias() {

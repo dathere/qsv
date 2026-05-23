@@ -1147,7 +1147,7 @@ fn parse_all_percentile_string_values<'a>(
 /// Field type enum for efficient comparisons
 /// Matches the FieldType enum from stats.rs but kept local for performance
 #[allow(clippy::enum_variant_names)]
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 enum FieldType {
     TNull,
     TString,
@@ -3517,8 +3517,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // Propagate CSV parse errors instead of silently dropping them — a
         // malformed stats row must surface as "failed to parse row N"
         // rather than as a downstream "missing columns" assertion.
-        let mut stats_field_values: std::collections::HashSet<String> =
-            std::collections::HashSet::new();
+        //
+        // Count OCCURRENCES per field name (not just set membership): qsv
+        // `join` keeps the join key on both sides, so a self-join leaves
+        // the joined CSV with duplicate column names (e.g. two `id`
+        // columns). A set-based check accepts a stats output that's
+        // missing one of those duplicates — but the field_pairs loop
+        // downstream needs ONE stats record per joined-CSV column to
+        // build all pairs. Using a multiset catches "off by one duplicate"
+        // corruption that a HashSet silently masks.
+        let mut stats_field_counts: std::collections::HashMap<String, usize> =
+            std::collections::HashMap::new();
         for (row_idx, rec) in rdr.records().enumerate() {
             let rec = rec.map_err(|e| {
                 CliError::Other(format!(
@@ -3527,21 +3536,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 ))
             })?;
             if let Some(v) = rec.get(field_idx) {
-                stats_field_values.insert(v.to_string());
+                *stats_field_counts.entry(v.to_string()).or_insert(0) += 1;
             }
         }
-        let missing: Vec<String> = joined_csv_header
+        let mut joined_header_counts: std::collections::HashMap<&str, usize> =
+            std::collections::HashMap::new();
+        for h in &joined_csv_header {
+            *joined_header_counts.entry(h.as_str()).or_insert(0) += 1;
+        }
+        let mut undercounted: Vec<(String, usize, usize)> = joined_header_counts
             .iter()
-            .filter(|h| !stats_field_values.contains(h.as_str()))
-            .cloned()
+            .filter_map(|(name, expected)| {
+                let got = stats_field_counts.get(*name).copied().unwrap_or(0);
+                (got < *expected).then(|| ((*name).to_string(), *expected, got))
+            })
             .collect();
-        if !missing.is_empty() {
+        if !undercounted.is_empty() {
+            // Sort by (expected desc, name asc) for deterministic diagnostics.
+            undercounted.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
             return fail_clierror!(
-                "Joined-stats subprocess output is missing stats records for columns {missing:?}: \
-                 the joined CSV has {} column(s) ({joined_csv_header:?}), but the stats output's \
-                 `field` column only covers {} of them ({stats_field_values:?})",
-                joined_csv_header.len(),
-                stats_field_values.len()
+                "Joined-stats subprocess output is undercounted for columns {undercounted:?} \
+                 (each entry is (name, expected, got)): the joined CSV has {} column(s) \
+                 ({joined_csv_header:?}), but the stats output's `field` column distribution is \
+                 {stats_field_counts:?}",
+                joined_csv_header.len()
             );
         }
 
@@ -4458,14 +4476,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let mut field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)> =
             HashMap::new();
 
+        // Diagnostic counters: surface WHY pairs get dropped. The
+        // field_pairs construction loop has six silent `continue` branches.
+        // When CI sees only primary-side pairs in the bivariate output
+        // (recurring flake on joined-inputs tests), we have no signal as
+        // to which filter fired. Track each rejection reason so a future
+        // flake leaves an actionable trail.
+        let mut skipped_field1_bad_type: u64 = 0;
+        let mut skipped_field1_missing_in_csv: u64 = 0;
+        let mut skipped_field2_bad_type: u64 = 0;
+        let mut skipped_field2_missing_in_csv: u64 = 0;
+        let mut skipped_zero_variance: u64 = 0;
+        let mut skipped_both_constant: u64 = 0;
+        let mut skipped_card_eq_rowcount: u64 = 0;
+        let mut skipped_type_filter: u64 = 0;
+
         for (i, field1_name) in stats_field_names.iter().enumerate() {
             let field1_type_str = records.get(i).and_then(|r| r.get(type_idx)).unwrap_or("");
             let Some(field1_type) = FieldType::from_str(field1_type_str) else {
+                skipped_field1_bad_type += 1;
+                // wwarn! (not log::warn!): qsv's default log level is `off`,
+                // so a bare log::warn! disappears in CI. wwarn! writes to
+                // stderr unconditionally — the actionable trail this
+                // instrumentation exists for. Likewise for the other
+                // per-skip warnings below. The full csv_headers value is
+                // logged ONCE in the summary winfo! after this loop, so
+                // we don't repeat it per-skip (avoids log-flooding on wide
+                // CSVs with many missing fields).
+                wwarn!(
+                    "bivariate field_pairs: skipping field1={field1_name:?} (i={i}): unrecognized \
+                     type {field1_type_str:?}"
+                );
                 continue;
             };
 
             // Get column index for field1
             let Some(field1_col_idx) = csv_headers.iter().position(|h| h == field1_name) else {
+                skipped_field1_missing_in_csv += 1;
+                wwarn!(
+                    "bivariate field_pairs: skipping field1={field1_name:?} (i={i}): name not \
+                     found in csv_headers (len={hdr_len})",
+                    hdr_len = csv_headers.len()
+                );
                 continue;
             };
 
@@ -4485,11 +4537,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             for (j, field2_name) in stats_field_names.iter().enumerate().skip(i + 1) {
                 let field2_type_str = records.get(j).and_then(|r| r.get(type_idx)).unwrap_or("");
                 let Some(field2_type) = FieldType::from_str(field2_type_str) else {
+                    skipped_field2_bad_type += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping field2={field2_name:?} (i={i}, j={j}) \
+                         with field1={field1_name:?}: unrecognized type {field2_type_str:?}"
+                    );
                     continue;
                 };
 
                 // Get column index for field2
                 let Some(field2_col_idx) = csv_headers.iter().position(|h| h == field2_name) else {
+                    skipped_field2_missing_in_csv += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping field2={field2_name:?} (i={i}, j={j}) \
+                         with field1={field1_name:?}: name not found in csv_headers \
+                         (len={hdr_len})",
+                        hdr_len = csv_headers.len()
+                    );
                     continue;
                 };
 
@@ -4508,11 +4572,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Filter invalid pairs: skip constant fields (zero variance)
                 if let (Some(stddev1), Some(stddev2)) = (field1_stddev, field2_stddev) {
                     if stddev1.abs() < f64::EPSILON || stddev2.abs() < f64::EPSILON {
+                        skipped_zero_variance += 1;
+                        wwarn!(
+                            "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
+                             (i={i}, j={j}): zero stddev (s1={stddev1}, s2={stddev2})"
+                        );
                         continue; // Skip pairs with constant fields (correlation undefined)
                     }
                 } else if let (Some(var1), Some(var2)) = (field1_variance, field2_variance)
                     && (var1.abs() < f64::EPSILON || var2.abs() < f64::EPSILON)
                 {
+                    skipped_zero_variance += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
+                         (i={i}, j={j}): zero variance (v1={var1}, v2={var2})"
+                    );
                     continue; // Skip pairs with constant fields (correlation undefined)
                 }
 
@@ -4521,6 +4595,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && card1 == 1
                     && card2 == 1
                 {
+                    skipped_both_constant += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
+                         (i={i}, j={j}): both cardinalities == 1"
+                    );
                     continue; // Both constant, no meaningful correlation
                 }
 
@@ -4530,6 +4609,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && (field1_cardinality.is_some_and(|c| c == rowcount)
                         || field2_cardinality.is_some_and(|c| c == rowcount))
                 {
+                    skipped_card_eq_rowcount += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
+                         (i={i}, j={j}): cardinality == rowcount ({rowcount}) (c1={c1:?}, \
+                         c2={c2:?})",
+                        c1 = field1_cardinality,
+                        c2 = field2_cardinality,
+                    );
                     continue; // All values are unique, correlations are not meaningful
                 }
 
@@ -4561,7 +4648,298 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             },
                         ),
                     );
+                } else {
+                    skipped_type_filter += 1;
+                    wwarn!(
+                        "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
+                         (i={i}, j={j}): neither field passes the numeric/date/string filter \
+                         (t1={field1_type:?}, t2={field2_type:?})"
+                    );
                 }
+            }
+        }
+
+        let total_skipped = skipped_field1_bad_type
+            + skipped_field1_missing_in_csv
+            + skipped_field2_bad_type
+            + skipped_field2_missing_in_csv
+            + skipped_zero_variance
+            + skipped_both_constant
+            + skipped_card_eq_rowcount
+            + skipped_type_filter;
+        if total_skipped > 0 || field_pairs.is_empty() {
+            // Always log a summary when something was skipped or when no
+            // pairs survived — this is the diagnostic trail for the
+            // recurring "primary-only bivariate output" flake. winfo!
+            // (not log::info!) writes to stderr unconditionally; qsv's
+            // default log level is `off`, so a bare log::info! would
+            // disappear in CI. The full csv_headers is logged HERE
+            // (once), not per-skip — the per-skip wwarn!s only carry
+            // the field name + reason to avoid log-flooding on wide
+            // CSVs with many missing fields.
+            winfo!(
+                "bivariate field_pairs: built {built} pair(s) from {nfields} stats fields \
+                 (record_count={record_count:?}); skipped: \
+                 field1_bad_type={skipped_field1_bad_type}, \
+                 field1_missing_in_csv={skipped_field1_missing_in_csv}, \
+                 field2_bad_type={skipped_field2_bad_type}, \
+                 field2_missing_in_csv={skipped_field2_missing_in_csv}, \
+                 zero_variance={skipped_zero_variance}, both_constant={skipped_both_constant}, \
+                 card_eq_rowcount={skipped_card_eq_rowcount}, type_filter={skipped_type_filter}; \
+                 csv_headers={csv_headers:?}",
+                built = field_pairs.len(),
+                nfields = stats_field_names.len(),
+                csv_headers = csv_headers.iter().collect::<Vec<_>>()
+            );
+        }
+
+        // In joined-inputs mode, fail loud when the corruption signature
+        // fires: NO surviving pair touches a secondary-side column that
+        // would actually be pairable under the loop's own filter rules.
+        // This is the precise failure mode of the recurring CI flake
+        // (e.g. moarstats_join_type_left_runs_and_writes_bivariate) —
+        // the bivariate output silently contains only primary-side
+        // pairs, which downstream produces a confusing "missing column"
+        // assertion in the test rather than pointing at moarstats.
+        //
+        // The guard's "pairable" check mirrors the COLUMN-LEVEL filters
+        // the loop applies, so a column that the loop legitimately
+        // filtered does not count against the guard:
+        //   - Type is recognized AND passes the bivariate type filter (numeric / date / string).
+        //   - Stddev/variance is non-zero (when reported) — zero variance makes the column
+        //     ineligible in ALL pairs.
+        //   - Cardinality != record_count (when both known) — equal cardinality also makes the
+        //     column ineligible in ALL pairs.
+        // The both-constant (cardinality == 1) filter is intentionally
+        // omitted: it's genuinely pair-level (only fires when BOTH columns
+        // have cardinality 1), so a card==1 column may still legitimately
+        // pair with a higher-cardinality partner.
+        //
+        // The guard also excludes:
+        //   - Columns that share a csv_headers position with primary (e.g. the join key) — never
+        //     exclusively secondary.
+        //   - Aliased duplicate names whose first-match position is elsewhere — field_pairs cannot
+        //     key on those indices anyway.
+        //
+        // It fires only when at least one pairable secondary-only column
+        // exists AND none of them appears in any pair.
+        if temp_joined_path.is_some() && !field_pairs.is_empty() {
+            // Build the set of csv_headers indices covered by surviving
+            // pairs.
+            let mut covered_indices: std::collections::HashSet<u16> =
+                std::collections::HashSet::new();
+            for (a, b) in field_pairs.keys() {
+                covered_indices.insert(*a);
+                covered_indices.insert(*b);
+            }
+
+            // Read the primary's header ONCE. Used to compute both
+            // primary_positions and primary_has_pairable below; the
+            // earlier revision opened input_path twice.
+            let primary_headers: Vec<String> = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(input_path)
+                .ok()
+                .and_then(|mut r| r.headers().ok().map(|h| h.clone()))
+                .map(|h| h.iter().map(std::string::ToString::to_string).collect())
+                .unwrap_or_default();
+
+            // Name -> first-occurrence position in csv_headers. O(1)
+            // lookups replace the linear `csv_headers.iter().position()`
+            // scans the previous revision did inside nested loops.
+            let csv_name_to_pos: std::collections::HashMap<&str, usize> = {
+                let mut m = std::collections::HashMap::with_capacity(csv_headers.len());
+                for (idx, name) in csv_headers.iter().enumerate() {
+                    m.entry(name).or_insert(idx);
+                }
+                m
+            };
+
+            // Set of csv_headers indices that come from the primary's
+            // header — used to identify which positions are exclusively
+            // secondary. Computed via the cached name->pos map.
+            let primary_positions: std::collections::HashSet<usize> = primary_headers
+                .iter()
+                .filter_map(|h| csv_name_to_pos.get(h.as_str()).copied())
+                .collect();
+
+            // Pair-level pairability: mirrors the construction loop's
+            // exact filter rules so the guard does not diverge from the
+            // loop's view of which secondary columns are eligible.
+            //
+            // Key subtlety the previous (column-level) check missed: the
+            // loop's zero-stddev/variance filter fires only when BOTH
+            // sides have stddev (or both have variance). A zero-stddev
+            // numeric column paired with a TString partner (no
+            // stddev/variance) is NOT skipped. Treating zero-stddev as
+            // an unconditional column-level disqualifier would mask
+            // corruption in mixed string/numeric joined datasets.
+            //
+            // pair_compatible mirrors:
+            //   - Zero stddev/variance filter (the loop's two-branch form)
+            //   - Both-constant (cardinality == 1) — only fires when BOTH
+            //   - Cardinality == record_count — fires when EITHER side
+            //   - Pair type filter — at least one side must be numeric/date/string
+            #[derive(Clone)]
+            struct ColInfo {
+                field_type:  FieldType,
+                stddev:      Option<f64>,
+                variance:    Option<f64>,
+                cardinality: Option<u64>,
+            }
+            // Parse every stats record's column attributes ONCE. Indexed
+            // by stats_field_names position. Avoids re-parsing the same
+            // record many times across nested pairability checks.
+            let col_infos: Vec<Option<ColInfo>> = (0..stats_field_names.len())
+                .map(|si| {
+                    let rec = records.get(si)?;
+                    let type_str = rec.get(type_idx).unwrap_or("");
+                    let field_type = FieldType::from_str(type_str)?;
+                    let stddev = stddev_idx
+                        .and_then(|i| rec.get(i))
+                        .and_then(parse_float_opt);
+                    let variance = variance_idx
+                        .and_then(|i| rec.get(i))
+                        .and_then(parse_float_opt);
+                    let cardinality = cardinality_idx
+                        .and_then(|i| rec.get(i))
+                        .and_then(|s| s.parse::<u64>().ok());
+                    Some(ColInfo {
+                        field_type,
+                        stddev,
+                        variance,
+                        cardinality,
+                    })
+                })
+                .collect();
+            // First-occurrence name -> stats_record_idx. Mirrors the
+            // construction loop's `stats_field_names.iter().position()`
+            // first-match semantics for duplicate names (e.g. two `id`
+            // entries from a self-join).
+            let stats_name_to_idx: std::collections::HashMap<&str, usize> = {
+                let mut m = std::collections::HashMap::with_capacity(stats_field_names.len());
+                for (idx, name) in stats_field_names.iter().enumerate() {
+                    m.entry(name.as_str()).or_insert(idx);
+                }
+                m
+            };
+
+            let pair_compatible = |a: &ColInfo, b: &ColInfo| -> bool {
+                if let (Some(s1), Some(s2)) = (a.stddev, b.stddev) {
+                    if s1.abs() < f64::EPSILON || s2.abs() < f64::EPSILON {
+                        return false;
+                    }
+                } else if let (Some(v1), Some(v2)) = (a.variance, b.variance)
+                    && (v1.abs() < f64::EPSILON || v2.abs() < f64::EPSILON)
+                {
+                    return false;
+                }
+                if let (Some(c1), Some(c2)) = (a.cardinality, b.cardinality)
+                    && c1 == 1
+                    && c2 == 1
+                {
+                    return false;
+                }
+                if let Some(rc) = record_count
+                    && (a.cardinality.is_some_and(|c| c == rc)
+                        || b.cardinality.is_some_and(|c| c == rc))
+                {
+                    return false;
+                }
+                a.field_type.is_numeric_or_date_type()
+                    || b.field_type.is_numeric_or_date_type()
+                    || a.field_type == FieldType::TString
+                    || b.field_type == FieldType::TString
+            };
+            // A column at `stats_idx` is "pairable" if at least one OTHER
+            // entry in col_infos forms a compatible pair with it under
+            // the construction loop's exact rules. One linear pass over
+            // col_infos per call; the surrounding caller pays O(n) per
+            // column tested, so overall O(n^2) — down from the previous
+            // revision's superlinear behavior driven by repeated
+            // `stats_field_names.iter().position()` scans.
+            let is_pairable_at = |stats_idx: usize| -> bool {
+                let Some(col) = col_infos.get(stats_idx).and_then(|c| c.as_ref()) else {
+                    return false;
+                };
+                col_infos.iter().enumerate().any(|(other_idx, other)| {
+                    other_idx != stats_idx
+                        && other.as_ref().is_some_and(|p| pair_compatible(col, p))
+                })
+            };
+            let is_pairable_by_name = |name: &str| -> bool {
+                stats_name_to_idx
+                    .get(name)
+                    .copied()
+                    .is_some_and(is_pairable_at)
+            };
+
+            // Collect pairable secondary-only positions from each
+            // additional input. We DON'T re-check `position(|jh| jh ==
+            // h) == Some(idx)` after the cached lookup — that compared
+            // first-match against the same first-match and was always
+            // true. The `primary_positions.contains(&idx)` check already
+            // rejects columns whose csv_headers position is shared with
+            // primary (the join-key alias case).
+            let additional_inputs_for_guard: Vec<String> = args
+                .flag_join_inputs
+                .as_ref()
+                .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
+                .unwrap_or_default();
+            let mut pairable_secondary_only: Vec<(String, String, usize)> = Vec::new();
+            for add_path in &additional_inputs_for_guard {
+                let Ok(mut add_rdr) = csv::ReaderBuilder::new()
+                    .has_headers(true)
+                    .from_path(add_path)
+                else {
+                    continue;
+                };
+                let Ok(add_hdrs) = add_rdr.headers() else {
+                    continue;
+                };
+                for h in add_hdrs.iter() {
+                    let Some(&idx) = csv_name_to_pos.get(h) else {
+                        continue;
+                    };
+                    if primary_positions.contains(&idx) {
+                        continue;
+                    }
+                    if !is_pairable_by_name(h) {
+                        continue;
+                    }
+                    pairable_secondary_only.push((add_path.clone(), h.to_string(), idx));
+                }
+            }
+
+            // Skip the guard entirely when no primary column passes the
+            // same pairability check: no pair would survive either, and
+            // the empty/sparse output is then a property of the data,
+            // not corruption.
+            let primary_has_pairable = primary_headers
+                .iter()
+                .any(|h| is_pairable_by_name(h.as_str()));
+
+            // Fire only when both sides have pairable columns AND no
+            // pairable secondary-only column is covered. Both sides
+            // having pairable columns is what the construction loop
+            // would also need to produce a secondary-touching pair — so
+            // if the loop didn't, that's the corruption.
+            if primary_has_pairable
+                && !pairable_secondary_only.is_empty()
+                && !pairable_secondary_only
+                    .iter()
+                    .any(|(_, _, idx)| covered_indices.contains(&(*idx as u16)))
+            {
+                return fail_clierror!(
+                    "Bivariate field_pairs built {} pair(s) but none touches any pairable \
+                     secondary-side column: {pairable_secondary_only:?} (each entry is (input, \
+                     column, csv_header_idx)). Primary input has at least one pairable column. \
+                     This is the recurring primary-only-bivariate corruption mode; refusing to \
+                     write a misleading bivariate output. \
+                     stats_field_names={stats_field_names:?}, csv_headers={csv_headers:?}, \
+                     record_count={record_count:?}.",
+                    field_pairs.len()
+                );
             }
         }
 

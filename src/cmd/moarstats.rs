@@ -4495,15 +4495,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             let field1_type_str = records.get(i).and_then(|r| r.get(type_idx)).unwrap_or("");
             let Some(field1_type) = FieldType::from_str(field1_type_str) else {
                 skipped_field1_bad_type += 1;
-                // wwarn! (not log::warn!): qsv's default log level is `off`,
-                // so a bare log::warn! disappears in CI. wwarn! writes to
-                // stderr unconditionally — the actionable trail this
-                // instrumentation exists for. Likewise for the other
-                // per-skip warnings below. The full csv_headers value is
-                // logged ONCE in the summary winfo! after this loop, so
-                // we don't repeat it per-skip (avoids log-flooding on wide
-                // CSVs with many missing fields).
-                wwarn!(
+                // log::warn! (not wwarn!): per-pair skip details are
+                // gated behind QSV_LOG_LEVEL so they don't flood stderr
+                // during routine bivariate runs — zero-variance,
+                // both-constant, all-unique, and type-filter skips are
+                // normal for many datasets and the loop visits O(n²)
+                // pairs. The post-loop winfo! summary already carries
+                // aggregate per-reason skip counts on stderr, which is
+                // enough signal to spot the corruption mode without
+                // dragging the full pair trail into every healthy run.
+                // Set QSV_LOG_LEVEL=warn to surface these per-pair
+                // diagnostics when actually debugging a flake.
+                log::warn!(
                     "bivariate field_pairs: skipping field1={field1_name:?} (i={i}): unrecognized \
                      type {field1_type_str:?}"
                 );
@@ -4513,7 +4516,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // Get column index for field1
             let Some(field1_col_idx) = csv_headers.iter().position(|h| h == field1_name) else {
                 skipped_field1_missing_in_csv += 1;
-                wwarn!(
+                log::warn!(
                     "bivariate field_pairs: skipping field1={field1_name:?} (i={i}): name not \
                      found in csv_headers (len={hdr_len})",
                     hdr_len = csv_headers.len()
@@ -4538,7 +4541,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let field2_type_str = records.get(j).and_then(|r| r.get(type_idx)).unwrap_or("");
                 let Some(field2_type) = FieldType::from_str(field2_type_str) else {
                     skipped_field2_bad_type += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping field2={field2_name:?} (i={i}, j={j}) \
                          with field1={field1_name:?}: unrecognized type {field2_type_str:?}"
                     );
@@ -4548,7 +4551,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // Get column index for field2
                 let Some(field2_col_idx) = csv_headers.iter().position(|h| h == field2_name) else {
                     skipped_field2_missing_in_csv += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping field2={field2_name:?} (i={i}, j={j}) \
                          with field1={field1_name:?}: name not found in csv_headers \
                          (len={hdr_len})",
@@ -4573,7 +4576,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 if let (Some(stddev1), Some(stddev2)) = (field1_stddev, field2_stddev) {
                     if stddev1.abs() < f64::EPSILON || stddev2.abs() < f64::EPSILON {
                         skipped_zero_variance += 1;
-                        wwarn!(
+                        log::warn!(
                             "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                              (i={i}, j={j}): zero stddev (s1={stddev1}, s2={stddev2})"
                         );
@@ -4583,7 +4586,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && (var1.abs() < f64::EPSILON || var2.abs() < f64::EPSILON)
                 {
                     skipped_zero_variance += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                          (i={i}, j={j}): zero variance (v1={var1}, v2={var2})"
                     );
@@ -4596,7 +4599,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     && card2 == 1
                 {
                     skipped_both_constant += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                          (i={i}, j={j}): both cardinalities == 1"
                     );
@@ -4610,7 +4613,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         || field2_cardinality.is_some_and(|c| c == rowcount))
                 {
                     skipped_card_eq_rowcount += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                          (i={i}, j={j}): cardinality == rowcount ({rowcount}) (c1={c1:?}, \
                          c2={c2:?})",
@@ -4650,7 +4653,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     );
                 } else {
                     skipped_type_filter += 1;
-                    wwarn!(
+                    log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
                          (i={i}, j={j}): neither field passes the numeric/date/string filter \
                          (t1={field1_type:?}, t2={field2_type:?})"
@@ -4673,10 +4676,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // recurring "primary-only bivariate output" flake. winfo!
             // (not log::info!) writes to stderr unconditionally; qsv's
             // default log level is `off`, so a bare log::info! would
-            // disappear in CI. The full csv_headers is logged HERE
-            // (once), not per-skip — the per-skip wwarn!s only carry
-            // the field name + reason to avoid log-flooding on wide
-            // CSVs with many missing fields.
+            // disappear in CI. This single line carries the aggregate
+            // per-reason skip counts and the full csv_headers — enough
+            // signal to spot the corruption mode without dragging the
+            // per-pair trail into every healthy run. Per-pair detail is
+            // emitted via log::warn! (gated by QSV_LOG_LEVEL) above.
             winfo!(
                 "bivariate field_pairs: built {built} pair(s) from {nfields} stats fields \
                  (record_count={record_count:?}); skipped: \

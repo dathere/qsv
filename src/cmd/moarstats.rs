@@ -4734,49 +4734,94 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 })
                 .unwrap_or_default();
 
-            // Column-level pairability check: mirrors the loop's filters
-            // that operate on a single column's attributes. A column
-            // that fails any of these checks would also be skipped by the
-            // loop in every pair it appears in, so the guard treats it
-            // as not-expected.
-            let column_pairable = |name: &str| -> bool {
-                let Some(stats_record_idx) = stats_field_names.iter().position(|n| n == name)
-                else {
-                    return false;
-                };
-                let rec = records.get(stats_record_idx);
-                let type_str = rec.and_then(|r| r.get(type_idx)).unwrap_or("");
-                let Some(field_type) = FieldType::from_str(type_str) else {
-                    return false;
-                };
-                if !(field_type.is_numeric_or_date_type() || field_type == FieldType::TString) {
-                    return false;
-                }
-                let stddev = rec
-                    .and_then(|r| stddev_idx.and_then(|i| r.get(i)))
+            // Pair-level pairability: mirrors the construction loop's
+            // exact filter rules so the guard does not diverge from the
+            // loop's view of which secondary columns are eligible.
+            //
+            // Key subtlety the previous (column-level) check missed: the
+            // loop's zero-stddev/variance filter fires only when BOTH
+            // sides have stddev (or both have variance). A
+            // zero-stddev numeric column paired with a TString partner
+            // (no stddev/variance) is NOT skipped. Treating zero-stddev
+            // as an unconditional column-level disqualifier would mask
+            // corruption in mixed string/numeric joined datasets.
+            //
+            // The compatibility check below mirrors:
+            //   - Zero stddev/variance filter (the loop's two-branch form)
+            //   - Both-constant (cardinality == 1) — only fires when BOTH
+            //   - Cardinality == record_count — fires when EITHER side
+            //   - Pair type filter — at least one side must be numeric/date/string
+            struct ColInfo {
+                field_type:  FieldType,
+                stddev:      Option<f64>,
+                variance:    Option<f64>,
+                cardinality: Option<u64>,
+            }
+            let read_col_info = |name: &str| -> Option<ColInfo> {
+                let stats_record_idx = stats_field_names.iter().position(|n| n == name)?;
+                let rec = records.get(stats_record_idx)?;
+                let type_str = rec.get(type_idx).unwrap_or("");
+                let field_type = FieldType::from_str(type_str)?;
+                let stddev = stddev_idx
+                    .and_then(|i| rec.get(i))
                     .and_then(parse_float_opt);
-                let variance = rec
-                    .and_then(|r| variance_idx.and_then(|i| r.get(i)))
+                let variance = variance_idx
+                    .and_then(|i| rec.get(i))
                     .and_then(parse_float_opt);
-                let card = rec
-                    .and_then(|r| cardinality_idx.and_then(|i| r.get(i)))
+                let cardinality = cardinality_idx
+                    .and_then(|i| rec.get(i))
                     .and_then(|s| s.parse::<u64>().ok());
-                if let Some(s) = stddev
-                    && s.abs() < f64::EPSILON
+                Some(ColInfo {
+                    field_type,
+                    stddev,
+                    variance,
+                    cardinality,
+                })
+            };
+            let pair_compatible = |a: &ColInfo, b: &ColInfo| -> bool {
+                if let (Some(s1), Some(s2)) = (a.stddev, b.stddev) {
+                    if s1.abs() < f64::EPSILON || s2.abs() < f64::EPSILON {
+                        return false;
+                    }
+                } else if let (Some(v1), Some(v2)) = (a.variance, b.variance)
+                    && (v1.abs() < f64::EPSILON || v2.abs() < f64::EPSILON)
                 {
                     return false;
                 }
-                if let Some(v) = variance
-                    && v.abs() < f64::EPSILON
+                if let (Some(c1), Some(c2)) = (a.cardinality, b.cardinality)
+                    && c1 == 1
+                    && c2 == 1
                 {
                     return false;
                 }
-                if let (Some(c), Some(rc)) = (card, record_count)
-                    && c == rc
+                if let Some(rc) = record_count
+                    && (a.cardinality.is_some_and(|c| c == rc)
+                        || b.cardinality.is_some_and(|c| c == rc))
                 {
                     return false;
                 }
-                true
+                a.field_type.is_numeric_or_date_type()
+                    || b.field_type.is_numeric_or_date_type()
+                    || a.field_type == FieldType::TString
+                    || b.field_type == FieldType::TString
+            };
+            // A column is "pairable" if at least one OTHER column in
+            // stats_field_names would form a compatible pair with it
+            // under the construction loop's exact rules. This matches
+            // the loop's behavior — including the "zero-stddev numeric
+            // pairs with a string column" case the previous check missed.
+            let column_pairable = |name: &str| -> bool {
+                let Some(col) = read_col_info(name) else {
+                    return false;
+                };
+                stats_field_names
+                    .iter()
+                    .filter(|other| other.as_str() != name)
+                    .any(|other| {
+                        read_col_info(other)
+                            .as_ref()
+                            .is_some_and(|partner| pair_compatible(&col, partner))
+                    })
             };
 
             // Collect pairable secondary-only positions from each

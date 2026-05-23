@@ -4677,37 +4677,65 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             );
         }
 
-        // In joined-inputs mode, fail loud if no constructed pair covers a
-        // column from a secondary input. This is the precise failure mode
-        // of the recurring CI flake (e.g.
-        // moarstats_join_type_left_runs_and_writes_bivariate): the
-        // bivariate output silently contains only primary-side pairs,
-        // which downstream produces a confusing "missing column" assertion
-        // in the test rather than pointing at moarstats. Catch it here
-        // with the actual state at hand.
+        // In joined-inputs mode, fail loud when the corruption signature
+        // fires: NO surviving pair touches an eligible secondary-side
+        // column. This is the precise failure mode of the recurring CI
+        // flake (e.g. moarstats_join_type_left_runs_and_writes_bivariate)
+        // — the bivariate output silently contains only primary-side
+        // pairs, which downstream produces a confusing "missing column"
+        // assertion in the test rather than pointing at moarstats.
+        //
+        // The guard is intentionally narrow to avoid spurious failures on
+        // legitimately-pairing-but-everything-filtered datasets. It only
+        // considers secondary columns that:
+        //   1. Are NOT aliased to a primary position by first-match `position()` lookup (so
+        //      duplicate join-key columns — e.g. two `id` columns — are excluded; the field_pairs
+        //      loop collapses them to the primary's index anyway).
+        //   2. Have a stats record with a recognized type that passes the bivariate type filter
+        //      (numeric / date / string). Columns filtered legitimately for OTHER reasons (zero
+        //      variance, cardinality == rowcount, both constant) are still counted as eligible here
+        //      — those filters fire on PAIRS, not columns, so an eligible-by-type column may still
+        //      legitimately not contribute to any pair under narrow data conditions. We accept that
+        //      residual false positive in exchange for early detection of the actual corruption
+        //      mode the flake produces.
+        // The guard fires only when at least one eligible secondary-only
+        // column exists AND none of them appears in any pair.
         if temp_joined_path.is_some() && !field_pairs.is_empty() {
-            // Build the set of csv_headers indices covered by the surviving
-            // pairs. If any column-index from one of the additional inputs
-            // is absent from this set, every pair involving that column
-            // was silently filtered.
+            // Build the set of csv_headers indices covered by surviving
+            // pairs.
             let mut covered_indices: std::collections::HashSet<u16> =
                 std::collections::HashSet::new();
             for (a, b) in field_pairs.keys() {
                 covered_indices.insert(*a);
                 covered_indices.insert(*b);
             }
-            // Resolve each additional input's header columns to csv_headers
-            // indices and check coverage. We use the same first-match
-            // `position` lookup as the construction loop so duplicate
-            // join-key columns alias to the same index (e.g. two `id`
-            // columns both map to idx 0) — that matches the loop's view of
-            // pair identity.
+
+            // Compute primary positions in csv_headers: indices whose
+            // names appear in the primary input's own header. Used to
+            // identify which csv_headers indices are exclusively from
+            // secondary inputs.
+            let primary_positions: std::collections::HashSet<usize> = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(input_path)
+                .ok()
+                .and_then(|mut r| r.headers().ok().map(|h| h.clone()))
+                .map(|primary_hdrs| {
+                    primary_hdrs
+                        .iter()
+                        .filter_map(|h| csv_headers.iter().position(|jh| jh == h))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            // Collect eligible secondary-only positions from each
+            // additional input, skipping aliased join-key columns and
+            // type-ineligible columns.
             let additional_inputs_for_guard: Vec<String> = args
                 .flag_join_inputs
                 .as_ref()
                 .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
                 .unwrap_or_default();
-            let mut uncovered: Vec<(String, String)> = Vec::new();
+            let mut eligible_secondary_only: Vec<(String, String, usize)> = Vec::new();
             for add_path in &additional_inputs_for_guard {
                 let Ok(mut add_rdr) = csv::ReaderBuilder::new()
                     .has_headers(true)
@@ -4719,27 +4747,61 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     continue;
                 };
                 for h in add_hdrs.iter() {
-                    if let Some(idx) = csv_headers.iter().position(|jh| jh == h) {
-                        if !covered_indices.contains(&(idx as u16)) {
-                            uncovered.push((add_path.clone(), h.to_string()));
-                        }
-                    } else {
-                        // The header read at line ~4422 has already
-                        // guarded the inverse direction; reaching here
-                        // means a secondary column genuinely vanished
-                        // from csv_headers without the earlier guard
-                        // catching it — record it anyway.
-                        uncovered.push((add_path.clone(), h.to_string()));
+                    let Some(idx) = csv_headers.iter().position(|jh| jh == h) else {
+                        continue;
+                    };
+                    // Exclude columns that share a position with primary
+                    // (e.g. the join key) — these can never be exclusively
+                    // secondary.
+                    if primary_positions.contains(&idx) {
+                        continue;
                     }
+                    // Exclude aliased duplicates: if this header name's
+                    // first occurrence in csv_headers is at a DIFFERENT
+                    // index than ours, field_pairs cannot key on this
+                    // index (it always collapses to the first match).
+                    // Treat those as inherently-uncoverable, not corruption.
+                    if csv_headers.iter().position(|jh| jh == h) != Some(idx) {
+                        continue;
+                    }
+                    // Eligibility-by-type: only consider columns whose
+                    // stats record has a recognized type that passes the
+                    // bivariate type filter. This excludes TNull and
+                    // unrecognized-type columns that would never pair.
+                    let Some(stats_record_idx) = stats_field_names.iter().position(|n| n == h)
+                    else {
+                        continue;
+                    };
+                    let type_str = records
+                        .get(stats_record_idx)
+                        .and_then(|r| r.get(type_idx))
+                        .unwrap_or("");
+                    let Some(field_type) = FieldType::from_str(type_str) else {
+                        continue;
+                    };
+                    if !(field_type.is_numeric_or_date_type() || field_type == FieldType::TString) {
+                        continue;
+                    }
+                    eligible_secondary_only.push((add_path.clone(), h.to_string(), idx));
                 }
             }
-            if !uncovered.is_empty() {
+
+            // Fire only when at least one eligible secondary-only column
+            // exists AND none of them is covered. This is the actual
+            // corruption signature: every secondary-side column that
+            // SHOULD have produced pairs failed to do so.
+            if !eligible_secondary_only.is_empty()
+                && !eligible_secondary_only
+                    .iter()
+                    .any(|(_, _, idx)| covered_indices.contains(&(*idx as u16)))
+            {
                 return fail_clierror!(
-                    "Bivariate field_pairs built {} pair(s) but no surviving pair covers these \
-                     secondary-side columns: {uncovered:?}. This is the recurring \
-                     primary-only-bivariate corruption mode; refusing to write a misleading \
-                     bivariate output. stats_field_names={stats_field_names:?}, \
-                     csv_headers={csv_headers:?}, record_count={record_count:?}.",
+                    "Bivariate field_pairs built {} pair(s) but none touches any eligible \
+                     secondary-side column: {eligible_secondary_only:?} (each entry is (input, \
+                     column, csv_header_idx)). This is the recurring primary-only-bivariate \
+                     corruption mode; refusing to write a misleading bivariate output. \
+                     stats_field_names={stats_field_names:?}, csv_headers={csv_headers:?}, \
+                     record_count={record_count:?}.",
                     field_pairs.len()
                 );
             }

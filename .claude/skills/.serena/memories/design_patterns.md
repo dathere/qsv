@@ -10,9 +10,9 @@
 
 ## Tool Exposure Modes (`QSV_MCP_EXPOSE_ALL_TOOLS`)
 - `true` — expose all available qsv tools at startup
-- `false` — 9 core tools only
-- unset (default) — deferred-loading mode: surface `COMMON_COMMANDS` filtered by `availableCommands` from the qsv binary; rest are discoverable via `qsv_search_tools`
-The plugin sets `QSV_MCP_EXPOSE_ALL_TOOLS=true` (Claude Code/Cowork handle large tool lists fine).
+- `false` — only the tools in `CORE_TOOLS` (defined in `src/mcp-server.ts`): `qsv_search_tools`, `qsv_config`, `qsv_set_working_dir`, `qsv_get_working_dir`, `qsv_browse_directory`, `qsv_list_files`, `qsv_log`, `qsv_command`, `qsv_to_parquet`, `qsv_index`, `qsv_stats` (+1 app-only tool when Apps enabled)
+- unset (default) — deferred-loading mode: `CORE_TOOLS` plus `COMMON_COMMANDS` filtered by `availableCommands` from the qsv binary; remaining tools are discoverable via `qsv_search_tools`
+The MCPB extension manifest (`manifest.json`) does NOT set `QSV_MCP_EXPOSE_ALL_TOOLS`, so the default deferred-loading mode applies unless a user explicitly sets the env var.
 
 ## Guidance Emoji Conventions
 - 💡 `USE WHEN` — when to use this tool vs alternatives

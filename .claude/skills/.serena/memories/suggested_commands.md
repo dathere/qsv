@@ -22,7 +22,6 @@ All commands run from `/Users/joelnatividad/GitHub/qsv/.claude/skills/` unless n
 ## Package & Release
 - `npm run mcpb:package` — package as `.mcpb` MCP bundle (`qsv-mcp-server-<v>.mcpb`)
 - `npm run plugin:package` — package as `.plugin` Cowork plugin (`qsv-data-wrangling-<v>.plugin`)
-- `npm run plugin:install` — install Cowork plugin locally (`bash scripts/install-cowork-plugin.sh`)
 - `npm run clean:bundles` — clean built bundle artifacts
 
 ## Skill Regeneration (from qsv repo root, NOT from this dir)

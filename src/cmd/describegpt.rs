@@ -308,15 +308,17 @@ describegpt options:
                              Ollama: http://localhost:11434/v1
                              Jan: https://localhost:1337/v1
                              LM Studio: http://localhost:1234/v1
-                           NOTE: If set, takes precedence over the QSV_LLM_BASE_URL environment variable
-                           and the base URL specified in the prompt file.
-                           [default: http://localhost:1234/v1]
+                           Precedence: explicit CLI flag > QSV_LLM_BASE_URL env var > prompt file
+                           base_url > built-in default (http://localhost:1234/v1).
+                           NOTE: no docopt default — the absence of an explicit flag is what
+                           lets the env var and the prompt file actually take effect.
     -m, --model <model>    The model to use for inferencing. This model must be compatible with OpenAI API spec.
                            Works with both cloud LLM providers and local LLMs.
-                           If set, takes precedence over the QSV_LLM_MODEL environment variable.
                            Tested open weights models include OpenAI's gpt-oss-20b and gpt-oss-120b;
                            Google's Gemma family of open models; and Mistral's Magistral reasoning models.
-                           [default: openai/gpt-oss-20b]
+                           Precedence: explicit CLI flag > QSV_LLM_MODEL env var > prompt file model
+                           > built-in default (openai/gpt-oss-20b). No docopt default — same
+                           rationale as --base-url above.
     --language <lang>      The output language/dialect/tone to use for the response. (e.g., "Spanish", "French",
                            "Hindi", "Mandarin", "Italian", "Castilian", "Franglais", "Taglish", "Pig Latin",
                            "Valley Girl", "Pirate", "Shakespearean English", "Chavacano", "Gen Z", "Yoda", etc.)
@@ -655,13 +657,22 @@ impl MarkdownTemplateOverride {
     }
 }
 
-// MUST stay byte-identical to the `--base-url` docopt `[default: ...]`. It is
-// the sentinel `get_prompt_file` / the api-key resolver compare `flag_base_url`
-// against to distinguish "user explicitly passed --base-url" from "docopt
-// default in effect". If it drifts from the real default, that comparison is
-// always true and the `QSV_LLM_BASE_URL` env-var precedence branch becomes dead
-// code (the env var is silently ignored).
+// The base_url / model values these constants represent are also baked
+// into the bundled default prompt file (resources/describegpt_defaults.toml).
+// At runtime, the effective URL/model is resolved by `get_prompt_file`
+// with CLI > env > prompt_file precedence — and the prompt_file's own
+// fields fall back to these constants via the bundled TOML when no
+// custom --prompt-file is given. The constants are therefore not used
+// as direct runtime fallbacks; they're kept here for tests that build
+// an `Args` struct manually and need a sensible default to plug in.
+//
+// Crucially, neither --base-url nor --model carries a docopt
+// `[default: ...]` — that would make flag_base_url/flag_model always
+// Some and erase the "user passed nothing" signal `get_prompt_file`'s
+// precedence depends on (codex review job 2363).
+#[allow(dead_code)]
 const DEFAULT_BASE_URL: &str = "http://localhost:1234/v1";
+#[allow(dead_code)]
 const DEFAULT_MODEL: &str = "openai/gpt-oss-20b";
 const LLM_APIKEY_ERROR: &str = r#"Error: Neither QSV_LLM_BASE_URL nor QSV_LLM_APIKEY environment variables are set.
 Either set `--base-url` to an address with "localhost" in it (indicating a local LLM), or set `--api-key`.
@@ -1036,12 +1047,14 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     // Get prompt file if --prompt-file is used, otherwise get default prompt file
     let prompt_file = get_prompt_file(args)?;
     let models_endpoint = "/models";
-    let base_url = if args.flag_prompt_file.is_some() {
-        prompt_file.base_url.clone()
-    } else {
-        // safety: base_url has a docopt default
-        args.flag_base_url.as_deref().unwrap().to_string()
-    };
+    // get_prompt_file already applied CLI > env > prompt_file precedence
+    // (the prompt_file's own base_url falls back to the built-in default
+    // via the bundled default prompt TOML when no --prompt-file is given),
+    // so prompt_file.base_url IS the effective URL. Use it for both the
+    // --prompt-file and no-flag cases — codex review job 2372 flagged the
+    // previous branch where the no-flag case skipped the prompt-file
+    // fallback.
+    let base_url = prompt_file.base_url.clone();
     let response = send_request(
         client,
         api_key,
@@ -1226,29 +1239,24 @@ fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
         };
 
         // Priority: Explicit CLI flag > Env var > Prompt file base_url
-        // Check if user explicitly provided --base-url (not the default value)
-        if args.flag_base_url.as_deref() != Some(DEFAULT_BASE_URL) {
-            // User explicitly provided a different base URL, use it
-            // safety: args.flag_base_url is guaranteed to be Some here, as it
-            // differs from the docopt default DEFAULT_BASE_URL checked above.
-            let base_url = args.flag_base_url.as_ref().unwrap();
-            prompt_file.base_url.clone_from(base_url);
-        } else if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
-            // User didn't provide explicit --base-url, but env var is set
-            prompt_file.base_url = base_url;
+        // With no docopt default on --base-url, flag_base_url is Some
+        // ONLY when the user explicitly passed the flag — so a plain
+        // Some/None check correctly distinguishes "CLI explicit" from
+        // "fall through to env/prompt_file" (codex review job 2363).
+        if let Some(cli_base_url) = args.flag_base_url.as_ref() {
+            prompt_file.base_url.clone_from(cli_base_url);
+        } else if let Ok(env_base_url) = env::var("QSV_LLM_BASE_URL") {
+            prompt_file.base_url = env_base_url;
         }
         // else: keep the base_url from the prompt file
 
-        // Priority: Explicit CLI flag > Env var > Prompt file model
-        // The --model flag has a docopt default
-        let model_to_use = if args.flag_model.as_deref() != Some(DEFAULT_MODEL) {
-            // User explicitly provided a different model via CLI, use it
-            args.flag_model.clone().unwrap() // safety: flag_model has a docopt default
+        // Priority: Explicit CLI flag > Env var > Prompt file model.
+        // Same rationale as --base-url above.
+        let model_to_use = if let Some(cli_model) = args.flag_model.as_ref() {
+            cli_model.clone()
         } else if let Ok(env_model) = env::var("QSV_LLM_MODEL") {
-            // User didn't provide explicit --model, but env var is set
             env_model
         } else {
-            // Use prompt file model or default
             prompt_file.model.clone()
         };
 
@@ -4441,16 +4449,24 @@ fn run_inference_options(
 ) -> CliResult<()> {
     let llm_start = Instant::now();
 
+    // Read the effective base URL FIRST so we can hand it to the
+    // reqwest client (for retry host classification — reqwest's
+    // `for_host` matches this against actual request hosts). The
+    // effective URL is CLI > env > prompt_file > built-in default;
+    // get_prompt_file applies that precedence and stores the result in
+    // prompt_file.base_url. Using resolve_base_url(args) here would
+    // skip the prompt_file fallback — codex review job 2372.
+    let base_url = get_prompt_file(args)?.base_url.clone();
+
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
         // unwrap_or 0 because 0 is a valid timeout per the usage text (local LLMs)
         util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
-        args.flag_base_url.clone(),
+        Some(base_url.clone()),
     )?;
 
     let model = check_model(&client, Some(api_key), args)?;
     let output_format = get_output_format(args)?;
-    let base_url = get_prompt_file(args)?.base_url.clone();
 
     let mut total_json_output: serde_json::Value = json!({});
     let mut data_dict = CompletionResponse::default();
@@ -5186,24 +5202,34 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .unwrap();
     }
 
-    // Priority: Explicit CLI flag > Env var > Default
-    // Since --base-url has a docopt default, we check if the current value is the default
-    // If it is, then the user didn't explicitly provide it, so env var should take precedence
-    if args.flag_base_url.as_deref() == Some(DEFAULT_BASE_URL) {
-        // Current value is default, check if env var is set
-        if let Ok(base_url) = env::var("QSV_LLM_BASE_URL") {
-            args.flag_base_url = Some(base_url);
-        }
-    }
-    // else: value is not default, so user explicitly provided it - keep it
+    // Resolve the EFFECTIVE base URL — the actual host the API request
+    // will go to. This MUST include the prompt-file's base_url in the
+    // precedence: CLI > env > prompt_file > built-in default. Using
+    // resolve_base_url(args) here would skip the prompt_file fallback
+    // and, with --prompt-file pointing at a remote provider and no
+    // CLI/env URL, leave us reading "http://localhost:1234/v1" — passing
+    // the localhost gate below and allowing an unauthenticated request
+    // to the remote provider (codex review job 2372). get_prompt_file
+    // applies the same precedence and writes the result into
+    // prompt_file.base_url, so reading it here is the canonical value.
+    //
+    // (The earlier fix for codex review job 2363 — removing the docopt
+    // default for --base-url — is what lets get_prompt_file's
+    // Some-iff-explicit check on args.flag_base_url work correctly.)
+    let effective_base_url = get_prompt_file(&args)?.base_url.clone();
 
     // Priority: CLI flag > Env var > default/error
-    let api_key: String = if args
-        .flag_base_url
-        .as_deref()
-        .unwrap_or_default()
-        .contains("localhost")
-    {
+    //
+    // --prepare-context only emits prompt/context JSON and never calls
+    // the LLM API, so skip the api-key requirement for that mode —
+    // requiring credentials for a remote prompt-file URL would block a
+    // legitimate no-network use case (codex review job 2373). The
+    // --process-response branch above already returns before reaching
+    // here, so it's not affected. `api_key` is unused on the
+    // --prepare-context path; the empty string is a typed placeholder.
+    let api_key: String = if args.flag_prepare_context {
+        String::new()
+    } else if effective_base_url.contains("localhost") {
         // Allow empty API key for localhost
         // Priority: CLI flag > Env var > empty
         args.flag_api_key

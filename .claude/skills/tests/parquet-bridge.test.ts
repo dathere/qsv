@@ -17,6 +17,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert";
+import { join } from "node:path";
 import {
   detectDelimiter,
   parseCSVLine,
@@ -199,17 +200,23 @@ test("getParquetPath ignores case and directory components", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test("statsFilePath places the cache next to the input file", () => {
-  assert.strictEqual(statsFilePath("/tmp/foo.csv"), "/tmp/foo.stats.csv");
-  assert.strictEqual(statsFilePath("/tmp/foo.tsv"), "/tmp/foo.stats.csv");
+  // Use path.join for the expected values so the assertions work on Windows
+  // too — statsFilePath internally uses path.join, which emits backslashes on win32.
+  assert.strictEqual(statsFilePath(join("/tmp", "foo.csv")), join("/tmp", "foo.stats.csv"));
+  assert.strictEqual(statsFilePath(join("/tmp", "foo.tsv")), join("/tmp", "foo.stats.csv"));
 });
 
 test("statsFilePath uses the basename without its extension", () => {
   // parse() drops the final extension, so 'foo.csv.sz' becomes 'foo.csv'.
   // This mirrors how qsv writes the stats cache for compressed inputs.
-  assert.strictEqual(statsFilePath("/tmp/foo.csv.sz"), "/tmp/foo.csv.stats.csv");
+  assert.strictEqual(
+    statsFilePath(join("/tmp", "foo.csv.sz")),
+    join("/tmp", "foo.csv.stats.csv"),
+  );
 });
 
 test("statsFilePath handles a bare filename without a directory", () => {
+  // No directory component → no separator to worry about.
   assert.strictEqual(statsFilePath("foo.csv"), "foo.stats.csv");
 });
 

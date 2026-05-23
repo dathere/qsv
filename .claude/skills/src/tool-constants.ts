@@ -196,3 +196,27 @@ export const MAX_HELPER_STDERR_SIZE = 1024 * 1024; // 1 MB
  * Timeout for binary validation (qsv --version, duckdb --version).
  */
 export const BINARY_VALIDATION_TIMEOUT_MS = 5000;
+
+
+/**
+ * Home-relative directories that should never be browsed or used as the
+ * working directory. Covers SSH/GPG/cloud-CLI credential stores, K8s configs,
+ * password managers, and the Docker daemon socket directory.
+ *
+ * Shared by `mcp-server.handleBrowseDirectory` and
+ * `FilesystemResourceProvider.setWorkingDirectory` so both entry points
+ * enforce the same denylist symmetrically.
+ */
+export const SENSITIVE_HOME_DIRS = [
+  ".ssh",
+  ".gnupg",
+  ".gpg",
+  ".pki",
+  ".aws",
+  ".azure",
+  ".config/gcloud",
+  ".kube",
+  ".password-store",
+  ".local/share/keyrings",
+  ".docker",
+];

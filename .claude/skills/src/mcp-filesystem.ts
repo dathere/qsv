@@ -17,6 +17,7 @@ import { formatBytes, getErrorMessage } from "./utils.js";
 import { config as appConfig } from "./config.js";
 import { runQsvSimple } from "./executor.js";
 import { statsFilePath } from "./parquet-bridge.js";
+import { SENSITIVE_HOME_DIRS } from "./tool-constants.js";
 
 /**
  * Expand tilde (~) in paths to the user's home directory
@@ -262,6 +263,32 @@ export class FilesystemResourceProvider {
       newDir = realpathSync(newDir);
     } catch {
       // Keep as-is if directory doesn't exist or inaccessible
+    }
+
+    // Defense-in-depth: refuse to point the working dir at well-known
+    // credential / secrets directories. Mirrors the SENSITIVE_HOME_DIRS check
+    // in mcp-server.handleBrowseDirectory so both entry points are symmetric.
+    // Without this, plugin mode could auto-add (e.g.) ~/.ssh to allowedDirs.
+    // Extension-based file listing still blocks reading non-tabular files,
+    // but pointing the working dir at a secrets dir is itself a smell.
+    const home = homedir();
+    let canonHome: string;
+    try {
+      canonHome = realpathSync(home);
+    } catch {
+      canonHome = home;
+    }
+    const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
+    const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
+    const target = normalize(newDir);
+    const sep = process.platform === "win32" ? "\\" : "/";
+    for (const sensitive of SENSITIVE_HOME_DIRS) {
+      const blocked = normalize(resolve(canonHome, sensitive));
+      if (target === blocked || target.startsWith(blocked + sep)) {
+        throw new Error(
+          `Cannot set working directory to ${dir}: "${sensitive}" is a protected directory.`,
+        );
+      }
     }
 
     if (!this.isPathAllowed(newDir, true)) {

@@ -63,20 +63,7 @@ import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 import { PipelineManifest } from "./pipeline-manifest.js";
 import { WorkingDirManager } from "./working-dir-manager.js";
 import { PIPELINE_METADATA, type PipelineMetadata } from "./mcp-tools.js";
-
-/**
- * Directories under $HOME that the browse-directory tool must never enter.
- * Each entry must be a directory (not a file) — the check resolves these as
- * paths and tests whether the target dir equals or is a child of the entry.
- * Promoted to module level so the array is created once, not on every call.
- */
-const SENSITIVE_DIRS = [
-  ".ssh", ".gnupg", ".gpg", ".pki",
-  ".aws", ".azure", ".config/gcloud",
-  ".kube",
-  ".password-store", ".local/share/keyrings",
-  ".docker",
-];
+import { SENSITIVE_HOME_DIRS } from "./tool-constants.js";
 
 /**
  * Core tools that are always available (defer_loading: false)
@@ -1104,7 +1091,7 @@ class QsvMcpServer {
       const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
       const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
       const target = normalize(targetDir);
-      for (const sensitive of SENSITIVE_DIRS) {
+      for (const sensitive of SENSITIVE_HOME_DIRS) {
         const blocked = normalize(resolve(canonHome, sensitive));
         if (target === blocked || target.startsWith(blocked + sep)) {
           return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
@@ -1271,7 +1258,12 @@ class QsvMcpServer {
  * Graceful shutdown handler
  */
 function setupShutdownHandlers(manifest: PipelineManifest | null): void {
-  const SHUTDOWN_TIMEOUT_MS = 2000; // 2 seconds max for graceful shutdown
+  // Hard cap on graceful shutdown. Generous enough to accommodate:
+  //   killAllProcesses SIGTERM → KILL_GRACE_PERIOD_MS (1s) → SIGKILL → small buffer
+  const SHUTDOWN_TIMEOUT_MS = 3000;
+  // Wait after killAllProcesses before exiting, long enough for the SIGKILL
+  // fallback (1s grace period) to fire on processes that ignore SIGTERM.
+  const POST_KILL_WAIT_MS = 1200;
   let shutdownInProgress = false;
 
   const handleShutdown = (signal: string) => {
@@ -1305,10 +1297,10 @@ function setupShutdownHandlers(manifest: PipelineManifest | null): void {
       }
     }
 
-    // Kill all child processes
+    // Kill all child processes (SIGTERM, then SIGKILL after grace period)
     killAllProcesses();
 
-    // Wait briefly for processes to exit, then force exit
+    // Wait long enough for the SIGKILL fallback to fire, then exit.
     setTimeout(() => {
       const remaining = getActiveProcessCount();
       if (remaining > 0) {
@@ -1319,7 +1311,7 @@ function setupShutdownHandlers(manifest: PipelineManifest | null): void {
         console.error("[Server] Graceful shutdown complete");
       }
       process.exit(0);
-    }, 100);
+    }, POST_KILL_WAIT_MS);
   };
 
   // Handle both SIGTERM (from Claude Desktop) and SIGINT (Ctrl+C)

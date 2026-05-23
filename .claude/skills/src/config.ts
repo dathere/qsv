@@ -815,6 +815,19 @@ export const config = {
   notifyUpdates: getBooleanEnv("QSV_MCP_NOTIFY_UPDATES", true),
 
   /**
+   * Strip absolute paths from qsv error messages before returning to client.
+   * Default: true. Set to false to preserve full paths for debugging.
+   *
+   * When true, both "Unexpected error" (thrown) and "Error executing <cmd>"
+   * (qsv non-zero exit) messages are run through sanitizeErrorForClient,
+   * which replaces absolute paths with their basename. This prevents leaking
+   * usernames and directory layout to MCP clients (relevant for hosted/shared
+   * deployments). Set to false in private/local setups where richer diagnostics
+   * are preferred.
+   */
+  sanitizeErrors: getBooleanEnv("QSV_MCP_SANITIZE_ERRORS", true),
+
+  /**
    * Custom server instructions sent during MCP initialization.
    * Overrides built-in workflow guidance when non-empty.
    * Leave empty (default) to use built-in defaults.

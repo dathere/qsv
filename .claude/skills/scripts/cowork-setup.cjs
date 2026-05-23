@@ -6,7 +6,7 @@
 // Node.js port of cowork-setup.sh for Windows compatibility.
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
-const { existsSync, copyFileSync, realpathSync } = require('node:fs');
+const { existsSync, copyFileSync, realpathSync, readFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { resolve, normalize, join } = require('node:path');
 const { homedir } = require('node:os');
@@ -15,8 +15,44 @@ function output(additionalContext) {
   process.stdout.write(JSON.stringify({ additionalContext }) + '\n');
 }
 
-// Minimum qsv version required — keep in sync with manifest.json _meta.minimum_qsv_version
-const MINIMUM_QSV_VERSION = '20.1.0';
+// Strict semver pattern accepted as a minimum-version floor. Mirrors
+// SEMVER_PATTERN in src/version.ts. Strings that don't match
+// (e.g. "v20.1.0", "20.1", "20.1.0-") are rejected so a malformed manifest
+// can't silently relax the version-floor check — the local compareVersions
+// here coerces NaN parts to 0, so "v20.1.0" would otherwise become "0.1.0"
+// and let any installed qsv pass.
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
+
+/**
+ * Read the minimum required qsv version from manifest.json
+ * (_meta["com.dathere.qsv"].minimum_qsv_version). manifest.json is the single
+ * source of truth; src/config.ts reads the same field via src/version.ts.
+ * Falls back to '0.0.0' on any error so a broken manifest can't break the
+ * SessionStart hook — the version check just becomes a no-op.
+ */
+function loadMinimumQsvVersion() {
+  let reason = 'manifest.json unreadable';
+  try {
+    const manifestPath = join(__dirname, '..', 'manifest.json');
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const v = parsed && parsed._meta && parsed._meta['com.dathere.qsv'] && parsed._meta['com.dathere.qsv'].minimum_qsv_version;
+    if (typeof v !== 'string' || v.length === 0) {
+      reason = '_meta.com.dathere.qsv.minimum_qsv_version is missing or empty';
+    } else if (!SEMVER_PATTERN.test(v)) {
+      reason = `_meta.com.dathere.qsv.minimum_qsv_version is not strict semver (got "${v}")`;
+    } else {
+      return v;
+    }
+  } catch (err) {
+    reason = `manifest.json read failed: ${err && err.message ? err.message : String(err)}`;
+  }
+  process.stderr.write(
+    `cowork-setup: ${reason} — falling back to '0.0.0' (qsv version check effectively disabled)\n`,
+  );
+  return '0.0.0';
+}
+
+const MINIMUM_QSV_VERSION = loadMinimumQsvVersion();
 
 /**
  * Check if qsvmcp or qsv binary is available.
@@ -76,8 +112,14 @@ function findQsvBinary() {
  * Returns -1 if a < b, 0 if equal, 1 if a > b.
  */
 function compareVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  // Strip pre-release and build metadata before splitting, matching
+  // src/utils.ts compareVersions(). Without this, a floor like
+  // "20.1.1-alpha.1" splits into ["20","1","1-alpha","1"], parses patch as
+  // NaN, and the (pa[i] || 0) coercion below would silently relax it to
+  // "20.1.0" — letting too-old qsv binaries pass the SessionStart check.
+  const strip = (v) => v.replace(/[-+].*$/, '');
+  const pa = strip(a).split('.').map(Number);
+  const pb = strip(b).split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     if ((pa[i] || 0) > (pb[i] || 0)) return 1;
@@ -339,7 +381,15 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  // Never block session start
-  process.exit(0);
-});
+// Export helpers for unit tests. Gate the SessionStart logic under
+// `require.main === module` so tests can require this file without
+// triggering stdin reads or filesystem writes. Same pattern as
+// scripts/log-web-results.cjs.
+module.exports = { compareVersions, loadMinimumQsvVersion, SEMVER_PATTERN };
+
+if (require.main === module) {
+  main().catch(() => {
+    // Never block session start
+    process.exit(0);
+  });
+}

@@ -20,6 +20,7 @@ const projectRoot = resolve(dirname(__filename), '..', '..');
 const { findQsvMcpBinary, truncateMessage, MAX_LOG_MESSAGE_LEN } = require(resolve(projectRoot, 'scripts', 'qsv-utils.cjs'));
 const { parseTranscript, formatDuration, buildSummary } = require(resolve(projectRoot, 'scripts', 'log-session-end.cjs'));
 const { sanitizeUrl, buildWebLogMessage } = require(resolve(projectRoot, 'scripts', 'log-web-results.cjs'));
+const { compareVersions: hookCompareVersions, SEMVER_PATTERN: hookSemverPattern } = require(resolve(projectRoot, 'scripts', 'cowork-setup.cjs'));
 
 // --- findQsvMcpBinary tests ---
 
@@ -378,4 +379,45 @@ test('buildWebLogMessage uses search_query fallback', () => {
   const result = buildWebLogMessage('WebSearch', { search_query: 'fallback query' }, 'results');
   assert.ok(result !== null);
   assert.ok(result.message.includes('query="fallback query"'));
+});
+
+// --- cowork-setup.cjs compareVersions tests ---
+//
+// Regression coverage for roborev #2408: the hook's local compareVersions
+// previously split on '.' without stripping pre-release/build metadata, so a
+// floor like "20.1.5-alpha.1" or "20.1.5+build.42" was parsed as patch NaN,
+// coerced to 0, and silently relaxed to "20.1.0" — letting too-old binaries
+// pass the SessionStart check. The fix mirrors src/utils.ts compareVersions
+// by stripping [-+].* before splitting.
+
+test('hook compareVersions: installed below pre-release floor returns -1', () => {
+  assert.strictEqual(hookCompareVersions('20.1.0', '20.1.5-alpha.1'), -1);
+});
+
+test('hook compareVersions: installed equals stripped pre-release floor returns 0', () => {
+  assert.strictEqual(hookCompareVersions('20.1.5', '20.1.5-alpha.1'), 0);
+});
+
+test('hook compareVersions: build-metadata floor is stripped before comparison', () => {
+  assert.strictEqual(hookCompareVersions('20.1.5', '20.1.5+build.42'), 0);
+});
+
+test('hook compareVersions: installed above pre-release floor returns 1', () => {
+  assert.strictEqual(hookCompareVersions('20.2.0', '20.1.5-alpha.1'), 1);
+});
+
+test('hook compareVersions: plain semver comparisons still work', () => {
+  assert.strictEqual(hookCompareVersions('20.1.0', '20.1.0'), 0);
+  assert.strictEqual(hookCompareVersions('19.0.0', '20.0.0'), -1);
+  assert.strictEqual(hookCompareVersions('21.0.0', '20.0.0'), 1);
+});
+
+test('hook SEMVER_PATTERN accepts only strict semver', () => {
+  // Sanity-check that the pattern matches src/version.ts SEMVER_PATTERN.
+  for (const good of ['20.1.0', '20.1.0-alpha.1', '20.1.0+build.42', '20.1.0-rc.1+sha.abc']) {
+    assert.ok(hookSemverPattern.test(good), `${good} should match`);
+  }
+  for (const bad of ['v20.1.0', '20.1', '20', '', '20.1.0-', '1.2.3.4', '20.1.0 ']) {
+    assert.ok(!hookSemverPattern.test(bad), `${bad} should NOT match`);
+  }
 });

@@ -50,6 +50,49 @@ export function readVersionFromJson(filePath: string): string | null {
 }
 
 /**
+ * Strict semver pattern accepted as a minimum-version floor.
+ * Matches MAJOR.MINOR.PATCH with optional pre-release (`-…`) and build
+ * (`+…`) metadata, matching what compareVersions() in src/utils.ts already
+ * strips and compares. Strings that don't match (e.g. "v20.1.0", "20.1",
+ * "20.1.0-") are rejected upstream so a malformed manifest can't silently
+ * relax the version-floor check via NaN-becomes-0 coercion in
+ * compareVersions().
+ */
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/;
+
+/**
+ * Read the minimum required qsv binary version from manifest.json's
+ * `_meta["com.dathere.qsv"].minimum_qsv_version` field. This is the single
+ * source of truth for the minimum-version floor enforced by both the MCP
+ * server (src/config.ts) and the SessionStart hook (scripts/cowork-setup.cjs).
+ *
+ * Returns null when the manifest is missing, malformed, or contains a value
+ * that doesn't parse as strict semver (MAJOR.MINOR.PATCH with optional
+ * pre-release/build metadata). Callers must handle null (typically by
+ * falling back to "0.0.0" so they don't crash a SessionStart hook on a
+ * packaging error).
+ * Exported for testing.
+ */
+export function readMinimumQsvVersionFromManifest(projectRoot: string): string | null {
+  try {
+    const manifestPath = join(projectRoot, "manifest.json");
+    if (!existsSync(manifestPath)) return null;
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const meta = (parsed as { _meta?: unknown })._meta;
+    if (typeof meta !== "object" || meta === null) return null;
+    const qsvMeta = (meta as Record<string, unknown>)["com.dathere.qsv"];
+    if (typeof qsvMeta !== "object" || qsvMeta === null) return null;
+    const v = (qsvMeta as { minimum_qsv_version?: unknown }).minimum_qsv_version;
+    if (typeof v !== "string" || v.length === 0) return null;
+    if (!SEMVER_PATTERN.test(v)) return null;
+    return v;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get version from package.json and validate it matches manifest.json.
  * Logs a warning at startup if the versions diverge.
  */

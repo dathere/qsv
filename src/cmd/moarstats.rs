@@ -4678,28 +4678,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         // In joined-inputs mode, fail loud when the corruption signature
-        // fires: NO surviving pair touches an eligible secondary-side
-        // column. This is the precise failure mode of the recurring CI
-        // flake (e.g. moarstats_join_type_left_runs_and_writes_bivariate)
-        // — the bivariate output silently contains only primary-side
+        // fires: NO surviving pair touches a secondary-side column that
+        // would actually be pairable under the loop's own filter rules.
+        // This is the precise failure mode of the recurring CI flake
+        // (e.g. moarstats_join_type_left_runs_and_writes_bivariate) —
+        // the bivariate output silently contains only primary-side
         // pairs, which downstream produces a confusing "missing column"
         // assertion in the test rather than pointing at moarstats.
         //
-        // The guard is intentionally narrow to avoid spurious failures on
-        // legitimately-pairing-but-everything-filtered datasets. It only
-        // considers secondary columns that:
-        //   1. Are NOT aliased to a primary position by first-match `position()` lookup (so
-        //      duplicate join-key columns — e.g. two `id` columns — are excluded; the field_pairs
-        //      loop collapses them to the primary's index anyway).
-        //   2. Have a stats record with a recognized type that passes the bivariate type filter
-        //      (numeric / date / string). Columns filtered legitimately for OTHER reasons (zero
-        //      variance, cardinality == rowcount, both constant) are still counted as eligible here
-        //      — those filters fire on PAIRS, not columns, so an eligible-by-type column may still
-        //      legitimately not contribute to any pair under narrow data conditions. We accept that
-        //      residual false positive in exchange for early detection of the actual corruption
-        //      mode the flake produces.
-        // The guard fires only when at least one eligible secondary-only
-        // column exists AND none of them appears in any pair.
+        // The guard's "pairable" check mirrors the COLUMN-LEVEL filters
+        // the loop applies, so a column that the loop legitimately
+        // filtered does not count against the guard:
+        //   - Type is recognized AND passes the bivariate type filter (numeric / date / string).
+        //   - Stddev/variance is non-zero (when reported) — zero variance makes the column
+        //     ineligible in ALL pairs.
+        //   - Cardinality != record_count (when both known) — equal cardinality also makes the
+        //     column ineligible in ALL pairs.
+        // The both-constant (cardinality == 1) filter is intentionally
+        // omitted: it's genuinely pair-level (only fires when BOTH columns
+        // have cardinality 1), so a card==1 column may still legitimately
+        // pair with a higher-cardinality partner.
+        //
+        // The guard also excludes:
+        //   - Columns that share a csv_headers position with primary (e.g. the join key) — never
+        //     exclusively secondary.
+        //   - Aliased duplicate names whose first-match position is elsewhere — field_pairs cannot
+        //     key on those indices anyway.
+        //
+        // It fires only when at least one pairable secondary-only column
+        // exists AND none of them appears in any pair.
         if temp_joined_path.is_some() && !field_pairs.is_empty() {
             // Build the set of csv_headers indices covered by surviving
             // pairs.
@@ -4727,15 +4734,59 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 })
                 .unwrap_or_default();
 
-            // Collect eligible secondary-only positions from each
-            // additional input, skipping aliased join-key columns and
-            // type-ineligible columns.
+            // Column-level pairability check: mirrors the loop's filters
+            // that operate on a single column's attributes. A column
+            // that fails any of these checks would also be skipped by the
+            // loop in every pair it appears in, so the guard treats it
+            // as not-expected.
+            let column_pairable = |name: &str| -> bool {
+                let Some(stats_record_idx) = stats_field_names.iter().position(|n| n == name)
+                else {
+                    return false;
+                };
+                let rec = records.get(stats_record_idx);
+                let type_str = rec.and_then(|r| r.get(type_idx)).unwrap_or("");
+                let Some(field_type) = FieldType::from_str(type_str) else {
+                    return false;
+                };
+                if !(field_type.is_numeric_or_date_type() || field_type == FieldType::TString) {
+                    return false;
+                }
+                let stddev = rec
+                    .and_then(|r| stddev_idx.and_then(|i| r.get(i)))
+                    .and_then(parse_float_opt);
+                let variance = rec
+                    .and_then(|r| variance_idx.and_then(|i| r.get(i)))
+                    .and_then(parse_float_opt);
+                let card = rec
+                    .and_then(|r| cardinality_idx.and_then(|i| r.get(i)))
+                    .and_then(|s| s.parse::<u64>().ok());
+                if let Some(s) = stddev
+                    && s.abs() < f64::EPSILON
+                {
+                    return false;
+                }
+                if let Some(v) = variance
+                    && v.abs() < f64::EPSILON
+                {
+                    return false;
+                }
+                if let (Some(c), Some(rc)) = (card, record_count)
+                    && c == rc
+                {
+                    return false;
+                }
+                true
+            };
+
+            // Collect pairable secondary-only positions from each
+            // additional input.
             let additional_inputs_for_guard: Vec<String> = args
                 .flag_join_inputs
                 .as_ref()
                 .map(|s| s.split(',').map(|p| p.trim().to_string()).collect())
                 .unwrap_or_default();
-            let mut eligible_secondary_only: Vec<(String, String, usize)> = Vec::new();
+            let mut pairable_secondary_only: Vec<(String, String, usize)> = Vec::new();
             for add_path in &additional_inputs_for_guard {
                 let Ok(mut add_rdr) = csv::ReaderBuilder::new()
                     .has_headers(true)
@@ -4750,56 +4801,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     let Some(idx) = csv_headers.iter().position(|jh| jh == h) else {
                         continue;
                     };
-                    // Exclude columns that share a position with primary
-                    // (e.g. the join key) — these can never be exclusively
-                    // secondary.
                     if primary_positions.contains(&idx) {
                         continue;
                     }
-                    // Exclude aliased duplicates: if this header name's
-                    // first occurrence in csv_headers is at a DIFFERENT
-                    // index than ours, field_pairs cannot key on this
-                    // index (it always collapses to the first match).
-                    // Treat those as inherently-uncoverable, not corruption.
                     if csv_headers.iter().position(|jh| jh == h) != Some(idx) {
                         continue;
                     }
-                    // Eligibility-by-type: only consider columns whose
-                    // stats record has a recognized type that passes the
-                    // bivariate type filter. This excludes TNull and
-                    // unrecognized-type columns that would never pair.
-                    let Some(stats_record_idx) = stats_field_names.iter().position(|n| n == h)
-                    else {
-                        continue;
-                    };
-                    let type_str = records
-                        .get(stats_record_idx)
-                        .and_then(|r| r.get(type_idx))
-                        .unwrap_or("");
-                    let Some(field_type) = FieldType::from_str(type_str) else {
-                        continue;
-                    };
-                    if !(field_type.is_numeric_or_date_type() || field_type == FieldType::TString) {
+                    if !column_pairable(h) {
                         continue;
                     }
-                    eligible_secondary_only.push((add_path.clone(), h.to_string(), idx));
+                    pairable_secondary_only.push((add_path.clone(), h.to_string(), idx));
                 }
             }
 
-            // Fire only when at least one eligible secondary-only column
-            // exists AND none of them is covered. This is the actual
-            // corruption signature: every secondary-side column that
-            // SHOULD have produced pairs failed to do so.
-            if !eligible_secondary_only.is_empty()
-                && !eligible_secondary_only
+            // Skip the guard entirely when no primary column passes the
+            // same column-level pairability check: no pair would survive
+            // either, and the empty/sparse output is then a property of
+            // the data, not corruption.
+            let primary_has_pairable = csv::ReaderBuilder::new()
+                .has_headers(true)
+                .from_path(input_path)
+                .ok()
+                .and_then(|mut r| r.headers().ok().map(|h| h.clone()))
+                .is_some_and(|primary_hdrs| primary_hdrs.iter().any(|h| column_pairable(h)));
+
+            // Fire only when both sides have pairable columns AND no
+            // pairable secondary-only column is covered. Both sides
+            // having pairable columns is what the construction loop would
+            // also need to produce a secondary-touching pair — so if the
+            // loop didn't, that's the corruption.
+            if primary_has_pairable
+                && !pairable_secondary_only.is_empty()
+                && !pairable_secondary_only
                     .iter()
                     .any(|(_, _, idx)| covered_indices.contains(&(*idx as u16)))
             {
                 return fail_clierror!(
-                    "Bivariate field_pairs built {} pair(s) but none touches any eligible \
-                     secondary-side column: {eligible_secondary_only:?} (each entry is (input, \
-                     column, csv_header_idx)). This is the recurring primary-only-bivariate \
-                     corruption mode; refusing to write a misleading bivariate output. \
+                    "Bivariate field_pairs built {} pair(s) but none touches any pairable \
+                     secondary-side column: {pairable_secondary_only:?} (each entry is (input, \
+                     column, csv_header_idx)). Primary input has at least one pairable column. \
+                     This is the recurring primary-only-bivariate corruption mode; refusing to \
+                     write a misleading bivariate output. \
                      stats_field_names={stats_field_names:?}, csv_headers={csv_headers:?}, \
                      record_count={record_count:?}.",
                     field_pairs.len()

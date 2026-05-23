@@ -1438,6 +1438,58 @@ p_fewshot_examples = ""
     );
 }
 
+// Regression test for codex review job 2373: --prepare-context emits
+// prompt/context JSON locally and never calls the LLM API, so it must
+// NOT require credentials even when the prompt-file points at a
+// non-localhost provider. Before the fix, the api-key gate ran ahead of
+// the --prepare-context branch and rejected the run.
+#[test]
+fn describegpt_prepare_context_remote_prompt_file_no_api_key() {
+    let wrk = Workdir::new("describegpt_prepare_context_remote_prompt_file");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let prompt_file_content = r#"name = "test"
+description = "test prompt file pointing at a remote provider"
+author = "test"
+version = "1.0"
+tokens = 0
+base_url = "https://api.openai.com/v1"
+model = "openai/gpt-oss-20b"
+timeout = 30
+format = "markdown"
+language = ""
+system_prompt = "test"
+dictionary_prompt = "test"
+description_prompt = "test"
+tags_prompt = "test"
+prompt = ""
+custom_prompt_guidance = ""
+duckdb_sql_guidance = ""
+polars_sql_guidance = ""
+dd_fewshot_examples = ""
+p_fewshot_examples = ""
+"#;
+    wrk.create_from_string("prompt.toml", prompt_file_content);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.env_remove("QSV_LLM_BASE_URL")
+        .env_remove("QSV_LLM_APIKEY")
+        .args(["--prompt-file", "prompt.toml"])
+        .arg("--prepare-context")
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache");
+
+    wrk.assert_success(&mut cmd);
+}
+
 // Test that CLI --model flag takes precedence over QSV_LLM_MODEL env var
 #[test]
 fn describegpt_model_precedence_cli_over_env() {

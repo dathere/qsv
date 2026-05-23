@@ -5219,7 +5219,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let effective_base_url = get_prompt_file(&args)?.base_url.clone();
 
     // Priority: CLI flag > Env var > default/error
-    let api_key: String = if effective_base_url.contains("localhost") {
+    //
+    // --prepare-context only emits prompt/context JSON and never calls
+    // the LLM API, so skip the api-key requirement for that mode —
+    // requiring credentials for a remote prompt-file URL would block a
+    // legitimate no-network use case (codex review job 2373). The
+    // --process-response branch above already returns before reaching
+    // here, so it's not affected. `api_key` is unused on the
+    // --prepare-context path; the empty string is a typed placeholder.
+    let api_key: String = if args.flag_prepare_context {
+        String::new()
+    } else if effective_base_url.contains("localhost") {
         // Allow empty API key for localhost
         // Priority: CLI flag > Env var > empty
         args.flag_api_key

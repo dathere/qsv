@@ -63,7 +63,7 @@ import { UpdateChecker, getUpdateConfigFromEnv } from "./update-checker.js";
 import { PipelineManifest } from "./pipeline-manifest.js";
 import { WorkingDirManager } from "./working-dir-manager.js";
 import { PIPELINE_METADATA, type PipelineMetadata } from "./mcp-tools.js";
-import { SENSITIVE_HOME_DIRS } from "./tool-constants.js";
+import { SENSITIVE_HOME_DIRS, normalizeForCaseFs } from "./tool-constants.js";
 
 /**
  * Core tools that are always available (defer_loading: false)
@@ -1088,11 +1088,9 @@ class QsvMcpServer {
       } catch {
         canonHome = home;
       }
-      const caseInsensitive = process.platform === "darwin" || process.platform === "win32";
-      const normalize = (p: string) => caseInsensitive ? p.toLowerCase() : p;
-      const target = normalize(targetDir);
+      const target = normalizeForCaseFs(targetDir);
       for (const sensitive of SENSITIVE_HOME_DIRS) {
-        const blocked = normalize(resolve(canonHome, sensitive));
+        const blocked = normalizeForCaseFs(resolve(canonHome, sensitive));
         if (target === blocked || target.startsWith(blocked + sep)) {
           return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
         }

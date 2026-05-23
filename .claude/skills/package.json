@@ -39,11 +39,11 @@
     "typescript": "^5.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "^1.2.0",
-    "@modelcontextprotocol/sdk": "^1.26.0",
+    "@modelcontextprotocol/ext-apps": "^1.7.2",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "wink-bm25-text-search": "^3.0.0",
     "wink-nlp-utils": "^2.1.0",
-    "yaml": "^2.8.3"
+    "yaml": "^2.9.0"
   },
   "engines": {
     "node": ">=18.0.0"

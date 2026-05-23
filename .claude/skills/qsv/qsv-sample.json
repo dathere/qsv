@@ -46,6 +46,11 @@
         "description": "Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion."
       },
       {
+        "flag": "--mergeable-reservoir",
+        "type": "flag",
+        "description": "Use a mergeable Algorithm-R reservoir sampler. Distribution is identical to the default RESERVOIR method, but the resulting sketch is mergeable via --sketch-out / --sketch-in. Cannot be combined with another sampling-method flag."
+      },
+      {
         "flag": "--no-headers",
         "type": "flag",
         "description": "When set, the first row will be considered as part of the population to sample from. (When not set, the first row is the header row and will always appear in the output.)"
@@ -65,6 +70,16 @@
         "flag": "--seed",
         "type": "string",
         "description": "Random Number Generator (RNG) seed."
+      },
+      {
+        "flag": "--sketch-in",
+        "type": "string",
+        "description": "Comma-separated list of sketch files produced by --sketch-out. CSV input is NOT read; the listed sketches (which must all be of the same sampler kind) are merged and the resulting sample is emitted as CSV. <sample-size> may be used to cap the merged sample below the sketches' own k."
+      },
+      {
+        "flag": "--sketch-out",
+        "type": "string",
+        "description": "After sampling, also write a binary sketch describing the internal sampler state to <file>. The blob can later be merged into another run via --sketch-in. Only valid with --varopt or --mergeable-reservoir. The format is qsv-specific and is not interoperable with serialized sketches from other tools."
       },
       {
         "flag": "--stratified",
@@ -120,6 +135,11 @@
         "default": "first"
       },
       {
+        "flag": "--varopt",
+        "type": "string",
+        "description": "Use VAROPT weighted reservoir sampling (A-ExpJ keying). The weight column is specified by <col> (column name or 0-based index). Variance-bounded, single-pass, no stats-cache required, mergeable via --sketch-out / --sketch-in. Records with non-positive or non-numeric weights are silently skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k)."
+      },
+      {
         "flag": "--weighted",
         "type": "string",
         "description": "Use weighted sampling. The weight column is specified by <col>. Can be either a column name or 0-based column index. The column will be parsed as a number. Records with non-number weights will be skipped. Uses MEMORY PROPORTIONAL to the sample size (k) - O(k)."
@@ -158,6 +178,22 @@
     {
       "description": "Take a sample using CLUSTER sampling where 10 clusters defined by the 'Neighborhood' column are randomly selected and all records from those clusters are included in the sample.",
       "command": "qsv sample --cluster Neighborhood 10 data.csv"
+    },
+    {
+      "description": "Take a sample using VAROPT (A-ExpJ weighted reservoir) sampling, weighted by the 'Revenue' column, for a sample size of 1000 records. Unlike --weighted, this does NOT require a stats cache.",
+      "command": "qsv sample --varopt Revenue 1000 data.csv"
+    },
+    {
+      "description": "Sample two shards and merge their sketches into a single uniform sample without re-reading the inputs.",
+      "command": "qsv sample --mergeable-reservoir --sketch-out a.sk 1000 shard_a.csv"
+    },
+    {
+      "description": "Sample two shards and merge their sketches into a single uniform sample without re-reading the inputs.",
+      "command": "qsv sample --mergeable-reservoir --sketch-out b.sk 1000 shard_b.csv"
+    },
+    {
+      "description": "Sample two shards and merge their sketches into a single uniform sample without re-reading the inputs.",
+      "command": "qsv sample --sketch-in a.sk,b.sk 1000 -o merged.csv"
     }
   ]
 }

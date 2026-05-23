@@ -159,6 +159,10 @@
       "command": "qsv sqlp data.csv data2.csv 'select * from _t_1 join _t_2 on _t_1.colname = _t_2.colname'"
     },
     {
+      "description": "FILTER clause on aggregates (SQL-standard) — apply a per-aggregate predicate without filtering the whole group. Useful for computing conditional sums/counts side by side with the unconditional aggregate in a single GROUP BY query. See https://github.com/pola-rs/polars/pull/27564.",
+      "command": "qsv sqlp sales.csv \"SELECT region, SUM(amount) AS total,  SUM(amount) FILTER (WHERE amount > 100) AS total_over_100,  COUNT(*) FILTER (WHERE status = 'refunded') AS refund_count  FROM sales GROUP BY region ORDER BY region\""
+    },
+    {
       "description": "Natural Joins are supported too! (https://www.w3resource.com/sql/joins/natural-join.php)",
       "command": "qsv sqlp data1.csv data2.csv data3.csv  \"SELECT COLUMNS('^[^:]+$') FROM data1 NATURAL JOIN data2 NATURAL JOIN data3 ORDER BY COMPANY_ID\""
     },

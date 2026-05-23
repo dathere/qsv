@@ -1,7 +1,7 @@
 {
   "name": "qsv-geocode",
   "version": "20.1.0",
-  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage API, which is sequential and rate-limited.",
+  "description": "Geocodes a location against an updatable local copy of the Geonames cities & the Maxmind GeoLite2 databases — with caching and multi-threading, this offline path geocodes up to 360,000 records/sec! Can also geocode online (forward & reverse) via the OpenCage geocoder.",
   "category": "utility",
   "command": {
     "subcommand": "geocode",
@@ -49,7 +49,7 @@
         "name": "index-file",
         "type": "file",
         "required": false,
-        "description": "The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 500, 1000, 5000 or 15000, it will download the corresponding English-only Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand."
+        "description": "The alternate geonames index file to use. It must be a .rkyv file. For convenience, if this is set to 15000, it will download the prebuilt English-only cities15000 Geonames index rkyv file from the qsv GitHub repo for the current qsv version and use it. Only used by the index-load subcommand."
       }
     ],
     "options": [

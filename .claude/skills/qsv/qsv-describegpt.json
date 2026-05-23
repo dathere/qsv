@@ -1,7 +1,7 @@
 {
   "name": "qsv-describegpt",
   "version": "20.1.0",
-  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs via Ollama, Jan & LM Studio. (e.g. Markdown, JSON, TOON, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
+  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
   "category": "documentation",
   "command": {
     "subcommand": "describegpt",
@@ -22,13 +22,18 @@
       {
         "flag": "--addl-cols-list",
         "type": "string",
-        "description": "A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. CONVENIENCE VALUES: These values are case-insensitive and automatically set the --addl-cols option to true. \"everything\" can be used to add all 45 \"available\" statistics columns. You can adjust the available columns with --stats-options. \"everything!\" automatically sets --stats-options to compute \"all\" 51 supported stats. The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences. \"moar\" gets you even moar stats, with detailed outliers info. \"moar!\" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)",
+        "description": "A comma-separated list of additional stats columns to add to the dictionary. The columns must be present in the Summary Statistics. If the columns are not present in the Summary Statistics or already in the dictionary, they will be ignored. These values are case-insensitive and automatically set the --addl-cols option to true. \"everything\" can be used to add all 45 \"available\" statistics columns. You can adjust the available columns with --stats-options. \"everything!\" automatically sets --stats-options to compute \"all\" 51 supported stats. The 6 addl cols are the mode/s & antimode/s stats with each having counts & occurrences. \"moar\" gets you even moar stats, with detailed outliers info. \"moar!\" gets you even moar with --advanced stats (Kurtosis, Gini Coefficient & Shannon Entropy)",
         "default": "sort_order, sortiness, mean, median, mad, stddev, variance, cv"
       },
       {
         "flag": "--all",
         "type": "flag",
         "description": "Shortcut for --dictionary --description --tags."
+      },
+      {
+        "flag": "--allow-extra-cols",
+        "type": "flag",
+        "description": "When the format is JSONSchema, emit additionalProperties as true at the schema root (default is false, strict). Only meaningful with the JSONSchema format; ignored otherwise."
       },
       {
         "flag": "--description",
@@ -65,13 +70,13 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "Output format: Markdown, TSV, JSON, or TOON. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info.",
+        "description": "Output format: Markdown, TSV, JSON, TOON, or JSONSchema. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported.",
         "default": "Markdown"
       },
       {
         "flag": "--freq-options",
         "type": "string",
-        "description": "Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with \"file:\" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. \"file:my_custom_frequency.csv\"",
+        "description": "Options for the frequency command used to generate frequency distributions. You can use this to exclude certain variable types from frequency analysis (e.g., --select '!id,!uuid'), limit results differently per use case, or control output format. If --limit is specified here, it takes precedence over --enum-threshold. If it starts with \"file:\" prefix, the frequency data is read from the specified CSV file instead of running the frequency command. e.g. \"file:my_custom_frequency.csv\" A \"file:\"-backed CSV is assumed to use frequency's default \"(NULL)\" null text; a custom --null-text in a file-supplied CSV is not recognized when validating inferred date/datetime formats.",
         "default": "--rank-strategy dense"
       },
       {
@@ -138,6 +143,11 @@
         "type": "string",
         "description": "Options for the stats command used to generate summary statistics. If it starts with \"file:\" prefix, the statistics are read from the specified CSV file instead of running the stats command. e.g. \"file:my_custom_stats.csv\"",
         "default": "--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl"
+      },
+      {
+        "flag": "--strict-dates",
+        "type": "flag",
+        "description": "When the format is JSONSchema, emit format date or date-time for columns that stats infers as Date or DateTime. Off by default because qsv's --infer-dates is permissive (accepts strings like \"June 27, 1968\") and JSON Schema's date formats require RFC 3339, so the validate roundtrip would otherwise fail. Set this only when your source columns are guaranteed to be RFC 3339 full-date / date-time. Mirrors the same flag on the schema command."
       },
       {
         "flag": "--tag-vocab",

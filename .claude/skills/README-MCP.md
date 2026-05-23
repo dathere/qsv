@@ -175,6 +175,7 @@ This script will:
 | `QSV_MCP_MAX_EXAMPLES` | `5` | Maximum examples in tool descriptions (0-20) |
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
 | `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55 tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
+| `QSV_MCP_SANITIZE_ERRORS` | `true` | Strip absolute paths from qsv error messages (and the command line echoed alongside them) before they reach the MCP client. Protects usernames and directory layout in hosted/shared deployments. Set to `false` to keep full paths for local debugging. |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 

@@ -664,6 +664,25 @@ async function runMoarstatsAutoEnrich(
   }
 }
 
+
+/**
+ * Apply error-message sanitization when `config.sanitizeErrors` is enabled.
+ *
+ * Centralizes the sanitize/no-sanitize decision so every catch path —
+ * "Unexpected error" envelopes, file-path resolution failures, and the
+ * Parquet conversion error in handleToParquetCall — honors the
+ * `QSV_MCP_SANITIZE_ERRORS=false` opt-out consistently. Previously the
+ * non-zero-exit branch in handleToolCall gated on the flag while the
+ * catch branches sanitized unconditionally, making the opt-out only
+ * partially effective for local debugging.
+ */
+function maybeSanitize(message: string): string {
+  if (config.sanitizeErrors) {
+    return sanitizeErrorForClient(message);
+  }
+  return message;
+}
+
 export async function handleToolCall(
   toolName: string,
   params: Record<string, unknown>,
@@ -898,8 +917,8 @@ export async function handleToolCall(
       // via QSV_MCP_SANITIZE_ERRORS=false. Sanitization protects hosted/shared
       // deployments; the engine header and parquet warning are server-authored
       // and don't need sanitizing.
-      const cmd = config.sanitizeErrors ? sanitizeErrorForClient(rawCmd) : rawCmd;
-      const stderr = config.sanitizeErrors ? sanitizeErrorForClient(rawStderr) : rawStderr;
+      const cmd = maybeSanitize(rawCmd);
+      const stderr = maybeSanitize(rawStderr);
       const cmdLine = cmd ? `\nCommand: ${cmd}` : "";
       const engineHeader = commandName === "sqlp" && !isHelpRequest ? "🐻‍❄️ Engine: Polars SQL\n\n" : "";
       const errorMsg = parquetConversionWarning
@@ -918,7 +937,7 @@ export async function handleToolCall(
       return errResult;
     }
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    return errorResult(`Unexpected error: ${maybeSanitize(getErrorMessage(error))}`);
   } finally {
     releaseSlot();
   }
@@ -999,7 +1018,7 @@ export async function handleGenericCommand(
       server,
     );
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    return errorResult(`Unexpected error: ${maybeSanitize(getErrorMessage(error))}`);
   }
 }
 
@@ -1375,7 +1394,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving input file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+      return errorResult(`Error resolving input file path: ${maybeSanitize(getErrorMessage(error))}`);
     }
   }
 
@@ -1422,7 +1441,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving output file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+      return errorResult(`Error resolving output file path: ${maybeSanitize(getErrorMessage(error))}`);
     }
   }
 
@@ -1491,7 +1510,7 @@ export async function handleToParquetCall(
     (result as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputPath;
     return result;
   } catch (error: unknown) {
-    const errResult = errorResult(`Error converting CSV to Parquet: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    const errResult = errorResult(`Error converting CSV to Parquet: ${maybeSanitize(getErrorMessage(error))}`);
     (errResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
       inputFile,
       outputFile: resolvedOutputFile,

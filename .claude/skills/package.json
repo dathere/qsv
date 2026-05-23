@@ -18,8 +18,8 @@
     "test-update-checker": "node examples/update-checker-demo.js",
     "mcp:start": "node dist/mcp-server.js",
     "mcp:install": "node scripts/install-mcp.js",
-    "mcpb:package": "node scripts/package-mcpb.js",
-    "plugin:package": "node scripts/package-plugin.js",
+    "mcpb:package": "npm run clean:bundles && node scripts/package-mcpb.js",
+    "plugin:package": "npm run clean:bundles && node scripts/package-plugin.js",
     "clean:bundles": "node scripts/clean-bundles.js"
   },
   "keywords": [

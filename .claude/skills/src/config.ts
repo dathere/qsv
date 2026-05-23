@@ -11,6 +11,7 @@ import { execFileSync } from "child_process";
 import { statSync } from "fs";
 import { compareVersions, getErrorMessage } from "./utils.js";
 import { DEFAULT_MAX_OUTPUT_SIZE, BINARY_VALIDATION_TIMEOUT_MS } from "./tool-constants.js";
+import { resolveProjectRoot, readMinimumQsvVersionFromManifest } from "./version.js";
 
 /**
  * Expand template variables in strings
@@ -169,9 +170,27 @@ function getOptionalBooleanEnv(envVar: string): boolean | undefined {
 }
 
 /**
- * Minimum required qsv version
+ * Minimum required qsv version.
+ *
+ * Sourced at module load from manifest.json's
+ * `_meta["com.dathere.qsv"].minimum_qsv_version` field — the single source of
+ * truth shared with the cowork SessionStart hook. If the manifest can't be
+ * read (e.g. a broken packaging), we log and fall back to "0.0.0" so the
+ * server still starts; the version check will then be a no-op rather than a
+ * crash. Update the floor by editing manifest.json, not this file.
  */
-export const MINIMUM_QSV_VERSION = "20.1.0";
+function loadMinimumQsvVersion(): string {
+  const version = readMinimumQsvVersionFromManifest(resolveProjectRoot());
+  if (version) return version;
+  console.error(
+    "[Config] Could not read _meta.com.dathere.qsv.minimum_qsv_version from manifest.json — " +
+      "falling back to '0.0.0' (qsv version check effectively disabled). " +
+      "This usually indicates a packaging error.",
+  );
+  return "0.0.0";
+}
+
+export const MINIMUM_QSV_VERSION = loadMinimumQsvVersion();
 
 /**
  * Validation result interface

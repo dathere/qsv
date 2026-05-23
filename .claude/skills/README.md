@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **54 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **55 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 4. **Working Demos** - Practical demonstrations of the system
@@ -29,7 +29,7 @@ This directory contains:
 Each skill file provides:
 - **Command specification**: Binary, subcommand, arguments, and options (parsed with qsv-docopt)
 - **Rich descriptions**: Extracted from usage text
-- **Usage examples**: Real usage examples from documentation (174 total)
+- **Usage examples**: Real usage examples from documentation (221 total)
 - **Type information**: Inferred parameter types and validation
 - **Performance hints**: Memory usage, streaming capability, indexing benefits
 - **Links to tests**: For additional context and validation

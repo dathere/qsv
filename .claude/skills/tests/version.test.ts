@@ -7,7 +7,7 @@ import assert from 'node:assert';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { VERSION, resolveProjectRoot, readVersionFromJson } from '../src/version.js';
+import { VERSION, resolveProjectRoot, readVersionFromJson, readMinimumQsvVersionFromManifest } from '../src/version.js';
 
 test('VERSION is a valid semver string', () => {
   assert.ok(typeof VERSION === 'string');
@@ -118,3 +118,54 @@ test('package.json and manifest.json versions are in sync', { skip: !MANIFEST_AV
   assert.strictEqual(packageVersion, manifestVersion,
     `package.json (${packageVersion}) and manifest.json (${manifestVersion}) versions must match`);
 });
+
+// --- MINIMUM_QSV_VERSION single-source-of-truth ---
+
+test('readMinimumQsvVersionFromManifest returns a semver string from real manifest',
+  { skip: !MANIFEST_AVAILABLE }, () => {
+    const root = resolveProjectRoot();
+    const minVersion = readMinimumQsvVersionFromManifest(root);
+    assert.ok(minVersion, 'manifest.json must declare _meta.com.dathere.qsv.minimum_qsv_version');
+    assert.match(minVersion!, /^\d+\.\d+\.\d+$/,
+      `minimum_qsv_version must be semver, got: ${minVersion}`);
+  });
+
+test('readMinimumQsvVersionFromManifest returns null for non-existent project root', () => {
+  assert.strictEqual(readMinimumQsvVersionFromManifest('/nonexistent/path'), null);
+});
+
+test('readMinimumQsvVersionFromManifest returns null when manifest lacks the field', () => {
+  const dir = join(tmpdir(), `qsv-min-version-test-${Date.now()}`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({ version: '1.0.0' }));
+    assert.strictEqual(readMinimumQsvVersionFromManifest(dir), null);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readMinimumQsvVersionFromManifest returns the nested string', () => {
+  const dir = join(tmpdir(), `qsv-min-version-test-${Date.now()}`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    writeFileSync(join(dir, 'manifest.json'), JSON.stringify({
+      _meta: { 'com.dathere.qsv': { minimum_qsv_version: '99.0.0' } },
+    }));
+    assert.strictEqual(readMinimumQsvVersionFromManifest(dir), '99.0.0');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('config.MINIMUM_QSV_VERSION matches manifest.json',
+  { skip: !MANIFEST_AVAILABLE }, async () => {
+    // Dynamic import so config.ts (which calls loadMinimumQsvVersion at module load)
+    // resolves against the real project root only when this test actually runs.
+    const { MINIMUM_QSV_VERSION } = await import('../src/config.js');
+    const root = resolveProjectRoot();
+    const manifestMinVersion = readMinimumQsvVersionFromManifest(root);
+    assert.strictEqual(MINIMUM_QSV_VERSION, manifestMinVersion,
+      `config.MINIMUM_QSV_VERSION (${MINIMUM_QSV_VERSION}) must equal ` +
+      `manifest.json _meta.com.dathere.qsv.minimum_qsv_version (${manifestMinVersion})`);
+  });

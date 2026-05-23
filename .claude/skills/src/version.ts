@@ -50,6 +50,35 @@ export function readVersionFromJson(filePath: string): string | null {
 }
 
 /**
+ * Read the minimum required qsv binary version from manifest.json's
+ * `_meta["com.dathere.qsv"].minimum_qsv_version` field. This is the single
+ * source of truth for the minimum-version floor enforced by both the MCP
+ * server (src/config.ts) and the SessionStart hook (scripts/cowork-setup.cjs).
+ *
+ * Returns null when the manifest is missing/malformed; callers must handle
+ * that case (typically by falling back to "0.0.0" so they don't crash a
+ * SessionStart hook on a packaging error).
+ * Exported for testing.
+ */
+export function readMinimumQsvVersionFromManifest(projectRoot: string): string | null {
+  try {
+    const manifestPath = join(projectRoot, "manifest.json");
+    if (!existsSync(manifestPath)) return null;
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf-8"));
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const meta = (parsed as { _meta?: unknown })._meta;
+    if (typeof meta !== "object" || meta === null) return null;
+    const qsvMeta = (meta as Record<string, unknown>)["com.dathere.qsv"];
+    if (typeof qsvMeta !== "object" || qsvMeta === null) return null;
+    const v = (qsvMeta as { minimum_qsv_version?: unknown }).minimum_qsv_version;
+    if (typeof v === "string" && v.length > 0) return v;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Get version from package.json and validate it matches manifest.json.
  * Logs a warning at startup if the versions diverge.
  */

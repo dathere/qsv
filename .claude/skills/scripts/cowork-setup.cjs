@@ -6,7 +6,7 @@
 // Node.js port of cowork-setup.sh for Windows compatibility.
 // Uses CommonJS so it works standalone without package.json declaring "type": "module".
 
-const { existsSync, copyFileSync, realpathSync } = require('node:fs');
+const { existsSync, copyFileSync, realpathSync, readFileSync } = require('node:fs');
 const { execFileSync } = require('node:child_process');
 const { resolve, normalize, join } = require('node:path');
 const { homedir } = require('node:os');
@@ -15,8 +15,30 @@ function output(additionalContext) {
   process.stdout.write(JSON.stringify({ additionalContext }) + '\n');
 }
 
-// Minimum qsv version required — keep in sync with manifest.json _meta.minimum_qsv_version
-const MINIMUM_QSV_VERSION = '20.1.0';
+/**
+ * Read the minimum required qsv version from manifest.json
+ * (_meta["com.dathere.qsv"].minimum_qsv_version). manifest.json is the single
+ * source of truth; src/config.ts reads the same field via src/version.ts.
+ * Falls back to '0.0.0' on any error so a broken manifest can't break the
+ * SessionStart hook — the version check just becomes a no-op.
+ */
+function loadMinimumQsvVersion() {
+  try {
+    const manifestPath = join(__dirname, '..', 'manifest.json');
+    const parsed = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+    const v = parsed && parsed._meta && parsed._meta['com.dathere.qsv'] && parsed._meta['com.dathere.qsv'].minimum_qsv_version;
+    if (typeof v === 'string' && v.length > 0) return v;
+  } catch {
+    // fall through to sentinel
+  }
+  process.stderr.write(
+    "cowork-setup: could not read _meta.com.dathere.qsv.minimum_qsv_version from manifest.json — " +
+      "falling back to '0.0.0' (qsv version check effectively disabled)\n",
+  );
+  return '0.0.0';
+}
+
+const MINIMUM_QSV_VERSION = loadMinimumQsvVersion();
 
 /**
  * Check if qsvmcp or qsv binary is available.

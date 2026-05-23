@@ -6,7 +6,7 @@ Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling co
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: 10 core tools loaded initially (~80% token reduction), plus 1 app-only tool (`qsv_browse_directory`) when MCP Apps are enabled. Additional tools are discovered via search and added dynamically.
+- **Deferred Tool Loading**: 10 core utility tools plus 13 commonly-used command tools (sniff, sqlp, joinp, frequency, search, etc.) — 23 tools at startup (~58% reduction vs full 55-tool exposure). `qsv_browse_directory` adds a 24th when MCP Apps are enabled. Remaining tools are discovered via search and added dynamically.
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -174,12 +174,20 @@ This script will:
 | `QSV_MCP_MAX_OUTPUT_SIZE` | `52428800` | Maximum output size in bytes (50MB) |
 | `QSV_MCP_MAX_EXAMPLES` | `5` | Maximum examples in tool descriptions (0-20) |
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55 tools immediately (no deferred loading). `false`: use only 10 core tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): use deferred loading (10 core tools + tools discovered via search) |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55 tools immediately (no deferred loading). `false`: use only 10 core utility tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): deferred loading — 23 tools at startup (10 core + 13 commonly-used commands), +1 app-only when Apps enabled, plus tools discovered via search |
 | `QSV_MCP_SANITIZE_ERRORS` | `true` | Strip absolute paths from qsv error messages (and the command line echoed alongside them) before they reach the MCP client. Protects usernames and directory layout in hosted/shared deployments. Set to `false` to keep full paths for local debugging. |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
 
 **Auto-Update**: The server includes built-in update detection and can automatically regenerate skills when qsv is updated. See [docs/reference/AUTO_UPDATE.md](./docs/reference/AUTO_UPDATE.md) for details.
+
+## Agents
+
+The plugin ships three agents (in `agents/`) for clear task boundaries:
+
+- **data-analyst** — read-only profiling, statistics, and ad-hoc SQL.
+- **data-wrangler** — cleaning, reshaping, deduping, joining, format conversion.
+- **policy-analyst** — policy questions combining local tabular data with US government sources (Census, BLS, FBI Crime Data, Wikidata). Requires optional MCP servers (`mcp-census-api`, `Wikidata MCP`) for full functionality; falls back to `WebSearch`/`WebFetch` if absent. See [`agents/policy-analyst.md`](./agents/policy-analyst.md) for the optional-MCP setup details.
 
 ## Available Tools
 
@@ -202,9 +210,9 @@ These tools are always available immediately:
 
 > **App-only tool:** `qsv_browse_directory` (interactive directory browser) is also available when `QSV_MCP_ENABLE_APPS=true` and the client supports MCP Apps UI.
 
-### 13 Common Command Tools (Loaded on Demand)
+### 13 Common Command Tools (Pre-Registered at Startup)
 
-Tools for frequently used commands, loaded when discovered via search:
+Tools for frequently used commands. Under default deferred loading these are registered at startup alongside the 10 core tools (so 23 tools are visible to the client at startup). Set `QSV_MCP_EXPOSE_ALL_TOOLS=false` to suppress this batch and start with only the 10 core tools:
 
 | Tool | Description |
 |------|-------------|
@@ -234,10 +242,10 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-Only 10 core tools are loaded initially, reducing token usage by ~80%:
+23 tools are loaded at startup — 10 core utility tools plus 13 commonly-used command tools — reducing token usage by ~58% vs exposing all 55 tools (`QSV_MCP_EXPOSE_ALL_TOOLS=true`):
 
-| Core Tool | Purpose |
-|-----------|---------|
+| Core Utility Tool | Purpose |
+|-------------------|---------|
 | `qsv_search_tools` | Find tools by keyword, category, or regex (BM25-powered) |
 | `qsv_config` | View current configuration |
 | `qsv_set_working_dir` | Change working directory |
@@ -248,6 +256,8 @@ Only 10 core tools are loaded initially, reducing token usage by ~80%:
 | `qsv_to_parquet` | Convert CSV to Parquet format |
 | `qsv_index` | Create index for fast random access |
 | `qsv_stats` | Statistical analysis (creates stats cache) |
+
+Commonly-used command tools also pre-registered (from `src/tool-constants.ts` `COMMON_COMMANDS`): `qsv_select`, `qsv_moarstats`, `qsv_search`, `qsv_frequency`, `qsv_headers`, `qsv_count`, `qsv_slice`, `qsv_sniff`, `qsv_sqlp`, `qsv_joinp`, `qsv_cat`, `qsv_geocode`, `qsv_describegpt`.
 
 > `qsv_browse_directory` is also loaded when the client supports MCP Apps UI.
 
@@ -263,8 +273,8 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
 - `true`: Always expose all 55 tools immediately (no deferred loading)
-- `false`: Always use 10 core tools only (+1 app-only tool when MCP Apps available; disables deferred loading)
-- Unset: Default behavior - 10 core tools (+1 app-only tool when MCP Apps available) with deferred loading (recommended)
+- `false`: Always use 10 core utility tools only (+1 app-only tool when MCP Apps available; disables both deferred loading and the 13 pre-registered common command tools)
+- Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 32 (recommended)
 
 ### Built-in Tool Search (`qsv_search_tools`)
 
@@ -609,6 +619,6 @@ For issues or questions:
 
 **Updated**: 2026-05-18
 **Version**: 20.1.0
-**Tools**: 10 core tools initially (+1 app-only), 55 when discovered via search
+**Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 55 discoverable via `qsv_search_tools`
 **Skills**: 55 qsv commands
 **Status**: Production Ready

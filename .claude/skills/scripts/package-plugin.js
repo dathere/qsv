@@ -4,6 +4,8 @@
  *
  * Creates a lightweight ZIP containing ONLY the workflow layer:
  * - .claude-plugin/plugin.json (manifest)
+ * - manifest.json (MCPB manifest — source of truth for minimum_qsv_version,
+ *     read at runtime by scripts/cowork-setup.cjs)
  * - skills/ (domain knowledge and user-invocable SKILL.md files)
  * - agents/ (subagent .md files)
  * - hooks/hooks.json (hook definitions)
@@ -41,6 +43,7 @@ console.log(`Packaging version: ${version}`);
 // Validate required files
 const required = [
   '.claude-plugin/plugin.json',
+  'manifest.json',
   'hooks/hooks.json',
   'skills/',
   'agents/',
@@ -106,6 +109,13 @@ archive.pipe(output);
 // Add plugin manifest
 console.log('  Adding .claude-plugin/plugin.json...');
 archive.file(join(rootDir, '.claude-plugin/plugin.json'), { name: '.claude-plugin/plugin.json' });
+
+// Add MCPB manifest (source of truth for minimum_qsv_version; read at runtime
+// by scripts/cowork-setup.cjs). Without this, cowork-setup.cjs falls back to
+// "0.0.0" and silently disables the qsv version-floor check inside .plugin
+// installs.
+console.log('  Adding manifest.json...');
+archive.file(join(rootDir, 'manifest.json'), { name: 'manifest.json' });
 
 // Add domain knowledge skills
 console.log('  Adding skills/...');

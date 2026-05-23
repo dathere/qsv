@@ -11,7 +11,7 @@ npm install
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0
 - qsv installed and in PATH (for execution)
 - TypeScript 5.0+ (for development)
 

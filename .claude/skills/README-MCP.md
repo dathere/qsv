@@ -106,7 +106,7 @@ This script will:
    cargo build --locked --bin qsvmcp -F qsvmcp
    ```
 
-2. **Node.js** >= 18.0.0
+2. **Node.js** >= 20.0.0
 
 3. **Claude Desktop** installed
 

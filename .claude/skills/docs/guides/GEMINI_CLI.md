@@ -13,7 +13,7 @@ This allows the Gemini CLI to stay focused on your specific data task without be
 
 ## Prerequisites
 
-1.  **Node.js ≥ 18.0.0**: Required to run the MCP server.
+1.  **Node.js ≥ 20.0.0**: Required to run the MCP server.
 2.  **qsv binary**: Ensure `qsv` is installed and in your PATH.
     ```bash
     qsv --version

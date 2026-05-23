@@ -502,7 +502,7 @@ npm run mcp:install  # Install to Claude Desktop
 
 ### System Requirements
 
-- **Node.js**: >= 18.0.0 (runtime for MCP server)
+- **Node.js**: >= 20.0.0 (runtime for MCP server)
 - **qsv**: >= 16.0.0 (CSV processing engine)
 - **Claude Desktop**: Latest version
 - **Memory**: 2GB minimum, 8GB+ recommended for large files

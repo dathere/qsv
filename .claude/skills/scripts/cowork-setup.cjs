@@ -112,8 +112,14 @@ function findQsvBinary() {
  * Returns -1 if a < b, 0 if equal, 1 if a > b.
  */
 function compareVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  // Strip pre-release and build metadata before splitting, matching
+  // src/utils.ts compareVersions(). Without this, a floor like
+  // "20.1.1-alpha.1" splits into ["20","1","1-alpha","1"], parses patch as
+  // NaN, and the (pa[i] || 0) coercion below would silently relax it to
+  // "20.1.0" — letting too-old qsv binaries pass the SessionStart check.
+  const strip = (v) => v.replace(/[-+].*$/, '');
+  const pa = strip(a).split('.').map(Number);
+  const pb = strip(b).split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     if ((pa[i] || 0) < (pb[i] || 0)) return -1;
     if ((pa[i] || 0) > (pb[i] || 0)) return 1;
@@ -375,7 +381,15 @@ async function main() {
   }
 }
 
-main().catch(() => {
-  // Never block session start
-  process.exit(0);
-});
+// Export helpers for unit tests. Gate the SessionStart logic under
+// `require.main === module` so tests can require this file without
+// triggering stdin reads or filesystem writes. Same pattern as
+// scripts/log-web-results.cjs.
+module.exports = { compareVersions, loadMinimumQsvVersion, SEMVER_PATTERN };
+
+if (require.main === module) {
+  main().catch(() => {
+    // Never block session start
+    process.exit(0);
+  });
+}

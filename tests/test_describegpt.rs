@@ -1370,6 +1370,74 @@ fn describegpt_baseurl_precedence_cli_default_over_env() {
     );
 }
 
+// Regression test for codex review job 2372: when --prompt-file points
+// at a non-localhost provider and neither --base-url nor QSV_LLM_BASE_URL
+// is set, the api-key gate MUST require an API key (the request will go
+// to the prompt-file URL, not localhost). Before the fix, the localhost
+// gate read the CLI > env > built-in-default URL only — which was
+// "http://localhost:1234/v1" — passed the localhost check, and allowed
+// describegpt to fire unauthenticated requests at the prompt-file URL.
+#[test]
+fn describegpt_baseurl_remote_prompt_file_requires_api_key() {
+    let wrk = Workdir::new("describegpt_baseurl_remote_prompt_file");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    // Prompt file pointing at a non-localhost provider. We never actually
+    // hit the URL — the api-key gate runs before any request — but its
+    // host is what determines whether the gate fires. Every field on
+    // PromptFile (other than dictionary_refine_prompt, which has a
+    // serde default) is required by the TOML deserializer, so populate
+    // them all here.
+    let prompt_file_content = r#"name = "test"
+description = "test prompt file pointing at a remote provider"
+author = "test"
+version = "1.0"
+tokens = 0
+base_url = "https://api.openai.com/v1"
+model = "openai/gpt-oss-20b"
+timeout = 30
+format = "markdown"
+language = ""
+system_prompt = "test"
+dictionary_prompt = "test"
+description_prompt = "test"
+tags_prompt = "test"
+prompt = ""
+custom_prompt_guidance = ""
+duckdb_sql_guidance = ""
+polars_sql_guidance = ""
+dd_fewshot_examples = ""
+p_fewshot_examples = ""
+"#;
+    wrk.create_from_string("prompt.toml", prompt_file_content);
+
+    let mut cmd = wrk.command("describegpt");
+    // Deliberately don't set QSV_LLM_BASE_URL or pass --base-url; don't
+    // pass --api-key either. The prompt_file's base_url is remote, so
+    // the api-key gate MUST fire and reject the run.
+    cmd.env_remove("QSV_LLM_BASE_URL")
+        .env_remove("QSV_LLM_APIKEY")
+        .args(["--prompt-file", "prompt.toml"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache");
+
+    wrk.assert_err(&mut cmd);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("QSV_LLM_APIKEY") || got.to_lowercase().contains("api"),
+        "Remote prompt-file URL must trigger the missing-API-key error.\nGot: {}",
+        got
+    );
+}
+
 // Test that CLI --model flag takes precedence over QSV_LLM_MODEL env var
 #[test]
 fn describegpt_model_precedence_cli_over_env() {

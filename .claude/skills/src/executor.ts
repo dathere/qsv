@@ -289,18 +289,22 @@ export class SkillExecutor {
       }
     }
 
+    // Clone params.options so cache-flag auto-injection below doesn't mutate
+    // the caller's object. Without this, a caller that reuses the same params
+    // object across calls would see the auto-added --stats-jsonl /
+    // --frequency-jsonl flags accumulate (or appear on later commands where
+    // they don't belong). Shallow clone is sufficient — values are primitives.
+    const effectiveOptions: Record<string, unknown> = { ...(params.options ?? {}) };
+
     // For stats command, always ensure --stats-jsonl flag is set
     // This creates the stats cache that other "smart" commands use
     // Skip when reading from stdin (e.g. pipelines) since cache requires a file path
     // Note: --stats-jsonl has been available since qsv 10.0.0, so no version guard needed
     if (skill.command.subcommand === "stats" && !params.stdin) {
-      if (!params.options) {
-        params.options = {};
-      }
       // Check both key formats to avoid duplicate flags
       // (buildSkillExecParams uses "--stats-jsonl", auto-add uses "stats-jsonl")
-      if (!params.options["stats-jsonl"] && !params.options["--stats-jsonl"]) {
-        params.options["stats-jsonl"] = true;
+      if (!effectiveOptions["stats-jsonl"] && !effectiveOptions["--stats-jsonl"]) {
+        effectiveOptions["stats-jsonl"] = true;
       }
     }
 
@@ -318,42 +322,37 @@ export class SkillExecutor {
         binaryVersion &&
         compareVersions(binaryVersion, FREQUENCY_JSONL_MIN_VERSION) >= 0
       ) {
-        if (!params.options) {
-          params.options = {};
-        }
         // Check both key formats to avoid duplicate flags
         if (
-          !params.options["frequency-jsonl"] &&
-          !params.options["--frequency-jsonl"]
+          !effectiveOptions["frequency-jsonl"] &&
+          !effectiveOptions["--frequency-jsonl"]
         ) {
-          params.options["frequency-jsonl"] = true;
+          effectiveOptions["frequency-jsonl"] = true;
         }
       }
     }
 
     // Add options/flags first
-    if (params.options) {
-      for (const [key, value] of Object.entries(params.options)) {
-        const normalizedKey = normalizeOptionKey(key);
+    for (const [key, value] of Object.entries(effectiveOptions)) {
+      const normalizedKey = normalizeOptionKey(key);
 
-        // --help is universally available for all qsv commands, even if not in skill definition
-        // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
-        if (normalizedKey === "help") {
-          if (value) args.push("--help");
-          continue;
-        }
+      // --help is universally available for all qsv commands, even if not in skill definition
+      // Note: mcp-tools.ts normalizes all help requests to options['help'] = true
+      if (normalizedKey === "help") {
+        if (value) args.push("--help");
+        continue;
+      }
 
-        // Find option definition
-        const option = findOptionDef(skill, key);
-        if (!option) continue;
+      // Find option definition
+      const option = findOptionDef(skill, key);
+      if (!option) continue;
 
-        if (option.type === "flag") {
-          // Boolean flag
-          if (value) args.push(option.flag);
-        } else {
-          // Option with value
-          args.push(option.flag, String(value));
-        }
+      if (option.type === "flag") {
+        // Boolean flag
+        if (value) args.push(option.flag);
+      } else {
+        // Option with value
+        args.push(option.flag, String(value));
       }
     }
 

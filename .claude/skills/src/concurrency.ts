@@ -4,6 +4,7 @@
 
 import type { ChildProcess } from "child_process";
 import { config } from "./config.js";
+import { KILL_GRACE_PERIOD_MS } from "./tool-constants.js";
 
 /**
  * Track active child processes for graceful shutdown (SIGTERM on exit).
@@ -148,14 +149,36 @@ export function initiateShutdown(): void {
  * Kill all active child processes for graceful shutdown.
  */
 export function killAllProcesses(): void {
+  // Snapshot the set so we can iterate again after the grace period without
+  // racing with `close` handlers that remove entries from `activeProcesses`.
+  const survivors: ChildProcess[] = [];
   for (const proc of activeProcesses) {
     try {
       proc.kill("SIGTERM");
+      survivors.push(proc);
     } catch {
       // Process might have already exited
     }
   }
   activeProcesses.clear();
+
+  // After a short grace period, force-kill anything still running. Mirrors
+  // the SIGTERM → grace → SIGKILL pattern in spawn-utils.spawnWithTimeout.
+  // The timer is unref'd so it never blocks process exit on its own.
+  if (survivors.length > 0) {
+    const killTimer = setTimeout(() => {
+      for (const proc of survivors) {
+        if (proc.exitCode === null && proc.signalCode === null) {
+          try {
+            proc.kill("SIGKILL");
+          } catch {
+            // exited between check and kill
+          }
+        }
+      }
+    }, KILL_GRACE_PERIOD_MS);
+    killTimer.unref();
+  }
   console.error("[MCP Tools] All child processes terminated");
 }
 

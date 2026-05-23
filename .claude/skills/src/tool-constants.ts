@@ -196,3 +196,53 @@ export const MAX_HELPER_STDERR_SIZE = 1024 * 1024; // 1 MB
  * Timeout for binary validation (qsv --version, duckdb --version).
  */
 export const BINARY_VALIDATION_TIMEOUT_MS = 5000;
+
+
+/**
+ * Home-relative directories that should never be browsed or used as the
+ * working directory. Covers SSH/GPG/cloud-CLI credential stores, K8s configs,
+ * password managers, and the Docker daemon socket directory.
+ *
+ * Shared by `mcp-server.handleBrowseDirectory` and
+ * `FilesystemResourceProvider.setWorkingDirectory` so both entry points
+ * enforce the same denylist symmetrically.
+ */
+export const SENSITIVE_HOME_DIRS = [
+  ".ssh",
+  ".gnupg",
+  ".gpg",
+  ".pki",
+  ".aws",
+  ".azure",
+  ".config/gcloud",
+  ".kube",
+  ".password-store",
+  ".local/share/keyrings",
+  ".docker",
+];
+
+
+/**
+ * Whether the host filesystem is case-insensitive.
+ *
+ * macOS (APFS by default) and Windows treat paths case-insensitively even
+ * though Node returns them with their original case. SENSITIVE_HOME_DIRS
+ * matching and allowed-dir prefix checks must therefore lowercase both sides
+ * on those platforms.
+ *
+ * Cached at module load so platform isn't re-evaluated on every comparison.
+ */
+export const PLATFORM_CASE_INSENSITIVE_FS =
+  process.platform === "darwin" || process.platform === "win32";
+
+/**
+ * Lowercase a path on case-insensitive filesystems, return it unchanged
+ * elsewhere. Shared helper so the (case-fold) pattern isn't duplicated at
+ * every SENSITIVE_HOME_DIRS check site.
+ */
+export function normalizeForCaseFs(path: string): string {
+  if (PLATFORM_CASE_INSENSITIVE_FS) {
+    return path.toLowerCase();
+  }
+  return path;
+}

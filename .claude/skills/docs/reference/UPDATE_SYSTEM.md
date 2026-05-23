@@ -228,7 +228,7 @@ Uses Node.js built-ins plus two npm dependencies:
 
 ## Compatibility
 
-- **Node.js**: >= 18.0.0 (for built-in fetch)
+- **Node.js**: >= 20.0.0 (matches package.json engines; pulled forward by @modelcontextprotocol/ext-apps ≥ 1.7 which requires Node ≥ 20)
 - **qsv**: All versions (uses --version flag)
 - **Rust**: Not required (auto-regeneration uses the prebuilt qsv binary's `--update-mcp-skills` flag)
 - **OS**: macOS, Linux, Windows

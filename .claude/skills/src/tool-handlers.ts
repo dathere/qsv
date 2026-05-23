@@ -351,6 +351,338 @@ function formatMoarstatsSkip(rawReason: string): string {
 /**
  * Handle execution of a qsv tool
  */
+/**
+ * Result envelope returned by tool handlers.
+ *
+ * Intentionally loose on the content `type` field: utils.errorResult /
+ * utils.successResult emit `{ type: "text" as const }`, but the upstream
+ * helpers (executeDescribegptWithSampling, processAgentResponses, etc.) and
+ * tryDuckDbExecution return `{ type: string }`. Tightening this would force
+ * casts across the file; the discriminator is policed by the producers, not
+ * the dispatcher.
+ */
+type ToolCallResult = {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+};
+
+/**
+ * Outcome of the sqlp DuckDB / Parquet interception.
+ *
+ *   - `earlyResult`  → handleToolCall should return this immediately.
+ *   - `inputFile`    → updated input path (may become "SKIP_INPUT" after the
+ *                      Parquet swap so qsv sqlp uses the rewritten SQL).
+ *   - `warning`      → prepended to the eventual sqlp output as a one-line
+ *                      heads-up when Parquet conversion was skipped.
+ */
+interface SqlpInterceptionResult {
+  earlyResult: ToolCallResult | null;
+  inputFile: string;
+  warning: string;
+}
+
+/**
+ * Apply the DuckDB/Parquet-first interception for `qsv_sqlp`.
+ *
+ * Strategy:
+ *   1. Multi-table queries (`_t_2`, `_t_3`, ...) bypass DuckDB — sqlp handles
+ *      multi-input natively; auto-conversion would be lossy.
+ *   2. Single-table queries:
+ *        a. Auto-convert the CSV to Parquet (skipped if input is "SKIP_INPUT").
+ *        b. Try DuckDB on the Parquet. If it returns a result, short-circuit.
+ *        c. Otherwise fall through to sqlp, rewriting the SQL via translateSql
+ *           and forcing inputFile="SKIP_INPUT" so qsv doesn't double-feed it.
+ *
+ * Any error during conversion/DuckDB is swallowed into a `warning` that the
+ * caller prepends to the sqlp output. We never fail the user's query just
+ * because the optimization didn't work.
+ *
+ * Mutates `params.sql` (the SQL is normalized and may be rewritten for the
+ * Parquet path); does not otherwise mutate inputs.
+ */
+async function runSqlpParquetInterception(
+  params: Record<string, unknown>,
+  inputFile: string,
+  outputFile: string | undefined,
+): Promise<SqlpInterceptionResult> {
+  const rawSql = params.sql as string | undefined;
+  if (!rawSql) {
+    return { earlyResult: null, inputFile, warning: "" };
+  }
+
+  // Normalize uppercase _T_N references to lowercase _t_N for consistent handling
+  const sql = normalizeTableRefs(rawSql);
+  params.sql = sql;
+
+  try {
+    // Skip DuckDB for multi-table queries (_t_2, _t_3, etc.) — sqlp handles
+    // multiple input files natively, so let the original input flow through.
+    // NOTE: Multi-table queries don't benefit from Parquet auto-conversion;
+    // users should manually convert all input files with qsv_to_parquet first.
+    if (MULTI_TABLE_PATTERN.test(sql)) {
+      console.error(`[MCP Tools] DuckDB: Multi-table query detected (_t_2+), falling back to sqlp`);
+      return { earlyResult: null, inputFile, warning: "" };
+    }
+
+    // Auto-convert CSV to Parquet (skip for SKIP_INPUT which already has explicit refs)
+    let parquetFile = inputFile;
+    if (inputFile !== "SKIP_INPUT") {
+      parquetFile = await ensureParquet(inputFile);
+    }
+
+    // Try DuckDB execution (single-table path)
+    const duckDbStart = Date.now();
+    const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
+    if (duckDbResult !== null) {
+      // Attach pipeline metadata for parity with the sqlp path
+      const duckDbSuccess = !("isError" in duckDbResult && duckDbResult.isError === true);
+      (duckDbResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
+        inputFile,
+        outputFile,
+        commandLine: `duckdb -c ${JSON.stringify(sql)}`,
+        durationMs: Date.now() - duckDbStart,
+        success: duckDbSuccess,
+      } satisfies PipelineMetadata;
+      if (outputFile) {
+        (duckDbResult as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputFile;
+      }
+      return { earlyResult: duckDbResult as ToolCallResult, inputFile, warning: "" };
+    }
+
+    // DuckDB unavailable or unsupported format — fall through to sqlp
+    // If we converted to Parquet, rewrite SQL via translateSql and use SKIP_INPUT
+    if (parquetFile !== inputFile && parquetFile.endsWith(".parquet")) {
+      const rewrittenSql = translateSql(sql, parquetFile);
+      params.sql = rewrittenSql;
+      console.error(`[MCP Tools] sqlp fallback with Parquet: ${rewrittenSql}`);
+      return { earlyResult: null, inputFile: "SKIP_INPUT", warning: "" };
+    }
+
+    return { earlyResult: null, inputFile, warning: "" };
+  } catch (error: unknown) {
+    // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
+    const errorMsg = getErrorMessage(error);
+    console.error(
+      `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
+      errorMsg,
+    );
+    return {
+      earlyResult: null,
+      inputFile,
+      // Include warning in result so the agent/user knows the optimization was skipped
+      warning: `[Warning] Parquet auto-conversion was skipped (${errorMsg}). Query ran against original CSV which may be slower.`,
+    };
+  }
+}
+
+/**
+ * Validate the shape of an `_llm_responses` callback payload.
+ * Returns an error message string when invalid, or `null` when the array
+ * matches the expected `Array<{ kind: string; response: string }>` shape.
+ *
+ * Extracted from the inline closure in handleToolCall so it can be unit-tested
+ * and so the describegpt interception doesn't carry validation noise inline.
+ */
+export function validateLlmResponsesShape(arr: unknown[]): string | null {
+  for (let i = 0; i < arr.length; i++) {
+    const el = arr[i];
+    if (el === null || typeof el !== "object" || Array.isArray(el)) {
+      return `_llm_responses[${i}] must be an object with "kind" and "response" string fields, got ${el === null ? "null" : Array.isArray(el) ? "array" : typeof el}.`;
+    }
+    const obj = el as Record<string, unknown>;
+    if (typeof obj.kind !== "string" || typeof obj.response !== "string") {
+      return `_llm_responses[${i}] must have "kind" and "response" string fields.`;
+    }
+  }
+  return null;
+}
+
+/**
+ * Apply the describegpt MCP-sampling interception.
+ *
+ * `qsv describegpt` is special: in MCP mode it never shells out to qsv with
+ * `--api-key` etc. Instead it uses the connected client's LLM via MCP
+ * sampling, OR falls back to an "agent-as-LLM" two-phase exchange.
+ *
+ * This function always returns a result when triggered — the entire
+ * describegpt path short-circuits handleToolCall. Returns `null` only when
+ * not applicable (commandName isn't describegpt, server not provided, etc.),
+ * so the caller falls through to normal execution.
+ *
+ * Phases handled here, in order:
+ *   1. Reject `--prompt` (SQL RAG chat mode is unsupported in MCP).
+ *   2. Reject `--base-url` / `--api-key` / `--model` / `--max-tokens` —
+ *      sampling supplies these.
+ *   3. If `_llm_responses` is set, validate and dispatch to
+ *      processAgentResponses (Phase 3 callback path).
+ *   4. Require at least one inference option (--dictionary / --description /
+ *      --tags / --all) and synthesize an output file path if needed.
+ *   5. Dispatch to MCP sampling when available, else fall back to
+ *      prepareContextForAgent.
+ */
+async function runDescribegptInterception(
+  params: Record<string, unknown>,
+  inputFile: string,
+  outputFile: string | undefined,
+  server: Server,
+): Promise<ToolCallResult> {
+  // Block SQL RAG mode (--prompt) in MCP server mode
+  if (params.prompt !== undefined || params["--prompt"] !== undefined) {
+    return errorResult(
+      `The --prompt option (SQL RAG chat mode) is not supported in MCP server mode.\n\n` +
+      `In MCP mode, use describegpt for data dictionaries, descriptions, and tags only (--dictionary, --description, --tags, --all).\n` +
+      `For natural language questions about your data, ask the connected LLM directly — ` +
+      `it can use other qsv tools (sqlp, frequency, stats) to answer your question.`,
+    );
+  }
+
+  // Block LLM API options that don't apply in MCP mode (sampling handles these)
+  const blockedLlmParams = ["base_url", "api_key", "model", "max_tokens"];
+  for (const param of blockedLlmParams) {
+    const dashParam = `--${param.replace(/_/g, "-")}`;
+    if (params[param] !== undefined || params[dashParam] !== undefined) {
+      return errorResult(
+        `The --${param.replace(/_/g, "-")} option is not needed in MCP server mode.\n` +
+        `describegpt uses the connected LLM automatically via MCP sampling — no API configuration required.`,
+      );
+    }
+  }
+
+  // Check if this is a Phase 3 callback with agent-provided LLM responses.
+  // The value may arrive as a JSON string (when passed through a typed schema
+  // that doesn't declare it) or as an already-parsed array.
+  let llmResponses: Array<{ kind: string; response: string }> | undefined;
+  const rawLlmResponses = params._llm_responses;
+
+  if (rawLlmResponses !== undefined) {
+    if (typeof rawLlmResponses === "string") {
+      try {
+        const parsed: unknown = JSON.parse(rawLlmResponses);
+        if (!Array.isArray(parsed)) {
+          return errorResult(`_llm_responses must be a JSON array, got ${typeof parsed}.`);
+        }
+        const validationError = validateLlmResponsesShape(parsed);
+        if (validationError) return errorResult(validationError);
+        llmResponses = parsed as Array<{ kind: string; response: string }>;
+      } catch {
+        return errorResult(
+          `Failed to parse _llm_responses JSON string. Expected an array of {kind, response} objects.`,
+        );
+      }
+    } else if (Array.isArray(rawLlmResponses)) {
+      const validationError = validateLlmResponsesShape(rawLlmResponses);
+      if (validationError) return errorResult(validationError);
+      llmResponses = rawLlmResponses as Array<{ kind: string; response: string }>;
+    } else {
+      return errorResult(
+        `Invalid _llm_responses format. Expected a JSON array or string, got ${typeof rawLlmResponses}.`,
+      );
+    }
+  }
+  if (llmResponses) {
+    return await processAgentResponses(
+      llmResponses, params, inputFile, outputFile, getCurrentWorkingDir(),
+    );
+  }
+
+  // Require at least one inference option (only for new requests, not _llm_responses callbacks).
+  // Normalize keys the same way buildDescribegptArgs does: strip leading --, convert - to _.
+  const inferenceOptions = new Set(["dictionary", "description", "tags", "all"]);
+  const hasInferenceOption = Object.entries(params).some(([rawKey, value]) => {
+    const normalized = rawKey.replace(/^--/, "").replace(/-/g, "_");
+    return inferenceOptions.has(normalized) && value === true;
+  });
+  if (!hasInferenceOption) {
+    return errorResult(
+      `describegpt requires at least one inference option: --dictionary, --description, --tags, or --all.\n\n` +
+      `Example: qsv_describegpt(input_file="data.csv", all=true)`,
+    );
+  }
+
+  // Auto-generate output file if not specified. describegpt output (data
+  // dictionaries, descriptions, tags) should always persist to a file.
+  // Default format is Markdown, so use .md extension. Place alongside the input file.
+  let resolvedOutputFile = outputFile;
+  if (!resolvedOutputFile) {
+    const inputBasename = basename(inputFile, extname(inputFile));
+    const inputDir = dirname(inputFile);
+    resolvedOutputFile = join(inputDir, `${inputBasename}.describegpt.md`);
+  }
+
+  const capabilities = server.getClientCapabilities();
+  if (capabilities?.sampling) {
+    // Build original CLI args from the resolved params
+    const cliArgs = buildDescribegptArgs(params, inputFile, resolvedOutputFile);
+    return await executeDescribegptWithSampling(
+      server,
+      config.qsvBinPath,
+      cliArgs,
+      getCurrentWorkingDir(),
+    );
+  }
+
+  // No sampling available — return prompts for agent-as-LLM fallback
+  return await prepareContextForAgent(params, inputFile, resolvedOutputFile, getCurrentWorkingDir());
+}
+
+/**
+ * Auto-run `qsv moarstats` after a successful `qsv stats` to enrich the
+ * .stats.csv cache with ~25 additional columns at minimal cost.
+ *
+ * moarstats overwrites the stats CSV in-place by default (no --output
+ * needed). Because this only fires for stats invocations (gated by the caller),
+ * moarstats itself can't recurse back here.
+ *
+ * Returns a short note suitable for appending to the user-visible output
+ * (either a success line or a "skipped because…" hint via formatMoarstatsSkip).
+ * Never throws.
+ */
+async function runMoarstatsAutoEnrich(
+  loader: SkillLoader,
+  executor: SkillExecutor,
+  inputFile: string,
+): Promise<string> {
+  try {
+    const moarstatsSkill = await loader.load("qsv-moarstats");
+    if (!moarstatsSkill) return "";
+
+    console.error(`[MCP Tools] Auto-running moarstats to enrich stats cache`);
+    const moarstatsResult = await executor.execute(moarstatsSkill, {
+      args: { input: inputFile },
+      options: {},
+    });
+    if (moarstatsResult.success) {
+      const duration = moarstatsResult.metadata?.duration ?? "?";
+      console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
+      return `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
+    }
+    console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
+    return formatMoarstatsSkip(moarstatsResult.stderr || "");
+  } catch (error: unknown) {
+    console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
+    return formatMoarstatsSkip(getErrorMessage(error));
+  }
+}
+
+
+/**
+ * Apply error-message sanitization when `config.sanitizeErrors` is enabled.
+ *
+ * Centralizes the sanitize/no-sanitize decision so every catch path —
+ * "Unexpected error" envelopes, file-path resolution failures, and the
+ * Parquet conversion error in handleToParquetCall — honors the
+ * `QSV_MCP_SANITIZE_ERRORS=false` opt-out consistently. Previously the
+ * non-zero-exit branch in handleToolCall gated on the flag while the
+ * catch branches sanitized unconditionally, making the opt-out only
+ * partially effective for local debugging.
+ */
+function maybeSanitize(message: string): string {
+  if (config.sanitizeErrors) {
+    return sanitizeErrorForClient(message);
+  }
+  return message;
+}
+
 export async function handleToolCall(
   toolName: string,
   params: Record<string, unknown>,
@@ -452,67 +784,18 @@ export async function handleToolCall(
       }
     }
 
-    // DuckDB/Parquet-first interception for sqlp queries
+    // DuckDB/Parquet-first interception for sqlp queries. The orchestration
+    // (multi-table detection, Parquet conversion, DuckDB attempt, fallback
+    // SQL rewrite, warning capture) lives in runSqlpParquetInterception so
+    // this function stays free of command-specific logic.
     let parquetConversionWarning = "";
     if (commandName === "sqlp" && !isHelpRequest && inputFile) {
-      const rawSql = params.sql as string | undefined;
-      if (rawSql) {
-        // Normalize uppercase _T_N references to lowercase _t_N for consistent handling
-        const sql = normalizeTableRefs(rawSql);
-        params.sql = sql;
-        try {
-          // Skip DuckDB for multi-table queries (_t_2, _t_3, etc.) — sqlp handles
-          // multiple input files natively, so let the original input flow through.
-          // NOTE: Multi-table queries don't benefit from Parquet auto-conversion;
-          // users should manually convert all input files with qsv_to_parquet first.
-          if (MULTI_TABLE_PATTERN.test(sql)) {
-            console.error(`[MCP Tools] DuckDB: Multi-table query detected (_t_2+), falling back to sqlp`);
-          } else {
-            // Auto-convert CSV to Parquet (skip for SKIP_INPUT which already has explicit refs)
-            let parquetFile = inputFile;
-            if (inputFile !== "SKIP_INPUT") {
-              parquetFile = await ensureParquet(inputFile);
-            }
-
-            // Try DuckDB execution (single-table path)
-            const duckDbStart = Date.now();
-            const duckDbResult = await tryDuckDbExecution(sql, parquetFile, params, outputFile);
-            if (duckDbResult !== null) {
-              // Attach pipeline metadata for parity with the sqlp path
-              const duckDbSuccess = !("isError" in duckDbResult && duckDbResult.isError === true);
-              (duckDbResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
-                inputFile,
-                outputFile,
-                commandLine: `duckdb -c ${JSON.stringify(sql)}`,
-                durationMs: Date.now() - duckDbStart,
-                success: duckDbSuccess,
-              } satisfies PipelineMetadata;
-              if (outputFile) {
-                (duckDbResult as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputFile;
-              }
-              return duckDbResult;
-            }
-
-            // DuckDB unavailable or unsupported format — fall through to sqlp
-            // If we converted to Parquet, rewrite SQL via translateSql and use SKIP_INPUT
-            if (parquetFile !== inputFile && parquetFile.endsWith(".parquet")) {
-              const rewrittenSql = translateSql(sql, parquetFile);
-              params.sql = rewrittenSql;
-              inputFile = "SKIP_INPUT";
-              console.error(`[MCP Tools] sqlp fallback with Parquet: ${rewrittenSql}`);
-            }
-          }
-        } catch (error: unknown) {
-          // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
-          const errorMsg = getErrorMessage(error);
-          console.error(
-            `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
-            errorMsg,
-          );
-          // Include warning in result so the agent/user knows the optimization was skipped
-          parquetConversionWarning = `[Warning] Parquet auto-conversion was skipped (${errorMsg}). Query ran against original CSV which may be slower.`;
-        }
+      const interception = await runSqlpParquetInterception(params, inputFile, outputFile);
+      if (interception.earlyResult) {
+        return interception.earlyResult;
       }
+      inputFile = interception.inputFile;
+      parquetConversionWarning = interception.warning;
     }
 
     // Determine if we should use a temp file for output (skip for help requests
@@ -551,159 +834,25 @@ export async function handleToolCall(
       JSON.stringify(options),
     );
 
-    // Intercept describegpt: use MCP sampling or agent-as-LLM fallback
-    // Skip for help requests — let them fall through to normal execution
+    // Intercept describegpt: use MCP sampling or agent-as-LLM fallback. The
+    // full per-phase routing (RAG rejection, API-option rejection, Phase 3
+    // _llm_responses validation, inference-option enforcement, output file
+    // auto-generation, sampling dispatch) lives in runDescribegptInterception.
+    // Skip for help requests — let them fall through to normal execution.
     if (commandName === "describegpt" && server && inputFile && !isHelpRequest) {
-      // Block SQL RAG mode (--prompt) in MCP server mode
-      if (params.prompt !== undefined || params["--prompt"] !== undefined) {
-        return errorResult(
-          `The --prompt option (SQL RAG chat mode) is not supported in MCP server mode.\n\n` +
-          `In MCP mode, use describegpt for data dictionaries, descriptions, and tags only (--dictionary, --description, --tags, --all).\n` +
-          `For natural language questions about your data, ask the connected LLM directly — ` +
-          `it can use other qsv tools (sqlp, frequency, stats) to answer your question.`,
-        );
-      }
-
-      // Block LLM API options that don't apply in MCP mode (sampling handles these)
-      const blockedLlmParams = ["base_url", "api_key", "model", "max_tokens"];
-      for (const param of blockedLlmParams) {
-        const dashParam = `--${param.replace(/_/g, "-")}`;
-        if (params[param] !== undefined || params[dashParam] !== undefined) {
-          return errorResult(
-            `The --${param.replace(/_/g, "-")} option is not needed in MCP server mode.\n` +
-            `describegpt uses the connected LLM automatically via MCP sampling — no API configuration required.`,
-          );
-        }
-      }
-
-      // Check if this is a Phase 3 callback with agent-provided LLM responses.
-      // The value may arrive as a JSON string (when passed through a typed schema that
-      // doesn't declare it) or as an already-parsed array.
-      let llmResponses: Array<{ kind: string; response: string }> | undefined;
-      const rawLlmResponses = params._llm_responses;
-
-      // Validate that every element in the array has the required shape.
-      const validateLlmResponseElements = (arr: unknown[]): string | null => {
-        for (let i = 0; i < arr.length; i++) {
-          const el = arr[i];
-          if (el === null || typeof el !== "object" || Array.isArray(el)) {
-            return `_llm_responses[${i}] must be an object with "kind" and "response" string fields, got ${el === null ? "null" : Array.isArray(el) ? "array" : typeof el}.`;
-          }
-          const obj = el as Record<string, unknown>;
-          if (typeof obj.kind !== "string" || typeof obj.response !== "string") {
-            return `_llm_responses[${i}] must have "kind" and "response" string fields.`;
-          }
-        }
-        return null;
-      };
-
-      if (rawLlmResponses !== undefined) {
-        if (typeof rawLlmResponses === "string") {
-          try {
-            const parsed: unknown = JSON.parse(rawLlmResponses);
-            if (!Array.isArray(parsed)) {
-              return errorResult(
-                `_llm_responses must be a JSON array, got ${typeof parsed}.`,
-              );
-            }
-            const validationError = validateLlmResponseElements(parsed);
-            if (validationError) {
-              return errorResult(validationError);
-            }
-            llmResponses = parsed as Array<{ kind: string; response: string }>;
-          } catch {
-            return errorResult(
-              `Failed to parse _llm_responses JSON string. Expected an array of {kind, response} objects.`,
-            );
-          }
-        } else if (Array.isArray(rawLlmResponses)) {
-          const validationError = validateLlmResponseElements(rawLlmResponses);
-          if (validationError) {
-            return errorResult(validationError);
-          }
-          llmResponses = rawLlmResponses as Array<{ kind: string; response: string }>;
-        } else {
-          return errorResult(
-            `Invalid _llm_responses format. Expected a JSON array or string, got ${typeof rawLlmResponses}.`,
-          );
-        }
-      }
-      if (llmResponses) {
-        return await processAgentResponses(
-          llmResponses, params, inputFile, outputFile, getCurrentWorkingDir(),
-        );
-      }
-
-      // Require at least one inference option (only for new requests, not _llm_responses callbacks).
-      // Normalize keys the same way buildDescribegptArgs does: strip leading --, convert - to _.
-      const inferenceOptions = new Set(["dictionary", "description", "tags", "all"]);
-      const hasInferenceOption = Object.entries(params).some(([rawKey, value]) => {
-        const normalized = rawKey.replace(/^--/, "").replace(/-/g, "_");
-        return inferenceOptions.has(normalized) && value === true;
-      });
-      if (!hasInferenceOption) {
-        return errorResult(
-          `describegpt requires at least one inference option: --dictionary, --description, --tags, or --all.\n\n` +
-          `Example: qsv_describegpt(input_file="data.csv", all=true)`,
-        );
-      }
-
-      // Auto-generate output file if not specified.
-      // describegpt output (data dictionaries, descriptions, tags) should always persist to a file.
-      // Default format is Markdown, so use .md extension. Place alongside the input file.
-      if (!outputFile && inputFile) {
-        const inputBasename = basename(inputFile, extname(inputFile));
-        const inputDir = dirname(inputFile);
-        outputFile = join(inputDir, `${inputBasename}.describegpt.md`);
-      }
-
-      const capabilities = server.getClientCapabilities();
-      if (capabilities?.sampling) {
-        // Build original CLI args from the resolved params
-        const cliArgs = buildDescribegptArgs(params, inputFile, outputFile);
-        return await executeDescribegptWithSampling(
-          server,
-          config.qsvBinPath,
-          cliArgs,
-          getCurrentWorkingDir(),
-        );
-      }
-
-      // No sampling available — return prompts for agent-as-LLM fallback
-      return await prepareContextForAgent(params, inputFile, outputFile, getCurrentWorkingDir());
+      return await runDescribegptInterception(params, inputFile, outputFile, server);
     }
 
     // Execute the skill
     const result = await executor.execute(skill, { args, options });
 
-    // Auto-run cheap moarstats (without --advanced or --bivariate) after successful stats execution
-    // to enrich the .stats.csv cache with ~25 additional columns at minimal cost.
-    // Note: moarstats overwrites the stats CSV in-place by default (no --output needed).
-    // This only triggers for commandName === "stats", so moarstats itself won't cause recursion.
-    let moarstatsNote = "";
-    if (commandName === "stats" && result.success && inputFile && !isHelpRequest) {
-      try {
-        const moarstatsSkill = await loader.load("qsv-moarstats");
-        if (moarstatsSkill) {
-          console.error(`[MCP Tools] Auto-running moarstats to enrich stats cache`);
-          const moarstatsResult = await executor.execute(moarstatsSkill, {
-            args: { input: inputFile },
-            options: {},
-          });
-          if (moarstatsResult.success) {
-            const duration = moarstatsResult.metadata?.duration ?? "?";
-            moarstatsNote = `\n\n📊 Auto-enriched stats cache with moarstats (~25 additional columns, ${duration}ms)`;
-            console.error(`[MCP Tools] moarstats auto-enrichment succeeded (${duration}ms)`);
-          } else {
-            moarstatsNote = formatMoarstatsSkip(moarstatsResult.stderr || "");
-            console.error(`[MCP Tools] moarstats auto-enrichment failed: ${moarstatsResult.stderr}`);
-          }
-        }
-      } catch (error: unknown) {
-        moarstatsNote = formatMoarstatsSkip(getErrorMessage(error));
-        console.error(`[MCP Tools] moarstats auto-enrichment error:`, getErrorMessage(error));
-      }
-    }
+    // Auto-run moarstats after a successful stats invocation to enrich the
+    // .stats.csv cache (~25 additional columns at minimal cost). Gated on
+    // commandName === "stats" so moarstats can't recurse back here.
+    const moarstatsNote =
+      commandName === "stats" && result.success && inputFile && !isHelpRequest
+        ? await runMoarstatsAutoEnrich(loader, executor, inputFile)
+        : "";
 
     // Format and return result
     if (result.success) {
@@ -762,8 +911,15 @@ export async function handleToolCall(
       } satisfies PipelineMetadata;
       return formattedResult;
     } else {
-      const cmdLine = result.metadata?.command ? `\nCommand: ${result.metadata.command}` : "";
-      const stderr = result.stderr.trimEnd();
+      const rawCmd = result.metadata?.command ?? "";
+      const rawStderr = result.stderr.trimEnd();
+      // Strip absolute paths (usernames, dir layout) unless explicitly opted out
+      // via QSV_MCP_SANITIZE_ERRORS=false. Sanitization protects hosted/shared
+      // deployments; the engine header and parquet warning are server-authored
+      // and don't need sanitizing.
+      const cmd = maybeSanitize(rawCmd);
+      const stderr = maybeSanitize(rawStderr);
+      const cmdLine = cmd ? `\nCommand: ${cmd}` : "";
       const engineHeader = commandName === "sqlp" && !isHelpRequest ? "🐻‍❄️ Engine: Polars SQL\n\n" : "";
       const errorMsg = parquetConversionWarning
         ? `${engineHeader}${parquetConversionWarning}\n\nError executing ${commandName}:\n${stderr}${cmdLine}`
@@ -781,7 +937,7 @@ export async function handleToolCall(
       return errResult;
     }
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    return errorResult(`Unexpected error: ${maybeSanitize(getErrorMessage(error))}`);
   } finally {
     releaseSlot();
   }
@@ -862,7 +1018,7 @@ export async function handleGenericCommand(
       server,
     );
   } catch (error: unknown) {
-    return errorResult(`Unexpected error: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    return errorResult(`Unexpected error: ${maybeSanitize(getErrorMessage(error))}`);
   }
 }
 
@@ -1238,7 +1394,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved input file: ${originalInputFile} -> ${inputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving input file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+      return errorResult(`Error resolving input file path: ${maybeSanitize(getErrorMessage(error))}`);
     }
   }
 
@@ -1285,7 +1441,7 @@ export async function handleToParquetCall(
         `[MCP Tools] Resolved output file: ${originalOutputFile} -> ${resolvedOutputFile}`,
       );
     } catch (error: unknown) {
-      return errorResult(`Error resolving output file path: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+      return errorResult(`Error resolving output file path: ${maybeSanitize(getErrorMessage(error))}`);
     }
   }
 
@@ -1354,7 +1510,7 @@ export async function handleToParquetCall(
     (result as Record<string | symbol, unknown>)[FINAL_OUTPUT_FILE] = outputPath;
     return result;
   } catch (error: unknown) {
-    const errResult = errorResult(`Error converting CSV to Parquet: ${sanitizeErrorForClient(getErrorMessage(error))}`);
+    const errResult = errorResult(`Error converting CSV to Parquet: ${maybeSanitize(getErrorMessage(error))}`);
     (errResult as Record<string | symbol, unknown>)[PIPELINE_METADATA] = {
       inputFile,
       outputFile: resolvedOutputFile,

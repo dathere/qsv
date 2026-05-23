@@ -29,7 +29,7 @@ Claude Code is Anthropic's official CLI for Claude - a powerful terminal-based i
    claude --version
    ```
 
-2. **Node.js ≥ 18.0.0** - Required to run the MCP server
+2. **Node.js ≥ 20.0.0** - Required to run the MCP server
    ```bash
    node --version
    npm --version

@@ -293,7 +293,7 @@ The update check runs asynchronously and doesn't block MCP server startup.
   - The `--update-mcp-skills` command must be run from within the repository
   - Outputs to `.claude/skills/qsv/` relative to repository root
   - Clone with: `git clone https://github.com/dathere/qsv.git`
-- **Node.js** >= 18.0.0 (for MCP server)
+- **Node.js** >= 20.0.0 (for MCP server)
 
 ## Best Practices
 

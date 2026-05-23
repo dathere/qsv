@@ -65,7 +65,7 @@ Auto-detection finds qsv in standard locations (PATH, /usr/local/bin, ~/.cargo/b
 
 **Perfect for**: Developers, terminal users, automation, remote servers, SSH workflows
 
-**Requirements**: Claude Code CLI + Node.js ≥ 18.0.0 + qsv binary
+**Requirements**: Claude Code CLI + Node.js ≥ 20.0.0 + qsv binary
 
 **Installation**:
 ```bash
@@ -91,7 +91,7 @@ npm run mcp:install  # Detects and configures Claude Code automatically
 
 **Perfect for**: Advanced users who want full config file control, using non-Claude MCP clients
 
-**Requirements**: Node.js ≥ 18.0.0 + npm + qsv binary
+**Requirements**: Node.js ≥ 20.0.0 + npm + qsv binary
 
 **Installation**:
 ```bash
@@ -438,7 +438,7 @@ qsv --update-mcp-skills
 
 ## Requirements
 
-- Node.js >= 18.0.0
+- Node.js >= 20.0.0
 - qsv installed and in PATH (for execution)
 - TypeScript 5.0+ (for development)
 

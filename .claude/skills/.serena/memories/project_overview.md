@@ -13,7 +13,7 @@
 
 ## Tech Stack
 - **Language**: TypeScript (ES2022, strict mode, ES modules)
-- **Runtime**: Node.js ≥ 18
+- **Runtime**: Node.js ≥ 20
 - **MCP SDK**: `@modelcontextprotocol/sdk` ^1.26.0 (+ `@modelcontextprotocol/ext-apps` ^1.2.0)
 - **Search**: `wink-bm25-text-search` + `wink-nlp-utils` for tool discovery
 - **Testing**: Node.js built-in test runner (`node --test`)

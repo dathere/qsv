@@ -1332,6 +1332,44 @@ fn describegpt_baseurl_precedence_env_over_default() {
     );
 }
 
+// Regression test for codex review job 2363: an explicit `--base-url`
+// that happens to match the documented default URL must still beat
+// QSV_LLM_BASE_URL. Before the fix, the sentinel-based precedence
+// couldn't tell the explicit-default-URL case from "no CLI flag" — both
+// produced `flag_base_url == Some(DEFAULT_BASE_URL)` — so the env var
+// silently overrode the explicit CLI flag.
+#[test]
+fn describegpt_baseurl_precedence_cli_default_over_env() {
+    let wrk = Workdir::new("describegpt_baseurl_cli_default_over_env");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    // Env var points at a URL that would be obviously wrong if it leaked
+    // through. The CLI flag explicitly pins the documented default
+    // localhost URL — the precedence MUST honor it.
+    cmd.env("QSV_LLM_BASE_URL", "http://env-url.example.com/v1")
+        .args(["--base-url", "http://localhost:1234/v1"])
+        .arg("in.csv")
+        .arg("--all")
+        .arg("--no-cache")
+        .args(["--api-key", "test"]);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        !got.contains("env-url.example.com"),
+        "Explicit --base-url http://localhost:1234/v1 must override QSV_LLM_BASE_URL even when \
+         its value equals the documented default.\nGot: {}",
+        got
+    );
+}
+
 // Test that CLI --model flag takes precedence over QSV_LLM_MODEL env var
 #[test]
 fn describegpt_model_precedence_cli_over_env() {

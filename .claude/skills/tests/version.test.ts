@@ -125,8 +125,15 @@ test('readMinimumQsvVersionFromManifest returns a semver string from real manife
   { skip: !MANIFEST_AVAILABLE }, () => {
     const root = resolveProjectRoot();
     const minVersion = readMinimumQsvVersionFromManifest(root);
-    assert.ok(minVersion, 'manifest.json must declare _meta.com.dathere.qsv.minimum_qsv_version');
-    assert.match(minVersion!, /^\d+\.\d+\.\d+$/,
+    // Explicit narrow-via-throw rather than `minVersion!` — keeps the
+    // assertion honest under strict-null-checks and satisfies Biome's
+    // no-non-null-assertion rule. assert.ok's `asserts value` signature
+    // doesn't always propagate through the default `import assert from
+    // 'node:assert'` style used in this file.
+    if (!minVersion) {
+      throw new Error('manifest.json must declare _meta.com.dathere.qsv.minimum_qsv_version');
+    }
+    assert.match(minVersion, /^\d+\.\d+\.\d+$/,
       `minimum_qsv_version must be semver, got: ${minVersion}`);
   });
 

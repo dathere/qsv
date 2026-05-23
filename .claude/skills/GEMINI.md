@@ -3,7 +3,7 @@
 QSV Agent Skills is a high-performance TypeScript implementation of a Model Context Protocol (MCP) server that exposes the extensive tabular data-wrangling capabilities of the `qsv` toolkit to AI agents like Claude. It enables seamless discovery, invocation, and composition of `qsv` commands for processing CSV, TSV, Excel, JSONL, and other tabular formats directly from local filesystems.
 
 ## Key Technologies
-- **Language:** TypeScript (Node.js >= 18.0.0)
+- **Language:** TypeScript (Node.js >= 20.0.0)
 - **Framework:** @modelcontextprotocol/sdk
 - **Core Engine:** `qsv` binary (Rust-based data-wrangling toolkit)
 - **Search:** `wink-bm25-text-search` for intelligent tool discovery

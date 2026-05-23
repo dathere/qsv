@@ -103,7 +103,7 @@ npm run build:test
 - Check for missing type definitions or incompatible Node.js types
 
 ### Node.js Version Issues
-- Ensure code uses features compatible with Node.js 18+
+- Ensure code uses features compatible with Node.js 20+ (CI tests Node 20, 22, 24)
 - Check `package.json` engines field matches minimum supported version
 
 ## Performance

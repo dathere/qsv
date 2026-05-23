@@ -462,15 +462,22 @@ async function runSqlpParquetInterception(
   } catch (error: unknown) {
     // Parquet conversion or DuckDB failed — warn and fall through to sqlp with original input
     const errorMsg = getErrorMessage(error);
+    // Server-side log keeps the full error (absolute paths included) for
+    // operator diagnostics.
     console.error(
       `[MCP Tools] Parquet/DuckDB interception failed, falling back to sqlp:`,
       errorMsg,
     );
+    // Client-visible warning routes through maybeSanitize so absolute
+    // input/output paths from the failed Parquet conversion don't leak when
+    // QSV_MCP_SANITIZE_ERRORS is at its default `true`. This warning is
+    // prepended to both success and error responses, so without
+    // sanitization it bypasses the gate every other error path honors.
+    // (roborev commit 2c72888 review)
     return {
       earlyResult: null,
       inputFile,
-      // Include warning in result so the agent/user knows the optimization was skipped
-      warning: `[Warning] Parquet auto-conversion was skipped (${errorMsg}). Query ran against original CSV which may be slower.`,
+      warning: `[Warning] Parquet auto-conversion was skipped (${maybeSanitize(errorMsg)}). Query ran against original CSV which may be slower.`,
     };
   }
 }

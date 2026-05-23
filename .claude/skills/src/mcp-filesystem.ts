@@ -271,6 +271,13 @@ export class FilesystemResourceProvider {
     // Without this, plugin mode could auto-add (e.g.) ~/.ssh to allowedDirs.
     // Extension-based file listing still blocks reading non-tabular files,
     // but pointing the working dir at a secrets dir is itself a smell.
+    //
+    // Symlink hardening: `newDir` was realpath'd above, so we must compare
+    // against BOTH the logical home-relative path AND its realpath'd target.
+    // Otherwise a symlinked `~/.ssh -> /private/secret` is bypassable:
+    // target resolves to /private/secret while the unresolved blocked path
+    // remains ~/.ssh, and the equality/prefix check misses. (roborev
+    // commit 49361f5 review)
     const home = homedir();
     let canonHome: string;
     try {
@@ -281,11 +288,24 @@ export class FilesystemResourceProvider {
     const target = normalizeForCaseFs(newDir);
     const sep = process.platform === "win32" ? "\\" : "/";
     for (const sensitive of SENSITIVE_HOME_DIRS) {
-      const blocked = normalizeForCaseFs(resolve(canonHome, sensitive));
-      if (target === blocked || target.startsWith(blocked + sep)) {
-        throw new Error(
-          `Cannot set working directory to ${dir}: "${sensitive}" is a protected directory.`,
-        );
+      const blockedLogical = resolve(canonHome, sensitive);
+      let blockedCanonical = blockedLogical;
+      try {
+        blockedCanonical = realpathSync(blockedLogical);
+      } catch {
+        // Sensitive dir doesn't exist on this host — only the logical
+        // form is meaningful (no symlink to resolve through).
+      }
+      // De-dupe so we don't recheck the same path when there's no symlink.
+      for (const blocked of new Set([
+        normalizeForCaseFs(blockedLogical),
+        normalizeForCaseFs(blockedCanonical),
+      ])) {
+        if (target === blocked || target.startsWith(blocked + sep)) {
+          throw new Error(
+            `Cannot set working directory to ${dir}: "${sensitive}" is a protected directory.`,
+          );
+        }
       }
     }
 

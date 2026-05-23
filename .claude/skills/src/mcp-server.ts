@@ -1089,10 +1089,29 @@ class QsvMcpServer {
         canonHome = home;
       }
       const target = normalizeForCaseFs(targetDir);
+      // Symlink hardening: compare against BOTH the logical home-relative
+      // path AND its realpath'd target. Without this, a symlinked
+      // ~/.ssh → /private/secret is bypassable: targetDir is realpath'd
+      // above (so it resolves to /private/secret) while the unresolved
+      // blocked path stays ~/.ssh, and the equality/prefix check misses.
+      // (roborev commit 49361f5 review)
       for (const sensitive of SENSITIVE_HOME_DIRS) {
-        const blocked = normalizeForCaseFs(resolve(canonHome, sensitive));
-        if (target === blocked || target.startsWith(blocked + sep)) {
-          return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
+        const blockedLogical = resolve(canonHome, sensitive);
+        let blockedCanonical = blockedLogical;
+        try {
+          blockedCanonical = await realpath(blockedLogical);
+        } catch {
+          // Sensitive dir doesn't exist on this host — only the logical
+          // form is meaningful (no symlink to resolve through).
+        }
+        // De-dupe so we don't recheck the same path when there's no symlink.
+        for (const blocked of new Set([
+          normalizeForCaseFs(blockedLogical),
+          normalizeForCaseFs(blockedCanonical),
+        ])) {
+          if (target === blocked || target.startsWith(blocked + sep)) {
+            return errorResult(`Access to "${sensitive}" is not allowed for security reasons.`);
+          }
         }
       }
 

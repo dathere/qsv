@@ -158,6 +158,43 @@ test('readMinimumQsvVersionFromManifest returns the nested string', () => {
   }
 });
 
+test('readMinimumQsvVersionFromManifest accepts semver with pre-release and build metadata', () => {
+  const dir = join(tmpdir(), `qsv-min-version-test-${Date.now()}-pre`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    for (const v of ['20.1.0-alpha.1', '20.1.0+build.42', '20.1.0-rc.1+sha.abc123']) {
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify({
+        _meta: { 'com.dathere.qsv': { minimum_qsv_version: v } },
+      }));
+      assert.strictEqual(readMinimumQsvVersionFromManifest(dir), v,
+        `expected ${v} to be accepted as valid semver`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('readMinimumQsvVersionFromManifest rejects non-semver strings (returns null)', () => {
+  const dir = join(tmpdir(), `qsv-min-version-test-${Date.now()}-bad`);
+  mkdirSync(dir, { recursive: true });
+  try {
+    // Each of these would silently degrade compareVersions() if accepted:
+    //   "v20.1.0" → ["v20", "1", "0"] → [NaN, 1, 0] → coerced to [0, 1, 0]
+    //   "20.1"    → 2 parts only → missing patch implicitly 0 → "20.1.0" (accidentally fine, but ambiguous)
+    //   "20"      → 1 part → wildly wrong floor
+    //   empty/whitespace/garbage → guaranteed bypass
+    for (const bad of ['v20.1.0', '20.1', '20', '', '   ', 'not-a-version', '20.1.0-', '1.2.3.4', '20.1.0 ']) {
+      writeFileSync(join(dir, 'manifest.json'), JSON.stringify({
+        _meta: { 'com.dathere.qsv': { minimum_qsv_version: bad } },
+      }));
+      assert.strictEqual(readMinimumQsvVersionFromManifest(dir), null,
+        `expected ${JSON.stringify(bad)} to be rejected`);
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test('config.MINIMUM_QSV_VERSION matches manifest.json',
   { skip: !MANIFEST_AVAILABLE }, async () => {
     // Dynamic import so config.ts (which calls loadMinimumQsvVersion at module load)

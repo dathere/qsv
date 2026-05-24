@@ -79,6 +79,8 @@ pub mod pivotp;
 pub mod pragmastat;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod pro;
+#[cfg(all(feature = "profile", feature = "feature_capable"))]
+pub mod profile;
 #[cfg(feature = "prompt")]
 pub mod prompt;
 pub mod pseudo;

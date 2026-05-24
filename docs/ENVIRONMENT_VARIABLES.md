@@ -55,7 +55,7 @@
 | `QSV_REDIS_TTL_REFRESH`| if set, enables cache hits to refresh TTL of Redis cached values. |
 | `QSV_TIMEOUT`| for commands with a --timeout option (`describegpt`, `fetch`, `fetchpost`, `geocode`, `luau`, `sample`, `snappy`, `sniff`, `template` & `validate`), the number of seconds before a web request times out (default: 30). |
 | `QSV_USER_AGENT`| the user-agent to use for web requests. When specifying a custom user agent. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to conform to the [IETF RFC 7231 standard](https://tools.ietf.org/html/rfc7231#section-5.5.3). See [here](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent) for examples.<br>(default: $QSV_BIN_NAME/$QSV_VERSION ($QSV_TARGET; $QSV_COMMAND; $QSV_KIND; https://github.com/dathere/qsv) - e.g.<br>`qsv/20.0.0 (x86_64-unknown-linux; fetch; prebuilt; https://github.com/dathere/qsv)`).|
-| `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode` command. (default: `GeoLite2-City.mmdb`) |
+| `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode iplookup*` commands. (default: `GeoLite2-City.mmdb`) |
 | `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
 
 Several dependencies also have environment variables that influence qsv's performance & behavior:

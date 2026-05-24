@@ -380,6 +380,24 @@ Edit `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 Restart Claude Desktop to load the server.
 
+### Environment Variables
+
+The `env` block above isn't limited to `QSV_MCP_*` keys — **any `QSV_*` variable qsv understands is honored**. The MCP server spawns the qsv binary as a child process and forwards its full `process.env` unchanged, so vars set in `env` reach qsv directly.
+
+Common reasons to set additional vars here:
+
+- **Geocoding API key**: `QSV_OPENCAGE_API_KEY`
+- **Geocoding cache**: `QSV_GEOCODE_INDEX_FILENAME`, `QSV_CACHE_DIR`
+- **CKAN integration**: `QSV_CKAN_API`, `QSV_CKAN_TOKEN`
+- **Reader/writer buffers**: `QSV_RDR_BUFFER_CAPACITY`, `QSV_WTR_BUFFER_CAPACITY`
+
+Two caveats:
+
+- The MCPB `user_config` UI in Claude Desktop only exposes the keys the manifest declares; any non-`QSV_MCP_*` var must be added by hand to the `env` block (or exported in the shell that launches the MCP client).
+- Some qsv env vars are read once at startup (e.g., update-check flags), so changes take effect only after restarting the MCP server.
+
+For the full catalog — both general qsv env vars and the dedicated `## MCP Server Environment Variables` section — see [docs/ENVIRONMENT_VARIABLES.md](../../docs/ENVIRONMENT_VARIABLES.md).
+
 ### Usage
 
 Once configured, use natural language in Claude Desktop:
@@ -429,6 +447,7 @@ qsv --update-mcp-skills
 - [Getting Started Guide](./docs/guides/START_HERE.md) - Install qsv MCP Server + Cowork Plugin (recommended)
 - [MCP Server Guide](./README-MCP.md) - Claude Desktop integration (legacy method)
 - [Auto-Update Guide](./docs/reference/AUTO_UPDATE.md) - Keep skills in sync with qsv releases
+- [Environment Variables](../../docs/ENVIRONMENT_VARIABLES.md) - Full catalog of `QSV_*` vars and MCP-specific knobs
 
 ### Usage & Features
 - [Additional Servers Guide](./docs/guides/ADDITIONAL_SERVERS.md) - Census + Wikidata MCP servers

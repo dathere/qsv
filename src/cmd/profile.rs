@@ -287,5 +287,3 @@ fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
     }
     v.as_object_mut().unwrap()
 }
-
-

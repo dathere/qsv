@@ -140,16 +140,15 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     if !resource.is_object() {
         resource = json!({});
     }
-    if resource.get("name").is_none() {
-        if let Some(name) = Path::new(args.input_path)
+    if resource.get("name").is_none()
+        && let Some(name) = Path::new(args.input_path)
             .file_stem()
             .and_then(|s| s.to_str())
-        {
-            resource
-                .as_object_mut()
-                .unwrap()
-                .insert("name".to_string(), Value::String(name.to_string()));
-        }
+    {
+        resource
+            .as_object_mut()
+            .unwrap()
+            .insert("name".to_string(), Value::String(name.to_string()));
     }
 
     // --- 7. assemble ------------------------------------------------------

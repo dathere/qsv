@@ -12,18 +12,8 @@ use serde_json::{Map, Value};
 
 use crate::CliResult;
 
-/// Top-level scheming document.
-///
-/// Mirrors the shape of `dataset-druf.yaml`:
-///
-/// ```yaml
-/// scheming_version: 2
-/// dataset_type: dataset
-/// about: ...
-/// dataset_fields:  [...]
-/// resource_fields: [...]
-/// ```
 #[derive(Debug, Deserialize)]
+#[allow(dead_code)] // some fields are preserved for round-tripping into the output rather than read in Rust
 pub struct Spec {
     #[serde(default)]
     pub scheming_version: Option<u32>,
@@ -43,12 +33,8 @@ pub struct Spec {
     pub extras:           Map<String, Value>,
 }
 
-/// One field declaration inside `dataset_fields` or `resource_fields`.
-///
-/// Only the keys we evaluate are typed; `extras` captures the rest (`preset`,
-/// `validators`, `form_*`, `choices`, `help_text`, `dpp_locale`, `start_form_page`,
-/// `dpp_suggestions`, …) verbatim.
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)] // `label` and `extras` are surfaced via the spec output rather than read in Rust
 pub struct Field {
     /// Field identifier (CKAN-side column name). Required for normal fields;
     /// `None` for the synthetic "page-break" entries that only carry a

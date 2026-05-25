@@ -143,24 +143,24 @@ fn push_if_some<'a>(
     let Some(name) = field.field_name.as_deref() else {
         return;
     };
-    if let Some(t) = field.formula.as_deref() {
-        if !t.trim().is_empty() {
-            out.push(FormulaSpec {
-                field_name: name,
-                kind: "formula",
-                scope,
-                template: t,
-            });
-        }
+    if let Some(t) = field.formula.as_deref()
+        && !t.trim().is_empty()
+    {
+        out.push(FormulaSpec {
+            field_name: name,
+            kind: "formula",
+            scope,
+            template: t,
+        });
     }
-    if let Some(t) = field.suggestion_formula.as_deref() {
-        if !t.trim().is_empty() {
-            out.push(FormulaSpec {
-                field_name: name,
-                kind: "suggestion_formula",
-                scope,
-                template: t,
-            });
-        }
+    if let Some(t) = field.suggestion_formula.as_deref()
+        && !t.trim().is_empty()
+    {
+        out.push(FormulaSpec {
+            field_name: name,
+            kind: "suggestion_formula",
+            scope,
+            template: t,
+        });
     }
 }

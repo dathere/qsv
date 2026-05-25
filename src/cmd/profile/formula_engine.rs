@@ -11,13 +11,15 @@
 //! so the rest of the profile pipeline (`profile.rs::run`,
 //! `merge_formula_results`) is untouched.
 
+use std::path::Path;
+
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 #[cfg(test)]
 use super::spec;
-use super::{formula_helpers, spec::Spec};
+use super::{formula_helpers, spec::Spec, sql_backend::SqlBackend};
 use crate::CliResult;
 
 /// One formula extracted from a scheming Field, ready to evaluate.
@@ -56,10 +58,19 @@ pub struct FormulaResult {
 /// If the spec has no formulas, returns `Ok(vec![])` without building
 /// the template environment.
 ///
+/// `csv_path`, when provided, installs a Polars-backed SQL backend so
+/// the SQL-requiring helpers (`temporal_resolution`,
+/// `guess_accrual_periodicity`) can query the input CSV. The backend is
+/// uninstalled before this function returns.
+///
 /// Errors during render are NOT fatal — they surface as `error` strings
 /// on the corresponding entry, so a failing formula in one field does
 /// not abort the whole profile pass.
-pub fn evaluate_spec(spec: &Spec, context: &Value) -> CliResult<Vec<FormulaResult>> {
+pub fn evaluate_spec(
+    spec: &Spec,
+    context: &Value,
+    csv_path: Option<&Path>,
+) -> CliResult<Vec<FormulaResult>> {
     // 1. flatten spec into a Vec<FormulaSpec>
     let mut formulas: Vec<FormulaSpec> = Vec::new();
     for f in spec.real_dataset_fields() {
@@ -72,14 +83,17 @@ pub fn evaluate_spec(spec: &Spec, context: &Value) -> CliResult<Vec<FormulaResul
         return Ok(Vec::new());
     }
 
-    // 2. build the minijinja environment with all helpers registered.
+    // 2. install the SQL backend for the duration of this call.
+    formula_helpers::set_sql_backend(csv_path.map(SqlBackend::new));
+
+    // 3. build the minijinja environment with all helpers registered.
     let mut env = Environment::new();
     formula_helpers::register(&mut env);
 
-    // 3. convert the context JSON Value into a minijinja Value once.
+    // 4. convert the context JSON Value into a minijinja Value once.
     let mj_context = minijinja::Value::from_serialize(context);
 
-    // 4. evaluate each formula
+    // 5. evaluate each formula
     let mut out: Vec<FormulaResult> = Vec::with_capacity(formulas.len());
     for f in formulas {
         let mut entry = FormulaResult {
@@ -106,6 +120,10 @@ pub fn evaluate_spec(spec: &Spec, context: &Value) -> CliResult<Vec<FormulaResul
         }
         out.push(entry);
     }
+
+    // 6. clear the SQL backend so a later call without csv_path doesn't see stale state.
+    formula_helpers::set_sql_backend(None);
+
     Ok(out)
 }
 
@@ -198,7 +216,7 @@ mod tests {
         let spec =
             spec::load_from_str("scheming_version: 2\ndataset_type: test\n", "test").unwrap();
         let ctx = json!({});
-        let results = evaluate_spec(&spec, &ctx).unwrap();
+        let results = evaluate_spec(&spec, &ctx, None).unwrap();
         assert!(results.is_empty());
     }
 
@@ -215,7 +233,7 @@ dataset_fields:
 ";
         let spec = spec::load_from_str(yaml, "test").unwrap();
         let ctx = json!({"package": {}}); // package exists, title is undefined
-        let results = evaluate_spec(&spec, &ctx).unwrap();
+        let results = evaluate_spec(&spec, &ctx, None).unwrap();
         assert_eq!(results.len(), 1);
         // "Hello " trimmed is "Hello" — non-empty, survives normalization.
         assert_eq!(
@@ -238,7 +256,7 @@ dataset_fields:
 ";
         let spec = spec::load_from_str(yaml, "test").unwrap();
         let ctx = json!({});
-        let results = evaluate_spec(&spec, &ctx).unwrap();
+        let results = evaluate_spec(&spec, &ctx, None).unwrap();
         assert_eq!(results.len(), 1);
         assert!(results[0].error.is_some(), "expected error to be set");
         assert!(

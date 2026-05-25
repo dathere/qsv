@@ -4744,7 +4744,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .has_headers(true)
                 .from_path(input_path)
                 .ok()
-                .and_then(|mut r| r.headers().ok().map(|h| h.clone()))
+                .and_then(|mut r| r.headers().ok().cloned())
                 .map(|h| h.iter().map(std::string::ToString::to_string).collect())
                 .unwrap_or_default();
 

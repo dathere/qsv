@@ -9,9 +9,10 @@ context (`package`, `resource`, `dpps`, `dppf`, `dpp`), then evaluate every
 resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort
 DCAT-US v3 projection, ready for qsv pro and DP+ to prepopulate CKAN packages.
 
-Helpers and filters are reused from DP+'s `jinja2_helpers.py` via an embedded
-Python interpreter (qsv's `python` feature). A working `python3` with the
-`jinja2` package installed is required at runtime.
+Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`,
+built on `minijinja`. No Python interpreter is required at runtime; the
+SQL-requiring helpers (`temporal_resolution`, `guess_accrual_periodicity`)
+query the input CSV directly via Polars SQL.
 
 For an example spec file, see:
   https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml
@@ -64,6 +65,7 @@ mod dcat;
 mod formula_engine;
 mod formula_helpers;
 mod spec;
+mod sql_backend;
 
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -121,7 +123,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // template against the analysis context. Helpers are the Rust port of
     // DP+'s `jinja2_helpers.py` (see `formula_helpers.rs`).
     let formula_results = match spec_opt.as_ref() {
-        Some(spec) => formula_engine::evaluate_spec(spec, &analysis.context)?,
+        Some(spec) => {
+            let csv_path = Some(Path::new(ctx_args.input_path));
+            formula_engine::evaluate_spec(spec, &analysis.context, csv_path)?
+        },
         None => Vec::new(),
     };
     let formulas_evaluated = !formula_results.is_empty();

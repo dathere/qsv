@@ -2689,11 +2689,10 @@ fn configured_null_text(freq_options: &str) -> &str {
         if let Some(val) = tok.strip_prefix("--null-text=") {
             return val;
         }
-        if tok == "--null-text" {
-            if let Some(val) = tokens.next() {
+        if tok == "--null-text"
+            && let Some(val) = tokens.next() {
                 return val;
             }
-        }
     }
     "(NULL)"
 }

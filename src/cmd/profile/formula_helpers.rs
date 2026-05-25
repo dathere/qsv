@@ -18,7 +18,40 @@
 //! the old `qsv_ckan_stubs.py` defaults and `ckanext.datapusher_plus.config`
 //! upstream defaults.
 
+use std::cell::RefCell;
+
+use chrono::{DateTime, NaiveDate, NaiveDateTime};
 use minijinja::{Environment, Error, ErrorKind, Value};
+
+use super::sql_backend::SqlBackend;
+
+thread_local! {
+    /// Per-thread handle to the SQL backend, set by `evaluate_spec`
+    /// before rendering and cleared after. Thread-local (not static
+    /// RwLock) so concurrent tests / future parallel-profile runs can't
+    /// race each other when setting and clearing the backend.
+    static SQL_BACKEND: RefCell<Option<SqlBackend>> = const { RefCell::new(None) };
+}
+
+/// Install the SQL backend on the current thread for the duration of
+/// an `evaluate_spec` call. Pass `None` to clear.
+pub fn set_sql_backend(backend: Option<SqlBackend>) {
+    SQL_BACKEND.with(|cell| *cell.borrow_mut() = backend);
+}
+
+/// Borrow the installed SQL backend on the current thread, if any.
+fn with_sql_backend<R>(f: impl FnOnce(&SqlBackend) -> Result<R, Error>) -> Result<R, Error> {
+    SQL_BACKEND.with(|cell| {
+        let borrowed = cell.borrow();
+        let backend = borrowed.as_ref().ok_or_else(|| {
+            value_err(
+                "no input CSV available for SQL-backed helper (stdin input or backend not \
+                 installed)",
+            )
+        })?;
+        f(backend)
+    })
+}
 
 /// Register every filter + global on the environment. Called once per
 /// `evaluate_spec` invocation by `formula_engine::evaluate_spec`.
@@ -46,13 +79,11 @@ pub fn register(env: &mut Environment) {
     env.add_function("get_column_stats", get_column_stats);
 
     // --- globals (SQL-backed) -----------------------------------------
-    // Stubs that return an error today. Phase 0c will wire these to
-    // Polars SQL over the input CSV. Returning an error here matches
-    // the old Python behavior of `dsu.datastore_search_sql` returning
-    // empty records → "Not enough records" ValueError, surfaced as an
-    // `error` on the FormulaResult.
-    env.add_function("temporal_resolution", temporal_resolution_stub);
-    env.add_function("guess_accrual_periodicity", guess_accrual_periodicity_stub);
+    // Backed by Polars SQL over the input CSV (see sql_backend.rs).
+    // The backend is set process-wide by `formula_engine::evaluate_spec`
+    // for the duration of the render pass, then cleared.
+    env.add_function("temporal_resolution", temporal_resolution);
+    env.add_function("guess_accrual_periodicity", guess_accrual_periodicity);
 }
 
 // =====================================================================
@@ -448,21 +479,151 @@ fn get_column_stats(
 }
 
 // =====================================================================
-// GLOBALS — SQL-backed (stubs for now; Phase 0c wires to Polars)
+// GLOBALS — SQL-backed (Polars over the input CSV)
 // =====================================================================
 
-fn temporal_resolution_stub(_args: minijinja::value::Rest<Value>) -> Result<String, Error> {
-    Err(value_err(
-        "temporal_resolution: SQL backend not yet wired (Phase 0c); set the value via \
-         --initial-context dpp_suggestions.temporal_resolution instead",
-    ))
+/// `temporal_resolution(date_field?)` — minimum interval between
+/// consecutive sorted unique values of `date_field` in the input CSV,
+/// expressed as an ISO 8601 duration. Mirrors DP+'s thresholds:
+///     < 1 day  → "PT1H"
+///     == 1 day → "P1D"
+///     <= 31 d  → "P{n}D"
+///     <= 366 d → "P{n//30}M"
+///     else     → "P{n//365}Y"
+/// If `date_field` is omitted, falls back to the first entry in
+/// `dpp.DATE_FIELDS` then `dpp.DATETIME_FIELDS`.
+fn temporal_resolution(
+    args: minijinja::value::Rest<Value>,
+    state: &minijinja::State,
+) -> Result<String, Error> {
+    let field = resolve_date_field(args.first(), state)?;
+    with_sql_backend(|backend| {
+        let strs = backend
+            .distinct_sorted_date_strings(&field)
+            .map_err(|e| value_err(&format!("temporal_resolution: {e}")))?;
+        if strs.len() < 2 {
+            return Err(value_err("Not enough records to get temporal resolution"));
+        }
+        let dates = parse_date_strings(&strs)?;
+        let intervals = day_intervals(&dates);
+        let min_days = *intervals
+            .iter()
+            .min()
+            .ok_or_else(|| value_err("No intervals found"))?;
+        Ok(format_temporal_resolution(min_days))
+    })
 }
 
-fn guess_accrual_periodicity_stub(_args: minijinja::value::Rest<Value>) -> Result<String, Error> {
-    Err(value_err(
-        "guess_accrual_periodicity: SQL backend not yet wired (Phase 0c); set the value via \
-         --initial-context dpp_suggestions.accrual_periodicity instead",
-    ))
+/// `guess_accrual_periodicity(date_field?)` — most common interval
+/// between consecutive sorted unique date values, expressed as an
+/// ISO 8601 repeating duration: `R/P{n}{unit}`.
+fn guess_accrual_periodicity(
+    args: minijinja::value::Rest<Value>,
+    state: &minijinja::State,
+) -> Result<String, Error> {
+    let field = resolve_date_field(args.first(), state)?;
+    with_sql_backend(|backend| {
+        let strs = backend
+            .distinct_sorted_date_strings(&field)
+            .map_err(|e| value_err(&format!("guess_accrual_periodicity: {e}")))?;
+        if strs.len() < 2 {
+            return Err(value_err("Not enough records to guess accrual periodicity"));
+        }
+        let dates = parse_date_strings(&strs)?;
+        let intervals = day_intervals(&dates);
+        let most_common = mode(&intervals).ok_or_else(|| value_err("No intervals found"))?;
+        Ok(format_accrual_periodicity(most_common))
+    })
+}
+
+/// Resolve a date-field name from an optional first-positional arg,
+/// falling back to the first entry of `dpp.DATE_FIELDS` then
+/// `dpp.DATETIME_FIELDS` in the template context.
+fn resolve_date_field(arg: Option<&Value>, state: &minijinja::State) -> Result<String, Error> {
+    if let Some(v) = arg
+        && let Some(s) = v.as_str()
+        && !s.is_empty()
+    {
+        return Ok(s.to_string());
+    }
+    let dpp = state.lookup("dpp").unwrap_or(Value::UNDEFINED);
+    for key in ["DATE_FIELDS", "DATETIME_FIELDS"] {
+        let arr = dpp.get_attr(key).unwrap_or(Value::UNDEFINED);
+        if let Some(name) =
+            deserialize_value::<Vec<String>>(&arr).and_then(|v| v.into_iter().next())
+        {
+            return Ok(name);
+        }
+    }
+    Err(value_err("No date or datetime fields found"))
+}
+
+/// Parse ISO 8601 date / datetime / RFC3339 strings into NaiveDateTime
+/// for interval math. Sub-second precision is preserved; date-only
+/// strings get midnight as the time component.
+fn parse_date_strings(strs: &[String]) -> Result<Vec<NaiveDateTime>, Error> {
+    let mut out = Vec::with_capacity(strs.len());
+    for s in strs {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+            out.push(dt);
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
+            out.push(dt);
+        } else if let Ok(d) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
+            out.push(d.and_hms_opt(0, 0, 0).unwrap());
+        } else if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
+            out.push(dt.naive_utc());
+        } else {
+            return Err(value_err(&format!("could not parse date: {s}")));
+        }
+    }
+    Ok(out)
+}
+
+/// Whole-day intervals between consecutive (already-sorted) datetimes.
+/// Matches DP+'s `(dates[i+1] - dates[i]).days` semantics — sub-day
+/// differences truncate to zero, surfaced as "PT1H" by the formatter.
+fn day_intervals(dates: &[NaiveDateTime]) -> Vec<i64> {
+    let mut out = Vec::with_capacity(dates.len().saturating_sub(1));
+    for w in dates.windows(2) {
+        out.push((w[1] - w[0]).num_days());
+    }
+    out
+}
+
+/// Most-frequent value (with ties broken by first-seen order).
+fn mode(values: &[i64]) -> Option<i64> {
+    use std::collections::HashMap;
+    let mut counts: HashMap<i64, usize> = HashMap::new();
+    for &v in values {
+        *counts.entry(v).or_insert(0) += 1;
+    }
+    counts.into_iter().max_by_key(|&(_, c)| c).map(|(v, _)| v)
+}
+
+fn format_temporal_resolution(min_days: i64) -> String {
+    if min_days < 1 {
+        "PT1H".to_string()
+    } else if min_days == 1 {
+        "P1D".to_string()
+    } else if min_days <= 31 {
+        format!("P{min_days}D")
+    } else if min_days <= 366 {
+        format!("P{}M", min_days / 30)
+    } else {
+        format!("P{}Y", min_days / 365)
+    }
+}
+
+fn format_accrual_periodicity(most_common: i64) -> String {
+    if most_common == 1 {
+        "R/P1D".to_string()
+    } else if most_common <= 31 {
+        format!("R/P{most_common}D")
+    } else if most_common <= 366 {
+        format!("R/P{}M", most_common / 30)
+    } else {
+        format!("R/P{}Y", most_common / 365)
+    }
 }
 
 // =====================================================================
@@ -481,6 +642,7 @@ struct BBoxCoords {
 /// precedence DP+ uses:
 ///   1. `resource.dpp_spatial_extent.coordinates` (BoundingBox geometry)
 ///   2. `dpp.LAT_FIELD` / `dpp.LON_FIELD` → `dpps[field].stats.{min,max}`
+///
 /// Raises a ValueError-equivalent if no lat/lon fields are found.
 fn bbox_from_context(state: &minijinja::State) -> Result<BBoxCoords, Error> {
     // Try resource.dpp_spatial_extent first
@@ -762,9 +924,76 @@ mod tests {
     }
 
     #[test]
-    fn temporal_resolution_returns_error_until_phase_0c() {
+    fn temporal_resolution_errors_without_backend() {
+        // Without a SQL backend installed (e.g. stdin input), the helper
+        // surfaces a clear error instead of crashing.
+        super::set_sql_backend(None);
         let env = build_env();
         let err = render(&env, "{{ temporal_resolution('d') }}", json!({})).unwrap_err();
-        assert!(format!("{err}").contains("SQL backend not yet wired"));
+        assert!(
+            format!("{err}").contains("no input CSV available"),
+            "got: {err}"
+        );
+    }
+
+    #[test]
+    fn temporal_resolution_daily_dates() {
+        use std::io::Write;
+        let mut f = tempfile::Builder::new()
+            .prefix("tr-daily")
+            .suffix(".csv")
+            .tempfile()
+            .unwrap();
+        f.write_all(b"id,date\n1,2024-01-01\n2,2024-01-02\n3,2024-01-03\n4,2024-01-04\n")
+            .unwrap();
+        f.flush().unwrap();
+        super::set_sql_backend(Some(super::SqlBackend::new(f.path())));
+        let env = build_env();
+        let out = render(&env, "{{ temporal_resolution('date') }}", json!({})).unwrap();
+        super::set_sql_backend(None);
+        assert_eq!(out, "P1D");
+    }
+
+    #[test]
+    fn guess_accrual_periodicity_weekly_cadence() {
+        use std::io::Write;
+        let mut f = tempfile::Builder::new()
+            .prefix("ap-weekly")
+            .suffix(".csv")
+            .tempfile()
+            .unwrap();
+        f.write_all(
+            b"id,date\n1,2024-01-01\n2,2024-01-08\n3,2024-01-15\n4,2024-01-22\n5,2024-01-29\n",
+        )
+        .unwrap();
+        f.flush().unwrap();
+        super::set_sql_backend(Some(super::SqlBackend::new(f.path())));
+        let env = build_env();
+        let out = render(&env, "{{ guess_accrual_periodicity('date') }}", json!({})).unwrap();
+        super::set_sql_backend(None);
+        assert_eq!(out, "R/P7D");
+    }
+
+    #[test]
+    fn format_temporal_resolution_thresholds() {
+        use super::format_temporal_resolution as f;
+        assert_eq!(f(0), "PT1H");
+        assert_eq!(f(1), "P1D");
+        assert_eq!(f(7), "P7D");
+        assert_eq!(f(31), "P31D");
+        assert_eq!(f(60), "P2M"); // 60/30 = 2
+        assert_eq!(f(366), "P12M"); // boundary: 366/30=12
+        assert_eq!(f(730), "P2Y"); // 730/365 = 2
+    }
+
+    #[test]
+    fn format_accrual_periodicity_thresholds() {
+        use super::format_accrual_periodicity as f;
+        assert_eq!(f(1), "R/P1D");
+        assert_eq!(f(7), "R/P7D");
+        assert_eq!(f(31), "R/P31D");
+        assert_eq!(f(90), "R/P3M");
+        assert_eq!(f(365), "R/P12M");
+        assert_eq!(f(730), "R/P2Y");
     }
 }

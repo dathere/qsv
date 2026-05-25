@@ -94,7 +94,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // For v1 we require a real input file path — running stats + frequency in
     // subprocess form against stdin would require materializing it to a
     // tempfile, and that's a follow-up.
-    let input_path = match args.arg_input.as_deref() {
+    let raw_input = match args.arg_input.as_deref() {
         Some("-") | None => {
             return Err(CliError::Other(
                 "qsv profile requires an input file path; reading from stdin is not yet supported."
@@ -103,6 +103,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
         Some(p) => p.to_string(),
     };
+
+    // URL inputs are downloaded to a tempfile so the rest of the pipeline
+    // (stats, frequency, sqlp-backed helpers) sees a normal file path. The
+    // tempfile must outlive `run`'s body — we bind it to a local variable
+    // (`_downloaded_temp`) so its Drop runs only at function exit. The
+    // original URL is preserved separately so the DCAT projection can use
+    // it as `dcat:downloadURL`.
+    let (input_path, original_url, _downloaded_temp) = resolve_input(&raw_input)?;
 
     // --- 1. parse spec (optional) -----------------------------------------
     let spec_opt = match args.flag_spec.as_deref() {
@@ -182,6 +190,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
     merge_formula_results(&mut package, &mut resource, &formula_results);
+
+    // When the input was a URL, stamp it as the resource URL so the DCAT
+    // projection's `dcat:downloadURL` slot gets populated (subject to the
+    // existing absolute-IRI check). Don't overwrite an explicit
+    // resource.url already supplied via formulas / seed metadata.
+    if let Some(url) = original_url.as_ref()
+        && let Some(res_obj) = resource.as_object_mut()
+    {
+        res_obj
+            .entry("url".to_string())
+            .or_insert_with(|| Value::String(url.clone()));
+    }
 
     if !args.flag_no_ckan {
         out_map.insert(
@@ -304,4 +324,77 @@ fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
         *v = json!({});
     }
     v.as_object_mut().unwrap()
+}
+
+/// Resolve the user-supplied input into a local file path. If the input
+/// is an http(s) URL, download it to a tempfile so the rest of the
+/// pipeline sees a normal file. Returns:
+///   * the local file path to feed to stats/frequency/sqlp
+///   * the original URL (when the input was one), for later use as `dcat:downloadURL` on the
+///     Distribution
+///   * a `NamedTempFile` handle that the caller must keep alive until all downstream readers have
+///     finished — dropping it deletes the temp on disk
+fn resolve_input(
+    raw: &str,
+) -> CliResult<(String, Option<String>, Option<tempfile::NamedTempFile>)> {
+    if !is_http_url(raw) {
+        return Ok((raw.to_string(), None, None));
+    }
+
+    use std::{io::Write, time::Duration};
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(120))
+        .build()
+        .map_err(|e| CliError::Other(format!("qsv profile: HTTP client build: {e}")))?;
+    let response = client
+        .get(raw)
+        .send()
+        .and_then(reqwest::blocking::Response::error_for_status)
+        .map_err(|e| CliError::Other(format!("qsv profile: download {raw}: {e}")))?;
+    let body = response
+        .bytes()
+        .map_err(|e| CliError::Other(format!("qsv profile: read body from {raw}: {e}")))?;
+
+    // Preserve the URL's file extension (when present) on the tempfile —
+    // some downstream qsv code paths sniff by extension.
+    let suffix = std::path::Path::new(raw)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{e}"))
+        .unwrap_or_else(|| ".csv".to_string());
+
+    let mut temp = tempfile::Builder::new()
+        .prefix("qsv-profile-")
+        .suffix(&suffix)
+        .tempfile()
+        .map_err(|e| CliError::Other(format!("qsv profile: create tempfile: {e}")))?;
+    temp.write_all(&body)
+        .map_err(|e| CliError::Other(format!("qsv profile: write tempfile: {e}")))?;
+    temp.flush().ok();
+
+    let local = temp.path().to_string_lossy().to_string();
+    Ok((local, Some(raw.to_string()), Some(temp)))
+}
+
+fn is_http_url(s: &str) -> bool {
+    let lower = s.to_ascii_lowercase();
+    lower.starts_with("http://") || lower.starts_with("https://")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_http_url;
+
+    #[test]
+    fn url_detection_recognizes_http_https_case_insensitive() {
+        assert!(is_http_url("http://example.gov/d.csv"));
+        assert!(is_http_url("https://example.gov/d.csv"));
+        assert!(is_http_url("HTTPS://example.gov/d.csv"));
+        assert!(is_http_url("Http://example.gov/d.csv"));
+        assert!(!is_http_url("/tmp/local.csv"));
+        assert!(!is_http_url("file:///tmp/x.csv"));
+        assert!(!is_http_url("ftp://example.com/x.csv"));
+        assert!(!is_http_url(""));
+    }
 }

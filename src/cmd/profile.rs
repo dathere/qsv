@@ -60,6 +60,7 @@ use serde_json::{Value, json};
 use crate::{CliError, CliResult, util};
 
 mod context;
+mod dcat;
 mod py_engine;
 mod spec;
 
@@ -148,34 +149,35 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         analysis.context.get("dppf").cloned().unwrap_or(json!({})),
     );
 
-    if !args.flag_no_ckan {
-        let mut package = analysis
-            .context
-            .get("package")
-            .cloned()
-            .unwrap_or(json!({}));
-        let mut resource = analysis
-            .context
-            .get("resource")
-            .cloned()
-            .unwrap_or(json!({}));
-        // If spec is present, mirror its scheming_version / dataset_type into
-        // the package block so downstream consumers can identify the schema.
-        if let (Some(pkg), Some(spec)) = (package.as_object_mut(), spec_opt.as_ref()) {
-            if let Some(v) = spec.scheming_version {
-                pkg.entry("scheming_version").or_insert_with(|| json!(v));
-            }
-            if let Some(dt) = spec.dataset_type.as_deref() {
-                pkg.entry("dataset_type")
-                    .or_insert_with(|| Value::String(dt.to_string()));
-            }
+    // Build the merged package/resource once so both --no-ckan and --no-dcat
+    // share the same post-formula state.
+    let mut package = analysis
+        .context
+        .get("package")
+        .cloned()
+        .unwrap_or(json!({}));
+    let mut resource = analysis
+        .context
+        .get("resource")
+        .cloned()
+        .unwrap_or(json!({}));
+    if let (Some(pkg), Some(spec)) = (package.as_object_mut(), spec_opt.as_ref()) {
+        if let Some(v) = spec.scheming_version {
+            pkg.entry("scheming_version").or_insert_with(|| json!(v));
         }
-        merge_formula_results(&mut package, &mut resource, &formula_results);
+        if let Some(dt) = spec.dataset_type.as_deref() {
+            pkg.entry("dataset_type")
+                .or_insert_with(|| Value::String(dt.to_string()));
+        }
+    }
+    merge_formula_results(&mut package, &mut resource, &formula_results);
+
+    if !args.flag_no_ckan {
         out_map.insert(
             "ckan".to_string(),
             json!({
-                "package":   package,
-                "resources": [resource],
+                "package":   package.clone(),
+                "resources": [resource.clone()],
             }),
         );
     }
@@ -189,7 +191,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     );
 
     if !args.flag_no_dcat {
-        out_map.insert("dcat".to_string(), build_dcat_stub(&input_path, &analysis));
+        let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
+        let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
+        let dcat_block = dcat::build(&package, &[resource.clone()], &dpp, &stats, &input_path);
+        out_map.insert("dcat".to_string(), dcat_block);
     }
 
     let _ = analysis.headers;
@@ -283,31 +288,4 @@ fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
     v.as_object_mut().unwrap()
 }
 
-/// Placeholder DCAT-US v3 projection. The full mapping lands in task #9 once
-/// the CKAN-side block is populated by the Python formula engine.
-fn build_dcat_stub(input_path: &str, analysis: &context::AnalysisContext) -> Value {
-    let title = Path::new(input_path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("dataset")
-        .to_string();
-    let row_count = analysis
-        .context
-        .pointer("/dpp/dataset_stats/row_count")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(0);
-    json!({
-        "@context":  "https://project-open-data.cio.gov/v1.1/schema/catalog.jsonld",
-        "@type":     "dcat:Dataset",
-        "title":     title,
-        "describedBy": null,
-        "distribution": [{
-            "@type":      "dcat:Distribution",
-            "mediaType":  "text/csv",
-            "downloadURL": input_path,
-            "byteSize":   std::fs::metadata(input_path).map(|m| m.len()).unwrap_or(0),
-            "rowCount":   row_count,
-        }],
-        "_note": "DCAT-US v3 projection is preliminary; full mapping pending issue #1705.",
-    })
-}
+

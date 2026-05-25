@@ -245,13 +245,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // When the input was a URL, stamp it as the resource URL so the DCAT
     // projection's `dcat:downloadURL` slot gets populated (subject to the
     // existing absolute-IRI check). Don't overwrite an explicit
-    // resource.url already supplied via formulas / seed metadata.
-    if let Some(url) = original_url.as_ref()
-        && let Some(res_obj) = resource.as_object_mut()
-    {
-        res_obj
-            .entry("url".to_string())
-            .or_insert_with(|| Value::String(url.clone()));
+    // resource.url already supplied via formulas / seed metadata. Same
+    // pattern for package.title / resource.name: when the user hasn't
+    // supplied them, derive defaults from the URL basename so the DCAT
+    // title slot doesn't surface the random tempfile suffix.
+    if let Some(url) = original_url.as_ref() {
+        if let Some(res_obj) = resource.as_object_mut() {
+            res_obj
+                .entry("url".to_string())
+                .or_insert_with(|| Value::String(url.clone()));
+        }
+        if let Some(url_title) = url_title_default(url) {
+            // package.title is read by add_core_identity and not touched
+            // by context::build — a simple .entry().or_insert() suffices.
+            if let Some(pkg_obj) = package.as_object_mut() {
+                pkg_obj
+                    .entry("title".to_string())
+                    .or_insert_with(|| Value::String(url_title.clone()));
+            }
+            // resource.name is already seeded by context::build from the
+            // tempfile path stem before we get here. Replace that default
+            // with the URL basename, but leave a real user-supplied value
+            // (via --initial-context or formulas) alone — distinguish by
+            // checking whether the current value matches the tempfile
+            // stem that context::build would have produced.
+            if let Some(res_obj) = resource.as_object_mut() {
+                let tempfile_stem = Path::new(&input_path)
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(str::to_string);
+                let current = res_obj
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string);
+                if current.is_none() || current == tempfile_stem {
+                    res_obj.insert("name".to_string(), Value::String(url_title));
+                }
+            }
+        }
     }
 
     if !args.flag_no_ckan {
@@ -517,6 +548,50 @@ fn tempfile_suffix_for_url(raw: &str) -> String {
         .and_then(|e| e.to_str())
         .map(|e| format!(".{e}"))
         .unwrap_or_else(|| ".csv".to_string())
+}
+
+/// Derive a human-readable default title from a URL when the user
+/// hasn't supplied `--initial-context.package.title`. Strips the
+/// URL's well-known compound extensions (`.csv.gz`, etc.) and any
+/// remaining single extension, then returns the last non-empty path
+/// segment. Returns `None` when the URL has no usable path (e.g. just
+/// a host, or a trailing slash), in which case the caller falls back
+/// to the existing tempfile-stem behaviour.
+///
+/// Opaque/UUID-style basenames (e.g. CKAN's
+/// `/datastore/dump/<uuid>`) pass through unchanged — a UUID is still
+/// reproducible and traceable back to the input, which is strictly
+/// better than the random tempfile suffix `qsv-profile-XXXXXX`.
+/// Users who want a prettier title should populate
+/// `--initial-context.package.title` explicitly.
+fn url_title_default(url: &str) -> Option<String> {
+    let parsed = url::Url::parse(url).ok()?;
+    let path = parsed.path();
+    let cleaned = strip_compound_csv_ext(path);
+    let basename = std::path::Path::new(&cleaned)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .filter(|s| !s.is_empty())?;
+    Some(basename)
+}
+
+/// Strip a CSV-family compound extension off a path (mirrors
+/// `tempfile_suffix_for_url`'s compound-extension list). Returns the
+/// path with the compound suffix removed, or unchanged when no known
+/// compound suffix is present (single extensions are stripped later
+/// via `Path::file_stem`).
+fn strip_compound_csv_ext(path: &str) -> String {
+    let lower = path.to_ascii_lowercase();
+    for compound in [
+        ".csv.gz", ".tsv.gz", ".ssv.gz", ".csv.zst", ".tsv.zst", ".ssv.zst", ".csv.bz2",
+        ".tsv.bz2", ".ssv.bz2", ".csv.xz", ".tsv.xz",
+    ] {
+        if lower.ends_with(compound) {
+            return path[..path.len() - compound.len()].to_string();
+        }
+    }
+    path.to_string()
 }
 
 /// Apply `--initial-context.dataset_info` JSON-Pointer → Value
@@ -809,6 +884,73 @@ mod tests {
         assert_eq!(tempfile_suffix_for_url("https://x.gov/export"), ".csv");
         // Malformed URL → treat the whole string as a path
         assert_eq!(tempfile_suffix_for_url("not-a-url.csv"), ".csv");
+    }
+
+    use super::url_title_default;
+
+    #[test]
+    fn url_title_strips_single_extension() {
+        assert_eq!(
+            url_title_default("https://example.gov/data/pittsburgh-311.csv"),
+            Some("pittsburgh-311".to_string())
+        );
+        assert_eq!(
+            url_title_default("https://x.gov/dir/sub/payments-2024.tsv"),
+            Some("payments-2024".to_string())
+        );
+    }
+
+    #[test]
+    fn url_title_strips_compound_csv_extension() {
+        assert_eq!(
+            url_title_default("https://example.gov/d/snapshot.csv.gz"),
+            Some("snapshot".to_string())
+        );
+        assert_eq!(
+            url_title_default("https://example.gov/d/q3.tsv.zst"),
+            Some("q3".to_string())
+        );
+    }
+
+    #[test]
+    fn url_title_ignores_query_and_fragment() {
+        // url::Url parsing already drops these from the path, but the
+        // assertion documents the intended behaviour.
+        assert_eq!(
+            url_title_default("https://example.gov/data.csv?token=secret&v=2#fragment"),
+            Some("data".to_string())
+        );
+    }
+
+    #[test]
+    fn url_title_preserves_uuid_basename_unchanged() {
+        // CKAN's `/datastore/dump/<uuid>` shape — uuid is still better
+        // than the random tempfile suffix and is traceable to the source.
+        assert_eq!(
+            url_title_default(
+                "https://data.wprdc.org/datastore/dump/5202679a-d243-402e-b82a-63189995a942"
+            ),
+            Some("5202679a-d243-402e-b82a-63189995a942".to_string())
+        );
+    }
+
+    #[test]
+    fn url_title_returns_none_for_host_only_url() {
+        // Host-only URLs (no path) leave no basename to use; caller
+        // falls back to the tempfile-stem default. Malformed URLs too.
+        assert_eq!(url_title_default("https://example.gov"), None);
+        assert_eq!(url_title_default("https://example.gov/"), None);
+        assert_eq!(url_title_default("not a url"), None);
+    }
+
+    #[test]
+    fn url_title_uses_directory_name_for_trailing_slash() {
+        // A trailing-slash URL has a directory name — that's still a
+        // usable title hint, better than the tempfile suffix.
+        assert_eq!(
+            url_title_default("https://example.gov/datasets/inventory/"),
+            Some("inventory".to_string())
+        );
     }
 
     #[test]

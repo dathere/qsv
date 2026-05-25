@@ -54,9 +54,13 @@ def _dsu_index_exists(resource_id: str, field: str) -> bool:  # noqa: ARG001
     return False
 
 
-def _dsu_datastore_search_sql(sql: str) -> list:  # noqa: ARG001
-    """Same as above -- no datastore to query."""
-    return []
+def _dsu_datastore_search_sql(sql: str) -> dict:  # noqa: ARG001
+    """No datastore to query. Return the same dict shape CKAN's real
+    ``datastore_search_sql`` returns (``{"records": [...]}``), so callers
+    that do ``records.get("records", [])`` get an empty list and short-
+    circuit cleanly instead of raising ``AttributeError`` on a bare list.
+    """
+    return {"records": []}
 
 
 # ---------------------------------------------------------------------------
@@ -70,7 +74,11 @@ class _TkConfig:
     def __init__(self) -> None:
         self._data: dict[str, Any] = {
             # DP+ checks this when deciding whether to expose SQL search.
-            "ckan.datapusher_plus.datastore_sqlsearch_enabled": False,
+            # Must match exactly what jinja2_helpers.py reads
+            # (see the decorator-time check around line 297-303 of the
+            # vendored helpers). A non-matching key would silently fall
+            # back to the default and break any future gating logic.
+            "ckan.datastore.sqlsearch.enabled": False,
         }
 
     def get(self, key: str, default: Any = None) -> Any:

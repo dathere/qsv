@@ -142,7 +142,12 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     let dpp = json!({
         "LAT_FIELD":           lat_field,
         "LON_FIELD":           lon_field,
-        "NO_LAT_LON_FIELDS":   lat_field.is_none() && lon_field.is_none(),
+        // True when *either* lat or lon is missing, matching DP+'s helpers
+        // (jinja2_helpers.py:148 uses `is None or`). With `&&`, a
+        // single-field-missing case would slip past the guards in
+        // spatial_extent_wkt() / spatial_extent_feature_collection() and
+        // crash mid-render instead of raising the intended ValueError.
+        "NO_LAT_LON_FIELDS":   lat_field.is_none() || lon_field.is_none(),
         "DATE_FIELDS":         date_fields,
         "NO_DATE_FIELDS":      date_fields.is_empty(),
         "DATETIME_FIELDS":     datetime_fields,

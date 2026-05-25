@@ -29,7 +29,16 @@ jobs:
       - name: Run DevSkim scanner
         uses: microsoft/DevSkim-Action@v1
         with:
-          ignore-globs: .claude/**
+          # .claude/** : plugin / agent scratch space (not shipped)
+          # src/cmd/profile/py/** : vendored Python helpers from
+          #   dathere/datapusher-plus (jinja2_helpers.py); keep verbatim so
+          #   upstream fixes can be re-vendored cleanly
+          # tests/resources/** : test fixture data (also includes vendored
+          #   YAML / CSV samples); scanning these is noise
+          ignore-globs: |
+            .claude/**
+            src/cmd/profile/py/**
+            tests/resources/**
         
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4

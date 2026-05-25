@@ -116,12 +116,16 @@ pub fn build(
         .pointer("/dpp_suggestions/spatial_extent/value")
         .and_then(|v| v.as_str())
     {
+        // The GeoSPARQL wktLiteral datatype is identified by its canonical
+        // W3C OGC IRI, which uses http://. This is a stable identifier, not
+        // a URL to fetch; changing the scheme would break interop with
+        // every DCAT/GeoSPARQL consumer.
         ds.insert(
             "dct:spatial".to_string(),
             json!({
                 "@type":      "dct:Location",
                 "locn:geometry": {
-                    "@type": "http://www.opengis.net/ont/geosparql#wktLiteral",
+                    "@type": "http://www.opengis.net/ont/geosparql#wktLiteral", //DevSkim: ignore DS137138
                     "@value": wkt,
                 }
             }),
@@ -170,8 +174,18 @@ fn build_distribution(resource: &Value, stats: &Value, input_path: &str) -> Valu
     if let Some(desc) = string_opt(resource.get("description")) {
         d.insert("dct:description".to_string(), Value::String(desc));
     }
-    let url = string_opt(resource.get("url")).unwrap_or_else(|| input_path.to_string());
-    d.insert("dcat:downloadURL".to_string(), Value::String(url));
+    // `dcat:downloadURL` is specified as an IRI, so only emit it when the
+    // resource actually carries an absolute http(s) / ftp(s) URL. A bare
+    // local filesystem path is not a valid IRI and would break strict
+    // JSON-LD consumers. The input file path is still preserved under
+    // `qsv:sourcePath` for human inspection.
+    if let Some(url) = string_opt(resource.get("url")).filter(|u| is_absolute_iri(u)) {
+        d.insert("dcat:downloadURL".to_string(), Value::String(url));
+    }
+    d.insert(
+        "qsv:sourcePath".to_string(),
+        Value::String(input_path.to_string()),
+    );
     d.insert(
         "dcat:mediaType".to_string(),
         Value::String("text/csv".to_string()),
@@ -276,6 +290,18 @@ fn json_to_f64(v: &Value) -> Option<f64> {
         .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
+/// Cheap check that `s` looks like an absolute IRI suitable for a
+/// `dcat:downloadURL` slot. Accepts the common web + file URL schemes
+/// (http, https, ftp, ftps, file). Local filesystem paths return false.
+fn is_absolute_iri(s: &str) -> bool {
+    let s = s.trim();
+    s.starts_with("http://")
+        || s.starts_with("https://")
+        || s.starts_with("ftp://")
+        || s.starts_with("ftps://")
+        || s.starts_with("file://")
+}
+
 /// Map a CKAN-style license string to a canonical IRI when we recognize it.
 ///
 /// Returns `Some(iri)` for known slugs and for values that already look like
@@ -287,12 +313,18 @@ fn license_iri(license: &str) -> Option<String> {
     if trimmed.is_empty() {
         return None;
     }
+    // The Creative Commons + Open Data Commons license IRIs below use
+    // http:// because those are the *canonical* identifiers published by
+    // CC / ODC and used by data.gov, DCAT-US sample catalogs, and Dublin
+    // Core. Changing to https:// would produce different IRIs that no
+    // longer round-trip with other DCAT consumers, so DS137138 is
+    // suppressed inline.
     match trimmed {
-        "cc-by" => Some("http://creativecommons.org/licenses/by/4.0/".to_string()),
-        "cc-by-sa" => Some("http://creativecommons.org/licenses/by-sa/4.0/".to_string()),
-        "cc-zero" => Some("http://creativecommons.org/publicdomain/zero/1.0/".to_string()),
-        "odc-by" => Some("http://opendatacommons.org/licenses/by/1.0/".to_string()),
-        "odc-pddl" => Some("http://opendatacommons.org/licenses/pddl/1.0/".to_string()),
+        "cc-by" => Some("http://creativecommons.org/licenses/by/4.0/".to_string()), /* DevSkim: ignore DS137138 */
+        "cc-by-sa" => Some("http://creativecommons.org/licenses/by-sa/4.0/".to_string()), /* DevSkim: ignore DS137138 */
+        "cc-zero" => Some("http://creativecommons.org/publicdomain/zero/1.0/".to_string()), /* DevSkim: ignore DS137138 */
+        "odc-by" => Some("http://opendatacommons.org/licenses/by/1.0/".to_string()), /* DevSkim: ignore DS137138 */
+        "odc-pddl" => Some("http://opendatacommons.org/licenses/pddl/1.0/".to_string()), /* DevSkim: ignore DS137138 */
         other if other.starts_with("http://") || other.starts_with("https://") => {
             Some(other.to_string())
         },

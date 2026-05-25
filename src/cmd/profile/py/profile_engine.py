@@ -107,9 +107,11 @@ def evaluate(context_json: str, formulas_json: str) -> str:
                 rendered = _normalize_suggestion(rendered)
             entry["value"] = rendered
         except Exception as exc:
-            # Capture the short message + a one-line traceback hint so the
-            # user can pinpoint which helper raised. The full traceback is
-            # available via RUST_LOG=debug.
+            # Capture the short message plus a short formatted traceback
+            # under a private `_traceback` field on the result entry so
+            # `qsv profile`'s output JSON carries enough context to diagnose
+            # which helper raised. Use `jq '.formula_results[]._traceback'`
+            # on the resulting metadata file to inspect.
             entry["error"] = f"{type(exc).__name__}: {exc}"
             entry["_traceback"] = traceback.format_exc(limit=2)
         out.append(entry)

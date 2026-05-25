@@ -37,6 +37,13 @@ profile options:
                               Dataset alongside the v3-required
                               Distribution-level copy. Default: off
                               (strict v3, license on Distribution only).
+    --no-dcat-discovery       Skip DCAT-markup discovery on URL inputs.
+                              Discovery sniffs HTTP Link: rel=describedBy
+                              (and, in future, sibling .metadata.json /
+                              JSON-LD <script> blocks) to use the
+                              publisher's stated metadata as a base layer.
+    --dcat-discovery-timeout <secs>  Per-request timeout for DCAT-markup
+                              discovery probes. Default: 5.
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -66,6 +73,7 @@ use crate::{CliError, CliResult, util};
 
 mod context;
 mod dcat;
+mod dcat_discover;
 mod formula_engine;
 mod formula_helpers;
 mod spec;
@@ -73,19 +81,21 @@ mod sql_backend;
 
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:                Option<String>,
-    flag_spec:                Option<String>,
-    flag_package_meta:        Option<String>,
-    flag_resource_meta:       Option<String>,
-    flag_no_dcat:             bool,
-    flag_dcat_legacy_license: bool,
-    flag_no_ckan:             bool,
-    flag_force:               bool,
-    flag_jobs:                Option<usize>,
-    flag_output:              Option<String>,
-    flag_no_headers:          bool,
-    flag_delimiter:           Option<crate::config::Delimiter>,
-    flag_memcheck:            bool,
+    arg_input:                   Option<String>,
+    flag_spec:                   Option<String>,
+    flag_package_meta:           Option<String>,
+    flag_resource_meta:          Option<String>,
+    flag_no_dcat:                bool,
+    flag_dcat_legacy_license:    bool,
+    flag_no_dcat_discovery:      bool,
+    flag_dcat_discovery_timeout: Option<u64>,
+    flag_no_ckan:                bool,
+    flag_force:                  bool,
+    flag_jobs:                   Option<usize>,
+    flag_output:                 Option<String>,
+    flag_no_headers:             bool,
+    flag_delimiter:              Option<crate::config::Delimiter>,
+    flag_memcheck:               bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -111,6 +121,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // original URL is preserved separately so the DCAT projection can use
     // it as `dcat:downloadURL`.
     let (input_path, original_url, _downloaded_temp) = resolve_input(&raw_input)?;
+
+    // URL-only: best-effort DCAT-markup discovery. Stored under
+    // `dcat_discovered` in the output JSON for now; the merge with the
+    // auto-inferred projection lands in Phase 4 alongside
+    // `--initial-context`.
+    let discovered_dcat: Option<Value> = match original_url.as_deref() {
+        Some(url) if !args.flag_no_dcat_discovery => {
+            let timeout =
+                std::time::Duration::from_secs(args.flag_dcat_discovery_timeout.unwrap_or(5));
+            dcat_discover::discover(url, timeout)
+        },
+        _ => None,
+    };
 
     // --- 1. parse spec (optional) -----------------------------------------
     let spec_opt = match args.flag_spec.as_deref() {
@@ -233,6 +256,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_dcat_legacy_license,
         );
         out_map.insert("dcat".to_string(), dcat_block);
+        // Phase 3b: surface the publisher-stated DCAT (if any) so users
+        // and downstream tooling can diff it against our auto-inferred
+        // projection. Phase 4 will merge it in per the documented
+        // precedence chain.
+        if let Some(d) = discovered_dcat {
+            out_map.insert("dcat_discovered".to_string(), d);
+        }
     }
 
     let _ = analysis.headers;

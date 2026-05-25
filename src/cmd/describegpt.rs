@@ -2690,9 +2690,10 @@ fn configured_null_text(freq_options: &str) -> &str {
             return val;
         }
         if tok == "--null-text"
-            && let Some(val) = tokens.next() {
-                return val;
-            }
+            && let Some(val) = tokens.next()
+        {
+            return val;
+        }
     }
     "(NULL)"
 }

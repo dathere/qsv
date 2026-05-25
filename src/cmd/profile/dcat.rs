@@ -25,6 +25,10 @@ use serde_json::{Map, Value, json};
 /// just one); `dpp` is the inferred metadata block; `input_path` is used to
 /// derive default title and downloadURL when the package/resource don't
 /// provide them.
+///
+/// This function is intentionally a thin orchestrator — every output
+/// slot lives in a dedicated `add_*` helper so subsequent phases can
+/// extend each section without re-reading the full builder.
 pub fn build(
     ckan_package: &Value,
     ckan_resources: &[Value],
@@ -33,6 +37,18 @@ pub fn build(
     input_path: &str,
 ) -> Value {
     let mut ds: Map<String, Value> = Map::new();
+    add_context_and_type(&mut ds);
+    add_core_identity(&mut ds, ckan_package, input_path);
+    add_provenance(&mut ds, ckan_package);
+    add_classification(&mut ds, ckan_package);
+    add_coverage(&mut ds, ckan_package, dpp, stats);
+    add_governance(&mut ds, ckan_package);
+    add_distributions(&mut ds, ckan_resources, stats, input_path);
+    Value::Object(ds)
+}
+
+/// `@context` + `@type` header.
+fn add_context_and_type(ds: &mut Map<String, Value>) {
     ds.insert(
         "@context".to_string(),
         Value::String("https://doi-do.github.io/dcat-us/context.jsonld".to_string()),
@@ -41,7 +57,10 @@ pub fn build(
         "@type".to_string(),
         Value::String("dcat:Dataset".to_string()),
     );
+}
 
+/// dct:title, dct:description, dct:identifier, dct:modified, dct:issued.
+fn add_core_identity(ds: &mut Map<String, Value>, ckan_package: &Value, input_path: &str) {
     let title = string_or(
         ckan_package.get("title"),
         Path::new(input_path)
@@ -63,9 +82,14 @@ pub fn build(
     if let Some(issued) = string_opt(ckan_package.get("metadata_created")) {
         ds.insert("dct:issued".to_string(), Value::String(issued));
     }
-    if let Some(license) = string_opt(ckan_package.get("license_id"))
-        .or_else(|| string_opt(ckan_package.get("license")))
-    {
+}
+
+/// dct:license + dct:publisher.
+///
+/// NOTE: Phase 2c will move dct:license to Distribution per strict DCAT-US v3.
+/// Kept here in Phase 1 for bit-identical output during the refactor.
+fn add_provenance(ds: &mut Map<String, Value>, ckan_package: &Value) {
+    if let Some(license) = take_first_str(ckan_package, &["license_id", "license"]) {
         // Only emit `@id` for slugs we map to canonical IRIs or for values
         // that already look like absolute IRIs. Unknown identifiers fall
         // through to a literal string -- avoids fabricating bogus JSON-LD
@@ -76,16 +100,16 @@ pub fn build(
         };
         ds.insert("dct:license".to_string(), license_value);
     }
-    if let Some(publisher) =
-        string_opt(ckan_package.get("publisher")).or_else(|| string_opt(ckan_package.get("author")))
-    {
+    if let Some(publisher) = take_first_str(ckan_package, &["publisher", "author"]) {
         ds.insert(
             "dct:publisher".to_string(),
             json!({ "@type": "foaf:Agent", "foaf:name": publisher }),
         );
     }
+}
 
-    // keyword: CKAN tags list → simple string array.
+/// dcat:keyword (from CKAN tags) and dcat:theme (from CKAN groups).
+fn add_classification(ds: &mut Map<String, Value>, ckan_package: &Value) {
     if let Some(tags) = ckan_package.get("tags").and_then(|v| v.as_array()) {
         let kw: Vec<Value> = tags
             .iter()
@@ -99,7 +123,6 @@ pub fn build(
             ds.insert("dcat:keyword".to_string(), Value::Array(kw));
         }
     }
-    // theme: CKAN groups list.
     if let Some(groups) = ckan_package.get("groups").and_then(|v| v.as_array()) {
         let theme: Vec<Value> = groups
             .iter()
@@ -109,7 +132,14 @@ pub fn build(
             ds.insert("dcat:theme".to_string(), Value::Array(theme));
         }
     }
+}
 
+/// dct:spatial + dct:temporal.
+///
+/// NOTE: Phase 2a/2b will widen these to arrays of Location/PeriodOfTime
+/// per the DCAT-US v3 migration. Kept as single objects in Phase 1 for
+/// bit-identical output during the refactor.
+fn add_coverage(ds: &mut Map<String, Value>, ckan_package: &Value, dpp: &Value, stats: &Value) {
     // spatial: prefer WKT from the suggestion_formula output, falling back
     // to inferred lat/lon column bounds.
     if let Some(wkt) = ckan_package
@@ -134,27 +164,47 @@ pub fn build(
         ds.insert("dct:spatial".to_string(), bbox);
     }
 
-    // temporal: derive from the first inferred date column's stats min/max.
     if let Some(temporal) = temporal_from_dpps(dpp, stats) {
         ds.insert("dct:temporal".to_string(), temporal);
     }
+}
 
-    // accessLevel defaults to public unless the package already declared one.
-    let access = string_opt(ckan_package.get("dcat-us:accessLevel"))
-        .or_else(|| string_opt(ckan_package.get("access_level")))
+/// dcat-us:accessLevel (defaults to "public").
+///
+/// NOTE: Phase 2d will also emit dct:conformsTo (Standard pointing at
+/// DCAT-US v3) and dct:language (ISO 639-1) here.
+fn add_governance(ds: &mut Map<String, Value>, ckan_package: &Value) {
+    let access = take_first_str(ckan_package, &["dcat-us:accessLevel", "access_level"])
         .unwrap_or_else(|| "public".to_string());
     ds.insert("dcat-us:accessLevel".to_string(), Value::String(access));
+}
 
-    // distribution: one entry per ckan resource. Inline the table schema
-    // derived from qsv stats so DCAT consumers get a column-level dictionary
-    // without re-running analysis.
+/// dcat:distribution — one Distribution per CKAN resource, each with a
+/// `csvw:tableSchema` derived from qsv stats.
+fn add_distributions(
+    ds: &mut Map<String, Value>,
+    ckan_resources: &[Value],
+    stats: &Value,
+    input_path: &str,
+) {
     let distributions: Vec<Value> = ckan_resources
         .iter()
         .map(|r| build_distribution(r, stats, input_path))
         .collect();
     ds.insert("dcat:distribution".to_string(), Value::Array(distributions));
+}
 
-    Value::Object(ds)
+/// Read the first non-empty string value from `obj` matching one of
+/// `keys` in priority order. Replaces the
+/// `string_opt(get(k1)).or_else(|| string_opt(get(k2)))` chains scattered
+/// through the dataset builder.
+fn take_first_str(obj: &Value, keys: &[&str]) -> Option<String> {
+    for k in keys {
+        if let Some(s) = string_opt(obj.get(k)) {
+            return Some(s);
+        }
+    }
+    None
 }
 
 fn build_distribution(resource: &Value, stats: &Value, input_path: &str) -> Value {

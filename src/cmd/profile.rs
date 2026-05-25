@@ -61,7 +61,8 @@ use crate::{CliError, CliResult, util};
 
 mod context;
 mod dcat;
-mod py_engine;
+mod formula_engine;
+mod formula_helpers;
 mod spec;
 
 #[derive(Debug, Deserialize)]
@@ -115,12 +116,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     };
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
 
-    // --- 3. formula evaluation (PyO3 + jinja2_helpers) --------------------
+    // --- 3. formula evaluation (minijinja, native Rust) -----------------
     // When a spec is provided, evaluate every `formula` / `suggestion_formula`
-    // template against the analysis context using DP+'s vendored
-    // jinja2_helpers.py via an embedded Python interpreter.
+    // template against the analysis context. Helpers are the Rust port of
+    // DP+'s `jinja2_helpers.py` (see `formula_helpers.rs`).
     let formula_results = match spec_opt.as_ref() {
-        Some(spec) => py_engine::evaluate_spec(spec, &analysis.context)?,
+        Some(spec) => formula_engine::evaluate_spec(spec, &analysis.context)?,
         None => Vec::new(),
     };
     let formulas_evaluated = !formula_results.is_empty();
@@ -219,7 +220,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 fn merge_formula_results(
     package: &mut Value,
     resource: &mut Value,
-    results: &[py_engine::FormulaResult],
+    results: &[formula_engine::FormulaResult],
 ) {
     if results.is_empty() {
         return;

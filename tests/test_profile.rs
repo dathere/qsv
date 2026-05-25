@@ -297,3 +297,131 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
         .expect("dct:license on Distribution");
     assert!(dist_license.contains("creativecommons.org"));
 }
+
+#[test]
+fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
+    let wrk = Workdir::new("profile_full_v3");
+    seed_geo_csv(&wrk);
+
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":              "Demo Dataset",
+                "notes":              "Full DCAT-US v3 population.",
+                "name":               "demo-dataset",
+                "license_id":         "cc-by",
+                "publisher":          "Demo Agency",
+                "metadata_modified":  "2024-12-15",
+                "language":           "en-US",
+                "contact_point":      {"fn": "Jane Doe", "hasEmail": "jane@example.gov"},
+                "bureauCode":         ["015:11"],
+                "programCode":        ["015:000"],
+                "accrualPeriodicity": "annually",
+                "accessRights":       "public",
+                "rights":             "U.S. Government Work",
+                "landing_page":       "https://example.gov/dataset",
+                "describedBy":        "https://example.gov/dataset/schema.json",
+                "purpose":            "Track example metric.",
+                "scopeNote":          "Years 2020-2024 only.",
+                "liabilityStatement": "As-is.",
+                "inSeries":           "https://example.gov/series"
+            },
+            "resource": {
+                "accessURL":          "https://example.gov/dataset",
+                "last_modified":      "2024-12-15T08:30:00",
+                "rights":             "U.S. Government Work",
+                "access_restriction": {"type": "none"}
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+
+    // Mandatory v3 fields.
+    for path in [
+        "/dcat/dct:title",
+        "/dcat/dct:description",
+        "/dcat/dct:identifier",
+        "/dcat/dct:publisher",
+        "/dcat/dcat:contactPoint",
+    ] {
+        assert!(
+            out.pointer(path).is_some(),
+            "mandatory v3 field missing at {path}: {out:#}"
+        );
+    }
+    // Recommended v3 fields added in Phase 5.
+    for path in [
+        "/dcat/dcat:landingPage",
+        "/dcat/dcat:describedBy",
+        "/dcat/dct:rights",
+        "/dcat/dct:accessRights",
+        "/dcat/dcat-us:bureauCode",
+        "/dcat/dcat-us:programCode",
+        "/dcat/dct:accrualPeriodicity",
+        "/dcat/dcat-us:purpose",
+        "/dcat/skos:scopeNote",
+        "/dcat/dcat-us:liabilityStatement",
+        "/dcat/dcat:inSeries",
+        "/dcat/dct:language",
+        "/dcat/dct:conformsTo",
+    ] {
+        assert!(
+            out.pointer(path).is_some(),
+            "recommended v3 field missing at {path}: {out:#}"
+        );
+    }
+    // Distribution-level v3 additions.
+    for path in [
+        "/dcat/dcat:distribution/0/dct:license",
+        "/dcat/dcat:distribution/0/dcat:accessURL",
+        "/dcat/dcat:distribution/0/dct:modified",
+        "/dcat/dcat:distribution/0/dct:rights",
+        "/dcat/dcat:distribution/0/dcat-us:accessRestriction",
+    ] {
+        assert!(
+            out.pointer(path).is_some(),
+            "distribution v3 addition missing at {path}: {out:#}"
+        );
+    }
+    // No dcat_warnings expected — every mandatory/recommended slot was seeded.
+    assert!(
+        out.get("dcat_warnings").is_none(),
+        "expected no dcat_warnings when everything is populated, got: {:?}",
+        out.get("dcat_warnings"),
+    );
+}
+
+#[test]
+fn profile_warns_when_contactpoint_missing() {
+    let wrk = Workdir::new("profile_warn_contact");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .expect("dcat_warnings array");
+    let cp = warnings
+        .iter()
+        .find(|w| w.get("field").and_then(|v| v.as_str()) == Some("dcat:contactPoint"))
+        .expect("dcat:contactPoint warning");
+    assert_eq!(
+        cp.get("severity").and_then(|v| v.as_str()),
+        Some("required")
+    );
+}

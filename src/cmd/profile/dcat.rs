@@ -18,7 +18,32 @@ use std::path::Path;
 
 use serde_json::{Map, Value, json};
 
-/// Build the DCAT-US v3 projection block.
+/// Severity of a `DcatWarning` entry.
+#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    /// DCAT-US v3 mandatory field missing.
+    Required,
+    /// DCAT-US v3 recommended field missing (or non-normative value passed through).
+    Recommended,
+}
+
+/// One advisory entry surfaced by `dcat::build` when a mandatory or
+/// recommended field couldn't be populated. Serialized into the output
+/// JSON under `dcat_warnings` (elided when empty) for downstream
+/// tooling and human review.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct DcatWarning {
+    /// JSON-LD key of the missing/non-normative field, e.g.
+    /// `"dcat:contactPoint"`.
+    pub field:    String,
+    pub severity: Severity,
+    pub message:  String,
+}
+
+/// Build the DCAT-US v3 projection block plus a list of advisory
+/// warnings for mandatory / recommended fields that couldn't be
+/// populated.
 ///
 /// `ckan_package` is the merged `ckan.package` object (post-formula
 /// evaluation); `ckan_resources` is the matching list of resources (today
@@ -36,14 +61,18 @@ pub fn build(
     stats: &Value,
     input_path: &str,
     legacy_license: bool,
-) -> Value {
+) -> (Value, Vec<DcatWarning>) {
     let mut ds: Map<String, Value> = Map::new();
+    let mut warnings: Vec<DcatWarning> = Vec::new();
     add_context_and_type(&mut ds);
     add_core_identity(&mut ds, ckan_package, input_path);
     add_provenance(&mut ds, ckan_package);
+    add_contact_point(&mut ds, ckan_package, &mut warnings);
     add_classification(&mut ds, ckan_package);
     add_coverage(&mut ds, ckan_package, dpp, stats);
+    add_us_codes(&mut ds, ckan_package, &mut warnings);
     add_governance(&mut ds, ckan_package);
+    add_extended_metadata(&mut ds, ckan_package);
     add_distributions(
         &mut ds,
         ckan_package,
@@ -52,7 +81,7 @@ pub fn build(
         input_path,
         legacy_license,
     );
-    Value::Object(ds)
+    (Value::Object(ds), warnings)
 }
 
 /// `@context` + `@type` header.
@@ -227,6 +256,244 @@ fn add_governance(ds: &mut Map<String, Value>, ckan_package: &Value) {
     }
 }
 
+/// dcat:contactPoint — **mandatory** in DCAT-US v3. Expected shape:
+/// `{"fn": "Jane Doe", "hasEmail": "jane@example.gov"}`. Falls back to
+/// `{maintainer, maintainer_email}` for CKAN-shaped seed data. Pushes a
+/// `Required` warning when neither is populated.
+fn add_contact_point(
+    ds: &mut Map<String, Value>,
+    ckan_package: &Value,
+    warnings: &mut Vec<DcatWarning>,
+) {
+    // Preferred shape: explicit contact_point object.
+    if let Some(cp) = ckan_package.get("contact_point")
+        && cp.is_object()
+    {
+        let fn_ = cp.get("fn").and_then(|v| v.as_str());
+        let email = cp.get("hasEmail").and_then(|v| v.as_str());
+        if let (Some(fn_), Some(email)) = (fn_, email) {
+            ds.insert(
+                "dcat:contactPoint".to_string(),
+                json!({
+                    "@type":          "vcard:Individual",
+                    "vcard:fn":       fn_,
+                    "vcard:hasEmail": format_mailto(email),
+                }),
+            );
+            return;
+        }
+    }
+    // Fallback: CKAN's maintainer / maintainer_email pair.
+    if let (Some(name), Some(email)) = (
+        take_first_str(ckan_package, &["maintainer"]),
+        take_first_str(ckan_package, &["maintainer_email"]),
+    ) {
+        ds.insert(
+            "dcat:contactPoint".to_string(),
+            json!({
+                "@type":          "vcard:Individual",
+                "vcard:fn":       name,
+                "vcard:hasEmail": format_mailto(&email),
+            }),
+        );
+        return;
+    }
+    warnings.push(DcatWarning {
+        field:    "dcat:contactPoint".to_string(),
+        severity: Severity::Required,
+        message:  "DCAT-US v3 mandatory field missing. Set --initial-context \
+                   package.contact_point = {fn, hasEmail} or package.maintainer + \
+                   package.maintainer_email."
+            .to_string(),
+    });
+}
+
+/// Normalize an email-or-mailto value into a `mailto:` IRI per the
+/// vcard:hasEmail convention.
+fn format_mailto(s: &str) -> String {
+    let trimmed = s.trim();
+    if trimmed.to_ascii_lowercase().starts_with("mailto:") {
+        trimmed.to_string()
+    } else {
+        format!("mailto:{trimmed}")
+    }
+}
+
+/// `dcat-us:bureauCode` + `dcat-us:programCode`. Both are arrays of
+/// OMB-format strings (`NNN:NN` for bureau, `NNN:NNN` for program).
+/// Pushes a `Recommended` warning for each missing slot — these aren't
+/// derivable from a CSV alone but are recommended by the spec for U.S.
+/// government datasets.
+fn add_us_codes(
+    ds: &mut Map<String, Value>,
+    ckan_package: &Value,
+    warnings: &mut Vec<DcatWarning>,
+) {
+    for (src_key, out_key) in &[
+        ("bureauCode", "dcat-us:bureauCode"),
+        ("programCode", "dcat-us:programCode"),
+    ] {
+        match ckan_package.get(src_key) {
+            Some(Value::Array(arr)) if !arr.is_empty() => {
+                ds.insert((*out_key).to_string(), Value::Array(arr.clone()));
+            },
+            Some(Value::String(s)) if !s.is_empty() => {
+                // Common CKAN convention: comma-separated string.
+                let items: Vec<Value> = s
+                    .split(',')
+                    .map(|t| Value::String(t.trim().to_string()))
+                    .filter(|v| v.as_str().is_some_and(|s| !s.is_empty()))
+                    .collect();
+                if !items.is_empty() {
+                    ds.insert((*out_key).to_string(), Value::Array(items));
+                    continue;
+                }
+                warnings.push(DcatWarning {
+                    field:    (*out_key).to_string(),
+                    severity: Severity::Recommended,
+                    message:  format!(
+                        "DCAT-US v3 recommended field missing. Set --initial-context \
+                         package.{src_key} to a list of OMB-format codes."
+                    ),
+                });
+            },
+            _ => {
+                warnings.push(DcatWarning {
+                    field:    (*out_key).to_string(),
+                    severity: Severity::Recommended,
+                    message:  format!(
+                        "DCAT-US v3 recommended field missing. Set --initial-context \
+                         package.{src_key} to a list of OMB-format codes."
+                    ),
+                });
+            },
+        }
+    }
+}
+
+/// Catch-all helper for the new v3 recommended slots that simply
+/// pass through from a CKAN-shaped seed key: `dcat:landingPage`,
+/// `dcat:describedBy`, `dct:rights`, `dct:accessRights`,
+/// `dcat-us:purpose`, `skos:scopeNote`, `dcat-us:liabilityStatement`,
+/// `dcat:inSeries`, `dct:accrualPeriodicity`,
+/// `dcat:temporalResolution`. Missing fields are not warned — they're
+/// recommended-when-applicable, not strictly required.
+fn add_extended_metadata(ds: &mut Map<String, Value>, ckan_package: &Value) {
+    // dcat:landingPage — IRI; validated to avoid polluting the JSON-LD
+    // IRI slot with bare strings.
+    if let Some(lp) = take_first_str(ckan_package, &["landing_page", "url"])
+        && is_absolute_iri(lp.trim())
+    {
+        ds.insert(
+            "dcat:landingPage".to_string(),
+            Value::String(lp.trim().to_string()),
+        );
+    }
+    // dcat:describedBy — data dictionary or schema URL.
+    if let Some(db) = take_first_str(ckan_package, &["data_dictionary", "describedBy"])
+        && is_absolute_iri(db.trim())
+    {
+        ds.insert(
+            "dcat:describedBy".to_string(),
+            Value::String(db.trim().to_string()),
+        );
+    }
+    // dct:rights — free-text rights statement.
+    if let Some(r) = take_first_str(ckan_package, &["rights"]) {
+        ds.insert("dct:rights".to_string(), Value::String(r));
+    }
+    // dct:accessRights — free-text, distinct from dcat-us:accessLevel
+    // (which has a controlled vocabulary).
+    if let Some(ar) = take_first_str(ckan_package, &["access_rights", "accessRights"]) {
+        ds.insert("dct:accessRights".to_string(), Value::String(ar));
+    }
+    // dcat-us namespace additions.
+    if let Some(p) = take_first_str(ckan_package, &["purpose"]) {
+        ds.insert("dcat-us:purpose".to_string(), Value::String(p));
+    }
+    if let Some(s) = take_first_str(ckan_package, &["scopeNote", "scope_note"]) {
+        ds.insert("skos:scopeNote".to_string(), Value::String(s));
+    }
+    if let Some(l) = take_first_str(ckan_package, &["liabilityStatement", "liability_statement"]) {
+        ds.insert("dcat-us:liabilityStatement".to_string(), Value::String(l));
+    }
+    // dcat:inSeries — IRI pointing at a DatasetSeries.
+    if let Some(s) = take_first_str(ckan_package, &["inSeries", "in_series"])
+        && is_absolute_iri(s.trim())
+    {
+        ds.insert(
+            "dcat:inSeries".to_string(),
+            Value::String(s.trim().to_string()),
+        );
+    }
+    // dct:accrualPeriodicity — slug → EU controlled-vocab IRI when
+    // recognized; else pass through verbatim. Also accepts a value
+    // auto-derived by the guess_accrual_periodicity formula helper.
+    let periodicity = take_first_str(
+        ckan_package,
+        &["accrualPeriodicity", "frequency", "update_frequency"],
+    )
+    .or_else(|| {
+        ckan_package
+            .pointer("/dpp_suggestions/accrual_periodicity/value")
+            .and_then(|v| v.as_str().map(str::to_string))
+    });
+    if let Some(slug) = periodicity {
+        let v = match accrual_periodicity_iri(&slug) {
+            Some(iri) => json!({ "@id": iri }),
+            None => Value::String(slug),
+        };
+        ds.insert("dct:accrualPeriodicity".to_string(), v);
+    }
+    // dcat:temporalResolution — ISO 8601 duration, typically populated
+    // by the temporal_resolution formula helper.
+    let resolution = take_first_str(ckan_package, &["temporalResolution"]).or_else(|| {
+        ckan_package
+            .pointer("/dpp_suggestions/temporal_resolution/value")
+            .and_then(|v| v.as_str().map(str::to_string))
+    });
+    if let Some(r) = resolution {
+        ds.insert("dcat:temporalResolution".to_string(), Value::String(r));
+    }
+}
+
+/// Map common DCAT-US accrual-periodicity slugs to EU controlled-vocab
+/// IRIs. Unknown slugs pass through unchanged via the caller. Mirrors
+/// the pattern in `license_iri`.
+fn accrual_periodicity_iri(slug: &str) -> Option<&'static str> {
+    match slug.trim().to_ascii_lowercase().as_str() {
+        "daily" | "r/p1d" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/DAILY")
+        },
+        "weekly" | "r/p7d" | "r/p1w" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/WEEKLY")
+        },
+        "biweekly" | "fortnightly" | "r/p14d" | "r/p2w" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/BIWEEKLY")
+        },
+        "monthly" | "r/p1m" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/MONTHLY")
+        },
+        "bimonthly" | "r/p2m" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/BIMONTHLY")
+        },
+        "quarterly" | "r/p3m" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/QUARTERLY")
+        },
+        "semiannual" | "biannual" | "r/p6m" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL_2")
+        },
+        "annual" | "annually" | "yearly" | "r/p1y" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL")
+        },
+        "irregular" => Some("http://publications.europa.eu/resource/authority/frequency/IRREG"),
+        "continuous" | "realtime" | "real-time" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/CONT")
+        },
+        _ => None,
+    }
+}
+
 /// Map a free-text language tag to its ISO 639-1 2-letter code.
 /// Accepts plain codes ("en"), RFC 5646 with region ("en-US"), or the
 /// expanded form some CKAN catalogs use ("English"). Returns `None` for
@@ -385,6 +652,34 @@ fn build_distribution(
         .or_else(|| package_license_fallback.map(str::to_string))
     {
         d.insert("dct:license".to_string(), license_value(&license));
+    }
+
+    // Phase 5b additions: dcat:accessURL, dct:rights, dct:modified,
+    // and the three DCAT-US v3 restriction blocks.
+    if let Some(access_url) = string_opt(resource.get("accessURL")).and_then(|u| {
+        let trimmed = u.trim().to_string();
+        is_absolute_iri(&trimmed).then_some(trimmed)
+    }) {
+        d.insert("dcat:accessURL".to_string(), Value::String(access_url));
+    }
+    if let Some(rights) = string_opt(resource.get("rights")) {
+        d.insert("dct:rights".to_string(), Value::String(rights));
+    }
+    if let Some(modified) =
+        string_opt(resource.get("last_modified")).or_else(|| string_opt(resource.get("modified")))
+    {
+        d.insert("dct:modified".to_string(), Value::String(modified));
+    }
+    for (src, target) in &[
+        ("access_restriction", "dcat-us:accessRestriction"),
+        ("use_restriction", "dcat-us:useRestriction"),
+        ("cui_restriction", "dcat-us:cuiRestriction"),
+    ] {
+        if let Some(v) = resource.get(src).cloned()
+            && !v.is_null()
+        {
+            d.insert((*target).to_string(), v);
+        }
     }
 
     if let Ok(meta) = std::fs::metadata(input_path) {
@@ -647,7 +942,7 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let ds = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
         let spatial = ds.pointer("/dct:spatial").expect("dct:spatial");
         assert!(spatial.is_array(), "dct:spatial must be an array");
         let arr = spatial.as_array().unwrap();
@@ -670,7 +965,7 @@ mod tests {
             "created": {"stats": {"min": "2024-01-01", "max": "2024-12-31"}},
             "updated": {"stats": {"min": "2024-02-01", "max": "2024-11-30"}},
         });
-        let ds = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
         let temporal = ds.pointer("/dct:temporal").expect("dct:temporal");
         assert!(temporal.is_array());
         let arr = temporal.as_array().unwrap();
@@ -693,7 +988,7 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let ds = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
         assert!(
             ds.get("dct:license").is_none(),
             "dct:license must not be on Dataset in strict v3"
@@ -716,7 +1011,7 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let ds = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", true);
+        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", true);
         assert!(
             ds.get("dct:license").is_some(),
             "dct:license must be re-emitted on Dataset under legacy flag"
@@ -735,7 +1030,7 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let ds = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
         assert_eq!(
             ds.pointer("/dct:conformsTo/@type").and_then(|v| v.as_str()),
             Some("dct:Standard")
@@ -780,5 +1075,270 @@ mod tests {
         // Empty / whitespace
         assert_eq!(sanitize_discrete_date(""), None);
         assert_eq!(sanitize_discrete_date("   "), None);
+    }
+
+    /// Phase 5: dcat:contactPoint emits a vcard:Individual when the
+    /// seed provides {fn, hasEmail}.
+    #[test]
+    fn contact_point_emits_vcard_individual() {
+        let pkg = json!({
+            "contact_point": {"fn": "Jane Doe", "hasEmail": "jane@example.gov"}
+        });
+        let resources = vec![json!({})];
+        let dpp = json!({});
+        let stats = json!({});
+        let (ds, warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        assert_eq!(
+            ds.pointer("/dcat:contactPoint/@type")
+                .and_then(|v| v.as_str()),
+            Some("vcard:Individual")
+        );
+        assert_eq!(
+            ds.pointer("/dcat:contactPoint/vcard:fn")
+                .and_then(|v| v.as_str()),
+            Some("Jane Doe")
+        );
+        assert_eq!(
+            ds.pointer("/dcat:contactPoint/vcard:hasEmail")
+                .and_then(|v| v.as_str()),
+            Some("mailto:jane@example.gov")
+        );
+        assert!(
+            !warnings.iter().any(|w| w.field == "dcat:contactPoint"),
+            "no warning when contactPoint is populated"
+        );
+    }
+
+    /// Phase 5: missing contactPoint pushes a Required-severity warning.
+    #[test]
+    fn missing_contact_point_warns_required() {
+        let pkg = json!({});
+        let resources = vec![json!({})];
+        let (_ds, warnings) = build(&pkg, &resources, &json!({}), &json!({}), "/x.csv", false);
+        let w = warnings
+            .iter()
+            .find(|w| w.field == "dcat:contactPoint")
+            .expect("expected dcat:contactPoint warning");
+        assert!(matches!(w.severity, super::Severity::Required));
+    }
+
+    /// Phase 5: contactPoint falls back to {maintainer, maintainer_email}.
+    #[test]
+    fn contact_point_falls_back_to_maintainer() {
+        let pkg = json!({
+            "maintainer":       "John Smith",
+            "maintainer_email": "mailto:john@example.gov"
+        });
+        let (ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        assert_eq!(
+            ds.pointer("/dcat:contactPoint/vcard:fn")
+                .and_then(|v| v.as_str()),
+            Some("John Smith")
+        );
+        // Already mailto: — shouldn't double-prefix
+        assert_eq!(
+            ds.pointer("/dcat:contactPoint/vcard:hasEmail")
+                .and_then(|v| v.as_str()),
+            Some("mailto:john@example.gov")
+        );
+        assert!(!warnings.iter().any(|w| w.field == "dcat:contactPoint"));
+    }
+
+    /// Phase 5: bureauCode/programCode arrays pass through verbatim.
+    #[test]
+    fn us_codes_pass_through_arrays() {
+        let pkg = json!({
+            "bureauCode":  ["015:11"],
+            "programCode": ["015:000", "015:001"],
+        });
+        let (ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        assert_eq!(
+            ds.pointer("/dcat-us:bureauCode/0").and_then(|v| v.as_str()),
+            Some("015:11")
+        );
+        assert_eq!(
+            ds.pointer("/dcat-us:programCode/1")
+                .and_then(|v| v.as_str()),
+            Some("015:001")
+        );
+        assert!(
+            !warnings.iter().any(|w| w.field.contains("Code")),
+            "no warnings when codes are populated"
+        );
+    }
+
+    /// Phase 5: comma-separated bureauCode string splits into an array.
+    #[test]
+    fn us_codes_split_comma_string() {
+        let pkg = json!({"bureauCode": "015:11, 015:12"});
+        let (ds, _) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let arr = ds
+            .pointer("/dcat-us:bureauCode")
+            .and_then(|v| v.as_array())
+            .unwrap();
+        assert_eq!(arr.len(), 2);
+        assert_eq!(arr[0].as_str(), Some("015:11"));
+        assert_eq!(arr[1].as_str(), Some("015:12"));
+    }
+
+    /// Phase 5: missing bureauCode/programCode warns Recommended.
+    #[test]
+    fn missing_us_codes_warns_recommended() {
+        let pkg = json!({});
+        let (_ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        for field in ["dcat-us:bureauCode", "dcat-us:programCode"] {
+            let w = warnings
+                .iter()
+                .find(|w| w.field == field)
+                .unwrap_or_else(|| panic!("expected warning for {field}"));
+            assert!(matches!(w.severity, super::Severity::Recommended));
+        }
+    }
+
+    /// Phase 5: accrual periodicity slugs map to EU controlled-vocab IRIs.
+    #[test]
+    fn accrual_periodicity_iri_maps_known_slugs() {
+        use super::accrual_periodicity_iri;
+        assert!(
+            accrual_periodicity_iri("annual")
+                .unwrap()
+                .ends_with("/ANNUAL")
+        );
+        assert!(
+            accrual_periodicity_iri("YEARLY")
+                .unwrap()
+                .ends_with("/ANNUAL")
+        );
+        assert!(
+            accrual_periodicity_iri("R/P1Y")
+                .unwrap()
+                .ends_with("/ANNUAL")
+        );
+        assert!(
+            accrual_periodicity_iri("monthly")
+                .unwrap()
+                .ends_with("/MONTHLY")
+        );
+        assert!(
+            accrual_periodicity_iri("daily")
+                .unwrap()
+                .ends_with("/DAILY")
+        );
+        assert!(
+            accrual_periodicity_iri("weekly")
+                .unwrap()
+                .ends_with("/WEEKLY")
+        );
+        assert!(
+            accrual_periodicity_iri("quarterly")
+                .unwrap()
+                .ends_with("/QUARTERLY")
+        );
+        assert!(accrual_periodicity_iri("nonsense").is_none());
+    }
+
+    /// Phase 5: extended metadata fields pass through from the seed.
+    #[test]
+    fn extended_metadata_passes_through() {
+        let pkg = json!({
+            "landing_page":       "https://example.gov/dataset",
+            "data_dictionary":    "https://example.gov/dataset/schema.json",
+            "rights":             "U.S. Government Work",
+            "access_rights":      "public",
+            "purpose":            "Track example metric.",
+            "scopeNote":          "Years 2020-2024 only.",
+            "liabilityStatement": "As-is.",
+            "inSeries":           "https://example.gov/series",
+            "accrualPeriodicity": "annually",
+            "temporalResolution": "P1D"
+        });
+        let (ds, _) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        assert_eq!(
+            ds.pointer("/dcat:landingPage").and_then(|v| v.as_str()),
+            Some("https://example.gov/dataset")
+        );
+        assert_eq!(
+            ds.pointer("/dcat:describedBy").and_then(|v| v.as_str()),
+            Some("https://example.gov/dataset/schema.json")
+        );
+        assert_eq!(
+            ds.pointer("/dct:rights").and_then(|v| v.as_str()),
+            Some("U.S. Government Work")
+        );
+        assert_eq!(
+            ds.pointer("/dct:accessRights").and_then(|v| v.as_str()),
+            Some("public")
+        );
+        assert_eq!(
+            ds.pointer("/dcat-us:purpose").and_then(|v| v.as_str()),
+            Some("Track example metric.")
+        );
+        assert_eq!(
+            ds.pointer("/skos:scopeNote").and_then(|v| v.as_str()),
+            Some("Years 2020-2024 only.")
+        );
+        assert_eq!(
+            ds.pointer("/dcat-us:liabilityStatement")
+                .and_then(|v| v.as_str()),
+            Some("As-is.")
+        );
+        assert_eq!(
+            ds.pointer("/dcat:inSeries").and_then(|v| v.as_str()),
+            Some("https://example.gov/series")
+        );
+        assert!(
+            ds.pointer("/dct:accrualPeriodicity/@id")
+                .and_then(|v| v.as_str())
+                .unwrap()
+                .ends_with("/ANNUAL"),
+            "annually slug must map to EU ANNUAL IRI"
+        );
+        assert_eq!(
+            ds.pointer("/dcat:temporalResolution")
+                .and_then(|v| v.as_str()),
+            Some("P1D")
+        );
+    }
+
+    /// Phase 5b: distribution-level v3 additions emit when seeded.
+    #[test]
+    fn distribution_carries_v3_additions() {
+        let resource = json!({
+            "name":               "data",
+            "accessURL":          "https://example.gov/dataset",
+            "rights":             "U.S. Government Work",
+            "last_modified":      "2024-12-15T08:30:00",
+            "access_restriction": {"type": "none"},
+            "use_restriction":    {"type": "none"},
+            "cui_restriction":    {"type": "none"}
+        });
+        let dist = build_distribution(&resource, &json!({}), "/tmp/data.csv", None);
+        assert_eq!(
+            dist.pointer("/dcat:accessURL").and_then(|v| v.as_str()),
+            Some("https://example.gov/dataset")
+        );
+        assert_eq!(
+            dist.pointer("/dct:rights").and_then(|v| v.as_str()),
+            Some("U.S. Government Work")
+        );
+        assert_eq!(
+            dist.pointer("/dct:modified").and_then(|v| v.as_str()),
+            Some("2024-12-15T08:30:00")
+        );
+        assert_eq!(
+            dist.pointer("/dcat-us:accessRestriction/type")
+                .and_then(|v| v.as_str()),
+            Some("none")
+        );
+        assert_eq!(
+            dist.pointer("/dcat-us:useRestriction/type")
+                .and_then(|v| v.as_str()),
+            Some("none")
+        );
+        assert_eq!(
+            dist.pointer("/dcat-us:cuiRestriction/type")
+                .and_then(|v| v.as_str()),
+            Some("none")
+        );
     }
 }

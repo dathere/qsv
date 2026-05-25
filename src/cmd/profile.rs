@@ -259,7 +259,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        let dcat_block = dcat::build(
+        let (dcat_block, dcat_warnings) = dcat::build(
             &package,
             &[resource.clone()],
             &dpp,
@@ -272,6 +272,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             None => dcat_block,
         };
         out_map.insert("dcat".to_string(), merged_dcat);
+        if !dcat_warnings.is_empty() {
+            out_map.insert(
+                "dcat_warnings".to_string(),
+                serde_json::to_value(&dcat_warnings).unwrap_or(json!([])),
+            );
+        }
         // Surface the raw discovered DCAT alongside the merged block so
         // downstream tooling can diff or audit what came from the
         // publisher vs what qsv inferred.

@@ -66,10 +66,15 @@ pub fn build(
     if let Some(license) = string_opt(ckan_package.get("license_id"))
         .or_else(|| string_opt(ckan_package.get("license")))
     {
-        ds.insert(
-            "dct:license".to_string(),
-            json!({ "@id": license_iri(&license) }),
-        );
+        // Only emit `@id` for slugs we map to canonical IRIs or for values
+        // that already look like absolute IRIs. Unknown identifiers fall
+        // through to a literal string -- avoids fabricating bogus JSON-LD
+        // IRIs from arbitrary CKAN license_id values.
+        let license_value = match license_iri(&license) {
+            Some(iri) => json!({ "@id": iri }),
+            None => Value::String(license),
+        };
+        ds.insert("dct:license".to_string(), license_value);
     }
     if let Some(publisher) =
         string_opt(ckan_package.get("publisher")).or_else(|| string_opt(ckan_package.get("author")))
@@ -207,18 +212,10 @@ fn build_distribution(resource: &Value, stats: &Value, input_path: &str) -> Valu
 fn bbox_from_dpps(dpp: &Value, stats: &Value) -> Option<Value> {
     let lat = dpp.get("LAT_FIELD").and_then(|v| v.as_str())?;
     let lon = dpp.get("LON_FIELD").and_then(|v| v.as_str())?;
-    let min_lon = stats
-        .pointer(&format!("/{lon}/stats/min"))
-        .and_then(json_to_f64)?;
-    let max_lon = stats
-        .pointer(&format!("/{lon}/stats/max"))
-        .and_then(json_to_f64)?;
-    let min_lat = stats
-        .pointer(&format!("/{lat}/stats/min"))
-        .and_then(json_to_f64)?;
-    let max_lat = stats
-        .pointer(&format!("/{lat}/stats/max"))
-        .and_then(json_to_f64)?;
+    let min_lon = stats_lookup(stats, lon, "min").and_then(json_to_f64)?;
+    let max_lon = stats_lookup(stats, lon, "max").and_then(json_to_f64)?;
+    let min_lat = stats_lookup(stats, lat, "min").and_then(json_to_f64)?;
+    let max_lat = stats_lookup(stats, lat, "max").and_then(json_to_f64)?;
     Some(json!({
         "@type": "dct:Location",
         "dcat:bbox": format!(
@@ -230,12 +227,10 @@ fn bbox_from_dpps(dpp: &Value, stats: &Value) -> Option<Value> {
 fn temporal_from_dpps(dpp: &Value, stats: &Value) -> Option<Value> {
     let dates = dpp.get("DATE_FIELDS").and_then(|v| v.as_array())?;
     let first = dates.iter().filter_map(|v| v.as_str()).next()?;
-    let start = stats
-        .pointer(&format!("/{first}/stats/min"))
+    let start = stats_lookup(stats, first, "min")
         .and_then(|v| v.as_str())?
         .to_string();
-    let end = stats
-        .pointer(&format!("/{first}/stats/max"))
+    let end = stats_lookup(stats, first, "max")
         .and_then(|v| v.as_str())?
         .to_string();
     Some(json!({
@@ -243,6 +238,14 @@ fn temporal_from_dpps(dpp: &Value, stats: &Value) -> Option<Value> {
         "dcat:startDate": start,
         "dcat:endDate":   end,
     }))
+}
+
+/// Look up `stats[<col_name>].stats.<field>` via direct map access. Used
+/// instead of `Value::pointer` so header names containing `/` or `~`
+/// (legal CSV but JSON-Pointer-significant characters) don't silently
+/// resolve to `None`.
+fn stats_lookup<'a>(stats: &'a Value, col_name: &str, field: &str) -> Option<&'a Value> {
+    stats.as_object()?.get(col_name)?.get("stats")?.get(field)
 }
 
 /// Best-effort mapping from qsv stats type strings to CSVW datatypes.
@@ -273,15 +276,26 @@ fn json_to_f64(v: &Value) -> Option<f64> {
         .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
-/// Map a CKAN-style license string to an IRI when we recognize it; fall back
-/// to a bare string otherwise.
-fn license_iri(license: &str) -> String {
-    match license {
-        "cc-by" => "http://creativecommons.org/licenses/by/4.0/".to_string(),
-        "cc-by-sa" => "http://creativecommons.org/licenses/by-sa/4.0/".to_string(),
-        "cc-zero" => "http://creativecommons.org/publicdomain/zero/1.0/".to_string(),
-        "odc-by" => "http://opendatacommons.org/licenses/by/1.0/".to_string(),
-        "odc-pddl" => "http://opendatacommons.org/licenses/pddl/1.0/".to_string(),
-        other => other.to_string(),
+/// Map a CKAN-style license string to a canonical IRI when we recognize it.
+///
+/// Returns `Some(iri)` for known slugs and for values that already look like
+/// absolute IRIs (starts with `http://` / `https://`). Returns `None` for
+/// everything else, so callers can emit a literal `dct:license` string
+/// instead of fabricating a JSON-LD `@id` that won't resolve.
+fn license_iri(license: &str) -> Option<String> {
+    let trimmed = license.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    match trimmed {
+        "cc-by" => Some("http://creativecommons.org/licenses/by/4.0/".to_string()),
+        "cc-by-sa" => Some("http://creativecommons.org/licenses/by-sa/4.0/".to_string()),
+        "cc-zero" => Some("http://creativecommons.org/publicdomain/zero/1.0/".to_string()),
+        "odc-by" => Some("http://opendatacommons.org/licenses/by/1.0/".to_string()),
+        "odc-pddl" => Some("http://opendatacommons.org/licenses/pddl/1.0/".to_string()),
+        other if other.starts_with("http://") || other.starts_with("https://") => {
+            Some(other.to_string())
+        },
+        _ => None,
     }
 }

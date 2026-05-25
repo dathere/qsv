@@ -80,7 +80,28 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // Mirrors describegpt: shell out to `qsv frequency` and parse the CSV.
     // Defaults: top 25 values per column, drop "Other" / NULL aggregate rows
     // so the per-column lists stay tight for downstream consumers.
-    let freq_args: Vec<&str> = vec!["--limit", "25", "--no-other", "--no-nulls"];
+    //
+    // Forwards every CSV-parsing / execution flag that profile took on its
+    // own command line so the frequency pass interprets the input under the
+    // same assumptions as the stats pass above. Otherwise an input that
+    // needed `--no-headers` or `--delimiter ;` would parse one way for
+    // stats and another way for frequency, producing inconsistent records.
+    let mut freq_owned: Vec<String> = vec![
+        "--limit".to_string(),
+        "25".to_string(),
+        "--no-other".to_string(),
+        "--no-nulls".to_string(),
+    ];
+    append_csv_flags(
+        &mut freq_owned,
+        args,
+        FreqOrCount {
+            jobs:     true,
+            force:    true,
+            memcheck: true,
+        },
+    );
+    let freq_args: Vec<&str> = freq_owned.iter().map(String::as_str).collect();
     let (freq_csv, _stderr) = util::run_qsv_cmd(
         "frequency",
         &freq_args,
@@ -113,7 +134,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     let date_fields = collect_typed(&stats, "Date");
     let datetime_fields = collect_typed(&stats, "DateTime");
 
-    let row_count = count_rows(args.input_path)?;
+    let row_count = count_rows(args)?;
     let size_bytes = std::fs::metadata(args.input_path)
         .map(|m| m.len())
         .unwrap_or(0);
@@ -126,6 +147,10 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
         "NO_DATE_FIELDS":      date_fields.is_empty(),
         "DATETIME_FIELDS":     datetime_fields,
         "NO_DATETIME_FIELDS":  datetime_fields.is_empty(),
+        // DP+'s jinja2_helpers reads `dpp.RECORD_COUNT` directly (e.g. in
+        // `get_column_null_percentage`); expose it as a flat alias so those
+        // helpers work unchanged against our context.
+        "RECORD_COUNT":        row_count,
         "dataset_stats": {
             "row_count":    row_count,
             "column_count": headers.len(),
@@ -227,13 +252,62 @@ fn collect_typed(stats: &[StatsData], wanted: &str) -> Vec<String> {
 /// Shell out to `qsv count` for an authoritative row count. Falls back to 0
 /// on failure (better to emit metadata with a missing count than to fail the
 /// whole command).
-fn count_rows(input_path: &str) -> CliResult<u64> {
+///
+/// Forwards the same `--no-headers` / `--delimiter` flags the stats and
+/// frequency passes use; otherwise headers get counted as a row, or rows
+/// with non-comma delimiters split incorrectly. `qsv count` does not accept
+/// `--jobs` / `--memcheck` / `--force`, so those are skipped.
+fn count_rows(args: &ContextArgs) -> CliResult<u64> {
+    let mut owned: Vec<String> = Vec::new();
+    append_csv_flags(
+        &mut owned,
+        args,
+        FreqOrCount {
+            jobs:     false,
+            force:    false,
+            memcheck: false,
+        },
+    );
+    let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
     let (stdout, _stderr) =
-        match util::run_qsv_cmd("count", &[], input_path, "qsv profile: ran `count`") {
+        match util::run_qsv_cmd("count", &argv, args.input_path, "qsv profile: ran `count`") {
             Ok(t) => t,
             Err(_) => return Ok(0),
         };
     Ok(stdout.trim().parse::<u64>().unwrap_or(0))
+}
+
+/// Which optional execution flags the target subprocess supports. Used by
+/// `append_csv_flags` to gate the forwarded flag set per command.
+struct FreqOrCount {
+    jobs:     bool,
+    force:    bool,
+    memcheck: bool,
+}
+
+/// Append CSV-parsing + execution flags from `args` onto `out` as separate
+/// argv tokens. Owns String values so the caller can borrow them as
+/// `&[&str]` for `run_qsv_cmd`.
+fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCount) {
+    if args.no_headers {
+        out.push("--no-headers".to_string());
+    }
+    if let Some(d) = args.delimiter {
+        out.push("--delimiter".to_string());
+        out.push((d.as_byte() as char).to_string());
+    }
+    if gates.jobs
+        && let Some(n) = args.jobs
+    {
+        out.push("--jobs".to_string());
+        out.push(n.to_string());
+    }
+    if gates.force && args.force {
+        out.push("--force".to_string());
+    }
+    if gates.memcheck && args.memcheck {
+        out.push("--memcheck".to_string());
+    }
 }
 
 /// Load a seed JSON file (--package-meta / --resource-meta). Returns

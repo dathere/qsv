@@ -43,25 +43,35 @@ import qsv_ckan_stubs
 qsv_ckan_stubs.install()
 
 import jinja2_helpers  # noqa: E402  (must come after stubs.install())
-from jinja2 import StrictUndefined  # noqa: E402
 from jinja2.sandbox import SandboxedEnvironment  # noqa: E402
 
 
 def _build_env() -> SandboxedEnvironment:
     """Mirrors ``FormulaProcessor.__init__``'s env construction, minus CKAN
-    specifics."""
-    env = SandboxedEnvironment(
-        # Keep undefined values surfacing as empty strings, which is what
-        # DP+'s default Jinja2 environment does (DP+ doesn't pass
-        # StrictUndefined). That matches the user expectation that a missing
-        # context key renders as "" rather than crashing the whole template.
-        undefined=type("_LooseUndefined", (StrictUndefined,), {}).__bases__[0],
-    )
+    specifics. Uses Jinja2's default ``Undefined`` (not ``StrictUndefined``)
+    so a missing optional context key renders as the empty string rather
+    than crashing the whole template -- matching DP+'s default Jinja2 env."""
+    env = SandboxedEnvironment()
     for f in jinja2_helpers.JINJA2_FILTERS:
         env.filters[f.__name__] = f
     for g in jinja2_helpers.JINJA2_GLOBALS:
         env.globals[g.__name__] = g
     return env
+
+
+def _normalize_suggestion(value: Any) -> Any:
+    """Suggestion outputs are "soft" -- a render that produces empty/whitespace
+    or the literal string ``"None"`` should surface as JSON ``null`` so
+    downstream consumers can treat "no useful suggestion" uniformly. Hard
+    ``formula`` results are left untouched: an explicit ``""`` may be the
+    intended value.
+    """
+    if not isinstance(value, str):
+        return value
+    stripped = value.strip()
+    if stripped == "" or stripped == "None":
+        return None
+    return value
 
 
 def evaluate(context_json: str, formulas_json: str) -> str:
@@ -92,7 +102,10 @@ def evaluate(context_json: str, formulas_json: str) -> str:
         }
         try:
             tmpl = env.from_string(template_src)
-            entry["value"] = tmpl.render(**context)
+            rendered = tmpl.render(**context)
+            if kind == "suggestion_formula":
+                rendered = _normalize_suggestion(rendered)
+            entry["value"] = rendered
         except Exception as exc:
             # Capture the short message + a one-line traceback hint so the
             # user can pinpoint which helper raised. The full traceback is

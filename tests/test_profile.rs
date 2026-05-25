@@ -194,13 +194,26 @@ fn profile_no_ckan_flag_skips_ckan_block() {
 #[test]
 fn profile_stdin_input_is_rejected() {
     // For v1 we require a real input file path -- piping stdin should fail
-    // with a clear message rather than producing a silent no-op.
+    // with a clear message rather than producing a silent no-op. Assert both
+    // a non-zero exit code AND the expected message; a successful command
+    // printing the same text on stderr must NOT pass this test.
     let wrk = Workdir::new("profile_stdin");
     let mut cmd = wrk.command("profile");
     cmd.args(["-", "-o", "out.json"]);
-    let got = wrk.output_stderr(&mut cmd);
+    let output = cmd.output().expect("spawn qsv profile");
     assert!(
-        got.contains("does not exist") || got.contains("not yet supported"),
-        "expected stdin-rejection error, got: {got}"
+        !output.status.success(),
+        "expected non-zero exit on stdin input, got status: {:?}",
+        output.status,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("does not exist") || stderr.contains("not yet supported"),
+        "expected stdin-rejection error, got: {stderr}"
+    );
+    // And the command must not have written the output file.
+    assert!(
+        !wrk.path("out.json").exists(),
+        "out.json should not have been written on rejection"
     );
 }

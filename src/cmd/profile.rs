@@ -348,14 +348,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Phase 6 (post-override): JSON Schema validation runs on the
     // emitted dcat block, after dataset_info overrides have applied.
-    // Pulls the stashed build-time warnings back out and merges schema
-    // violations into the final dcat_warnings array.
+    // Pulls the stashed build-time warnings back out, drops any whose
+    // referenced field is now present in the final dcat block (the
+    // dataset_info override or discovered-DCAT merge satisfied them),
+    // then merges schema violations into the final dcat_warnings array.
     if !args.flag_no_dcat {
         let out_map = output.as_object_mut().unwrap();
-        let mut dcat_warnings: Vec<dcat::DcatWarning> = out_map
+        let stashed: Vec<dcat::DcatWarning> = out_map
             .remove("__pending_dcat_warnings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
+        let final_dcat_snapshot = out_map.get("dcat").cloned();
+        let mut dcat_warnings: Vec<dcat::DcatWarning> = stashed
+            .into_iter()
+            .filter(|w| !final_dcat_has_field(final_dcat_snapshot.as_ref(), &w.field))
+            .collect();
         if args.flag_validate_dcat
             && let Some(final_dcat) = out_map.get("dcat")
         {
@@ -642,6 +649,49 @@ fn merge_discovered(inferred: Value, discovered: &Value) -> Value {
         }
     }
     Value::Object(inf)
+}
+
+/// Returns true when the final dcat block carries a non-null,
+/// non-empty value for `field` (a JSON-LD key like `"dcat:contactPoint"`
+/// or a nested path like `"dcat:distribution/0/dct:license"`). Used
+/// to filter stale build-time warnings after `dataset_info` overrides
+/// and discovered-DCAT merging have had a chance to populate slots
+/// that were originally absent.
+///
+/// Top-level field names get a fast direct lookup; nested paths are
+/// resolved via JSON Pointer (with a leading `/` added if absent).
+/// Returns false for any unparseable / missing field — the safe
+/// default is "keep the warning".
+fn final_dcat_has_field(final_dcat: Option<&Value>, field: &str) -> bool {
+    let Some(dcat) = final_dcat else {
+        return false;
+    };
+    if field.is_empty() {
+        return false;
+    }
+    // Top-level field name (the common case for build-time warnings).
+    if !field.contains('/')
+        && let Some(v) = dcat.get(field)
+    {
+        return !is_value_empty(v);
+    }
+    // Nested JSON-Pointer path.
+    let pointer = if field.starts_with('/') {
+        field.to_string()
+    } else {
+        format!("/{field}")
+    };
+    dcat.pointer(&pointer).is_some_and(|v| !is_value_empty(v))
+}
+
+fn is_value_empty(v: &Value) -> bool {
+    match v {
+        Value::Null => true,
+        Value::String(s) => s.is_empty(),
+        Value::Array(arr) => arr.is_empty(),
+        Value::Object(map) => map.is_empty(),
+        _ => false,
+    }
 }
 
 fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {

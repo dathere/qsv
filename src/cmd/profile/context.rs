@@ -359,7 +359,13 @@ pub(super) fn load_initial_context(path: Option<&str>) -> CliResult<(Value, Valu
     }
     let package = normalize_value_force(doc.get("package").cloned().unwrap_or(json!({})));
     let resource = normalize_value_force(doc.get("resource").cloned().unwrap_or(json!({})));
-    let dataset_info = doc.get("dataset_info").cloned().unwrap_or(json!({}));
+    // Roborev 2440#2: dataset_info must also pass through wrapper
+    // normalization so that an override like
+    //   "/dcat/dcat:contactPoint": {"value": {...}, "force": true}
+    // unwraps to the inner value before being written to the output.
+    // Otherwise the wrapper object itself becomes the DCAT value and
+    // the override fails to rescue --strict-dcat validation.
+    let dataset_info = normalize_value_force(doc.get("dataset_info").cloned().unwrap_or(json!({})));
     Ok((package, resource, dataset_info))
 }
 

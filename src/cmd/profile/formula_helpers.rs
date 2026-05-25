@@ -297,53 +297,81 @@ fn spatial_extent_wkt(
 }
 
 /// Convert a bounding box to a named GeoJSON FeatureCollection string.
-/// DP+'s docstring documents this with three named slots:
-/// `spatial_extent_feature_collection(name='...', bbox=[...], feature_type='...')`.
+/// DP+'s docstring documents this with three named slots, and the
+/// examples show both positional and keyword call styles:
 ///
-/// All three slots are accepted as **keyword arguments only** (matching
-/// the DP+ docstring's call style). minijinja's argument binding
-/// doesn't currently support mixing typed positional params with
-/// `Kwargs` in a way that lets a no-positional / all-kwargs call resolve
-/// cleanly, so positional invocation isn't supported here. Existing
-/// scheming-YAML formulas using positional syntax must switch to kwargs.
+///   * `spatial_extent_feature_collection("Name", bbox, "manual")`
+///   * `spatial_extent_feature_collection(name="X", bbox=[...], feature_type="m")`
+///
+/// Both shapes are supported. minijinja's `Function` impls don't route
+/// `Rest<Value> + Kwargs` cleanly (Rest swallows the kwargs container),
+/// so we accept `Rest<Value>` only and detect a trailing kwargs-shaped
+/// `Value` ourselves via `Kwargs::extract`.
 fn spatial_extent_feature_collection(
-    kwargs: Kwargs,
+    args: minijinja::value::Rest<Value>,
     state: &minijinja::State,
 ) -> Result<String, Error> {
-    let name = kwargs
-        .get::<Option<String>>("name")?
-        .unwrap_or_else(|| "Inferred Spatial Extent".to_string());
-    let mut feature_type = kwargs
-        .get::<Option<String>>("feature_type")?
-        .unwrap_or_else(|| "inferred".to_string());
-    let bbox_value = kwargs.get::<Option<Value>>("bbox")?;
-    kwargs.assert_all_used()?;
+    // Separate positional args from a trailing kwargs container.
+    // `Kwargs::try_from(Value)` succeeds only on the synthetic kwargs
+    // marker minijinja emits for `name=...` syntax — which lets us
+    // tell apart `func([1,2,3,4])` (a real bbox list as the only
+    // positional) from `func(bbox=[1,2,3,4])` (kwargs).
+    let (positional, kwargs): (&[Value], Option<Kwargs>) = match args.last() {
+        Some(last) => match Kwargs::try_from(last.clone()) {
+            Ok(kw) => (&args[..args.len() - 1], Some(kw)),
+            Err(_) => (&args[..], None),
+        },
+        None => (&args[..], None),
+    };
 
+    // ---- name -------------------------------------------------------
+    let mut name = positional
+        .first()
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| "Inferred Spatial Extent".to_string());
+    if let Some(kw) = kwargs.as_ref()
+        && let Some(v) = kw.get::<Option<String>>("name")?
+    {
+        name = v;
+    }
+
+    // ---- bbox -------------------------------------------------------
     let mut bbox: Option<[f64; 4]> = None;
-    if let Some(v) = bbox_value
+    let mut bbox_supplied = false;
+    if let Some(v) = positional.get(1)
         && !v.is_none()
         && !v.is_undefined()
     {
-        let collected: Vec<Value> = v
-            .try_iter()
-            .map_err(|e| value_err(&format!("bbox= kwarg must be iterable: {e}")))?
-            .collect();
-        if collected.len() != 4 {
-            return Err(value_err("Invalid bounding box"));
-        }
-        let mut arr = [0_f64; 4];
-        for (i, vv) in collected.iter().enumerate() {
-            arr[i] = value_to_f64(vv).ok_or_else(|| {
-                value_err("spatial_extent_feature_collection: bbox= must be a list of 4 numerics")
-            })?;
-        }
-        bbox = Some(arr);
-        // Default feature_type to "calculated" when the user supplied
-        // their own bbox (matching DP+ semantics); their explicit
-        // feature_type= still wins.
-        if !kwargs_contained_feature_type(&feature_type) {
-            feature_type = "calculated".to_string();
-        }
+        bbox = Some(extract_bbox(v)?);
+        bbox_supplied = true;
+    }
+    if let Some(kw) = kwargs.as_ref()
+        && let Some(v) = kw.get::<Option<Value>>("bbox")?
+        && !v.is_none()
+        && !v.is_undefined()
+    {
+        bbox = Some(extract_bbox(&v)?);
+        bbox_supplied = true;
+    }
+
+    // ---- feature_type ----------------------------------------------
+    let mut feature_type = positional
+        .get(2)
+        .and_then(|v| v.as_str().map(str::to_string))
+        .unwrap_or_else(|| {
+            if bbox_supplied {
+                "calculated".to_string()
+            } else {
+                "inferred".to_string()
+            }
+        });
+    if let Some(kw) = kwargs.as_ref()
+        && let Some(v) = kw.get::<Option<String>>("feature_type")?
+    {
+        feature_type = v;
+    }
+    if let Some(kw) = kwargs {
+        kw.assert_all_used()?;
     }
 
     let coords = match bbox {
@@ -366,12 +394,24 @@ fn spatial_extent_feature_collection(
     ))
 }
 
-/// Returns true if the current `feature_type` value differs from the
-/// default `"inferred"` — i.e., the user explicitly set
-/// `feature_type=`. Kept as a tiny helper so the bbox-default logic
-/// reads as intent rather than a string comparison.
-fn kwargs_contained_feature_type(current: &str) -> bool {
-    current != "inferred"
+/// Convert a minijinja Value (expected: list of 4 numerics) into a
+/// `[f64; 4]` bbox. Used by both the positional and kwarg paths of
+/// `spatial_extent_feature_collection` — iterating via `try_iter` (not
+/// serde) handles mixed int/float arrays that DP+'s Python helpers
+/// accept uniformly.
+fn extract_bbox(v: &Value) -> Result<[f64; 4], Error> {
+    let collected: Vec<Value> = v
+        .try_iter()
+        .map_err(|e| value_err(&format!("bbox must be iterable: {e}")))?
+        .collect();
+    if collected.len() != 4 {
+        return Err(value_err("Invalid bounding box"));
+    }
+    let mut arr = [0_f64; 4];
+    for (i, vv) in collected.iter().enumerate() {
+        arr[i] = value_to_f64(vv).ok_or_else(|| value_err("bbox must be a list of 4 numerics"))?;
+    }
+    Ok(arr)
 }
 
 /// Get the top values for a field from frequency data (`dppf`).
@@ -1121,5 +1161,39 @@ mod tests {
         assert!(out.contains(r#""name": "Custom""#), "got: {out}");
         assert!(out.contains(r#""type": "manual""#), "got: {out}");
         assert!(out.contains("-180,-90"), "got: {out}");
+    }
+
+    /// Roborev finding 2440#3: positional calls to
+    /// `spatial_extent_feature_collection` (the DP+ docstring's other
+    /// example syntax) must keep working alongside kwargs.
+    #[test]
+    fn spatial_extent_feature_collection_positional() {
+        let env = build_env();
+        // Three positional args: name, bbox, feature_type
+        let out = render(
+            &env,
+            r#"{{ spatial_extent_feature_collection("PosName", [-180,-90,180,90], "manual") }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert!(out.contains(r#""name": "PosName""#), "got: {out}");
+        assert!(out.contains(r#""type": "manual""#), "got: {out}");
+        assert!(out.contains("-180,-90"), "got: {out}");
+    }
+
+    /// Mixed positional + kwargs: name positional, bbox + feature_type
+    /// as kwargs. Verifies the trailing-Value-as-kwargs detection
+    /// doesn't mis-classify a real positional Value as a kwargs marker.
+    #[test]
+    fn spatial_extent_feature_collection_mixed_pos_and_kw() {
+        let env = build_env();
+        let out = render(
+            &env,
+            r#"{{ spatial_extent_feature_collection("Mix", bbox=[-1,-1,1,1], feature_type="m") }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert!(out.contains(r#""name": "Mix""#), "got: {out}");
+        assert!(out.contains(r#""type": "m""#), "got: {out}");
     }
 }

@@ -578,3 +578,97 @@ fn dataset_info_override_supplies_field_before_strict_validation() {
         "dataset_info override must apply before validation"
     );
 }
+
+#[test]
+fn dataset_info_override_clears_stale_warnings() {
+    // Roborev 2440#1: when dataset_info supplies a missing field,
+    // the stale build-time "missing X" warning must NOT survive into
+    // the final dcat_warnings array.
+    let wrk = Workdir::new("profile_clear_stale");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "dataset_info": {
+                "/dcat/dcat:contactPoint": {
+                    "@type":          "vcard:Individual",
+                    "vcard:fn":       "Override",
+                    "vcard:hasEmail": "mailto:o@x.gov"
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings: Vec<Value> = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    assert!(
+        !warnings
+            .iter()
+            .any(|w| w.get("field").and_then(|v| v.as_str()) == Some("dcat:contactPoint")),
+        "stale contactPoint warning must be filtered out, got: {warnings:#?}",
+    );
+}
+
+#[test]
+fn wrapped_dataset_info_override_rescues_strict_validation() {
+    // Roborev 2440#2: dataset_info entries written in the
+    // {"value": ..., "force": true} wrapper form must unwrap to their
+    // inner value before being applied. With the unwrap in place,
+    // a wrapped override of a mandatory field rescues --strict-dcat.
+    let wrk = Workdir::new("profile_wrapped_strict");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
+            "dataset_info": {
+                "/dcat/dcat:contactPoint": {
+                    "value": {
+                        "@type":          "vcard:Individual",
+                        "vcard:fn":       "Wrapped",
+                        "vcard:hasEmail": "mailto:wrapped@example.gov"
+                    },
+                    "force": true
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate-dcat",
+        "--strict-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    // Wrapper unwrapped → inner vcard:Individual landed at the
+    // contactPoint slot, validation passed (otherwise --strict-dcat
+    // would have aborted).
+    assert_eq!(
+        out.pointer("/dcat/dcat:contactPoint/vcard:fn")
+            .and_then(|v| v.as_str()),
+        Some("Wrapped"),
+        "wrapper must unwrap; the {{value, force}} object itself must NOT become the \
+         dcat:contactPoint value"
+    );
+}

@@ -33,6 +33,10 @@ profile options:
     --resource-meta <json>    Same, for the resource dict.
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
+    --dcat-legacy-license     Transitional: re-emit dct:license on the
+                              Dataset alongside the v3-required
+                              Distribution-level copy. Default: off
+                              (strict v3, license on Distribution only).
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -69,18 +73,19 @@ mod sql_backend;
 
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:          Option<String>,
-    flag_spec:          Option<String>,
-    flag_package_meta:  Option<String>,
-    flag_resource_meta: Option<String>,
-    flag_no_dcat:       bool,
-    flag_no_ckan:       bool,
-    flag_force:         bool,
-    flag_jobs:          Option<usize>,
-    flag_output:        Option<String>,
-    flag_no_headers:    bool,
-    flag_delimiter:     Option<crate::config::Delimiter>,
-    flag_memcheck:      bool,
+    arg_input:                Option<String>,
+    flag_spec:                Option<String>,
+    flag_package_meta:        Option<String>,
+    flag_resource_meta:       Option<String>,
+    flag_no_dcat:             bool,
+    flag_dcat_legacy_license: bool,
+    flag_no_ckan:             bool,
+    flag_force:               bool,
+    flag_jobs:                Option<usize>,
+    flag_output:              Option<String>,
+    flag_no_headers:          bool,
+    flag_delimiter:           Option<crate::config::Delimiter>,
+    flag_memcheck:            bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -199,7 +204,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        let dcat_block = dcat::build(&package, &[resource.clone()], &dpp, &stats, &input_path);
+        let dcat_block = dcat::build(
+            &package,
+            &[resource.clone()],
+            &dpp,
+            &stats,
+            &input_path,
+            args.flag_dcat_legacy_license,
+        );
         out_map.insert("dcat".to_string(), dcat_block);
     }
 

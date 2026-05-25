@@ -78,13 +78,15 @@ fn profile_spec_less_emits_dpp_block() {
         "expected empty formula_results, got {results:?}"
     );
 
-    // DCAT block is emitted by default. dct:spatial falls back to the
-    // bbox-derived POLYGON because no formula ran.
+    // DCAT block is emitted by default. dct:spatial is an array of
+    // dct:Location per DCAT-US v3; the bbox-derived POLYGON lives at
+    // index 0 when no formula has run.
     let spatial = out.pointer("/dcat/dct:spatial").expect("dct:spatial");
+    assert!(spatial.is_array(), "dct:spatial must be an array");
     let bbox = spatial
-        .get("dcat:bbox")
+        .pointer("/0/dcat:bbox")
         .and_then(|v| v.as_str())
-        .expect("dcat:bbox str");
+        .expect("dct:spatial[0].dcat:bbox str");
     assert!(
         bbox.contains("POLYGON"),
         "expected POLYGON bbox, got {bbox:?}"
@@ -149,9 +151,10 @@ fn profile_with_druf_spec_evaluates_spatial_extent_wkt() {
     assert_eq!(merged, value);
 
     // DCAT spatial picks up the WKT via the GeoSPARQL wktLiteral path now
-    // that the suggestion populated it.
+    // that the suggestion populated it. dct:spatial is an array per v3 —
+    // the WKT Location lives at index 0.
     let wkt = out
-        .pointer("/dcat/dct:spatial/locn:geometry/@value")
+        .pointer("/dcat/dct:spatial/0/locn:geometry/@value")
         .and_then(|v| v.as_str())
         .expect("dcat spatial wkt");
     assert_eq!(wkt, value);

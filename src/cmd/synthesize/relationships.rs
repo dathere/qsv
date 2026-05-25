@@ -372,36 +372,33 @@ fn resolve_ordered(
     // Anchor distribution, expressed in the numeric domain.
     let anchor_stats = &stats[member_cols[0]];
     let anchor_buckets: Vec<(f64, f64)> = match kind {
-        OrderedKind::Numeric => match numeric_quartile_buckets(anchor_stats) {
-            Some(buckets) => buckets,
-            None => {
+        OrderedKind::Numeric => {
+            if let Some(buckets) = numeric_quartile_buckets(anchor_stats) {
+                buckets
+            } else {
                 log::warn!(
                     "synthesize: ordered relationship {names:?} dropped — anchor '{}' has no \
                      usable numeric range",
                     names[0]
                 );
                 return Ok(None);
-            },
+            }
         },
         OrderedKind::Date | OrderedKind::DateTime => {
             let is_datetime = kind == OrderedKind::DateTime;
-            match date_quartile_buckets(anchor_stats, is_datetime) {
-                Some(buckets) =>
-                {
-                    #[allow(clippy::cast_precision_loss)]
-                    buckets
-                        .into_iter()
-                        .map(|(lo, hi)| (lo as f64, hi as f64))
-                        .collect()
-                },
-                None => {
-                    log::warn!(
-                        "synthesize: ordered relationship {names:?} dropped — anchor '{}' has no \
-                         usable date range",
-                        names[0]
-                    );
-                    return Ok(None);
-                },
+            if let Some(buckets) = date_quartile_buckets(anchor_stats, is_datetime) {
+                #[allow(clippy::cast_precision_loss)]
+                buckets
+                    .into_iter()
+                    .map(|(lo, hi)| (lo as f64, hi as f64))
+                    .collect()
+            } else {
+                log::warn!(
+                    "synthesize: ordered relationship {names:?} dropped — anchor '{}' has no \
+                     usable date range",
+                    names[0]
+                );
+                return Ok(None);
             }
         },
     };
@@ -721,6 +718,9 @@ fn fractional_ranks(values: &[f64]) -> Vec<f64> {
     let mut i = 0;
     while i < n {
         let mut j = i;
+        // Tie detection for average-rank assignment: we want bit-exact equality
+        // of sort keys, not "within epsilon" — equal-key runs share a rank.
+        #[allow(clippy::float_cmp)]
         while j + 1 < n && values[order[j + 1]] == values[order[i]] {
             j += 1;
         }

@@ -187,7 +187,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // same columns stats/frequency saw. --delimiter overrides
             // Polars' default comma; --no-headers maps to has_header=false.
             let sql_backend = sql_backend::SqlBackend::new(ctx_args.input_path)
-                .with_delimiter(ctx_args.delimiter.map(|d| d.0).unwrap_or(b','))
+                .with_delimiter(ctx_args.delimiter.map_or(b',', |d| d.0))
                 .with_has_header(!ctx_args.no_headers);
             formula_engine::evaluate_spec(spec, &analysis.context, Some(sql_backend))?
         },
@@ -490,6 +490,8 @@ fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
 fn resolve_input(
     raw: &str,
 ) -> CliResult<(String, Option<String>, Option<tempfile::NamedTempFile>)> {
+    use std::io::Write;
+
     if !is_http_url(raw) {
         return Ok((raw.to_string(), None, None));
     }
@@ -518,7 +520,6 @@ fn resolve_input(
 
     // Stream the body straight into the tempfile rather than buffering
     // the whole response in memory (large remote CSVs would OOM).
-    use std::io::Write;
     std::io::copy(&mut response, temp.as_file_mut())
         .map_err(|e| CliError::Other(format!("qsv profile: stream body from {raw}: {e}")))?;
     temp.as_file_mut().flush().ok();
@@ -551,8 +552,7 @@ fn tempfile_suffix_for_url(raw: &str) -> String {
     std::path::Path::new(&path)
         .extension()
         .and_then(|e| e.to_str())
-        .map(|e| format!(".{e}"))
-        .unwrap_or_else(|| ".csv".to_string())
+        .map_or_else(|| ".csv".to_string(), |e| format!(".{e}"))
 }
 
 /// Derive a human-readable default title from a URL when the user
@@ -707,7 +707,7 @@ fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
     let mut cursor: &mut Value = root;
     for (i, tok) in tokens.iter().enumerate() {
         let is_last = i + 1 == tokens.len();
-        match cursor {
+        if let Value::Array(arr) = cursor {
             // Traverse into an existing array via numeric segment. We
             // never create or extend arrays here — that would require
             // distinguishing array-vs-object intent at every missing
@@ -715,33 +715,30 @@ fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
             // indices and non-numeric tokens are silently skipped so a
             // typo in a single override doesn't corrupt the rest of
             // the output.
-            Value::Array(arr) => {
-                let Ok(idx) = tok.parse::<usize>() else {
-                    return;
-                };
-                if idx >= arr.len() {
-                    return;
-                }
-                if is_last {
-                    arr[idx] = value;
-                    return;
-                }
-                cursor = &mut arr[idx];
-            },
+            let Ok(idx) = tok.parse::<usize>() else {
+                return;
+            };
+            if idx >= arr.len() {
+                return;
+            }
+            if is_last {
+                arr[idx] = value;
+                return;
+            }
+            cursor = &mut arr[idx];
+        } else {
             // Object (or any non-object scalar, which we replace with
             // an empty object before descending). Same behaviour as
             // before for object-typed parents.
-            _ => {
-                if !cursor.is_object() {
-                    *cursor = json!({});
-                }
-                let map = cursor.as_object_mut().unwrap();
-                if is_last {
-                    map.insert(tok.clone(), value);
-                    return;
-                }
-                cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
-            },
+            if !cursor.is_object() {
+                *cursor = json!({});
+            }
+            let map = cursor.as_object_mut().unwrap();
+            if is_last {
+                map.insert(tok.clone(), value);
+                return;
+            }
+            cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
         }
     }
 }

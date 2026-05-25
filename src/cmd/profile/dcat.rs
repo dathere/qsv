@@ -507,12 +507,6 @@ fn accrual_periodicity_iri(slug: &str) -> Option<&'static str> {
 /// expanded form some CKAN catalogs use ("English"). Returns `None` for
 /// anything unrecognized — caller decides whether to warn or pass through.
 fn normalize_iso_639_1(input: &str) -> Option<String> {
-    let cleaned = input.trim().to_lowercase();
-    if cleaned.is_empty() {
-        return None;
-    }
-    // RFC 5646 subtag stripping: "en-US" → "en", "zh-Hans-CN" → "zh".
-    let base = cleaned.split(&['-', '_'][..]).next().unwrap_or(&cleaned);
     // Curated allow-list covering the most common DCAT-US catalog usage;
     // extend as needed. Codes per ISO 639-1.
     const KNOWN: &[(&str, &str)] = &[
@@ -543,6 +537,13 @@ fn normalize_iso_639_1(input: &str) -> Option<String> {
         ("hi", "hi"),
         ("hindi", "hi"),
     ];
+
+    let cleaned = input.trim().to_lowercase();
+    if cleaned.is_empty() {
+        return None;
+    }
+    // RFC 5646 subtag stripping: "en-US" → "en", "zh-Hans-CN" → "zh".
+    let base = cleaned.split(&['-', '_'][..]).next().unwrap_or(&cleaned);
     KNOWN
         .iter()
         .find(|(k, _)| *k == cleaned || *k == base)
@@ -789,7 +790,7 @@ fn csvw_datatype(t: Option<&Value>) -> &'static str {
 }
 
 fn string_opt(v: Option<&Value>) -> Option<String> {
-    v.and_then(|x| x.as_str().map(|s| s.to_string()))
+    v.and_then(|x| x.as_str().map(std::string::ToString::to_string))
         .filter(|s| !s.is_empty())
 }
 

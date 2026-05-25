@@ -244,10 +244,15 @@ impl<T: Clone> ReservoirItemsSketch<T> {
         // Per-item weights: each pool item from `self` stands in for
         // self.n / self.reservoir.len() original stream items (same for
         // other). Items below contribute proportionally to their stream's
-        // mass.
+        // mass. A-ExpJ tolerates the f64 mantissa loss — counts realistically
+        // fit, and the resulting keys are only used for ordering.
+        #[allow(clippy::cast_precision_loss)]
         let self_k = self.reservoir.len().max(1) as f64;
+        #[allow(clippy::cast_precision_loss)]
         let other_k = other.reservoir.len().max(1) as f64;
+        #[allow(clippy::cast_precision_loss)]
         let w_self = (self.n as f64) / self_k;
+        #[allow(clippy::cast_precision_loss)]
         let w_other = (other.n as f64) / other_k;
 
         // Concatenate the two reservoirs and assign A-ExpJ keys.
@@ -289,7 +294,7 @@ impl<T: Clone + SerializableItem> ReservoirItemsSketch<T> {
         buf.extend_from_slice(&SKETCH_MAGIC);
         buf.write_u8(SKETCH_FORMAT_VERSION)?;
         buf.write_u8(SketchFamily::Reservoir as u8)?;
-        let flags: u16 = if self.header.is_some() { 1 } else { 0 };
+        let flags: u16 = u16::from(self.header.is_some());
         buf.write_u16::<LittleEndian>(flags)?;
         buf.write_u64::<LittleEndian>(self.k as u64)?;
         buf.write_u64::<LittleEndian>(self.n)?;
@@ -541,7 +546,7 @@ impl<T: Clone + SerializableItem> VarOptItemsSketch<T> {
         buf.extend_from_slice(&SKETCH_MAGIC);
         buf.write_u8(SKETCH_FORMAT_VERSION)?;
         buf.write_u8(SketchFamily::VarOpt as u8)?;
-        let flags: u16 = if self.header.is_some() { 1 } else { 0 };
+        let flags: u16 = u16::from(self.header.is_some());
         buf.write_u16::<LittleEndian>(flags)?;
         buf.write_u64::<LittleEndian>(self.k as u64)?;
         buf.write_u64::<LittleEndian>(self.n)?;

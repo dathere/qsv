@@ -256,7 +256,7 @@ fn calculate_bbox_area(
         bbox_from_context(state)?
     };
     let earth_radius = 6371_f64; // km
-    let mid_lat = (coords.min_lat + coords.max_lat) / 2.0;
+    let mid_lat = f64::midpoint(coords.min_lat, coords.max_lat);
     let width = (coords.max_lon - coords.min_lon).abs() * std::f64::consts::PI / 180.0
         * mid_lat.to_radians().cos();
     let height = (coords.max_lat - coords.min_lat).abs() * std::f64::consts::PI / 180.0;
@@ -807,8 +807,7 @@ fn bbox_from_context(state: &minijinja::State) -> Result<BBoxCoords, Error> {
     let no_lat_lon = dpp
         .get_attr("NO_LAT_LON_FIELDS")
         .ok()
-        .map(|v| v.is_true())
-        .unwrap_or(false);
+        .is_some_and(|v| v.is_true());
     if no_lat_lon {
         return Err(value_err("No latitude or longitude fields found"));
     }
@@ -880,7 +879,7 @@ fn deserialize_value<T: serde::de::DeserializeOwned>(v: &Value) -> Option<T> {
 /// US-locale thousands-separated float format, e.g. `format_thousands(1234567.89, 2) ==
 /// "1,234,567.89"`.
 fn format_thousands(n: f64, decimals: usize) -> String {
-    let formatted = format!("{n:.*}", decimals);
+    let formatted = format!("{n:.decimals$}");
     let (int_part, dec_part) = match formatted.find('.') {
         Some(idx) => (&formatted[..idx], &formatted[idx..]),
         None => (formatted.as_str(), ""),

@@ -4615,10 +4615,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     skipped_card_eq_rowcount += 1;
                     log::warn!(
                         "bivariate field_pairs: skipping ({field1_name:?}, {field2_name:?}) \
-                         (i={i}, j={j}): cardinality == rowcount ({rowcount}) (c1={c1:?}, \
-                         c2={c2:?})",
-                        c1 = field1_cardinality,
-                        c2 = field2_cardinality,
+                         (i={i}, j={j}): cardinality == rowcount ({rowcount}) \
+                         (c1={field1_cardinality:?}, c2={field2_cardinality:?})",
                     );
                     continue; // All values are unique, correlations are not meaningful
                 }
@@ -4901,7 +4899,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 let Ok(add_hdrs) = add_rdr.headers() else {
                     continue;
                 };
-                for h in add_hdrs.iter() {
+                for h in add_hdrs {
                     let Some(&idx) = csv_name_to_pos.get(h) else {
                         continue;
                     };

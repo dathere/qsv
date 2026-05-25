@@ -89,9 +89,9 @@ impl GroupGenerator {
     /// The output column indices this group is responsible for.
     pub(crate) fn col_indices(&self) -> &[usize] {
         match self {
-            GroupGenerator::Joint { col_indices, .. } => col_indices,
             GroupGenerator::Ordered { member_cols, .. } => member_cols,
-            GroupGenerator::Correlated { col_indices, .. } => col_indices,
+            GroupGenerator::Joint { col_indices, .. }
+            | GroupGenerator::Correlated { col_indices, .. } => col_indices,
         }
     }
 
@@ -136,7 +136,7 @@ impl GroupGenerator {
                 let mut out = Vec::with_capacity(member_cols.len());
                 out.push((
                     member_cols[0],
-                    format_ordered(value, *kind, is_int[0], date_format),
+                    format_ordered(value, *kind, is_int[0], date_format.as_ref()),
                 ));
                 for (i, gaps) in gap_buckets.iter().enumerate() {
                     // Gap buckets are clamped to >= 0, so `value` is
@@ -144,7 +144,7 @@ impl GroupGenerator {
                     value += sample_bucket(gaps, rng);
                     out.push((
                         member_cols[i + 1],
-                        format_ordered(value, *kind, is_int[i + 1], date_format),
+                        format_ordered(value, *kind, is_int[i + 1], date_format.as_ref()),
                     ));
                 }
                 out
@@ -209,7 +209,7 @@ fn format_ordered(
     value: f64,
     kind: OrderedKind,
     is_int: bool,
-    date_format: &Option<String>,
+    date_format: Option<&String>,
 ) -> String {
     #[allow(clippy::cast_possible_truncation)]
     match kind {

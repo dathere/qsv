@@ -137,9 +137,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     let datetime_fields = collect_typed(&stats, "DateTime");
 
     let row_count = count_rows(args)?;
-    let size_bytes = std::fs::metadata(args.input_path)
-        .map(|m| m.len())
-        .unwrap_or(0);
+    let size_bytes = std::fs::metadata(args.input_path).map_or(0, |m| m.len());
 
     let dpp = json!({
         "LAT_FIELD":           lat_field,
@@ -285,11 +283,11 @@ fn count_rows(args: &ContextArgs) -> CliResult<u64> {
         },
     );
     let argv: Vec<&str> = owned.iter().map(String::as_str).collect();
-    let (stdout, _stderr) =
-        match util::run_qsv_cmd("count", &argv, args.input_path, "qsv profile: ran `count`") {
-            Ok(t) => t,
-            Err(_) => return Ok(0),
-        };
+    let Ok((stdout, _stderr)) =
+        util::run_qsv_cmd("count", &argv, args.input_path, "qsv profile: ran `count`")
+    else {
+        return Ok(0);
+    };
     Ok(stdout.trim().parse::<u64>().unwrap_or(0))
 }
 

@@ -267,11 +267,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &input_path,
             args.flag_dcat_legacy_license,
         );
-        out_map.insert("dcat".to_string(), dcat_block);
-        // Phase 3b: surface the publisher-stated DCAT (if any) so users
-        // and downstream tooling can diff it against our auto-inferred
-        // projection. Phase 4b merges it in per the documented
-        // precedence chain.
+        let merged_dcat = match discovered_dcat.as_ref() {
+            Some(disc) => merge_discovered(dcat_block, disc),
+            None => dcat_block,
+        };
+        out_map.insert("dcat".to_string(), merged_dcat);
+        // Surface the raw discovered DCAT alongside the merged block so
+        // downstream tooling can diff or audit what came from the
+        // publisher vs what qsv inferred.
         if let Some(d) = discovered_dcat {
             out_map.insert("dcat_discovered".to_string(), d);
         }
@@ -448,6 +451,37 @@ fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String,
     }
 }
 
+/// Merge a discovered DCAT-US v3 dataset object into our auto-inferred
+/// projection per the Phase 4b precedence rules:
+///
+///   * Inferred values (including those seeded from `--initial-context`) always win — discovered
+///     DCAT only fills slots the inferred output left absent.
+///   * Top-level scalar / object keys present in `discovered` but not in `inferred` are copied over
+///     verbatim.
+///   * Array slots (`dct:spatial`, `dct:temporal`, `dcat:keyword`, `dcat:theme`) get the discovered
+///     array only when the inferred side is missing entirely; we don't try to merge per-element.
+///   * `dcat:distribution` is left alone — per-distribution merging is out of scope until we have a
+///     per-resource identity scheme.
+///   * `@context` and `@type` are never overwritten.
+///
+/// Future full-force semantics (`force: true` wrappers in
+/// `--initial-context` overriding discovered) will layer a "forced
+/// keys" skip-set onto this same merge function.
+fn merge_discovered(inferred: Value, discovered: &Value) -> Value {
+    let (Value::Object(mut inf), Some(disc)) = (inferred, discovered.as_object()) else {
+        return Value::Object(serde_json::Map::new());
+    };
+    for (k, v) in disc {
+        if k == "@context" || k == "@type" || k == "dcat:distribution" {
+            continue;
+        }
+        if !inf.contains_key(k) {
+            inf.insert(k.clone(), v.clone());
+        }
+    }
+    Value::Object(inf)
+}
+
 fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
     // RFC 6901: split on '/', skip the leading empty token, unescape
     // ~1 → /, ~0 → ~ on each remaining token.
@@ -550,6 +584,71 @@ mod tests {
             root.pointer("/has~1slash/has~0tilde")
                 .and_then(|v| v.as_str()),
             Some("v")
+        );
+    }
+
+    use super::merge_discovered;
+
+    #[test]
+    fn merge_fills_gaps_only() {
+        let inferred = json!({
+            "@type": "dcat:Dataset",
+            "dct:title": "Inferred Title",
+        });
+        let discovered = json!({
+            "dct:title": "Discovered Title", // collision — inferred wins
+            "dct:rights": "Discovered Rights", // gap — discovered fills
+        });
+        let merged = merge_discovered(inferred, &discovered);
+        assert_eq!(
+            merged.pointer("/dct:title").and_then(|v| v.as_str()),
+            Some("Inferred Title"),
+            "inferred always wins on collision"
+        );
+        assert_eq!(
+            merged.pointer("/dct:rights").and_then(|v| v.as_str()),
+            Some("Discovered Rights"),
+            "discovered fills the gap"
+        );
+    }
+
+    #[test]
+    fn merge_never_overwrites_context_or_type() {
+        let inferred = json!({
+            "@context": "https://inferred",
+            "@type": "dcat:Dataset",
+        });
+        let discovered = json!({
+            "@context": "https://discovered",
+            "@type": "dcat:OtherType",
+        });
+        let merged = merge_discovered(inferred, &discovered);
+        assert_eq!(
+            merged.pointer("/@context").and_then(|v| v.as_str()),
+            Some("https://inferred")
+        );
+        assert_eq!(
+            merged.pointer("/@type").and_then(|v| v.as_str()),
+            Some("dcat:Dataset")
+        );
+    }
+
+    #[test]
+    fn merge_skips_distribution_array() {
+        let inferred = json!({"dcat:distribution": [{"@type": "dcat:Distribution"}]});
+        let discovered = json!({"dcat:distribution": [{"dct:title": "Discovered Dist"}]});
+        let merged = merge_discovered(inferred, &discovered);
+        // Distribution array is left untouched — per-resource merging
+        // is out of scope until a per-distribution identity scheme exists.
+        assert_eq!(
+            merged
+                .pointer("/dcat:distribution/0/@type")
+                .and_then(|v| v.as_str()),
+            Some("dcat:Distribution")
+        );
+        assert!(
+            merged.pointer("/dcat:distribution/0/dct:title").is_none(),
+            "discovered distribution must not be merged"
         );
     }
 }

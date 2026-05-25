@@ -11,8 +11,6 @@
 //! so the rest of the profile pipeline (`profile.rs::run`,
 //! `merge_formula_results`) is untouched.
 
-use std::path::Path;
-
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -58,10 +56,12 @@ pub struct FormulaResult {
 /// If the spec has no formulas, returns `Ok(vec![])` without building
 /// the template environment.
 ///
-/// `csv_path`, when provided, installs a Polars-backed SQL backend so
+/// `sql_backend`, when provided, installs a Polars-backed SQL backend so
 /// the SQL-requiring helpers (`temporal_resolution`,
-/// `guess_accrual_periodicity`) can query the input CSV. The backend is
-/// uninstalled before this function returns.
+/// `guess_accrual_periodicity`) can query the input CSV. Callers build
+/// the backend so they can apply the profile's CSV parsing options
+/// (delimiter, header presence). The backend is uninstalled before this
+/// function returns.
 ///
 /// Errors during render are NOT fatal — they surface as `error` strings
 /// on the corresponding entry, so a failing formula in one field does
@@ -69,7 +69,7 @@ pub struct FormulaResult {
 pub fn evaluate_spec(
     spec: &Spec,
     context: &Value,
-    csv_path: Option<&Path>,
+    sql_backend: Option<SqlBackend>,
 ) -> CliResult<Vec<FormulaResult>> {
     // 1. flatten spec into a Vec<FormulaSpec>
     let mut formulas: Vec<FormulaSpec> = Vec::new();
@@ -84,7 +84,7 @@ pub fn evaluate_spec(
     }
 
     // 2. install the SQL backend for the duration of this call.
-    formula_helpers::set_sql_backend(csv_path.map(SqlBackend::new));
+    formula_helpers::set_sql_backend(sql_backend);
 
     // 3. build the minijinja environment with all helpers registered.
     let mut env = Environment::new();

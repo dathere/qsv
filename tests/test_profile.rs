@@ -534,3 +534,47 @@ fn strict_dcat_fails_command_on_violation() {
         "out.json should not be written when --strict-dcat fails"
     );
 }
+
+#[test]
+fn dataset_info_override_supplies_field_before_strict_validation() {
+    // Roborev finding 2439#4: validation must run AFTER dataset_info
+    // overrides. A user who supplies a missing mandatory field via a
+    // JSON-Pointer override should not be blocked by --strict-dcat.
+    let wrk = Workdir::new("profile_strict_with_override");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    // Note: NO contact_point in package — would normally fail
+    // --strict-dcat. The dataset_info override supplies it directly.
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
+            "dataset_info": {
+                "/dcat/dcat:contactPoint": {
+                    "@type":          "vcard:Individual",
+                    "vcard:fn":       "Override",
+                    "vcard:hasEmail": "mailto:override@example.gov"
+                }
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate-dcat",
+        "--strict-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/dcat/dcat:contactPoint/vcard:fn")
+            .and_then(|v| v.as_str()),
+        Some("Override"),
+        "dataset_info override must apply before validation"
+    );
+}

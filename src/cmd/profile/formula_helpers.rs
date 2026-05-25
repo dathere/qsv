@@ -21,9 +21,18 @@
 use std::cell::RefCell;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
-use minijinja::{Environment, Error, ErrorKind, Value};
+use minijinja::{Environment, Error, ErrorKind, Value, value::Kwargs};
 
 use super::sql_backend::SqlBackend;
+
+/// Pick the first defined value from a chain of `Option<T>`s. Used to
+/// implement Jinja2-style "positional or keyword" argument resolution
+/// in helpers that DP+ documents with named parameters
+/// (`format_date(value, format='%Y-%m-%d')` etc.).
+fn first_some<T>(opts: [Option<T>; 2]) -> Option<T> {
+    let [a, b] = opts;
+    a.or(b)
+}
 
 thread_local! {
     /// Per-thread handle to the SQL backend, set by `evaluate_spec`
@@ -92,27 +101,37 @@ pub fn register(env: &mut Environment) {
 
 /// Truncate text to `length`, appending `ellipsis` if truncation occurred.
 /// `{{ package.description | truncate_with_ellipsis(10) }}` → "Hello, wo..."
-fn truncate_with_ellipsis(text: Value, length: Option<usize>, ellipsis: Option<String>) -> Value {
+/// Also accepts `length=` and `ellipsis=` keyword args for DP+ parity.
+fn truncate_with_ellipsis(
+    text: Value,
+    length: Option<usize>,
+    ellipsis: Option<String>,
+    kwargs: Kwargs,
+) -> Result<Value, Error> {
+    let len = first_some([length, kwargs.get::<Option<usize>>("length")?]).unwrap_or(50);
+    let ell = first_some([ellipsis, kwargs.get::<Option<String>>("ellipsis")?])
+        .unwrap_or_else(|| "...".to_string());
+    kwargs.assert_all_used()?;
     let Some(s) = text.as_str() else {
-        return text;
+        return Ok(text);
     };
-    let len = length.unwrap_or(50);
-    let ell = ellipsis.unwrap_or_else(|| "...".to_string());
     if s.chars().count() <= len {
-        return text;
+        return Ok(text);
     }
     let truncated: String = s.chars().take(len).collect();
-    Value::from(format!("{truncated}{ell}"))
+    Ok(Value::from(format!("{truncated}{ell}")))
 }
 
 /// Format numbers with thousands separator and decimal places.
 /// `{{ value | format_number }}` → "1,234,567.89"
-fn format_number(value: Value, decimals: Option<usize>) -> Value {
+/// Also accepts a `decimals=` keyword arg for DP+ parity.
+fn format_number(value: Value, decimals: Option<usize>, kwargs: Kwargs) -> Result<Value, Error> {
+    let d = first_some([decimals, kwargs.get::<Option<usize>>("decimals")?]).unwrap_or(2);
+    kwargs.assert_all_used()?;
     let Some(n) = value_to_f64(&value) else {
-        return value; // pass through if not numeric
+        return Ok(value); // pass through if not numeric
     };
-    let d = decimals.unwrap_or(2);
-    Value::from(format_thousands(n, d))
+    Ok(Value::from(format_thousands(n, d)))
 }
 
 /// Format byte sizes into human-readable form.
@@ -133,27 +152,29 @@ fn format_bytes(value: Value) -> Value {
 
 /// Format dates in a specified strftime-style format. Currently supports
 /// the most common DP+ formats; falls back to the original string on any
-/// parse / format failure. `format` defaults to `%Y-%m-%d`.
-fn format_date(value: Value, format: Option<String>) -> Value {
+/// parse / format failure. Accepts `format=` as a keyword arg for DP+
+/// parity; `format` defaults to `%Y-%m-%d`.
+fn format_date(value: Value, format: Option<String>, kwargs: Kwargs) -> Result<Value, Error> {
+    let fmt = first_some([format, kwargs.get::<Option<String>>("format")?])
+        .unwrap_or_else(|| "%Y-%m-%d".to_string());
+    kwargs.assert_all_used()?;
     if value.is_none() || value.is_undefined() {
-        return Value::from_serialize(&Option::<String>::None);
+        return Ok(Value::from_serialize(&Option::<String>::None));
     }
     let Some(s) = value.as_str() else {
-        return value;
+        return Ok(value);
     };
-    let fmt = format.unwrap_or_else(|| "%Y-%m-%d".to_string());
     // Try a few common ISO 8601 shapes; fall back to original on failure.
-    use chrono::{DateTime, NaiveDate, NaiveDateTime};
     if let Ok(dt) = DateTime::parse_from_rfc3339(s) {
-        return Value::from(dt.format(&fmt).to_string());
+        return Ok(Value::from(dt.format(&fmt).to_string()));
     }
     if let Ok(ndt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
-        return Value::from(ndt.format(&fmt).to_string());
+        return Ok(Value::from(ndt.format(&fmt).to_string()));
     }
     if let Ok(nd) = NaiveDate::parse_from_str(s, "%Y-%m-%d") {
-        return Value::from(nd.format(&fmt).to_string());
+        return Ok(Value::from(nd.format(&fmt).to_string()));
     }
-    value
+    Ok(value)
 }
 
 /// Calculate percentage. Raises an error if `whole` is zero or inputs
@@ -167,19 +188,34 @@ fn calculate_percentage(part: Value, whole: Value) -> Result<f64, Error> {
     Ok((p / w) * 100.0)
 }
 
-/// Format a range of values: `format_range(min, max, separator=" to ")`
-fn format_range(min_val: Value, max_val: Value, separator: Option<String>) -> Value {
-    let sep = separator.unwrap_or_else(|| " to ".to_string());
-    Value::from(format!("{min_val}{sep}{max_val}"))
+/// Format a range of values: `format_range(min, max, separator=" to ")`.
+/// Accepts `separator=` as a keyword arg for DP+ parity.
+fn format_range(
+    min_val: Value,
+    max_val: Value,
+    separator: Option<String>,
+    kwargs: Kwargs,
+) -> Result<Value, Error> {
+    let sep = first_some([separator, kwargs.get::<Option<String>>("separator")?])
+        .unwrap_or_else(|| " to ".to_string());
+    kwargs.assert_all_used()?;
+    Ok(Value::from(format!("{min_val}{sep}{max_val}")))
 }
 
-/// Format coordinates as `40.712800°N, 74.006000°W`.
-fn format_coordinates(lat: Value, lon: Value, precision: Option<usize>) -> Result<String, Error> {
+/// Format coordinates as `40.712800°N, 74.006000°W`. Accepts
+/// `precision=` as a keyword arg for DP+ parity.
+fn format_coordinates(
+    lat: Value,
+    lon: Value,
+    precision: Option<usize>,
+    kwargs: Kwargs,
+) -> Result<String, Error> {
+    let p = first_some([precision, kwargs.get::<Option<usize>>("precision")?]).unwrap_or(6);
+    kwargs.assert_all_used()?;
     let lat_f =
         value_to_f64(&lat).ok_or_else(|| value_err("format_coordinates: lat must be numeric"))?;
     let lon_f =
         value_to_f64(&lon).ok_or_else(|| value_err("format_coordinates: lon must be numeric"))?;
-    let p = precision.unwrap_or(6);
     let lat_dir = if lat_f >= 0.0 { 'N' } else { 'S' };
     let lon_dir = if lon_f >= 0.0 { 'E' } else { 'W' };
     Ok(format!(
@@ -261,37 +297,53 @@ fn spatial_extent_wkt(
 }
 
 /// Convert a bounding box to a named GeoJSON FeatureCollection string.
+/// DP+'s docstring documents this with three named slots:
+/// `spatial_extent_feature_collection(name='...', bbox=[...], feature_type='...')`.
+///
+/// All three slots are accepted as **keyword arguments only** (matching
+/// the DP+ docstring's call style). minijinja's argument binding
+/// doesn't currently support mixing typed positional params with
+/// `Kwargs` in a way that lets a no-positional / all-kwargs call resolve
+/// cleanly, so positional invocation isn't supported here. Existing
+/// scheming-YAML formulas using positional syntax must switch to kwargs.
 fn spatial_extent_feature_collection(
-    args: minijinja::value::Rest<Value>,
+    kwargs: Kwargs,
     state: &minijinja::State,
 ) -> Result<String, Error> {
-    // Positional: (name, bbox, feature_type)
-    let mut name = "Inferred Spatial Extent".to_string();
-    let mut bbox: Option<[f64; 4]> = None;
-    let mut feature_type = "inferred".to_string();
+    let name = kwargs
+        .get::<Option<String>>("name")?
+        .unwrap_or_else(|| "Inferred Spatial Extent".to_string());
+    let mut feature_type = kwargs
+        .get::<Option<String>>("feature_type")?
+        .unwrap_or_else(|| "inferred".to_string());
+    let bbox_value = kwargs.get::<Option<Value>>("bbox")?;
+    kwargs.assert_all_used()?;
 
-    if let Some(v) = args.first()
-        && let Some(s) = v.as_str()
-    {
-        name = s.to_string();
-    }
-    if let Some(v) = args.get(1)
+    let mut bbox: Option<[f64; 4]> = None;
+    if let Some(v) = bbox_value
         && !v.is_none()
         && !v.is_undefined()
     {
-        let arr: Vec<f64> = deserialize_value(v).ok_or_else(|| {
-            value_err("spatial_extent_feature_collection: bbox must be a list of 4 floats")
-        })?;
-        if arr.len() != 4 {
+        let collected: Vec<Value> = v
+            .try_iter()
+            .map_err(|e| value_err(&format!("bbox= kwarg must be iterable: {e}")))?
+            .collect();
+        if collected.len() != 4 {
             return Err(value_err("Invalid bounding box"));
         }
-        bbox = Some([arr[0], arr[1], arr[2], arr[3]]);
-        feature_type = "calculated".to_string();
-    }
-    if let Some(v) = args.get(2)
-        && let Some(s) = v.as_str()
-    {
-        feature_type = s.to_string();
+        let mut arr = [0_f64; 4];
+        for (i, vv) in collected.iter().enumerate() {
+            arr[i] = value_to_f64(vv).ok_or_else(|| {
+                value_err("spatial_extent_feature_collection: bbox= must be a list of 4 numerics")
+            })?;
+        }
+        bbox = Some(arr);
+        // Default feature_type to "calculated" when the user supplied
+        // their own bbox (matching DP+ semantics); their explicit
+        // feature_type= still wins.
+        if !kwargs_contained_feature_type(&feature_type) {
+            feature_type = "calculated".to_string();
+        }
     }
 
     let coords = match bbox {
@@ -312,6 +364,14 @@ fn spatial_extent_feature_collection(
     Ok(format!(
         r#"{{"type": "FeatureCollection", "features": [{{"type": "Feature", "properties": {{"name": "{name}", "type": "{feature_type}"}}, "geometry": {{"type": "Polygon", "coordinates": [[[{min_lon},{min_lat}], [{min_lon},{max_lat}], [{max_lon},{max_lat}], [{max_lon},{min_lat}], [{min_lon},{min_lat}]]]}}}}]}}"#
     ))
+}
+
+/// Returns true if the current `feature_type` value differs from the
+/// default `"inferred"` — i.e., the user explicitly set
+/// `feature_type=`. Kept as a tiny helper so the bbox-default logic
+/// reads as intent rather than a string comparison.
+fn kwargs_contained_feature_type(current: &str) -> bool {
+    current != "inferred"
 }
 
 /// Get the top values for a field from frequency data (`dppf`).
@@ -995,5 +1055,71 @@ mod tests {
         assert_eq!(f(90), "R/P3M");
         assert_eq!(f(365), "R/P12M");
         assert_eq!(f(730), "R/P2Y");
+    }
+
+    /// Roborev finding 2439#6: DP+ helpers must accept Jinja2 keyword
+    /// arguments alongside positional ones.
+    #[test]
+    fn helpers_accept_keyword_args() {
+        let env = build_env();
+
+        // format_date with format= kwarg
+        let out = render(
+            &env,
+            r#"{{ '2024-01-15' | format_date(format='%B %d, %Y') }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert_eq!(out, "January 15, 2024");
+
+        // truncate_with_ellipsis with length= + ellipsis= kwargs
+        let out = render(
+            &env,
+            r#"{{ 'Hello, world!' | truncate_with_ellipsis(length=5, ellipsis='…') }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert_eq!(out, "Hello…");
+
+        // format_number with decimals= kwarg.
+        // 1234.6 (not 1234.5 — Rust's f64 → string uses banker's
+        // rounding, so .5 rounds to even and would yield 1,234).
+        let out = render(
+            &env,
+            r#"{{ 1234.6 | format_number(decimals=0) }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert_eq!(out, "1,235");
+
+        // format_coordinates with precision= kwarg (lat piped in as filter)
+        let out = render(
+            &env,
+            r#"{{ 40.7128 | format_coordinates(-74.006, precision=2) }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert_eq!(out, "40.71°N, 74.01°W");
+
+        // format_range is registered as a filter (matches DP+'s
+        // @jinja2_filter decorator), so the min value pipes in first.
+        let out = render(
+            &env,
+            r#"{{ 1 | format_range(10, separator=' through ') }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert_eq!(out, "1 through 10");
+
+        // spatial_extent_feature_collection with name=, bbox=, feature_type=
+        let out = render(
+            &env,
+            r#"{{ spatial_extent_feature_collection(name='Custom', bbox=[-180,-90,180,90], feature_type='manual') }}"#,
+            json!({}),
+        )
+        .unwrap();
+        assert!(out.contains(r#""name": "Custom""#), "got: {out}");
+        assert!(out.contains(r#""type": "manual""#), "got: {out}");
+        assert!(out.contains("-180,-90"), "got: {out}");
     }
 }

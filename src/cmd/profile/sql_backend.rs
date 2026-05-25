@@ -19,18 +19,42 @@ use polars::{prelude::*, sql::SQLContext};
 
 use crate::{CliError, CliResult};
 
-/// Owns the path to the input CSV so helpers can issue ad-hoc SQL
-/// queries against it. Inexpensive to clone (just wraps a `PathBuf`).
+/// Owns the path to the input CSV plus the parsing options that the
+/// rest of the `profile` pipeline applies (delimiter, header presence)
+/// so SQL-backed helpers see the same columns the stats / frequency
+/// passes did. Inexpensive to clone.
 #[derive(Debug, Clone)]
 pub struct SqlBackend {
-    csv_path: PathBuf,
+    csv_path:   PathBuf,
+    delimiter:  u8,
+    has_header: bool,
 }
 
 impl SqlBackend {
+    /// Defaults match Polars' `LazyCsvReader` defaults — comma-separated
+    /// with a header row. Use the `with_*` builders to override.
     pub fn new(csv_path: impl Into<PathBuf>) -> Self {
         Self {
-            csv_path: csv_path.into(),
+            csv_path:   csv_path.into(),
+            delimiter:  b',',
+            has_header: true,
         }
+    }
+
+    /// Override the field separator byte (e.g. `b'\t'` for TSV).
+    #[must_use]
+    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+        self.delimiter = delimiter;
+        self
+    }
+
+    /// Set whether the first row carries column names. When `false`,
+    /// Polars synthesizes `column_1`, `column_2`, … as field names —
+    /// SQL queries must reference those generated names.
+    #[must_use]
+    pub fn with_has_header(mut self, has_header: bool) -> Self {
+        self.has_header = has_header;
+        self
     }
 
     /// Run a SQL query against the input CSV. The CSV is registered as
@@ -39,7 +63,8 @@ impl SqlBackend {
         let path_str = self.csv_path.to_string_lossy();
         let plpath = PlRefPath::new(&*path_str);
         let lf = LazyCsvReader::new(plpath)
-            .with_has_header(true)
+            .with_separator(self.delimiter)
+            .with_has_header(self.has_header)
             .finish()
             .map_err(|e| CliError::Other(format!("SqlBackend: read CSV: {e}")))?;
         let mut ctx = SQLContext::new();
@@ -130,5 +155,22 @@ mod tests {
         let df = backend.query("SELECT COUNT(*) AS n FROM data").unwrap();
         let n_col = df.column("n").unwrap();
         assert_eq!(n_col.len(), 1);
+    }
+
+    #[test]
+    fn with_delimiter_handles_tsv() {
+        let f = write_csv("tsv", "id\tdate\n1\t2024-01-01\n2\t2024-01-02\n");
+        let backend = SqlBackend::new(f.path()).with_delimiter(b'\t');
+        let dates = backend.distinct_sorted_date_strings("date").unwrap();
+        assert_eq!(dates, vec!["2024-01-01", "2024-01-02"]);
+    }
+
+    #[test]
+    fn with_has_header_false_uses_synthetic_names() {
+        // No header row — Polars synthesizes column_1, column_2.
+        let f = write_csv("hdrless", "1,2024-01-01\n2,2024-01-02\n3,2024-01-03\n");
+        let backend = SqlBackend::new(f.path()).with_has_header(false);
+        let dates = backend.distinct_sorted_date_strings("column_2").unwrap();
+        assert_eq!(dates, vec!["2024-01-01", "2024-01-02", "2024-01-03"]);
     }
 }

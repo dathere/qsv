@@ -19,7 +19,7 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 
 /// Severity of a `DcatWarning` entry.
-#[derive(Debug, Clone, Copy, serde::Serialize)]
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// DCAT-US v3 mandatory field missing.
@@ -32,7 +32,7 @@ pub enum Severity {
 /// recommended field couldn't be populated. Serialized into the output
 /// JSON under `dcat_warnings` (elided when empty) for downstream
 /// tooling and human review.
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct DcatWarning {
     /// JSON-LD key of the missing/non-normative field, e.g.
     /// `"dcat:contactPoint"`.

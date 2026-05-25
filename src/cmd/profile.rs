@@ -181,8 +181,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // DP+'s `jinja2_helpers.py` (see `formula_helpers.rs`).
     let formula_results = match spec_opt.as_ref() {
         Some(spec) => {
-            let csv_path = Some(Path::new(ctx_args.input_path));
-            formula_engine::evaluate_spec(spec, &analysis.context, csv_path)?
+            // Build a SQL backend honoring the same CSV parsing options
+            // as the rest of the profile pipeline so SQL-backed helpers
+            // (temporal_resolution, guess_accrual_periodicity) see the
+            // same columns stats/frequency saw. --delimiter overrides
+            // Polars' default comma; --no-headers maps to has_header=false.
+            let sql_backend = sql_backend::SqlBackend::new(ctx_args.input_path)
+                .with_delimiter(ctx_args.delimiter.map(|d| d.0).unwrap_or(b','))
+                .with_has_header(!ctx_args.no_headers);
+            formula_engine::evaluate_spec(spec, &analysis.context, Some(sql_backend))?
         },
         None => Vec::new(),
     };
@@ -268,7 +275,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        let (dcat_block, mut dcat_warnings) = dcat::build(
+        let (dcat_block, dcat_build_warnings) = dcat::build(
             &package,
             &[resource.clone()],
             &dpp,
@@ -280,12 +287,48 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             Some(disc) => merge_discovered(dcat_block, disc),
             None => dcat_block,
         };
+        out_map.insert("dcat".to_string(), merged_dcat);
+        // Stash the build-time warnings for now; we'll insert them
+        // after dataset_info overrides + schema validation have had
+        // their say so the final dcat_warnings array reflects the
+        // emitted dcat block, not an intermediate snapshot.
+        out_map.insert(
+            "__pending_dcat_warnings".to_string(),
+            serde_json::to_value(&dcat_build_warnings).unwrap_or(json!([])),
+        );
+        // Surface the raw discovered DCAT alongside the merged block so
+        // downstream tooling can diff or audit what came from the
+        // publisher vs what qsv inferred.
+        if let Some(d) = discovered_dcat {
+            out_map.insert("dcat_discovered".to_string(), d);
+        }
+    }
 
-        // Phase 6: opt-in JSON Schema validation. Violations append to
-        // dcat_warnings unless --strict-dcat was set, in which case
-        // they abort the run.
-        if args.flag_validate_dcat {
-            let validation = dcat_validate::validate_dataset(&merged_dcat);
+    // --initial-context's `dataset_info` JSON-Pointer overrides are the
+    // final escape hatch — applied unconditionally over inference,
+    // discovery, the CKAN block, and formula output. Must run BEFORE
+    // schema validation so an override that supplies a missing
+    // mandatory field doesn't trip --strict-dcat. Per plan §4c.
+    if let Some(overrides) = analysis.dataset_info.as_object()
+        && !overrides.is_empty()
+    {
+        apply_pointer_overrides(&mut output, overrides);
+    }
+
+    // Phase 6 (post-override): JSON Schema validation runs on the
+    // emitted dcat block, after dataset_info overrides have applied.
+    // Pulls the stashed build-time warnings back out and merges schema
+    // violations into the final dcat_warnings array.
+    if !args.flag_no_dcat {
+        let out_map = output.as_object_mut().unwrap();
+        let mut dcat_warnings: Vec<dcat::DcatWarning> = out_map
+            .remove("__pending_dcat_warnings")
+            .and_then(|v| serde_json::from_value(v).ok())
+            .unwrap_or_default();
+        if args.flag_validate_dcat
+            && let Some(final_dcat) = out_map.get("dcat")
+        {
+            let validation = dcat_validate::validate_dataset(final_dcat);
             if !validation.is_empty() && args.flag_strict_dcat {
                 let summary = validation
                     .iter()
@@ -299,30 +342,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
             dcat_warnings.extend(validation);
         }
-
-        out_map.insert("dcat".to_string(), merged_dcat);
         if !dcat_warnings.is_empty() {
             out_map.insert(
                 "dcat_warnings".to_string(),
                 serde_json::to_value(&dcat_warnings).unwrap_or(json!([])),
             );
         }
-        // Surface the raw discovered DCAT alongside the merged block so
-        // downstream tooling can diff or audit what came from the
-        // publisher vs what qsv inferred.
-        if let Some(d) = discovered_dcat {
-            out_map.insert("dcat_discovered".to_string(), d);
-        }
-    }
-
-    // Phase 4a: --initial-context's `dataset_info` JSON-Pointer
-    // overrides are the final escape hatch — applied last so they win
-    // unconditionally over everything else (inference, discovery, the
-    // CKAN block, formula output). Per the plan §4c precedence table.
-    if let Some(overrides) = analysis.dataset_info.as_object()
-        && !overrides.is_empty()
-    {
-        apply_pointer_overrides(&mut output, overrides);
     }
 
     let _ = analysis.headers;
@@ -431,40 +456,67 @@ fn resolve_input(
         return Ok((raw.to_string(), None, None));
     }
 
-    use std::{io::Write, time::Duration};
+    use std::time::Duration;
 
     let client = reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(120))
         .build()
         .map_err(|e| CliError::Other(format!("qsv profile: HTTP client build: {e}")))?;
-    let response = client
+    let mut response = client
         .get(raw)
         .send()
         .and_then(reqwest::blocking::Response::error_for_status)
         .map_err(|e| CliError::Other(format!("qsv profile: download {raw}: {e}")))?;
-    let body = response
-        .bytes()
-        .map_err(|e| CliError::Other(format!("qsv profile: read body from {raw}: {e}")))?;
 
-    // Preserve the URL's file extension (when present) on the tempfile —
-    // some downstream qsv code paths sniff by extension.
-    let suffix = std::path::Path::new(raw)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(|e| format!(".{e}"))
-        .unwrap_or_else(|| ".csv".to_string());
+    // Preserve the URL's *path* extension on the tempfile so downstream
+    // qsv code paths that sniff by extension (e.g. compressed-CSV
+    // detection) keep working. Parse the URL first so query strings and
+    // fragments don't pollute the suffix.
+    let suffix = tempfile_suffix_for_url(raw);
 
     let mut temp = tempfile::Builder::new()
         .prefix("qsv-profile-")
         .suffix(&suffix)
         .tempfile()
         .map_err(|e| CliError::Other(format!("qsv profile: create tempfile: {e}")))?;
-    temp.write_all(&body)
-        .map_err(|e| CliError::Other(format!("qsv profile: write tempfile: {e}")))?;
-    temp.flush().ok();
+
+    // Stream the body straight into the tempfile rather than buffering
+    // the whole response in memory (large remote CSVs would OOM).
+    use std::io::Write;
+    std::io::copy(&mut response, temp.as_file_mut())
+        .map_err(|e| CliError::Other(format!("qsv profile: stream body from {raw}: {e}")))?;
+    temp.as_file_mut().flush().ok();
 
     let local = temp.path().to_string_lossy().to_string();
     Ok((local, Some(raw.to_string()), Some(temp)))
+}
+
+/// Compute the tempfile suffix for a downloaded URL. Strips query
+/// strings and fragments by parsing the URL, then preserves the
+/// well-known CSV-family compound extensions (`.csv.gz`, `.tsv.gz`,
+/// `.csv.zst`, `.tsv.zst`, `.csv.bz2`, `.tsv.bz2`) so qsv's downstream
+/// extension sniffing routes compressed CSVs through the right reader.
+/// Single-extension paths use the last path component's extension.
+/// Falls back to `.csv` when no path or no extension is present.
+fn tempfile_suffix_for_url(raw: &str) -> String {
+    let path = match url::Url::parse(raw) {
+        Ok(u) => u.path().to_string(),
+        Err(_) => raw.to_string(),
+    };
+    let lower = path.to_ascii_lowercase();
+    for compound in [
+        ".csv.gz", ".tsv.gz", ".ssv.gz", ".csv.zst", ".tsv.zst", ".ssv.zst", ".csv.bz2",
+        ".tsv.bz2", ".ssv.bz2", ".csv.xz", ".tsv.xz",
+    ] {
+        if lower.ends_with(compound) {
+            return compound.to_string();
+        }
+    }
+    std::path::Path::new(&path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| format!(".{e}"))
+        .unwrap_or_else(|| ".csv".to_string())
 }
 
 /// Apply `--initial-context.dataset_info` JSON-Pointer → Value
@@ -532,15 +584,42 @@ fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
     let mut cursor: &mut Value = root;
     for (i, tok) in tokens.iter().enumerate() {
         let is_last = i + 1 == tokens.len();
-        if !cursor.is_object() {
-            *cursor = json!({});
+        match cursor {
+            // Traverse into an existing array via numeric segment. We
+            // never create or extend arrays here — that would require
+            // distinguishing array-vs-object intent at every missing
+            // parent, which RFC 6901 leaves to the caller. Out-of-range
+            // indices and non-numeric tokens are silently skipped so a
+            // typo in a single override doesn't corrupt the rest of
+            // the output.
+            Value::Array(arr) => {
+                let Ok(idx) = tok.parse::<usize>() else {
+                    return;
+                };
+                if idx >= arr.len() {
+                    return;
+                }
+                if is_last {
+                    arr[idx] = value;
+                    return;
+                }
+                cursor = &mut arr[idx];
+            },
+            // Object (or any non-object scalar, which we replace with
+            // an empty object before descending). Same behaviour as
+            // before for object-typed parents.
+            _ => {
+                if !cursor.is_object() {
+                    *cursor = json!({});
+                }
+                let map = cursor.as_object_mut().unwrap();
+                if is_last {
+                    map.insert(tok.clone(), value);
+                    return;
+                }
+                cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
+            },
         }
-        let map = cursor.as_object_mut().unwrap();
-        if is_last {
-            map.insert(tok.clone(), value);
-            return;
-        }
-        cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
     }
 }
 
@@ -685,5 +764,97 @@ mod tests {
             merged.pointer("/dcat:distribution/0/dct:title").is_none(),
             "discovered distribution must not be merged"
         );
+    }
+
+    use super::tempfile_suffix_for_url;
+
+    #[test]
+    fn url_suffix_preserves_compound_csv_extensions() {
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.csv.gz"),
+            ".csv.gz"
+        );
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.tsv.gz"),
+            ".tsv.gz"
+        );
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.csv.zst"),
+            ".csv.zst"
+        );
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.csv.bz2"),
+            ".csv.bz2"
+        );
+    }
+
+    #[test]
+    fn url_suffix_strips_query_and_fragment() {
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.csv?token=secret"),
+            ".csv",
+            "query string must not bleed into the tempfile suffix"
+        );
+        assert_eq!(
+            tempfile_suffix_for_url("https://x.gov/data.csv.gz?v=2&user=a#frag"),
+            ".csv.gz"
+        );
+    }
+
+    #[test]
+    fn url_suffix_handles_plain_csv_and_unknown() {
+        assert_eq!(tempfile_suffix_for_url("https://x.gov/data.csv"), ".csv");
+        assert_eq!(tempfile_suffix_for_url("https://x.gov/data.tsv"), ".tsv");
+        // No extension → fall back to .csv
+        assert_eq!(tempfile_suffix_for_url("https://x.gov/export"), ".csv");
+        // Malformed URL → treat the whole string as a path
+        assert_eq!(tempfile_suffix_for_url("not-a-url.csv"), ".csv");
+    }
+
+    #[test]
+    fn pointer_overrides_descend_into_array_by_numeric_index() {
+        // Regression for the array-corruption finding: previously this
+        // would replace the distribution array with {"0": {...}}.
+        let mut root = json!({
+            "dcat": {
+                "dcat:distribution": [
+                    {"@type": "dcat:Distribution", "dct:license": "old"}
+                ]
+            }
+        });
+        let overrides = json!({"/dcat/dcat:distribution/0/dct:license": "new"})
+            .as_object()
+            .unwrap()
+            .clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        // Array shape must be preserved
+        assert!(
+            root.pointer("/dcat/dcat:distribution")
+                .is_some_and(|v| v.is_array()),
+            "distribution must remain an array, got: {root:#}"
+        );
+        assert_eq!(
+            root.pointer("/dcat/dcat:distribution/0/dct:license")
+                .and_then(|v| v.as_str()),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn pointer_overrides_skip_out_of_range_array_index() {
+        let mut root = json!({"arr": [1, 2, 3]});
+        let overrides = json!({"/arr/99": 42}).as_object().unwrap().clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        // Out-of-range index — silently skipped, array unchanged
+        assert_eq!(root, json!({"arr": [1, 2, 3]}));
+    }
+
+    #[test]
+    fn pointer_overrides_skip_non_numeric_array_token() {
+        let mut root = json!({"arr": [{"k": "v"}]});
+        let overrides = json!({"/arr/foo": "bar"}).as_object().unwrap().clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        // Non-numeric token while traversing an array → silently skipped
+        assert_eq!(root, json!({"arr": [{"k": "v"}]}));
     }
 }

@@ -60,6 +60,7 @@ use serde_json::{Value, json};
 use crate::{CliError, CliResult, util};
 
 mod context;
+mod py_engine;
 mod spec;
 
 #[derive(Debug, Deserialize)]
@@ -114,10 +115,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
 
     // --- 3. formula evaluation (PyO3 + jinja2_helpers) --------------------
-    // TODO(#1705/task-8): when the python engine lands, evaluate every
-    // `formula` and `suggestion_formula` declared in the spec against
-    // `analysis.context` and merge the results into the CKAN block below.
-    let formulas_evaluated = false;
+    // When a spec is provided, evaluate every `formula` / `suggestion_formula`
+    // template against the analysis context using DP+'s vendored
+    // jinja2_helpers.py via an embedded Python interpreter.
+    let formula_results = match spec_opt.as_ref() {
+        Some(spec) => py_engine::evaluate_spec(spec, &analysis.context)?,
+        None => Vec::new(),
+    };
+    let formulas_evaluated = !formula_results.is_empty();
 
     // --- 4. assemble output ----------------------------------------------
     let mut output = json!({
@@ -149,7 +154,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .get("package")
             .cloned()
             .unwrap_or(json!({}));
-        let resource = analysis
+        let mut resource = analysis
             .context
             .get("resource")
             .cloned()
@@ -165,6 +170,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     .or_insert_with(|| Value::String(dt.to_string()));
             }
         }
+        merge_formula_results(&mut package, &mut resource, &formula_results);
         out_map.insert(
             "ckan".to_string(),
             json!({
@@ -173,6 +179,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }),
         );
     }
+
+    // Always expose the raw per-formula results (including any error strings)
+    // so users can debug formula failures and inspect computed values out of
+    // band of the merged CKAN block.
+    out_map.insert(
+        "formula_results".to_string(),
+        serde_json::to_value(&formula_results).unwrap_or(json!([])),
+    );
 
     if !args.flag_no_dcat {
         out_map.insert("dcat".to_string(), build_dcat_stub(&input_path, &analysis));
@@ -195,6 +209,78 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     eprintln!("qsv profile: wrote `{out_path}`");
     Ok(())
+}
+
+fn merge_formula_results(
+    package: &mut Value,
+    resource: &mut Value,
+    results: &[py_engine::FormulaResult],
+) {
+    if results.is_empty() {
+        return;
+    }
+
+    // Pass 1: stamp `formula` results onto the package/resource fields.
+    {
+        let pkg = ensure_object(package);
+        let res = ensure_object(resource);
+        for r in results {
+            if r.kind != "formula" || r.error.is_some() {
+                continue;
+            }
+            let value = r.value.clone().unwrap_or(Value::Null);
+            match r.scope.as_str() {
+                "dataset" => {
+                    pkg.insert(r.field_name.clone(), value);
+                },
+                "resource" => {
+                    res.insert(r.field_name.clone(), value);
+                },
+                _ => {},
+            }
+        }
+    }
+
+    // Pass 2: collect `suggestion_formula` results under
+    // package.dpp_suggestions. Done after pass 1 finishes so we hold no
+    // overlapping mutable borrows of `package`.
+    let mut sugg_entries: Vec<(String, Value)> = Vec::new();
+    for r in results {
+        if r.kind != "suggestion_formula" {
+            continue;
+        }
+        let value = r.value.clone().unwrap_or(Value::Null);
+        sugg_entries.push((
+            r.field_name.clone(),
+            json!({
+                "value": value,
+                "scope": r.scope,
+                "error": r.error,
+            }),
+        ));
+    }
+    if !sugg_entries.is_empty() {
+        let pkg = ensure_object(package);
+        let suggestions_v = pkg
+            .entry("dpp_suggestions".to_string())
+            .or_insert_with(|| json!({}));
+        if !suggestions_v.is_object() {
+            *suggestions_v = json!({});
+        }
+        let suggestions = suggestions_v.as_object_mut().unwrap();
+        for (k, v) in sugg_entries {
+            suggestions.insert(k, v);
+        }
+    }
+}
+
+/// Coerce a JSON value into a mutable object, replacing it with `{}` if it
+/// wasn't an object to begin with.
+fn ensure_object(v: &mut Value) -> &mut serde_json::Map<String, Value> {
+    if !v.is_object() {
+        *v = json!({});
+    }
+    v.as_object_mut().unwrap()
 }
 
 /// Placeholder DCAT-US v3 projection. The full mapping lands in task #9 once

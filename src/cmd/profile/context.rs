@@ -31,21 +31,23 @@ use crate::{
 /// CLI-facing knobs that the context builder cares about. Kept narrow so we
 /// don't couple `context.rs` to the full top-level `Args` struct.
 pub struct ContextArgs<'a> {
-    pub input_path:    &'a str,
-    pub no_headers:    bool,
-    pub delimiter:     Option<Delimiter>,
-    pub jobs:          Option<usize>,
-    pub force:         bool,
-    pub memcheck:      bool,
-    pub package_meta:  Option<&'a str>,
-    pub resource_meta: Option<&'a str>,
+    pub input_path:      &'a str,
+    pub no_headers:      bool,
+    pub delimiter:       Option<Delimiter>,
+    pub jobs:            Option<usize>,
+    pub force:           bool,
+    pub memcheck:        bool,
+    pub initial_context: Option<&'a str>,
 }
 
 /// Result of the analysis pass — the JSON context plus the column headers we
-/// extracted along the way (used by the output module).
+/// extracted along the way (used by the output module), plus the
+/// initial-context's `dataset_info` JSON-Pointer override map (applied to
+/// the final output by `profile.rs::run` after `dcat::build` returns).
 pub struct AnalysisContext {
-    pub context: Value,
-    pub headers: Vec<String>,
+    pub context:      Value,
+    pub headers:      Vec<String>,
+    pub dataset_info: Value,
 }
 
 /// Build the full analysis context for `input_path`.
@@ -164,8 +166,13 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     });
 
     // --- 6. package / resource seed dicts ---------------------------------
-    let package = load_seed_json(args.package_meta)?;
-    let mut resource = load_seed_json(args.resource_meta)?;
+    // Loaded from --initial-context (unified single-file replacement for
+    // the old --package-meta + --resource-meta pair). dataset_info
+    // (the third returned slot) holds JSON-Pointer overrides applied to
+    // the final output by profile.rs::run after dcat::build returns; we
+    // round-trip it through the analysis context so the orchestrator
+    // doesn't need a separate loader call.
+    let (package, mut resource, dataset_info) = load_initial_context(args.initial_context)?;
     // Default resource.name from the input file stem if not explicitly seeded.
     if !resource.is_object() {
         resource = json!({});
@@ -190,7 +197,11 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
         "dpp":      dpp,
     });
 
-    Ok(AnalysisContext { context, headers })
+    Ok(AnalysisContext {
+        context,
+        headers,
+        dataset_info,
+    })
 }
 
 /// Build the `dpps` dict — `{col_name: {stats: {<StatsData fields>}}}`.
@@ -315,17 +326,142 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
     }
 }
 
-/// Load a seed JSON file (--package-meta / --resource-meta). Returns
-/// `json!({})` when the flag is unset.
-fn load_seed_json(path: Option<&str>) -> CliResult<Value> {
+/// Load and split a `--initial-context` JSON file into its three
+/// top-level components. Returns `(package, resource, dataset_info)`
+/// where any missing key defaults to `json!({})`.
+///
+/// Phase 4b: leaf values shaped exactly as `{"value": …, "force": bool}`
+/// are normalized to their inner `value` so the rest of the pipeline
+/// sees a clean CKAN-shaped object. The `force` flag is currently
+/// accepted (forward-compat for full per-property force semantics) but
+/// has no behavioural effect yet — under the current merge rules
+/// (Phase 4b: discovered DCAT only fills *gaps* in the inferred
+/// projection), seeded values always win over discovered, so plain
+/// values and `force: true` wrappers produce identical output. The
+/// flag is preserved across the API so a future commit can wire full
+/// override-discovered semantics without an init-context breaking change.
+pub(super) fn load_initial_context(path: Option<&str>) -> CliResult<(Value, Value, Value)> {
     let Some(path) = path else {
-        return Ok(json!({}));
+        return Ok((json!({}), json!({}), json!({})));
     };
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Other(format!("could not read seed meta file `{path}`: {e}")))?;
-    serde_json::from_str::<Value>(&raw).map_err(|e| {
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        CliError::Other(format!("could not read initial-context file `{path}`: {e}"))
+    })?;
+    let doc: Value = serde_json::from_str(&raw).map_err(|e| {
         CliError::Other(format!(
-            "could not parse seed meta file `{path}` as JSON: {e}"
+            "could not parse initial-context file `{path}` as JSON: {e}"
         ))
-    })
+    })?;
+    if !doc.is_object() {
+        return Err(CliError::Other(format!(
+            "initial-context file `{path}` must be a JSON object at the top level"
+        )));
+    }
+    let package = normalize_value_force(doc.get("package").cloned().unwrap_or(json!({})));
+    let resource = normalize_value_force(doc.get("resource").cloned().unwrap_or(json!({})));
+    // Roborev 2440#2: dataset_info must also pass through wrapper
+    // normalization so that an override like
+    //   "/dcat/dcat:contactPoint": {"value": {...}, "force": true}
+    // unwraps to the inner value before being written to the output.
+    // Otherwise the wrapper object itself becomes the DCAT value and
+    // the override fails to rescue --strict-dcat validation.
+    let dataset_info = normalize_value_force(doc.get("dataset_info").cloned().unwrap_or(json!({})));
+    Ok((package, resource, dataset_info))
+}
+
+/// Recursively walk a Value; whenever a Map has exactly the two keys
+/// `value` and `force` (and `force` is a bool), replace the wrapper
+/// with the inner `value`. Other Maps are descended into; non-Map
+/// Values pass through unchanged. Structural fields like
+/// `contact_point: {fn, hasEmail}` are NOT wrapper-shaped (different
+/// keys), so they survive intact.
+fn normalize_value_force(v: Value) -> Value {
+    match v {
+        Value::Object(map) => {
+            // Detect wrapper: exactly {"value": ..., "force": <bool>}
+            if map.len() == 2
+                && map.contains_key("value")
+                && map.get("force").is_some_and(Value::is_boolean)
+            {
+                // Recurse into the inner value in case it's also a Map
+                // with nested wrapper-shaped leaves.
+                return normalize_value_force(map.get("value").cloned().unwrap_or(Value::Null));
+            }
+            let normalized: serde_json::Map<String, Value> = map
+                .into_iter()
+                .map(|(k, v)| (k, normalize_value_force(v)))
+                .collect();
+            Value::Object(normalized)
+        },
+        Value::Array(arr) => Value::Array(arr.into_iter().map(normalize_value_force).collect()),
+        other => other,
+    }
+}
+
+#[cfg(test)]
+mod load_initial_context_tests {
+    use serde_json::json;
+
+    use super::normalize_value_force;
+
+    #[test]
+    fn plain_values_pass_through() {
+        let v = json!({"title": "X", "tags": ["a", "b"]});
+        assert_eq!(normalize_value_force(v.clone()), v);
+    }
+
+    #[test]
+    fn wrapper_with_force_true_unwraps() {
+        let v = json!({"title": {"value": "X", "force": true}});
+        assert_eq!(normalize_value_force(v), json!({"title": "X"}));
+    }
+
+    #[test]
+    fn wrapper_with_force_false_unwraps_too() {
+        // force: false is a valid wrapper shape — just means "no override"
+        // (current semantics treat both as fill-gap, but the shape must
+        // round-trip cleanly for downstream tooling).
+        let v = json!({"title": {"value": "X", "force": false}});
+        assert_eq!(normalize_value_force(v), json!({"title": "X"}));
+    }
+
+    #[test]
+    fn structural_object_with_extra_keys_is_not_a_wrapper() {
+        // {fn, hasEmail} has 2 keys but neither is `value`/`force`, so
+        // it's a legitimate structured field, not a wrapper.
+        let v = json!({"contact_point": {"fn": "Jane", "hasEmail": "j@x"}});
+        assert_eq!(normalize_value_force(v.clone()), v);
+    }
+
+    #[test]
+    fn object_with_value_and_force_plus_extras_is_not_a_wrapper() {
+        // Only the EXACT two-key shape counts. Adding extras keeps it
+        // as a structured field.
+        let v = json!({
+            "field": {"value": "X", "force": true, "extra": "kept"}
+        });
+        assert_eq!(normalize_value_force(v.clone()), v);
+    }
+
+    #[test]
+    fn wrapper_with_object_value_unwraps_and_recurses() {
+        let v = json!({
+            "publisher": {
+                "value": {"name": "Agency", "url": {"value": "https://x", "force": true}},
+                "force": true
+            }
+        });
+        // Outer wrapper unwraps to the inner object; the nested wrapper
+        // inside `url` also normalizes.
+        assert_eq!(
+            normalize_value_force(v),
+            json!({"publisher": {"name": "Agency", "url": "https://x"}})
+        );
+    }
+
+    #[test]
+    fn wrapper_in_array_element_unwraps() {
+        let v = json!({"tags": ["a", {"value": "b", "force": true}, "c"]});
+        assert_eq!(normalize_value_force(v), json!({"tags": ["a", "b", "c"]}));
+    }
 }

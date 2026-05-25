@@ -406,7 +406,6 @@ distrib_features = [
     "mcp",
     "polars",
     "profile",
-    "python",
     "synthesize",
     "to",
 ]
@@ -454,14 +453,21 @@ polars = ["dep:polars", "bytemuck"]
 prompt = ["rfd"]
 python = ["pyo3"]
 # profile: CKAN scheming-driven metadata extraction (DCAT-US v3 / Croissant).
-# Requires python (embedded via pyo3) for reusing DP+'s jinja2_helpers.py and
-# yaml_serde for parsing the scheming spec YAML. See `qsv profile --help`.
-profile = ["feature_capable", "python", "yaml_serde"]
+# Native Rust implementation — minijinja replaces jinja2 for formula
+# evaluation; polars (SQL context) backs the SQL-requiring helpers
+# (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
+# scheming spec YAML. See `qsv profile --help`.
+profile = ["feature_capable", "polars", "yaml_serde"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []
 datapusher_plus = ["geocode", "self_update"]
+# NOTE: `profile` is intentionally excluded from datapusher_plus for now.
+# The Phase 0e plan to add it triggers `feature_capable` overlap with
+# code paths gated `#[cfg(feature = "datapusher_plus")]` (e.g. sortcheck.rs).
+# Re-enabling requires an audit of feature-cfg interactions across the
+# codebase; deferred to a follow-up PR.
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator"]
 feature_capable = []

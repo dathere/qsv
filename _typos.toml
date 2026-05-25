@@ -21,7 +21,11 @@ Generice      = "Generice"
 Portugese     = "Portugese"
 ACI           = "ACI"
 consts        = "consts"
-Caf          = "Caf"
+Caf           = "Caf"
+unparseable   = "unparseable"
+mis           = "mis"
+nd            = "nd"
+Pn            = "Pn"
 
 [files]
 extend-exclude = [

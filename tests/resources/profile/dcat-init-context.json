@@ -1,0 +1,43 @@
+{
+  "package": {
+    "title": "Example Dataset (seed)",
+    "notes": "A demo dataset showing every --initial-context slot the qsv profile command will read in Phase 4+.",
+    "name": "example-dataset",
+    "license_id": "cc-by",
+    "publisher": "Example Agency",
+    "metadata_modified": "2024-12-15",
+    "metadata_created": "2024-01-01",
+    "tags": ["climate", "transportation"],
+    "groups": [{"name": "transportation"}],
+    "language": "en-US",
+
+    "contact_point": {"fn": "Jane Doe", "hasEmail": "jane.doe@example.gov"},
+    "bureauCode": ["015:11"],
+    "programCode": ["015:000"],
+    "accrualPeriodicity": "annually",
+    "accessRights": "public",
+    "rights": "U.S. Government Work",
+    "landing_page": "https://example.gov/datasets/example-dataset",
+    "describedBy": "https://example.gov/datasets/example-dataset/data-dictionary.json",
+    "purpose": "Track example metric over time.",
+    "scopeNote": "Records cover calendar years 2020-2024 only.",
+    "liabilityStatement": "Provided as-is; verify before operational use.",
+    "inSeries": "https://example.gov/datasets/example-series"
+  },
+  "resource": {
+    "name": "example",
+    "description": "Single-CSV distribution of the example dataset.",
+    "format": "CSV",
+    "url": "https://example.gov/datasets/example-dataset/data.csv",
+    "license_id": "cc-by",
+    "last_modified": "2024-12-15T08:30:00",
+    "access_restriction": {"type": "none"},
+    "use_restriction": {"type": "none"},
+    "cui_restriction": {"type": "none"},
+    "accessURL": "https://example.gov/datasets/example-dataset",
+    "rights": "U.S. Government Work"
+  },
+  "dataset_info": {
+    "/dcat/dct:title": "Example Dataset (init-context override)"
+  }
+}

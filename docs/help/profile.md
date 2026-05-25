@@ -21,9 +21,10 @@ context (`package`, `resource`, `dpps`, `dppf`, `dpp`), then evaluate every
 resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort
 DCAT-US v3 projection, ready for qsv pro and DP+ to prepopulate CKAN packages.
 
-Helpers and filters are reused from DP+'s `jinja2_helpers.py` via an embedded
-Python interpreter (qsv's `python` feature). A working `python3` with the
-`jinja2` package installed is required at runtime.
+Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`,
+built on `minijinja`. No Python interpreter is required at runtime; the
+SQL-requiring helpers (`temporal_resolution`, `guess_accrual_periodicity`)
+query the input CSV directly via Polars SQL.
 
 For an example spec file, see:  
 <https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml>
@@ -44,13 +45,17 @@ qsv profile --help
 
 ## Profile Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑spec`&nbsp; | string | CKAN scheming YAML spec file. If omitted, only the inferred `dpp` block (lat/lon/date columns, dataset stats) is emitted; no formulas are evaluated. |  |
-| &nbsp;`‑‑package‑meta`&nbsp; | string | Optional JSON file with seed package fields (title, owner_org, etc.) merged into the formula context before evaluation. |  |
-| &nbsp;`‑‑resource‑meta`&nbsp; | string | Same, for the resource dict. |  |
+| &nbsp;`‑‑initial‑context`&nbsp; | string | JSON file providing seed values for the package / resource dicts plus optional JSON-Pointer overrides for the final DCAT block. Replaces the older --package-meta / --resource-meta flags. Shape: { "package":  {"title": "...", ...}, "resource": {"format": "CSV", ...}, "dataset_info": { "/dcat/dct:title": "Force override" } } Each leaf value may also be wrapped as {"value": ..., "force": true} to mark it as overriding any value discovered from the URL's existing DCAT markup. Phase 4a ships the flag + dataset_info overrides; per-property force semantics land in 4b. |  |
 | &nbsp;`‑‑no‑dcat`&nbsp; | flag | Skip the DCAT-US v3 projection block. |  |
 | &nbsp;`‑‑no‑ckan`&nbsp; | flag | Skip the CKAN-shape block. |  |
+| &nbsp;`‑‑dcat‑legacy‑license`&nbsp; | flag | Transitional: re-emit dct:license on the Dataset alongside the v3-required Distribution-level copy. Default: off (strict v3, license on Distribution only). |  |
+| &nbsp;`‑‑no‑dcat‑discovery`&nbsp; | flag | Skip DCAT-markup discovery on URL inputs. Discovery sniffs HTTP Link: rel=describedBy (and, in future, sibling .metadata.json / JSON-LD <script> blocks) to use the publisher's stated metadata as a base layer. |  |
+| &nbsp;`‑‑dcat‑discovery‑timeout`&nbsp; | integer | Per-request timeout for DCAT-markup discovery probes. Default: 5. |  |
+| &nbsp;`‑‑validate‑dcat`&nbsp; | flag | Validate the emitted dcat block against the embedded minimal DCAT-US v3 schema (covers the mandatory fields). Violations append to dcat_warnings by default. |  |
+| &nbsp;`‑‑strict‑dcat`&nbsp; | flag | With --validate-dcat, fail the command on any schema violation instead of warning. |  |
 | &nbsp;`‑‑force`&nbsp; | flag | Force recomputing cardinality and unique values even if a stats cache file exists. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel for the underlying stats/frequency passes. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Output JSON path. Default: <input>.metadata.json. |  |

@@ -1534,11 +1534,16 @@ fn validate_invalid_json_schema_file() {
     wrk.assert_err(&mut cmd);
 
     let got = wrk.output_stderr(&mut cmd);
-    assert_eq!(
-        got,
+    // reqwest >=0.13.4 appends " for url (<url>)" to body-decoding errors; match the
+    // stable prefix only so we don't re-couple to reqwest's exact wording.
+    let expected_prefix =
         "JSON Schema Meta-Reference Error: Resource \
          'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
-         retrieving it failed: error decoding response body\n"
+         retrieving it failed: error decoding response body";
+    assert!(
+        got.starts_with(expected_prefix),
+        "stderr did not start with expected prefix.\n  expected prefix: {expected_prefix:?}\n  \
+         got: {got:?}"
     );
 
     // Create schema with format validation
@@ -1747,11 +1752,17 @@ fn validate_schema_subcommand_invalid_draft() {
     wrk.assert_err(&mut cmd);
 
     let got: String = wrk.output_stderr(&mut cmd);
-    let expected =
+    // reqwest >=0.13.4 appends " for url (<url>)" to body-decoding errors; match the
+    // stable prefix only so we don't re-couple to reqwest's exact wording.
+    let expected_prefix =
         "JSON Schema Meta-Reference Error: Resource \
          'https://json-schema.org/draft/2020-25/schema' is not present in a registry and \
-         retrieving it failed: error decoding response body\n";
-    assert_eq!(got, expected);
+         retrieving it failed: error decoding response body";
+    assert!(
+        got.starts_with(expected_prefix),
+        "stderr did not start with expected prefix.\n  expected prefix: {expected_prefix:?}\n  \
+         got: {got:?}"
+    );
 }
 
 #[test]

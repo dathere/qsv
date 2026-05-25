@@ -54,6 +54,8 @@ qsv profile --help
 | &nbsp;`‑‑dcat‑legacy‑license`&nbsp; | flag | Transitional: re-emit dct:license on the Dataset alongside the v3-required Distribution-level copy. Default: off (strict v3, license on Distribution only). |  |
 | &nbsp;`‑‑no‑dcat‑discovery`&nbsp; | flag | Skip DCAT-markup discovery on URL inputs. Discovery sniffs HTTP Link: rel=describedBy (and, in future, sibling .metadata.json / JSON-LD <script> blocks) to use the publisher's stated metadata as a base layer. |  |
 | &nbsp;`‑‑dcat‑discovery‑timeout`&nbsp; | integer | Per-request timeout for DCAT-markup discovery probes. Default: 5. |  |
+| &nbsp;`‑‑validate‑dcat`&nbsp; | flag | Validate the emitted dcat block against the embedded minimal DCAT-US v3 schema (covers the mandatory fields). Violations append to dcat_warnings by default. |  |
+| &nbsp;`‑‑strict‑dcat`&nbsp; | flag | With --validate-dcat, fail the command on any schema violation instead of warning. |  |
 | &nbsp;`‑‑force`&nbsp; | flag | Force recomputing cardinality and unique values even if a stats cache file exists. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel for the underlying stats/frequency passes. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Output JSON path. Default: <input>.metadata.json. |  |

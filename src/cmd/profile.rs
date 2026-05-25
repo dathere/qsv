@@ -58,6 +58,12 @@ profile options:
                               publisher's stated metadata as a base layer.
     --dcat-discovery-timeout <secs>  Per-request timeout for DCAT-markup
                               discovery probes. Default: 5.
+    --validate-dcat           Validate the emitted dcat block against the
+                              embedded minimal DCAT-US v3 schema (covers
+                              the mandatory fields). Violations append to
+                              dcat_warnings by default.
+    --strict-dcat             With --validate-dcat, fail the command on
+                              any schema violation instead of warning.
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -88,6 +94,7 @@ use crate::{CliError, CliResult, util};
 mod context;
 mod dcat;
 mod dcat_discover;
+mod dcat_validate;
 mod formula_engine;
 mod formula_helpers;
 mod spec;
@@ -102,6 +109,8 @@ struct Args {
     flag_dcat_legacy_license:    bool,
     flag_no_dcat_discovery:      bool,
     flag_dcat_discovery_timeout: Option<u64>,
+    flag_validate_dcat:          bool,
+    flag_strict_dcat:            bool,
     flag_no_ckan:                bool,
     flag_force:                  bool,
     flag_jobs:                   Option<usize>,
@@ -259,7 +268,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        let (dcat_block, dcat_warnings) = dcat::build(
+        let (dcat_block, mut dcat_warnings) = dcat::build(
             &package,
             &[resource.clone()],
             &dpp,
@@ -271,6 +280,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             Some(disc) => merge_discovered(dcat_block, disc),
             None => dcat_block,
         };
+
+        // Phase 6: opt-in JSON Schema validation. Violations append to
+        // dcat_warnings unless --strict-dcat was set, in which case
+        // they abort the run.
+        if args.flag_validate_dcat {
+            let validation = dcat_validate::validate_dataset(&merged_dcat);
+            if !validation.is_empty() && args.flag_strict_dcat {
+                let summary = validation
+                    .iter()
+                    .map(|w| format!("  - {}: {}", w.field, w.message))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(CliError::Other(format!(
+                    "qsv profile --strict-dcat: {} schema violation(s):\n{summary}",
+                    validation.len()
+                )));
+            }
+            dcat_warnings.extend(validation);
+        }
+
         out_map.insert("dcat".to_string(), merged_dcat);
         if !dcat_warnings.is_empty() {
             out_map.insert(

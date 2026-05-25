@@ -425,3 +425,112 @@ fn profile_warns_when_contactpoint_missing() {
         Some("required")
     );
 }
+
+#[test]
+fn validate_dcat_passes_on_full_initial_context() {
+    let wrk = Workdir::new("profile_validate_pass");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":         "Valid Dataset",
+                "notes":         "Passes the minimal v3 schema.",
+                "name":          "valid-dataset",
+                "license_id":    "cc-by",
+                "publisher":     "Demo Agency",
+                "contact_point": {"fn": "Jane Doe", "hasEmail": "jane@example.gov"},
+                "bureauCode":    ["015:11"],
+                "programCode":   ["015:000"]
+            }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "--validate-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    // No schema-violation warnings expected — all mandatory keys populated.
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let schema_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| {
+            let msg = w.get("message").and_then(|v| v.as_str()).unwrap_or("");
+            // schema violations come from jsonschema; in-projection
+            // warnings have human-readable messages like "DCAT-US v3
+            // mandatory field missing".
+            !msg.starts_with("DCAT-US v3")
+        })
+        .collect();
+    assert!(
+        schema_warnings.is_empty(),
+        "expected no schema warnings, got: {schema_warnings:#?}",
+    );
+}
+
+#[test]
+fn validate_dcat_flags_missing_contactpoint() {
+    let wrk = Workdir::new("profile_validate_missing_cp");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--validate-dcat", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .expect("dcat_warnings array");
+    // The contact-point warning from the in-projection check fires
+    // either way; schema validation also fires its own. At minimum one
+    // entry should mention contactPoint.
+    assert!(
+        warnings.iter().any(|w| w
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .contains("contactPoint")),
+        "expected a contactPoint warning, got: {warnings:#?}",
+    );
+}
+
+#[test]
+fn strict_dcat_fails_command_on_violation() {
+    let wrk = Workdir::new("profile_strict");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--validate-dcat",
+        "--strict-dcat",
+        "-o",
+        "out.json",
+    ]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        !output.status.success(),
+        "expected non-zero exit under --strict-dcat with missing fields, got: {:?}",
+        output.status,
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("strict-dcat") && stderr.contains("violation"),
+        "expected strict-dcat violation message in stderr, got: {stderr}"
+    );
+    // out.json must not exist when the command failed.
+    assert!(
+        !wrk.path("out.json").exists(),
+        "out.json should not be written when --strict-dcat fails"
+    );
+}

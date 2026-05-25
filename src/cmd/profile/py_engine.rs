@@ -43,6 +43,15 @@ struct FormulaSpec<'a> {
 }
 
 /// One result entry returned from `profile_engine.evaluate`.
+///
+/// The `_traceback` field is populated by the Python side only when a
+/// formula render raises an exception; the underscore prefix mirrors the
+/// Python convention for "internal/debug" fields and is preserved across
+/// the serde round-trip via an explicit rename. Without the rename, serde
+/// would silently drop the field (the leading underscore is a valid Rust
+/// identifier but Python's JSON key is the literal `_traceback`, so the
+/// rename keeps the wire shape stable regardless of how serde normalizes
+/// field names in future versions).
 #[derive(Debug, Deserialize, Serialize)]
 pub struct FormulaResult {
     pub field_name: String,
@@ -50,6 +59,12 @@ pub struct FormulaResult {
     pub scope:      String,
     pub value:      Option<Value>,
     pub error:      Option<String>,
+    #[serde(
+        rename = "_traceback",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub traceback:  Option<String>,
 }
 
 /// Evaluate every `formula` / `suggestion_formula` in `spec` against

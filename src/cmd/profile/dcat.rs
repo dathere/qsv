@@ -293,13 +293,19 @@ fn json_to_f64(v: &Value) -> Option<f64> {
 /// Cheap check that `s` looks like an absolute IRI suitable for a
 /// `dcat:downloadURL` slot. Accepts the common web + file URL schemes
 /// (http, https, ftp, ftps, file). Local filesystem paths return false.
+///
+/// URI schemes are case-insensitive per RFC 3986 §3.1, so `HTTPS://`,
+/// `Http://`, etc. all count -- otherwise valid CKAN resource URLs that
+/// happen to come in non-lowercase form would be silently dropped from
+/// the DCAT distribution. Compares with `eq_ignore_ascii_case` rather
+/// than allocating a lowercased copy.
 fn is_absolute_iri(s: &str) -> bool {
+    const SCHEMES: &[&str] = &["http", "https", "ftp", "ftps", "file"];
     let s = s.trim();
-    s.starts_with("http://")
-        || s.starts_with("https://")
-        || s.starts_with("ftp://")
-        || s.starts_with("ftps://")
-        || s.starts_with("file://")
+    let Some((scheme, rest)) = s.split_once("://") else {
+        return false;
+    };
+    !rest.is_empty() && SCHEMES.iter().any(|cand| scheme.eq_ignore_ascii_case(cand))
 }
 
 /// Map a CKAN-style license string to a canonical IRI when we recognize it.
@@ -329,5 +335,58 @@ fn license_iri(license: &str) -> Option<String> {
             Some(other.to_string())
         },
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// URL schemes are case-insensitive per RFC 3986 §3.1; the IRI check
+    /// must accept `HTTPS://`, `Http://`, etc. so CKAN resource URLs that
+    /// happen to come in non-lowercase form aren't silently dropped from
+    /// the DCAT distribution.
+    #[test]
+    fn is_absolute_iri_is_case_insensitive() {
+        for ok in [
+            "http://example.com/data.csv",
+            "https://example.com/data.csv",
+            "HTTPS://example.com/data.csv",
+            "Http://example.com/data.csv",
+            "FTP://example.com/data.csv",
+            "ftps://example.com/data.csv",
+            "FILE:///tmp/x.csv",
+            "   https://example.com/data.csv   ", // tolerated leading/trailing ws
+        ] {
+            assert!(is_absolute_iri(ok), "should accept: {ok:?}");
+        }
+        for bad in [
+            "data.csv",
+            "/tmp/data.csv",
+            "./data.csv",
+            "C:\\data.csv",
+            "javascript://oops", // unsupported scheme
+            "https://",          // no authority/path
+            "",
+        ] {
+            assert!(!is_absolute_iri(bad), "should reject: {bad:?}");
+        }
+    }
+
+    /// Known CKAN license slugs map to canonical IRIs; absolute http(s)
+    /// IRIs are passed through; everything else returns None so the caller
+    /// emits a literal string instead of a fabricated `@id`.
+    #[test]
+    fn license_iri_maps_known_slugs() {
+        assert_eq!(
+            license_iri("cc-by").as_deref(),
+            Some("http://creativecommons.org/licenses/by/4.0/")
+        );
+        assert_eq!(
+            license_iri("https://example.com/license").as_deref(),
+            Some("https://example.com/license")
+        );
+        assert!(license_iri("uk-ogl").is_none());
+        assert!(license_iri("").is_none());
     }
 }

@@ -52,9 +52,15 @@ Common options:
                               CSV into memory using CONSERVATIVE heuristics.
 "#;
 
-use serde::Deserialize;
+use std::path::Path;
 
-use crate::{CliResult, util};
+use serde::Deserialize;
+use serde_json::{Value, json};
+
+use crate::{CliError, CliResult, util};
+
+mod context;
+mod spec;
 
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -64,39 +70,158 @@ struct Args {
     flag_resource_meta: Option<String>,
     flag_no_dcat:       bool,
     flag_no_ckan:       bool,
-    #[allow(dead_code)]
     flag_force:         bool,
-    #[allow(dead_code)]
     flag_jobs:          Option<usize>,
     flag_output:        Option<String>,
-    #[allow(dead_code)]
     flag_no_headers:    bool,
-    #[allow(dead_code)]
     flag_delimiter:     Option<crate::config::Delimiter>,
-    #[allow(dead_code)]
     flag_memcheck:      bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // Scaffolding only — the full implementation is gated behind tasks #5–#9
-    // (spec parsing, context builder, PyO3 engine, CKAN+DCAT projection).
-    // This stub validates that the command is wired into the CLI dispatch and
-    // its flags parse, without yet doing any analysis or formula evaluation.
-    let _ = (
-        &args.arg_input,
-        &args.flag_spec,
-        &args.flag_package_meta,
-        &args.flag_resource_meta,
-        args.flag_no_dcat,
-        args.flag_no_ckan,
-        &args.flag_output,
+    // For v1 we require a real input file path — running stats + frequency in
+    // subprocess form against stdin would require materializing it to a
+    // tempfile, and that's a follow-up.
+    let input_path = match args.arg_input.as_deref() {
+        Some("-") | None => {
+            return Err(CliError::Other(
+                "qsv profile requires an input file path; reading from stdin is not yet supported."
+                    .into(),
+            ));
+        },
+        Some(p) => p.to_string(),
+    };
+
+    // --- 1. parse spec (optional) -----------------------------------------
+    let spec_opt = match args.flag_spec.as_deref() {
+        Some(p) => Some(spec::load_from_path(p)?),
+        None => None,
+    };
+
+    // --- 2. run stats + frequency, build analysis context -----------------
+    let ctx_args = context::ContextArgs {
+        input_path:    &input_path,
+        no_headers:    args.flag_no_headers,
+        delimiter:     args.flag_delimiter,
+        jobs:          args.flag_jobs,
+        force:         args.flag_force,
+        memcheck:      args.flag_memcheck,
+        package_meta:  args.flag_package_meta.as_deref(),
+        resource_meta: args.flag_resource_meta.as_deref(),
+    };
+    let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
+
+    // --- 3. formula evaluation (PyO3 + jinja2_helpers) --------------------
+    // TODO(#1705/task-8): when the python engine lands, evaluate every
+    // `formula` and `suggestion_formula` declared in the spec against
+    // `analysis.context` and merge the results into the CKAN block below.
+    let formulas_evaluated = false;
+
+    // --- 4. assemble output ----------------------------------------------
+    let mut output = json!({
+        "qsv_version":      env!("CARGO_PKG_VERSION"),
+        "generated_at":     chrono::Utc::now().to_rfc3339(),
+        "spec_file":        args.flag_spec.clone(),
+        "input":            input_path,
+        "formulas_evaluated": formulas_evaluated,
+    });
+    let out_map = output.as_object_mut().unwrap();
+
+    // dpp block (inferred metadata, stats, frequency) is always emitted.
+    out_map.insert(
+        "dpp".to_string(),
+        analysis.context.get("dpp").cloned().unwrap_or(json!({})),
+    );
+    out_map.insert(
+        "stats".to_string(),
+        analysis.context.get("dpps").cloned().unwrap_or(json!({})),
+    );
+    out_map.insert(
+        "frequency".to_string(),
+        analysis.context.get("dppf").cloned().unwrap_or(json!({})),
     );
 
-    Err(crate::CliError::Other(
-        "`qsv profile` is under active development (see issue #1705) and is not yet functional. \
-         The command surface is in place; the analysis + formula-evaluation pipeline lands next."
-            .into(),
-    ))
+    if !args.flag_no_ckan {
+        let mut package = analysis
+            .context
+            .get("package")
+            .cloned()
+            .unwrap_or(json!({}));
+        let resource = analysis
+            .context
+            .get("resource")
+            .cloned()
+            .unwrap_or(json!({}));
+        // If spec is present, mirror its scheming_version / dataset_type into
+        // the package block so downstream consumers can identify the schema.
+        if let (Some(pkg), Some(spec)) = (package.as_object_mut(), spec_opt.as_ref()) {
+            if let Some(v) = spec.scheming_version {
+                pkg.entry("scheming_version").or_insert_with(|| json!(v));
+            }
+            if let Some(dt) = spec.dataset_type.as_deref() {
+                pkg.entry("dataset_type")
+                    .or_insert_with(|| Value::String(dt.to_string()));
+            }
+        }
+        out_map.insert(
+            "ckan".to_string(),
+            json!({
+                "package":   package,
+                "resources": [resource],
+            }),
+        );
+    }
+
+    if !args.flag_no_dcat {
+        out_map.insert("dcat".to_string(), build_dcat_stub(&input_path, &analysis));
+    }
+
+    let _ = analysis.headers;
+
+    // --- 5. write output --------------------------------------------------
+    let out_path = args.flag_output.clone().unwrap_or_else(|| {
+        let stem = Path::new(&input_path)
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("output");
+        format!("{stem}.metadata.json")
+    });
+    let pretty = serde_json::to_string_pretty(&output)
+        .map_err(|e| CliError::Other(format!("could not serialize metadata JSON: {e}")))?;
+    std::fs::write(&out_path, pretty)
+        .map_err(|e| CliError::Other(format!("could not write `{out_path}`: {e}")))?;
+
+    eprintln!("qsv profile: wrote `{out_path}`");
+    Ok(())
+}
+
+/// Placeholder DCAT-US v3 projection. The full mapping lands in task #9 once
+/// the CKAN-side block is populated by the Python formula engine.
+fn build_dcat_stub(input_path: &str, analysis: &context::AnalysisContext) -> Value {
+    let title = Path::new(input_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("dataset")
+        .to_string();
+    let row_count = analysis
+        .context
+        .pointer("/dpp/dataset_stats/row_count")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    json!({
+        "@context":  "https://project-open-data.cio.gov/v1.1/schema/catalog.jsonld",
+        "@type":     "dcat:Dataset",
+        "title":     title,
+        "describedBy": null,
+        "distribution": [{
+            "@type":      "dcat:Distribution",
+            "mediaType":  "text/csv",
+            "downloadURL": input_path,
+            "byteSize":   std::fs::metadata(input_path).map(|m| m.len()).unwrap_or(0),
+            "rowCount":   row_count,
+        }],
+        "_note": "DCAT-US v3 projection is preliminary; full mapping pending issue #1705.",
+    })
 }

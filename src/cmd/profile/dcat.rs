@@ -460,35 +460,43 @@ fn add_extended_metadata(ds: &mut Map<String, Value>, ckan_package: &Value) {
 /// Map common DCAT-US accrual-periodicity slugs to EU controlled-vocab
 /// IRIs. Unknown slugs pass through unchanged via the caller. Mirrors
 /// the pattern in `license_iri`.
+///
+/// Like `license_iri`, the EU `publications.europa.eu` frequency IRIs
+/// are stable opaque identifiers published with the `http://` scheme.
+/// Changing to `https://` yields different IRIs that no longer round-
+/// trip with DCAT consumers — so each line below carries a DevSkim
+/// suppression for rule DS137138 (non-TLS URL).
 fn accrual_periodicity_iri(slug: &str) -> Option<&'static str> {
     match slug.trim().to_ascii_lowercase().as_str() {
         "daily" | "r/p1d" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/DAILY")
+            Some("http://publications.europa.eu/resource/authority/frequency/DAILY") // DevSkim: ignore DS137138
         },
         "weekly" | "r/p7d" | "r/p1w" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/WEEKLY")
+            Some("http://publications.europa.eu/resource/authority/frequency/WEEKLY") // DevSkim: ignore DS137138
         },
         "biweekly" | "fortnightly" | "r/p14d" | "r/p2w" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/BIWEEKLY")
+            Some("http://publications.europa.eu/resource/authority/frequency/BIWEEKLY") // DevSkim: ignore DS137138
         },
         "monthly" | "r/p1m" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/MONTHLY")
+            Some("http://publications.europa.eu/resource/authority/frequency/MONTHLY") // DevSkim: ignore DS137138
         },
         "bimonthly" | "r/p2m" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/BIMONTHLY")
+            Some("http://publications.europa.eu/resource/authority/frequency/BIMONTHLY") // DevSkim: ignore DS137138
         },
         "quarterly" | "r/p3m" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/QUARTERLY")
+            Some("http://publications.europa.eu/resource/authority/frequency/QUARTERLY") // DevSkim: ignore DS137138
         },
         "semiannual" | "biannual" | "r/p6m" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL_2")
+            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL_2") // DevSkim: ignore DS137138
         },
         "annual" | "annually" | "yearly" | "r/p1y" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL")
+            Some("http://publications.europa.eu/resource/authority/frequency/ANNUAL") // DevSkim: ignore DS137138
         },
-        "irregular" => Some("http://publications.europa.eu/resource/authority/frequency/IRREG"),
+        "irregular" => {
+            Some("http://publications.europa.eu/resource/authority/frequency/IRREG") // DevSkim: ignore DS137138
+        },
         "continuous" | "realtime" | "real-time" => {
-            Some("http://publications.europa.eu/resource/authority/frequency/CONT")
+            Some("http://publications.europa.eu/resource/authority/frequency/CONT") // DevSkim: ignore DS137138
         },
         _ => None,
     }

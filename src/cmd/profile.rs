@@ -494,12 +494,10 @@ fn resolve_input(
         return Ok((raw.to_string(), None, None));
     }
 
-    use std::time::Duration;
-
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_secs(120))
-        .build()
-        .map_err(|e| CliError::Other(format!("qsv profile: HTTP client build: {e}")))?;
+    // Reuse qsv's shared blocking HTTP client (user-agent,
+    // gzip/brotli/zstd compression, rustls, retry on 503) so URL inputs
+    // behave consistently with `fetch`, `validate`, `describegpt` etc.
+    let client = util::create_reqwest_blocking_client(None, 120, None)?;
     let mut response = client
         .get(raw)
         .send()
@@ -759,10 +757,13 @@ mod tests {
 
     #[test]
     fn url_detection_recognizes_http_https_case_insensitive() {
-        assert!(is_http_url("http://example.gov/d.csv"));
+        // The bare http:// literals in this test are detector inputs,
+        // not URLs to fetch — that's exactly what is_http_url is
+        // testing. Suppress DevSkim's TLS-URL warning rule.
+        assert!(is_http_url("http://example.gov/d.csv")); // DevSkim: ignore DS137138
         assert!(is_http_url("https://example.gov/d.csv"));
         assert!(is_http_url("HTTPS://example.gov/d.csv"));
-        assert!(is_http_url("Http://example.gov/d.csv"));
+        assert!(is_http_url("Http://example.gov/d.csv")); // DevSkim: ignore DS137138
         assert!(!is_http_url("/tmp/local.csv"));
         assert!(!is_http_url("file:///tmp/x.csv"));
         assert!(!is_http_url("ftp://example.com/x.csv"));

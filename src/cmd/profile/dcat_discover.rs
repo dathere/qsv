@@ -11,10 +11,10 @@
 //!
 //!   1. HTTP `Link: rel=describedBy` header on the CSV's HEAD response. Authoritative — the
 //!      publisher explicitly points at the metadata.
-//!   2. **TODO Phase 3b'**: sibling URLs by convention (`<url>.metadata.json`, `<url>.dcat.json`,
+//!   2. (Phase 3b' follow-up) sibling URLs by convention (`<url>.metadata.json`, `<url>.dcat.json`,
 //!      `<dirname>/datapackage.json`, `<host>/.well-known/data.json`).
-//!   3. **TODO Phase 3b''**: JSON-LD `<script type="application/ld+json">` blocks in the URL's HTML
-//!      landing page.
+//!   3. (Phase 3b'' follow-up) JSON-LD `<script type="application/ld+json">` blocks in the URL's
+//!      HTML landing page.
 //!
 //! Each step has a tight default timeout (configurable via
 //! `--dcat-discovery-timeout`). All network errors are non-fatal — the
@@ -29,19 +29,22 @@ use reqwest::{
 };
 use serde_json::Value;
 
+use crate::util;
+
 /// Best-effort DCAT-markup sniff for `url`. Returns the discovered
 /// `dcat:Dataset` JSON-LD object if any mechanism succeeded, else
 /// `None`. Network / parse errors are swallowed and treated as
 /// "nothing discovered" — this is a non-essential enrichment.
+///
+/// Uses qsv's shared blocking HTTP client (`util::create_reqwest_blocking_client`)
+/// for consistent user-agent / compression / TLS / retry behaviour
+/// with the rest of qsv (fetch, validate, describegpt, …). `timeout`
+/// is converted from the caller's `Duration` to whole seconds for the
+/// shared client; we round up so a fractional-second caller never gets
+/// a zero-timeout client.
 pub fn discover(url: &str, timeout: Duration) -> Option<Value> {
-    let client = match Client::builder()
-        .timeout(timeout)
-        .connect_timeout(Duration::from_secs(3))
-        .build()
-    {
-        Ok(c) => c,
-        Err(_) => return None,
-    };
+    let timeout_secs: u16 = timeout.as_secs().max(1).min(u16::MAX as u64) as u16;
+    let client = util::create_reqwest_blocking_client(None, timeout_secs, None).ok()?;
 
     if let Some(via_link) = discover_via_link_header(&client, url) {
         return Some(via_link);
@@ -51,10 +54,23 @@ pub fn discover(url: &str, timeout: Duration) -> Option<Value> {
     None
 }
 
+/// Cap on bytes read from a publisher-supplied DCAT-LD document.
+/// The Link `rel=describedBy` target is publisher-controlled, so an
+/// errant/hostile pointer at a multi-GB resource shouldn't blow up
+/// qsv's memory. 4 MiB is well above any realistic DCAT-LD document
+/// (Pittsburgh 311's full CKAN package JSON is ~30 KiB) while still
+/// being a safe ceiling.
+const DCAT_DISCOVERY_MAX_BYTES: u64 = 4 * 1024 * 1024;
+
 /// Issue a HEAD against `url`; if the response carries a
 /// `Link: <iri>; rel="describedBy"` header, follow the IRI and parse
 /// its body as JSON-LD. Returns the parsed `dcat:Dataset` value, if
 /// any. Errors at every step are swallowed (return `None`).
+///
+/// The followed body is capped at `DCAT_DISCOVERY_MAX_BYTES` because
+/// the Link target is publisher-controlled; reading the whole thing
+/// via `.text()` would expose qsv to memory exhaustion if it points
+/// at a large resource.
 fn discover_via_link_header(client: &Client, url: &str) -> Option<Value> {
     let head = client.head(url).send().ok()?;
     let link_header = head.headers().get(LINK)?;
@@ -62,7 +78,10 @@ fn discover_via_link_header(client: &Client, url: &str) -> Option<Value> {
 
     let resolved = resolve_relative(url, &describedby_iri).unwrap_or(describedby_iri);
 
-    let body = client.get(&resolved).send().ok()?.text().ok()?;
+    let response = client.get(&resolved).send().ok()?;
+    let mut limited = std::io::Read::take(response, DCAT_DISCOVERY_MAX_BYTES);
+    let mut body = String::new();
+    std::io::Read::read_to_string(&mut limited, &mut body).ok()?;
     let json: Value = serde_json::from_str(&body).ok()?;
     extract_dcat_dataset(&json)
 }
@@ -132,18 +151,22 @@ fn extract_dcat_dataset(doc: &Value) -> Option<Value> {
 }
 
 fn is_dcat_dataset(v: &Value) -> bool {
+    // The full IRI form below uses the http:// scheme because the W3C
+    // DCAT namespace is published with it (https://www.w3.org/ns/dcat
+    // resolves the same docs but the canonical type IRI is the http
+    // form). DevSkim suppression for rule DS137138 (non-TLS URL).
     let Some(ty) = v.get("@type") else {
         return false;
     };
     if let Some(s) = ty.as_str() {
         return s.eq_ignore_ascii_case("dcat:Dataset")
-            || s.eq_ignore_ascii_case("http://www.w3.org/ns/dcat#Dataset");
+            || s.eq_ignore_ascii_case("http://www.w3.org/ns/dcat#Dataset"); // DevSkim: ignore DS137138
     }
     if let Some(arr) = ty.as_array() {
         return arr.iter().any(|t| {
             t.as_str().is_some_and(|s| {
                 s.eq_ignore_ascii_case("dcat:Dataset")
-                    || s.eq_ignore_ascii_case("http://www.w3.org/ns/dcat#Dataset")
+                    || s.eq_ignore_ascii_case("http://www.w3.org/ns/dcat#Dataset") // DevSkim: ignore DS137138
             })
         });
     }
@@ -240,12 +263,16 @@ mod tests {
 
     #[test]
     fn extract_dataset_recognizes_full_iri_type() {
+        // W3C DCAT canonical type IRI — http scheme is the published
+        // identifier. DevSkim: ignore DS137138
         let doc = json!({"@type": "http://www.w3.org/ns/dcat#Dataset", "dct:title": "X"});
         assert!(extract_dcat_dataset(&doc).is_some());
     }
 
     #[test]
     fn extract_dataset_handles_type_array() {
+        // Leading entry is a placeholder type IRI for the test;
+        // DevSkim: ignore DS137138
         let doc = json!({"@type": ["http://example/Thing", "dcat:Dataset"], "dct:title": "X"});
         assert!(extract_dcat_dataset(&doc).is_some());
     }

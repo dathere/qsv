@@ -15,7 +15,8 @@ The top-level keys are:
 
 ## `package` fields the projection reads
 
-Most fields mirror their CKAN names; v3 additions are new in Phase 5.
+Most fields mirror their CKAN names; v3 additions were added in Phase 5
+and are all live in the current build.
 
 | Field                          | DCAT-US v3 slot                              | Status     |
 |--------------------------------|----------------------------------------------|------------|
@@ -29,15 +30,15 @@ Most fields mirror their CKAN names; v3 additions are new in Phase 5.
 | `tags[]`                       | `dcat:keyword`                               | ✅ today   |
 | `groups[]`                     | `dcat:theme`                                 | ✅ today   |
 | `language`                     | `dct:language` (normalized to ISO 639-1)     | ✅ today   |
-| `contact_point` `{fn, hasEmail}` | `dcat:contactPoint` (**mandatory**)        | ⏳ Phase 5 |
-| `bureauCode`, `programCode`    | `dcat-us:bureauCode` / `dcat-us:programCode` | ⏳ Phase 5 |
-| `accrualPeriodicity`           | `dct:accrualPeriodicity`                     | ⏳ Phase 5 |
-| `accessRights`                 | `dct:accessRights`                           | ⏳ Phase 5 |
-| `rights`                       | `dct:rights`                                 | ⏳ Phase 5 |
-| `landing_page`                 | `dcat:landingPage`                           | ⏳ Phase 5 |
-| `describedBy`                  | `dcat:describedBy`                           | ⏳ Phase 5 |
-| `purpose`, `scopeNote`, `liabilityStatement` | `dcat-us:*`                    | ⏳ Phase 5 |
-| `inSeries`                     | `dcat:inSeries`                              | ⏳ Phase 5 |
+| `contact_point` `{fn, hasEmail}` | `dcat:contactPoint` (**mandatory**)        | ✅ today   |
+| `bureauCode`, `programCode`    | `dcat-us:bureauCode` / `dcat-us:programCode` | ✅ today   |
+| `accrualPeriodicity`           | `dct:accrualPeriodicity`                     | ✅ today   |
+| `accessRights`                 | `dct:accessRights`                           | ✅ today   |
+| `rights`                       | `dct:rights`                                 | ✅ today   |
+| `landing_page`                 | `dcat:landingPage`                           | ✅ today   |
+| `describedBy`                  | `dcat:describedBy`                           | ✅ today   |
+| `purpose`, `scopeNote`, `liabilityStatement` | `dcat-us:*`                    | ✅ today   |
+| `inSeries`                     | `dcat:inSeries`                              | ✅ today   |
 
 ## `resource` fields the projection reads
 
@@ -48,10 +49,10 @@ Most fields mirror their CKAN names; v3 additions are new in Phase 5.
 | `format`              | Distribution `dct:format`                   | ✅ today   |
 | `url`                 | Distribution `dcat:downloadURL` (IRI only)  | ✅ today   |
 | `license_id` / `license` | Distribution `dct:license`               | ✅ today   |
-| `last_modified`       | Distribution `dct:modified`                 | ⏳ Phase 5 |
-| `accessURL`           | Distribution `dcat:accessURL`               | ⏳ Phase 5 |
-| `rights`              | Distribution `dct:rights`                   | ⏳ Phase 5 |
-| `access_restriction`, `use_restriction`, `cui_restriction` | `dcat-us:*Restriction` | ⏳ Phase 5 |
+| `last_modified`       | Distribution `dct:modified`                 | ✅ today   |
+| `accessURL`           | Distribution `dcat:accessURL`               | ✅ today   |
+| `rights`              | Distribution `dct:rights`                   | ✅ today   |
+| `access_restriction`, `use_restriction`, `cui_restriction` | `dcat-us:*Restriction` | ✅ today   |
 
 ## Per-property `force` semantics (Phase 4b)
 

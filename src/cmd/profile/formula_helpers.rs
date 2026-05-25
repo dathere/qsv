@@ -10,9 +10,11 @@
 //!
 //!   * filters     — applied via the `|` pipe
 //!   * globals     — invoked by name
-//!   * SQL globals — currently short-circuit to an error (matches the old Python stub behavior of
-//!     returning empty datastore results); Phase 0c will wire them to Polars SQL over the input
-//!     CSV.
+//!   * SQL globals — backed by Polars SQL over the input CSV via `sql_backend::SqlBackend`. The
+//!     backend is installed on the current thread by `formula_engine::evaluate_spec` for the
+//!     render-pass duration; without one installed, the helpers surface a clear "no input CSV
+//!     available" error rather than crashing (matches the old Python-stub behaviour of returning
+//!     empty datastore results).
 //!
 //! Default field-name candidate lists for lat/lon detection come from
 //! the old `qsv_ckan_stubs.py` defaults and `ckanext.datapusher_plus.config`
@@ -657,14 +659,26 @@ fn resolve_date_field(arg: Option<&Value>, state: &minijinja::State) -> Result<S
     }
     Err(value_err("No date or datetime fields found"))
 }
-
 /// Parse ISO 8601 date / datetime / RFC3339 strings into NaiveDateTime
 /// for interval math. Sub-second precision is preserved; date-only
 /// strings get midnight as the time component.
+///
+/// Patterns tried in order, mirroring what Python's
+/// `datetime.fromisoformat()` accepts (which DP+'s helpers used):
+///   * `%Y-%m-%dT%H:%M:%S%.f` — datetime with fractional seconds (T)
+///   * `%Y-%m-%d %H:%M:%S%.f` — datetime with fractional seconds (space)
+///   * `%Y-%m-%dT%H:%M:%S`    — datetime, second precision (T)
+///   * `%Y-%m-%d %H:%M:%S`    — datetime, second precision (space)
+///   * `%Y-%m-%d`             — bare date → midnight
+///   * RFC 3339               — with timezone (normalized to UTC)
 fn parse_date_strings(strs: &[String]) -> Result<Vec<NaiveDateTime>, Error> {
     let mut out = Vec::with_capacity(strs.len());
     for s in strs {
-        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
+        if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S%.f") {
+            out.push(dt);
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S%.f") {
+            out.push(dt);
+        } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%dT%H:%M:%S") {
             out.push(dt);
         } else if let Ok(dt) = NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S") {
             out.push(dt);
@@ -689,15 +703,32 @@ fn day_intervals(dates: &[NaiveDateTime]) -> Vec<i64> {
     }
     out
 }
-
-/// Most-frequent value (with ties broken by first-seen order).
+/// Most-frequent value, with ties broken by first-seen order to match
+/// Python's `Counter(...).most_common(1)[0]` semantics. The earlier
+/// implementation used a `HashMap`, which made tie-breaking
+/// nondeterministic and could change `guess_accrual_periodicity`
+/// results between runs when multiple intervals are equally common.
+/// Walking the input once to assign each unique value a stable index,
+/// then `max_by_key` over (count, -first_index), preserves first-seen
+/// order without needing an external `IndexMap` dep.
 fn mode(values: &[i64]) -> Option<i64> {
     use std::collections::HashMap;
+    let mut first_seen: HashMap<i64, usize> = HashMap::new();
     let mut counts: HashMap<i64, usize> = HashMap::new();
-    for &v in values {
+    for (i, &v) in values.iter().enumerate() {
+        first_seen.entry(v).or_insert(i);
         *counts.entry(v).or_insert(0) += 1;
     }
-    counts.into_iter().max_by_key(|&(_, c)| c).map(|(v, _)| v)
+    counts
+        .into_iter()
+        .max_by_key(|&(v, c)| {
+            // Higher count wins; on a tie, the value first seen (lower
+            // first_seen index) wins — invert the index sign by
+            // comparing with a `Reverse`-style trick so the SMALLEST
+            // index beats larger ones.
+            (c, std::cmp::Reverse(first_seen[&v]))
+        })
+        .map(|(v, _)| v)
 }
 
 fn format_temporal_resolution(min_days: i64) -> String {
@@ -1097,6 +1128,49 @@ mod tests {
         assert_eq!(f(730), "R/P2Y");
     }
 
+    /// Copilot PR #3901 finding (mode() determinism): when multiple
+    /// values share the highest count, the first-seen value must win
+    /// for reproducible guess_accrual_periodicity output across runs.
+    #[test]
+    fn mode_tie_broken_by_first_seen_order() {
+        use super::mode;
+        // 1 and 7 both appear twice. The first occurrence of 1 is at
+        // index 0, of 7 is at index 1 — so 1 must win, deterministically.
+        assert_eq!(mode(&[1, 7, 7, 1, 3]), Some(1));
+        // 5 first appears at index 0, 2 at index 2 — both count==2; 5 wins.
+        assert_eq!(mode(&[5, 5, 2, 2]), Some(5));
+        // Unique max wins regardless of position.
+        assert_eq!(mode(&[3, 3, 3, 1, 1]), Some(3));
+        // Empty input returns None.
+        assert_eq!(mode(&[]), None);
+    }
+
+    /// Copilot PR #3901 finding (fractional-second ISO 8601 datetimes):
+    /// DP+'s `datetime.fromisoformat` accepts these and our parser
+    /// must too — otherwise temporal_resolution /
+    /// guess_accrual_periodicity hard-fail on CSVs with sub-second
+    /// timestamps.
+    #[test]
+    fn parse_date_strings_accepts_fractional_seconds() {
+        use super::parse_date_strings;
+        let inputs = vec![
+            "2024-01-01T12:34:56.789".to_string(),
+            "2024-01-02 12:34:56.789".to_string(),
+            "2024-01-03T12:34:56".to_string(),
+            "2024-01-04".to_string(),
+        ];
+        let parsed = parse_date_strings(&inputs).expect("all four shapes must parse");
+        assert_eq!(parsed.len(), 4);
+        // Spot-check the fractional-second values reach millisecond precision.
+        assert_eq!(
+            parsed[0].format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
+            "2024-01-01T12:34:56.789"
+        );
+        assert_eq!(
+            parsed[1].format("%Y-%m-%dT%H:%M:%S%.3f").to_string(),
+            "2024-01-02T12:34:56.789"
+        );
+    }
     /// Roborev finding 2439#6: DP+ helpers must accept Jinja2 keyword
     /// arguments alongside positional ones.
     #[test]

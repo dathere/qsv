@@ -31,21 +31,23 @@ use crate::{
 /// CLI-facing knobs that the context builder cares about. Kept narrow so we
 /// don't couple `context.rs` to the full top-level `Args` struct.
 pub struct ContextArgs<'a> {
-    pub input_path:    &'a str,
-    pub no_headers:    bool,
-    pub delimiter:     Option<Delimiter>,
-    pub jobs:          Option<usize>,
-    pub force:         bool,
-    pub memcheck:      bool,
-    pub package_meta:  Option<&'a str>,
-    pub resource_meta: Option<&'a str>,
+    pub input_path:      &'a str,
+    pub no_headers:      bool,
+    pub delimiter:       Option<Delimiter>,
+    pub jobs:            Option<usize>,
+    pub force:           bool,
+    pub memcheck:        bool,
+    pub initial_context: Option<&'a str>,
 }
 
 /// Result of the analysis pass — the JSON context plus the column headers we
-/// extracted along the way (used by the output module).
+/// extracted along the way (used by the output module), plus the
+/// initial-context's `dataset_info` JSON-Pointer override map (applied to
+/// the final output by `profile.rs::run` after `dcat::build` returns).
 pub struct AnalysisContext {
-    pub context: Value,
-    pub headers: Vec<String>,
+    pub context:      Value,
+    pub headers:      Vec<String>,
+    pub dataset_info: Value,
 }
 
 /// Build the full analysis context for `input_path`.
@@ -164,8 +166,13 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     });
 
     // --- 6. package / resource seed dicts ---------------------------------
-    let package = load_seed_json(args.package_meta)?;
-    let mut resource = load_seed_json(args.resource_meta)?;
+    // Loaded from --initial-context (unified single-file replacement for
+    // the old --package-meta + --resource-meta pair). dataset_info
+    // (the third returned slot) holds JSON-Pointer overrides applied to
+    // the final output by profile.rs::run after dcat::build returns; we
+    // round-trip it through the analysis context so the orchestrator
+    // doesn't need a separate loader call.
+    let (package, mut resource, dataset_info) = load_initial_context(args.initial_context)?;
     // Default resource.name from the input file stem if not explicitly seeded.
     if !resource.is_object() {
         resource = json!({});
@@ -190,7 +197,11 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
         "dpp":      dpp,
     });
 
-    Ok(AnalysisContext { context, headers })
+    Ok(AnalysisContext {
+        context,
+        headers,
+        dataset_info,
+    })
 }
 
 /// Build the `dpps` dict — `{col_name: {stats: {<StatsData fields>}}}`.
@@ -315,17 +326,33 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
     }
 }
 
-/// Load a seed JSON file (--package-meta / --resource-meta). Returns
-/// `json!({})` when the flag is unset.
-fn load_seed_json(path: Option<&str>) -> CliResult<Value> {
+/// Load and split a `--initial-context` JSON file into its three
+/// top-level components. Returns `(package, resource, dataset_info)`
+/// where any missing key defaults to `json!({})`.
+///
+/// Phase 4a: leaf values pass through unmodified — both plain values
+/// and `{value, force}` wrappers are stored as-is. Phase 4b will
+/// normalize the wrappers and consume `force` during the merge with
+/// discovered DCAT markup.
+pub(super) fn load_initial_context(path: Option<&str>) -> CliResult<(Value, Value, Value)> {
     let Some(path) = path else {
-        return Ok(json!({}));
+        return Ok((json!({}), json!({}), json!({})));
     };
-    let raw = std::fs::read_to_string(path)
-        .map_err(|e| CliError::Other(format!("could not read seed meta file `{path}`: {e}")))?;
-    serde_json::from_str::<Value>(&raw).map_err(|e| {
+    let raw = std::fs::read_to_string(path).map_err(|e| {
+        CliError::Other(format!("could not read initial-context file `{path}`: {e}"))
+    })?;
+    let doc: Value = serde_json::from_str(&raw).map_err(|e| {
         CliError::Other(format!(
-            "could not parse seed meta file `{path}` as JSON: {e}"
+            "could not parse initial-context file `{path}` as JSON: {e}"
         ))
-    })
+    })?;
+    if !doc.is_object() {
+        return Err(CliError::Other(format!(
+            "initial-context file `{path}` must be a JSON object at the top level"
+        )));
+    }
+    let package = doc.get("package").cloned().unwrap_or(json!({}));
+    let resource = doc.get("resource").cloned().unwrap_or(json!({}));
+    let dataset_info = doc.get("dataset_info").cloned().unwrap_or(json!({}));
+    Ok((package, resource, dataset_info))
 }

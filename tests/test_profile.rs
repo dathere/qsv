@@ -220,3 +220,80 @@ fn profile_stdin_input_is_rejected() {
         "out.json should not have been written on rejection"
     );
 }
+
+#[test]
+fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
+    let wrk = Workdir::new("profile_init_context");
+    seed_geo_csv(&wrk);
+
+    // Minimal init-context: seeds package fields the projection reads,
+    // then forces a JSON-Pointer override into the final output.
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+            "package": {
+                "title":        "Seeded From Init",
+                "notes":        "loaded via --initial-context",
+                "license_id":   "cc-by",
+                "language":     "en-US",
+                "metadata_modified": "R/P1Y"
+            },
+            "dataset_info": {
+                "/dcat/dct:title": "Final Override Wins"
+            }
+        }"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+
+    // dataset_info override is last-write-wins.
+    assert_eq!(
+        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        Some("Final Override Wins"),
+        "dataset_info JSON-Pointer override must win over the package seed"
+    );
+
+    // package.notes flows into the projection as dct:description.
+    assert_eq!(
+        out.pointer("/dcat/dct:description")
+            .and_then(|v| v.as_str()),
+        Some("loaded via --initial-context")
+    );
+
+    // language is normalized en-US → en (Phase 2d behaviour).
+    assert_eq!(
+        out.pointer("/dcat/dct:language").and_then(|v| v.as_str()),
+        Some("en"),
+    );
+
+    // metadata_modified was a repeating-interval ("R/P1Y"); Phase 2e
+    // sanitizer drops it so dct:modified is absent (frequency goes to
+    // accrualPeriodicity, queued for Phase 5).
+    assert!(
+        out.pointer("/dcat/dct:modified").is_none(),
+        "ISO 8601 interval must be rejected from dct:modified"
+    );
+
+    // license moved to Distribution in Phase 2c — must not appear on
+    // the Dataset by default.
+    assert!(
+        out.pointer("/dcat/dct:license").is_none(),
+        "dct:license must live on Distribution in strict v3"
+    );
+    let dist_license = out
+        .pointer("/dcat/dcat:distribution/0/dct:license/@id")
+        .and_then(|v| v.as_str())
+        .expect("dct:license on Distribution");
+    assert!(dist_license.contains("creativecommons.org"));
+}

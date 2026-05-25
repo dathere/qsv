@@ -48,8 +48,7 @@ qsv profile --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑spec`&nbsp; | string | CKAN scheming YAML spec file. If omitted, only the inferred `dpp` block (lat/lon/date columns, dataset stats) is emitted; no formulas are evaluated. |  |
-| &nbsp;`‑‑package‑meta`&nbsp; | string | Optional JSON file with seed package fields (title, owner_org, etc.) merged into the formula context before evaluation. |  |
-| &nbsp;`‑‑resource‑meta`&nbsp; | string | Same, for the resource dict. |  |
+| &nbsp;`‑‑initial‑context`&nbsp; | string | JSON file providing seed values for the package / resource dicts plus optional JSON-Pointer overrides for the final DCAT block. Replaces the older --package-meta / --resource-meta flags. Shape: { "package":  {"title": "...", ...}, "resource": {"format": "CSV", ...}, "dataset_info": { "/dcat/dct:title": "Force override" } } Each leaf value may also be wrapped as {"value": ..., "force": true} to mark it as overriding any value discovered from the URL's existing DCAT markup. Phase 4a ships the flag + dataset_info overrides; per-property force semantics land in 4b. |  |
 | &nbsp;`‑‑no‑dcat`&nbsp; | flag | Skip the DCAT-US v3 projection block. |  |
 | &nbsp;`‑‑no‑ckan`&nbsp; | flag | Skip the CKAN-shape block. |  |
 | &nbsp;`‑‑dcat‑legacy‑license`&nbsp; | flag | Transitional: re-emit dct:license on the Dataset alongside the v3-required Distribution-level copy. Default: off (strict v3, license on Distribution only). |  |

@@ -27,10 +27,24 @@ profile options:
     --spec <yaml>             CKAN scheming YAML spec file. If omitted, only the
                               inferred `dpp` block (lat/lon/date columns, dataset
                               stats) is emitted; no formulas are evaluated.
-    --package-meta <json>     Optional JSON file with seed package fields (title,
-                              owner_org, etc.) merged into the formula context
-                              before evaluation.
-    --resource-meta <json>    Same, for the resource dict.
+    --initial-context <json>  JSON file providing seed values for the package /
+                              resource dicts plus optional JSON-Pointer
+                              overrides for the final DCAT block. Replaces
+                              the older --package-meta / --resource-meta
+                              flags. Shape:
+                                {
+                                  "package":  {"title": "...", ...},
+                                  "resource": {"format": "CSV", ...},
+                                  "dataset_info": {
+                                    "/dcat/dct:title": "Force override"
+                                  }
+                                }
+                              Each leaf value may also be wrapped as
+                              {"value": ..., "force": true} to mark it
+                              as overriding any value discovered from
+                              the URL's existing DCAT markup. Phase 4a
+                              ships the flag + dataset_info overrides;
+                              per-property force semantics land in 4b.
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
@@ -83,8 +97,7 @@ mod sql_backend;
 struct Args {
     arg_input:                   Option<String>,
     flag_spec:                   Option<String>,
-    flag_package_meta:           Option<String>,
-    flag_resource_meta:          Option<String>,
+    flag_initial_context:        Option<String>,
     flag_no_dcat:                bool,
     flag_dcat_legacy_license:    bool,
     flag_no_dcat_discovery:      bool,
@@ -143,14 +156,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 2. run stats + frequency, build analysis context -----------------
     let ctx_args = context::ContextArgs {
-        input_path:    &input_path,
-        no_headers:    args.flag_no_headers,
-        delimiter:     args.flag_delimiter,
-        jobs:          args.flag_jobs,
-        force:         args.flag_force,
-        memcheck:      args.flag_memcheck,
-        package_meta:  args.flag_package_meta.as_deref(),
-        resource_meta: args.flag_resource_meta.as_deref(),
+        input_path:      &input_path,
+        no_headers:      args.flag_no_headers,
+        delimiter:       args.flag_delimiter,
+        jobs:            args.flag_jobs,
+        force:           args.flag_force,
+        memcheck:        args.flag_memcheck,
+        initial_context: args.flag_initial_context.as_deref(),
     };
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
 
@@ -258,11 +270,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         out_map.insert("dcat".to_string(), dcat_block);
         // Phase 3b: surface the publisher-stated DCAT (if any) so users
         // and downstream tooling can diff it against our auto-inferred
-        // projection. Phase 4 will merge it in per the documented
+        // projection. Phase 4b merges it in per the documented
         // precedence chain.
         if let Some(d) = discovered_dcat {
             out_map.insert("dcat_discovered".to_string(), d);
         }
+    }
+
+    // Phase 4a: --initial-context's `dataset_info` JSON-Pointer
+    // overrides are the final escape hatch — applied last so they win
+    // unconditionally over everything else (inference, discovery, the
+    // CKAN block, formula output). Per the plan §4c precedence table.
+    if let Some(overrides) = analysis.dataset_info.as_object()
+        && !overrides.is_empty()
+    {
+        apply_pointer_overrides(&mut output, overrides);
     }
 
     let _ = analysis.headers;
@@ -407,6 +429,52 @@ fn resolve_input(
     Ok((local, Some(raw.to_string()), Some(temp)))
 }
 
+/// Apply `--initial-context.dataset_info` JSON-Pointer → Value
+/// overrides to the assembled output JSON. Each key in `overrides`
+/// must be an RFC 6901 JSON Pointer (e.g. `/dcat/dct:title`); the
+/// value replaces whatever was at that path. Missing parents are
+/// created as objects on demand.
+///
+/// Out of scope: array-index intermediate-parent creation and
+/// `-`-suffix appending. Failures (non-pointer keys, traversal through
+/// non-object scalars) are silently skipped — overrides are
+/// best-effort, not an enforcement mechanism.
+fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String, Value>) {
+    for (ptr, new_value) in overrides {
+        if !ptr.starts_with('/') {
+            continue;
+        }
+        set_by_pointer(root, ptr, new_value.clone());
+    }
+}
+
+fn set_by_pointer(root: &mut Value, pointer: &str, value: Value) {
+    // RFC 6901: split on '/', skip the leading empty token, unescape
+    // ~1 → /, ~0 → ~ on each remaining token.
+    let tokens: Vec<String> = pointer
+        .split('/')
+        .skip(1)
+        .map(|t| t.replace("~1", "/").replace("~0", "~"))
+        .collect();
+    if tokens.is_empty() {
+        *root = value;
+        return;
+    }
+    let mut cursor: &mut Value = root;
+    for (i, tok) in tokens.iter().enumerate() {
+        let is_last = i + 1 == tokens.len();
+        if !cursor.is_object() {
+            *cursor = json!({});
+        }
+        let map = cursor.as_object_mut().unwrap();
+        if is_last {
+            map.insert(tok.clone(), value);
+            return;
+        }
+        cursor = map.entry(tok.clone()).or_insert_with(|| json!({}));
+    }
+}
+
 fn is_http_url(s: &str) -> bool {
     let lower = s.to_ascii_lowercase();
     lower.starts_with("http://") || lower.starts_with("https://")
@@ -426,5 +494,62 @@ mod tests {
         assert!(!is_http_url("file:///tmp/x.csv"));
         assert!(!is_http_url("ftp://example.com/x.csv"));
         assert!(!is_http_url(""));
+    }
+
+    use serde_json::json;
+
+    use super::{apply_pointer_overrides, set_by_pointer};
+
+    #[test]
+    fn pointer_overrides_set_existing_leaf() {
+        let mut root = json!({"dcat": {"dct:title": "old"}});
+        let overrides = json!({"/dcat/dct:title": "new"})
+            .as_object()
+            .unwrap()
+            .clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        assert_eq!(
+            root.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+            Some("new")
+        );
+    }
+
+    #[test]
+    fn pointer_overrides_create_missing_parents() {
+        let mut root = json!({});
+        let overrides = json!({"/dcat/dcat-us:bureauCode": ["015:11"]})
+            .as_object()
+            .unwrap()
+            .clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        assert_eq!(
+            root.pointer("/dcat/dcat-us:bureauCode/0")
+                .and_then(|v| v.as_str()),
+            Some("015:11")
+        );
+    }
+
+    #[test]
+    fn pointer_overrides_skip_non_pointer_keys() {
+        let mut root = json!({"x": 1});
+        let overrides = json!({"no-leading-slash": "ignored"})
+            .as_object()
+            .unwrap()
+            .clone();
+        apply_pointer_overrides(&mut root, &overrides);
+        // Unchanged
+        assert_eq!(root, json!({"x": 1}));
+    }
+
+    #[test]
+    fn pointer_handles_escape_sequences() {
+        // RFC 6901: ~0 → ~ and ~1 → / in path tokens.
+        let mut root = json!({});
+        set_by_pointer(&mut root, "/has~1slash/has~0tilde", json!("v"));
+        assert_eq!(
+            root.pointer("/has~1slash/has~0tilde")
+                .and_then(|v| v.as_str()),
+            Some("v")
+        );
     }
 }

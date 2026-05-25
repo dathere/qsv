@@ -179,7 +179,15 @@ fn build_distribution(resource: &Value, stats: &Value, input_path: &str) -> Valu
     // local filesystem path is not a valid IRI and would break strict
     // JSON-LD consumers. The input file path is still preserved under
     // `qsv:sourcePath` for human inspection.
-    if let Some(url) = string_opt(resource.get("url")).filter(|u| is_absolute_iri(u)) {
+    // Trim before insertion: `is_absolute_iri` accepts surrounding
+    // whitespace (CKAN URL fields sometimes round-trip with stray ws),
+    // but the value we serialize into the IRI slot must be exactly what
+    // we validated -- otherwise an input like `"   https://x   "` would
+    // pass the filter and land in the JSON-LD with literal spaces.
+    if let Some(url) = string_opt(resource.get("url")).and_then(|u| {
+        let trimmed = u.trim().to_string();
+        is_absolute_iri(&trimmed).then_some(trimmed)
+    }) {
         d.insert("dcat:downloadURL".to_string(), Value::String(url));
     }
     d.insert(
@@ -388,5 +396,37 @@ mod tests {
         );
         assert!(license_iri("uk-ogl").is_none());
         assert!(license_iri("").is_none());
+    }
+
+    /// Regression: a whitespace-padded URL that passes `is_absolute_iri`
+    /// must be emitted *trimmed* into `dcat:downloadURL`, not with literal
+    /// surrounding spaces (which would no longer be a valid IRI).
+    #[test]
+    fn download_url_is_trimmed_before_insertion() {
+        let resource = serde_json::json!({
+            "name": "data",
+            "url":  "   https://example.com/data.csv   ",
+        });
+        let stats = serde_json::json!({});
+        let dist = build_distribution(&resource, &stats, "/local/data.csv");
+        let url = dist
+            .get("dcat:downloadURL")
+            .and_then(|v| v.as_str())
+            .expect("dcat:downloadURL should be present");
+        assert_eq!(url, "https://example.com/data.csv");
+    }
+
+    /// Bare local filesystem path -> no `dcat:downloadURL` (not an IRI),
+    /// but `qsv:sourcePath` still records the source.
+    #[test]
+    fn local_path_omits_download_url_but_keeps_source_path() {
+        let resource = serde_json::json!({ "name": "data" });
+        let stats = serde_json::json!({});
+        let dist = build_distribution(&resource, &stats, "/tmp/data.csv");
+        assert!(dist.get("dcat:downloadURL").is_none());
+        assert_eq!(
+            dist.get("qsv:sourcePath").and_then(|v| v.as_str()),
+            Some("/tmp/data.csv"),
+        );
     }
 }

@@ -239,6 +239,10 @@ polars = { version = "0.53", features = [
     "timezones",
 ], optional = true }
 pyo3 = { version = "0.28", features = ["auto-initialize"], optional = true }
+# yaml_serde: serde_yaml fork maintained by The YAML Organization
+# https://github.com/yaml/yaml-serde - used by the `profile` command to parse
+# CKAN scheming specs (e.g. dataset-druf.yaml).
+yaml_serde = { version = "0.10", optional = true }
 qsv-dateparser = "0.15"
 qsv_docopt = "1.10"
 qsv-stats = "0.50"
@@ -401,12 +405,13 @@ distrib_features = [
     "luau",
     "mcp",
     "polars",
+    "profile",
     "python",
     "synthesize",
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "self_update", "synthesize", "to"]
+qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
 apply = [
     "base62",
     "base64-simd",
@@ -448,6 +453,10 @@ polars = ["dep:polars", "bytemuck"]
 
 prompt = ["rfd"]
 python = ["pyo3"]
+# profile: CKAN scheming-driven metadata extraction (DCAT-US v3 / Croissant).
+# Requires python (embedded via pyo3) for reusing DP+'s jinja2_helpers.py and
+# yaml_serde for parsing the scheming spec YAML. See `qsv profile --help`.
+profile = ["feature_capable", "python", "yaml_serde"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]

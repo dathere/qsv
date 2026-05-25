@@ -109,6 +109,8 @@ mod test_partition;
 #[cfg(feature = "polars")]
 mod test_pivotp;
 mod test_pragmastat;
+#[cfg(all(feature = "profile", feature = "feature_capable"))]
+mod test_profile;
 #[cfg(feature = "prompt")]
 mod test_prompt;
 mod test_pseudo;

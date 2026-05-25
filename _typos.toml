@@ -36,4 +36,5 @@ extend-exclude = [
     "nyc311-describegpt*.*",
     "docs/describegpt/*",
     "docs/whirlwind_tour.md",
+    "*.py",
 ]

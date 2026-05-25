@@ -1223,6 +1223,9 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - geoconvert: experimental command (not yet stable)
     // - lens: interactive TUI viewer (requires terminal)
     // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
+    // - profile: requires Python interpreter + jinja2 on host, produces a large .metadata.json
+    //   artifact better consumed as a file than chat output; reconsider after MCP gains
+    //   file-resource handling for the result
     // - prompt: interactive prompt builder (requires terminal)
     // - scoresql: not available in qsvmcp
     // - snappy: compression utility not needed for AI agents

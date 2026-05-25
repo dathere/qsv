@@ -1,0 +1,128 @@
+scheming_version: 2
+dataset_type: dataset
+about: A re-implementation of the default CKAN dataset schema
+about_url: http://github.com/ckan/ckanext-scheming
+
+draft_fields_required: false
+
+display_group_order:
+  [
+    "Basic Info",
+    "Detailed Info",
+  ]
+
+dataset_fields:
+
+  - start_form_page:
+      title: Basic Info
+      description: Required and core dataset fields
+
+    field_name: title
+    label: Title
+    preset: title
+    required: True
+    form_placeholder: eg. A descriptive title
+
+  - field_name: name
+    label: URL
+    preset: dataset_slug
+    form_placeholder: eg. my-dataset
+
+  - field_name: notes
+    label: Abstract
+    validators: scheming_required
+    required: false
+    form_snippet: markdown.html
+    form_placeholder: eg. Some useful notes about the data
+    
+  - field_name: spatial_extent
+    label: Spatial Extent
+    validators: scheming_required
+    form_snippet: markdown.html
+    suggestion_formula: '{{ spatial_extent_wkt() }}'
+
+  - field_name: owner_org
+    label: Organization
+    required: True
+    preset: dataset_organization
+
+  - start_form_page:
+      title: Detailed Info
+      description:
+        These fields improve search and give users important links
+
+    field_name: update_type
+    label: Update Type
+    help_text: Select Update Type
+    help_inline: true
+    form_include_blank_choice: true
+    preset: select
+    choices:
+      - label: Automatic
+        value: automatic
+      - label: Manual
+        value: manual
+      - label: None
+        value: none
+
+  - field_name: end_date
+    label: Automatic Update End Date
+    form_snippet: date.html
+    validators: ignore_missing 
+    help_text: If this dataset has an Update Type of Automatic and Automatic Updates should stop at some point, please indicate the end date at which Automatic Updates should stop. If not, leave this field blank.
+    help_inline: true
+
+  - field_name: next_update
+    label: Next Update
+    form_snippet: date.html
+
+
+  - field_name: dpp_suggestions
+    label: DPP Suggestions
+    preset: json_object
+
+resource_fields:
+  - field_name: url
+    label: URL
+    preset: resource_url_upload
+
+  - field_name: name
+    label: Name
+    form_placeholder: eg. January 2011
+
+  - field_name: format
+    label: Format
+    preset: resource_format_autocomplete
+
+  - field_name: description
+    label: Description
+    form_snippet: markdown.html
+    form_placeholder: Some useful notes about the data
+
+  - field_name: rights
+    label: Rights
+    form_snippet: markdown.html
+    validators: ignore_missing
+
+  - field_name: license
+    label: License
+    validators: ignore_missing
+
+  - field_name: data_dictionary
+    label: Data dictionary
+    validators: ignore_missing
+
+  # Issue #112: per-resource locale override for number parsing.
+  # ``AnalysisStage._normalize_locale_numbers`` reads this field at
+  # ingestion time. BCP 47 / POSIX-style identifier (``de_DE``,
+  # ``fr_FR``, ``en_US``, ...). When set, babel parses comma-decimal
+  # and locale-specific thousands-separated numbers before qsv stats
+  # runs, so ``57,957`` (de_DE) and ``1.234,56`` (de_DE) and
+  # ``57 957,12`` (fr_FR) all infer as Float instead of Text.
+  # ``ckanext.datapusher_plus.default_locale`` provides the global
+  # fallback when this field is empty.
+  - field_name: dpp_locale
+    label: Locale
+    form_placeholder: e.g. de_DE, fr_FR, en_US
+    validators: ignore_missing
+

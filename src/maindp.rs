@@ -124,6 +124,11 @@ fn build_command_list() -> String {
     #[cfg(feature = "polars")]
     enabled_commands.push_str("    pivotp      Pivot CSV data 🐻‍❄️\n");
 
+    #[cfg(feature = "profile")]
+    enabled_commands.push_str(
+        "    profile     Extract and infer DCAT-3/Croissant metadata using a scheming spec\n",
+    );
+
     enabled_commands.push_str(
         "    pragmastat  Pragmatic statistical toolkit
     pseudo      Pseudonymise the values of a column
@@ -315,6 +320,8 @@ enum Command {
     #[cfg(feature = "polars")]
     PivotP,
     Pragmastat,
+    #[cfg(feature = "profile")]
+    Profile,
     Pseudo,
     Rename,
     Replace,
@@ -384,6 +391,8 @@ impl Command {
             #[cfg(feature = "polars")]
             Command::PivotP => cmd::pivotp::run(argv),
             Command::Pragmastat => cmd::pragmastat::run(argv),
+            #[cfg(feature = "profile")]
+            Command::Profile => cmd::profile::run(argv),
             Command::Pseudo => cmd::pseudo::run(argv),
             Command::Rename => cmd::rename::run(argv),
             Command::Replace => cmd::replace::run(argv),

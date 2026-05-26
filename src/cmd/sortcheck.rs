@@ -177,7 +177,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             0
         };
     }
-    #[cfg(feature = "datapusher_plus")]
+    #[cfg(all(
+        feature = "datapusher_plus",
+        not(any(feature = "feature_capable", feature = "lite"))
+    ))]
     {
         record_count = 0;
     }

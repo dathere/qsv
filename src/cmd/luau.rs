@@ -703,7 +703,10 @@ fn sequential_mode(
     // in the MAIN/END scripts
     luau.globals().raw_set(QSV_INSERTRECORD_TBL, Value::Nil)?;
 
-    #[cfg(feature = "datapusher_plus")]
+    #[cfg(all(
+        feature = "datapusher_plus",
+        not(any(feature = "feature_capable", feature = "lite"))
+    ))]
     let show_progress = false;
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
@@ -1088,7 +1091,10 @@ fn random_access_mode(
     let mut error_count = 0_usize;
     let mut processed_count = 0_usize;
 
-    #[cfg(feature = "datapusher_plus")]
+    #[cfg(all(
+        feature = "datapusher_plus",
+        not(any(feature = "feature_capable", feature = "lite"))
+    ))]
     let show_progress = false;
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]

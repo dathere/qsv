@@ -462,12 +462,7 @@ synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []
-datapusher_plus = ["geocode", "self_update"]
-# NOTE: `profile` is intentionally excluded from datapusher_plus for now.
-# The Phase 0e plan to add it triggers `feature_capable` overlap with
-# code paths gated `#[cfg(feature = "datapusher_plus")]` (e.g. sortcheck.rs).
-# Re-enabling requires an audit of feature-cfg interactions across the
-# codebase; deferred to a follow-up PR.
+datapusher_plus = ["geocode", "polars", "profile", "self_update"]
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator"]
 feature_capable = []

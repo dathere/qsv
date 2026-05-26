@@ -1085,7 +1085,10 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         .delimiter(args.flag_delimiter)
         .select(SelectColumns::parse(&args.arg_column)?);
 
-    #[cfg(feature = "datapusher_plus")]
+    #[cfg(all(
+        feature = "datapusher_plus",
+        not(any(feature = "feature_capable", feature = "lite"))
+    ))]
     let show_progress = false;
 
     // prep progress bar
@@ -1708,9 +1711,16 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         );
     };
 
-    #[cfg(feature = "datapusher_plus")]
+    #[cfg(all(
+        feature = "datapusher_plus",
+        not(any(feature = "feature_capable", feature = "lite"))
+    ))]
     let show_progress = false;
-    #[cfg(not(feature = "datapusher_plus"))]
+    #[cfg(any(
+        not(feature = "datapusher_plus"),
+        feature = "feature_capable",
+        feature = "lite"
+    ))]
     let show_progress =
         (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
 

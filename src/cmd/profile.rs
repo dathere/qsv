@@ -826,6 +826,12 @@ fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String,
 /// the corresponding TOP-LEVEL DCAT key (`dcat:contactPoint` here)
 /// would have been merged whole — nested-leaf forcing is satisfied
 /// by the later pointer-override pass.
+///
+/// **Roborev #2469:** discovered keys are escaped via RFC 6901 token
+/// rules (`~` → `~0`, `/` → `~1`) before being interpolated into the
+/// candidate path so that JSON-LD properties carrying `/` or `~`
+/// (e.g. full IRIs like `http://purl.org/dc/terms/title`) compare
+/// correctly against forced paths written in their escaped form.
 fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[String]) -> Value {
     let (Value::Object(mut inf), Some(disc)) = (inferred, discovered.as_object()) else {
         return Value::Object(serde_json::Map::new());
@@ -837,10 +843,13 @@ fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[St
         if inf.contains_key(k) {
             continue;
         }
-        // §5.4: skip if user marked this top-level DCAT key as forced.
-        // Discovered → inferred path translation: discovered key `k`
-        // maps to dataset_info pointer `/dcat/k`.
-        let candidate = format!("/dcat/{k}");
+        // §5.4 + #2469: skip if user marked this top-level DCAT key as
+        // forced. Discovered → inferred path translation: discovered
+        // key `k` maps to dataset_info pointer `/dcat/<escaped-k>`.
+        // RFC 6901 escaping is required so keys containing `/` or `~`
+        // (full IRI properties etc.) compare against forced paths
+        // written in their canonical escaped form.
+        let candidate = format!("/dcat/{}", escape_json_pointer_token(k));
         let is_forced = forced_dcat_paths
             .iter()
             .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
@@ -850,6 +859,14 @@ fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[St
         inf.insert(k.clone(), v.clone());
     }
     Value::Object(inf)
+}
+
+/// Escape a single token for use inside a JSON Pointer per RFC 6901
+/// section 4 (`~` → `~0`, `/` → `~1`). The `~`-replacement MUST happen
+/// first; doing it after `/`→`~1` would double-escape the newly
+/// introduced `~`.
+fn escape_json_pointer_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
 }
 
 /// Returns true when the final dcat block carries a non-null,
@@ -1027,7 +1044,7 @@ mod tests {
         );
     }
 
-    use super::merge_discovered;
+    use super::{escape_json_pointer_token, merge_discovered};
 
     #[test]
     fn merge_fills_gaps_only() {
@@ -1150,6 +1167,59 @@ mod tests {
         assert_eq!(
             merged.get("dct:title").and_then(|v| v.as_str()),
             Some("Lands")
+        );
+    }
+
+    // Roborev #2469: discovered keys that themselves contain `/` or `~`
+    // (full IRI properties, the rare CURIE with a tilde) must be escaped
+    // per RFC 6901 before being compared against forced paths. Without
+    // escaping, the candidate path `/dcat/http://purl.org/dc/terms/title`
+    // has too many segments and never matches the user's forced path.
+    #[test]
+    fn merge_force_match_handles_full_iri_keys_via_rfc6901_escaping() {
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({"http://purl.org/dc/terms/title": "From Publisher"});
+        // User writes the forced path with each `/` token-escaped to `~1`
+        // and each `~` to `~0`. The single-token full IRI value becomes:
+        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert!(
+            merged.get("http://purl.org/dc/terms/title").is_none(),
+            "full-IRI forced key must block discovered overlay after RFC 6901 escaping, got: \
+             {merged:?}",
+        );
+    }
+
+    #[test]
+    fn merge_force_does_not_match_unrelated_keys_after_escaping() {
+        // Regression sanity: escaping must not over-eagerly match unrelated
+        // discovered keys. Forced full-IRI path for `terms/title` must NOT
+        // block the unrelated `dct:identifier` key.
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({"dct:identifier": "id-123"});
+        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert_eq!(
+            merged.get("dct:identifier").and_then(|v| v.as_str()),
+            Some("id-123"),
+        );
+    }
+
+    #[test]
+    fn escape_json_pointer_token_matches_rfc6901() {
+        // RFC 6901 section 4: ~ → ~0, / → ~1. Order matters: ~ must be
+        // escaped first to avoid double-escaping the ~ introduced by /.
+        assert_eq!(escape_json_pointer_token(""), "");
+        assert_eq!(escape_json_pointer_token("plain"), "plain");
+        assert_eq!(escape_json_pointer_token("a/b"), "a~1b");
+        assert_eq!(escape_json_pointer_token("a~b"), "a~0b");
+        // The ordering trap: input "a~/b" must become "a~0~1b", NOT
+        // "a~01b" (which would be the result of the wrong order).
+        assert_eq!(escape_json_pointer_token("a~/b"), "a~0~1b");
+        // Full IRI: each `/` → `~1`, `:` is unescaped.
+        assert_eq!(
+            escape_json_pointer_token("http://purl.org/dc/terms/title"),
+            "http:~1~1purl.org~1dc~1terms~1title",
         );
     }
 

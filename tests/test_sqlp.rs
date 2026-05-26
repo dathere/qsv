@@ -4536,6 +4536,7 @@ fn sqlp_distinct_on_complex_ordering() {
     assert_eq!(got, expected);
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn sqlp_datetime_schema_inference() {
     let wrk = Workdir::new("sqlp_datetime_schema_inference");

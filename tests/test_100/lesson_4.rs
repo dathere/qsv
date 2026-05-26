@@ -38,6 +38,7 @@ fn lesson_4_task_2() {
     assert_eq!(got, expected);
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn lesson_4_task_3() {
     use std::process;

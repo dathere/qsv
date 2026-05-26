@@ -3090,6 +3090,7 @@ fn joinp_decimal_comma_validation_with_sql_filter() {
     assert_eq!(got, expected);
 }
 
+#[cfg(not(feature = "datapusher_plus"))]
 #[test]
 fn test_joinp_cache_schema_datetime() {
     let wrk = Workdir::new("joinp_cache_schema_datetime");

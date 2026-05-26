@@ -42,9 +42,15 @@ profile options:
                               Each leaf value may also be wrapped as
                               {"value": ..., "force": true} to mark it
                               as overriding any value discovered from
-                              the URL's existing DCAT markup. Phase 4a
-                              ships the flag + dataset_info overrides;
-                              per-property force semantics land in 4b.
+                              the URL's existing DCAT markup. For
+                              dataset_info entries, `force: true` is
+                              honored at merge time: discovered DCAT
+                              will NOT overlay forced paths even when
+                              the inferred projection left them
+                              absent. (Force on package/resource
+                              entries is accepted and stripped but
+                              has no merge-time effect yet — needs
+                              a CKAN→DCAT pointer mapping table.)
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
@@ -342,7 +348,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_dcat_legacy_license,
         );
         let merged_dcat = match discovered_dcat.as_ref() {
-            Some(disc) => merge_discovered(dcat_block, disc),
+            Some(disc) => merge_discovered(dcat_block, disc, &analysis.forced_dcat_paths),
             None => dcat_block,
         };
         out_map.insert("dcat".to_string(), merged_dcat);
@@ -809,10 +815,18 @@ fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String,
 ///     per-resource identity scheme.
 ///   * `@context` and `@type` are never overwritten.
 ///
-/// Future full-force semantics (`force: true` wrappers in
-/// `--initial-context` overriding discovered) will layer a "forced
-/// keys" skip-set onto this same merge function.
-fn merge_discovered(inferred: Value, discovered: &Value) -> Value {
+/// §5.4: `forced_dcat_paths` is the list of JSON-Pointer paths (in the
+/// dataset_info form, e.g. `/dcat/dct:title`) that the user wrapped with
+/// `{value, force: true}`. For each discovered top-level key, we
+/// translate to the same path space (`/dcat/<key>`) and skip the overlay
+/// if it's present in the forced set — so a user can mark a field
+/// "intentionally absent" and prevent publisher DCAT from filling it
+/// in. Forced paths that target nested leaves
+/// (e.g. `/dcat/dcat:contactPoint/vcard:fn`) only block the merge when
+/// the corresponding TOP-LEVEL DCAT key (`dcat:contactPoint` here)
+/// would have been merged whole — nested-leaf forcing is satisfied
+/// by the later pointer-override pass.
+fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[String]) -> Value {
     let (Value::Object(mut inf), Some(disc)) = (inferred, discovered.as_object()) else {
         return Value::Object(serde_json::Map::new());
     };
@@ -820,9 +834,20 @@ fn merge_discovered(inferred: Value, discovered: &Value) -> Value {
         if k == "@context" || k == "@type" || k == "dcat:distribution" {
             continue;
         }
-        if !inf.contains_key(k) {
-            inf.insert(k.clone(), v.clone());
+        if inf.contains_key(k) {
+            continue;
         }
+        // §5.4: skip if user marked this top-level DCAT key as forced.
+        // Discovered → inferred path translation: discovered key `k`
+        // maps to dataset_info pointer `/dcat/k`.
+        let candidate = format!("/dcat/{k}");
+        let is_forced = forced_dcat_paths
+            .iter()
+            .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
+        if is_forced {
+            continue;
+        }
+        inf.insert(k.clone(), v.clone());
     }
     Value::Object(inf)
 }
@@ -1014,7 +1039,7 @@ mod tests {
             "dct:title": "Discovered Title", // collision — inferred wins
             "dct:rights": "Discovered Rights", // gap — discovered fills
         });
-        let merged = merge_discovered(inferred, &discovered);
+        let merged = merge_discovered(inferred, &discovered, &[]);
         assert_eq!(
             merged.pointer("/dct:title").and_then(|v| v.as_str()),
             Some("Inferred Title"),
@@ -1037,7 +1062,7 @@ mod tests {
             "@context": "https://discovered",
             "@type": "dcat:OtherType",
         });
-        let merged = merge_discovered(inferred, &discovered);
+        let merged = merge_discovered(inferred, &discovered, &[]);
         assert_eq!(
             merged.pointer("/@context").and_then(|v| v.as_str()),
             Some("https://inferred")
@@ -1052,7 +1077,7 @@ mod tests {
     fn merge_skips_distribution_array() {
         let inferred = json!({"dcat:distribution": [{"@type": "dcat:Distribution"}]});
         let discovered = json!({"dcat:distribution": [{"dct:title": "Discovered Dist"}]});
-        let merged = merge_discovered(inferred, &discovered);
+        let merged = merge_discovered(inferred, &discovered, &[]);
         // Distribution array is left untouched — per-resource merging
         // is out of scope until a per-distribution identity scheme exists.
         assert_eq!(
@@ -1064,6 +1089,67 @@ mod tests {
         assert!(
             merged.pointer("/dcat:distribution/0/dct:title").is_none(),
             "discovered distribution must not be merged"
+        );
+    }
+
+    // §5.4: force semantics — forced top-level keys block discovered overlay.
+    #[test]
+    fn merge_skips_discovered_for_forced_top_level_key() {
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({"dct:title": "From Publisher"});
+        // User marked /dcat/dct:title as forced; discovered must NOT fill it.
+        let forced = vec!["/dcat/dct:title".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert!(
+            merged.get("dct:title").is_none(),
+            "forced top-level key must not be overlaid by discovered, got: {merged:?}",
+        );
+    }
+
+    #[test]
+    fn merge_skips_discovered_when_force_path_is_nested_under_top_level() {
+        // /dcat/dcat:contactPoint/vcard:fn is nested — but the top-level
+        // dcat:contactPoint would be merged whole otherwise, which would
+        // include the (forced-absent) vcard:fn from discovered. Block it.
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({
+            "dcat:contactPoint": {"vcard:fn": "From Publisher", "vcard:hasEmail": "x@y.gov"}
+        });
+        let forced = vec!["/dcat/dcat:contactPoint/vcard:fn".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert!(
+            merged.get("dcat:contactPoint").is_none(),
+            "forced nested path must block the whole-object overlay, got: {merged:?}",
+        );
+    }
+
+    #[test]
+    fn merge_still_overlays_unrelated_keys_when_one_is_forced() {
+        // Force only one key; other discovered keys still fill gaps.
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({
+            "dct:title":       "Forced Out",
+            "dct:description": "Should Land"
+        });
+        let forced = vec!["/dcat/dct:title".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert!(merged.get("dct:title").is_none());
+        assert_eq!(
+            merged.get("dct:description").and_then(|v| v.as_str()),
+            Some("Should Land")
+        );
+    }
+
+    #[test]
+    fn merge_ignores_forced_paths_outside_dcat_subtree() {
+        // /ckan/package/title isn't in /dcat/ space — must NOT affect merge.
+        let inferred = json!({"@type": "dcat:Dataset"});
+        let discovered = json!({"dct:title": "Lands"});
+        let forced = vec!["/ckan/package/title".to_string()];
+        let merged = merge_discovered(inferred, &discovered, &forced);
+        assert_eq!(
+            merged.get("dct:title").and_then(|v| v.as_str()),
+            Some("Lands")
         );
     }
 

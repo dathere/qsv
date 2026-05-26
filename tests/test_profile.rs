@@ -531,6 +531,63 @@ fn profile_runs_validation_when_spec_declares_validators() {
 }
 
 #[test]
+fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
+    // §5.4: when a dataset_info entry is wrapped {"value": ..., "force": true},
+    // the corresponding DCAT path is recorded as "forced" and discovered-DCAT
+    // merging is forbidden from overlaying it — even when inferred is absent.
+    //
+    // This test stages a custom initial-context with two interesting wrappers:
+    //   * /dcat/dct:license set to {"value": "MIT", "force": true} — the value lands via the
+    //     pointer-override pass.
+    //   * /dcat/dct:rights set to {"value": null, "force": true} — the null wrapper unwraps to a
+    //     `null`, and the FORCE half means "don't let any future merge fill this in either".
+    // Discovered DCAT isn't simulated here (no URL input) so we only
+    // assert the static wiring: forced paths are collected, the
+    // override applies, and the per-test workdir output reads back
+    // the expected shape.
+    let wrk = Workdir::new("profile_force_semantics");
+    seed_geo_csv(&wrk);
+    let ic = serde_json::json!({
+        "package": {
+            "title":             "Forced Title",
+            "notes":             "An abstract",
+            "contact_point":     {"fn": "Data Steward", "hasEmail": "ds@example.gov"},
+            "publisher":         {"name": "Forced Agency"},
+            "metadata_modified": "2024-12-01"
+        },
+        "resource": {"name": "data"},
+        "dataset_info": {
+            "/dcat/dct:license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
+            "/dcat/dct:rights":  {"value": null, "force": true}
+        }
+    });
+    wrk.create_from_string("ic.json", &serde_json::to_string_pretty(&ic).unwrap());
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--initial-context", "ic.json", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    // 1. Pointer-override-wrapped license lands as the inner string.
+    assert_eq!(
+        out.pointer("/dcat/dct:license").and_then(|v| v.as_str()),
+        Some("https://creativecommons.org/licenses/by/4.0/"),
+        "forced-with-value license must land as the inner value (no wrapper leak), got: {}",
+        out.pointer("/dcat/dct:license")
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+    );
+    // 2. The {value: null, force: true} wrapper unwraps to literal null; pointer-override writes
+    //    that null at the path. Round-trip check.
+    assert_eq!(
+        out.pointer("/dcat/dct:rights"),
+        Some(&serde_json::Value::Null),
+        "forced-null rights must round-trip to literal null, got: {:?}",
+        out.pointer("/dcat/dct:rights"),
+    );
+}
+
+#[test]
 fn profile_skips_validation_when_spec_has_no_validators() {
     // §5.8 negative: spec-less profile must NOT spawn `qsv validate`.
     // Inverse signal: the stderr "ran `validate`" marker is absent.

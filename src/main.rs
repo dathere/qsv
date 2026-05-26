@@ -209,7 +209,7 @@ fn main() -> QsvExitCode {
     pro         Interact with the qsv pro API\n",
     );
 
-    #[cfg(all(feature = "profile", feature = "feature_capable"))]
+    #[cfg(feature = "profile")]
     enabled_commands.push_str(
         "    profile     Extract and infer DCAT-3/Croissant metadata using a scheming spec\n",
     );
@@ -495,7 +495,7 @@ enum Command {
     PivotP,
     Pragmastat,
     Pro,
-    #[cfg(all(feature = "profile", feature = "feature_capable"))]
+    #[cfg(feature = "profile")]
     Profile,
     #[cfg(all(feature = "prompt", feature = "feature_capable"))]
     Prompt,
@@ -615,7 +615,7 @@ impl Command {
             Command::PivotP => cmd::pivotp::run(argv),
             Command::Pragmastat => cmd::pragmastat::run(argv),
             Command::Pro => cmd::pro::run(argv),
-            #[cfg(all(feature = "profile", feature = "feature_capable"))]
+            #[cfg(feature = "profile")]
             Command::Profile => cmd::profile::run(argv),
             #[cfg(all(feature = "prompt", feature = "feature_capable"))]
             Command::Prompt => cmd::prompt::run(argv),

@@ -109,7 +109,7 @@ mod test_partition;
 #[cfg(feature = "polars")]
 mod test_pivotp;
 mod test_pragmastat;
-#[cfg(all(feature = "profile", feature = "feature_capable"))]
+#[cfg(feature = "profile")]
 mod test_profile;
 #[cfg(feature = "prompt")]
 mod test_prompt;

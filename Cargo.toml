@@ -457,7 +457,7 @@ python = ["pyo3"]
 # evaluation; polars (SQL context) backs the SQL-requiring helpers
 # (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
 # scheming spec YAML. See `qsv profile --help`.
-profile = ["feature_capable", "polars", "yaml_serde"]
+profile = ["polars", "yaml_serde"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]

@@ -1,30 +1,26 @@
 # profile
 
-> Extract and infer DCAT-US v3 / Croissant metadata from a CSV, optionally driven by a CKAN [scheming](https://github.com/ckan/ckanext-scheming) YAML spec (e.g. [dataset-druf.yaml](https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml)). Reuses [Datapusher+'s](https://github.com/dathere/datapusher-plus) `jinja2_helpers.py` for formula/suggestion evaluation via an embedded Python interpreter. Produces a `.metadata.json` that CKAN uploaders (qsv pro, DP+) consume to prepopulate package + resource metadata. [Requires Python 3.10 or greater](https://github.com/dathere/qsv/blob/master/docs/INTERPRETERS.md#building-qsv-with-python-feature) and the `jinja2` package.
+> Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile of a dataset, mapped and driven by a metadata [scheming](https://github.com/ckan/ckanext-scheming) YAML spec. This enables [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) at scale.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/profile.rs](https://github.com/dathere/qsv/blob/master/src/cmd/profile.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
-[Description](#description) | [Usage](#usage) | [Profile Options](#profile-options) | [Common Options](#common-options)
+[Description](#description) | [Usage](#usage) | [Arguments](#arguments) | [Profile Options](#profile-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
 ## Description [↩](#nav)
 
-Extract and infer DCAT-3 / Croissant metadata from a CSV, optionally driven by a
-CKAN scheming YAML spec.
+Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile
+of a dataset, mapped and driven by a metadata scheming YAML spec.
 
-This is the non-interactive, qsv-native counterpart to what datapusher-plus (DP+)
-does in CKAN: run statistical + frequency analysis on the input, build a Jinja2
-context (`package`, `resource`, `dpps`, `dppf`, `dpp`), then evaluate every
-`formula` / `suggestion_formula` field declared in the scheming YAML. The
-resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort
-DCAT-US v3 projection, ready for qsv pro and DP+ to prepopulate CKAN packages.
+This is the non-interactive, qsv-native FAIRification counterpart to what datapusher-plus (DP+)
+does in CKAN: run statistical + frequency analysis on the input, build a Jinja2 context with the results,
+then evaluate Jinja2 formulae/suggestions using this context as declared in the scheming YAML.
+The resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort DCAT v3
+projection (starting with DCAT-US v3), DP+ to prepopulate CKAN packages.
 
-Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`,
-built on `minijinja`. No Python interpreter is required at runtime; the
-SQL-requiring helpers (`temporal_resolution`, `guess_accrual_periodicity`)
-query the input CSV directly via Polars SQL.
+Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`, built on `minijinja`.
 
 For an example spec file, see:  
 <https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml>
@@ -40,6 +36,14 @@ For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tes
 qsv profile [options] [<input>]
 qsv profile --help
 ```
+
+<a name="arguments"></a>
+
+## Arguments [↩](#nav)
+
+| Argument&nbsp; | Description |
+|----------|-------------|
+| &nbsp;`<input>`&nbsp; | Path or URL to the CSV to profile. When `-` or omitted, reads from stdin. When the URL has DCAT markup, qsv will attempt to discover and ingest it as a base layer of metadata (unless --no-dcat-discovery is set). See --no-dcat-discovery and --dcat-discovery-timeout for details and opt-out. |
 
 <a name="profile-options"></a>
 

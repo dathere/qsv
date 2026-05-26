@@ -1,18 +1,14 @@
 static USAGE: &str = r#"
-Extract and infer DCAT-3 / Croissant metadata from a CSV, optionally driven by a
-CKAN scheming YAML spec.
+Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile
+of a dataset, mapped and driven by a metadata scheming YAML spec.
 
-This is the non-interactive, qsv-native counterpart to what datapusher-plus (DP+)
-does in CKAN: run statistical + frequency analysis on the input, build a Jinja2
-context (`package`, `resource`, `dpps`, `dppf`, `dpp`), then evaluate every
-`formula` / `suggestion_formula` field declared in the scheming YAML. The
-resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort
-DCAT-US v3 projection, ready for qsv pro and DP+ to prepopulate CKAN packages.
+This is the non-interactive, qsv-native FAIRification counterpart to what datapusher-plus (DP+)
+does in CKAN: run statistical + frequency analysis on the input, build a Jinja2 context with the results,
+then evaluate Jinja2 formulae/suggestions using this context as declared in the scheming YAML.
+The resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort DCAT v3
+projection (starting with DCAT-US v3), DP+ to prepopulate CKAN packages.
 
-Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`,
-built on `minijinja`. No Python interpreter is required at runtime; the
-SQL-requiring helpers (`temporal_resolution`, `guess_accrual_periodicity`)
-query the input CSV directly via Polars SQL.
+Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`, built on `minijinja`.
 
 For an example spec file, see:
   https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml
@@ -22,6 +18,14 @@ For more extensive examples, see https://github.com/dathere/qsv/blob/master/test
 Usage:
     qsv profile [options] [<input>]
     qsv profile --help
+
+profile argument:
+    <input>                   Path or URL to the CSV to profile. When `-` or
+                              omitted, reads from stdin.
+                              When the URL has DCAT markup, qsv will attempt to
+                              discover and ingest it as a base layer of metadata
+                              (unless --no-dcat-discovery is set). See --no-dcat-discovery
+                              and --dcat-discovery-timeout for details and opt-out.
 
 profile options:
     --spec <yaml>             CKAN scheming YAML spec file. If omitted, only the
@@ -1375,7 +1379,7 @@ mod tests {
         // Mixed case.
         assert!(is_uuid_like("5202679A-D243-402E-B82A-63189995A942"));
         // Compact 32 hex.
-        assert!(is_uuid_like("5202679ad243402eb82a63189995a942"));
+        assert!(is_uuid_like("5202679ad243402eb82a63189995a942")); // devskim: ignore DS173237
         // Negatives:
         assert!(!is_uuid_like("dump"));
         assert!(!is_uuid_like("2024-Q3-payments"));

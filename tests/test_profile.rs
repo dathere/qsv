@@ -205,17 +205,23 @@ fn profile_stdin_input_is_accepted() {
     // Regression for roborev #2453: also assert the DCAT distribution's
     // `qsv:sourcePath` reads "stdin" — that field previously kept the
     // tempfile path even after the top-level `input` label was fixed.
+    //
+    // Regression for roborev #2454: also assert `dcat:byteSize` is
+    // populated for stdin. An earlier attempt at the #2453 fix passed
+    // the display label to `dcat::build` for the metadata read too,
+    // which silently dropped byte-size info; the proper fix splits
+    // `local_path` (real file for fs::metadata) from `source_label`
+    // (display).
     let wrk = Workdir::new("profile_stdin");
     let mut cmd = wrk.command("profile");
     cmd.arg("-");
     cmd.stdin(std::process::Stdio::piped());
     let mut child = cmd.spawn().expect("spawn qsv profile");
+    let payload = b"id,name\n1,alpha\n2,bravo\n3,charlie\n";
     {
         use std::io::Write;
         let stdin = child.stdin.as_mut().expect("child stdin");
-        stdin
-            .write_all(b"id,name\n1,alpha\n2,bravo\n3,charlie\n")
-            .expect("write stdin");
+        stdin.write_all(payload).expect("write stdin");
     }
     let output = child.wait_with_output().expect("wait qsv profile");
     assert!(
@@ -252,6 +258,18 @@ fn profile_stdin_input_is_accepted() {
         Some("stdin"),
         "expected dcat:distribution[0].qsv:sourcePath to be \"stdin\" (no tempfile leak), got: \
          {source_path:?}\nfull body: {body}",
+    );
+
+    // roborev #2454 regression: dcat:byteSize must still reflect the
+    // materialized tempfile, even though the display label is "stdin".
+    let byte_size = parsed
+        .pointer("/dcat/dcat:distribution/0/dcat:byteSize")
+        .and_then(serde_json::Value::as_u64);
+    assert_eq!(
+        byte_size,
+        Some(payload.len() as u64),
+        "expected dcat:byteSize == {} (piped payload size), got: {byte_size:?}\nfull body: {body}",
+        payload.len(),
     );
 }
 

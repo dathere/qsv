@@ -47,9 +47,16 @@ pub struct DcatWarning {
 ///
 /// `ckan_package` is the merged `ckan.package` object (post-formula
 /// evaluation); `ckan_resources` is the matching list of resources (today
-/// just one); `dpp` is the inferred metadata block; `input_path` is used to
-/// derive default title and downloadURL when the package/resource don't
-/// provide them.
+/// just one); `dpp` is the inferred metadata block.
+///
+/// Two input paths are accepted because URL and stdin inputs are
+/// materialized to a tempfile that mustn't surface in user-facing
+/// metadata:
+///   * `local_path` — the actual file on disk used for `fs::metadata` (currently `dcat:byteSize`).
+///     This is the tempfile path for URL/stdin inputs and the original path otherwise.
+///   * `source_label` — the human-facing label shown in display fields (`qsv:sourcePath`, default
+///     `dct:title`). For local files this equals `local_path`; for URLs it's the URL; for stdin
+///     it's `"stdin"`.
 ///
 /// `legacy_license` (the `--dcat-legacy-license` CLI flag, default off)
 /// re-emits `dct:license` at the Dataset level for back-compat. In strict
@@ -59,13 +66,14 @@ pub fn build(
     ckan_resources: &[Value],
     dpp: &Value,
     stats: &Value,
-    input_path: &str,
+    local_path: &str,
+    source_label: &str,
     legacy_license: bool,
 ) -> (Value, Vec<DcatWarning>) {
     let mut ds: Map<String, Value> = Map::new();
     let mut warnings: Vec<DcatWarning> = Vec::new();
     add_context_and_type(&mut ds);
-    add_core_identity(&mut ds, ckan_package, input_path);
+    add_core_identity(&mut ds, ckan_package, source_label);
     add_provenance(&mut ds, ckan_package);
     add_contact_point(&mut ds, ckan_package, &mut warnings);
     add_classification(&mut ds, ckan_package);
@@ -78,7 +86,8 @@ pub fn build(
         ckan_package,
         ckan_resources,
         stats,
-        input_path,
+        local_path,
+        source_label,
         legacy_license,
     );
     (Value::Object(ds), warnings)
@@ -98,14 +107,19 @@ fn add_context_and_type(ds: &mut Map<String, Value>) {
 
 /// dct:title, dct:description, dct:identifier, dct:modified, dct:issued.
 ///
+/// `source_label` is the user-facing input label (path / URL / "stdin")
+/// used only to derive a default `dct:title` when the CKAN package
+/// doesn't already supply one. It must not be a tempfile path — see
+/// `build`'s doc comment for the split rationale.
+///
 /// Phase 2e: `dct:modified` is sanitized to strip ISO 8601 interval
 /// syntax (`R/P1Y`, `2020-01-01/P1Y`, etc.) — DCAT-US v3 requires a
 /// discrete date here. Frequency-of-update values belong on
 /// `dct:accrualPeriodicity` (Phase 5).
-fn add_core_identity(ds: &mut Map<String, Value>, ckan_package: &Value, input_path: &str) {
+fn add_core_identity(ds: &mut Map<String, Value>, ckan_package: &Value, source_label: &str) {
     let title = string_or(
         ckan_package.get("title"),
-        Path::new(input_path)
+        Path::new(source_label)
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("dataset"),
@@ -555,12 +569,17 @@ fn normalize_iso_639_1(input: &str) -> Option<String> {
 /// a `csvw:tableSchema` derived from qsv stats. When `legacy_license` is
 /// set, the package license is also re-emitted on the Dataset (inserted
 /// just before the distribution array so output ordering remains stable).
+///
+/// `local_path` is the file on disk for `fs::metadata`; `source_label` is
+/// the user-facing path/URL/"stdin" surfaced in display fields. See
+/// `build`'s doc comment for the split rationale.
 fn add_distributions(
     ds: &mut Map<String, Value>,
     ckan_package: &Value,
     ckan_resources: &[Value],
     stats: &Value,
-    input_path: &str,
+    local_path: &str,
+    source_label: &str,
     legacy_license: bool,
 ) {
     let pkg_license = take_first_str(ckan_package, &["license_id", "license"]);
@@ -571,7 +590,7 @@ fn add_distributions(
 
     let distributions: Vec<Value> = ckan_resources
         .iter()
-        .map(|r| build_distribution(r, stats, input_path, pkg_license.as_deref()))
+        .map(|r| build_distribution(r, stats, local_path, source_label, pkg_license.as_deref()))
         .collect();
     ds.insert("dcat:distribution".to_string(), Value::Array(distributions));
 }
@@ -604,10 +623,17 @@ fn take_first_str(obj: &Value, keys: &[&str]) -> Option<String> {
 /// the package-level license slug (or absolute IRI) to use when the
 /// resource itself doesn't declare one — per DCAT-US v3 the license
 /// lives on the Distribution rather than the Dataset.
+///
+/// `local_path` is the file on disk used for `dcat:byteSize` via
+/// `fs::metadata`; `source_label` is the user-facing path/URL/"stdin"
+/// used for `qsv:sourcePath` and the title default. The split lets the
+/// caller materialize URL/stdin inputs to a tempfile without leaking
+/// the random tempfile suffix into the emitted DCAT.
 fn build_distribution(
     resource: &Value,
     stats: &Value,
-    input_path: &str,
+    local_path: &str,
+    source_label: &str,
     package_license_fallback: Option<&str>,
 ) -> Value {
     let mut d: Map<String, Value> = Map::new();
@@ -617,7 +643,7 @@ fn build_distribution(
     );
     let title = string_or(
         resource.get("name"),
-        Path::new(input_path)
+        Path::new(source_label)
             .file_name()
             .and_then(|s| s.to_str())
             .unwrap_or("data.csv"),
@@ -644,7 +670,7 @@ fn build_distribution(
     }
     d.insert(
         "qsv:sourcePath".to_string(),
-        Value::String(input_path.to_string()),
+        Value::String(source_label.to_string()),
     );
     d.insert(
         "dcat:mediaType".to_string(),
@@ -691,7 +717,11 @@ fn build_distribution(
         }
     }
 
-    if let Ok(meta) = std::fs::metadata(input_path) {
+    // Always use the real on-disk path for fs::metadata — URL/stdin
+    // inputs hand us a tempfile here, and the byte size we want is the
+    // materialized payload, not the (nonexistent) file at the display
+    // label.
+    if let Ok(meta) = std::fs::metadata(local_path) {
         d.insert("dcat:byteSize".to_string(), json!(meta.len()));
     }
 
@@ -914,7 +944,13 @@ mod tests {
             "url":  "   https://example.com/data.csv   ",
         });
         let stats = serde_json::json!({});
-        let dist = build_distribution(&resource, &stats, "/local/data.csv", None);
+        let dist = build_distribution(
+            &resource,
+            &stats,
+            "/local/data.csv",
+            "/local/data.csv",
+            None,
+        );
         let url = dist
             .get("dcat:downloadURL")
             .and_then(|v| v.as_str())
@@ -928,7 +964,7 @@ mod tests {
     fn local_path_omits_download_url_but_keeps_source_path() {
         let resource = serde_json::json!({ "name": "data" });
         let stats = serde_json::json!({});
-        let dist = build_distribution(&resource, &stats, "/tmp/data.csv", None);
+        let dist = build_distribution(&resource, &stats, "/tmp/data.csv", "/tmp/data.csv", None);
         assert!(dist.get("dcat:downloadURL").is_none());
         assert_eq!(
             dist.get("qsv:sourcePath").and_then(|v| v.as_str()),
@@ -951,7 +987,15 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            false,
+        );
         let spatial = ds.pointer("/dct:spatial").expect("dct:spatial");
         assert!(spatial.is_array(), "dct:spatial must be an array");
         let arr = spatial.as_array().unwrap();
@@ -974,7 +1018,15 @@ mod tests {
             "created": {"stats": {"min": "2024-01-01", "max": "2024-12-31"}},
             "updated": {"stats": {"min": "2024-02-01", "max": "2024-11-30"}},
         });
-        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            false,
+        );
         let temporal = ds.pointer("/dct:temporal").expect("dct:temporal");
         assert!(temporal.is_array());
         let arr = temporal.as_array().unwrap();
@@ -997,7 +1049,15 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            false,
+        );
         assert!(
             ds.get("dct:license").is_none(),
             "dct:license must not be on Dataset in strict v3"
@@ -1020,7 +1080,15 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", true);
+        let (ds, _warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            true,
+        );
         assert!(
             ds.get("dct:license").is_some(),
             "dct:license must be re-emitted on Dataset under legacy flag"
@@ -1039,7 +1107,15 @@ mod tests {
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
         let stats = serde_json::json!({});
-        let (ds, _warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, _warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            false,
+        );
         assert_eq!(
             ds.pointer("/dct:conformsTo/@type").and_then(|v| v.as_str()),
             Some("dct:Standard")
@@ -1096,7 +1172,15 @@ mod tests {
         let resources = vec![json!({})];
         let dpp = json!({});
         let stats = json!({});
-        let (ds, warnings) = build(&pkg, &resources, &dpp, &stats, "/tmp/data.csv", false);
+        let (ds, warnings) = build(
+            &pkg,
+            &resources,
+            &dpp,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            false,
+        );
         assert_eq!(
             ds.pointer("/dcat:contactPoint/@type")
                 .and_then(|v| v.as_str()),
@@ -1123,7 +1207,15 @@ mod tests {
     fn missing_contact_point_warns_required() {
         let pkg = json!({});
         let resources = vec![json!({})];
-        let (_ds, warnings) = build(&pkg, &resources, &json!({}), &json!({}), "/x.csv", false);
+        let (_ds, warnings) = build(
+            &pkg,
+            &resources,
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         let w = warnings
             .iter()
             .find(|w| w.field == "dcat:contactPoint")
@@ -1138,7 +1230,15 @@ mod tests {
             "maintainer":       "John Smith",
             "maintainer_email": "mailto:john@example.gov"
         });
-        let (ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let (ds, warnings) = build(
+            &pkg,
+            &[json!({})],
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         assert_eq!(
             ds.pointer("/dcat:contactPoint/vcard:fn")
                 .and_then(|v| v.as_str()),
@@ -1160,7 +1260,15 @@ mod tests {
             "bureauCode":  ["015:11"],
             "programCode": ["015:000", "015:001"],
         });
-        let (ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let (ds, warnings) = build(
+            &pkg,
+            &[json!({})],
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         assert_eq!(
             ds.pointer("/dcat-us:bureauCode/0").and_then(|v| v.as_str()),
             Some("015:11")
@@ -1180,7 +1288,15 @@ mod tests {
     #[test]
     fn us_codes_split_comma_string() {
         let pkg = json!({"bureauCode": "015:11, 015:12"});
-        let (ds, _) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let (ds, _) = build(
+            &pkg,
+            &[json!({})],
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         let arr = ds
             .pointer("/dcat-us:bureauCode")
             .and_then(|v| v.as_array())
@@ -1194,7 +1310,15 @@ mod tests {
     #[test]
     fn missing_us_codes_warns_recommended() {
         let pkg = json!({});
-        let (_ds, warnings) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let (_ds, warnings) = build(
+            &pkg,
+            &[json!({})],
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         for field in ["dcat-us:bureauCode", "dcat-us:programCode"] {
             let w = warnings
                 .iter()
@@ -1261,7 +1385,15 @@ mod tests {
             "accrualPeriodicity": "annually",
             "temporalResolution": "P1D"
         });
-        let (ds, _) = build(&pkg, &[json!({})], &json!({}), &json!({}), "/x.csv", false);
+        let (ds, _) = build(
+            &pkg,
+            &[json!({})],
+            &json!({}),
+            &json!({}),
+            "/x.csv",
+            "/x.csv",
+            false,
+        );
         assert_eq!(
             ds.pointer("/dcat:landingPage").and_then(|v| v.as_str()),
             Some("https://example.gov/dataset")
@@ -1321,7 +1453,13 @@ mod tests {
             "use_restriction":    {"type": "none"},
             "cui_restriction":    {"type": "none"}
         });
-        let dist = build_distribution(&resource, &json!({}), "/tmp/data.csv", None);
+        let dist = build_distribution(
+            &resource,
+            &json!({}),
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            None,
+        );
         assert_eq!(
             dist.pointer("/dcat:accessURL").and_then(|v| v.as_str()),
             Some("https://example.gov/dataset")

@@ -47,15 +47,19 @@ profile options:
                               Each leaf value may also be wrapped as
                               {"value": ..., "force": true} to mark it
                               as overriding any value discovered from
-                              the URL's existing DCAT markup. For
-                              dataset_info entries, `force: true` is
-                              honored at merge time: discovered DCAT
-                              will NOT overlay forced paths even when
-                              the inferred projection left them
-                              absent. (Force on package/resource
-                              entries is accepted and stripped but
-                              has no merge-time effect yet — needs
-                              a CKAN→DCAT pointer mapping table.)
+                              the URL's existing DCAT markup AND any
+                              value qsv inferred. Force is honored
+                              across all three subtrees:
+                                * dataset_info entries (DCAT pointers)
+                                  override their target path verbatim.
+                                * package / resource entries route
+                                  through a CKAN→DCAT mapping table —
+                                  e.g. `package.title force=true`
+                                  lands at `/dcat/dct:title`, beating
+                                  both inference and discovery.
+                                Forced values for CKAN slots that have
+                                no DCAT counterpart are silently
+                                dropped (no-op rather than error).
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
@@ -70,11 +74,19 @@ profile options:
     --dcat-discovery-timeout <secs>  Per-request timeout for DCAT-markup
                               discovery probes. Default: 5.
     --validate-dcat           Validate the emitted dcat block against the
-                              embedded minimal DCAT-US v3 schema (covers
-                              the mandatory fields). Violations append to
-                              dcat_warnings by default.
+                              vendored GSA DCAT-US v3 JSON Schema bundle
+                              (see resources/dcat-us-v3/). Catches missing
+                              mandatory fields, cardinality issues, and
+                              shape violations across the full v3 spec.
+                              Violations append to dcat_warnings by default.
     --strict-dcat             With --validate-dcat, fail the command on
                               any schema violation instead of warning.
+    --catalog                 Wrap the emitted DCAT-US v3 Dataset inside a
+                              dcat:Catalog envelope (Catalog{dataset:[...]}).
+                              Useful for federation harvesters (data.gov,
+                              CKAN ingest) that expect Catalog-shaped
+                              top-level metadata. Default: off
+                              (Dataset-only, backwards-compatible).
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -102,7 +114,10 @@ use serde_json::{Value, json};
 
 use crate::{CliError, CliResult, util};
 
+mod catalog;
+mod ckan_to_dcat;
 mod context;
+mod curie;
 mod dcat;
 mod dcat_discover;
 mod dcat_validate;
@@ -122,6 +137,7 @@ struct Args {
     flag_dcat_discovery_timeout: Option<u64>,
     flag_validate_dcat:          bool,
     flag_strict_dcat:            bool,
+    flag_catalog:                bool,
     flag_no_ckan:                bool,
     flag_force:                  bool,
     flag_jobs:                   Option<usize>,
@@ -373,15 +389,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // --initial-context's `dataset_info` JSON-Pointer overrides are the
-    // final escape hatch — applied unconditionally over inference,
-    // discovery, the CKAN block, and formula output. Must run BEFORE
-    // schema validation so an override that supplies a missing
-    // mandatory field doesn't trip --strict-dcat. Per plan §4c.
+    // --initial-context's `dataset_info` JSON-Pointer overrides are
+    // applied first — unconditionally over inference, discovery, the
+    // CKAN block, and formula output. Must run BEFORE schema
+    // validation so an override that supplies a missing mandatory
+    // field doesn't trip --strict-dcat. Per plan §4c.
     if let Some(overrides) = analysis.dataset_info.as_object()
         && !overrides.is_empty()
     {
         apply_pointer_overrides(&mut output, overrides);
+    }
+
+    // §5.4: forced `(dcat_pointer, value)` pairs from all three
+    // subtrees (dataset_info, package, resource — translated via
+    // ckan_to_dcat). Applied AFTER apply_pointer_overrides so a
+    // `{value, force: true}` wrapper beats both inferred metadata
+    // AND publisher-discovered DCAT, with last-write-wins on
+    // aliasing pointers. Still runs BEFORE schema validation so a
+    // forced field can rescue --strict-dcat the same way
+    // dataset_info entries do.
+    if !analysis.forced_values.is_empty() {
+        apply_force_overrides(&mut output, &analysis.forced_values);
     }
 
     // Phase 6 (post-override): JSON Schema validation runs on the
@@ -396,15 +424,33 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .remove("__pending_dcat_warnings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
+        // Stale-warning filter consults the Dataset shape (BEFORE any
+        // Catalog wrap so the build-time field names — `dcat:contactPoint`
+        // etc. — still live at the top of the dcat block).
         let final_dcat_snapshot = out_map.get("dcat").cloned();
         let mut dcat_warnings: Vec<dcat::DcatWarning> = stashed
             .into_iter()
             .filter(|w| !final_dcat_has_field(final_dcat_snapshot.as_ref(), &w.field))
             .collect();
+
+        // --catalog: wrap the emitted Dataset inside a dcat:Catalog
+        // envelope so federation harvesters (data.gov, CKAN ingest) see
+        // a Catalog-shaped block. Runs AFTER the stale-warning filter
+        // (so build-time Dataset field names still resolve) but BEFORE
+        // schema validation (so validate_dataset_or_catalog picks the
+        // Catalog overlay via @type and enforces Catalog-level required
+        // keys on the envelope).
+        if args.flag_catalog
+            && let Some(dataset) = out_map.remove("dcat")
+        {
+            let catalog_block = catalog::wrap_as_catalog(dataset);
+            out_map.insert("dcat".to_string(), catalog_block);
+        }
+
         if args.flag_validate_dcat
             && let Some(final_dcat) = out_map.get("dcat")
         {
-            let validation = dcat_validate::validate_dataset(final_dcat);
+            let validation = dcat_validate::validate_dataset_or_catalog(final_dcat);
             if !validation.is_empty() && args.flag_strict_dcat {
                 let summary = validation
                     .iter()
@@ -818,6 +864,26 @@ fn strip_compound_csv_ext(path: &str) -> String {
 /// best-effort, not an enforcement mechanism.
 fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String, Value>) {
     for (ptr, new_value) in overrides {
+        if !ptr.starts_with('/') {
+            continue;
+        }
+        set_by_pointer(root, ptr, new_value.clone());
+    }
+}
+
+/// §5.4: apply forced `(dcat_pointer, value)` pairs after
+/// `apply_pointer_overrides` so a user's `{value, force: true}`
+/// markings beat both inferred output AND discovered DCAT. Mirrors
+/// `apply_pointer_overrides`'s skip-non-pointer behaviour but takes
+/// a `&[(String, Value)]` instead of a Map so insertion order is
+/// preserved (matters when two forced leaves alias the same pointer
+/// via the `ckan_to_dcat` mapping — last-write-wins).
+///
+/// `forced_values` comes from `context::collect_forced_paths` and
+/// already has any `package/<key>` / `resource/<key>` pointers
+/// translated to their DCAT counterparts.
+fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
+    for (ptr, new_value) in forced_values {
         if !ptr.starts_with('/') {
             continue;
         }

@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/periodoftime",
+  "title": "PeriodOfTime",
+  "description": "Information about a specific time period with a start- and/or end-time",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/periods/fiscal-year-2024"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "PeriodOfTime"
+    },
+    "endDate": {
+      "title": "end date",
+      "description": "The end date of the period of time",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:endDate",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2024-12-31", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Recommended"
+    },
+    "startDate": {
+      "title": "start date",
+      "description": "The start date of the period of time",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:startDate",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2023-10-01", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "anyOf": [
+    {
+      "required": ["startDate"]
+    },
+    {
+      "required": ["endDate"]
+    }
+  ],
+  "_oldDocs": {
+    "rdfClass": "dcterms:PeriodOfTime",
+    "rationale": "The introduction of dcterms:PeriodOfTime in DCAT-US 3.0 is pivotal for harmonizing with international standards and rectifying the inconsistency with DCAT 1. In DCAT-US 1.1, [[ISO8601-1]] was used for interval representation in dcterms:temporal, diverging from DCAT 1's requirement of dcterms:PeriodOfTime. This alignment with DCAT 3 standards in DCAT-US 3.0 not only resolves discrepancies but also streamlines data processing, simplifying parsing and indexing of time intervals. By adopting dcterms:PeriodOfTime, DCAT-US 3.0 promotes ease of implementation, ensuring uniformity, flexibility, accuracy, and enhanced interoperability in handling time-related data, ultimately benefiting data usability and exchange."
+  },
+  "examples": [
+    {
+      "@type": "PeriodOfTime",
+      "startDate": "2024-01-01",
+      "endDate": "2024-12-31"
+    }
+  ]
+}

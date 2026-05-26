@@ -1,0 +1,138 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/concept",
+  "title": "Concept",
+  "description": "A controlled term or label, optionally drawn from a concept scheme",
+  "anyOf": [
+    {
+      "type": "string",
+      "title": "Concept",
+      "description": "The value of the concept, expressed as a string. This is only used when the concept is not further described by the properties of the Concept object and is not linked to a concept scheme.",
+      "examples": ["Environment", "Climate Science"]
+    },
+    {
+      "type": "object",
+      "examples": [
+        {
+          "@type": "Concept",
+          "prefLabel": "Environment"
+        },
+        {
+          "@type": "Concept",
+          "prefLabel": "Climate Science",
+          "definition": "The scientific study of climate patterns and change.",
+          "inScheme": {
+            "@id": "https://example.gov/concept-schemes/science-domains",
+            "@type": "ConceptScheme",
+            "title": "Science Domains"
+          }
+        }
+      ],
+      "properties": {
+        "@id": {
+          "type": "string",
+          "format": "iri",
+          "examples": ["https://example.gov/concepts/environment"]
+        },
+        "@type": {
+          "type": "string",
+          "default": "Concept"
+        },
+        "altLabel": {
+          "title": "alternate label",
+          "description": "Alternative label for a concept",
+          "type": ["null", "string"],
+          "examples": ["Ecology"]
+        },
+        "definition": {
+          "title": "definition",
+          "description": "Definition of the controlled vocabulary term",
+          "type": ["null", "string"],
+          "examples": [
+            "The scientific study of climate patterns and change.",
+            "The natural world, including air, water, land, plants, and animals, especially as affected by human activity."
+          ]
+        },
+        "inScheme": {
+          "title": "in scheme",
+          "description": "Concept scheme defining this concept",
+          "$ref": "/dcat-us/3.0.0/definitions/conceptscheme",
+          "examples": [
+            {
+              "@id": "https://example.gov/concept-schemes/science-domains",
+              "@type": "ConceptScheme",
+              "title": "Science Domains"
+            },
+            {
+              "@id": "https://example.gov/concept-schemes/data-themes",
+              "@type": "ConceptScheme",
+              "version": "2.0",
+              "description": "DCAT-US approved themes for categorizing datasets",
+              "title": "Data Themes"
+            }
+          ]
+        },
+        "notation": {
+          "title": "notation",
+          "description": "List of abbreviations or codes from code lists for the Concept",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ],
+          "examples": [["ENV", "E01", "ENVI"]]
+        },
+        "prefLabel": {
+          "title": "preferred label",
+          "description": "Preferred label for the term",
+          "type": "string",
+          "examples": ["Environment", "Climate Science"]
+        }
+      },
+      "required": ["prefLabel"]
+    }
+  ],
+  "_oldDocs": {
+    "rdfClass": "skos:Concept",
+    "rationale": "The inclusion of skos:Concept in DCAT-US 3.0 enhances semantic search in catalogs, enabling more accurate discovery of Catalogs, Datasets, and Data Services. It improves user experience, promotes data discoverability, and supports better resource utilization. Additionally, it aligns with international standards like SKOS, ensuring compatibility and adherence to recognized controlled vocabulary practices."
+  },
+  "examples": [
+    "Environment",
+    "Climate Science",
+    {
+      "@type": "Concept",
+      "prefLabel": "Environment"
+    },
+    {
+      "@type": "Concept",
+      "prefLabel": "Climate Science",
+      "definition": "The scientific study of climate patterns and change.",
+      "inScheme": {
+        "@id": "https://example.gov/concept-schemes/science-domains",
+        "@type": "ConceptScheme",
+        "title": "Science Domains"
+      }
+    },
+    {
+      "@id": "https://example.gov/concepts/environment",
+      "@type": "Concept",
+      "prefLabel": "Environment",
+      "altLabel": "Ecology",
+      "definition": "The natural world, including air, water, land, plants, and animals, especially as affected by human activity.",
+      "notation": ["ENV", "E01", "ENVI"],
+      "inScheme": {
+        "@id": "https://example.gov/concept-schemes/data-themes",
+        "@type": "ConceptScheme",
+        "version": "2.0",
+        "description": "DCAT-US approved themes for categorizing datasets",
+        "title": "Data Themes"
+      }
+    }
+  ]
+}

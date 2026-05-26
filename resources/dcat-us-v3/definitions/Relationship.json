@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/relationship",
+  "title": "Relationship",
+  "description": "Additional information about how one resource is related to another",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": [
+        "https://example.gov/relationships/dataset-001-data-provider"
+      ]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Relationship"
+    },
+    "hadRole": {
+      "title": "role",
+      "description": "The function of an entity or agent with respect to a dataset",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcat:hadRole",
+        "range": "dcat:Role"
+      },
+      "examples": ["isInputTo", "dataProvider"],
+      "requirementLevel": "Mandatory"
+    },
+    "relation": {
+      "title": "relation",
+      "description": "The entity related to the dataset. This string should unambiguously identify the related resource using an appropriate identifier.",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcterms:relation",
+        "range": "rdfs:Resource"
+      },
+      "examples": [
+        "https://example.gov/models/climate-prediction",
+        "https://example.gov/organizations/national-weather-service"
+      ],
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["hadRole", "relation"],
+  "_oldDocs": {
+    "rdfClass": "dcat:Relationship",
+    "rationale": "The introduction of dcat:Relationship in DCAT-US serves to enhance the representation and description of relationships between datasets and other resources. This class allows for the attachment of additional information to relationships that are not adequately characterized by standard properties, promoting a more comprehensive understanding of dataset connections. By accommodating nuanced relationship types beyond existing standards like [[DCTERMS]] and [[PROV-O]] properties, DCAT-US ensures greater flexibility and precision in documenting dataset relationships, facilitating more informed data discovery and utilization."
+  },
+  "examples": [
+    {
+      "@type": "Relationship",
+      "hadRole": "isInputTo",
+      "relation": "https://example.gov/models/climate-prediction"
+    }
+  ]
+}

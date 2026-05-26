@@ -1,19 +1,22 @@
 {
   "package": {
     "title": "Example Dataset (seed)",
-    "notes": "A demo dataset showing every --initial-context slot the qsv profile command will read in Phase 4+.",
+    "notes": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
     "name": "example-dataset",
     "license_id": "cc-by",
     "publisher": "Example Agency",
     "metadata_modified": "2024-12-15",
     "metadata_created": "2024-01-01",
+    "created": "2023-06-15",
+    "version": "1.2.0",
+    "versionNotes": "Q3 2024 refresh — added new sensors and corrected historical timestamps.",
     "tags": ["climate", "transportation"],
     "groups": [{"name": "transportation"}],
     "language": "en-US",
 
     "contact_point": {"fn": "Jane Doe", "hasEmail": "jane.doe@example.gov"},
     "bureauCode": ["015:11"],
-    "programCode": ["015:000"],
+    "programCode": ["015:001"],
     "accrualPeriodicity": "annually",
     "accessRights": "public",
     "rights": "U.S. Government Work",
@@ -22,7 +25,13 @@
     "purpose": "Track example metric over time.",
     "scopeNote": "Records cover calendar years 2020-2024 only.",
     "liabilityStatement": "Provided as-is; verify before operational use.",
-    "inSeries": "https://example.gov/datasets/example-series"
+    "inSeries": "https://example.gov/datasets/example-series",
+
+    "_force_example_title": {
+      "_note": "Move the `_force_example_title` key to `title` (replacing the seed value above) to demonstrate force semantics: package.title force=true beats both inferred and discovered metadata via the CKAN→DCAT mapping table.",
+      "value": "Forced Title (beats inference + discovery)",
+      "force": true
+    }
   },
   "resource": {
     "name": "example",
@@ -30,6 +39,8 @@
     "format": "CSV",
     "url": "https://example.gov/datasets/example-dataset/data.csv",
     "license_id": "cc-by",
+    "language": "en",
+    "conformsTo": "https://www.w3.org/TR/tabular-data-model/",
     "last_modified": "2024-12-15T08:30:00",
     "access_restriction": {"type": "none"},
     "use_restriction": {"type": "none"},
@@ -38,6 +49,7 @@
     "rights": "U.S. Government Work"
   },
   "dataset_info": {
-    "/dcat/dct:title": "Example Dataset (init-context override)"
+    "/dcat/dct:title": "Example Dataset (init-context override)",
+    "/dcat/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
   }
 }

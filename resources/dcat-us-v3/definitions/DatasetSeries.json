@@ -1,0 +1,421 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/datasetseries",
+  "title": "DatasetSeries",
+  "description": "A group of related datasets that are published separately",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/series/annual-climate-observations"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "DatasetSeries"
+    },
+    "contactPoint": {
+      "title": "contact point",
+      "description": "List of contacts people can use to ask questions or send feedback about the dataset series",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/kind"
+      },
+      "_oldDocs": {
+        "uri": "dcat:contactPoint",
+        "range": "vcard:Kind"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "first": {
+      "title": "first",
+      "description": "The first dataset in an ordered dataset series",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/dataset",
+          "description": "inline description of the first dataset"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:first",
+        "range": "dcat:Dataset"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "last": {
+      "title": "last",
+      "description": "The last dataset in an ordered dataset series",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/dataset",
+          "description": "inline description of the last dataset"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:last",
+        "range": "dcat:Dataset"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "seriesMember": {
+      "title": "series member",
+      "description": "List of members of the Dataset Series",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/dataset"
+      },
+      "_oldDocs": {
+        "uri": "dcat:seriesMember",
+        "range": "dcat:Dataset"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "accrualPeriodicity": {
+      "title": "frequency",
+      "description": "The frequency at which the Dataset Series is updated. This is the series update frequency, not necessarily each dataset's frequency",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "description": "ISO 19115 Maintenance Frequency code",
+          "enum": [
+            "continual",
+            "daily",
+            "weekly",
+            "fortnightly",
+            "monthly",
+            "quarterly",
+            "biannually",
+            "annually",
+            "asNeeded",
+            "irregular",
+            "notPlanned",
+            "unknown"
+          ]
+        },
+        {
+          "type": "string",
+          "description": "ISO-8601 Maintenance Frequency code for recurring values, see https://www.iso.org/standard/70907.html",
+          "pattern": "^R/P.+$"
+        },
+        {
+          "type": "string",
+          "description": "Dublin Core Collection Frequency Vocabulary, see https://www.dublincore.org/specifications/dublin-core/collection-description/frequency/#vocabulary-terms",
+          "enum": [
+            "continuous",
+            "daily",
+            "weekly",
+            "biweekly",
+            "monthly",
+            "quarterly",
+            "semiannual",
+            "annual",
+            "irregular",
+            "triennial",
+            "biennial",
+            "threeTimesAYear",
+            "bimonthly",
+            "semimonthly",
+            "threeTimesAMonth",
+            "semiweekly",
+            "threeTimesAWeek"
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:accrualPeriodicity",
+        "range": "dcterms:Frequency"
+      },
+      "examples": ["annually"],
+      "requirementLevel": "Optional"
+    },
+    "description": {
+      "title": "description",
+      "description": "Plain-language summary of the dataset series",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcterms:description",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "An annual series of comprehensive climate observation datasets collected from monitoring stations across the United States. Each dataset in the series covers one calendar year of daily observations."
+      ],
+      "requirementLevel": "Mandatory"
+    },
+    "issued": {
+      "title": "release date",
+      "description": "Date when the Dataset Series was formally established or published, not the release date of the oldest dataset in the series",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:issued",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2000-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "modified": {
+      "title": "update/modification date",
+      "description": "Most recent date when the Dataset Series changed, not the modified date of the newest dataset in the series",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:modified",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": [
+        "2024-12-01",
+        "2024-06-01",
+        "2024-01-15T10:30:00Z",
+        "2024",
+        "2024-01"
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "publisher": {
+      "title": "publisher",
+      "description": "Organization responsible for maintaining the Dataset Series as a coherent series; this may differ from publishers of individual datasets",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/agent",
+          "description": "inline description of publisher"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:publisher",
+        "range": "foaf:Agent"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "spatial": {
+      "title": "spatial/geographic coverage",
+      "description": "A geographic region that is covered by the Dataset Series",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/location"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:spatial",
+        "range": "dcterms:Location"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "temporal": {
+      "title": "temporal coverage",
+      "description": "Time periods covered by the dataset series",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/periodoftime"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:temporal",
+        "range": "dcterms:PeriodOfTime"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "title": {
+      "title": "title",
+      "description": "Human-readable title of the dataset series",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcterms:title",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "Annual Climate Observations",
+        "Annual National Climate Observations Series"
+      ],
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["description", "title"],
+  "_oldDocs": {
+    "rdfClass": "dcat:DatasetSeries",
+    "rationale": "Incorporating dcat:DatasetSeries is essential to enable the structured grouping and presentation of related datasets, ensuring that data publishers can convey meaningful collections of data. This facilitates efficient data organization and discovery for users, aligning the DCAT profile with international standards for dataset series representation.",
+    "subclassOf": "dcat:Dataset"
+  },
+  "examples": [
+    {
+      "@type": "DatasetSeries",
+      "title": "Annual Climate Observations",
+      "description": "A series of annual climate observation datasets from monitoring stations.",
+      "contactPoint": [
+        {
+          "fn": "Climate Data Support",
+          "hasEmail": "mailto:climate@example.gov"
+        }
+      ],
+      "publisher": {
+        "name": "National Climate Data Center"
+      },
+      "accrualPeriodicity": "annually",
+      "issued": "2000-01-15",
+      "modified": "2024-12-01",
+      "first": {
+        "@id": "https://example.gov/datasets/climate-observations-2000",
+        "@type": "Dataset",
+        "title": "Climate Observations 2000",
+        "description": "First year of climate observations.",
+        "contactPoint": {
+          "fn": "Climate Support",
+          "hasEmail": "mailto:climate@example.gov"
+        },
+        "publisher": {
+          "name": "National Climate Data Center"
+        },
+        "identifier": "https://example.gov/datasets/series-first"
+      },
+      "last": {
+        "@id": "https://example.gov/datasets/climate-observations-2024",
+        "@type": "Dataset",
+        "title": "Climate Observations 2024",
+        "description": "Latest year of climate observations.",
+        "contactPoint": {
+          "fn": "Climate Support",
+          "hasEmail": "mailto:climate@example.gov"
+        },
+        "publisher": {
+          "name": "National Climate Data Center"
+        },
+        "identifier": "https://example.gov/datasets/series-last"
+      },
+      "seriesMember": [
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2022",
+          "@type": "Dataset",
+          "title": "Climate Observations 2022",
+          "description": "Climate observations for 2022.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/series-member-001"
+        },
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2023",
+          "@type": "Dataset",
+          "title": "Climate Observations 2023",
+          "description": "Climate observations for 2023.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/series-member-002"
+        },
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2024",
+          "@type": "Dataset",
+          "title": "Climate Observations 2024",
+          "description": "Climate observations for 2024.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/series-member-003"
+        }
+      ],
+      "spatial": [
+        {
+          "@type": "Location",
+          "bbox": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [-125.0, 24.0],
+                [-66.0, 24.0],
+                [-66.0, 50.0],
+                [-125.0, 50.0],
+                [-125.0, 24.0]
+              ]
+            ]
+          }
+        }
+      ],
+      "temporal": [
+        {
+          "@type": "PeriodOfTime",
+          "startDate": "2000-01-01",
+          "endDate": "2024-12-31"
+        }
+      ]
+    }
+  ]
+}

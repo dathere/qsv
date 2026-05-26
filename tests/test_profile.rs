@@ -262,9 +262,12 @@ fn profile_stdin_input_is_accepted() {
 
     // roborev #2454 regression: dcat:byteSize must still reflect the
     // materialized tempfile, even though the display label is "stdin".
+    // Emitted as a string per GSA Distribution.json's
+    // type=["null","string"] (xsd:nonNegativeInteger stored as string).
     let byte_size = parsed
         .pointer("/dcat/dcat:distribution/0/dcat:byteSize")
-        .and_then(serde_json::Value::as_u64);
+        .and_then(serde_json::Value::as_str)
+        .and_then(|s| s.parse::<u64>().ok());
     assert_eq!(
         byte_size,
         Some(payload.len() as u64),
@@ -344,7 +347,7 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
         "dct:license must live on Distribution in strict v3"
     );
     let dist_license = out
-        .pointer("/dcat/dcat:distribution/0/dct:license/@id")
+        .pointer("/dcat/dcat:distribution/0/dct:license")
         .and_then(|v| v.as_str())
         .expect("dct:license on Distribution");
     assert!(dist_license.contains("creativecommons.org"));
@@ -919,4 +922,430 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
         "wrapper must unwrap; the {{value, force}} object itself must NOT become the \
          dcat:contactPoint value"
     );
+}
+
+// =============================================================================
+// DCAT-US v3 comprehensive coverage (--catalog, force overrides, new fields,
+// GSA bundle validation).
+// =============================================================================
+
+#[test]
+fn profile_catalog_flag_wraps_dataset() {
+    let wrk = Workdir::new("profile_catalog");
+    seed_geo_csv(&wrk);
+
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv").arg("--catalog");
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        Some("dcat:Catalog"),
+        "expected Catalog envelope when --catalog is set: {out:#}"
+    );
+    assert!(
+        out.pointer("/dcat/dcat:dataset")
+            .and_then(|v| v.as_array())
+            .is_some_and(|a| a.len() == 1),
+        "Catalog must carry exactly one Dataset"
+    );
+    assert_eq!(
+        out.pointer("/dcat/dcat:dataset/0/@type")
+            .and_then(|v| v.as_str()),
+        Some("dcat:Dataset"),
+        "inner element of dcat:dataset must keep its Dataset shape"
+    );
+    // dct:modified must NOT be auto-emitted on the Catalog envelope
+    // (single-CSV inputs have no independent catalog-level mtime).
+    assert!(
+        out.pointer("/dcat/dct:modified").is_none(),
+        "Catalog envelope must omit dct:modified for single-CSV runs"
+    );
+}
+
+#[test]
+fn profile_omits_catalog_wrapper_by_default() {
+    // Regression: without --catalog the dcat block stays a Dataset.
+    let wrk = Workdir::new("profile_no_catalog");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        Some("dcat:Dataset"),
+        "default mode must keep Dataset shape: {out:#}"
+    );
+}
+
+#[test]
+fn profile_emits_checksum_for_local_file() {
+    use std::io::Read;
+
+    let wrk = Workdir::new("profile_checksum");
+    seed_geo_csv(&wrk);
+
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv");
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    let alg = out
+        .pointer("/dcat/dcat:distribution/0/dcat:checksum/spdx:algorithm")
+        .and_then(|v| v.as_str());
+    assert_eq!(alg, Some("SHA-256"));
+    let emitted = out
+        .pointer("/dcat/dcat:distribution/0/dcat:checksum/spdx:checksumValue")
+        .and_then(|v| v.as_str())
+        .expect("checksumValue present");
+    assert_eq!(emitted.len(), 64, "SHA-256 hex is 64 chars: got {emitted}");
+    assert!(
+        emitted
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()),
+        "checksumValue must be lowercase hex per GSA Checksum schema"
+    );
+    // Independently compute SHA-256 of the on-disk file and compare.
+    use sha2::{Digest, Sha256};
+    let mut f = std::fs::File::open(wrk.path("in.csv")).unwrap();
+    let mut bytes = Vec::new();
+    f.read_to_end(&mut bytes).unwrap();
+    let mut hasher = Sha256::new();
+    hasher.update(&bytes);
+    let want = hasher.finalize();
+    let want_hex: String = want.iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(emitted, want_hex, "checksum mismatch");
+}
+
+#[test]
+fn profile_emits_compress_format_for_csv_gz_input() {
+    // Drop a plain CSV, gzip it, then profile the .csv.gz file.
+    let wrk = Workdir::new("profile_compress_gz");
+    seed_geo_csv(&wrk);
+    // Spawn `gzip` to keep the test free of compression deps.
+    let csv_path = wrk.path("in.csv");
+    let status = std::process::Command::new("gzip")
+        .arg("-9")
+        .arg(&csv_path)
+        .status()
+        .expect("spawn gzip");
+    assert!(status.success(), "gzip exited non-zero");
+    let gz_path = wrk.path("in.csv.gz");
+    assert!(gz_path.exists(), "expected in.csv.gz at {gz_path:?}");
+
+    let mut cmd = wrk.command("profile");
+    cmd.arg(gz_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "in.csv.gz.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dcat:distribution/0/dcat:compressFormat")
+            .and_then(|v| v.as_str()),
+        Some("application/gzip"),
+        "expected dcat:compressFormat=application/gzip for .csv.gz input: {out:#}"
+    );
+    assert!(
+        out.pointer("/dcat/dcat:distribution/0/dcat:packageFormat")
+            .is_none(),
+        "single-file compression must NOT also emit packageFormat"
+    );
+}
+
+#[test]
+fn profile_emits_dataset_level_created_version_versionnotes() {
+    let wrk = Workdir::new("profile_dataset_extras");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package": {
+            "title":        "Foo",
+            "notes":        "Bar",
+            "publisher":    "Agency",
+            "created":      "2023-06-15",
+            "version":      "1.2.0",
+            "versionNotes": "Q3 refresh"
+          },
+          "resource": {}
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dct:created").and_then(|v| v.as_str()),
+        Some("2023-06-15")
+    );
+    assert_eq!(
+        out.pointer("/dcat/dcat:version").and_then(|v| v.as_str()),
+        Some("1.2.0")
+    );
+    assert_eq!(
+        out.pointer("/dcat/dcat:versionNotes")
+            .and_then(|v| v.as_str()),
+        Some("Q3 refresh")
+    );
+}
+
+#[test]
+fn profile_emits_distribution_language_and_conformsto() {
+    let wrk = Workdir::new("profile_distribution_extras");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package":  {"title":"Foo","notes":"Bar","publisher":"Agency"},
+          "resource": {
+            "language":   "en",
+            "conformsTo": "https://www.w3.org/TR/tabular-data-model/"
+          }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dcat:distribution/0/dct:language")
+            .and_then(|v| v.as_str()),
+        Some("en")
+    );
+    // conformsTo is an array of dct:Standard objects per v3 cardinality.
+    assert_eq!(
+        out.pointer("/dcat/dcat:distribution/0/dct:conformsTo/0/@type")
+            .and_then(|v| v.as_str()),
+        Some("dct:Standard")
+    );
+    assert_eq!(
+        out.pointer("/dcat/dcat:distribution/0/dct:conformsTo/0/@id")
+            .and_then(|v| v.as_str()),
+        Some("https://www.w3.org/TR/tabular-data-model/")
+    );
+}
+
+#[test]
+fn profile_force_on_package_title_flows_via_ckan_to_dcat() {
+    let wrk = Workdir::new("profile_force_package_title");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    // Note: `title` carries a wrapper; the inner value lands at
+    // /dcat/dct:title (translated by ckan_to_dcat) and must beat any
+    // inferred value.
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package": {
+            "title":     {"value": "FORCED VIA PACKAGE", "force": true},
+            "notes":     "Bar",
+            "publisher": "Agency"
+          },
+          "resource": {}
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        Some("FORCED VIA PACKAGE"),
+        "package.title force=true must land at /dcat/dct:title: {out:#}"
+    );
+}
+
+#[test]
+fn profile_force_on_resource_url_translates_to_download_url() {
+    let wrk = Workdir::new("profile_force_resource_url");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package":  {"title":"Foo","notes":"Bar","publisher":"Agency"},
+          "resource": {
+            "url": {"value":"https://forced.example.gov/data.csv","force":true}
+          }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dcat:distribution/0/dcat:downloadURL")
+            .and_then(|v| v.as_str()),
+        Some("https://forced.example.gov/data.csv"),
+        "resource.url force=true must land at /dcat/dcat:distribution/0/dcat:downloadURL: {out:#}"
+    );
+}
+
+#[test]
+fn profile_force_on_dataset_info_beats_plain_dataset_info() {
+    // Two dataset_info entries target the same path; the forced one
+    // is applied LAST and wins.
+    let wrk = Workdir::new("profile_force_dataset_info");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package":      {"title":"Plain","notes":"Bar","publisher":"Agency"},
+          "resource":     {},
+          "dataset_info": {
+            "/dcat/dct:title": {"value": "Forced via dataset_info", "force": true}
+          }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap());
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        Some("Forced via dataset_info"),
+        "dataset_info force=true must beat inferred: {out:#}"
+    );
+}
+
+#[test]
+fn profile_validate_catalog_runs_catalog_overlay() {
+    // With --catalog --validate-dcat, the validator picks the Catalog
+    // overlay schema by @type. A minimal-but-valid Catalog (one
+    // fully-populated Dataset inside) must validate clean against the
+    // GSA Catalog schema — no Required-severity warnings.
+    let wrk = Workdir::new("profile_validate_catalog");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{
+          "package": {
+            "title":       "Catalog Test",
+            "notes":       "Bar",
+            "name":        "catalog-test-001",
+            "publisher":   "Agency",
+            "bureauCode":  ["015:11"],
+            "programCode": ["015:001"],
+            "contact_point": {"fn":"X","hasEmail":"x@y.gov"}
+          },
+          "resource": {
+            "url": "https://x.gov/d.csv"
+          }
+        }"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.arg("in.csv")
+        .arg("--initial-context")
+        .arg(ctx_path.to_str().unwrap())
+        .arg("--catalog")
+        .arg("--validate-dcat");
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "in.csv.metadata.json");
+    assert_eq!(
+        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        Some("dcat:Catalog"),
+        "--catalog must produce a Catalog envelope"
+    );
+    // No Required-severity warnings — Catalog overlay required keys are
+    // satisfied. Recommended-severity warnings would surface as
+    // best-practice nudges; this test guards the strict bar.
+    let required_warnings: Vec<&Value> = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter(|w| w.get("severity").and_then(|s| s.as_str()) == Some("required"))
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        required_warnings.is_empty(),
+        "expected no Required-severity schema warnings, got: {required_warnings:?}",
+    );
+}
+
+// =============================================================================
+// Vendored DCAT-US v3 schema bundle pin guard.
+// =============================================================================
+
+/// Recompute the SHA-256 of every file listed in
+/// `resources/dcat-us-v3/MANIFEST.json` and assert each matches the
+/// hash recorded in the manifest. Guards against silent edits to the
+/// vendored upstream schemas — the refresh procedure in
+/// `resources/dcat-us-v3/README.md` is the only blessed way to update
+/// them.
+#[test]
+fn dcat_us_v3_bundle_pin_manifest_matches_files() {
+    use std::io::Read;
+
+    use sha2::{Digest, Sha256};
+
+    let manifest_path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/dcat-us-v3/MANIFEST.json");
+    let bundle_root = manifest_path.parent().unwrap();
+    let raw = std::fs::read_to_string(&manifest_path)
+        .unwrap_or_else(|e| panic!("could not read {}: {e}", manifest_path.display()));
+    let manifest: serde_json::Value = serde_json::from_str(&raw).expect("manifest is valid JSON");
+    let files = manifest
+        .get("files")
+        .and_then(|v| v.as_array())
+        .expect("MANIFEST.json must carry a `files` array");
+    assert!(!files.is_empty(), "MANIFEST.json `files` array is empty");
+
+    for entry in files {
+        let rel_path = entry
+            .get("path")
+            .and_then(|v| v.as_str())
+            .expect("each file entry must carry a `path`");
+        let want_sha = entry
+            .get("sha256")
+            .and_then(|v| v.as_str())
+            .expect("each file entry must carry a `sha256`");
+
+        let abs_path = bundle_root.join(rel_path);
+        let mut f = std::fs::File::open(&abs_path)
+            .unwrap_or_else(|e| panic!("could not open vendored file {}: {e}", abs_path.display()));
+        let mut hasher = Sha256::new();
+        let mut buf = [0u8; 64 * 1024];
+        loop {
+            let n = f.read(&mut buf).unwrap_or_else(|e| {
+                panic!("could not read vendored file {}: {e}", abs_path.display())
+            });
+            if n == 0 {
+                break;
+            }
+            hasher.update(&buf[..n]);
+        }
+        let got: String = hasher
+            .finalize()
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(
+            got, want_sha,
+            "SHA-256 mismatch for vendored DCAT-US v3 schema `{rel_path}`: re-vendor via \
+             resources/dcat-us-v3/README.md procedure or restore the file"
+        );
+    }
 }

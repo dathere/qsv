@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/agent",
+  "title": "Agent",
+  "description": "A person, organization, software agent, or other entity involved with a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/agents/data-steward-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Agent"
+    },
+    "category": {
+      "title": "category",
+      "description": "The type of the agent that makes the item available",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "requirementLevel": "Optional"
+    },
+    "name": {
+      "title": "name",
+      "description": "The name of the agent",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "foaf:name",
+        "range": "xsd:string"
+      },
+      "examples": [
+        "National Climate Data Center",
+        "U.S. Department of Commerce Data Stewardship Office"
+      ],
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["name"],
+  "_oldDocs": {
+    "rdfClass": "foaf:Agent",
+    "rationale": "The addition of the foaf:Agent class in DCAT-US 3.0 serves a dual purpose. Firstly, it allows for the representation of software agents, aligning with modern data automation needs. Secondly, it acts as an abstract class for both foaf:Person and org:Organization, promoting consistency and interoperability while simplifying resource descriptions within the dataset catalog."
+  },
+  "examples": [
+    {
+      "@type": "Agent",
+      "name": "National Climate Data Center",
+      "category": ["https://example.gov/concepts/federal-agency"]
+    }
+  ]
+}

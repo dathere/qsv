@@ -1,0 +1,235 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/catalogrecord",
+  "title": "CatalogRecord",
+  "description": "A record in a catalog, describing the registration of a single resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": [
+        "https://example.gov/catalog-records/climate-dataset-record-001"
+      ]
+    },
+    "@type": {
+      "type": "string",
+      "default": "CatalogRecord"
+    },
+    "status": {
+      "title": "change type",
+      "description": "The status of the catalog record in the context of editorial flow of the dataset and data service descriptions",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/concept",
+          "description": "inline description of status"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "adms:status",
+        "range": "skos:Concept"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "conformsTo": {
+      "title": "application profile",
+      "description": "An Application Profile that the Catalog Record's metadata conforms to",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/standard",
+          "description": "inline description of application profile"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:conformsTo",
+        "range": "dcterms:Standard"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "description": {
+      "title": "Descriptions",
+      "description": "A list of free-text accounts of the catalog record",
+      "type": ["null", "array"],
+      "items": {
+        "title": "Description string",
+        "type": "string"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:description",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        [
+          "This catalog record describes the registration of the Climate Data 2023 dataset.",
+          "Contains metadata about when the dataset was added and last updated."
+        ]
+      ],
+      "requirementLevel": "Optional"
+    },
+    "issued": {
+      "title": "listing date",
+      "description": "List of dates on which the catalog record was included in the catalog",
+      "type": ["null", "array"],
+      "items": {
+        "title": "Date string",
+        "anyOf": [
+          {
+            "type": "string",
+            "format": "date-time"
+          },
+          {
+            "type": "string",
+            "format": "date"
+          },
+          {
+            "type": "string",
+            "pattern": "^[0-9]{4}$",
+            "description": "A year in YYYY format"
+          },
+          {
+            "type": "string",
+            "pattern": "^[0-9]{4}-[0-9]{2}$",
+            "description": "A year and month in YYYY-MM format"
+          }
+        ]
+      },
+      "_oldDocs": {
+        "uri": "dcterms:issued",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": [
+        ["2024-01-15T10:30:00Z"],
+        ["2024-01-15"],
+        ["2024"],
+        ["2024-01"]
+      ],
+      "requirementLevel": "Optional"
+    },
+    "language": {
+      "title": "language",
+      "description": "Language code used in catalog record metadata text, using ISO 639-1 values such as en or es, full list can be seen at https://id.loc.gov/vocabulary/iso639-1.html",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "title": "Language code",
+          "maxLength": 2
+        },
+        {
+          "type": "array",
+          "title": "Array of language codes",
+          "items": {
+            "title": "Language code",
+            "type": "string",
+            "maxLength": 2
+          }
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:language",
+        "range": "dcterms:LinguisticSystem"
+      },
+      "examples": ["en", ["en", "es"]],
+      "requirementLevel": "Optional"
+    },
+    "modified": {
+      "title": "update/modification date",
+      "description": "The most recent date on which the catalog record was changed or modified",
+      "anyOf": [
+        {
+          "type": "string",
+          "format": "date-time"
+        },
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}$",
+          "description": "A year in YYYY format"
+        },
+        {
+          "type": "string",
+          "pattern": "^[0-9]{4}-[0-9]{2}$",
+          "description": "A year and month in YYYY-MM format"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:modified",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2024-06-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Mandatory"
+    },
+    "source": {
+      "title": "source metadata",
+      "description": "The original metadata that was used in creating metadata for the items in the catalog record, either a URL referencing the source metadata or a string of the source metadata itself",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:source",
+        "range": "dcat:Resource"
+      },
+      "examples": ["Original metadata harvested from NOAA data portal"],
+      "requirementLevel": "Optional"
+    },
+    "title": {
+      "title": "title",
+      "description": "A name given to the Catalog Record",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:title",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "Climate Data 2024 Catalog Entry",
+        "Climate Data 2023 Catalog Record"
+      ],
+      "requirementLevel": "Optional"
+    },
+    "primaryTopic": {
+      "title": "primary topic",
+      "description": "A link to the Dataset, Data service or Catalog described in the Catalog Record",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "foaf:primaryTopic",
+        "range": "dcat:Resource"
+      },
+      "examples": [
+        "https://example.gov/datasets/climate-data-2024",
+        "https://example.gov/datasets/climate-data-2023"
+      ],
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["modified", "primaryTopic"],
+  "_oldDocs": {
+    "rdfClass": "dcat:CatalogRecord",
+    "rationale": "While its use is not mandatory, the incorporation of dcat:CatalogRecord into DCAT-US 3.0 holds significant value. It enables catalogs to distinguish between metadata describing datasets or services and the actual catalog entries. This differentiation proves especially advantageous for ensuring adherence to application profiles that demand specific metadata for catalog records. Furthermore, it streamlines resource lifecycle management, empowering catalogs to monitor alterations and revisions to their entries, ultimately bolstering data governance and quality assurance protocols."
+  },
+  "examples": [
+    {
+      "@type": "CatalogRecord",
+      "modified": "2024-06-15",
+      "primaryTopic": "https://example.gov/datasets/climate-data-2024",
+      "title": "Climate Data 2024 Catalog Entry",
+      "issued": ["2024-01-15"],
+      "status": "published",
+      "conformsTo": {
+        "@type": "Standard",
+        "title": "DCAT-US 3.0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/location",
+  "title": "Location",
+  "description": "A named place or geographic area",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/locations/washington-dc"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Location"
+    },
+    "bbox": {
+      "title": "bounding box",
+      "description": "Bounding box for the location, described in WKT, GeoJSON, or GML format",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "description": "Bounding box represented in WKT, GeoJSON (stringified), or GML format"
+        },
+        {
+          "type": "object",
+          "description": "Bounding box represented in GeoJSON format, either as a Polygon or in bbox array format",
+          "properties": {
+            "coordinates": {
+              "type": "array"
+            },
+            "type": {
+              "type": "string",
+              "const": "Polygon"
+            }
+          },
+          "required": ["type", "coordinates"]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:bbox",
+        "range": "rdfs:Literal typed as geosparql:wktLiteral or geosparql:gmlLiteral"
+      },
+      "examples": [
+        "POLYGON((-125 24, -66 24, -66 50, -125 50, -125 24))",
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-77.119759, 38.791645],
+              [-76.909393, 38.791645],
+              [-76.909393, 38.99538],
+              [-77.119759, 38.99538],
+              [-77.119759, 38.791645]
+            ]
+          ]
+        }
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "centroid": {
+      "title": "centroid",
+      "description": "The geographic center (centroid) of a location described in WKT, GeoJSON, or GML format",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "description": "Center point represented in WKT, GeoJSON (stringified), or GML format"
+        },
+        {
+          "type": "object",
+          "description": "Centroid represented in GeoJSON format; force point usage with coordinates of longitude and latitude",
+          "properties": {
+            "coordinates": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "type": {
+              "type": "string",
+              "const": "Point"
+            }
+          },
+          "required": ["type", "coordinates"]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat:centroid",
+        "range": "rdfs:Literal typed as geosparql:wktLiteral or geosparql:gmlLiteral"
+      },
+      "examples": [
+        {
+          "type": "Point",
+          "coordinates": [-77.0369, 38.9072]
+        }
+      ],
+      "requirementLevel": "Optional"
+    },
+    "identifier": {
+      "title": "identifier",
+      "description": "The unique geographic identifier for the Location, e.g., the URI or other unique identifier in the context of the relevant gazetteer",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/identifier",
+          "description": "inline description of Identifier"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:identifier",
+        "range": "rdfs:Literal"
+      },
+      "requirementLevel": "Optional"
+    },
+    "otherIdentifier": {
+      "title": "other identifier",
+      "description": "A list of geographic identifiers for the Location besides the main identifier, e.g. the URI or other unique identifiers in the context of the relevant gazetteer",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/identifier"
+      },
+      "requirementLevel": "Optional"
+    },
+    "geometry": {
+      "title": "geometry",
+      "description": "Associates a location with a corresponding geometry described in WKT, GeoJSON, or GML format",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "description": "String format of the full geometry of the location in WKT, GeoJSON, or GML format"
+        },
+        {
+          "type": "object",
+          "description": "Geometry represented in GeoJSON format",
+          "required": ["type", "coordinates"]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "locn:geometry",
+        "range": "locn:Geometry"
+      },
+      "examples": [
+        {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [-77.0402, 38.7916],
+              [-76.9094, 38.8921],
+              [-76.9115, 38.9355],
+              [-76.9286, 38.9784],
+              [-77.0024, 38.9657],
+              [-77.0389, 38.9939],
+              [-77.0672, 38.9687],
+              [-77.0782, 38.9143],
+              [-77.1198, 38.9342],
+              [-77.1198, 38.8456],
+              [-77.0402, 38.7916]
+            ]
+          ]
+        }
+      ],
+      "requirementLevel": "Optional"
+    },
+    "inScheme": {
+      "title": "gazetteer",
+      "description": "The gazetteer to which the location belongs",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/conceptscheme",
+          "description": "inline description of the gazetteer"
+        }
+      ],
+      "_oldDocs": {
+        "range": "skos:ConceptScheme",
+        "uri": "skos:inScheme"
+      },
+      "requirementLevel": "Optional"
+    },
+    "altLabel": {
+      "title": "alternative name",
+      "description": "An alternative label or name for a location",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "range": "rdfs:Literal"
+      },
+      "examples": ["DC"],
+      "requirementLevel": "Optional"
+    },
+    "prefLabel": {
+      "title": "geographic name",
+      "description": "Preferred label or name of the Location",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "range": "rdfs:Literal"
+      },
+      "examples": ["Continental United States", "Washington, D.C."],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": [],
+  "_oldDocs": {
+    "rdfClass": "dcterms:Location"
+  },
+  "examples": [
+    {
+      "@type": "Location",
+      "prefLabel": "Continental United States",
+      "bbox": "POLYGON((-125 24, -66 24, -66 50, -125 50, -125 24))"
+    },
+    {
+      "@type": "Location",
+      "prefLabel": "Continental United States",
+      "bbox": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-77.119759, 38.791645],
+            [-76.909393, 38.791645],
+            [-76.909393, 38.99538],
+            [-77.119759, 38.99538],
+            [-77.119759, 38.791645]
+          ]
+        ]
+      }
+    },
+    {
+      "@type": "Location",
+      "prefLabel": "Null Island",
+      "bbox": "POINT (0.0 0.0)"
+    },
+    {
+      "@type": "Location",
+      "prefLabel": "Random object",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-77.0402, 38.7916],
+            [-76.9094, 38.8921],
+            [-76.9115, 38.9355],
+            [-76.9286, 38.9784],
+            [-77.0024, 38.9657],
+            [-77.0389, 38.9939],
+            [-77.0672, 38.9687],
+            [-77.0782, 38.9143],
+            [-77.1198, 38.9342],
+            [-77.1198, 38.8456],
+            [-77.0402, 38.7916]
+          ]
+        ]
+      }
+    }
+  ]
+}

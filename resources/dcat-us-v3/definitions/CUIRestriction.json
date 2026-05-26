@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/cuirestriction",
+  "title": "CUIRestriction",
+  "description": "Information describing Controlled Unclassified Information (CUI) restrictions for a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/cui-restrictions/dataset-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "CUIRestriction"
+    },
+    "cuiBannerMarking": {
+      "title": "CUI banner marking",
+      "description": "CUI (Controlled Unclassified Information) banner marking is required for any unclassified information that is deemed sensitive and requires protection; see information at https://www.archives.gov/cui/registry/category-marking-list",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcat-us:cuiBannerMarking",
+        "range": "xsd:string"
+      },
+      "examples": ["CUI//SP-CTI", "CUI//SP-PRVCY//SP-LEGAL"],
+      "requirementLevel": "Mandatory"
+    },
+    "designationIndicator": {
+      "title": "CUI designation indicator",
+      "description": "Agency that designated the information as CUI; include at least \"Controlled by:\" and, when possible, contact information",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcat-us:designationIndicator",
+        "range": "xsd:string"
+      },
+      "examples": [
+        "Controlled by: Agency XYZ",
+        "Controlled by: DOC; POC: Jane Smith, mailto:jane.smith@example.gov, XXX-XXX-XXXX"
+      ],
+      "requirementLevel": "Mandatory"
+    },
+    "requiredIndicatorPerAuthority": {
+      "title": "required indicator per authority",
+      "description": "List of free-text required indicators from the applicable authority (for example, category descriptions or distribution statements)",
+      "type": ["null", "array"],
+      "items": {
+        "title": "Indicator string",
+        "type": "string"
+      },
+      "_oldDocs": {
+        "uri": "dcat-us:requiredIndicatorPerAuthority",
+        "range": "xsd:string"
+      },
+      "examples": [["Privacy Act of 1974", "Federal Records Act"]],
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["cuiBannerMarking", "designationIndicator"],
+  "_oldDocs": {
+    "rdfClass": "dcat-us:CuiRestriction",
+    "rationale": "The introduction of the dcat-us:CuiRestriction class in DCAT-US 3.0 is driven by the need for compliance with National Archives and Records Administration (NARA) guidelines regarding Controlled Unclassified Information (CUI). This addition ensures that DCAT-US aligns with NARA's standards, promotes transparency, facilitates compliance audits, and supports efficient resource management. Ultimately, it enhances data interoperability and security within the government data ecosystem."
+  },
+  "examples": [
+    {
+      "@type": "CUIRestriction",
+      "cuiBannerMarking": "CUI//SP-CTI",
+      "designationIndicator": "Controlled by: Agency XYZ"
+    }
+  ]
+}

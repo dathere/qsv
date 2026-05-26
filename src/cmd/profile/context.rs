@@ -43,15 +43,18 @@ pub struct ContextArgs<'a> {
 /// Result of the analysis pass — the JSON context plus the column headers we
 /// extracted along the way (used by the output module), the
 /// initial-context's `dataset_info` JSON-Pointer override map (applied to
-/// the final output by `profile.rs::run` after `dcat::build` returns), and
-/// the §5.4 list of `dataset_info` JSON-Pointer paths that the user marked
+/// the final output by `profile.rs::run` after `dcat::build` returns), the
+/// §5.4 list of DCAT JSON-Pointer paths that the user marked
 /// `{value, force: true}` (consulted by `merge_discovered` to skip overlay
-/// at those paths).
+/// at those paths), and the matching list of `(dcat_pointer, value)` pairs
+/// to apply unconditionally over inferred + discovered + dataset_info
+/// (the new `apply_force_overrides` step in `profile.rs::run`).
 pub struct AnalysisContext {
     pub context:           Value,
     pub headers:           Vec<String>,
     pub dataset_info:      Value,
     pub forced_dcat_paths: Vec<String>,
+    pub forced_values:     Vec<(String, Value)>,
 }
 
 /// Build the full analysis context for `input_path`.
@@ -174,7 +177,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // the final output by profile.rs::run after dcat::build returns; we
     // round-trip it through the analysis context so the orchestrator
     // doesn't need a separate loader call.
-    let (package, mut resource, dataset_info, forced_dcat_paths) =
+    let (package, mut resource, dataset_info, forced_dcat_paths, forced_values) =
         load_initial_context(args.initial_context)?;
     // Default resource.name from the input file stem if not explicitly seeded.
     if !resource.is_object() {
@@ -205,6 +208,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
         headers,
         dataset_info,
         forced_dcat_paths,
+        forced_values,
     })
 }
 
@@ -330,67 +334,101 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
     }
 }
 
-/// §5.4: walk the `dataset_info` subtree of the raw initial-context
-/// JSON (before `normalize_value_force` strips the wrappers) and
-/// collect every JSON-Pointer key that was paired with a
-/// `{"value": ..., "force": true}` wrapper.
+/// §5.4: walk all three subtrees of the raw initial-context JSON
+/// (before `normalize_value_force` strips the wrappers) and collect
+/// every `{value, force: true}`-marked leaf as both:
 ///
-/// Only `dataset_info` is scanned because its keys are already in
-/// DCAT JSON-Pointer space (e.g. `/dcat/dct:title`) — the same space
-/// `merge_discovered` needs to skip-test against. Forcing a field on
-/// the `package` / `resource` side would require a CKAN→DCAT pointer
-/// mapping table; deferred to a future enhancement.
+/// 1. A DCAT JSON-Pointer path (the `paths` return value) for `merge_discovered`'s skip-test — same
+///    shape as before.
+/// 2. A `(dcat_pointer, value)` pair (the `values` return value) for the new
+///    `apply_force_overrides` step in `profile.rs::run`, which applies forced leaves LAST so they
+///    beat inferred and discovered.
 ///
-/// The returned vector preserves insertion order so users can
-/// reason about precedence; duplicates are not deduped (the merge
-/// path checks set membership semantics on a per-key basis).
-fn collect_forced_dataset_info_paths(raw_doc: &Value) -> Vec<String> {
-    let Some(ds_info) = raw_doc.get("dataset_info").and_then(Value::as_object) else {
-        return Vec::new();
-    };
-    ds_info
-        .iter()
-        .filter_map(|(key, val)| is_forced_wrapper(val).then(|| key.clone()))
-        .collect()
+/// Subtree handling:
+/// - `dataset_info/<key>` — key is already a DCAT JSON pointer (e.g. `/dcat/dct:title`); used
+///   verbatim.
+/// - `package/<key>` — translated to a DCAT pointer via
+///   `ckan_to_dcat::translate_ckan_ptr("/package/<key>")`. Untranslated keys (CKAN slots qsv
+///   profile does not surface in DCAT) are silently skipped — `force: true` on those is a
+///   documented no-op.
+/// - `resource/<key>` — translated similarly via `/resource/<key>`. The DCAT side targets
+///   `/dcat/dcat:distribution/0/...` per the single-Distribution model.
+///
+/// Returns insertion-ordered vectors; duplicates are not deduped (the
+/// merge / override paths use set-membership semantics per-key).
+fn collect_forced_paths(raw_doc: &Value) -> (Vec<String>, Vec<(String, Value)>) {
+    let mut paths: Vec<String> = Vec::new();
+    let mut values: Vec<(String, Value)> = Vec::new();
+
+    // dataset_info — keys are already /dcat/... pointers.
+    if let Some(ds_info) = raw_doc.get("dataset_info").and_then(Value::as_object) {
+        for (key, val) in ds_info {
+            if let Some(inner) = forced_inner(val) {
+                paths.push(key.clone());
+                values.push((key.clone(), normalize_value_force(inner.clone())));
+            }
+        }
+    }
+
+    // package + resource — CKAN keys translated to DCAT pointers.
+    for (top, key_prefix) in [("package", "/package/"), ("resource", "/resource/")] {
+        if let Some(obj) = raw_doc.get(top).and_then(Value::as_object) {
+            for (key, val) in obj {
+                if let Some(inner) = forced_inner(val) {
+                    let ckan_ptr = format!("{key_prefix}{key}");
+                    if let Some(dcat_ptr) = super::ckan_to_dcat::translate_ckan_ptr(&ckan_ptr) {
+                        paths.push(dcat_ptr.to_string());
+                        values.push((dcat_ptr.to_string(), normalize_value_force(inner.clone())));
+                    }
+                }
+            }
+        }
+    }
+
+    (paths, values)
 }
 
-/// Recognize the exact `{"value": ..., "force": true}` shape.
-/// Anything else (plain values, force=false wrappers, plain objects
-/// that happen to share a key name) returns false.
-fn is_forced_wrapper(v: &Value) -> bool {
-    let Some(map) = v.as_object() else {
-        return false;
-    };
-    map.len() == 2
+/// Return the inner `value` of a `{value, force: true}` wrapper.
+/// Returns `None` for anything else (plain values, `force: false`,
+/// non-object values).
+fn forced_inner(v: &Value) -> Option<&Value> {
+    let map = v.as_object()?;
+    if map.len() == 2
         && map.contains_key("value")
         && map.get("force").is_some_and(|f| f.as_bool() == Some(true))
+    {
+        map.get("value")
+    } else {
+        None
+    }
 }
 
 /// Load and split a `--initial-context` JSON file into its three
-/// top-level components plus the §5.4 forced-paths list. Returns
-/// `(package, resource, dataset_info, forced_dataset_info_paths)`
+/// top-level components plus the §5.4 forced-paths machinery. Returns
+/// `(package, resource, dataset_info, forced_paths, forced_values)`
 /// where any missing key defaults to `json!({})` and the forced
-/// list is empty when no `{value, force: true}` wrappers appear
-/// under `dataset_info`.
+/// outputs are empty when no `{value, force: true}` wrappers appear
+/// anywhere in the document.
 ///
 /// Phase 4b: leaf values shaped exactly as `{"value": …, "force": bool}`
 /// are normalized to their inner `value` so the rest of the pipeline
 /// sees a clean CKAN-shaped object.
 ///
-/// §5.4: `force: true` wrappers under `dataset_info` are *additionally*
-/// recorded as JSON-Pointer paths into the forced list. The merge
-/// step (`merge_discovered`) consults that list and refuses to overlay
-/// discovered values at those paths — so a user can declare a field
-/// "intentionally absent" and prevent publisher DCAT discovery from
-/// silently filling it in. Forced wrappers on the `package` /
-/// `resource` side are accepted and stripped, but their force
-/// semantics are NOT honored — that requires a CKAN→DCAT JSON-Pointer
-/// mapping table and is a deferred follow-up.
+/// §5.4: `force: true` wrappers anywhere under `dataset_info` /
+/// `package` / `resource` are *additionally* recorded twice — once as
+/// a DCAT JSON-Pointer path (consulted by `merge_discovered` to refuse
+/// publisher-DCAT overlay) and once as a `(dcat_pointer, value)` pair
+/// (consumed by the new `apply_force_overrides` step in `profile.rs`,
+/// which applies forced leaves LAST so they beat inferred and
+/// discovered metadata too). Package / resource keys are routed
+/// through the `ckan_to_dcat` translation table; CKAN slots qsv
+/// profile does not surface in DCAT are silently dropped (a
+/// documented no-op rather than a translation error).
 pub(super) fn load_initial_context(
     path: Option<&str>,
-) -> CliResult<(Value, Value, Value, Vec<String>)> {
+) -> CliResult<(Value, Value, Value, Vec<String>, Vec<(String, Value)>)> {
     let Some(path) = path else {
-        return Ok((json!({}), json!({}), json!({}), Vec::new()));
+        return Ok((json!({}), json!({}), json!({}), Vec::new(), Vec::new()));
     };
     let raw = std::fs::read_to_string(path).map_err(|e| {
         CliError::Other(format!("could not read initial-context file `{path}`: {e}"))
@@ -405,9 +443,9 @@ pub(super) fn load_initial_context(
             "initial-context file `{path}` must be a JSON object at the top level"
         )));
     }
-    // §5.4: collect forced paths from `dataset_info` BEFORE
-    // normalize_value_force strips the wrappers.
-    let forced_paths = collect_forced_dataset_info_paths(&doc);
+    // §5.4: collect forced paths + values from all three subtrees
+    // BEFORE normalize_value_force strips the wrappers.
+    let (forced_paths, forced_values) = collect_forced_paths(&doc);
 
     let package = normalize_value_force(doc.get("package").cloned().unwrap_or(json!({})));
     let resource = normalize_value_force(doc.get("resource").cloned().unwrap_or(json!({})));
@@ -418,7 +456,7 @@ pub(super) fn load_initial_context(
     // Otherwise the wrapper object itself becomes the DCAT value and
     // the override fails to rescue --strict-dcat validation.
     let dataset_info = normalize_value_force(doc.get("dataset_info").cloned().unwrap_or(json!({})));
-    Ok((package, resource, dataset_info, forced_paths))
+    Ok((package, resource, dataset_info, forced_paths, forced_values))
 }
 
 /// Recursively walk a Value; whenever a Map has exactly the two keys
@@ -517,49 +555,85 @@ mod load_initial_context_tests {
         assert_eq!(normalize_value_force(v), json!({"tags": ["a", "b", "c"]}));
     }
 
-    // §5.4: collect_forced_dataset_info_paths.
+    // §5.4: collect_forced_paths.
     #[test]
-    fn collect_forced_collects_only_force_true_under_dataset_info() {
-        use super::collect_forced_dataset_info_paths;
+    fn collect_forced_collects_force_true_across_all_three_subtrees() {
+        use super::collect_forced_paths;
 
         let doc = json!({
             "package": {
-                // package-side force is accepted but NOT collected (no
-                // CKAN→DCAT mapping yet — see §5.4 docs).
-                "title": {"value": "X", "force": true}
+                // package-side force now IS collected — translated via
+                // ckan_to_dcat to the /dcat/dct:title DCAT pointer.
+                "title": {"value": "X", "force": true},
+                // unknown CKAN key (no DCAT counterpart) — silently dropped.
+                "scheming_version": {"value": "2.0", "force": true},
+            },
+            "resource": {
+                // resource-side force, translated to the /dcat/...
+                // distribution[0] subtree.
+                "url": {"value": "https://x.gov/d.csv", "force": true},
             },
             "dataset_info": {
-                "/dcat/dct:title":       {"value": "Forced", "force": true},
-                "/dcat/dct:description": {"value": "Plain force=false", "force": false},
+                "/dcat/dct:title":       {"value": "Override", "force": true},
+                "/dcat/dct:description": {"value": "no force", "force": false},
                 "/dcat/dct:identifier":  "plain string",
-                "/dcat/dct:rights":      {"value": null, "force": true}
+                "/dcat/dct:rights":      {"value": null, "force": true},
             }
         });
-        let mut got = collect_forced_dataset_info_paths(&doc);
-        got.sort();
-        assert_eq!(
-            got,
-            vec![
-                "/dcat/dct:rights".to_string(),
-                "/dcat/dct:title".to_string(),
-            ],
+        let (mut paths, values) = collect_forced_paths(&doc);
+        paths.sort();
+        // package.title and dataset_info both target the same /dcat/dct:title
+        // pointer — duplicates are intentionally preserved so the merge /
+        // override paths can apply set-membership semantics per-key.
+        assert!(
+            paths.contains(&"/dcat/dct:title".to_string()),
+            "package.title force must land at /dcat/dct:title"
         );
+        assert!(
+            paths.contains(&"/dcat/dct:rights".to_string()),
+            "dataset_info /dcat/dct:rights force must be recorded"
+        );
+        assert!(
+            paths.contains(&"/dcat/dcat:distribution/0/dcat:downloadURL".to_string()),
+            "resource.url force must translate to distribution[0].downloadURL"
+        );
+        // Sanity on values: distribution URL force must carry the inner
+        // string value (post-unwrap), not the {value, force} wrapper.
+        let url_val = values
+            .iter()
+            .find(|(p, _)| p == "/dcat/dcat:distribution/0/dcat:downloadURL")
+            .map(|(_, v)| v.clone());
+        assert_eq!(url_val, Some(json!("https://x.gov/d.csv")));
     }
 
     #[test]
-    fn collect_forced_empty_when_no_dataset_info() {
-        use super::collect_forced_dataset_info_paths;
+    fn collect_forced_empty_when_no_force_wrappers() {
+        use super::collect_forced_paths;
 
-        let doc = json!({"package": {"title": {"value": "X", "force": true}}});
-        assert!(collect_forced_dataset_info_paths(&doc).is_empty());
+        // Plain values without {value, force} wrappers — both outputs
+        // empty.
+        let doc = json!({
+            "package":      {"title": "plain"},
+            "resource":     {"url":   "plain"},
+            "dataset_info": {"/dcat/dct:title": "plain"},
+        });
+        let (paths, values) = collect_forced_paths(&doc);
+        assert!(paths.is_empty());
+        assert!(values.is_empty());
     }
 
     #[test]
-    fn collect_forced_empty_when_dataset_info_is_not_object() {
-        use super::collect_forced_dataset_info_paths;
+    fn collect_forced_does_not_panic_on_non_object_subtrees() {
+        use super::collect_forced_paths;
 
         // Pathological shape — must not panic.
-        let doc = json!({"dataset_info": ["not", "an", "object"]});
-        assert!(collect_forced_dataset_info_paths(&doc).is_empty());
+        let doc = json!({
+            "dataset_info": ["not", "an", "object"],
+            "package":      "also not an object",
+            "resource":     42,
+        });
+        let (paths, values) = collect_forced_paths(&doc);
+        assert!(paths.is_empty());
+        assert!(values.is_empty());
     }
 }

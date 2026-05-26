@@ -19,7 +19,7 @@ use std::path::Path;
 use serde_json::{Map, Value, json};
 
 /// Severity of a `DcatWarning` entry.
-#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Severity {
     /// DCAT-US v3 mandatory field missing.
@@ -241,9 +241,12 @@ fn add_coverage(ds: &mut Map<String, Value>, ckan_package: &Value, dpp: &Value, 
 
 /// dcat-us:accessLevel + dct:conformsTo + dct:language.
 ///
-/// `dct:conformsTo` is always emitted as a `dct:Standard` object pointing
-/// at the DCAT-US v3 resource page — this projection always claims v3
-/// conformance.
+/// `dct:conformsTo` is emitted as an array of `dct:Standard` objects
+/// per DCAT-US v3 cardinality (0..*). qsv always populates it with a
+/// single entry pointing at the DCAT-US v3 resource page so the
+/// projection always claims v3 conformance; users can extend the
+/// array via `--initial-context.dataset_info` overrides if their
+/// dataset conforms to additional standards.
 ///
 /// `dct:language`, when provided, is normalized to ISO 639-1 (the
 /// DCAT-US v3 migration guide narrowed `language` from RFC 5646 to
@@ -257,10 +260,10 @@ fn add_governance(ds: &mut Map<String, Value>, ckan_package: &Value) {
 
     ds.insert(
         "dct:conformsTo".to_string(),
-        json!({
+        json!([{
             "@type": "dct:Standard",
             "@id":   "https://resources.data.gov/resources/dcat-us3/",
-        }),
+        }]),
     );
 
     if let Some(lang) = take_first_str(ckan_package, &["language"])
@@ -390,7 +393,8 @@ fn add_us_codes(
 /// `dcat:describedBy`, `dct:rights`, `dct:accessRights`,
 /// `dcat-us:purpose`, `skos:scopeNote`, `dcat-us:liabilityStatement`,
 /// `dcat:inSeries`, `dct:accrualPeriodicity`,
-/// `dcat:temporalResolution`. Missing fields are not warned — they're
+/// `dcat:temporalResolution`, `dct:created`, `dcat:version`,
+/// `dcat:versionNotes`. Missing fields are not warned — they're
 /// recommended-when-applicable, not strictly required.
 fn add_extended_metadata(ds: &mut Map<String, Value>, ckan_package: &Value) {
     // dcat:landingPage — IRI; validated to avoid polluting the JSON-LD
@@ -468,6 +472,20 @@ fn add_extended_metadata(ds: &mut Map<String, Value>, ckan_package: &Value) {
     });
     if let Some(r) = resolution {
         ds.insert("dcat:temporalResolution".to_string(), Value::String(r));
+    }
+    // dct:created — distinct from dct:issued (which is "first published")
+    // and dct:modified (which is "last changed"). Used for the dataset's
+    // creation date — e.g. when the original data was collected.
+    if let Some(c) = take_first_str(ckan_package, &["created"]) {
+        ds.insert("dct:created".to_string(), Value::String(c));
+    }
+    // dcat:version — single version string (e.g. "1.2.0", "2024-Q3").
+    if let Some(v) = take_first_str(ckan_package, &["version"]) {
+        ds.insert("dcat:version".to_string(), Value::String(v));
+    }
+    // dcat:versionNotes — free-text release notes for this version.
+    if let Some(n) = take_first_str(ckan_package, &["versionNotes", "version_notes"]) {
+        ds.insert("dcat:versionNotes".to_string(), Value::String(n));
     }
 }
 
@@ -590,18 +608,32 @@ fn add_distributions(
 
     let distributions: Vec<Value> = ckan_resources
         .iter()
-        .map(|r| build_distribution(r, stats, local_path, source_label, pkg_license.as_deref()))
+        .map(|r| {
+            build_distribution(
+                r,
+                ckan_package,
+                stats,
+                local_path,
+                source_label,
+                pkg_license.as_deref(),
+            )
+        })
         .collect();
     ds.insert("dcat:distribution".to_string(), Value::Array(distributions));
 }
 
-/// Map a license slug or absolute IRI to its JSON-LD representation:
-/// known slugs / absolute URLs → `{"@id": "..."}`; opaque strings →
-/// literal `Value::String`. Shared between Dataset-level (legacy) and
+/// Map a license slug or absolute IRI to its DCAT-US v3 representation
+/// — always a literal string (URL or opaque). GSA's Distribution.json
+/// declares `license` as `anyOf: [null, string]` (a URL or full text);
+/// the previous JSON-LD-compact `{"@id": ...}` wrapper produced a
+/// shape GSA's schema rejects. Known slugs (`cc-by`, `cc-by-sa`,
+/// `cc-zero`, etc.) resolve to their canonical IRI string; absolute
+/// URLs pass through trimmed; opaque strings (free-text license terms)
+/// are preserved verbatim. Shared between Dataset-level (legacy) and
 /// Distribution-level emission so the wire shape stays consistent.
 fn license_value(slug: &str) -> Value {
     match license_iri(slug) {
-        Some(iri) => json!({ "@id": iri }),
+        Some(iri) => Value::String(iri.to_string()),
         None => Value::String(slug.to_string()),
     }
 }
@@ -624,13 +656,21 @@ fn take_first_str(obj: &Value, keys: &[&str]) -> Option<String> {
 /// resource itself doesn't declare one — per DCAT-US v3 the license
 /// lives on the Distribution rather than the Dataset.
 ///
-/// `local_path` is the file on disk used for `dcat:byteSize` via
-/// `fs::metadata`; `source_label` is the user-facing path/URL/"stdin"
-/// used for `qsv:sourcePath` and the title default. The split lets the
-/// caller materialize URL/stdin inputs to a tempfile without leaking
-/// the random tempfile suffix into the emitted DCAT.
+/// `local_path` is the file on disk used for `dcat:byteSize`,
+/// `dcat:checksum`, and `dcat:compressFormat` detection via
+/// `fs::metadata` / `sha2`. `source_label` is the user-facing path/URL/
+/// "stdin" used for `qsv:sourcePath` and the title default. The split
+/// lets the caller materialize URL/stdin inputs to a tempfile without
+/// leaking the random tempfile suffix into the emitted DCAT.
+///
+/// `ckan_package` is consulted for package-level fallbacks
+/// (Distribution-level `dct:language` defaults to `package.language`
+/// when the resource has no language of its own) and for the
+/// `dpp_suggestions/spatial_resolution_in_meters/value` channel that
+/// the spatial-inference formula helper populates.
 fn build_distribution(
     resource: &Value,
+    ckan_package: &Value,
     stats: &Value,
     local_path: &str,
     source_label: &str,
@@ -717,12 +757,102 @@ fn build_distribution(
         }
     }
 
+    // dct:language at Distribution level — separate from the
+    // Dataset-level fallback (the v3 migration guide allows both).
+    // Falls back to package.language so a single language declaration
+    // at the dataset doesn't have to be repeated in each resource.
+    if let Some(lang) =
+        string_opt(resource.get("language")).or_else(|| take_first_str(ckan_package, &["language"]))
+        && let Some(normalized) = normalize_iso_639_1(&lang)
+    {
+        d.insert("dct:language".to_string(), Value::String(normalized));
+    }
+
+    // dct:conformsTo at Distribution level — array of Standard objects
+    // per v3 cardinality (0..*). Accepts either an already-shaped
+    // standard object (with @type/@id) or a bare IRI string.
+    if let Some(c) = resource.get("conformsTo") {
+        let arr = match c {
+            Value::Array(items) => items
+                .iter()
+                .filter_map(coerce_to_standard)
+                .collect::<Vec<_>>(),
+            other => coerce_to_standard(other).into_iter().collect::<Vec<_>>(),
+        };
+        if !arr.is_empty() {
+            d.insert("dct:conformsTo".to_string(), Value::Array(arr));
+        }
+    }
+
     // Always use the real on-disk path for fs::metadata — URL/stdin
     // inputs hand us a tempfile here, and the byte size we want is the
     // materialized payload, not the (nonexistent) file at the display
     // label.
+    //
+    // Emit as a string per GSA Distribution.json — that schema declares
+    // byteSize as `["null", "string"]` (xsd:nonNegativeInteger stored
+    // as a string to preserve precision for very large files).
     if let Ok(meta) = std::fs::metadata(local_path) {
-        d.insert("dcat:byteSize".to_string(), json!(meta.len()));
+        d.insert(
+            "dcat:byteSize".to_string(),
+            Value::String(meta.len().to_string()),
+        );
+    }
+
+    // dcat:checksum — SHA-256 over the materialized file (the same
+    // bytes dcat:byteSize reports). Match the GSA Checksum shape:
+    // {algorithm, checksumValue} (unprefixed in the schema; we emit
+    // the spdx:* CURIE form and let curie::strip_curies bridge it
+    // at validation time). Best-effort: failure to read returns no
+    // checksum field rather than aborting the projection.
+    if let Some(hex) = sha256_of_path(local_path) {
+        d.insert(
+            "dcat:checksum".to_string(),
+            json!({
+                "@type":              "spdx:Checksum",
+                "spdx:algorithm":     "SHA-256",
+                "spdx:checksumValue": hex,
+            }),
+        );
+    }
+
+    // dcat:compressFormat / dcat:packageFormat — derived from the
+    // file extension. compressFormat covers single-file compressors
+    // (.gz, .zst, .bz2, .xz); packageFormat covers archives (.zip,
+    // .tar — and the tar-then-gzip composite signals BOTH).
+    if let Some(cf) =
+        compress_format_for_path(local_path).or_else(|| compress_format_for_path(source_label))
+    {
+        d.insert(
+            "dcat:compressFormat".to_string(),
+            Value::String(cf.to_string()),
+        );
+    }
+    if let Some(pf) =
+        package_format_for_path(local_path).or_else(|| package_format_for_path(source_label))
+    {
+        d.insert(
+            "dcat:packageFormat".to_string(),
+            Value::String(pf.to_string()),
+        );
+    }
+
+    // dcat:spatialResolutionInMeters — sourced from the formula helper
+    // of the same name (when wired via the spec) through dpp_suggestions.
+    // Mirrors how temporalResolution flows in `add_extended_metadata`.
+    if let Some(sr) = ckan_package
+        .pointer("/dpp_suggestions/spatial_resolution_in_meters/value")
+        .and_then(|v| {
+            v.as_str()
+                .map(str::to_string)
+                .or_else(|| v.as_f64().map(|n| n.to_string()))
+                .or_else(|| v.as_i64().map(|n| n.to_string()))
+        })
+    {
+        d.insert(
+            "dcat:spatialResolutionInMeters".to_string(),
+            Value::String(sr),
+        );
     }
 
     // tableSchema: per-column dictionary derived from qsv stats. Mirrors the
@@ -749,6 +879,108 @@ fn build_distribution(
         );
     }
     Value::Object(d)
+}
+
+/// Coerce a single value into a dct:Standard object form. Accepts:
+/// - an absolute IRI string → `{"@type": "dct:Standard", "@id": <iri>}`
+/// - an already-shaped object with `@id` → passes through (best-effort; we don't validate the
+///   object's other keys here, the schema layer does that)
+///
+/// Returns `None` for empty strings, non-IRI strings, or objects
+/// missing `@id`.
+fn coerce_to_standard(v: &Value) -> Option<Value> {
+    match v {
+        Value::String(s) => {
+            let trimmed = s.trim();
+            if is_absolute_iri(trimmed) {
+                Some(json!({
+                    "@type": "dct:Standard",
+                    "@id":   trimmed,
+                }))
+            } else {
+                None
+            }
+        },
+        Value::Object(obj) if obj.get("@id").and_then(Value::as_str).is_some() => {
+            // Pre-shaped object — pass through. The schema validator
+            // will catch missing @type / wrong shape if --validate-dcat
+            // is on.
+            Some(v.clone())
+        },
+        _ => None,
+    }
+}
+
+/// SHA-256 hex digest of `path`'s contents. Returns `None` if the file
+/// can't be opened or read; this is a best-effort enrichment so a
+/// read failure must not abort the broader projection.
+///
+/// Reads in 64 KiB chunks so very large CSVs don't load entirely
+/// into memory. Output is lowercase hex per the GSA Checksum
+/// schema's stated convention.
+fn sha256_of_path(path: &str) -> Option<String> {
+    use std::io::Read;
+
+    use sha2::{Digest, Sha256};
+
+    let mut file = std::fs::File::open(path).ok()?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf).ok()?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    let digest = hasher.finalize();
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for b in digest {
+        use std::fmt::Write as _;
+        let _ = write!(hex, "{b:02x}");
+    }
+    Some(hex)
+}
+
+/// Map a single-file compression extension to its IANA media type
+/// string. Mirrors the compound-CSV extension enumeration in
+/// `profile.rs::tempfile_suffix_for_url` so both sites agree on
+/// which compressors qsv recognizes. Returns `None` for files
+/// without a recognized compression suffix.
+fn compress_format_for_path(path: &str) -> Option<&'static str> {
+    let lower = path.to_ascii_lowercase();
+    for (ext, mime) in &[
+        (".gz", "application/gzip"),
+        (".zst", "application/zstd"),
+        (".bz2", "application/x-bzip2"),
+        (".xz", "application/x-xz"),
+    ] {
+        if lower.ends_with(ext) {
+            return Some(*mime);
+        }
+    }
+    None
+}
+
+/// Map a multi-file packaging extension to its IANA media type
+/// string. Distinct from `compress_format_for_path`: packaging
+/// formats group multiple files; compression formats reduce a
+/// single payload's size. A `.tar.gz` triggers both. Returns
+/// `None` for files without a recognized packaging suffix.
+fn package_format_for_path(path: &str) -> Option<&'static str> {
+    let lower = path.to_ascii_lowercase();
+    for (ext, mime) in &[
+        (".zip", "application/zip"),
+        (".tar", "application/x-tar"),
+        (".tar.gz", "application/x-tar"),
+        (".tar.bz2", "application/x-tar"),
+        (".tar.xz", "application/x-tar"),
+    ] {
+        if lower.ends_with(ext) {
+            return Some(*mime);
+        }
+    }
+    None
 }
 
 /// Derive a `dct:Location` array from inferred LAT/LON columns. v3
@@ -944,8 +1176,10 @@ mod tests {
             "url":  "   https://example.com/data.csv   ",
         });
         let stats = serde_json::json!({});
+        let pkg = serde_json::json!({});
         let dist = build_distribution(
             &resource,
+            &pkg,
             &stats,
             "/local/data.csv",
             "/local/data.csv",
@@ -964,7 +1198,15 @@ mod tests {
     fn local_path_omits_download_url_but_keeps_source_path() {
         let resource = serde_json::json!({ "name": "data" });
         let stats = serde_json::json!({});
-        let dist = build_distribution(&resource, &stats, "/tmp/data.csv", "/tmp/data.csv", None);
+        let pkg = serde_json::json!({});
+        let dist = build_distribution(
+            &resource,
+            &pkg,
+            &stats,
+            "/tmp/data.csv",
+            "/tmp/data.csv",
+            None,
+        );
         assert!(dist.get("dcat:downloadURL").is_none());
         assert_eq!(
             dist.get("qsv:sourcePath").and_then(|v| v.as_str()),
@@ -1063,7 +1305,7 @@ mod tests {
             "dct:license must not be on Dataset in strict v3"
         );
         let dist_license = ds
-            .pointer("/dcat:distribution/0/dct:license/@id")
+            .pointer("/dcat:distribution/0/dct:license")
             .and_then(|v| v.as_str())
             .expect("dct:license on Distribution");
         assert!(
@@ -1099,10 +1341,13 @@ mod tests {
         );
     }
 
-    /// Phase 2d: dct:conformsTo is always emitted as a dct:Standard
-    /// object pointing at the DCAT-US v3 spec URL.
+    /// Phase 2d: dct:conformsTo is always emitted as a one-element
+    /// array of dct:Standard objects pointing at the DCAT-US v3 spec
+    /// URL. The array form mirrors v3's 0..* cardinality (the embedded
+    /// minimal schema and the vendored GSA Dataset.json both expect
+    /// an array, not a single object).
     #[test]
-    fn conforms_to_emits_standard_object() {
+    fn conforms_to_emits_standard_array() {
         let pkg = serde_json::json!({});
         let resources = vec![serde_json::json!({})];
         let dpp = serde_json::json!({});
@@ -1117,11 +1362,12 @@ mod tests {
             false,
         );
         assert_eq!(
-            ds.pointer("/dct:conformsTo/@type").and_then(|v| v.as_str()),
+            ds.pointer("/dct:conformsTo/0/@type")
+                .and_then(|v| v.as_str()),
             Some("dct:Standard")
         );
         assert_eq!(
-            ds.pointer("/dct:conformsTo/@id").and_then(|v| v.as_str()),
+            ds.pointer("/dct:conformsTo/0/@id").and_then(|v| v.as_str()),
             Some("https://resources.data.gov/resources/dcat-us3/")
         );
     }
@@ -1455,6 +1701,7 @@ mod tests {
         });
         let dist = build_distribution(
             &resource,
+            &json!({}),
             &json!({}),
             "/tmp/data.csv",
             "/tmp/data.csv",

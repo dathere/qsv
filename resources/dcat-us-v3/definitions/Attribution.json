@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/attribution",
+  "title": "Attribution",
+  "description": "A responsibility that an agent has for a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/attributions/dataset-steward-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Attribution"
+    },
+    "hadRole": {
+      "title": "role",
+      "description": "The function of an entity or agent with respect to another entity or resource",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcat:hadRole",
+        "range": "dcat:Role"
+      },
+      "examples": ["Data Steward"],
+      "requirementLevel": "Mandatory"
+    },
+    "agent": {
+      "title": "agent",
+      "description": "The agent that plays a role in the resource",
+      "$ref": "/dcat-us/3.0.0/definitions/agent",
+      "_oldDocs": {
+        "uri": "prov:agent",
+        "range": "foaf:Agent"
+      },
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["hadRole", "agent"],
+  "_oldDocs": {
+    "rdfClass": "prov:Attribution",
+    "rationale": "The inclusion of prov:Attribution in the DCAT profile enables clear data source attribution, promoting responsible data sharing and proper citation practices. It aligns the profile with data provenance best practices for accurate attribution in data sharing."
+  },
+  "examples": [
+    {
+      "@type": "Attribution",
+      "hadRole": "Data Steward",
+      "agent": {
+        "name": "Environmental Data Management Office"
+      }
+    }
+  ]
+}

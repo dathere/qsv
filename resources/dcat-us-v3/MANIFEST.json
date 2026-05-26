@@ -1,0 +1,118 @@
+{
+  "upstream": "https://github.com/GSA/dcat-us",
+  "commit": "cf8789002b1f60c2c7247de475dd565427e5b8b7",
+  "commit_url": "https://github.com/GSA/dcat-us/tree/cf8789002b1f60c2c7247de475dd565427e5b8b7/jsonschema/definitions",
+  "fetched_at": "2026-05-26",
+  "schema_draft": "https://json-schema.org/draft/2020-12/schema",
+  "entry_points": {
+    "dataset": "definitions/Dataset.json",
+    "catalog": "definitions/Catalog.json"
+  },
+  "files": [
+    {
+      "path": "definitions/AccessRestriction.json",
+      "sha256": "86f42cb373dc3df1c870f74847d5b1e2054b0e709f285e051e41491a1f6cc812"
+    },
+    {
+      "path": "definitions/Activity.json",
+      "sha256": "9459c82a914555abfc998d57c9e0004b8fefbe8b9c1321a39f05a12247532214"
+    },
+    {
+      "path": "definitions/Address.json",
+      "sha256": "a71eaee3e1cda731d7724bc5b880f1f7285a668f8250e34c7928c0d63503ab4b"
+    },
+    {
+      "path": "definitions/Agent.json",
+      "sha256": "c3a8dd6103a0a72af12bbfcf8d8641df5deb71e505176bb6a6e112d1f3d4b636"
+    },
+    {
+      "path": "definitions/Attribution.json",
+      "sha256": "089eabc39498a08b9459bc8c44e5b8696c2e3055d747a58499cf5ae9df3cafd8"
+    },
+    {
+      "path": "definitions/CUIRestriction.json",
+      "sha256": "c380e6ab8625c2cff2bab522ae47d0d9fe210c100304b81181e6c6e9236a3075"
+    },
+    {
+      "path": "definitions/Catalog.json",
+      "sha256": "0eca73c0c21f13413a92d7a8d1c24896c2ecbbee39200cafb85c3a837e000380"
+    },
+    {
+      "path": "definitions/CatalogRecord.json",
+      "sha256": "3520e634156fb0045a9735a67ba37f7fe18a295bfb6cbd4e505964c9d25f4205"
+    },
+    {
+      "path": "definitions/Checksum.json",
+      "sha256": "fb2efdbfec4a620f065c1d16bfe3b2681d7a11203f3da7bc1e937bbf5a177a2d"
+    },
+    {
+      "path": "definitions/Concept.json",
+      "sha256": "86fa9ce21ed5482df8325b5a99157fbd6592623315e14a734e6326be6aee9b2d"
+    },
+    {
+      "path": "definitions/ConceptScheme.json",
+      "sha256": "52e18b5f0d380f7321346c36688584df5e2cc3f627f17a65d6be631bce657414"
+    },
+    {
+      "path": "definitions/DataService.json",
+      "sha256": "b843173283f0e8f22641fcad27c50224c8c76896b9500bcb6abf1ca0bfccef93"
+    },
+    {
+      "path": "definitions/Dataset.json",
+      "sha256": "1a0e25bae00581e2c4d990ea7de91fe07e207fa82f9d8623939342cc7054fedc"
+    },
+    {
+      "path": "definitions/DatasetSeries.json",
+      "sha256": "2cd36c8e4b0a67be33f6bdfdccc91043079f778c3b0bd430f7052ea60f817078"
+    },
+    {
+      "path": "definitions/Distribution.json",
+      "sha256": "bc68f31d53afc662d02e225458e6b4537b913ba2ea918fcd923b950a53f46ae5"
+    },
+    {
+      "path": "definitions/Document.json",
+      "sha256": "d270d10e2e97524038aaa00bfdabf90db41609940dc2b054e0d0bcf6edab7172"
+    },
+    {
+      "path": "definitions/Identifier.json",
+      "sha256": "7e8d769d3d6213a63c1bce867e8ab0369c4859d8778e10ce2b0cdab99face543"
+    },
+    {
+      "path": "definitions/Kind.json",
+      "sha256": "06c11ceb9b1cd6646ce808676611e0cb4f4fc95f80b9dd3cf3a5f0027a3d6b54"
+    },
+    {
+      "path": "definitions/Location.json",
+      "sha256": "394363091f89b7eaddf33fc00917e825700deafe2d101c534a7631455b5ac830"
+    },
+    {
+      "path": "definitions/Metric.json",
+      "sha256": "f0677522d162a9f89c78981e7617eb53e41a6a54106f5ab0599d05292ff9de58"
+    },
+    {
+      "path": "definitions/Organization.json",
+      "sha256": "18edc2eaadf8d600d8f1b4e2ec27e46562c2b6404779d92d88f6a65562a5f143"
+    },
+    {
+      "path": "definitions/PeriodOfTime.json",
+      "sha256": "16c2580806d91791842eed877f5d44053e1295ba0ded389e88491d5ceb58d14b"
+    },
+    {
+      "path": "definitions/QualityMeasurement.json",
+      "sha256": "b31bdfeaf59e9e087e2e21f1d94f4ff236777a66b75b98a2ea185e89607fcc21"
+    },
+    {
+      "path": "definitions/Relationship.json",
+      "sha256": "c2f470e8a900cffff02756e53b6d78c2725f6cba0e7197182da329a433f0b6f2"
+    },
+    {
+      "path": "definitions/Standard.json",
+      "sha256": "17696088895efe91f409a5e27f4cbedce19cc4f0b3a6d2b6b9258489a8d762ca"
+    },
+    {
+      "path": "definitions/UseRestriction.json",
+      "sha256": "dc32705962486f2170dd515c8f53b2e33e01cc3bc9943b93daa17a2282a8712e"
+    }
+  ],
+  "_note": "Vendored verbatim from upstream. NEVER hand-edit \u2014 refresh via the procedure in README.md."
+}

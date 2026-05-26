@@ -283,6 +283,7 @@ semver = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
+sha2 = { version = "0.10", optional = true }
 simdutf8 = "0.1"
 toml = "1.1"
 toon-format = { version = "0.5", default-features = false }
@@ -457,7 +458,7 @@ python = ["pyo3"]
 # evaluation; polars (SQL context) backs the SQL-requiring helpers
 # (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
 # scheming spec YAML. See `qsv profile --help`.
-profile = ["polars", "yaml_serde"]
+profile = ["dep:sha2", "polars", "yaml_serde"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]

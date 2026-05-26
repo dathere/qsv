@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/accessrestriction",
+  "title": "AccessRestriction",
+  "description": "Rules or indicators that describe who can access a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri"
+    },
+    "@type": {
+      "type": "string",
+      "default": "AccessRestriction"
+    },
+    "restrictionNote": {
+      "title": "restriction note",
+      "description": "A note related to the access restriction",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcat-us:restrictionNote",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["Access restricted to authorized personnel only."],
+      "requirementLevel": "Optional"
+    },
+    "restrictionStatus": {
+      "title": "restriction status",
+      "description": "The indication of whether or not there are access restrictions on the item, consider using a controlled vocabulary such as https://www.archives.gov/research/catalog/lcdrg/authority-lists/access-restriction-status",
+      "$ref": "/dcat-us/3.0.0/definitions/concept",
+      "_oldDocs": {
+        "uri": "dcat-us:restrictionStatus",
+        "range": "skos:Concept"
+      },
+      "examples": ["Restricted - Fully", "Unrestricted"],
+      "requirementLevel": "Mandatory"
+    },
+    "specificRestriction": {
+      "title": "specific restriction",
+      "description": "Authority, code list entry, or policy reference that defines the specific access restriction; consider using a controlled vocabulary such as the NARA https://www.archives.gov/research/catalog/lcdrg/authority-lists/specific-access-restriction",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/concept",
+          "description": "inline description of the specific restriction"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat-us:specificRestriction",
+        "range": "skos:Concept"
+      },
+      "examples": [
+        "CRCCRCA 4(1)(A)",
+        "PRMPA - National Security Classified (B)"
+      ],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": ["restrictionStatus"],
+  "_oldDocs": {
+    "rdfClass": "dcat-us:AccessRestriction",
+    "rationale": "The \"AccessRestriction\" class in the DCAT-US application profile is essential for categorizing and managing access restrictions according to NARA standards, ensuring responsible access to sensitive historical records. It enhances transparency, aiding researchers and authorized users in understanding and navigating access parameters for archived materials."
+  },
+  "examples": [
+    {
+      "@type": "AccessRestriction",
+      "restrictionStatus": "Restricted - Fully",
+      "specificRestriction": "PRMPA - National Security Classified (B)",
+      "restrictionNote": "Access restricted to authorized personnel only."
+    }
+  ]
+}

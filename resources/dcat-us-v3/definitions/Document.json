@@ -1,0 +1,263 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/document",
+  "title": "Document",
+  "description": "A publication or other document related to a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/documents/climate-user-guide-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Document"
+    },
+    "accessURL": {
+      "title": "access URL",
+      "description": "A URL that gives access to the Document",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "title": "URL",
+          "description": "reference iri of Document",
+          "format": "iri"
+        }
+      ],
+      "examples": ["https://example.gov/docs/climate-user-guide"],
+      "requirementLevel": "Optional"
+    },
+    "downloadURL": {
+      "title": "download URL",
+      "description": "A URL that is a direct link to a downloadable file of the Document in a given format",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "title": "URL",
+          "description": "reference iri of Document",
+          "format": "iri"
+        }
+      ],
+      "examples": ["https://example.gov/docs/climate-user-guide.pdf"],
+      "requirementLevel": "Optional"
+    },
+    "creator": {
+      "title": "author",
+      "description": "The individual(s) responsible for creating the Document",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/kind"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:creator",
+        "range": "org:Organization"
+      },
+      "requirementLevel": "Optional"
+    },
+    "mediaType": {
+      "title": "media type",
+      "description": "The file format of the Document as defined in the official register of media types managed by IANA: https://www.iana.org/assignments/media-types/media-types.xhtml",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:mediaType",
+        "range": "dcterms:MediaType"
+      },
+      "examples": ["application/pdf"],
+      "requirementLevel": "Optional"
+    },
+    "abstract": {
+      "title": "abstract",
+      "description": "Text abstract of the Document",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:abstract",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "This document provides detailed instructions for using climate data products, including API access, file formats, and data interpretation guidelines."
+      ],
+      "requirementLevel": "Optional"
+    },
+    "bibliographicCitation": {
+      "title": "bibliographic citation",
+      "description": "Bibliographic citation as text",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:bibliographicCitation",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "National Climate Data Center. (2024). Climate Data User Guide. Retrieved from https://example.gov/docs/climate-user-guide",
+        "National Climate Data Center. (2024). Climate Data User Guide. U.S. Department of Commerce."
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "conformsTo": {
+      "title": "conforms to",
+      "description": "List of standards or specifications the document follows",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/standard"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:identifier",
+        "range": "dcterms:Standard"
+      },
+      "requirementLevel": "Optional"
+    },
+    "corporateCreator": {
+      "title": "corporate author",
+      "description": "The corporate organization(s) responsible for creating the Document",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/organization"
+      },
+      "requirementLevel": "Optional"
+    },
+    "description": {
+      "title": "description",
+      "description": "Plain-language summary of the document",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:description",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "A guide for accessing and using the National Climate Data Center's data products.",
+        "A comprehensive guide for accessing and using the National Climate Data Center's data products and services."
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "identifier": {
+      "title": "identifier",
+      "description": "The unique identifier for the Document (e.g. DOI, ISBN)",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/identifier",
+          "description": "inline description of Identifier"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:identifier",
+        "range": "rdfs:Literal"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "otherIdentifier": {
+      "title": "other identifier",
+      "description": "A list of identifiers for the Document besides the main identifier, e.g. the URI or other unique identifiers in the context of the Catalog",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/identifier"
+      },
+      "requirementLevel": "Optional"
+    },
+    "issued": {
+      "title": "publication date",
+      "description": "Publication date of the Document",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:issued",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["2024-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Recommended"
+    },
+    "publisher": {
+      "title": "publisher",
+      "description": "The organization(s) that published the Document",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/organization"
+      },
+      "_oldDocs": {
+        "uri": "dc:publisher",
+        "range": "rdfs:Literal"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "title": {
+      "title": "title",
+      "description": "The title of the Document",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcterms:title",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["Climate Data User Guide"],
+      "requirementLevel": "Mandatory"
+    },
+    "category": {
+      "title": "category",
+      "description": "List of categories/genres for the Document",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["title"],
+  "_oldDocs": {
+    "rdfClass": "foaf:Document",
+    "rationale": "The introduction of foaf:Document significantly improves the representation of documents within the DCAT-US profile. It ensures that metadata about documents, such as title, format, language, and access options, are clearly defined and standardized. This alignment with global data standards fosters interoperability and eases document integration into various data ecosystems, benefiting both publishers and consumers."
+  },
+  "examples": [
+    {
+      "@type": "Document",
+      "title": "Climate Data User Guide",
+      "description": "A guide for accessing and using the National Climate Data Center's data products.",
+      "accessURL": "https://example.gov/docs/climate-user-guide",
+      "mediaType": "application/pdf",
+      "identifier": "NCDC-UG-2024-001",
+      "issued": "2024-03-15",
+      "publisher": [
+        {
+          "@type": "Organization",
+          "name": "National Climate Data Center"
+        }
+      ],
+      "bibliographicCitation": "National Climate Data Center. (2024). Climate Data User Guide. Retrieved from https://example.gov/docs/climate-user-guide"
+    }
+  ]
+}

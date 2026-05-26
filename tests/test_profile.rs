@@ -195,30 +195,48 @@ fn profile_no_ckan_flag_skips_ckan_block() {
 }
 
 #[test]
-fn profile_stdin_input_is_rejected() {
-    // For v1 we require a real input file path -- piping stdin should fail
-    // with a clear message rather than producing a silent no-op. Assert both
-    // a non-zero exit code AND the expected message; a successful command
-    // printing the same text on stderr must NOT pass this test.
+fn profile_stdin_input_is_accepted() {
+    // §5.6: stdin is materialized to a tempfile internally so the rest of
+    // the pipeline sees a normal file path. Pipe a small CSV in, assert
+    // the command succeeds, and check that the output JSON labels the
+    // input as "stdin" (rather than leaking the random tempfile path)
+    // and lands at the default "stdin.metadata.json" in the workdir.
     let wrk = Workdir::new("profile_stdin");
     let mut cmd = wrk.command("profile");
-    cmd.args(["-", "-o", "out.json"]);
-    let output = cmd.output().expect("spawn qsv profile");
+    cmd.arg("-");
+    cmd.stdin(std::process::Stdio::piped());
+    let mut child = cmd.spawn().expect("spawn qsv profile");
+    {
+        use std::io::Write;
+        let stdin = child.stdin.as_mut().expect("child stdin");
+        stdin
+            .write_all(b"id,name\n1,alpha\n2,bravo\n3,charlie\n")
+            .expect("write stdin");
+    }
+    let output = child.wait_with_output().expect("wait qsv profile");
     assert!(
-        !output.status.success(),
-        "expected non-zero exit on stdin input, got status: {:?}",
+        output.status.success(),
+        "expected success on stdin input, got status: {:?}\nstderr: {}",
         output.status,
+        String::from_utf8_lossy(&output.stderr),
     );
-    let stderr = String::from_utf8_lossy(&output.stderr);
+    let out_path = wrk.path("stdin.metadata.json");
     assert!(
-        stderr.contains("does not exist") || stderr.contains("not yet supported"),
-        "expected stdin-rejection error, got: {stderr}"
+        out_path.exists(),
+        "expected stdin.metadata.json to be written, missing at {out_path:?}",
     );
-    // And the command must not have written the output file.
-    assert!(
-        !wrk.path("out.json").exists(),
-        "out.json should not have been written on rejection"
+    let body = std::fs::read_to_string(&out_path).expect("read out");
+    let parsed: serde_json::Value = serde_json::from_str(&body).expect("parse out");
+    assert_eq!(
+        parsed.get("input").and_then(|v| v.as_str()),
+        Some("stdin"),
+        "expected output.input to be \"stdin\" (no tempfile leak), got: {}",
+        parsed
+            .get("input")
+            .map_or("<missing>".to_string(), |v| v.to_string()),
     );
+    // dpp block (inferred metadata) is always emitted.
+    assert!(parsed.get("dpp").is_some(), "missing dpp block: {body}");
 }
 
 #[test]

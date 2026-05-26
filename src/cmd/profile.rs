@@ -123,26 +123,29 @@ struct Args {
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
 
-    // For v1 we require a real input file path — running stats + frequency in
-    // subprocess form against stdin would require materializing it to a
-    // tempfile, and that's a follow-up.
-    let raw_input = match args.arg_input.as_deref() {
-        Some("-") | None => {
-            return Err(CliError::Other(
-                "qsv profile requires an input file path; reading from stdin is not yet supported."
-                    .into(),
-            ));
-        },
-        Some(p) => p.to_string(),
-    };
-
-    // URL inputs are downloaded to a tempfile so the rest of the pipeline
-    // (stats, frequency, sqlp-backed helpers) sees a normal file path. The
-    // tempfile must outlive `run`'s body — we bind it to a local variable
-    // (`_downloaded_temp`) so its Drop runs only at function exit. The
-    // original URL is preserved separately so the DCAT projection can use
-    // it as `dcat:downloadURL`.
-    let (input_path, original_url, _downloaded_temp) = resolve_input(&raw_input)?;
+    // URL and stdin inputs are materialized to a tempfile so the rest of the
+    // pipeline (stats, frequency, sqlp-backed helpers) sees a normal file
+    // path. The tempfile must outlive `run`'s body — we bind it to a local
+    // variable (`_kept_temp`) so its Drop runs only at function exit.
+    //
+    // `display_input` is the human-readable label that surfaces in the
+    // output JSON's `input` field (and the default `-o` filename when
+    // stdin): "stdin" for piped input, the original path/URL otherwise.
+    // `original_url` is preserved separately so the DCAT projection can
+    // use it as `dcat:downloadURL` and to derive a title fallback.
+    let (input_path, original_url, display_input, from_stdin, _kept_temp) =
+        match args.arg_input.as_deref() {
+            Some("-") | None => {
+                let temp = stdin_to_tempfile()?;
+                let local = temp.path().to_string_lossy().to_string();
+                (local, None, "stdin".to_string(), true, Some(temp))
+            },
+            Some(p) => {
+                let (local, url, kept) = resolve_input(p)?;
+                let display = url.clone().unwrap_or_else(|| p.to_string());
+                (local, url, display, false, kept)
+            },
+        };
 
     // URL-only: best-effort DCAT-markup discovery. Stored under
     // `dcat_discovered` in the output JSON for now; the merge with the
@@ -200,7 +203,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "qsv_version":      env!("CARGO_PKG_VERSION"),
         "generated_at":     chrono::Utc::now().to_rfc3339(),
         "spec_file":        args.flag_spec.clone(),
-        "input":            input_path,
+        "input":            display_input,
         "formulas_evaluated": formulas_evaluated,
     });
     let out_map = output.as_object_mut().unwrap();
@@ -249,6 +252,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // pattern for package.title / resource.name: when the user hasn't
     // supplied them, derive defaults from the URL basename so the DCAT
     // title slot doesn't surface the random tempfile suffix.
+    // Mirror of the URL block below: when input came from stdin, the
+    // tempfile-stem default for resource.name leaks the random suffix into
+    // the DCAT title. Replace it with "stdin" unless the user explicitly
+    // supplied a resource.name via --initial-context or formulas.
+    if from_stdin && let Some(res_obj) = resource.as_object_mut() {
+        let tempfile_stem = Path::new(&input_path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string);
+        let current = res_obj
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::to_string);
+        if current.is_none() || current == tempfile_stem {
+            res_obj.insert("name".to_string(), Value::String("stdin".to_string()));
+        }
+    }
+
     if let Some(url) = original_url.as_ref() {
         if let Some(res_obj) = resource.as_object_mut() {
             res_obj
@@ -392,11 +413,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // --- 5. write output --------------------------------------------------
     let out_path = args.flag_output.clone().unwrap_or_else(|| {
-        let stem = Path::new(&input_path)
-            .file_name()
-            .and_then(|s| s.to_str())
-            .unwrap_or("output");
-        format!("{stem}.metadata.json")
+        if from_stdin {
+            // Avoid leaking the random tempfile suffix into the default
+            // filename for piped input.
+            "stdin.metadata.json".to_string()
+        } else {
+            let stem = Path::new(&input_path)
+                .file_name()
+                .and_then(|s| s.to_str())
+                .unwrap_or("output");
+            format!("{stem}.metadata.json")
+        }
     });
     let pretty = serde_json::to_string_pretty(&output)
         .map_err(|e| CliError::Other(format!("could not serialize metadata JSON: {e}")))?;
@@ -526,6 +553,29 @@ fn resolve_input(
 
     let local = temp.path().to_string_lossy().to_string();
     Ok((local, Some(raw.to_string()), Some(temp)))
+}
+
+/// Materialize stdin into a `.csv`-suffixed tempfile so the rest of the
+/// pipeline (stats, frequency, sqlp-backed helpers) sees a normal file
+/// path. The caller must keep the returned handle alive until all
+/// downstream readers have finished — dropping it deletes the temp on
+/// disk. Mirrors `resolve_input`'s URL→tempfile branch.
+fn stdin_to_tempfile() -> CliResult<tempfile::NamedTempFile> {
+    use std::io::Write;
+
+    let mut temp = tempfile::Builder::new()
+        .prefix("qsv-profile-stdin-")
+        .suffix(".csv")
+        .tempfile()
+        .map_err(|e| CliError::Other(format!("qsv profile: create stdin tempfile: {e}")))?;
+
+    let stdin = std::io::stdin();
+    let mut handle = stdin.lock();
+    std::io::copy(&mut handle, temp.as_file_mut())
+        .map_err(|e| CliError::Other(format!("qsv profile: read stdin: {e}")))?;
+    temp.as_file_mut().flush().ok();
+
+    Ok(temp)
 }
 
 /// Compute the tempfile suffix for a downloaded URL. Strips query

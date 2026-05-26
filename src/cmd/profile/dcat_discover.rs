@@ -119,38 +119,62 @@ fn discover_via_sibling_urls(client: &Client, url: &str) -> Option<Value> {
 
 /// Build the four sibling-URL candidates for `url`. Skips entries we
 /// can't construct (e.g. a URL with no path → no `dirname`).
+///
+/// All candidates are built via `url::Url` parsing so that query strings
+/// (`?token=...`) and fragments (`#...`) on the input URL do NOT get
+/// concatenated into the appended suffix — without this, an input like
+/// `snapshot.csv?token=abc` would yield `snapshot.csv?token=abc.metadata.json`,
+/// which the server would interpret as a GET on `snapshot.csv` with a
+/// `token=abc.metadata.json` query value and return the CSV body, not the
+/// sibling JSON.
 fn sibling_candidates(url: &str) -> Vec<String> {
     let mut out = Vec::with_capacity(4);
-    out.push(format!("{url}.metadata.json"));
-    out.push(format!("{url}.dcat.json"));
 
-    if let Ok(parsed) = url::Url::parse(url) {
-        let path = parsed.path();
-        // <dirname>/datapackage.json: replace last segment with
-        // "datapackage.json". When the URL is just "/" we still want
-        // "/datapackage.json".
-        let dirname = std::path::Path::new(path)
-            .parent()
-            .and_then(|p| p.to_str())
-            .unwrap_or("/");
-        let dirname_with_slash = if dirname.ends_with('/') {
-            dirname.to_string()
-        } else {
-            format!("{dirname}/")
-        };
-        let mut datapackage = parsed.clone();
-        datapackage.set_path(&format!("{dirname_with_slash}datapackage.json"));
-        datapackage.set_query(None);
-        datapackage.set_fragment(None);
-        out.push(datapackage.to_string());
+    let Ok(parsed) = url::Url::parse(url) else {
+        // Unparseable URL: fall back to textual append. Best-effort —
+        // anything that doesn't parse as a URL is unlikely to be fetched
+        // successfully anyway, but we keep the slots populated.
+        out.push(format!("{url}.metadata.json"));
+        out.push(format!("{url}.dcat.json"));
+        return out;
+    };
 
-        // <host>/.well-known/data.json
-        let mut well_known = parsed.clone();
-        well_known.set_path("/.well-known/data.json");
-        well_known.set_query(None);
-        well_known.set_fragment(None);
-        out.push(well_known.to_string());
+    // <url>.metadata.json and <url>.dcat.json: append the suffix to the
+    // *path*, and clear query/fragment so they don't leak into the
+    // appended portion.
+    let base_path = parsed.path().to_string();
+    for suffix in [".metadata.json", ".dcat.json"] {
+        let mut candidate = parsed.clone();
+        candidate.set_path(&format!("{base_path}{suffix}"));
+        candidate.set_query(None);
+        candidate.set_fragment(None);
+        out.push(candidate.to_string());
     }
+
+    // <dirname>/datapackage.json: replace last segment with
+    // "datapackage.json". When the URL is just "/" we still want
+    // "/datapackage.json".
+    let dirname = std::path::Path::new(&base_path)
+        .parent()
+        .and_then(|p| p.to_str())
+        .unwrap_or("/");
+    let dirname_with_slash = if dirname.ends_with('/') {
+        dirname.to_string()
+    } else {
+        format!("{dirname}/")
+    };
+    let mut datapackage = parsed.clone();
+    datapackage.set_path(&format!("{dirname_with_slash}datapackage.json"));
+    datapackage.set_query(None);
+    datapackage.set_fragment(None);
+    out.push(datapackage.to_string());
+
+    // <host>/.well-known/data.json
+    let mut well_known = parsed.clone();
+    well_known.set_path("/.well-known/data.json");
+    well_known.set_query(None);
+    well_known.set_fragment(None);
+    out.push(well_known.to_string());
 
     out
 }
@@ -470,12 +494,16 @@ mod tests {
     }
 
     #[test]
-    fn sibling_candidates_strips_query_and_fragment_from_datapackage_and_wellknown() {
-        // Hand-rolled `<url>.metadata.json` keeps the query (it's a
-        // textual append), but the parsed-URL constructions for
-        // datapackage.json and .well-known/data.json drop it because
-        // those slots are on the host, not appended to the input URL.
+    fn sibling_candidates_strips_query_and_fragment_from_all_candidates() {
+        // All four candidates are built via `url::Url` parsing, so the
+        // input URL's query string and fragment are dropped — they would
+        // otherwise be appended *after* the `.metadata.json` /
+        // `.dcat.json` suffix (e.g. `snapshot.csv?token=abc.metadata.json`),
+        // which servers interpret as a GET on the CSV with a polluted
+        // query value rather than the sibling JSON.
         let c = sibling_candidates("https://x.gov/data/snapshot.csv?token=abc#frag");
+        assert_eq!(c[0], "https://x.gov/data/snapshot.csv.metadata.json");
+        assert_eq!(c[1], "https://x.gov/data/snapshot.csv.dcat.json");
         assert_eq!(c[2], "https://x.gov/data/datapackage.json");
         assert_eq!(c[3], "https://x.gov/.well-known/data.json");
     }

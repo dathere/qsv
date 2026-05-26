@@ -424,7 +424,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .as_ref()
             .is_some_and(super::profile::spec::Spec::has_validators)
         {
-            dcat_warnings.extend(run_profile_validation(&input_path));
+            dcat_warnings.extend(run_profile_validation(
+                &input_path,
+                args.flag_no_headers,
+                args.flag_delimiter,
+            ));
         }
 
         if !dcat_warnings.is_empty() {
@@ -616,19 +620,33 @@ fn stdin_to_tempfile() -> CliResult<tempfile::NamedTempFile> {
 /// types + validators is a future enhancement; for now the presence
 /// of any validators opts the user into RFC4180 structural checks.
 ///
-/// Emits a `qsv profile: ran `validate`` status line on stderr,
-/// mirroring the existing `ran `frequency`` / `ran `count`` markers
-/// so users (and tests) can confirm the helper actually fired.
-fn run_profile_validation(input_path: &str) -> Vec<dcat::DcatWarning> {
+/// `--no-headers` and `--delimiter` are forwarded so `qsv validate`
+/// parses the input the same way the rest of the profile pipeline
+/// (stats / frequency / count) does. Without this, a profile run with
+/// non-default CSV options would yield spurious RFC4180 failures (or
+/// miss real ones) because validate would default to comma-separated
+/// input with headers. Other flags `qsv validate` supports (e.g.
+/// `--jobs`, `--trim`) aren't surfaced by `profile` itself, so we
+/// don't forward them.
+fn run_profile_validation(
+    input_path: &str,
+    no_headers: bool,
+    delimiter: Option<crate::config::Delimiter>,
+) -> Vec<dcat::DcatWarning> {
     let start = std::time::Instant::now();
     let Ok(qsv_path) = util::current_exe() else {
         return Vec::new();
     };
-    let Ok(output) = std::process::Command::new(qsv_path)
-        .arg("validate")
-        .arg(input_path)
-        .output()
-    else {
+    let mut cmd = std::process::Command::new(qsv_path);
+    cmd.arg("validate").arg(input_path);
+    if no_headers {
+        cmd.arg("--no-headers");
+    }
+    if let Some(d) = delimiter {
+        cmd.arg("--delimiter")
+            .arg((d.as_byte() as char).to_string());
+    }
+    let Ok(output) = cmd.output() else {
         return Vec::new();
     };
     util::print_status("qsv profile: ran `validate`", Some(start.elapsed()));

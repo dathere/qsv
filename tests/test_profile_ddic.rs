@@ -38,8 +38,12 @@ fn profile_ddic_emits_required_identifiers_and_metadata() {
 
     let codebook_id = extract_attr(&xml, "codeBook", "ID").expect("codeBook/@ID missing");
     assert!(
-        Uuid::parse_str(&codebook_id).is_ok(),
-        "codeBook/@ID is not a UUID: {codebook_id}"
+        codebook_id.starts_with('_'),
+        "codeBook/@ID should start with an underscore: {codebook_id}"
+    );
+    assert!(
+        Uuid::parse_str(&codebook_id[1..]).is_ok(),
+        "codeBook/@ID suffix is not a UUID: {codebook_id}"
     );
 
     assert!(xml.contains("<fileDscr ID=\"F1\">"));
@@ -175,7 +179,7 @@ fn profile_ddic_emits_sumstats_var_attrs_and_varformat_after_categories() {
         "expected numeric mean sumStat"
     );
     assert!(
-        xml.contains("<sumStat type=\"invld\">0</sumStat>"),
+        xml.contains("<sumStat type=\"invd\">0</sumStat>"),
         "expected invalid count sumStat"
     );
     assert!(
@@ -189,6 +193,10 @@ fn profile_ddic_emits_sumstats_var_attrs_and_varformat_after_categories() {
     assert!(
         xml.contains("<catStat type=\"percent\">"),
         "expected category percent stat"
+    );
+    assert!(
+        xml.contains("<varFormat type=\"numeric\" schema=\"other\" otherSchema=\"qsv\" formatname=\"Float\"/>"),
+        "expected DDI-compliant varFormat schema attributes"
     );
 
     let kind_var_start = xml.find("<var ID=\"V2\"").expect("V2 var missing");

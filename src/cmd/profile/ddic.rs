@@ -101,7 +101,7 @@ pub fn build(
 	frequency: &Value,
 	policy: &CatgryLimitPolicy,
 ) -> CliResult<String> {
-	let codebook_id = Uuid::new_v4().to_string();
+	let codebook_id = format!("_{}", Uuid::new_v4());
 	let filename = Path::new(input_path)
 		.file_name()
 		.and_then(|s| s.to_str())
@@ -146,7 +146,7 @@ pub fn build(
 
 	write!(
 		out,
-		"  <fileDscr ID=\"F1\">\n    <fileTxt>\n      <fileName>{}</fileName>\n      <fileType>CSV</fileType>\n      <dimensns>\n        <caseCnt>{}</caseCnt>\n        <varCnt>{}</varCnt>\n      </dimensns>\n    </fileTxt>\n  </fileDscr>\n",
+		"  <fileDscr ID=\"F1\">\n    <fileTxt>\n      <fileName>{}</fileName>\n      <dimensns>\n        <caseQnty>{}</caseQnty>\n        <varQnty>{}</varQnty>\n      </dimensns>\n      <fileType>CSV</fileType>\n    </fileTxt>\n  </fileDscr>\n",
 		escape_xml_text(&filename),
 		row_count,
 		headers.len()
@@ -183,7 +183,7 @@ pub fn build(
 
 		write!(
 			out,
-			"      <varFormat type=\"{}\" schema=\"qsv\" formatname=\"{}\"/>\n",
+			"      <varFormat type=\"{}\" schema=\"other\" otherSchema=\"qsv\" formatname=\"{}\"/>\n",
 			escape_xml_attr(var_type),
 			escape_xml_attr(infer_source_type(stats_obj).unwrap_or("Unknown"))
 		)
@@ -358,7 +358,7 @@ fn emit_sumstats(
 		.unwrap_or(0);
 	write!(
 		out,
-		"      <sumStat type=\"invld\">{}</sumStat>\n      <sumStat type=\"vald\">{}</sumStat>\n",
+		"      <sumStat type=\"invd\">{}</sumStat>\n      <sumStat type=\"vald\">{}</sumStat>\n",
 		nullcount,
 		row_count.saturating_sub(nullcount)
 	)?;
@@ -445,7 +445,7 @@ fn emit_categories(
 		let percentage = c.get("percentage").and_then(Value::as_f64).unwrap_or(0.0);
 		write!(
 			out,
-			"      <catgry>\n        <catVal>{}</catVal>\n        <labl>{}</labl>\n        <catStat type=\"freq\">{}</catStat>\n        <catStat type=\"percent\">{}</catStat>\n      </catgry>\n",
+			"      <catgry>\n        <catValu>{}</catValu>\n        <labl>{}</labl>\n        <catStat type=\"freq\">{}</catStat>\n        <catStat type=\"percent\">{}</catStat>\n      </catgry>\n",
 			escape_xml_text(&value),
 			escape_xml_text(&value),
 			count,

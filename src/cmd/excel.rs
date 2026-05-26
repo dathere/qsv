@@ -110,6 +110,9 @@ Excel options:
                                  index, sheet_name, type and visible fields.
                                For all JSON modes, the filename, the full file path, the workbook format
                                 and the number of sheets are also included.
+                               For XLS/XLSX/XLSM/XLSB workbooks, has_1904_epoch is also included,
+                                indicating whether the workbook uses the 1904 date system
+                                (true) or the 1900 date system (false). Omitted for ODS.
                                If metadata retrieval performance is a concern, use the short modes
                                as they return instantaneously as they don't need to process the sheet data.
 
@@ -269,6 +272,10 @@ struct MetadataStruct {
     canonical_filename: String,
     format:             String,
     sheet_count:        usize,
+    // Some(true) = 1904 date system, Some(false) = 1900 date system,
+    // None = format doesn't expose an epoch flag (ODS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    has_1904_epoch:     Option<bool>,
     sheet:              Vec<SheetMetadata>,
     names:              Vec<NamesMetadata>,
     name_count:         usize,
@@ -282,6 +289,8 @@ struct ShortMetadataStruct {
     canonical_filename: String,
     format:             String,
     sheet_count:        usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    has_1904_epoch:     Option<bool>,
     sheet:              Vec<ShortSheetMetadata>,
 }
 
@@ -526,6 +535,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // check if we're exporting workbook metadata only
     if metadata_mode != MetadataMode::None {
+        // 1904/1900 date epoch flag is workbook-level and only exposed by
+        // calamine for Xls/Xlsx/Xlsb. ODS has no equivalent concept, so leave
+        // it as None and let serde skip it.
+        let has_1904_epoch = match &sheets {
+            Sheets::Xls(wb) => Some(wb.has_1904_epoch()),
+            Sheets::Xlsx(wb) => Some(wb.has_1904_epoch()),
+            Sheets::Xlsb(wb) => Some(wb.has_1904_epoch()),
+            Sheets::Ods(_) => None,
+        };
+
         let mut names_vec = vec![];
         let mut table_metadata_vec = vec![];
 
@@ -562,6 +581,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 format!("Excel: {format}")
             },
             sheet_count,
+            has_1904_epoch,
             sheet: vec![],
             name_count: names_vec.len(),
             names: names_vec,
@@ -745,6 +765,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     canonical_filename,
                     format,
                     sheet_count,
+                    has_1904_epoch,
                     sheet: vec![],
                 };
                 for sheetmetadata in excelmetadata_struct.sheet {

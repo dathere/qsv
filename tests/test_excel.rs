@@ -703,7 +703,7 @@ fn excel_metadata_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected = r#"excel-xls.xls","format": "Excel: xls","sheet_count": 8,"sheet": [
+    let expected = r#"excel-xls.xls","format": "Excel: xls","sheet_count": 8,"has_1904_epoch": false,"sheet": [
     {
       "index": 0,"name": "First","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
@@ -805,7 +805,7 @@ fn excel_metadata_xlsx_ranges_tables_pretty_json() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    let expected = r#"excel-xlsx.xlsx","format": "Excel: xlsx","sheet_count": 7,"sheet": [
+    let expected = r#"excel-xlsx.xlsx","format": "Excel: xlsx","sheet_count": 7,"has_1904_epoch": false,"sheet": [
     {
       "index": 0,"name": "Sheet1","typ": "WorkSheet","visible": "Visible","headers": [
         "URL",
@@ -1212,7 +1212,26 @@ fn excel_metadata_sheet_types_xlsx_short_json() {
     cmd.arg("--metadata").arg("S").arg(xlsx_file);
 
     let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"any_sheets.xlsx","format":"xlsx","sheet_count":4,"sheet":[{"index":0,"name":"Visible","typ":"WorkSheet","visible":"Visible"},{"index":1,"name":"Hidden","typ":"WorkSheet","visible":"Hidden"},{"index":2,"name":"VeryHidden","typ":"WorkSheet","visible":"VeryHidden"},{"index":3,"name":"Chart","typ":"ChartSheet","visible":"Visible"}]}"#;
+    let expected = r#"any_sheets.xlsx","format":"xlsx","sheet_count":4,"has_1904_epoch":false,"sheet":[{"index":0,"name":"Visible","typ":"WorkSheet","visible":"Visible"},{"index":1,"name":"Hidden","typ":"WorkSheet","visible":"Hidden"},{"index":2,"name":"VeryHidden","typ":"WorkSheet","visible":"VeryHidden"},{"index":3,"name":"Chart","typ":"ChartSheet","visible":"Visible"}]}"#;
+    assert!(got.ends_with(expected));
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
+fn excel_metadata_1904_epoch_xlsx_short_json() {
+    // excel-1904-epoch.xlsx was generated with openpyxl using
+    // CALENDAR_MAC_1904, which sets <workbookPr date1904="1"/> — calamine's
+    // has_1904_epoch() should pick this up and qsv must surface it as
+    // `"has_1904_epoch":true` in the metadata output.
+    let wrk = Workdir::new("excel_metadata_1904_epoch_xlsx_short_json");
+
+    let xlsx_file = wrk.load_test_file("excel-1904-epoch.xlsx");
+
+    let mut cmd = wrk.command("excel");
+    cmd.arg("--metadata").arg("S").arg(xlsx_file);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = r#"excel-1904-epoch.xlsx","format":"xlsx","sheet_count":1,"has_1904_epoch":true,"sheet":[{"index":0,"name":"Dates1904","typ":"WorkSheet","visible":"Visible"}]}"#;
     assert!(got.ends_with(expected));
     wrk.assert_success(&mut cmd);
 }

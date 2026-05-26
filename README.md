@@ -128,8 +128,8 @@
 
 ## Installation Options
 
-> [!NOTE]
-> To install the qsv MCP Server and the optional Claude Cowork plugin, see the [Getting Started guide](.claude/skills/docs/guides/START_HERE.md).
+> [!TIP]
+> To install the qsv MCP Server and/or the qsv Claude Cowork plugin, see the [Getting Started guide](.claude/skills/docs/guides/START_HERE.md).
 
 ### Option 0: qsv pro
 
@@ -328,7 +328,7 @@ Its syntax can be found [here](https://docs.rs/regex/latest/regex/#syntax) and *
 
 If you want to test your regular expressions, [regex101](https://regex101.com) supports the syntax used by the `regex` crate. Just select the "Rust" flavor.
 
-> [!NOTE]
+> [!CAUTION]
 JSON SCHEMA VALIDATION REGEX: The `schema` command, when inferring a JSON Schema Validation file, will derive a regex expression for the selected columns when the `--pattern-columns` option is used. Though the derived regex is guaranteed to work, it may not be the most efficient.<br/>Before using the generated JSON Schema file in production with the `validate` command, it is recommended that users inspect and optimize the derived regex as required.<br/>While doing so, note that the `validate` command in JSON Schema Validation mode, can also support "fancy" regex expressions with look-around and backreferences using the `--fancy-regex` option.
 
 ## File formats
@@ -362,7 +362,7 @@ The `sniff` command can also detect the mime type of any file with the `--no-inf
 It can detect more than 130 file formats, including MS Office/Open Document files, JSON, XML, PDF, PNG, JPEG and specialized geospatial formats like GPX, GML, KML, TML, TMX, TSX, TTML.
 Click [here](https://docs.rs/file-format/latest/file_format/#reader-features) for a complete list.
 
-> [!NOTE]
+> [!TIP]
 > When the `polars` feature is enabled, qsv can also natively read `.parquet`, `.ipc`, `.arrow`, `.json` & `.jsonl` files.
 
 ### Extended Input Support
@@ -397,7 +397,7 @@ Using the `snappy` command, we can compress NYC's 311 data (15gb, 28m rows) to 4
 
 Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compressed the same file to 2.9 gb in _248.3 seconds on the same machine - 43x slower at 0.06 gb/sec_ with a 0.19 (5.17:1) compression ratio - for just an additional 14% (2.45 gb) of saved space. zip also took 4.3x longer to roundtrip decompress the same file in _72 seconds_ - _0.20 gb/sec_.
 
-> [!NOTE]
+> [!TIP]
 > qsv has additional compression support beyond Snappy:
 >
 > The `sqlp` command can:

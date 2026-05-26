@@ -407,6 +407,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             }
             dcat_warnings.extend(validation);
         }
+
+        // §5.8: profile-driven validation. When the spec opts in by
+        // declaring any `validators`, run `qsv validate` against the
+        // input and merge any RFC4180 failures into dcat_warnings.
+        // Triggered regardless of --validate-dcat so users get a
+        // useful structural signal even without enabling JSON-Schema
+        // validation against the emitted dcat block.
+        if spec_opt
+            .as_ref()
+            .is_some_and(super::profile::spec::Spec::has_validators)
+        {
+            dcat_warnings.extend(run_profile_validation(&input_path));
+        }
+
         if !dcat_warnings.is_empty() {
             out_map.insert(
                 "dcat_warnings".to_string(),
@@ -582,6 +596,58 @@ fn stdin_to_tempfile() -> CliResult<tempfile::NamedTempFile> {
     temp.as_file_mut().flush().ok();
 
     Ok(temp)
+}
+
+/// §5.8: run `qsv validate` against `input_path` and return any RFC4180
+/// failures as `DcatWarning`s. Best-effort — spawn errors, missing
+/// binary, or non-UTF-8 stderr all silently degrade to "no warnings"
+/// rather than failing the whole profile run.
+///
+/// The trigger lives in the caller: this helper is only invoked when
+/// the spec declares one or more `validators` (see
+/// `Spec::has_validators`). The validators' string content isn't
+/// interpreted yet — auto-generating a JSON Schema from declared
+/// types + validators is a future enhancement; for now the presence
+/// of any validators opts the user into RFC4180 structural checks.
+///
+/// Emits a `qsv profile: ran `validate`` status line on stderr,
+/// mirroring the existing `ran `frequency`` / `ran `count`` markers
+/// so users (and tests) can confirm the helper actually fired.
+fn run_profile_validation(input_path: &str) -> Vec<dcat::DcatWarning> {
+    let start = std::time::Instant::now();
+    let Ok(qsv_path) = util::current_exe() else {
+        return Vec::new();
+    };
+    let Ok(output) = std::process::Command::new(qsv_path)
+        .arg("validate")
+        .arg(input_path)
+        .output()
+    else {
+        return Vec::new();
+    };
+    util::print_status("qsv profile: ran `validate`", Some(start.elapsed()));
+
+    if output.status.success() {
+        return Vec::new();
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    // First non-empty line is the headline error. Strip the
+    // "Validation error: " prefix qsv validate prepends so the
+    // surfaced message reads naturally inside a dcat_warning.
+    let msg = stderr
+        .lines()
+        .find(|l| !l.trim().is_empty())
+        .map(|s| {
+            s.trim()
+                .trim_start_matches("Validation error: ")
+                .to_string()
+        })
+        .unwrap_or_else(|| "qsv validate failed with no error message".to_string());
+    vec![dcat::DcatWarning {
+        field:    "qsv:validation".to_string(),
+        severity: dcat::Severity::Required,
+        message:  format!("input failed `qsv validate` (RFC4180): {msg}"),
+    }]
 }
 
 /// Compute the tempfile suffix for a downloaded URL. Strips query

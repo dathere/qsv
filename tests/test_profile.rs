@@ -479,6 +479,80 @@ fn profile_warns_when_contactpoint_missing() {
 }
 
 #[test]
+fn profile_runs_validation_when_spec_declares_validators() {
+    // §5.8: when the scheming spec declares one or more `validators`,
+    // profile should invoke `qsv validate` against the input and merge
+    // any RFC4180 failures into dcat_warnings. The presence of
+    // validators is the trigger; their string content isn't
+    // interpreted yet (auto-generating a JSON Schema from declared
+    // types + validators is a future enhancement).
+    //
+    // This test uses a clean CSV so we assert two things:
+    //   1. The helper *ran* — stderr shows the `ran `validate`` marker (mirroring the existing `ran
+    //      `frequency`` / `ran `count`` status lines).
+    //   2. The clean CSV produces NO `qsv:validation` entry under dcat_warnings (validation
+    //      succeeded).
+    let wrk = Workdir::new("profile_validation_trigger");
+    seed_geo_csv(&wrk);
+    std::fs::copy(
+        "tests/resources/profile/dataset-druf.yaml",
+        wrk.path("spec.yaml"),
+    )
+    .expect("copy spec fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--spec", "spec.yaml", "-o", "out.json"]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "profile with validators failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ran `validate`"),
+        "expected stderr to confirm validate was invoked, got: {stderr}",
+    );
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let validation_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.get("field").and_then(|f| f.as_str()) == Some("qsv:validation"))
+        .collect();
+    assert!(
+        validation_warnings.is_empty(),
+        "expected no qsv:validation warnings on clean CSV, got: {validation_warnings:?}",
+    );
+}
+
+#[test]
+fn profile_skips_validation_when_spec_has_no_validators() {
+    // §5.8 negative: spec-less profile must NOT spawn `qsv validate`.
+    // Inverse signal: the stderr "ran `validate`" marker is absent.
+    let wrk = Workdir::new("profile_no_validation_trigger");
+    seed_geo_csv(&wrk);
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "-o", "out.json"]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "spec-less profile failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("ran `validate`"),
+        "expected validate to NOT run without spec validators, got stderr: {stderr}",
+    );
+}
+
+#[test]
 fn validate_dcat_passes_on_full_initial_context() {
     let wrk = Workdir::new("profile_validate_pass");
     seed_geo_csv(&wrk);

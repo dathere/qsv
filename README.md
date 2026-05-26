@@ -328,7 +328,8 @@ Its syntax can be found [here](https://docs.rs/regex/latest/regex/#syntax) and *
 
 If you want to test your regular expressions, [regex101](https://regex101.com) supports the syntax used by the `regex` crate. Just select the "Rust" flavor.
 
-> JSON SCHEMA VALIDATION REGEX NOTE: The `schema` command, when inferring a JSON Schema Validation file, will derive a regex expression for the selected columns when the `--pattern-columns` option is used. Though the derived regex is guaranteed to work, it may not be the most efficient.<br/>Before using the generated JSON Schema file in production with the `validate` command, it is recommended that users inspect and optimize the derived regex as required.<br/>While doing so, note that the `validate` command in JSON Schema Validation mode, can also support "fancy" regex expressions with look-around and backreferences using the `--fancy-regex` option.
+> [!NOTE]
+JSON SCHEMA VALIDATION REGEX: The `schema` command, when inferring a JSON Schema Validation file, will derive a regex expression for the selected columns when the `--pattern-columns` option is used. Though the derived regex is guaranteed to work, it may not be the most efficient.<br/>Before using the generated JSON Schema file in production with the `validate` command, it is recommended that users inspect and optimize the derived regex as required.<br/>While doing so, note that the `validate` command in JSON Schema Validation mode, can also support "fancy" regex expressions with look-around and backreferences using the `--fancy-regex` option.
 
 ## File formats
 

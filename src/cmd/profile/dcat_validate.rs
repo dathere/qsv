@@ -13,13 +13,29 @@
 //! class of mistake without requiring users to download the full GSA
 //! schema bundle.
 //!
-//! **Follow-up:** vendor the full GSA dcat-us JSON Schema suite from
-//! <https://github.com/GSA/dcat-us/tree/main/jsonschema> under
-//! `resources/dcat-us-v3/` pinned to a specific upstream commit SHA,
-//! and switch `embedded_minimal_schema()` to load the vendored bundle
-//! with `$ref` resolution. The Validator construction pattern at the
-//! bottom of this file already mirrors the one used in
-//! `src/cmd/validate.rs:2378` for an easy swap.
+//! **Follow-up — JSON-LD prefix mismatch (§5.3):** the upstream GSA
+//! schema bundle at <https://github.com/GSA/dcat-us/tree/main/jsonschema>
+//! is written against **unprefixed** keys (e.g. `otherIdentifier`,
+//! `@type: "Dataset"`) — i.e. it validates the JSON-LD-expanded form.
+//! `dcat::build` emits the **JSON-LD-compact** form with curie prefixes
+//! (`dct:identifier`, `dcat:contactPoint`, `@type: "dcat:Dataset"`).
+//! Naïvely vendoring the bundle and pointing the validator at it
+//! flags every key as missing.
+//!
+//! Adopting the full GSA suite therefore requires either:
+//!   1. A JSON-LD expansion pass on the emitted block before validation
+//!      (treat `dct:identifier` as the IRI
+//!      `http://purl.org/dc/terms/identifier`, then validate against
+//!      the unprefixed schema with full IRIs); needs a JSON-LD dep.
+//!   2. A mechanical key-translation layer (strip known curie prefixes before validation); fragile
+//!      around CURIEs-in-values and `@type` strings, but avoids the JSON-LD dep.
+//!   3. Refactor `dcat::build` to emit the expanded (unprefixed) form; breaks existing
+//!      JSON-LD-compact consumers.
+//!
+//! Deferred — the embedded minimal schema below catches the mandatory-
+//! field class of mistake cheaply; adopting the full bundle without
+//! one of the three approaches above would silently flag every
+//! correctly-emitted key as missing.
 
 use jsonschema::Validator;
 use serde_json::{Value, json};

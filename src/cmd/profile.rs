@@ -615,26 +615,82 @@ fn tempfile_suffix_for_url(raw: &str) -> String {
 /// hasn't supplied `--initial-context.package.title`. Strips the
 /// URL's well-known compound extensions (`.csv.gz`, etc.) and any
 /// remaining single extension, then returns the last non-empty path
-/// segment. Returns `None` when the URL has no usable path (e.g. just
-/// a host, or a trailing slash), in which case the caller falls back
-/// to the existing tempfile-stem behaviour.
+/// segment.
 ///
-/// Opaque/UUID-style basenames (e.g. CKAN's
-/// `/datastore/dump/<uuid>`) pass through unchanged — a UUID is still
-/// reproducible and traceable back to the input, which is strictly
-/// better than the random tempfile suffix `qsv-profile-XXXXXX`.
-/// Users who want a prettier title should populate
-/// `--initial-context.package.title` explicitly.
+/// §5.9: when the leaf segment looks UUID-like (canonical 8-4-4-4-12
+/// hex with dashes, or the compact 32-char hex variant — common in
+/// CKAN's `/datastore/dump/<uuid>` shape and elsewhere), walk up the
+/// path until we find a non-UUID-like segment, up to a 3-level cap.
+/// That yields meaningful titles like "dump" instead of opaque UUIDs.
+/// If every candidate up the cap is UUID-like, fall back to the leaf
+/// UUID — still better than the random tempfile suffix.
+///
+/// Returns `None` when the URL has no usable path (e.g. just a host,
+/// or a trailing slash with no segments), in which case the caller
+/// falls back to the existing tempfile-stem behaviour.
+///
+/// Users who want a prettier title than what URL-walking can derive
+/// should populate `--initial-context.package.title` explicitly — a
+/// CKAN `/api/3/action/resource_show?id=<uuid>` lookup is a deferred
+/// follow-up.
 fn url_title_default(url: &str) -> Option<String> {
     let parsed = url::Url::parse(url).ok()?;
-    let path = parsed.path();
-    let cleaned = strip_compound_csv_ext(path);
-    let basename = std::path::Path::new(&cleaned)
+    let segments: Vec<&str> = parsed.path().split('/').filter(|s| !s.is_empty()).collect();
+    if segments.is_empty() {
+        return None;
+    }
+
+    // Walk from leaf upward, up to 3 levels. Return the first
+    // non-UUID-like stem we find.
+    for seg in segments.iter().rev().take(3) {
+        let cleaned = strip_compound_csv_ext(seg);
+        let stem = std::path::Path::new(&cleaned)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+            .filter(|s| !s.is_empty());
+        if let Some(name) = stem
+            && !is_uuid_like(&name)
+        {
+            return Some(name);
+        }
+    }
+
+    // Every candidate up the cap was UUID-like. Fall back to the leaf
+    // basename so the title is at least reproducible.
+    let leaf = segments.last()?;
+    let cleaned = strip_compound_csv_ext(leaf);
+    std::path::Path::new(&cleaned)
         .file_stem()
         .and_then(|s| s.to_str())
         .map(str::to_string)
-        .filter(|s| !s.is_empty())?;
-    Some(basename)
+        .filter(|s| !s.is_empty())
+}
+
+/// §5.9 helper: does this segment look like a UUID? Matches:
+///   * canonical RFC 4122 form: 8-4-4-4-12 hex with dashes (e.g.
+///     `5202679a-d243-402e-b82a-63189995a942`);
+///   * compact form: 32 contiguous hex characters (e.g. `5202679ad243402eb82a63189995a942`).
+/// Case-insensitive. Other ID-like patterns (MongoDB ObjectId at 24
+/// hex, ULIDs, slugified IDs) are intentionally NOT matched — UUIDs
+/// dominate CKAN/data.gov URLs, and over-eager matching would walk
+/// past legitimate titles like "2024-Q3".
+fn is_uuid_like(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    if bytes.len() == 36 {
+        // Canonical: 8-4-4-4-12 with dashes at fixed positions.
+        if bytes[8] != b'-' || bytes[13] != b'-' || bytes[18] != b'-' || bytes[23] != b'-' {
+            return false;
+        }
+        return bytes
+            .iter()
+            .enumerate()
+            .all(|(i, &b)| matches!(i, 8 | 13 | 18 | 23) || b.is_ascii_hexdigit());
+    }
+    if bytes.len() == 32 {
+        return bytes.iter().all(u8::is_ascii_hexdigit);
+    }
+    false
 }
 
 /// Strip a CSV-family compound extension off a path (mirrors
@@ -990,7 +1046,7 @@ mod tests {
         assert_eq!(tempfile_suffix_for_url("not-a-url.csv"), ".csv");
     }
 
-    use super::url_title_default;
+    use super::{is_uuid_like, url_title_default};
 
     #[test]
     fn url_title_strips_single_extension() {
@@ -1027,15 +1083,70 @@ mod tests {
     }
 
     #[test]
-    fn url_title_preserves_uuid_basename_unchanged() {
-        // CKAN's `/datastore/dump/<uuid>` shape — uuid is still better
-        // than the random tempfile suffix and is traceable to the source.
+    fn url_title_walks_past_uuid_to_parent_segment() {
+        // §5.9: CKAN's `/datastore/dump/<uuid>` shape — walk one level up
+        // past the UUID basename to yield "dump", which is meaningful
+        // (and much better than a random tempfile suffix or an opaque hex).
         assert_eq!(
             url_title_default(
                 "https://data.wprdc.org/datastore/dump/5202679a-d243-402e-b82a-63189995a942"
             ),
-            Some("5202679a-d243-402e-b82a-63189995a942".to_string())
+            Some("dump".to_string())
         );
+        // Compact 32-hex variant — same treatment.
+        assert_eq!(
+            url_title_default(
+                "https://example.gov/path/snapshots/5202679ad243402eb82a63189995a942"
+            ),
+            Some("snapshots".to_string())
+        );
+    }
+
+    #[test]
+    fn url_title_returns_leaf_when_all_parents_uuid_like() {
+        // Degenerate case: every segment in the leaf-most 3 is UUID-like.
+        // We fall back to the leaf UUID — still reproducible / traceable,
+        // strictly better than the random tempfile suffix.
+        let leaf = "5202679a-d243-402e-b82a-63189995a942";
+        let mid = "abcdef01-2345-6789-abcd-ef0123456789";
+        let parent = "fedcba98-7654-3210-fedc-ba9876543210";
+        let url = format!("https://example.gov/{parent}/{mid}/{leaf}");
+        assert_eq!(url_title_default(&url), Some(leaf.to_string()));
+    }
+
+    #[test]
+    fn url_title_does_not_walk_for_normal_basenames() {
+        // Regression: non-UUID basenames pass straight through; no walking.
+        assert_eq!(
+            url_title_default("https://example.gov/datastore/dump/2024-Q3-payments.csv"),
+            Some("2024-Q3-payments".to_string()),
+        );
+        // Length-collision check: 36-char non-hex must NOT be misclassified.
+        assert_eq!(
+            url_title_default("https://example.gov/path/this-is-thirty-six-chars-long-XYZQRS"),
+            Some("this-is-thirty-six-chars-long-XYZQRS".to_string()),
+        );
+    }
+
+    #[test]
+    fn is_uuid_like_recognizes_both_canonical_and_compact_forms() {
+        // Canonical 8-4-4-4-12 with dashes.
+        assert!(is_uuid_like("5202679a-d243-402e-b82a-63189995a942"));
+        // Mixed case.
+        assert!(is_uuid_like("5202679A-D243-402E-B82A-63189995A942"));
+        // Compact 32 hex.
+        assert!(is_uuid_like("5202679ad243402eb82a63189995a942"));
+        // Negatives:
+        assert!(!is_uuid_like("dump"));
+        assert!(!is_uuid_like("2024-Q3-payments"));
+        // Right length, wrong char.
+        assert!(!is_uuid_like("5202679a-d243-402e-b82a-63189995a94Z"));
+        // Right length, dashes in wrong place.
+        assert!(!is_uuid_like("5202679a-d243-402-eb82a-63189995a942"));
+        // Compact wrong length.
+        assert!(!is_uuid_like("5202679ad243402eb82a"));
+        // Compact non-hex.
+        assert!(!is_uuid_like("zzzzzzzzd243402eb82a63189995a942"));
     }
 
     #[test]

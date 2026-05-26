@@ -531,6 +531,71 @@ fn profile_runs_validation_when_spec_declares_validators() {
 }
 
 #[test]
+fn profile_validation_honors_forwarded_delimiter_flag() {
+    // §5.8 regression: `run_profile_validation` must forward
+    // `--delimiter` to the spawned `qsv validate`. Without the
+    // forwarding, validate would parse this semicolon-delimited input
+    // as comma-separated and the row "store, retail" would split the
+    // record into more fields than the 1-field header, yielding an
+    // RFC4180 failure surfaced as a `qsv:validation` dcat_warning.
+    //
+    // With the forwarding wired correctly, validate parses on `;` and
+    // sees six consistent fields per row, so NO `qsv:validation`
+    // warning is emitted. The assertion below would fail if the flag
+    // were ever dropped or misordered.
+    let wrk = Workdir::new("profile_validation_delimiter_forwarding");
+    wrk.create_from_string(
+        "in.csv",
+        "id;name;created_at;latitude;longitude;kind\n1;Alpha;2024-01-15;40.7128;-74.0060;store, \
+         retail\n2;Bravo;2024-02-20;34.0522;-118.2437;office, \
+         hq\n3;Charlie;2024-03-10;41.8781;-87.6298;office, branch\n",
+    );
+    std::fs::copy(
+        "tests/resources/profile/dataset-druf.yaml",
+        wrk.path("spec.yaml"),
+    )
+    .expect("copy spec fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--spec",
+        "spec.yaml",
+        "--delimiter",
+        ";",
+        "-o",
+        "out.json",
+    ]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "profile with --delimiter ; failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ran `validate`"),
+        "expected stderr to confirm validate was invoked, got: {stderr}",
+    );
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let validation_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.get("field").and_then(|f| f.as_str()) == Some("qsv:validation"))
+        .collect();
+    assert!(
+        validation_warnings.is_empty(),
+        "expected no qsv:validation warnings when --delimiter ; is forwarded to validate, got: \
+         {validation_warnings:?}",
+    );
+}
+
+#[test]
 fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
     // §5.4: when a dataset_info entry is wrapped {"value": ..., "force": true},
     // the corresponding DCAT path is recorded as "forced" and discovered-DCAT

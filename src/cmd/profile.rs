@@ -32,6 +32,11 @@ profile options:
     --resource-meta <json>    Same, for the resource dict.
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
+    --ddi-c <file>            Optional output path for DDI-Codebook XML.
+    --ddi-catgry-limit <arg>  DDI category limit policy. Accepts either:
+                              1) number (global default cap),
+                              2) JSON object string (per-variable caps), or
+                              3) path to a JSON file containing that object.
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -61,6 +66,7 @@ use crate::{CliError, CliResult, util};
 
 mod context;
 mod dcat;
+mod ddic;
 mod py_engine;
 mod spec;
 
@@ -72,6 +78,8 @@ struct Args {
     flag_resource_meta: Option<String>,
     flag_no_dcat:       bool,
     flag_no_ckan:       bool,
+    flag_ddi_c:         Option<String>,
+    flag_ddi_catgry_limit: Option<String>,
     flag_force:         bool,
     flag_jobs:          Option<usize>,
     flag_output:        Option<String>,
@@ -81,7 +89,26 @@ struct Args {
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    // Accept legacy single-dash long form requested by users.
+    let normalized_argv: Vec<String> = argv
+        .iter()
+        .map(|arg| {
+            if *arg == "-ddi-c" {
+                "--ddi-c".to_string()
+            } else {
+                (*arg).to_string()
+            }
+        })
+        .collect();
+    let normalized_argv_ref: Vec<&str> = normalized_argv.iter().map(String::as_str).collect();
+
+    let args: Args = util::get_args(USAGE, &normalized_argv_ref)?;
+
+    let ddic_policy = ddic::parse_limit_policy(args.flag_ddi_catgry_limit.as_deref())?;
+    let frequency_limit = std::cmp::max(
+        context::DEFAULT_PROFILE_FREQUENCY_LIMIT,
+        ddic_policy.max_requested_cap(),
+    );
 
     // For v1 we require a real input file path — running stats + frequency in
     // subprocess form against stdin would require materializing it to a
@@ -110,6 +137,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         jobs:          args.flag_jobs,
         force:         args.flag_force,
         memcheck:      args.flag_memcheck,
+        frequency_limit,
         package_meta:  args.flag_package_meta.as_deref(),
         resource_meta: args.flag_resource_meta.as_deref(),
     };
@@ -197,7 +225,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         out_map.insert("dcat".to_string(), dcat_block);
     }
 
-    let _ = analysis.headers;
+    if let Some(ddi_out_path) = args.flag_ddi_c.as_deref() {
+        let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
+        let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
+        let frequency = analysis.context.get("dppf").cloned().unwrap_or(json!({}));
+        let ddic_xml = ddic::build(
+            &input_path,
+            &analysis.headers,
+            &dpp,
+            &stats,
+            &frequency,
+            &ddic_policy,
+        )?;
+        std::fs::write(ddi_out_path, ddic_xml)
+            .map_err(|e| CliError::Other(format!("could not write `{ddi_out_path}`: {e}")))?;
+        eprintln!("qsv profile: wrote `{ddi_out_path}`");
+    }
 
     // --- 5. write output --------------------------------------------------
     let out_path = args.flag_output.clone().unwrap_or_else(|| {

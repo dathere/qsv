@@ -28,6 +28,8 @@ use crate::{
     util::{self, SchemaArgs, StatsMode},
 };
 
+pub const DEFAULT_PROFILE_FREQUENCY_LIMIT: usize = 25;
+
 /// CLI-facing knobs that the context builder cares about. Kept narrow so we
 /// don't couple `context.rs` to the full top-level `Args` struct.
 pub struct ContextArgs<'a> {
@@ -37,6 +39,7 @@ pub struct ContextArgs<'a> {
     pub jobs:          Option<usize>,
     pub force:         bool,
     pub memcheck:      bool,
+    pub frequency_limit: usize,
     pub package_meta:  Option<&'a str>,
     pub resource_meta: Option<&'a str>,
 }
@@ -78,7 +81,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
 
     // --- 2. frequency ------------------------------------------------------
     // Mirrors describegpt: shell out to `qsv frequency` and parse the CSV.
-    // Defaults: top 25 values per column, drop "Other" / NULL aggregate rows
+    // Defaults: top N values per column, drop "Other" / NULL aggregate rows
     // so the per-column lists stay tight for downstream consumers.
     //
     // Forwards every CSV-parsing / execution flag that profile took on its
@@ -88,7 +91,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // stats and another way for frequency, producing inconsistent records.
     let mut freq_owned: Vec<String> = vec![
         "--limit".to_string(),
-        "25".to_string(),
+        args.frequency_limit.to_string(),
         "--no-other".to_string(),
         "--no-nulls".to_string(),
     ];

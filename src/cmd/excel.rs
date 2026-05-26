@@ -110,7 +110,7 @@ Excel options:
                                  index, sheet_name, type and visible fields.
                                For all JSON modes, the filename, the full file path, the workbook format
                                 and the number of sheets are also included.
-                               For XLS/XLSX/XLSB workbooks, has_1904_epoch is also included,
+                               For XLS/XLSX/XLSM/XLSB workbooks, has_1904_epoch is also included,
                                 indicating whether the workbook uses the 1904 date system
                                 (true) or the 1900 date system (false). Omitted for ODS.
                                If metadata retrieval performance is a concern, use the short modes

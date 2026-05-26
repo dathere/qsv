@@ -201,6 +201,10 @@ fn profile_stdin_input_is_accepted() {
     // the command succeeds, and check that the output JSON labels the
     // input as "stdin" (rather than leaking the random tempfile path)
     // and lands at the default "stdin.metadata.json" in the workdir.
+    //
+    // Regression for roborev #2453: also assert the DCAT distribution's
+    // `qsv:sourcePath` reads "stdin" — that field previously kept the
+    // tempfile path even after the top-level `input` label was fixed.
     let wrk = Workdir::new("profile_stdin");
     let mut cmd = wrk.command("profile");
     cmd.arg("-");
@@ -237,6 +241,18 @@ fn profile_stdin_input_is_accepted() {
     );
     // dpp block (inferred metadata) is always emitted.
     assert!(parsed.get("dpp").is_some(), "missing dpp block: {body}");
+
+    // DCAT distribution's qsv:sourcePath must also read "stdin", not the
+    // tempfile path. This is the specific roborev #2453 regression check.
+    let source_path = parsed
+        .pointer("/dcat/dcat:distribution/0/qsv:sourcePath")
+        .and_then(|v| v.as_str());
+    assert_eq!(
+        source_path,
+        Some("stdin"),
+        "expected dcat:distribution[0].qsv:sourcePath to be \"stdin\" (no tempfile leak), got: \
+         {source_path:?}\nfull body: {body}",
+    );
 }
 
 #[test]

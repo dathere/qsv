@@ -327,12 +327,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
+        // Pass the human-facing label (URL / "stdin" / local path) rather
+        // than the tempfile path so DCAT's `qsv:sourcePath` and the
+        // Distribution `dct:title` default don't leak random tempfile
+        // suffixes for URL or stdin inputs.
         let (dcat_block, dcat_build_warnings) = dcat::build(
             &package,
             &[resource.clone()],
             &dpp,
             &stats,
-            &input_path,
+            &display_input,
             args.flag_dcat_legacy_license,
         );
         let merged_dcat = match discovered_dcat.as_ref() {

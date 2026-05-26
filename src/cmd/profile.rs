@@ -1,6 +1,7 @@
 static USAGE: &str = r#"
-Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile
-of a dataset, mapped and driven by a metadata scheming YAML spec.
+Extract, derive & infer metadata from a CSV (local path or URL) - using the statistical profile of a
+dataset, mapped and driven by a metadata scheming YAML spec. CKAN/DCAT metadata is optionally
+discovered and ingested as a base layer when the input is a URL with DCAT markup.
 
 This is the non-interactive, qsv-native FAIRification counterpart to what datapusher-plus (DP+)
 does in CKAN: run statistical + frequency analysis on the input, build a Jinja2 context with the results,

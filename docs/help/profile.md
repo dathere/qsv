@@ -1,6 +1,6 @@
 # profile
 
-> Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile of a dataset, mapped and driven by a metadata [scheming](https://github.com/ckan/ckanext-scheming) YAML spec. This enables [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) at scale.
+> Extract, derive & infer metadata from a CSV (local path or URL) - using the statistical profile of a dataset, mapped and driven by a metadata [scheming](https://github.com/ckan/ckanext-scheming) YAML spec, with optional CKAN/DCAT metadata discovery for URL inputs. This enables [FAIRification](https://www.go-fair.org/fair-principles/fairification-process/) at scale.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/profile.rs](https://github.com/dathere/qsv/blob/master/src/cmd/profile.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
@@ -11,8 +11,9 @@
 
 ## Description [↩](#nav)
 
-Extract, derive & infer metadata from a CSV or a CKAN dataset/resource - using the statistical profile
-of a dataset, mapped and driven by a metadata scheming YAML spec.
+Extract, derive & infer metadata from a CSV (local path or URL) - using the statistical profile of a
+dataset, mapped and driven by a metadata scheming YAML spec. CKAN/DCAT metadata is optionally
+discovered and ingested as a base layer when the input is a URL with DCAT markup.
 
 This is the non-interactive, qsv-native FAIRification counterpart to what datapusher-plus (DP+)
 does in CKAN: run statistical + frequency analysis on the input, build a Jinja2 context with the results,

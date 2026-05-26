@@ -97,6 +97,22 @@ impl Spec {
     pub fn real_resource_fields(&self) -> impl Iterator<Item = &Field> {
         self.resource_fields.iter().filter(|f| f.is_real())
     }
+
+    /// §5.8: does any field carry a non-empty `validators` entry? Used by
+    /// `profile.rs::run` as the trigger to invoke `qsv validate` against
+    /// the input and surface RFC4180 failures as `dcat_warnings`. The
+    /// validators' string content isn't interpreted (yet) — its presence
+    /// is treated as the user opting into validation.
+    pub fn has_validators(&self) -> bool {
+        self.real_dataset_fields()
+            .chain(self.real_resource_fields())
+            .any(|f| {
+                f.extras
+                    .get("validators")
+                    .and_then(|v| v.as_str())
+                    .is_some_and(|s| !s.trim().is_empty())
+            })
+    }
 }
 
 #[cfg(test)]
@@ -197,5 +213,79 @@ resource_fields:
         assert!(locale.formula.is_none());
         assert!(locale.suggestion_formula.is_none());
         assert!(locale.extras.contains_key("form_placeholder"));
+    }
+
+    // §5.8: has_validators trigger.
+    #[test]
+    fn has_validators_true_when_any_field_declares_them() {
+        let yaml = r#"
+dataset_fields:
+  - field_name: title
+    label: Title
+  - field_name: notes
+    label: Abstract
+    validators: scheming_required
+resource_fields:
+  - field_name: name
+    label: Name
+"#;
+        let spec = load_from_str(yaml, "test").expect("parse");
+        assert!(
+            spec.has_validators(),
+            "expected has_validators=true when a dataset field declares them",
+        );
+    }
+
+    #[test]
+    fn has_validators_true_for_resource_only_validators() {
+        let yaml = r#"
+dataset_fields:
+  - field_name: title
+    label: Title
+resource_fields:
+  - field_name: name
+    label: Name
+    validators: ignore_missing
+"#;
+        let spec = load_from_str(yaml, "test").expect("parse");
+        assert!(
+            spec.has_validators(),
+            "expected has_validators=true when a resource field declares them",
+        );
+    }
+
+    #[test]
+    fn has_validators_false_when_none_declared() {
+        let yaml = r#"
+dataset_fields:
+  - field_name: title
+    label: Title
+resource_fields:
+  - field_name: name
+    label: Name
+"#;
+        let spec = load_from_str(yaml, "test").expect("parse");
+        assert!(
+            !spec.has_validators(),
+            "expected has_validators=false when no field declares them",
+        );
+    }
+
+    #[test]
+    fn has_validators_false_when_validators_string_is_blank() {
+        // Whitespace-only validators string is treated as "not declared"
+        // so empty-but-present entries don't accidentally trigger
+        // validation.
+        let yaml = r#"
+dataset_fields:
+  - field_name: title
+    label: Title
+    validators: "   "
+"#;
+        let spec = load_from_str(yaml, "test").expect("parse");
+        assert!(
+            !spec.has_validators(),
+            "expected has_validators=false for whitespace-only validators",
+        );
     }
 }

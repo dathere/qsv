@@ -479,6 +479,202 @@ fn profile_warns_when_contactpoint_missing() {
 }
 
 #[test]
+fn profile_runs_validation_when_spec_declares_validators() {
+    // §5.8: when the scheming spec declares one or more `validators`,
+    // profile should invoke `qsv validate` against the input and merge
+    // any RFC4180 failures into dcat_warnings. The presence of
+    // validators is the trigger; their string content isn't
+    // interpreted yet (auto-generating a JSON Schema from declared
+    // types + validators is a future enhancement).
+    //
+    // This test uses a clean CSV so we assert two things:
+    //   1. The helper *ran* — stderr shows the `ran `validate`` marker (mirroring the existing `ran
+    //      `frequency`` / `ran `count`` status lines).
+    //   2. The clean CSV produces NO `qsv:validation` entry under dcat_warnings (validation
+    //      succeeded).
+    let wrk = Workdir::new("profile_validation_trigger");
+    seed_geo_csv(&wrk);
+    std::fs::copy(
+        "tests/resources/profile/dataset-druf.yaml",
+        wrk.path("spec.yaml"),
+    )
+    .expect("copy spec fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--spec", "spec.yaml", "-o", "out.json"]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "profile with validators failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ran `validate`"),
+        "expected stderr to confirm validate was invoked, got: {stderr}",
+    );
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let validation_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.get("field").and_then(|f| f.as_str()) == Some("qsv:validation"))
+        .collect();
+    assert!(
+        validation_warnings.is_empty(),
+        "expected no qsv:validation warnings on clean CSV, got: {validation_warnings:?}",
+    );
+}
+
+#[test]
+fn profile_validation_honors_forwarded_delimiter_flag() {
+    // §5.8 regression: `run_profile_validation` must forward
+    // `--delimiter` to the spawned `qsv validate`. Without the
+    // forwarding, validate would parse this semicolon-delimited input
+    // as comma-separated and the row "store, retail" would split the
+    // record into more fields than the 1-field header, yielding an
+    // RFC4180 failure surfaced as a `qsv:validation` dcat_warning.
+    //
+    // With the forwarding wired correctly, validate parses on `;` and
+    // sees six consistent fields per row, so NO `qsv:validation`
+    // warning is emitted. The assertion below would fail if the flag
+    // were ever dropped or misordered.
+    let wrk = Workdir::new("profile_validation_delimiter_forwarding");
+    wrk.create_from_string(
+        "in.csv",
+        "id;name;created_at;latitude;longitude;kind\n1;Alpha;2024-01-15;40.7128;-74.0060;store, \
+         retail\n2;Bravo;2024-02-20;34.0522;-118.2437;office, \
+         hq\n3;Charlie;2024-03-10;41.8781;-87.6298;office, branch\n",
+    );
+    std::fs::copy(
+        "tests/resources/profile/dataset-druf.yaml",
+        wrk.path("spec.yaml"),
+    )
+    .expect("copy spec fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--spec",
+        "spec.yaml",
+        "--delimiter",
+        ";",
+        "-o",
+        "out.json",
+    ]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "profile with --delimiter ; failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("ran `validate`"),
+        "expected stderr to confirm validate was invoked, got: {stderr}",
+    );
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let validation_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| w.get("field").and_then(|f| f.as_str()) == Some("qsv:validation"))
+        .collect();
+    assert!(
+        validation_warnings.is_empty(),
+        "expected no qsv:validation warnings when --delimiter ; is forwarded to validate, got: \
+         {validation_warnings:?}",
+    );
+}
+
+#[test]
+fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
+    // §5.4: when a dataset_info entry is wrapped {"value": ..., "force": true},
+    // the corresponding DCAT path is recorded as "forced" and discovered-DCAT
+    // merging is forbidden from overlaying it — even when inferred is absent.
+    //
+    // This test stages a custom initial-context with two interesting wrappers:
+    //   * /dcat/dct:license set to {"value": "MIT", "force": true} — the value lands via the
+    //     pointer-override pass.
+    //   * /dcat/dct:rights set to {"value": null, "force": true} — the null wrapper unwraps to a
+    //     `null`, and the FORCE half means "don't let any future merge fill this in either".
+    // Discovered DCAT isn't simulated here (no URL input) so we only
+    // assert the static wiring: forced paths are collected, the
+    // override applies, and the per-test workdir output reads back
+    // the expected shape.
+    let wrk = Workdir::new("profile_force_semantics");
+    seed_geo_csv(&wrk);
+    let ic = serde_json::json!({
+        "package": {
+            "title":             "Forced Title",
+            "notes":             "An abstract",
+            "contact_point":     {"fn": "Data Steward", "hasEmail": "ds@example.gov"},
+            "publisher":         {"name": "Forced Agency"},
+            "metadata_modified": "2024-12-01"
+        },
+        "resource": {"name": "data"},
+        "dataset_info": {
+            "/dcat/dct:license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
+            "/dcat/dct:rights":  {"value": null, "force": true}
+        }
+    });
+    wrk.create_from_string("ic.json", &serde_json::to_string_pretty(&ic).unwrap());
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--initial-context", "ic.json", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    // 1. Pointer-override-wrapped license lands as the inner string.
+    assert_eq!(
+        out.pointer("/dcat/dct:license").and_then(|v| v.as_str()),
+        Some("https://creativecommons.org/licenses/by/4.0/"),
+        "forced-with-value license must land as the inner value (no wrapper leak), got: {}",
+        out.pointer("/dcat/dct:license")
+            .map(ToString::to_string)
+            .unwrap_or_default(),
+    );
+    // 2. The {value: null, force: true} wrapper unwraps to literal null; pointer-override writes
+    //    that null at the path. Round-trip check.
+    assert_eq!(
+        out.pointer("/dcat/dct:rights"),
+        Some(&serde_json::Value::Null),
+        "forced-null rights must round-trip to literal null, got: {:?}",
+        out.pointer("/dcat/dct:rights"),
+    );
+}
+
+#[test]
+fn profile_skips_validation_when_spec_has_no_validators() {
+    // §5.8 negative: spec-less profile must NOT spawn `qsv validate`.
+    // Inverse signal: the stderr "ran `validate`" marker is absent.
+    let wrk = Workdir::new("profile_no_validation_trigger");
+    seed_geo_csv(&wrk);
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "-o", "out.json"]);
+    let output = cmd.output().expect("spawn qsv profile");
+    assert!(
+        output.status.success(),
+        "spec-less profile failed: {}",
+        String::from_utf8_lossy(&output.stderr),
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !stderr.contains("ran `validate`"),
+        "expected validate to NOT run without spec validators, got stderr: {stderr}",
+    );
+}
+
+#[test]
 fn validate_dcat_passes_on_full_initial_context() {
     let wrk = Workdir::new("profile_validate_pass");
     seed_geo_csv(&wrk);

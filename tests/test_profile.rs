@@ -2117,3 +2117,221 @@ fn dcat_us_v3_bundle_pin_manifest_matches_files() {
         );
     }
 }
+
+// =========================================================================
+// External validator trust gate (Roborev #2509)
+// =========================================================================
+// The `validation.external` block can spawn arbitrary commands. Bundled
+// profiles are vetted at qsv release time and run frictionlessly; file-
+// loaded profiles must opt in via `--allow-external-validator`. These
+// tests lock in the gate so a future refactor can't silently regress
+// the security boundary.
+
+/// Write a minimal profile YAML to the workdir that declares a
+/// stderr-emitting `validation.external` command (so we can both
+/// confirm the spawn happened and see the parsed finding). Returns
+/// the path the test should pass via `--profile`.
+fn write_external_validator_profile(wrk: &Workdir, label: &str) -> std::path::PathBuf {
+    // sh -c '...; exit 1' is portable on macOS and Linux CI runners.
+    // The findings include a recognizable marker string so the test
+    // can verify the validator actually ran.
+    let yaml = format!(
+        r#"name: ext-gate-test
+dataset:
+  type: dcat:Dataset
+  fields:
+    - path: dct:title
+      template: "{{{{ pkg.title | default('Untitled') }}}}"
+validation:
+  enabled: false
+  external:
+    command: "sh"
+    args: ["-c", "echo SPAWNED-{label} 1>&2; exit 1"]
+    label: "{label}"
+    default_severity: "recommended"
+"#
+    );
+    let path = wrk.path("ext-gate.yaml");
+    std::fs::write(&path, yaml).expect("write ext-gate.yaml");
+    path
+}
+
+#[cfg(unix)]
+#[test]
+fn external_validator_gated_for_file_loaded_profile_without_flag() {
+    let wrk = Workdir::new("ext_gate_file_no_flag");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let yaml_path = write_external_validator_profile(&wrk, "fake-validator");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        yaml_path.to_str().unwrap(),
+        "--validate-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // The gate warning must be present.
+    let gate_warning = warnings.iter().find(|w| {
+        w.get("field").and_then(|v| v.as_str()) == Some("external_validate")
+            && w.get("message").and_then(|v| v.as_str()).is_some_and(|m| {
+                m.contains("was NOT run") && m.contains("--allow-external-validator")
+            })
+    });
+    assert!(
+        gate_warning.is_some(),
+        "file-loaded profile must emit the gate warning explaining the opt-in; got warnings: \
+         {warnings:#?}"
+    );
+
+    // The validator must NOT have spawned — no SPAWNED- marker anywhere.
+    let any_spawn_evidence = warnings.iter().any(|w| {
+        w.get("message")
+            .and_then(|v| v.as_str())
+            .is_some_and(|m| m.contains("SPAWNED-"))
+    });
+    assert!(
+        !any_spawn_evidence,
+        "validator command must NOT have been spawned without --allow-external-validator; got \
+         warnings: {warnings:#?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn external_validator_runs_for_file_loaded_profile_with_flag() {
+    let wrk = Workdir::new("ext_gate_file_with_flag");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let yaml_path = write_external_validator_profile(&wrk, "fake-validator");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        yaml_path.to_str().unwrap(),
+        "--validate-dcat",
+        "--allow-external-validator",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+
+    // The gate warning must NOT be present.
+    let any_gate_warning = warnings.iter().any(|w| {
+        w.get("message")
+            .and_then(|v| v.as_str())
+            .is_some_and(|m| m.contains("was NOT run") && m.contains("--allow-external-validator"))
+    });
+    assert!(
+        !any_gate_warning,
+        "opt-in flag must skip the gate warning; got warnings: {warnings:#?}"
+    );
+
+    // Validator output must surface with the `<label>: <line>` format
+    // and the stable `external_validate` field.
+    let finding = warnings.iter().find(|w| {
+        w.get("field").and_then(|v| v.as_str()) == Some("external_validate")
+            && w.get("message")
+                .and_then(|v| v.as_str())
+                .is_some_and(|m| m == "fake-validator: SPAWNED-fake-validator")
+    });
+    assert!(
+        finding.is_some(),
+        "validator must have spawned and produced a finding; got warnings: {warnings:#?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn external_validator_strict_dcat_fails_on_file_loaded_findings() {
+    // With --strict-dcat AND --allow-external-validator, non-Info
+    // findings (Recommended/Required) from an external validator
+    // must fail the command the same way schema violations do.
+    let wrk = Workdir::new("ext_gate_strict");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let yaml_path = write_external_validator_profile(&wrk, "fake-validator");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        yaml_path.to_str().unwrap(),
+        "--validate-dcat",
+        "--allow-external-validator",
+        "--strict-dcat",
+        "-o",
+        "out.json",
+    ]);
+    let got_err = wrk.output_stderr(&mut cmd);
+    assert!(
+        got_err.contains("external validator finding"),
+        "strict mode must surface the external validator failure: got `{got_err}`"
+    );
+}
+
+#[test]
+fn external_validator_embedded_profile_skips_gate_warning() {
+    // Embedded profiles (Croissant ships `validation.external` for
+    // mlcroissant) MUST NOT emit the file-loaded gate warning. The
+    // mlcroissant binary itself may or may not be installed on CI;
+    // either outcome is acceptable here — we're locking in that the
+    // gate doesn't accidentally apply to vetted bundled profiles.
+    let wrk = Workdir::new("ext_gate_embedded");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "croissant",
+        "--validate-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let gate_warning_present = warnings.iter().any(|w| {
+        w.get("message")
+            .and_then(|v| v.as_str())
+            .is_some_and(|m| m.contains("was NOT run") && m.contains("--allow-external-validator"))
+    });
+    assert!(
+        !gate_warning_present,
+        "embedded profile must not trip the file-loaded gate; got warnings: {warnings:#?}"
+    );
+}

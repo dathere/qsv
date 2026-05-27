@@ -136,6 +136,15 @@ pub struct ProfileSpec {
     /// profiles can round-trip vendor extensions.
     #[serde(flatten)]
     pub extras: Map<String, Value>,
+
+    /// Where this profile was loaded from. NOT deserialized — set
+    /// by `load()` after parsing. Direct `load_from_str` callers
+    /// (tests, in-memory construction) get the `Embedded` default
+    /// so unit tests don't trip the orchestrator's untrusted-source
+    /// gate; real CLI usage always goes through `load()`, which
+    /// overrides this with the resolved source.
+    #[serde(skip)]
+    pub source: ProfileSource,
 }
 
 // -----------------------------------------------------------------------
@@ -168,6 +177,57 @@ pub struct Validation {
     /// `STRIPPABLE_PREFIXES` const.
     #[serde(default)]
     pub strippable_curie_prefixes: Vec<String>,
+    /// Optional out-of-process validator (e.g. `mlcroissant`,
+    /// `pyshacl`). Runs orthogonal to the built-in JSON-Schema
+    /// validator gated by `enabled`: a profile may set
+    /// `enabled: false` (no JSON Schema) but still configure
+    /// `external` for vocabulary-specific validation. When the
+    /// configured `command` isn't on `PATH`, validation degrades
+    /// gracefully to a single `Severity::Info` warning rather than
+    /// failing the projection.
+    #[serde(default)]
+    pub external:                  Option<ExternalValidator>,
+}
+
+/// Out-of-process validator config. The command is spawned with the
+/// rendered JSON-LD written to a tempfile; the file path is
+/// substituted for the literal `{file}` token in `args`, or appended
+/// as the last argument when no `{file}` token is present.
+///
+/// A non-zero exit code is treated as "validation failed" — each
+/// non-empty stderr line becomes one `ProjectionWarning` with
+/// severity `default_severity`. Exit code zero is treated as
+/// success regardless of stdout/stderr content.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
+pub struct ExternalValidator {
+    /// Command to spawn. Resolved via `PATH`. When the command
+    /// isn't found, validation emits a single `Info`-severity
+    /// warning ("`<command>` not installed; skipped validation")
+    /// rather than failing — keeps profiles that rely on an
+    /// optional Python tool usable in plain-Rust environments.
+    pub command:          String,
+    /// Arguments. The literal token `{file}` is replaced with the
+    /// tempfile path holding the rendered JSON-LD. When no `{file}`
+    /// token is present, the path is appended as the last argument.
+    #[serde(default)]
+    pub args:             Vec<String>,
+    /// Severity assigned to each surfaced finding. One of
+    /// `"required"`, `"recommended"` (default), `"optional"`,
+    /// `"info"`. Case-insensitive.
+    #[serde(default)]
+    pub default_severity: Option<String>,
+    /// Optional label used in warning messages instead of the raw
+    /// command name. Lets a profile show "mlcroissant" even when
+    /// the command is actually `python3 -m mlcroissant ...`.
+    #[serde(default)]
+    pub label:            Option<String>,
+    /// Optional install hint appended to the missing-binary
+    /// warning. Free-form text — typically a short install
+    /// command and/or a URL pointing at the validator's homepage.
+    /// E.g. "pip install mlcroissant (https://github.com/mlcommons/croissant)".
+    #[serde(default)]
+    pub install_hint:     Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -279,6 +339,34 @@ pub enum RequiredLevel {
     Required,
     Recommended,
     Optional,
+}
+
+/// Tag identifying where the profile was loaded from. Set by
+/// `load()`; used by the orchestrator to gate trust-sensitive
+/// features (e.g. spawning external validators).
+///
+/// The `Embedded` default is for tests / direct `load_from_str`
+/// callers that bypass `load()`. Real CLI invocations always go
+/// through `load()`, which sets the source explicitly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProfileSource {
+    /// Bundled with the qsv binary (`EMBEDDED` table). Trusted at
+    /// build time; safe to spawn declared validators without an
+    /// explicit per-invocation opt-in.
+    #[default]
+    Embedded,
+    /// Loaded from a YAML file on disk. Treated as untrusted: the
+    /// orchestrator requires an explicit CLI opt-in
+    /// (`--allow-external-validator`) before spawning any binary
+    /// the file declares.
+    FilePath,
+}
+
+impl ProfileSource {
+    /// True when the profile shipped with the qsv binary.
+    pub fn is_embedded(self) -> bool {
+        matches!(self, Self::Embedded)
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -407,27 +495,29 @@ pub struct RecordSetSpec {
 /// Returns a `CliError::Other` with a helpful list of bundled names when
 /// neither lookup succeeds.
 ///
-/// The returned profile is also `dry_compile`-validated — every
-/// template inside the profile is parsed by minijinja so a malformed
-/// embedded YAML (or a user-supplied file with a typo) fails at
-/// `load` time rather than mid-projection. This matches the doc
-/// claim on the `EMBEDDED` constant. Tests + low-level call sites
-/// that want raw parsing without compilation can still use
-/// `load_from_str` directly.
+/// The returned profile is `dry_compile`-validated (every template
+/// is parsed by minijinja so a malformed YAML fails here rather
+/// than mid-projection) and has its `source` field stamped with
+/// the resolution path — `Embedded` for bundled profiles, `FilePath`
+/// for on-disk YAML. The orchestrator reads `source` to gate
+/// trust-sensitive features such as external validator spawn.
+/// Tests + low-level callers that want raw parsing without
+/// compilation can still use `load_from_str` directly (those keep
+/// the `Embedded` default).
 pub fn load(arg: &str) -> CliResult<ProfileSpec> {
     let needle = arg.to_ascii_lowercase();
-    let profile = if let Some((_, raw)) = EMBEDDED
+    let (mut profile, source) = if let Some((_, raw)) = EMBEDDED
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(&needle))
     {
-        load_from_str(raw, arg)?
+        (load_from_str(raw, arg)?, ProfileSource::Embedded)
     } else {
         let path = std::path::Path::new(arg);
         if path.is_file() {
             let raw = std::fs::read_to_string(path).map_err(|e| {
                 CliError::Other(format!("could not read --profile file `{arg}`: {e}"))
             })?;
-            load_from_str(&raw, arg)?
+            (load_from_str(&raw, arg)?, ProfileSource::FilePath)
         } else {
             return Err(CliError::Other(format!(
                 "unknown --profile `{arg}`; embedded profiles: [{}]. To use a file path, point at \
@@ -436,6 +526,7 @@ pub fn load(arg: &str) -> CliResult<ProfileSpec> {
             )));
         }
     };
+    profile.source = source;
     // Validate every template at load time — malformed profiles
     // surface here, not deep inside a render. Errors are wrapped to
     // include the profile name + label.
@@ -530,9 +621,18 @@ dataset:
         let spec = load("croissant").expect("embedded load");
         assert_eq!(spec.name, "croissant");
         // Croissant relies on the mlcommons Python validator; built-in
-        // validator + discovery merge are both disabled.
+        // JSON-Schema validator + discovery merge are both disabled.
         assert!(!spec.validation.enabled);
         assert!(!spec.discovery_merge.enabled);
+        // External validator is configured (mlcroissant).
+        let external = spec
+            .validation
+            .external
+            .as_ref()
+            .expect("croissant should declare external validator");
+        assert_eq!(external.command, "mlcroissant");
+        assert!(external.args.iter().any(|a| a == "validate"));
+        assert!(external.args.iter().any(|a| a.contains("{file}")));
         assert!(!spec.dataset.fields.is_empty());
         assert!(spec.distribution.is_some());
         assert!(spec.catalog.is_some());

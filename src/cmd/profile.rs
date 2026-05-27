@@ -72,6 +72,19 @@ profile options:
                               Violations append to dcat_warnings by default.
     --strict-dcat             With --validate-dcat, fail the command on
                               any schema violation instead of warning.
+    --allow-external-validator
+                              Opt in to spawning the validator binary
+                              declared by `validation.external` when the
+                              profile was loaded from an arbitrary YAML
+                              file. Bundled profiles (dcat-us-v3,
+                              dcat-ap-v3, croissant) always run their
+                              declared external validators because the
+                              profile content is vetted at qsv release
+                              time. Without this flag, file-loaded
+                              profiles emit a Recommended-severity
+                              warning instead of running the binary, so
+                              an untrusted YAML can't silently execute
+                              arbitrary commands. Default: off.
     --catalog                 Wrap the emitted DCAT-US v3 Dataset inside a
                               dcat:Catalog envelope (Catalog{dataset:[...]}).
                               Useful for federation harvesters (data.gov,
@@ -116,6 +129,7 @@ mod context;
 mod dcat_discover;
 mod dcat_validate;
 mod discovery_merge;
+mod external_validate;
 mod formula_engine;
 mod formula_helpers;
 mod profile_spec;
@@ -125,24 +139,25 @@ mod sql_backend;
 
 #[derive(Debug, Deserialize)]
 struct Args {
-    arg_input:                   Option<String>,
-    flag_spec:                   Option<String>,
-    flag_initial_context:        Option<String>,
-    flag_no_dcat:                bool,
-    flag_dcat_legacy_license:    bool,
-    flag_no_dcat_discovery:      bool,
-    flag_dcat_discovery_timeout: Option<u64>,
-    flag_validate_dcat:          bool,
-    flag_strict_dcat:            bool,
-    flag_catalog:                bool,
-    flag_profile:                Option<String>,
-    flag_no_ckan:                bool,
-    flag_force:                  bool,
-    flag_jobs:                   Option<usize>,
-    flag_output:                 Option<String>,
-    flag_no_headers:             bool,
-    flag_delimiter:              Option<crate::config::Delimiter>,
-    flag_memcheck:               bool,
+    arg_input:                     Option<String>,
+    flag_spec:                     Option<String>,
+    flag_initial_context:          Option<String>,
+    flag_no_dcat:                  bool,
+    flag_dcat_legacy_license:      bool,
+    flag_no_dcat_discovery:        bool,
+    flag_dcat_discovery_timeout:   Option<u64>,
+    flag_validate_dcat:            bool,
+    flag_strict_dcat:              bool,
+    flag_allow_external_validator: bool,
+    flag_catalog:                  bool,
+    flag_profile:                  Option<String>,
+    flag_no_ckan:                  bool,
+    flag_force:                    bool,
+    flag_jobs:                     Option<usize>,
+    flag_output:                   Option<String>,
+    flag_no_headers:               bool,
+    flag_delimiter:                Option<crate::config::Delimiter>,
+    flag_memcheck:                 bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -494,6 +509,57 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 )));
             }
             dcat_warnings.extend(validation);
+
+            // Out-of-process validator (e.g. mlcroissant, pyshacl).
+            // Runs in parallel to the built-in JSON-Schema validator;
+            // a profile may use either, both, or neither.
+            //
+            // Trust gate: a `--profile <path>` argument can load an
+            // arbitrary YAML file from disk, and that file controls
+            // `validation.external.command`. Spawning whatever the
+            // file says would let an untrusted profile execute
+            // arbitrary commands. So: embedded profiles always run
+            // their declared external validators (qsv release vets
+            // those YAMLs); file-loaded profiles need an explicit
+            // `--allow-external-validator` opt-in, otherwise we skip
+            // the spawn and emit a Recommended-severity warning that
+            // tells the user what would have run and how to opt in.
+            // Strict mode honors external findings the same way it
+            // honors schema violations — once you've opted in to
+            // validation, all findings escalate.
+            let allow_external = profile.source.is_embedded() || args.flag_allow_external_validator;
+            if profile.validation.external.is_some() && !allow_external {
+                let cfg = profile.validation.external.as_ref().unwrap();
+                let label = cfg.label.as_deref().unwrap_or(cfg.command.as_str());
+                dcat_warnings.push(projection::ProjectionWarning {
+                    field:    "external_validate".to_string(),
+                    severity: projection::Severity::Recommended,
+                    message:  format!(
+                        "external validator `{label}` declared by file-loaded profile `{}` was \
+                         NOT run. Spawning arbitrary commands from untrusted profiles is gated \
+                         for safety. Pass --allow-external-validator to opt in.",
+                        profile.name,
+                    ),
+                });
+            } else if allow_external {
+                let external = external_validate::validate(&profile, final_dcat);
+                let external_findings: Vec<_> = external
+                    .iter()
+                    .filter(|w| !matches!(w.severity, projection::Severity::Info))
+                    .collect();
+                if !external_findings.is_empty() && args.flag_strict_dcat {
+                    let summary = external_findings
+                        .iter()
+                        .map(|w| format!("  - {}: {}", w.field, w.message))
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    return Err(CliError::Other(format!(
+                        "qsv profile --strict-dcat: {} external validator finding(s):\n{summary}",
+                        external_findings.len()
+                    )));
+                }
+                dcat_warnings.extend(external);
+            }
         }
 
         // §5.8: profile-driven validation. When the spec opts in by

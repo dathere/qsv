@@ -139,6 +139,167 @@ fn dcat_us_v3_golden_parity_catalog() {
     }
 }
 
+
+// =========================================================================
+// DCAT-AP v3 profile smoke tests
+// =========================================================================
+
+#[test]
+fn dcat_ap_v3_emits_no_dcat_us_extensions() {
+    // DCAT-AP intentionally drops dcat-us:* extensions (bureauCode,
+    // programCode, accessLevel, purpose, liabilityStatement). The
+    // profile must not surface them even when the initial-context
+    // would have provided values.
+    let wrk = Workdir::new("dcat_ap_v3_no_us_ext");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let ic_src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/dcat-init-context.json");
+    std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "dcat-ap-v3",
+        "--initial-context",
+        "ic.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let dcat_keys: Vec<String> = out
+        .pointer("/dcat")
+        .and_then(|v| v.as_object())
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let us_keys: Vec<&String> = dcat_keys
+        .iter()
+        .filter(|k| k.starts_with("dcat-us:"))
+        .collect();
+    assert!(
+        us_keys.is_empty(),
+        "DCAT-AP must not surface dcat-us:* extensions, found: {us_keys:?}",
+    );
+}
+
+#[test]
+fn dcat_ap_v3_distribution_carries_access_url() {
+    // DCAT-AP mandates dcat:accessURL on every Distribution.
+    let wrk = Workdir::new("dcat_ap_v3_access_url");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let ic_src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/dcat-init-context.json");
+    std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "dcat-ap-v3",
+        "--initial-context",
+        "ic.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let access_url = out
+        .pointer("/dcat/dcat:distribution/0/dcat:accessURL")
+        .and_then(|v| v.as_str())
+        .expect("dcat:accessURL on Distribution[0]");
+    assert!(
+        access_url.starts_with("http"),
+        "dcat:accessURL must be an absolute IRI, got `{access_url}`",
+    );
+}
+
+#[test]
+fn dcat_ap_v3_conforms_to_targets_spec_url() {
+    // dct:conformsTo must point at the DCAT-AP v3 release URL — that's
+    // how downstream consumers detect the profile.
+    let wrk = Workdir::new("dcat_ap_v3_conforms_to");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "dcat-ap-v3", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let conforms = out
+        .pointer("/dcat/dct:conformsTo/0/@id")
+        .and_then(|v| v.as_str())
+        .expect("dct:conformsTo[0].@id");
+    assert!(
+        conforms.contains("semiceu.github.io/DCAT-AP"),
+        "dct:conformsTo target must reference DCAT-AP spec, got `{conforms}`",
+    );
+}
+
+#[test]
+fn dcat_ap_v3_validation_is_disabled_noop() {
+    // DCAT-AP ships SHACL, not JSON Schema. --validate-dcat with this
+    // profile must succeed without producing schema-level violations
+    // (in-projection required_level warnings are still allowed).
+    let wrk = Workdir::new("dcat_ap_v3_validation_off");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let ic_src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/dcat-init-context.json");
+    std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "dcat-ap-v3",
+        "--initial-context",
+        "ic.json",
+        "--validate-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    // Filter out the "minijinja could not render X" / required-level
+    // warnings — those aren't schema validation noise. We just want
+    // no schema-validator errors to slip through.
+    let schema_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| {
+            w.get("field")
+                .and_then(|v| v.as_str())
+                .is_some_and(|f| f == "dcat_validate")
+        })
+        .collect();
+    assert!(
+        schema_warnings.is_empty(),
+        "DCAT-AP profile must not invoke JSON Schema validator, got: {schema_warnings:#?}",
+    );
+}
+
 #[test]
 fn profile_spec_less_emits_dpp_block() {
     let wrk = Workdir::new("profile_spec_less");

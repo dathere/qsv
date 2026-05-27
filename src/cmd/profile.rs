@@ -287,7 +287,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .or_insert_with(|| Value::String(dt.to_string()));
         }
     }
-    merge_formula_results(&mut package, &mut resource, &formula_results);
+    merge_formula_results(
+        &mut package,
+        &mut resource,
+        &formula_results,
+        &analysis.forced_package_fields,
+        &analysis.forced_resource_fields,
+    );
 
     // When the input was a URL, stamp it as the resource URL so the DCAT
     // projection's `dcat:downloadURL` slot gets populated (subject to the
@@ -550,12 +556,21 @@ fn merge_formula_results(
     package: &mut Value,
     resource: &mut Value,
     results: &[formula_engine::FormulaResult],
+    forced_package_fields: &std::collections::HashSet<String>,
+    forced_resource_fields: &std::collections::HashSet<String>,
 ) {
     if results.is_empty() {
         return;
     }
 
     // Pass 1: stamp `formula` results onto the package/resource fields.
+    // Roborev #2491: skip fields the user marked `force: true` in the
+    // initial-context so a spec formula can't overwrite the forced
+    // CKAN value before projection. The forced value already lives in
+    // package/resource via normalize_value_force; preserving it here
+    // honors the documented "force beats inferred" guarantee while
+    // still letting the value flow through the profile templates for
+    // shaping.
     {
         let pkg = ensure_object(package);
         let res = ensure_object(resource);
@@ -566,9 +581,15 @@ fn merge_formula_results(
             let value = r.value.clone().unwrap_or(Value::Null);
             match r.scope.as_str() {
                 "dataset" => {
+                    if forced_package_fields.contains(&r.field_name) {
+                        continue;
+                    }
                     pkg.insert(r.field_name.clone(), value);
                 },
                 "resource" => {
+                    if forced_resource_fields.contains(&r.field_name) {
+                        continue;
+                    }
                     res.insert(r.field_name.clone(), value);
                 },
                 _ => {},
@@ -578,7 +599,10 @@ fn merge_formula_results(
 
     // Pass 2: collect `suggestion_formula` results under
     // package.dpp_suggestions. Done after pass 1 finishes so we hold no
-    // overlapping mutable borrows of `package`.
+    // overlapping mutable borrows of `package`. Suggestions are
+    // advisory and live in a separate namespace; they are NOT subject
+    // to the force-skip (a suggestion that targets `spatial_extent`
+    // doesn't overwrite a forced `pkg.publisher`).
     let mut sugg_entries: Vec<(String, Value)> = Vec::new();
     for r in results {
         if r.kind != "suggestion_formula" {

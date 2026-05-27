@@ -645,6 +645,61 @@ fn forced_package_publisher_flows_through_profile_template() {
 }
 
 #[test]
+fn forced_package_field_survives_formula_overwrite() {
+    // Roborev #2491: regression for the #5 fix. A `force: true` value
+    // on `package.title` must NOT be overwritten by a spec formula
+    // that targets the same field. merge_formula_results now skips
+    // fields recorded in `analysis.forced_package_fields`.
+    let wrk = Workdir::new("force_beats_formula");
+    seed_geo_csv(&wrk);
+
+    // Spec with a dataset-scope formula that, absent the force, would
+    // replace `package.title` with `"Formula Wins"`. The forced
+    // initial-context value must beat it.
+    let spec_path = wrk.path("spec.yaml");
+    std::fs::write(
+        &spec_path,
+        r#"
+scheming_version: 2
+dataset_type: test
+dataset_fields:
+  - field_name: title
+    formula: '"Formula Wins"'
+"#,
+    )
+    .unwrap();
+
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"package": {"title": {"value": "Forced Title", "force": true}}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--spec",
+        spec_path.to_str().unwrap(),
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let title = out
+        .pointer("/dcat/dct:title")
+        .and_then(|v| v.as_str())
+        .expect("dct:title");
+    assert_eq!(
+        title, "Forced Title",
+        "force:true must beat a spec formula targeting the same field",
+    );
+}
+
+#[test]
 fn profile_spec_less_emits_dpp_block() {
     let wrk = Workdir::new("profile_spec_less");
     seed_geo_csv(&wrk);

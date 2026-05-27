@@ -700,6 +700,112 @@ dataset_fields:
 }
 
 #[test]
+fn forced_author_locks_publisher_alias() {
+    // Roborev #2493: package.author and package.publisher both map to
+    // /dcat/dct:publisher. Forcing one must lock the other — a
+    // formula writing `publisher` mustn't be able to overwrite a
+    // forced `author` value before projection.
+    let wrk = Workdir::new("force_alias_publisher");
+    seed_geo_csv(&wrk);
+
+    let spec_path = wrk.path("spec.yaml");
+    std::fs::write(
+        &spec_path,
+        r#"
+scheming_version: 2
+dataset_type: test
+dataset_fields:
+  - field_name: publisher
+    formula: '"Formula Publisher"'
+"#,
+    )
+    .unwrap();
+
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"package": {"author": {"value": "Forced Author", "force": true}}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--spec",
+        spec_path.to_str().unwrap(),
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let publisher_name = out
+        .pointer("/dcat/dct:publisher/foaf:name")
+        .and_then(|v| v.as_str())
+        .expect("dct:publisher.foaf:name");
+    assert_eq!(
+        publisher_name, "Forced Author",
+        "forced package.author must lock the publisher alias against formula overwrite",
+    );
+}
+
+#[test]
+fn forced_license_id_locks_license_alias() {
+    // Roborev #2493: resource.license and resource.license_id both
+    // map to /dcat/dcat:distribution/0/dct:license. Forcing one
+    // must lock the other against formula overwrite.
+    let wrk = Workdir::new("force_alias_license");
+    seed_geo_csv(&wrk);
+
+    let spec_path = wrk.path("spec.yaml");
+    std::fs::write(
+        &spec_path,
+        r#"
+scheming_version: 2
+dataset_type: test
+resource_fields:
+  - field_name: license
+    formula: '"cc-by-sa"'
+"#,
+    )
+    .unwrap();
+
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"resource": {"license_id": {"value": "cc-by", "force": true}}}"#,
+    )
+    .unwrap();
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--spec",
+        spec_path.to_str().unwrap(),
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let license = out
+        .pointer("/dcat/dcat:distribution/0/dct:license")
+        .and_then(|v| v.as_str())
+        .expect("Distribution.dct:license");
+    // cc-by resolves to the CC-BY 4.0 IRI; cc-by-sa would resolve to
+    // a different IRI. The forced cc-by must win.
+    assert!(
+        license.contains("creativecommons.org/licenses/by/4.0"),
+        "forced resource.license_id (cc-by) must lock the license alias against formula \
+         overwrite, got `{license}`",
+    );
+}
+
+#[test]
 fn profile_spec_less_emits_dpp_block() {
     let wrk = Workdir::new("profile_spec_less");
     seed_geo_csv(&wrk);

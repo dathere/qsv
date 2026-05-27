@@ -369,8 +369,10 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 ///    Only `dataset_info` entries contribute here; package/resource forces flow through templates
 ///    instead (see #3 below).
 /// 3. `forced_package_fields` — CKAN-side field names (e.g. `"publisher"`) marked `force: true`
-///    under `package/`. Consumed by `merge_formula_results` to skip formula output on those fields
-///    so a spec formula can't overwrite a forced value (Roborev #2491).
+///    under `package/`, **expanded to include any alias keys that map to the same target pointer**
+///    (Roborev #2493). For example forcing `package.author` also locks `package.publisher` because
+///    both map to `/dcat/dct:publisher`. Consumed by `merge_formula_results` to skip formula output
+///    on those fields so a spec formula can't overwrite a forced value (originally Roborev #2491).
 /// 4. `forced_resource_fields` — same idea for `resource/`.
 ///
 /// Subtree handling:
@@ -386,7 +388,7 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 ///   and `dcat:contactPoint` (vcard:Individual object) get their proper JSON-LD shape. Writing the
 ///   raw CKAN value to the target pointer would bypass that shaping (Roborev #2490 finding #5). The
 ///   field-name set is recorded so `merge_formula_results` can skip formula output that would
-///   otherwise overwrite the forced value before projection (Roborev #2491).
+///   otherwise overwrite the forced value before projection (Roborev #2491, #2493).
 ///
 /// Returns insertion-ordered vectors; duplicates are not deduped (the
 /// merge / override paths use set-membership semantics per-key).
@@ -420,29 +422,58 @@ fn collect_forced_paths(
 
     // package + resource — CKAN keys translated to target pointers via
     // the active profile's field_mappings. Path is recorded for
-    // discovery-merge protection only; the value is intentionally NOT
-    // added to `values` so the profile's templates shape it normally
-    // (e.g. `dct:publisher` template wraps the string in a foaf:Agent
-    // object). The forced value already lives in the merged
-    // package/resource via `normalize_value_force` upstream. The
-    // field-name set is recorded for merge_formula_results to skip.
-    for (top, key_prefix, set) in [
-        ("package", "/package/", &mut forced_pkg),
-        ("resource", "/resource/", &mut forced_res),
+    // discovery-merge protection only; the value flows through normal
+    // projection (see doc above for the why).
+    //
+    // Roborev #2493: also collect the set of forced TARGET POINTERS
+    // per scope so we can expand the field-name sets to cover alias
+    // keys. e.g. `/package/author` and `/package/publisher` both map
+    // to `/dcat/dct:publisher`; forcing one must lock the other.
+    let mut forced_pkg_targets: HashSet<String> = HashSet::new();
+    let mut forced_res_targets: HashSet<String> = HashSet::new();
+    for (top, key_prefix, field_set, target_set) in [
+        (
+            "package",
+            "/package/",
+            &mut forced_pkg,
+            &mut forced_pkg_targets,
+        ),
+        (
+            "resource",
+            "/resource/",
+            &mut forced_res,
+            &mut forced_res_targets,
+        ),
     ] {
         if let Some(obj) = raw_doc.get(top).and_then(Value::as_object) {
             for (key, val) in obj {
                 if forced_inner(val).is_some() {
-                    set.insert(key.clone());
+                    field_set.insert(key.clone());
                     let ckan_ptr = format!("{key_prefix}{key}");
                     if let Some(target_ptr) = profile.translate_ckan_ptr(&ckan_ptr) {
                         paths.push(target_ptr.to_string());
-                        // No values.push(...): the value flows through
-                        // normal projection so shaped fields stay
-                        // properly typed.
+                        target_set.insert(target_ptr.to_string());
                     }
                 }
             }
+        }
+    }
+
+    // Roborev #2493: expand forced_pkg / forced_res through field
+    // alias mappings — every CKAN field whose target appears in the
+    // forced target set is also locked, so a formula targeting a
+    // synonym (`publisher` for a forced `author`) can't overwrite the
+    // resolved value.
+    for mapping in &profile.field_mappings {
+        if let Some(local_key) = mapping.ckan.strip_prefix("/package/")
+            && forced_pkg_targets.contains(&mapping.target)
+        {
+            forced_pkg.insert(local_key.to_string());
+        }
+        if let Some(local_key) = mapping.ckan.strip_prefix("/resource/")
+            && forced_res_targets.contains(&mapping.target)
+        {
+            forced_res.insert(local_key.to_string());
         }
     }
 

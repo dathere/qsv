@@ -28,12 +28,20 @@ use crate::{CliError, CliResult};
 
 /// Which top-level shape the engine assembles.
 ///
-/// `Dataset` produces the bare Dataset block (default); `Catalog` wraps
-/// the Dataset inside the profile's `catalog:` envelope (used by
-/// `--catalog`).
+/// `Dataset` produces the bare Dataset block (default); `Catalog`
+/// wraps the Dataset inside the profile's `catalog:` envelope. At
+/// the binary level today only `Dataset` is constructed — the
+/// orchestrator calls `wrap_in_catalog_envelope` after
+/// `discovery_merge` for `--catalog` mode so discovered metadata
+/// lands on the inner Dataset, not the outer envelope (Roborev
+/// #2490 finding #1). `Catalog` remains in the API so `project`
+/// stays usable by tests and downstream callers that want the
+/// pre-merge wrap; without `#[allow(dead_code)]` the variant
+/// would trip the never-constructed lint in non-test builds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProjectionMode {
     Dataset,
+    #[allow(dead_code)]
     Catalog,
 }
 
@@ -437,12 +445,11 @@ fn render_truthy(env: &Environment, ctx: &minijinja::Value, src: &str) -> bool {
 /// parsed as JSON; anything else is taken as a literal string.
 pub fn coerce_json_or_string(rendered: &str) -> Value {
     let trimmed = rendered.trim();
-    if (trimmed.starts_with('{') && trimmed.ends_with('}'))
-        || (trimmed.starts_with('[') && trimmed.ends_with(']'))
+    if ((trimmed.starts_with('{') && trimmed.ends_with('}'))
+        || (trimmed.starts_with('[') && trimmed.ends_with(']')))
+        && let Ok(v) = serde_json::from_str::<Value>(trimmed)
     {
-        if let Ok(v) = serde_json::from_str::<Value>(trimmed) {
-            return v;
-        }
+        return v;
     }
     Value::String(rendered.to_string())
 }

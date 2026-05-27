@@ -1,7 +1,6 @@
 # `qsv profile` — handoff #3 (YAML-driven projection engine, **COMPLETE**)
 
-The YAML-driven projection engine described in the plan
-`/Users/joelnatividad/.claude/plans/looking-at-src-cmd-profile-rs-luminous-moth.md`
+The YAML-driven projection engine described in the original plan
 **fully landed across 8 staged commits**. The shipped binary always
 goes through the YAML engine; the legacy `dcat.rs` / `catalog.rs` /
 `ckan_to_dcat.rs` / `curie.rs` modules are deleted.

@@ -242,4 +242,3 @@ catalog:
 
 discovery_merge:
   enabled: false
-  strippable_curie_prefixes: []

@@ -19,7 +19,7 @@ optional schema validation pass exposed by `qsv profile`'s
 | `entry_points` | Recommended root schemas (Dataset for dataset-only, Catalog for federation) |
 | `files`        | Each vendored file with its SHA-256 content hash                 |
 
-A unit test (`tests/test_dcat_us_bundle_pin.rs`) re-hashes every file
+A unit test (`tests/test_profile.rs::dcat_us_v3_bundle_pin_manifest_matches_files`) re-hashes every file
 on every CI run and fails if any SHA in `MANIFEST.json` does not
 match the file on disk. Silent edits are blocked.
 
@@ -68,7 +68,7 @@ match the file on disk. Silent edits are blocked.
 4. Run the test suite:
 
    ```bash
-   cargo test --test tests -F profile -- test_dcat_us_bundle_pin::
+   cargo test --test tests -F profile,feature_capable -- test_profile::dcat_us_v3_bundle_pin
    cargo test --bin qsv -F profile cmd::profile::
    ```
 

@@ -36,30 +36,21 @@ profile options:
                               resource dicts plus optional JSON-Pointer
                               overrides for the final DCAT block. Replaces
                               the older --package-meta / --resource-meta
-                              flags. Shape:
-                                {
-                                  "package":  {"title": "...", ...},
-                                  "resource": {"format": "CSV", ...},
-                                  "dataset_info": {
-                                    "/dcat/dct:title": "Force override"
-                                  }
-                                }
-                              Each leaf value may also be wrapped as
-                              {"value": ..., "force": true} to mark it
-                              as overriding any value discovered from
-                              the URL's existing DCAT markup AND any
-                              value qsv inferred. Force is honored
-                              across all three subtrees:
-                                * dataset_info entries (DCAT pointers)
-                                  override their target path verbatim.
-                                * package / resource entries route
-                                  through a CKAN→DCAT mapping table —
-                                  e.g. `package.title force=true`
-                                  lands at `/dcat/dct:title`, beating
-                                  both inference and discovery.
-                                Forced values for CKAN slots that have
-                                no DCAT counterpart are silently
-                                dropped (no-op rather than error).
+                              flags. Top-level keys: `package`, `resource`,
+                              `dataset_info`. Each leaf value may be wrapped
+                              as {"value": ..., "force": true} to mark it as
+                              overriding any value discovered from URL DCAT
+                              markup AND any value qsv inferred. Force is
+                              honored across all three subtrees: dataset_info
+                              entries override their target path verbatim;
+                              package / resource entries route through the
+                              active profile's `field_mappings:` table (e.g.
+                              `package.title force=true` lands at
+                              `/dcat/dct:title`, beating inference and
+                              discovery). Forced values for slots the profile
+                              does not surface are silently dropped (no-op).
+                              See tests/resources/profile/dcat-init-context.README.md
+                              for a fully-populated example.
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
@@ -206,8 +197,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // templates BEFORE we run stats / frequency / formula evaluation, so
     // a typo in a profile YAML doesn't burn 30s of upstream work first.
     let profile_arg = args.flag_profile.as_deref().unwrap_or("dcat-us-v3");
+    // load() validates templates via dry_compile internally — a
+    // malformed embedded profile or a user-supplied file with a typo
+    // surfaces here before stats / frequency / formulas run.
     let profile = profile_spec::load(profile_arg)?;
-    projection::dry_compile(&profile)?;
 
     // --- 2. run stats + frequency, build analysis context -----------------
     let ctx_args = context::ContextArgs {
@@ -451,8 +444,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     // §5.4: forced `(dcat_pointer, value)` pairs from all three
-    // subtrees (dataset_info, package, resource — translated via
-    // ckan_to_dcat). Applied AFTER apply_pointer_overrides so a
+    // subtrees (dataset_info, package, resource — package/resource keys
+    // translated via the active profile's `field_mappings:` table, see
+    // `ProfileSpec::translate_ckan_ptr`). Applied AFTER apply_pointer_overrides so a
     // `{value, force: true}` wrapper beats both inferred metadata
     // AND publisher-discovered DCAT, with last-write-wins on
     // aliasing pointers. Still runs BEFORE schema validation so a
@@ -932,11 +926,11 @@ fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String,
 /// `apply_pointer_overrides`'s skip-non-pointer behaviour but takes
 /// a `&[(String, Value)]` instead of a Map so insertion order is
 /// preserved (matters when two forced leaves alias the same pointer
-/// via the `ckan_to_dcat` mapping — last-write-wins).
+/// via the active profile's `field_mappings:` table — last-write-wins).
 ///
 /// `forced_values` comes from `context::collect_forced_paths` and
 /// already has any `package/<key>` / `resource/<key>` pointers
-/// translated to their DCAT counterparts.
+/// translated to their target counterparts.
 fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
     for (ptr, new_value) in forced_values {
         if !ptr.starts_with('/') {
@@ -944,65 +938,6 @@ fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
         }
         set_by_pointer(root, ptr, new_value.clone());
     }
-}
-
-/// Merge a discovered DCAT-US v3 dataset object into our auto-inferred
-/// projection per the Phase 4b precedence rules:
-///
-///   * Inferred values (including those seeded from `--initial-context`) always win — discovered
-///     DCAT only fills slots the inferred output left absent.
-///   * Top-level scalar / object keys present in `discovered` but not in `inferred` are copied over
-///     verbatim.
-///   * Array slots (`dct:spatial`, `dct:temporal`, `dcat:keyword`, `dcat:theme`) get the discovered
-///     array only when the inferred side is missing entirely; we don't try to merge per-element.
-///   * `dcat:distribution` is left alone — per-distribution merging is out of scope until we have a
-///     per-resource identity scheme.
-///   * `@context` and `@type` are never overwritten.
-///
-/// §5.4: `forced_dcat_paths` is the list of JSON-Pointer paths (in the
-/// dataset_info form, e.g. `/dcat/dct:title`) that the user wrapped with
-/// `{value, force: true}`. For each discovered top-level key, we
-/// translate to the same path space (`/dcat/<key>`) and skip the overlay
-/// if it's present in the forced set — so a user can mark a field
-/// "intentionally absent" and prevent publisher DCAT from filling it
-/// in. Forced paths that target nested leaves
-/// (e.g. `/dcat/dcat:contactPoint/vcard:fn`) only block the merge when
-/// the corresponding TOP-LEVEL DCAT key (`dcat:contactPoint` here)
-/// would have been merged whole — nested-leaf forcing is satisfied
-/// by the later pointer-override pass.
-///
-/// **Roborev #2469:** discovered keys are escaped via RFC 6901 token
-/// rules (`~` → `~0`, `/` → `~1`) before being interpolated into the
-/// candidate path so that JSON-LD properties carrying `/` or `~`
-/// (e.g. full IRIs like `http://purl.org/dc/terms/title`) compare
-/// correctly against forced paths written in their escaped form.
-fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[String]) -> Value {
-    let (Value::Object(mut inf), Some(disc)) = (inferred, discovered.as_object()) else {
-        return Value::Object(serde_json::Map::new());
-    };
-    for (k, v) in disc {
-        if k == "@context" || k == "@type" || k == "dcat:distribution" {
-            continue;
-        }
-        if inf.contains_key(k) {
-            continue;
-        }
-        // §5.4 + #2469: skip if user marked this top-level DCAT key as
-        // forced. Discovered → inferred path translation: discovered
-        // key `k` maps to dataset_info pointer `/dcat/<escaped-k>`.
-        // RFC 6901 escaping is required so keys containing `/` or `~`
-        // (full IRI properties etc.) compare against forced paths
-        // written in their canonical escaped form.
-        let candidate = format!("/dcat/{}", escape_json_pointer_token(k));
-        let is_forced = forced_dcat_paths
-            .iter()
-            .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
-        if is_forced {
-            continue;
-        }
-        inf.insert(k.clone(), v.clone());
-    }
-    Value::Object(inf)
 }
 
 /// Escape a single token for use inside a JSON Pointer per RFC 6901
@@ -1176,178 +1111,12 @@ mod tests {
         assert_eq!(root, json!({"x": 1}));
     }
 
-    #[test]
-    fn pointer_handles_escape_sequences() {
-        // RFC 6901: ~0 → ~ and ~1 → / in path tokens.
-        let mut root = json!({});
-        set_by_pointer(&mut root, "/has~1slash/has~0tilde", json!("v"));
-        assert_eq!(
-            root.pointer("/has~1slash/has~0tilde")
-                .and_then(|v| v.as_str()),
-            Some("v")
-        );
-    }
+    // merge_discovered tests removed — discovery merge now lives in
+    // `super::discovery_merge::merge` and is covered by that module's
+    // unit tests plus the new integration tests in tests/test_profile.rs
+    // (Roborev PR-#3908 Copilot finding).
 
-    use super::{escape_json_pointer_token, merge_discovered};
-
-    #[test]
-    fn merge_fills_gaps_only() {
-        let inferred = json!({
-            "@type": "dcat:Dataset",
-            "dct:title": "Inferred Title",
-        });
-        let discovered = json!({
-            "dct:title": "Discovered Title", // collision — inferred wins
-            "dct:rights": "Discovered Rights", // gap — discovered fills
-        });
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        assert_eq!(
-            merged.pointer("/dct:title").and_then(|v| v.as_str()),
-            Some("Inferred Title"),
-            "inferred always wins on collision"
-        );
-        assert_eq!(
-            merged.pointer("/dct:rights").and_then(|v| v.as_str()),
-            Some("Discovered Rights"),
-            "discovered fills the gap"
-        );
-    }
-
-    #[test]
-    fn merge_never_overwrites_context_or_type() {
-        let inferred = json!({
-            "@context": "https://inferred",
-            "@type": "dcat:Dataset",
-        });
-        let discovered = json!({
-            "@context": "https://discovered",
-            "@type": "dcat:OtherType",
-        });
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        assert_eq!(
-            merged.pointer("/@context").and_then(|v| v.as_str()),
-            Some("https://inferred")
-        );
-        assert_eq!(
-            merged.pointer("/@type").and_then(|v| v.as_str()),
-            Some("dcat:Dataset")
-        );
-    }
-
-    #[test]
-    fn merge_skips_distribution_array() {
-        let inferred = json!({"dcat:distribution": [{"@type": "dcat:Distribution"}]});
-        let discovered = json!({"dcat:distribution": [{"dct:title": "Discovered Dist"}]});
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        // Distribution array is left untouched — per-resource merging
-        // is out of scope until a per-distribution identity scheme exists.
-        assert_eq!(
-            merged
-                .pointer("/dcat:distribution/0/@type")
-                .and_then(|v| v.as_str()),
-            Some("dcat:Distribution")
-        );
-        assert!(
-            merged.pointer("/dcat:distribution/0/dct:title").is_none(),
-            "discovered distribution must not be merged"
-        );
-    }
-
-    // §5.4: force semantics — forced top-level keys block discovered overlay.
-    #[test]
-    fn merge_skips_discovered_for_forced_top_level_key() {
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:title": "From Publisher"});
-        // User marked /dcat/dct:title as forced; discovered must NOT fill it.
-        let forced = vec!["/dcat/dct:title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("dct:title").is_none(),
-            "forced top-level key must not be overlaid by discovered, got: {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_skips_discovered_when_force_path_is_nested_under_top_level() {
-        // /dcat/dcat:contactPoint/vcard:fn is nested — but the top-level
-        // dcat:contactPoint would be merged whole otherwise, which would
-        // include the (forced-absent) vcard:fn from discovered. Block it.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({
-            "dcat:contactPoint": {"vcard:fn": "From Publisher", "vcard:hasEmail": "x@y.gov"}
-        });
-        let forced = vec!["/dcat/dcat:contactPoint/vcard:fn".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("dcat:contactPoint").is_none(),
-            "forced nested path must block the whole-object overlay, got: {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_still_overlays_unrelated_keys_when_one_is_forced() {
-        // Force only one key; other discovered keys still fill gaps.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({
-            "dct:title":       "Forced Out",
-            "dct:description": "Should Land"
-        });
-        let forced = vec!["/dcat/dct:title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(merged.get("dct:title").is_none());
-        assert_eq!(
-            merged.get("dct:description").and_then(|v| v.as_str()),
-            Some("Should Land")
-        );
-    }
-
-    #[test]
-    fn merge_ignores_forced_paths_outside_dcat_subtree() {
-        // /ckan/package/title isn't in /dcat/ space — must NOT affect merge.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:title": "Lands"});
-        let forced = vec!["/ckan/package/title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert_eq!(
-            merged.get("dct:title").and_then(|v| v.as_str()),
-            Some("Lands")
-        );
-    }
-
-    // Roborev #2469: discovered keys that themselves contain `/` or `~`
-    // (full IRI properties, the rare CURIE with a tilde) must be escaped
-    // per RFC 6901 before being compared against forced paths. Without
-    // escaping, the candidate path `/dcat/http://purl.org/dc/terms/title`
-    // has too many segments and never matches the user's forced path.
-    #[test]
-    fn merge_force_match_handles_full_iri_keys_via_rfc6901_escaping() {
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"http://purl.org/dc/terms/title": "From Publisher"});
-        // User writes the forced path with each `/` token-escaped to `~1`
-        // and each `~` to `~0`. The single-token full IRI value becomes:
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("http://purl.org/dc/terms/title").is_none(),
-            "full-IRI forced key must block discovered overlay after RFC 6901 escaping, got: \
-             {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_force_does_not_match_unrelated_keys_after_escaping() {
-        // Regression sanity: escaping must not over-eagerly match unrelated
-        // discovered keys. Forced full-IRI path for `terms/title` must NOT
-        // block the unrelated `dct:identifier` key.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:identifier": "id-123"});
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert_eq!(
-            merged.get("dct:identifier").and_then(|v| v.as_str()),
-            Some("id-123"),
-        );
-    }
+    use super::escape_json_pointer_token;
 
     #[test]
     fn escape_json_pointer_token_matches_rfc6901() {

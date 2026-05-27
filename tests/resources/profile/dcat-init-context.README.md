@@ -98,8 +98,9 @@ following pipeline (low → high precedence):
 ### How package / resource force flags route to DCAT
 
 The CKAN field name is translated to its DCAT JSON-Pointer counterpart
-via a built-in mapping table (`src/cmd/profile/ckan_to_dcat.rs`). The
-most common entries:
+via the active profile's `field_mappings:` table (see
+`resources/profiles/dcat-us-v3.yaml`; the lookup itself is
+`ProfileSpec::translate_ckan_ptr`). The most common entries:
 
 | CKAN pointer           | DCAT pointer                                  |
 |------------------------|-----------------------------------------------|

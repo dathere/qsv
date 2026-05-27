@@ -336,27 +336,41 @@ pub struct RecordSetSpec {
 ///
 /// Returns a `CliError::Other` with a helpful list of bundled names when
 /// neither lookup succeeds.
+///
+/// The returned profile is also `dry_compile`-validated — every
+/// template inside the profile is parsed by minijinja so a malformed
+/// embedded YAML (or a user-supplied file with a typo) fails at
+/// `load` time rather than mid-projection. This matches the doc
+/// claim on the `EMBEDDED` constant. Tests + low-level call sites
+/// that want raw parsing without compilation can still use
+/// `load_from_str` directly.
 pub fn load(arg: &str) -> CliResult<ProfileSpec> {
     let needle = arg.to_ascii_lowercase();
-    if let Some((_, raw)) = EMBEDDED
+    let profile = if let Some((_, raw)) = EMBEDDED
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(&needle))
     {
-        return load_from_str(raw, arg);
-    }
-
-    let path = std::path::Path::new(arg);
-    if path.is_file() {
-        let raw = std::fs::read_to_string(path)
-            .map_err(|e| CliError::Other(format!("could not read --profile file `{arg}`: {e}")))?;
-        return load_from_str(&raw, arg);
-    }
-
-    Err(CliError::Other(format!(
-        "unknown --profile `{arg}`; embedded profiles: [{}]. To use a file path, point at an \
-         existing .yaml file.",
-        list_embedded().join(", "),
-    )))
+        load_from_str(raw, arg)?
+    } else {
+        let path = std::path::Path::new(arg);
+        if path.is_file() {
+            let raw = std::fs::read_to_string(path).map_err(|e| {
+                CliError::Other(format!("could not read --profile file `{arg}`: {e}"))
+            })?;
+            load_from_str(&raw, arg)?
+        } else {
+            return Err(CliError::Other(format!(
+                "unknown --profile `{arg}`; embedded profiles: [{}]. To use a file path, point at \
+                 an existing .yaml file.",
+                list_embedded().join(", "),
+            )));
+        }
+    };
+    // Validate every template at load time — malformed profiles
+    // surface here, not deep inside a render. Errors are wrapped to
+    // include the profile name + label.
+    super::projection::dry_compile(&profile)?;
+    Ok(profile)
 }
 
 /// Parse a profile YAML from an in-memory string. `source_label` is used

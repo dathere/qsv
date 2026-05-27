@@ -49,6 +49,37 @@ Every entry under `dataset.fields[]`, `distribution.fields[]`, and
 | `default` | Literal fallback when the main template renders empty (suppresses the warning). |
 | `for_each_column` | Croissant-style expansion: emit one entry per stats column. |
 
+## Catalog envelope
+
+When `--catalog` is set, the Dataset block is wrapped inside the
+profile's `catalog:` block. Two paths are available for surfacing
+Dataset values on the outer Catalog envelope:
+
+* **`inherit_from_dataset: [key, key, ...]`** — verbatim copy. Each
+  listed Dataset key is copied (same name, same value) onto the
+  Catalog. Cheapest path; suitable when you just want to expose
+  `dct:publisher` or similar at the catalog level.
+* **`catalog.fields[]`** — template-driven. Each entry is a regular
+  `FieldDecl` (same directives as dataset/distribution fields), but
+  its template gets access to an extra `inner` binding holding the
+  rendered Dataset block. Use this for rename, conditional copy, or
+  value transformation:
+
+```yaml
+catalog:
+  inherit_from_dataset: ["dct:publisher"]   # verbatim
+  fields:
+    - path: "dcat:contactPoint"
+      template: '{{ inner["dcat:contactPoint"] | tojson }}'
+      emit_when: '{{ inner["dcat:contactPoint"] is defined }}'
+    - path: "qsv:catalogId"
+      template: 'cat-{{ pkg.id }}'
+```
+
+The catalog `title_template` also receives both bindings, so titles
+can mix analysis vars and Dataset values:
+`'{{ pkg.publisher }} — Catalog of {{ inner["dct:title"] }}'`.
+
 ## Discovery merge
 
 When the caller provides publisher-side DCAT (via `--initial-context` or

@@ -153,7 +153,7 @@ pub fn project(
     let block = match mode {
         ProjectionMode::Dataset => dataset_value,
         ProjectionMode::Catalog => {
-            wrap_as_catalog(&env, &mj_ctx, profile, dataset_value, &mut warnings)
+            wrap_as_catalog(&env, ctx, profile, dataset_value, &mut warnings)
         },
     };
 
@@ -174,7 +174,8 @@ pub fn project(
 /// environment because the helper only needs it for the optional
 /// `title_template` + any catalog-only fields. `analysis_ctx` flows
 /// through so catalog templates can reach the same `pkg`/`res`/`stats`
-/// values the Dataset templates see.
+/// values the Dataset templates see, plus an injected `inner` (the
+/// rendered Dataset block) for template-driven inheritance.
 pub fn wrap_in_catalog_envelope(
     profile: &ProfileSpec,
     dataset: Value,
@@ -184,9 +185,8 @@ pub fn wrap_in_catalog_envelope(
     env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     formula_helpers::register(&mut env);
     register_profile_helpers(&mut env, profile);
-    let mj_ctx = minijinja::Value::from_serialize(analysis_ctx);
     let mut warnings: Vec<ProjectionWarning> = Vec::new();
-    let block = wrap_as_catalog(&env, &mj_ctx, profile, dataset, &mut warnings);
+    let block = wrap_as_catalog(&env, analysis_ctx, profile, dataset, &mut warnings);
     Ok((block, warnings))
 }
 
@@ -295,7 +295,7 @@ fn emit_recordset(
 
 pub fn wrap_as_catalog(
     env: &Environment,
-    ctx: &minijinja::Value,
+    analysis_ctx: &Value,
     profile: &ProfileSpec,
     dataset: Value,
     warnings: &mut Vec<ProjectionWarning>,
@@ -305,16 +305,28 @@ pub fn wrap_as_catalog(
         .and_then(|c| c.type_.clone())
         .unwrap_or_else(|| "dcat:Catalog".to_string());
 
+    // Build a ctx that exposes the inner Dataset alongside the regular
+    // analysis vars (pkg/res/stats/dpp/etc.). Catalog templates use
+    // this so they can pull values from the rendered Dataset via
+    // `inner["dct:title"]` while still seeing the underlying source
+    // (`pkg.title`, etc.). The ctx clone is cheap (serde_json::Value
+    // is reference-counted for strings under the hood) and constructed
+    // once per catalog wrap.
+    let ctx_with_inner = build_ctx_with_inner(analysis_ctx, &dataset);
+    let mj_with_inner = minijinja::Value::from_serialize(&ctx_with_inner);
+
     // Title derived from the catalog template if any; otherwise fall back
-    // to the legacy "Catalog of <dct:title>" convention.
+    // to the legacy "Catalog of <dct:title>" convention. The title
+    // template now sees the same ctx_with_inner as catalog.fields, so
+    // it can reference pkg/res/stats in addition to inner[...] (a
+    // backward-compatible superset — legacy templates that only used
+    // `inner` keep working unchanged).
     let title = if let Some(CatalogBlock {
         title_template: Some(tpl),
         ..
     }) = envelope
     {
-        let inner_ctx = json!({ "inner": dataset });
-        let mj_inner = minijinja::Value::from_serialize(&inner_ctx);
-        match render_to_string(env, &mj_inner, tpl) {
+        match render_to_string(env, &mj_with_inner, tpl) {
             Ok(s) if !s.trim().is_empty() => s,
             _ => legacy_catalog_title(&dataset),
         }
@@ -347,7 +359,11 @@ pub fn wrap_as_catalog(
         );
     }
 
-    // Inherit declared keys from the Dataset.
+    // Inherit declared keys from the Dataset (verbatim copy by key).
+    // For template-driven inheritance — renaming, conditional copy,
+    // transforming values — use a `catalog.fields[]` entry instead;
+    // those render with `inner` exposed so they can do
+    // `{{ inner["dct:publisher"] | tojson }}` etc.
     if let Some(envelope) = envelope {
         for key in &envelope.inherit_from_dataset {
             if let Some(v) = dataset.get(key) {
@@ -355,15 +371,33 @@ pub fn wrap_as_catalog(
             }
         }
 
-        // Additional catalog-only fields.
+        // Additional catalog-only / template-driven fields. Render
+        // with the ctx_with_inner so templates can reference both
+        // the analysis vars (`pkg`, `res`, `stats`, `dpp`) and the
+        // rendered Dataset (`inner["..."]`).
         for field in &envelope.fields {
-            emit_field(env, ctx, field, &mut catalog, warnings);
+            emit_field(env, &mj_with_inner, field, &mut catalog, warnings);
         }
     }
 
     catalog.insert("dcat:dataset".to_string(), Value::Array(vec![dataset]));
 
     Value::Object(catalog)
+}
+
+/// Builds a catalog-scope rendering context by cloning the analysis
+/// JSON ctx and inserting `inner` (the rendered Dataset block). Falls
+/// back to a fresh object when the analysis ctx is not an object
+/// (e.g. tests that pass `json!({})` and shouldn't see a panic).
+fn build_ctx_with_inner(analysis_ctx: &Value, dataset: &Value) -> Value {
+    match analysis_ctx {
+        Value::Object(map) => {
+            let mut out = map.clone();
+            out.insert("inner".to_string(), dataset.clone());
+            Value::Object(out)
+        },
+        _ => json!({ "inner": dataset }),
+    }
 }
 
 fn legacy_catalog_title(dataset: &Value) -> String {
@@ -630,6 +664,138 @@ catalog:
             Some("Catalog of Hello")
         );
         assert!(out.get("dcat:dataset").and_then(Value::as_array).is_some());
+    }
+
+    #[test]
+    fn catalog_field_template_can_reference_inner_dataset() {
+        // Template-driven inheritance: a catalog.fields[] entry can
+        // reference `inner["..."]` to pull values from the rendered
+        // Dataset block, supporting rename / conditional copy /
+        // transform that the static `inherit_from_dataset` list
+        // cannot express.
+        let yaml = r#"
+name: catalog-inherit-template
+dataset:
+  type: dcat:Dataset
+  fields:
+    - path: dct:title
+      template: "Hello"
+    - path: dct:publisher
+      template: '{"@type":"foaf:Organization","foaf:name":"GSA"}'
+catalog:
+  type: dcat:Catalog
+  inherit_from_dataset: []
+  fields:
+    # Rename: emit dct:publisher from the Dataset under the
+    # dcat:contactPoint key on the Catalog.
+    - path: "dcat:contactPoint"
+      template: '{{ inner["dct:publisher"] | tojson }}'
+    # Conditional: emit a derived catalog-only key only when the
+    # Dataset has a title.
+    - path: "qsv:datasetTitle"
+      template: '{{ inner["dct:title"] }}'
+      emit_when: '{{ inner["dct:title"] is defined }}'
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let ctx = json!({});
+        let (out, _) = project(&profile, &ctx, ProjectionMode::Catalog).unwrap();
+        // Renamed key carries the Dataset's publisher object.
+        let cp = out.get("dcat:contactPoint").expect("contactPoint");
+        assert_eq!(
+            cp.get("foaf:name").and_then(Value::as_str),
+            Some("GSA"),
+            "template-driven inheritance must surface nested fields"
+        );
+        // Conditional inheritance fires when inner has the key.
+        assert_eq!(
+            out.get("qsv:datasetTitle").and_then(Value::as_str),
+            Some("Hello")
+        );
+    }
+
+    #[test]
+    fn catalog_field_template_sees_analysis_ctx_alongside_inner() {
+        // ctx_with_inner is the union of the analysis ctx and
+        // `inner`, so catalog templates can mix both (e.g. emit a
+        // catalog-only ID from pkg + a rendered Dataset value).
+        let yaml = r#"
+name: catalog-mixed-ctx
+dataset:
+  type: dcat:Dataset
+  fields:
+    - path: dct:title
+      template: "{{ pkg.title | default('Untitled') }}"
+catalog:
+  type: dcat:Catalog
+  inherit_from_dataset: []
+  fields:
+    - path: "qsv:catalogId"
+      template: 'cat-{{ pkg.id }}-{{ inner["dct:title"] }}'
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let ctx = json!({ "pkg": { "id": "42", "title": "NYC 311" } });
+        let (out, _) = project(&profile, &ctx, ProjectionMode::Catalog).unwrap();
+        assert_eq!(
+            out.get("qsv:catalogId").and_then(Value::as_str),
+            Some("cat-42-NYC 311"),
+            "catalog template must see both pkg.* and inner[...]"
+        );
+    }
+
+    #[test]
+    fn catalog_field_emit_when_against_inner_skips_empty() {
+        // An emit_when guard that consults `inner` must skip the
+        // field when the guard renders falsy (the Dataset's key is
+        // missing).
+        let yaml = r#"
+name: catalog-guard
+dataset:
+  type: dcat:Dataset
+  fields:
+    - path: dct:title
+      template: "T"
+catalog:
+  type: dcat:Catalog
+  inherit_from_dataset: []
+  fields:
+    - path: "qsv:hasLicense"
+      template: "yes"
+      emit_when: '{{ inner["dct:license"] is defined }}'
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let (out, _) = project(&profile, &json!({}), ProjectionMode::Catalog).unwrap();
+        assert!(
+            out.get("qsv:hasLicense").is_none(),
+            "emit_when against inner[missing] must skip"
+        );
+    }
+
+    #[test]
+    fn catalog_title_template_can_reference_analysis_ctx() {
+        // Backward-compatible superset: the title template now sees
+        // pkg/res/stats in addition to `inner`. Legacy templates that
+        // only used `inner` keep working — covered by
+        // dcat_us_v3_golden_parity_catalog. This test confirms the
+        // additional context is reachable.
+        let yaml = r#"
+name: catalog-title-ctx
+dataset:
+  type: dcat:Dataset
+  fields:
+    - path: dct:title
+      template: "Inner Title"
+catalog:
+  type: dcat:Catalog
+  title_template: '{{ pkg.publisher }} — Catalog of {{ inner["dct:title"] }}'
+  inherit_from_dataset: []
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let ctx = json!({ "pkg": { "publisher": "Acme" } });
+        let (out, _) = project(&profile, &ctx, ProjectionMode::Catalog).unwrap();
+        assert_eq!(
+            out.get("dct:title").and_then(Value::as_str),
+            Some("Acme — Catalog of Inner Title")
+        );
     }
 
     #[test]

@@ -205,18 +205,29 @@ pub struct CatalogBlock {
     #[serde(default, rename = "type")]
     pub type_:                Option<String>,
     /// minijinja template producing the catalog's `dct:title`. The
-    /// inner Dataset is available as `inner["..."]` for inheritance.
+    /// inner Dataset is exposed as `inner["..."]` (e.g.
+    /// `inner["dct:title"]`), and the analysis ctx
+    /// (`pkg`/`res`/`stats`/`dpp`/...) is available too. When unset,
+    /// the title falls back to the legacy
+    /// "Catalog of <inner dct:title>" convention.
     #[serde(default)]
     pub title_template:       Option<String>,
-    /// Top-level Dataset keys to copy into the Catalog envelope
-    /// (typical: `dct:publisher`).
+    /// Top-level Dataset keys to copy onto the Catalog envelope
+    /// verbatim (typical: `dct:publisher`). For renaming,
+    /// transforming, or conditional inheritance use a `fields[]`
+    /// entry whose template references `inner["<key>"]` instead;
+    /// catalog templates have full access to that binding plus the
+    /// analysis ctx.
     #[serde(default)]
     pub inherit_from_dataset: Vec<String>,
     /// The `dct:conformsTo` target IRI.
     #[serde(default)]
     pub conforms_to:          Option<String>,
-    /// Extra catalog-only fields beyond the title/conformsTo/dataset
-    /// trio.
+    /// Catalog-only / template-driven fields. Each entry is a
+    /// regular `FieldDecl`; templates render with `inner` (the
+    /// rendered Dataset block) injected on top of the analysis ctx,
+    /// so you can do `{{ inner["dct:publisher"] | tojson }}` for
+    /// transform-style inheritance.
     #[serde(default)]
     pub fields:               Vec<FieldDecl>,
 }

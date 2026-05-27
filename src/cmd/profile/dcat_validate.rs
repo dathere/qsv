@@ -41,8 +41,8 @@ use jsonschema::Validator;
 use serde_json::{Value, json};
 
 use super::{
-    curie,
-    dcat::{DcatWarning, Severity},
+    profile_spec::ProfileSpec,
+    projection::{ProjectionWarning, Severity},
 };
 
 // -----------------------------------------------------------------------------
@@ -239,21 +239,28 @@ fn build_validator(entry_json: &str) -> Result<Validator, String> {
 // Public API
 // -----------------------------------------------------------------------------
 
-/// Validate `dcat_block` against the appropriate vendored DCAT-US v3
+/// Validate `block` against the appropriate vendored DCAT-US v3
 /// schema (Dataset overlay or Catalog overlay, chosen by inspecting
-/// `@type`). Returns one `DcatWarning` per violation; an empty Vec
-/// indicates the block is conformant.
+/// `@type`). Returns one `ProjectionWarning` per violation; an empty
+/// Vec indicates the block is conformant.
 ///
-/// Re-exported under the legacy name `validate_dataset` for the
-/// existing call sites in `profile.rs`.
-pub fn validate_dataset_or_catalog(dcat_block: &Value) -> Vec<DcatWarning> {
-    let stripped = curie::strip_curies(dcat_block);
-    let is_catalog = dcat_block
-        .get("@type")
-        .and_then(Value::as_str)
-        .is_some_and(|t| {
-            t.eq_ignore_ascii_case("dcat:Catalog") || t.eq_ignore_ascii_case("Catalog")
-        });
+/// When `profile.validation.enabled == false`, validation is a no-op
+/// (returns an empty Vec). Non-DCAT profiles use this to opt out of
+/// JSON-Schema validation entirely.
+pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> {
+    if !profile.validation.enabled {
+        return Vec::new();
+    }
+    let prefixes: Vec<&str> = profile
+        .validation
+        .strippable_curie_prefixes
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let stripped = strip_curies(block, &prefixes);
+    let is_catalog = block.get("@type").and_then(Value::as_str).is_some_and(|t| {
+        t.eq_ignore_ascii_case("dcat:Catalog") || t.eq_ignore_ascii_case("Catalog")
+    });
 
     let validator = if is_catalog {
         catalog_validator()
@@ -268,14 +275,14 @@ pub fn validate_dataset_or_catalog(dcat_block: &Value) -> Vec<DcatWarning> {
                 let path = err.instance_path().to_string();
                 let field = path.trim_start_matches('/').to_string();
                 let kind = format!("{:?}", err.kind());
-                DcatWarning {
+                ProjectionWarning {
                     field,
                     severity: classify_severity(&kind),
                     message: format!("{err}"),
                 }
             })
             .collect(),
-        Err(e) => vec![DcatWarning {
+        Err(e) => vec![ProjectionWarning {
             field:    "dcat_validate".to_string(),
             severity: Severity::Required,
             message:  e.to_string(),
@@ -283,7 +290,39 @@ pub fn validate_dataset_or_catalog(dcat_block: &Value) -> Vec<DcatWarning> {
     }
 }
 
-/// Classify a `jsonschema::ValidationError` kind as Mandatory or
+/// Deep clone `v` with every object key whose CURIE prefix matches
+/// one in `prefixes` replaced by the unprefixed local name. The
+/// validator needs ownership and the emitted block (the one written
+/// to disk) must keep the compact form. Inlined here so the legacy
+/// `curie.rs` module can be deleted.
+fn strip_curies(v: &Value, prefixes: &[&str]) -> Value {
+    use serde_json::Map;
+    match v {
+        Value::Object(map) => {
+            let mut out = Map::with_capacity(map.len());
+            for (k, child) in map {
+                let new_key = strip_curie_key(k, prefixes);
+                out.insert(new_key, strip_curies(child, prefixes));
+            }
+            Value::Object(out)
+        },
+        Value::Array(items) => {
+            Value::Array(items.iter().map(|c| strip_curies(c, prefixes)).collect())
+        },
+        _ => v.clone(),
+    }
+}
+
+fn strip_curie_key(key: &str, prefixes: &[&str]) -> String {
+    for p in prefixes {
+        if let Some(local) = key.strip_prefix(p) {
+            return local.to_string();
+        }
+    }
+    key.to_string()
+}
+
+/// Classify a `jsonschema::ValidationError` kind as Required or
 /// Recommended. Errors keyed off `Required` (missing mandatory
 /// property in a vendored schema's `required` array) get
 /// `Severity::Required`; everything else (pattern mismatches,
@@ -420,7 +459,8 @@ mod tests {
         // curie::strip_curies. If this starts failing, either the bundle
         // was refreshed with new mandatory fields or the curie module
         // is mis-mapping a prefix.
-        let warnings = validate_dataset_or_catalog(&minimal_valid_dataset());
+        let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
+        let warnings = validate(&profile, &minimal_valid_dataset());
         assert!(
             warnings.is_empty(),
             "minimal valid dataset must pass: warnings = {warnings:#?}",
@@ -433,7 +473,8 @@ mod tests {
         // surface as Severity::Required (not Recommended).
         let mut ds = minimal_valid_dataset();
         ds.as_object_mut().unwrap().remove("dct:publisher");
-        let warnings = validate_dataset_or_catalog(&ds);
+        let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
+        let warnings = validate(&profile, &ds);
         assert!(!warnings.is_empty());
         assert!(
             warnings.iter().any(|w| w.severity == Severity::Required),
@@ -450,7 +491,8 @@ mod tests {
         let obj = ds.as_object_mut().unwrap();
         obj.insert("dcat-us:bureauCode".to_string(), json!(["015:11"]));
         obj.insert("dcat-us:programCode".to_string(), json!(["015:001"]));
-        let warnings = validate_dataset_or_catalog(&ds);
+        let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
+        let warnings = validate(&profile, &ds);
         assert!(
             warnings.is_empty(),
             "dcat-us:* extensions must validate clean, got: {warnings:#?}",
@@ -467,7 +509,8 @@ mod tests {
             "dct:title": "Test Catalog",
             "dcat:dataset": [minimal_valid_dataset()],
         });
-        let warnings = validate_dataset_or_catalog(&cat);
+        let profile = super::super::profile_spec::load("dcat-us-v3").unwrap();
+        let warnings = validate(&profile, &cat);
         assert!(
             warnings.is_empty(),
             "minimal valid catalog must pass: warnings = {warnings:#?}",

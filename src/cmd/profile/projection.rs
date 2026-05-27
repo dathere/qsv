@@ -67,23 +67,6 @@ impl From<RequiredLevel> for Severity {
     }
 }
 
-// Bridge from the legacy `DcatWarning` shape so the orchestrator can
-// extend `Vec<ProjectionWarning>` with output from `dcat_validate::*`
-// and `run_profile_validation` while Stage 5 refactors those modules
-// to return `ProjectionWarning` directly.
-impl From<super::dcat::DcatWarning> for ProjectionWarning {
-    fn from(w: super::dcat::DcatWarning) -> Self {
-        ProjectionWarning {
-            field:    w.field,
-            severity: match w.severity {
-                super::dcat::Severity::Required => Severity::Required,
-                super::dcat::Severity::Recommended => Severity::Recommended,
-            },
-            message:  w.message,
-        }
-    }
-}
-
 // -----------------------------------------------------------------------
 // Engine entry point
 // -----------------------------------------------------------------------

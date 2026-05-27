@@ -121,11 +121,7 @@ use serde_json::{Value, json};
 
 use crate::{CliError, CliResult, util};
 
-mod catalog;
-mod ckan_to_dcat;
 mod context;
-mod curie;
-mod dcat;
 mod dcat_discover;
 mod dcat_validate;
 mod discovery_merge;
@@ -470,7 +466,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_validate_dcat
             && let Some(final_dcat) = out_map.get("dcat")
         {
-            let validation = dcat_validate::validate_dataset_or_catalog(final_dcat);
+            let validation = dcat_validate::validate(&profile, final_dcat);
             if !validation.is_empty() && args.flag_strict_dcat {
                 let summary = validation
                     .iter()
@@ -499,11 +495,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .as_ref()
             .is_some_and(super::profile::spec::Spec::has_validators)
         {
-            dcat_warnings.extend(
-                run_profile_validation(&input_path, args.flag_no_headers, args.flag_delimiter)
-                    .into_iter()
-                    .map(projection::ProjectionWarning::from),
-            );
+            dcat_warnings.extend(run_profile_validation(
+                &input_path,
+                args.flag_no_headers,
+                args.flag_delimiter,
+            ));
         }
 
         if !dcat_warnings.is_empty() {
@@ -684,7 +680,7 @@ fn stdin_to_tempfile() -> CliResult<tempfile::NamedTempFile> {
 }
 
 /// §5.8: run `qsv validate` against `input_path` and return any RFC4180
-/// failures as `DcatWarning`s. Best-effort — spawn errors, missing
+/// failures as `ProjectionWarning`s. Best-effort — spawn errors, missing
 /// binary, or non-UTF-8 stderr all silently degrade to "no warnings"
 /// rather than failing the whole profile run.
 ///
@@ -707,7 +703,7 @@ fn run_profile_validation(
     input_path: &str,
     no_headers: bool,
     delimiter: Option<crate::config::Delimiter>,
-) -> Vec<dcat::DcatWarning> {
+) -> Vec<projection::ProjectionWarning> {
     let start = std::time::Instant::now();
     let Ok(qsv_path) = util::current_exe() else {
         return Vec::new();
@@ -742,9 +738,9 @@ fn run_profile_validation(
                 .to_string()
         })
         .unwrap_or_else(|| "qsv validate failed with no error message".to_string());
-    vec![dcat::DcatWarning {
+    vec![projection::ProjectionWarning {
         field:    "qsv:validation".to_string(),
-        severity: dcat::Severity::Required,
+        severity: projection::Severity::Required,
         message:  format!("input failed `qsv validate` (RFC4180): {msg}"),
     }]
 }

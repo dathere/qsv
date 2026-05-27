@@ -48,3 +48,37 @@ Every entry under `dataset.fields[]`, `distribution.fields[]`, and
 | `emit_when` | Optional guard template; field skipped when this renders falsy/empty. |
 | `default` | Literal fallback when the main template renders empty (suppresses the warning). |
 | `for_each_column` | Croissant-style expansion: emit one entry per stats column. |
+
+## Discovery merge
+
+When the caller provides publisher-side DCAT (via `--initial-context` or
+auto-discovered from CKAN), `discovery_merge` controls how that metadata
+folds into the qsv-inferred projection.
+
+| Key | Meaning |
+|---|---|
+| `enabled` | Master switch. `false` skips merging entirely. |
+| `never_overwrite` | Top-level keys protected from any overlay (typical: `@context`, `@type`, `dcat:distribution`). |
+| `default_strategy` | `fill-if-absent` (default — inferred wins on conflict), `overlay-array` (append publisher elements to inferred arrays), or `never`. |
+| `distribution_merge` | Optional per-element merge for the distribution array. See below. |
+
+### Per-distribution merging
+
+By default the `dcat:distribution` array is `never_overwrite`'d — qsv's
+inferred distributions are canonical for the local data. Setting
+`distribution_merge.enabled: true` bypasses that protection for the
+array key and walks each publisher Distribution, matching it to an
+inferred one by `identity_keys` (first non-empty match wins). Matched
+fields flow into the inferred record via `field_strategy`.
+
+| Key | Meaning |
+|---|---|
+| `enabled` | Master switch for per-element merging. `false` (default) preserves the legacy "publisher distributions dropped" behavior. |
+| `array_key` | The top-level key holding the distribution array. Default `dcat:distribution`. |
+| `identity_keys` | Ordered list of fields used to match a publisher Distribution against an inferred one. Empty list disables matching. |
+| `field_strategy` | How to merge fields within a matched pair: `fill-if-absent` (default) / `overlay-array` / `never`. |
+| `append_unmatched` | When `true`, publisher distributions that match no inferred entry are appended. Default `false` (silently dropped). |
+
+DCAT-US v3 and DCAT-AP v3 enable this with `dcat:downloadURL` →
+`dcat:accessURL` → `@id` as the identity-key priority. Croissant
+disables `discovery_merge` entirely.

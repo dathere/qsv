@@ -548,3 +548,18 @@ discovery_merge:
     - "@type"
     - "dcat:distribution"
   default_strategy: fill-if-absent
+  # Per-element merging for the distribution array. Bypasses the
+  # `never_overwrite` rule for `dcat:distribution` when enabled and
+  # matches each publisher Distribution against an inferred one by
+  # `dcat:downloadURL` or `dcat:accessURL`. Matched fields use
+  # fill-if-absent so qsv-inferred values (mediaType, byteSize,
+  # CSVW schema) always win over publisher overrides.
+  distribution_merge:
+    enabled: true
+    array_key: "dcat:distribution"
+    identity_keys:
+      - "dcat:downloadURL"
+      - "dcat:accessURL"
+      - "@id"
+    field_strategy: fill-if-absent
+    append_unmatched: false

@@ -275,16 +275,26 @@ pub enum RequiredLevel {
 pub struct DiscoveryMerge {
     /// When `false`, discovery-merge is a no-op for this profile.
     #[serde(default = "default_true")]
-    pub enabled:          bool,
+    pub enabled:            bool,
     /// Top-level keys never overwritten by discovered metadata.
     /// Defaults include `@context`, `@type`, and the distribution array.
     #[serde(default)]
-    pub never_overwrite:  Vec<String>,
+    pub never_overwrite:    Vec<String>,
     /// Strategy applied to keys not in `never_overwrite`.
     /// Possible values: `fill-if-absent` (default), `overlay-array`,
     /// `never`.
     #[serde(default)]
-    pub default_strategy: Option<String>,
+    pub default_strategy:   Option<String>,
+    /// Optional per-element merge config for the distribution array.
+    /// When `Some(cfg)` with `cfg.enabled = true`, the distribution
+    /// key bypasses the `never_overwrite` early-return and each
+    /// publisher Distribution is matched against an inferred
+    /// Distribution by identity keys (e.g. `dcat:accessURL`),
+    /// allowing publisher metadata (titles, rights, formats) to
+    /// flow into the inferred record without losing qsv's stats.
+    /// See `DistributionMerge` for details.
+    #[serde(default)]
+    pub distribution_merge: Option<DistributionMerge>,
 }
 
 // Hand-rolled Default so callers that build a ProfileSpec without
@@ -296,15 +306,64 @@ pub struct DiscoveryMerge {
 impl Default for DiscoveryMerge {
     fn default() -> Self {
         Self {
-            enabled:          true,
-            never_overwrite:  vec![
+            enabled:            true,
+            never_overwrite:    vec![
                 "@context".to_string(),
                 "@type".to_string(),
                 "dcat:distribution".to_string(),
             ],
-            default_strategy: Some("fill-if-absent".to_string()),
+            default_strategy:   Some("fill-if-absent".to_string()),
+            distribution_merge: None,
         }
     }
+}
+
+/// Per-element merge config for the distribution array. When
+/// `enabled = true`, the discovery-merge engine bypasses the outer
+/// `never_overwrite` rule for `array_key` and walks the discovered
+/// distribution array element-by-element, matching each publisher
+/// Distribution against the inferred array via `identity_keys`.
+///
+/// A typical config for DCAT profiles:
+/// ```yaml
+/// distribution_merge:
+///   enabled: true
+///   array_key: "dcat:distribution"
+///   identity_keys: ["dcat:downloadURL", "dcat:accessURL", "@id"]
+///   field_strategy: fill-if-absent
+///   append_unmatched: false
+/// ```
+#[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
+pub struct DistributionMerge {
+    /// Master switch. `false` (default) preserves the legacy
+    /// "inferred-only" behavior.
+    #[serde(default)]
+    pub enabled:          bool,
+    /// Top-level key that holds the distribution array. Defaults
+    /// to `dcat:distribution`. Croissant-style profiles can point
+    /// this at `distribution` (schema.org bare-name).
+    #[serde(default)]
+    pub array_key:        Option<String>,
+    /// Ordered list of fields used to match a publisher distribution
+    /// against an inferred one. The first identity key with a
+    /// non-empty value on both sides triggers the match. Empty
+    /// `identity_keys` disables matching (every publisher dist is
+    /// treated as unmatched).
+    #[serde(default)]
+    pub identity_keys:    Vec<String>,
+    /// Strategy for merging fields within a matched pair. Same
+    /// values as `DiscoveryMerge::default_strategy`: `fill-if-absent`
+    /// (default), `overlay-array`, or `never`.
+    #[serde(default)]
+    pub field_strategy:   Option<String>,
+    /// When `true`, publisher distributions that don't match any
+    /// inferred distribution are appended to the array. Default
+    /// `false` — qsv's inferred distributions are usually canonical
+    /// for the local data, and unmatched publisher entries often
+    /// describe resources we don't see (mirrors, alternate formats).
+    #[serde(default)]
+    pub append_unmatched: bool,
 }
 
 /// Croissant-specific RecordSet declaration. The engine emits one

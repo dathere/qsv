@@ -528,8 +528,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // honors schema violations — once you've opted in to
             // validation, all findings escalate.
             let allow_external = profile.source.is_embedded() || args.flag_allow_external_validator;
-            if profile.validation.external.is_some() && !allow_external {
-                let cfg = profile.validation.external.as_ref().unwrap();
+            if let Some(cfg) = profile.validation.external.as_ref()
+                && !allow_external
+            {
                 let label = cfg.label.as_deref().unwrap_or(cfg.command.as_str());
                 dcat_warnings.push(projection::ProjectionWarning {
                     field:    "external_validate".to_string(),
@@ -927,6 +928,7 @@ fn url_title_default(url: &str) -> Option<String> {
 ///   * canonical RFC 4122 form: 8-4-4-4-12 hex with dashes (e.g.
 ///     `5202679a-d243-402e-b82a-63189995a942`);
 ///   * compact form: 32 contiguous hex characters (e.g. `5202679ad243402eb82a63189995a942`).
+///
 /// Case-insensitive. Other ID-like patterns (MongoDB ObjectId at 24
 /// hex, ULIDs, slugified IDs) are intentionally NOT matched — UUIDs
 /// dominate CKAN/data.gov URLs, and over-eager matching would walk
@@ -935,6 +937,11 @@ fn is_uuid_like(s: &str) -> bool {
     let bytes = s.as_bytes();
     if bytes.len() == 36 {
         // Canonical: 8-4-4-4-12 with dashes at fixed positions.
+        // Explicit length assert (already implied by the outer
+        // `len() == 36` check) lets the compiler elide bounds
+        // checks on the byte indexes below and satisfies
+        // `clippy::missing_asserts_for_indexing`.
+        assert!(bytes.len() > 23);
         if bytes[8] != b'-' || bytes[13] != b'-' || bytes[18] != b'-' || bytes[23] != b'-' {
             return false;
         }
@@ -1004,14 +1011,6 @@ fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
         }
         set_by_pointer(root, ptr, new_value.clone());
     }
-}
-
-/// Escape a single token for use inside a JSON Pointer per RFC 6901
-/// section 4 (`~` → `~0`, `/` → `~1`). The `~`-replacement MUST happen
-/// first; doing it after `/`→`~1` would double-escape the newly
-/// introduced `~`.
-fn escape_json_pointer_token(token: &str) -> String {
-    token.replace('~', "~0").replace('/', "~1")
 }
 
 /// Returns true when the final dcat block carries a non-null,
@@ -1182,25 +1181,10 @@ mod tests {
     // unit tests plus the new integration tests in tests/test_profile.rs
     // (Roborev PR-#3908 Copilot finding).
 
-    use super::escape_json_pointer_token;
-
-    #[test]
-    fn escape_json_pointer_token_matches_rfc6901() {
-        // RFC 6901 section 4: ~ → ~0, / → ~1. Order matters: ~ must be
-        // escaped first to avoid double-escaping the ~ introduced by /.
-        assert_eq!(escape_json_pointer_token(""), "");
-        assert_eq!(escape_json_pointer_token("plain"), "plain");
-        assert_eq!(escape_json_pointer_token("a/b"), "a~1b");
-        assert_eq!(escape_json_pointer_token("a~b"), "a~0b");
-        // The ordering trap: input "a~/b" must become "a~0~1b", NOT
-        // "a~01b" (which would be the result of the wrong order).
-        assert_eq!(escape_json_pointer_token("a~/b"), "a~0~1b");
-        // Full IRI: each `/` → `~1`, `:` is unescaped.
-        assert_eq!(
-            escape_json_pointer_token("http://purl.org/dc/terms/title"),
-            "http:~1~1purl.org~1dc~1terms~1title",
-        );
-    }
+    // RFC 6901 escape coverage lives in
+    // `discovery_merge::tests::escape_token_handles_rfc6901_round_trip`;
+    // profile.rs's own escape helper was deleted (PR follow-up
+    // sweep) since it had no non-test callers.
 
     use super::tempfile_suffix_for_url;
 

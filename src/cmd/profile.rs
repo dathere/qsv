@@ -478,11 +478,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     validation.len()
                 )));
             }
-            dcat_warnings.extend(
-                validation
-                    .into_iter()
-                    .map(projection::ProjectionWarning::from),
-            );
+            dcat_warnings.extend(validation);
         }
 
         // §5.8: profile-driven validation. When the spec opts in by

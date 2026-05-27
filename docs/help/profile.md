@@ -62,6 +62,7 @@ qsv profile --help
 | &nbsp;`‑‑validate‑dcat`&nbsp; | flag | Validate the emitted dcat block against the vendored GSA DCAT-US v3 JSON Schema bundle (see resources/dcat-us-v3/). Catches missing mandatory fields, cardinality issues, and shape violations across the full v3 spec. Violations append to dcat_warnings by default. |  |
 | &nbsp;`‑‑strict‑dcat`&nbsp; | flag | With --validate-dcat, fail the command on any schema violation instead of warning. |  |
 | &nbsp;`‑‑catalog`&nbsp; | flag | Wrap the emitted DCAT-US v3 Dataset inside a dcat:Catalog envelope (Catalog{dataset:[...]}). Useful for federation harvesters (data.gov, CKAN ingest) that expect Catalog-shaped top-level metadata. Default: off (Dataset-only, backwards-compatible). |  |
+| &nbsp;`‑‑profile`&nbsp; | string | Metadata projection profile to use. Embedded names: dcat-us-v3 (default), dcat-ap-v3, croissant. A path to a custom YAML profile is also accepted; embedded names always win over same-named files. See resources/profiles/README.md for the schema and authoring guide. |  |
 | &nbsp;`‑‑force`&nbsp; | flag | Force recomputing cardinality and unique values even if a stats cache file exists. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel for the underlying stats/frequency passes. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | Output JSON path. Default: <input>.metadata.json. |  |

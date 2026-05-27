@@ -309,9 +309,12 @@ pub fn wrap_as_catalog(
     // analysis vars (pkg/res/stats/dpp/etc.). Catalog templates use
     // this so they can pull values from the rendered Dataset via
     // `inner["dct:title"]` while still seeing the underlying source
-    // (`pkg.title`, etc.). The ctx clone is cheap (serde_json::Value
-    // is reference-counted for strings under the hood) and constructed
-    // once per catalog wrap.
+    // (`pkg.title`, etc.). `serde_json::Value::clone` is a deep copy
+    // (it allocates for nested objects/arrays/strings), but we do it
+    // once per catalog wrap and the analysis ctx is small in typical
+    // use. A future optimization could avoid the clone entirely by
+    // layering contexts inside minijinja instead of merging at the
+    // JSON layer.
     let ctx_with_inner = build_ctx_with_inner(analysis_ctx, &dataset);
     let mj_with_inner = minijinja::Value::from_serialize(&ctx_with_inner);
 

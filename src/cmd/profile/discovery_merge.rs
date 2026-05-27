@@ -154,8 +154,11 @@ fn merge_one(out: &mut Map<String, Value>, key: &str, value: Value, strategy: &s
 /// the *inferred* distribution as the array index.
 ///
 /// The inferred and discovered values are coerced into arrays
-/// uniformly: a single object becomes a one-element array. The
-/// returned value is always a `Value::Array`.
+/// uniformly: a single object becomes a one-element slice. The
+/// returned value is always a `Value::Array`. Iteration is by
+/// reference; per-field clones happen lazily inside the match arms
+/// so large publisher catalogs don't pay an upfront `to_vec`
+/// allocation and unmatched-drop entries are never cloned.
 fn merge_distribution_array(
     inferred: Value,
     discovered: &Value,
@@ -164,23 +167,27 @@ fn merge_distribution_array(
     dist_key: &str,
 ) -> Value {
     let mut inferred_arr = coerce_to_array(inferred);
-    let disc_arr_iter = match discovered {
-        Value::Array(a) => a.to_vec(),
-        other => vec![other.clone()],
+    // Borrow the publisher array as a slice — `from_ref` lets the
+    // scalar case share the same iteration path without allocating
+    // a temporary Vec.
+    let disc_slice: &[Value] = match discovered {
+        Value::Array(a) => a.as_slice(),
+        other => std::slice::from_ref(other),
     };
 
     let field_strategy = cfg.field_strategy.as_deref().unwrap_or("fill-if-absent");
     let dist_prefix = format!("/dcat/{}", escape_token(dist_key));
 
-    for disc in disc_arr_iter {
+    for disc in disc_slice {
         let Value::Object(disc_obj) = disc else {
-            // Non-object publisher entry: append only if configured.
+            // Non-object publisher entry: append only if configured
+            // (clone only at the moment of insertion).
             if cfg.append_unmatched {
-                inferred_arr.push(disc);
+                inferred_arr.push(disc.clone());
             }
             continue;
         };
-        match find_distribution_match(&inferred_arr, &disc_obj, &cfg.identity_keys) {
+        match find_distribution_match(&inferred_arr, disc_obj, &cfg.identity_keys) {
             Some(idx) => {
                 if let Value::Object(inf_obj) = &mut inferred_arr[idx] {
                     for (k, v) in disc_obj {
@@ -193,20 +200,24 @@ fn merge_distribution_array(
                         // cannot have their explicit overrides
                         // silently overwritten by per-distribution
                         // merging.
-                        let field_path = format!("{dist_prefix}/{idx}/{}", escape_token(&k));
+                        let field_path = format!("{dist_prefix}/{idx}/{}", escape_token(k));
                         let is_forced = forced_dcat_paths
                             .iter()
                             .any(|p| p == &field_path || p.starts_with(&format!("{field_path}/")));
                         if is_forced {
                             continue;
                         }
-                        merge_one(inf_obj, &k, v, field_strategy);
+                        // Per-field clone — only the fields that
+                        // actually flow into the inferred record
+                        // pay an allocation, and forced fields are
+                        // already filtered out above.
+                        merge_one(inf_obj, k, v.clone(), field_strategy);
                     }
                 }
             },
             None => {
                 if cfg.append_unmatched {
-                    inferred_arr.push(Value::Object(disc_obj));
+                    inferred_arr.push(Value::Object(disc_obj.clone()));
                 }
             },
         }

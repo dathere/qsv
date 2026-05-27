@@ -526,6 +526,65 @@ fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
     );
 }
 
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_publisher_falls_through_empty_maintainer_to_publisher() {
+    // Roborev #2535 (Low): the schema:publisher template uses `or`
+    // (not `| default`) so a CKAN package with maintainer="" (defined
+    // but empty — common when only `publisher` is populated) falls
+    // through to pkg.publisher rather than dropping the publisher
+    // block entirely. Regression-guards the #2531 Low fix.
+    let wrk = Workdir::new("geoconnex_publisher_falls_through");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let ic = serde_json::json!({
+        "package": {
+            "maintainer": "",
+            "publisher": "Agency",
+            "maintainer_email": "contact@agency.gov"
+        }
+    });
+    std::fs::write(
+        wrk.path("ic.json"),
+        serde_json::to_string_pretty(&ic).unwrap(),
+    )
+    .expect("write initial-context");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "geoconnex",
+        "--initial-context",
+        "ic.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let publisher_name = out
+        .pointer("/dcat/schema:publisher/schema:name")
+        .and_then(|v| v.as_str())
+        .expect(
+            "schema:publisher must be emitted when maintainer is blank but publisher + email are \
+             set",
+        );
+    assert_eq!(
+        publisher_name, "Agency",
+        "blank maintainer must fall through to pkg.publisher, got `{publisher_name}`",
+    );
+    // Sanity: the email side of the AND-guard also wired through.
+    assert_eq!(
+        out.pointer("/dcat/schema:publisher/schema:email")
+            .and_then(|v| v.as_str()),
+        Some("contact@agency.gov"),
+    );
+}
+
 // =========================================================================
 // Croissant 1.0 profile smoke tests
 // =========================================================================

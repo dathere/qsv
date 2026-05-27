@@ -385,3 +385,16 @@ discovery_merge:
     - "@type"
     - "dcat:distribution"
   default_strategy: fill-if-absent
+  # Per-element merging for the distribution array. See dcat-us-v3.yaml
+  # for the full rationale. DCAT-AP shares the same identity-key
+  # priority because the same dcat:downloadURL / dcat:accessURL terms
+  # are used in both vocabularies.
+  distribution_merge:
+    enabled: true
+    array_key: "dcat:distribution"
+    identity_keys:
+      - "dcat:downloadURL"
+      - "dcat:accessURL"
+      - "@id"
+    field_strategy: fill-if-absent
+    append_unmatched: false

@@ -116,6 +116,7 @@ mod context;
 mod dcat_discover;
 mod dcat_validate;
 mod discovery_merge;
+mod external_validate;
 mod formula_engine;
 mod formula_helpers;
 mod profile_spec;
@@ -494,6 +495,32 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 )));
             }
             dcat_warnings.extend(validation);
+
+            // Out-of-process validator (e.g. mlcroissant, pyshacl).
+            // Runs in parallel to the built-in JSON-Schema validator;
+            // a profile may use either, both, or neither. Findings
+            // surface as ProjectionWarnings; missing-binary cases
+            // degrade gracefully to a single Info-severity notice.
+            // Strict mode treats external findings the same as
+            // schema violations — if you've opted in to validation,
+            // you've opted in to all of it.
+            let external = external_validate::validate(&profile, final_dcat);
+            let external_findings: Vec<_> = external
+                .iter()
+                .filter(|w| !matches!(w.severity, projection::Severity::Info))
+                .collect();
+            if !external_findings.is_empty() && args.flag_strict_dcat {
+                let summary = external_findings
+                    .iter()
+                    .map(|w| format!("  - {}: {}", w.field, w.message))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                return Err(CliError::Other(format!(
+                    "qsv profile --strict-dcat: {} external validator finding(s):\n{summary}",
+                    external_findings.len()
+                )));
+            }
+            dcat_warnings.extend(external);
         }
 
         // §5.8: profile-driven validation. When the spec opts in by

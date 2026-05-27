@@ -71,11 +71,27 @@ field_mappings:
 # Schema validation: disabled
 # =========================================================================
 # Croissant uses a Python validator (mlcroissant); JSON Schema isn't
-# upstream. Future enhancement: invoke the Python validator
-# out-of-process when available.
+# upstream. `enabled: false` keeps the built-in JSON-Schema validator
+# off; the `external` block wires up the canonical Python validator
+# when it's installed locally (graceful skip with an Info-severity
+# warning when it isn't).
 validation:
   enabled: false
   strippable_curie_prefixes: []
+  # `mlcroissant` is the reference validator shipped by MLCommons
+  # (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
+  # Install via `pip install mlcroissant`. qsv runs it under
+  # `--validate-dcat`; findings surface as ProjectionWarnings at
+  # `default_severity`. Missing-binary cases never fail the run.
+  external:
+    command: "mlcroissant"
+    args: ["validate", "--jsonld", "{file}"]
+    label: "mlcroissant"
+    default_severity: "recommended"
+    # Shown in the missing-binary warning so users see the install
+    # path at the exact moment they need it. Free-form — typically
+    # a one-line install command + the project URL.
+    install_hint: "pip install mlcroissant (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant)"
 
 # =========================================================================
 # Dataset projection

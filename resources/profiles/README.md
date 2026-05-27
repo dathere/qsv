@@ -113,3 +113,45 @@ fields flow into the inferred record via `field_strategy`.
 DCAT-US v3 and DCAT-AP v3 enable this with `dcat:downloadURL` →
 `dcat:accessURL` → `@id` as the identity-key priority. Croissant
 disables `discovery_merge` entirely.
+
+## Validation
+
+Two orthogonal validators are available on every profile:
+
+* **`validation.enabled` (JSON Schema)** — when `true`, the engine
+  validates the rendered block against the vendored GSA DCAT-US v3
+  bundle under `resources/dcat-us-v3/`. Today only the DCAT-US v3
+  bundle ships with qsv; any other `schema_dir` emits a heads-up
+  warning. Triggered by `--validate-dcat`.
+* **`validation.external`** — an out-of-process validator (e.g.
+  `mlcroissant`, `pyshacl`) spawned with the rendered JSON-LD on
+  disk. Runs orthogonal to JSON Schema: a profile may use either,
+  both, or neither. Also gated by `--validate-dcat`.
+
+### External validator config
+
+| Key | Meaning |
+|---|---|
+| `command` | Command to spawn (resolved via `PATH`). When not found, validation emits one `Info`-severity warning and continues — projection still ships. |
+| `args` | Arguments. The literal token `{file}` is replaced with the path to a tempfile holding the rendered JSON-LD. Without `{file}`, the path is appended as the last positional arg. |
+| `default_severity` | Severity for each surfaced finding. One of `required` / `recommended` (default) / `optional` / `info`. |
+| `label` | Friendly name used in warning messages instead of the raw `command` value. Useful when the command is e.g. `python3 -m mlcroissant ...`. |
+| `install_hint` | Optional free-form text appended to the missing-binary warning (typically a one-line install command + project URL). |
+
+A non-zero exit code surfaces one warning per non-empty stderr line
+(falling back to stdout when stderr is empty). Exit 0 = empty Vec.
+Findings respect `--strict-dcat`: when set, a non-`Info` external
+finding fails the command the same way a JSON Schema violation does.
+
+Croissant uses this to wire up the canonical Python validator:
+
+```yaml
+validation:
+  enabled: false
+  external:
+    command: "mlcroissant"
+    args: ["validate", "--jsonld", "{file}"]
+    label: "mlcroissant"
+    default_severity: "recommended"
+    install_hint: "pip install mlcroissant (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant)"
+```

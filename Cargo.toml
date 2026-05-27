@@ -24,6 +24,22 @@ include = [
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",
     "resources/describegpt_defaults.toml",
+    # Profile engine resources — bundled via include_str! in
+    # src/cmd/profile/profile_spec.rs::EMBEDDED and
+    # src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES. Must be
+    # in this whitelist so `cargo install qsv -F all_features` (or
+    # `-F datapusher_plus,geoconnex`) builds cleanly from the
+    # crates.io tarball; without these patterns the include_str!
+    # calls fail at compile time. The geoconnex paths are tracked here
+    # unconditionally — feature gating happens at the Rust level, not
+    # at packaging time, and the ~10KB of geoconnex/SHACL Turtle plus
+    # the small YAML is harmless to anyone who doesn't compile the
+    # feature.
+    "resources/profiles/*.yaml",
+    "resources/profiles/README.md",
+    "resources/dcat-us-v3/**/*",
+    "resources/dcat-ap-v3/shacl/*",
+    "resources/geoconnex/shacl/*",
 ]
 
 [[bin]]
@@ -403,6 +419,7 @@ distrib_features = [
     "fetch",
     "foreach",
     "geocode",
+    "geoconnex",
     "luau",
     "mcp",
     "polars",
@@ -459,6 +476,13 @@ python = ["pyo3"]
 # (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
 # scheming spec YAML. See `qsv profile --help`.
 profile = ["dep:sha2", "polars", "yaml_serde"]
+# geoconnex: bundled SHACL-validated linked-data profile for hydrologic
+# features (https://docs.geoconnex.us/). Embeds the Geoconnex SHACL
+# shapes (~10KB Turtle bundle) so `qsv profile --profile geoconnex
+# --validate-dcat` can spawn `pyshacl` without external file deps.
+# Requires `profile`. Available in qsv (via distrib_features) and as an
+# opt-in for qsvdp; NOT in qsvlite or qsvmcp.
+geoconnex = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]

@@ -300,6 +300,292 @@ fn dcat_ap_v3_validation_is_disabled_noop() {
 }
 
 // =========================================================================
+// Geoconnex profile smoke tests
+// =========================================================================
+// Phase 1 dataset-level projection only (DatasetShape / ProviderShape /
+// PublisherShape / DistributionShape from the upstream SHACL). The
+// row-per-feature LocationOrientedShape is deferred to a follow-up PR
+// that introduces a `for_each_row` projection mode.
+//
+// Gated behind the `geoconnex` cargo feature — present in qsv (via
+// `distrib_features`) and as an opt-in for qsvdp; absent from qsvlite
+// / qsvmcp. The test runner picks up these tests only when the
+// integration-test crate is built with the feature on.
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_emits_schema_dataset_type() {
+    // Phase 1 emits a schema.org-rooted Dataset, NOT a dcat:Dataset.
+    // The SHACL DatasetShape targets schema:Dataset by class, so the
+    // top-level @type is what triggers SHACL evaluation downstream.
+    let wrk = Workdir::new("geoconnex_dataset_type");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "geoconnex", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        Some("schema:Dataset"),
+        "Geoconnex Dataset @type must be schema:Dataset",
+    );
+}
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_context_declares_schema_org_with_trailing_slash() {
+    // pyshacl expands prefixes by literal concatenation, so the
+    // schema.org IRI in @context MUST have the trailing slash —
+    // `https://schema.org/` exactly. A missing slash would make
+    // every schema:* triple un-matchable against the SHACL graph
+    // (which uses the same `@prefix schema: <https://schema.org/>`
+    // declaration).
+    let wrk = Workdir::new("geoconnex_context_trailing_slash");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "geoconnex", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let context = out
+        .pointer("/dcat/@context")
+        .and_then(|v| v.as_object())
+        .expect("@context object");
+    assert_eq!(
+        context.get("schema").and_then(|v| v.as_str()),
+        Some("https://schema.org/"),
+        "Geoconnex @context.schema must be `https://schema.org/` (trailing slash is load-bearing)",
+    );
+    // dc: must resolve to dcterms — same IRI DCAT uses for `dct:`
+    // (the SHACL Turtle uses the `dc:` prefix shorthand).
+    assert_eq!(
+        context.get("dc").and_then(|v| v.as_str()),
+        Some("http://purl.org/dc/terms/"),
+        "Geoconnex @context.dc must be `http://purl.org/dc/terms/`",
+    );
+}
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_provider_is_always_emitted() {
+    // SHACL DatasetShape has `sh:property [ sh:path schema:provider;
+    // sh:minCount 1 ]` — provider is mandatory. The profile emits an
+    // "Unknown" fallback when no publisher/author is available so the
+    // SHACL constraint always passes structurally; users supplying
+    // their own publisher info via --initial-context override the
+    // fallback. ProviderShape itself requires only schema:name
+    // (minCount 1), which the fallback satisfies.
+    let wrk = Workdir::new("geoconnex_provider_always");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "geoconnex", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let provider = out
+        .pointer("/dcat/schema:provider")
+        .expect("schema:provider must be emitted unconditionally");
+    let provider_type = provider
+        .pointer("/@type")
+        .and_then(|v| v.as_str())
+        .expect("provider @type");
+    assert_eq!(
+        provider_type, "schema:Organization",
+        "provider @type must be schema:Organization (one of the SHACL-allowed classes)",
+    );
+    assert!(
+        provider
+            .pointer("/schema:name")
+            .and_then(|v| v.as_str())
+            .is_some_and(|s| !s.is_empty()),
+        "provider must carry a non-empty schema:name to satisfy ProviderShape minCount 1",
+    );
+}
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_validation_is_disabled_noop() {
+    // Geoconnex ships SHACL upstream, not JSON Schema. --validate-dcat
+    // with this profile must succeed without producing any
+    // dcat_validate-field warnings (the in-process JSON-Schema
+    // validator is gated by validation.enabled = false). pyshacl-side
+    // findings, if any, surface under `external_validate`; we don't
+    // assert on those here because pyshacl may not be installed in CI.
+    let wrk = Workdir::new("geoconnex_validation_off");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "geoconnex",
+        "--validate-dcat",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let warnings = out
+        .get("dcat_warnings")
+        .and_then(|v| v.as_array())
+        .cloned()
+        .unwrap_or_default();
+    let schema_warnings: Vec<_> = warnings
+        .iter()
+        .filter(|w| {
+            w.get("field")
+                .and_then(|v| v.as_str())
+                .is_some_and(|f| f == "dcat_validate")
+        })
+        .collect();
+    assert!(
+        schema_warnings.is_empty(),
+        "Geoconnex profile must not invoke JSON Schema validator, got: {schema_warnings:#?}",
+    );
+}
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
+    // Roborev #2531 (Medium): the catalog wrapper used to hard-code
+    // `dct:title` and `dcat:dataset`, which break the JSON-LD envelope
+    // for profiles whose @context doesn't declare those prefixes. The
+    // geoconnex profile pins `title_key: schema:name` and
+    // `dataset_key: schema:dataset` so the envelope's keys land in the
+    // same namespace as everything else under @context. This test locks
+    // that wiring in.
+    let wrk = Workdir::new("geoconnex_catalog_schema_keys");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "geoconnex",
+        "--catalog",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let catalog = out
+        .pointer("/dcat")
+        .and_then(|v| v.as_object())
+        .expect("catalog envelope object");
+
+    assert_eq!(
+        catalog.get("@type").and_then(|v| v.as_str()),
+        Some("schema:DataCatalog"),
+    );
+    assert!(
+        catalog.contains_key("schema:name"),
+        "catalog title must land at schema:name, got keys: {:?}",
+        catalog.keys().collect::<Vec<_>>(),
+    );
+    assert!(
+        catalog.contains_key("schema:dataset"),
+        "inner Dataset must land at schema:dataset, got keys: {:?}",
+        catalog.keys().collect::<Vec<_>>(),
+    );
+    // DCAT/DCT keys must NOT leak onto a schema.org-rooted envelope.
+    assert!(
+        !catalog.contains_key("dct:title"),
+        "envelope must not carry dct:title when @context has no dct: prefix",
+    );
+    assert!(
+        !catalog.contains_key("dcat:dataset"),
+        "envelope must not carry dcat:dataset when @context has no dcat: prefix",
+    );
+
+    // Inner Dataset still has its own schema:Dataset typing intact.
+    assert_eq!(
+        out.pointer("/dcat/schema:dataset/0/@type")
+            .and_then(|v| v.as_str()),
+        Some("schema:Dataset"),
+    );
+}
+
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_publisher_falls_through_empty_maintainer_to_publisher() {
+    // Roborev #2535 (Low): the schema:publisher template uses `or`
+    // (not `| default`) so a CKAN package with maintainer="" (defined
+    // but empty — common when only `publisher` is populated) falls
+    // through to pkg.publisher rather than dropping the publisher
+    // block entirely. Regression-guards the #2531 Low fix.
+    let wrk = Workdir::new("geoconnex_publisher_falls_through");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let ic = serde_json::json!({
+        "package": {
+            "maintainer": "",
+            "publisher": "Agency",
+            "maintainer_email": "contact@agency.gov"
+        }
+    });
+    std::fs::write(
+        wrk.path("ic.json"),
+        serde_json::to_string_pretty(&ic).unwrap(),
+    )
+    .expect("write initial-context");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "geoconnex",
+        "--initial-context",
+        "ic.json",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let publisher_name = out
+        .pointer("/dcat/schema:publisher/schema:name")
+        .and_then(|v| v.as_str())
+        .expect(
+            "schema:publisher must be emitted when maintainer is blank but publisher + email are \
+             set",
+        );
+    assert_eq!(
+        publisher_name, "Agency",
+        "blank maintainer must fall through to pkg.publisher, got `{publisher_name}`",
+    );
+    // Sanity: the email side of the AND-guard also wired through.
+    assert_eq!(
+        out.pointer("/dcat/schema:publisher/schema:email")
+            .and_then(|v| v.as_str()),
+        Some("contact@agency.gov"),
+    );
+}
+
+// =========================================================================
 // Croissant 1.0 profile smoke tests
 // =========================================================================
 

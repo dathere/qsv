@@ -1,0 +1,289 @@
+# Geoconnex hydrologic linked-data projection profile
+# (https://docs.geoconnex.us/)
+#
+# Phase 1: dataset-level projection only. Emits a schema.org-rooted
+# JSON-LD document conforming to the DatasetShape / ProviderShape /
+# PublisherShape / DistributionShape NodeShapes in Geoconnex's
+# upstream SHACL graph (vendored under resources/geoconnex/shacl/).
+#
+# Not covered in Phase 1:
+#   * LocationOrientedShape — row-per-feature schema:Place projection
+#     with mandatory gsp:hasGeometry / gsp:asWKT geometry synthesis
+#     from lat/lon columns. Needs a `for_each_row` projection mode
+#     that doesn't exist yet; deferred to a follow-up PR.
+#   * VariableShape / MeasurementMethodShape — these only fire when a
+#     Dataset emits schema:variableMeasured / schema:measurementMethod,
+#     which Phase 1 doesn't, so the SHACL leaves them silent.
+#
+# Validation: JSON Schema is disabled (Geoconnex ships SHACL upstream).
+# The `external` block wires pyshacl against the embedded shapes file.
+#
+# Discovery merge: disabled. Geoconnex contributors typically author
+# JSON-LD directly rather than relying on CKAN-shaped publisher
+# metadata; the merge plumbing doesn't add value here today.
+
+name: geoconnex
+version: 1.0.0
+about: Geoconnex hydrologic linked-data projection (Internet of Water)
+about_url: https://docs.geoconnex.us/
+
+# =========================================================================
+# Named vocabularies
+# =========================================================================
+# Reused from dcat-ap-v3 where the underlying meaning matches. Geoconnex
+# itself doesn't mandate a license vocabulary, but giving users the same
+# CKAN-slug → IRI table they get on DCAT keeps cross-profile authoring
+# predictable.
+
+vocabularies:
+  # CKAN license slug → canonical IRI. Geoconnex's SHACL constrains
+  # schema:license to xsd:string, so the lookup result is emitted as a
+  # plain string literal rather than an {@id: ...} reference.
+  license_iri:
+    cc-by:     "http://creativecommons.org/licenses/by/4.0/"          # DevSkim: ignore DS137138
+    cc-by-sa:  "http://creativecommons.org/licenses/by-sa/4.0/"       # DevSkim: ignore DS137138
+    cc-zero:   "http://creativecommons.org/publicdomain/zero/1.0/"    # DevSkim: ignore DS137138
+    odc-by:    "http://opendatacommons.org/licenses/by/1.0/"          # DevSkim: ignore DS137138
+    odc-pddl:  "http://opendatacommons.org/licenses/pddl/1.0/"        # DevSkim: ignore DS137138
+
+  # ISO 639-1 mapping. Geoconnex's SHACL doesn't currently constrain
+  # language, but the table is here for parity with other profiles.
+  iso_639_1:
+    en:           en
+    english:      en
+    es:           es
+    spanish:      es
+    fr:           fr
+    french:       fr
+
+# =========================================================================
+# CKAN → schema.org pointer mappings
+# =========================================================================
+# Geoconnex uses bare schema.org predicates internally (`schema:` prefix
+# in the SHACL = `https://schema.org/` IRI), so target pointers are
+# rooted under `/dcat/schema:<name>` (the projection address space's
+# `dcat` root is profile-neutral — it's just where the rendered block
+# lands in the output JSON).
+
+field_mappings:
+  - { ckan: "/package/title",                target: "/dcat/schema:name" }
+  - { ckan: "/package/notes",                target: "/dcat/schema:description" }
+  - { ckan: "/package/name",                 target: "/dcat/schema:identifier" }
+  - { ckan: "/package/publisher",            target: "/dcat/schema:provider" }
+  - { ckan: "/package/author",               target: "/dcat/schema:creator" }
+  - { ckan: "/package/tags",                 target: "/dcat/schema:keywords" }
+  - { ckan: "/package/license_id",           target: "/dcat/schema:license" }
+  - { ckan: "/package/accrualPeriodicity",   target: "/dcat/dc:accrualPeriodicity" }
+  - { ckan: "/package/frequency",            target: "/dcat/dc:accrualPeriodicity" }
+  # Distribution[0] → schema:DataDownload
+  - { ckan: "/resource/name",                target: "/dcat/schema:distribution/0/schema:name" }
+  - { ckan: "/resource/url",                 target: "/dcat/schema:distribution/0/schema:contentUrl" }
+  - { ckan: "/resource/format",              target: "/dcat/schema:distribution/0/schema:encodingFormat" }
+
+# =========================================================================
+# Schema validation: disabled (SHACL upstream)
+# =========================================================================
+# Geoconnex ships SHACL constraints
+# (https://github.com/internetofwater/nabu); qsv's built-in JSON-Schema
+# validator can't consume SHACL, so `enabled: false` keeps it off.
+# The `external` block points at `pyshacl` for actual constraint
+# checking; the shapes file ships embedded in the qsv binary
+# (see src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES).
+validation:
+  enabled: false
+  strippable_curie_prefixes:
+    - "schema:"
+    - "dc:"
+    - "gsp:"
+    - "hyf:"
+    - "xsd:"
+    - "qsv:"
+  external:
+    command: "pyshacl"
+    args:
+      - "-s"
+      - "{shapes}"
+      - "-sf"
+      - "turtle"
+      - "-df"
+      - "json-ld"
+      - "-f"
+      - "human"
+      - "{file}"
+    label: "pyshacl"
+    default_severity: "recommended"
+    install_hint: "pip install pyshacl (https://github.com/RDFLib/pySHACL)"
+    resources:
+      - name: "shapes"
+        embedded: "geoconnex-shacl-shapes"
+        suffix: ".ttl"
+
+# =========================================================================
+# Dataset projection
+# =========================================================================
+# SHACL mandatory (sh:minCount 1): schema:name, schema:provider.
+# Everything else is recommended-or-optional.
+#
+# @context declares the prefix → IRI bindings used by every field path
+# below. The schema.org IRI MUST have the trailing slash —
+# `https://schema.org/` is what the SHACL @prefix uses, and pyshacl
+# treats prefix expansion as literal concatenation, so a missing slash
+# would make every schema:* triple un-matchable.
+
+dataset:
+  type: "schema:Dataset"
+  context:
+    schema: "https://schema.org/"
+    dc:     "http://purl.org/dc/terms/"                    # DevSkim: ignore DS137138
+    gsp:    "http://www.opengis.net/ont/geosparql#"        # DevSkim: ignore DS137138
+    hyf:    "https://www.opengis.net/def/schema/hy_features/hyf/"
+  fields:
+    - path: "schema:name"
+      template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
+      required_level: required
+
+    - path: "schema:description"
+      template: '{{ pkg.notes | default("") }}'
+      required_level: required
+
+    - path: "schema:identifier"
+      template: '{{ pkg.name | default("") }}'
+      emit_when: '{{ (pkg.name | default("")) != "" }}'
+
+    # ProviderShape requires schema:name (minCount 1). We always emit a
+    # provider block so the Dataset's mandatory schema:provider passes
+    # SHACL; when no publisher/author is available, fall back to a
+    # neutral "Unknown" label so the JSON-LD stays well-formed and the
+    # user sees the gap in the rendered output (vs a silent omission).
+    # `or` (vs `| default`) covers both the undefined-key and the
+    # defined-but-empty-string case in one expression.
+    - path: "schema:provider"
+      template: |
+        {%- set name = pkg.publisher or pkg.author or "Unknown" -%}
+        {%- set url  = pkg.url or pkg.landing_page or "" -%}
+        { "@type": "schema:Organization",
+          "schema:name": {{ name | tojson }}
+        {%- if url != "" -%}, "schema:url": {{ url | tojson }}{%- endif -%}
+        }
+      required_level: required
+
+    # PublisherShape requires BOTH schema:name AND schema:email
+    # (minCount 1 on each). Only emit when both are available — an
+    # incomplete Publisher block would fail SHACL, and Dataset's
+    # schema:publisher property doesn't have minCount 1 so omitting
+    # it entirely is the safer default. Use `or` (vs `| default`) so
+    # a CKAN package with maintainer set to "" (common when only
+    # publisher is filled in) still falls through to pkg.publisher.
+    - path: "schema:publisher"
+      template: |
+        {%- set name = pkg.maintainer or pkg.publisher or "" -%}
+        {%- set email = pkg.maintainer_email or "" -%}
+        {%- if name != "" and email != "" -%}
+        { "@type": "schema:Organization",
+          "schema:name": {{ name | tojson }},
+          "schema:email": {{ email | tojson }} }
+        {%- endif -%}
+      emit_when: '{{ (pkg.maintainer or pkg.publisher or "") != "" and (pkg.maintainer_email or "") != "" }}'
+
+    # DatasetShape's schema:creator is recommended/optional with no
+    # datatype constraint. Emit a typed Person node when an author
+    # name is known.
+    - path: "schema:creator"
+      template: |
+        {%- if pkg.author -%}
+        { "@type": "schema:Person",
+          "schema:name": {{ pkg.author | tojson }}
+        {%- if pkg.author_email -%}, "schema:email": {{ pkg.author_email | tojson }}{%- endif -%}
+        }
+        {%- endif -%}
+      emit_when: '{{ (pkg.author | default("")) != "" }}'
+
+    # SHACL constrains schema:keywords to xsd:string; an array of
+    # strings expands to multiple triples each carrying a string
+    # literal, which conforms.
+    - path: "schema:keywords"
+      template: |
+        {%- if pkg.tags -%}
+        [{% for t in pkg.tags %}{% if not loop.first %},{% endif %}
+        {%- if t is string %}{{ t | tojson }}{% else %}{{ (t.name | default(t)) | tojson }}{% endif -%}
+        {% endfor %}]
+        {%- endif -%}
+      emit_when: '{{ pkg.tags is defined and pkg.tags | length > 0 }}'
+
+    # schema:license is xsd:string in the SHACL — emit the lookup
+    # result as a plain string (vs DCAT-AP's {@id: ...} reference).
+    - path: "schema:license"
+      template: |
+        {%- set raw = (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
+      emit_when: '{{ (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) != "" }}'
+
+    # dc:accrualPeriodicity is xsd:string in the SHACL. Emit the raw
+    # slug or the looked-up IRI as a plain string (no @id wrapper).
+    - path: "dc:accrualPeriodicity"
+      template: |
+        {%- set slug = pkg.accrualPeriodicity | default(pkg.frequency | default(pkg.dpp_suggestions.accrual_periodicity.value | default(""))) -%}
+        {%- if slug != "" -%}{{ lookup("accrual_periodicity", slug) | default(slug) }}{%- endif -%}
+      emit_when: '{{ (pkg.accrualPeriodicity | default(pkg.frequency | default(pkg.dpp_suggestions.accrual_periodicity.value | default("")))) != "" }}'
+
+# =========================================================================
+# Distribution projection — schema:DataDownload
+# =========================================================================
+# SHACL DistributionShape (targets schema:DataDownload).
+# Mandatory: schema:contentUrl (minCount 1, xsd:string).
+# Recommended/optional: schema:name, schema:encodingFormat,
+# dc:conformsTo.
+
+distribution:
+  type: "schema:DataDownload"
+  path: "schema:distribution"
+  fields:
+    - path: "schema:name"
+      template: '{{ res.name | default(source_label | basename) | default("data.csv") }}'
+
+    - path: "schema:description"
+      template: '{{ res.description | default("") }}'
+      emit_when: '{{ (res.description | default("")) != "" }}'
+
+    # SHACL mandates schema:contentUrl. xsd:string constraint means
+    # this is emitted as a plain string, not an {@id: ...} reference.
+    - path: "schema:contentUrl"
+      template: '{{ (res.url | default("")) | only_if_absolute_iri }}'
+      required_level: required
+
+    - path: "qsv:sourcePath"
+      template: '{{ source_label }}'
+
+    - path: "schema:encodingFormat"
+      template: '{{ res.format | default("text/csv") }}'
+
+# =========================================================================
+# Catalog envelope
+# =========================================================================
+# schema.org's catalog equivalent is schema:DataCatalog. The SHACL
+# graph doesn't define a catalog shape, so this is purely a federation
+# convenience (data.gov-style harvesters that wrap datasets in a
+# catalog envelope).
+
+catalog:
+  type: "schema:DataCatalog"
+  # The geoconnex @context above declares neither `dct:` nor `dcat:`,
+  # so the default catalog wrapper keys (dct:title / dcat:dataset)
+  # would land as un-namespaced CURIEs that don't expand. Pin the
+  # title slot onto schema:name and the inner-dataset slot onto
+  # schema:dataset (schema.org's canonical DataCatalog→Dataset
+  # property; https://schema.org/DataCatalog).
+  title_key: "schema:name"
+  dataset_key: "schema:dataset"
+  title_template: '{%- if inner["schema:name"] -%}Catalog of {{ inner["schema:name"] }}{%- else -%}Geoconnex DataCatalog{%- endif -%}'
+  inherit_from_dataset:
+    - "schema:publisher"
+
+# =========================================================================
+# Discovery merge — disabled
+# =========================================================================
+# Geoconnex contributors author JSON-LD directly; CKAN-shaped publisher
+# metadata isn't typically available to merge from.
+
+discovery_merge:
+  enabled: false

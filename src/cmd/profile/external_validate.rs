@@ -46,10 +46,27 @@ use super::{
 /// Adding a new resource: vendor the file under `resources/<slug>/`
 /// (with a sibling `README.md` documenting source + re-vendor
 /// procedure) and add one tuple here.
+/// Embedded resource table. The `geoconnex-shacl-shapes` entry is
+/// gated behind the `geoconnex` cargo feature so qsvlite / qsvmcp /
+/// default qsvdp builds don't pay the ~10 KB binary cost. The two
+/// `cfg`'d definitions differ only by that one tuple.
+#[cfg(not(feature = "geoconnex"))]
 pub const EMBEDDED_RESOURCES: &[(&str, &str)] = &[(
     "dcat-ap-v3-shacl-shapes",
     include_str!("../../../resources/dcat-ap-v3/shacl/dcat-ap-SHACL.ttl"),
 )];
+
+#[cfg(feature = "geoconnex")]
+pub const EMBEDDED_RESOURCES: &[(&str, &str)] = &[
+    (
+        "dcat-ap-v3-shacl-shapes",
+        include_str!("../../../resources/dcat-ap-v3/shacl/dcat-ap-SHACL.ttl"),
+    ),
+    (
+        "geoconnex-shacl-shapes",
+        include_str!("../../../resources/geoconnex/shacl/geoconnex.ttl"),
+    ),
+];
 
 /// Resolve an embedded-resource identifier to its content (or
 /// `None` when the name isn't bundled).
@@ -744,6 +761,31 @@ validation:
         assert!(
             shapes.contains("dcat:Dataset"),
             "embedded SHACL shapes must reference dcat:Dataset"
+        );
+    }
+
+    #[cfg(feature = "geoconnex")]
+    #[test]
+    fn embedded_resources_table_includes_geoconnex_shapes() {
+        // Same lock-in as the DCAT-AP v3 shapes test — a typo in the
+        // EMBEDDED_RESOURCES key would silently break the bundled
+        // `geoconnex` profile.
+        let shapes = lookup_embedded("geoconnex-shacl-shapes")
+            .expect("EMBEDDED_RESOURCES must include the Geoconnex SHACL shapes by canonical name");
+        // Sanity check: bundle is real Turtle, not e.g. a corrupted
+        // re-vendor.
+        assert!(
+            shapes.contains("@prefix sh:"),
+            "embedded Geoconnex shapes must declare the SHACL prefix"
+        );
+        assert!(
+            shapes.contains("schema:Dataset"),
+            "embedded Geoconnex shapes must reference schema:Dataset (target of DatasetShape)"
+        );
+        assert!(
+            shapes.contains("schema:DataDownload"),
+            "embedded Geoconnex shapes must reference schema:DataDownload (target of \
+             DistributionShape)"
         );
     }
 

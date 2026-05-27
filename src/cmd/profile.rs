@@ -93,9 +93,12 @@ profile options:
                               (Dataset-only, backwards-compatible).
     --profile <name|path>     Metadata projection profile to use. Embedded
                               names: dcat-us-v3 (default), dcat-ap-v3,
-                              croissant. A path to a custom YAML profile
-                              is also accepted; embedded names always win
-                              over same-named files. See
+                              croissant; geoconnex (when built with the
+                              `geoconnex` feature — qsv default; qsvdp
+                              opt-in via -F datapusher_plus,geoconnex).
+                              A path to a custom YAML profile is also
+                              accepted; embedded names always win over
+                              same-named files. See
                               resources/profiles/README.md for the schema
                               and authoring guide.
     --force                   Force recomputing cardinality and unique values

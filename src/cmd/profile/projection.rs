@@ -99,7 +99,9 @@ pub fn project(
         dataset.insert("@type".to_string(), Value::String(type_.clone()));
     }
     if let Some(context) = &profile.dataset.context {
-        dataset.insert("@context".to_string(), Value::String(context.clone()));
+        // Profile's `context:` can be a string URI (typical DCAT) or
+        // a JSON-LD object (Croissant ships an inline @context map).
+        dataset.insert("@context".to_string(), context.clone());
     }
     for field in &profile.dataset.fields {
         if !field.on_dataset {
@@ -125,7 +127,10 @@ pub fn project(
             }
         }
         if !dist.is_empty() {
-            let key = "dcat:distribution"; // overridden by Croissant via separate path
+            // Profile may override the wrapping key (Croissant uses
+            // schema.org bare `distribution`; DCAT defaults to
+            // `dcat:distribution`).
+            let key = dist_block.path.as_deref().unwrap_or("dcat:distribution");
             dataset.insert(key.to_string(), Value::Array(vec![Value::Object(dist)]));
         }
     }

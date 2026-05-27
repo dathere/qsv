@@ -105,6 +105,7 @@ pub fn register(env: &mut Environment) {
     env.add_function("build_csvw_schema", build_csvw_schema);
     env.add_function("bbox_from_dpps", bbox_from_dpps);
     env.add_function("temporal_from_dpps", temporal_from_dpps);
+    env.add_function("build_croissant_fields", build_croissant_fields);
 
     // --- globals (SQL-backed) -----------------------------------------
     // Backed by Polars SQL over the input CSV (see sql_backend.rs).
@@ -1217,6 +1218,56 @@ fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijin
         return minijinja::Value::UNDEFINED;
     }
     minijinja::Value::from_serialize(out)
+}
+
+/// `build_croissant_fields` global — walks a stats map (column-name →
+/// stats blob) and emits a flat array of `cr:Field` objects suitable
+/// for Croissant's `recordSet[0].field` slot. The datatype maps
+/// through the profile's `croissant_datatype` vocabulary (sc:Text /
+/// sc:Integer / sc:Float / sc:Date / sc:DateTime / sc:Boolean / sc:URL).
+///
+/// Distinct from `build_csvw_schema`: that helper emits CSVW-shaped
+/// `{columns: [...]}` for DCAT's `csvw:tableSchema`; this one emits
+/// a top-level array of Field entries for Croissant's
+/// `cr:RecordSet.field`.
+fn build_croissant_fields(stats: minijinja::Value) -> minijinja::Value {
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(cols) = stats_json.as_object() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let fields: Vec<serde_json::Value> = cols
+        .iter()
+        .map(|(name, blob)| {
+            let stats_obj = blob.get("stats").unwrap_or(blob);
+            let qsv_type = stats_obj
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("String");
+            // Map via Croissant atomic types; default sc:Text.
+            let datatype = match qsv_type {
+                "Integer" => "sc:Integer",
+                "Float" => "sc:Float",
+                "Boolean" => "sc:Boolean",
+                "Date" => "sc:Date",
+                "DateTime" => "sc:DateTime",
+                "URL" => "sc:URL",
+                _ => "sc:Text",
+            };
+            serde_json::json!({
+                "@type":              "cr:Field",
+                "@id":                format!("main-table/{name}"),
+                "name":               name,
+                "description":        format!("Column `{name}` from the source CSV."),
+                "dataType":           datatype,
+                "qsv:cardinality":    stats_obj.get("cardinality"),
+                "qsv:nullcount":      stats_obj.get("nullcount"),
+            })
+        })
+        .collect();
+    minijinja::Value::from_serialize(fields)
 }
 
 // =====================================================================

@@ -139,7 +139,6 @@ fn dcat_us_v3_golden_parity_catalog() {
     }
 }
 
-
 // =========================================================================
 // DCAT-AP v3 profile smoke tests
 // =========================================================================
@@ -298,6 +297,158 @@ fn dcat_ap_v3_validation_is_disabled_noop() {
         schema_warnings.is_empty(),
         "DCAT-AP profile must not invoke JSON Schema validator, got: {schema_warnings:#?}",
     );
+}
+
+// =========================================================================
+// Croissant 1.0 profile smoke tests
+// =========================================================================
+
+#[test]
+fn croissant_uses_schema_org_context_and_sc_dataset_type() {
+    let wrk = Workdir::new("croissant_schema_org");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    assert_eq!(
+        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        Some("sc:Dataset"),
+        "Croissant Dataset @type must be sc:Dataset",
+    );
+    let context = out
+        .pointer("/dcat/@context")
+        .and_then(|v| v.as_object())
+        .expect("@context object");
+    assert_eq!(
+        context.get("@vocab").and_then(|v| v.as_str()),
+        Some("https://schema.org/"),
+        "Croissant @context.@vocab must be schema.org",
+    );
+}
+
+#[test]
+fn croissant_conforms_to_targets_mlcommons_spec() {
+    let wrk = Workdir::new("croissant_conforms_to");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let conforms = out
+        .pointer("/dcat/conformsTo")
+        .and_then(|v| v.as_str())
+        .expect("conformsTo");
+    assert!(
+        conforms.contains("mlcommons.org/croissant"),
+        "conformsTo must reference Croissant spec, got `{conforms}`",
+    );
+}
+
+#[test]
+fn croissant_emits_recordset_with_one_field_per_csv_column() {
+    let wrk = Workdir::new("croissant_recordset");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let record_sets = out
+        .pointer("/dcat/recordSet")
+        .and_then(|v| v.as_array())
+        .expect("recordSet array");
+    assert_eq!(
+        record_sets.len(),
+        1,
+        "Croissant minimal Dataset has 1 RecordSet"
+    );
+    assert_eq!(
+        record_sets[0].get("@type").and_then(|v| v.as_str()),
+        Some("cr:RecordSet"),
+    );
+    let fields = record_sets[0]
+        .get("field")
+        .and_then(|v| v.as_array())
+        .expect("recordSet[0].field array");
+    // nyc-311-subset.csv has 10 columns.
+    assert_eq!(fields.len(), 10, "must emit one cr:Field per CSV column");
+    // All fields are cr:Field with a schema.org dataType.
+    for f in fields {
+        assert_eq!(
+            f.get("@type").and_then(|v| v.as_str()),
+            Some("cr:Field"),
+            "every field entry must be cr:Field",
+        );
+        let dtype = f
+            .get("dataType")
+            .and_then(|v| v.as_str())
+            .expect("field.dataType");
+        assert!(
+            dtype.starts_with("sc:"),
+            "dataType must use schema.org vocab, got `{dtype}`",
+        );
+    }
+}
+
+#[test]
+fn croissant_uses_bare_distribution_key_not_dcat_namespaced() {
+    // Croissant's @vocab=schema.org resolves bare `distribution` →
+    // schema.org/distribution. DCAT-namespaced `dcat:distribution`
+    // would break the JSON-LD interpretation.
+    let wrk = Workdir::new("croissant_distribution_key");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/dcat/distribution").is_some(),
+        "Croissant Dataset must carry bare `distribution`",
+    );
+    assert!(
+        out.pointer("/dcat/dcat:distribution").is_none(),
+        "Croissant Dataset must not carry dcat:distribution",
+    );
+}
+
+#[test]
+fn croissant_distribution_uses_file_object_type() {
+    let wrk = Workdir::new("croissant_file_object");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let file_obj_type = out
+        .pointer("/dcat/distribution/0/@type")
+        .and_then(|v| v.as_str())
+        .expect("distribution[0].@type");
+    assert_eq!(file_obj_type, "sc:FileObject");
 }
 
 #[test]

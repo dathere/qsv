@@ -175,8 +175,12 @@ pub struct Validation {
 pub struct DatasetBlock {
     #[serde(default, rename = "type")]
     pub type_:   Option<String>,
+    /// JSON-LD `@context`. A string is emitted as a single context
+    /// URI (typical DCAT shape); an object is emitted verbatim
+    /// (Croissant ships a multi-key context with `@vocab` + prefix
+    /// shorthands).
     #[serde(default)]
-    pub context: Option<String>,
+    pub context: Option<Value>,
     #[serde(default)]
     pub fields:  Vec<FieldDecl>,
 }
@@ -186,6 +190,11 @@ pub struct DatasetBlock {
 pub struct DistributionBlock {
     #[serde(default, rename = "type")]
     pub type_:  Option<String>,
+    /// JSON-LD key under which the Distribution array is emitted.
+    /// Default: `dcat:distribution`. Croissant uses bare
+    /// `distribution` (schema.org's @vocab resolves it).
+    #[serde(default)]
+    pub path:   Option<String>,
     #[serde(default)]
     pub fields: Vec<FieldDecl>,
 }

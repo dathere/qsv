@@ -50,7 +50,7 @@ qsv profile --help
 
 ## Profile Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑spec`&nbsp; | string | CKAN scheming YAML spec file. If omitted, only the inferred `dpp` block (lat/lon/date columns, dataset stats) is emitted; no formulas are evaluated. |  |
 | &nbsp;`‑‑initial‑context`&nbsp; | string | JSON file providing seed values for the package / resource dicts plus optional JSON-Pointer overrides for the final DCAT block. Replaces the older --package-meta / --resource-meta flags. Top-level keys: `package`, `resource`, `dataset_info`. Each leaf value may be wrapped as {"value": ..., "force": true} to mark it as overriding any value discovered from URL DCAT markup AND any value qsv inferred. Force is honored across all three subtrees: dataset_info entries override their target path verbatim; package / resource entries route through the active profile's `field_mappings:` table (e.g. `package.title force=true` lands at `/dcat/dct:title`, beating inference and discovery). Forced values for slots the profile does not surface are silently dropped (no-op). See tests/resources/profile/dcat-init-context.README.md for a fully-populated example. |  |
@@ -61,6 +61,7 @@ qsv profile --help
 | &nbsp;`‑‑dcat‑discovery‑timeout`&nbsp; | integer | Per-request timeout for DCAT-markup discovery probes. Default: 5. |  |
 | &nbsp;`‑‑validate‑dcat`&nbsp; | flag | Validate the emitted dcat block against the vendored GSA DCAT-US v3 JSON Schema bundle (see resources/dcat-us-v3/). Catches missing mandatory fields, cardinality issues, and shape violations across the full v3 spec. Violations append to dcat_warnings by default. |  |
 | &nbsp;`‑‑strict‑dcat`&nbsp; | flag | With --validate-dcat, fail the command on any schema violation instead of warning. |  |
+| &nbsp;`‑‑allow‑external‑validator`&nbsp; | flag | Opt in to spawning the validator binary declared by `validation.external` when the profile was loaded from an arbitrary YAML file. Bundled profiles (dcat-us-v3, dcat-ap-v3, croissant) always run their declared external validators because the profile content is vetted at qsv release time. Without this flag, file-loaded profiles emit a Recommended-severity warning instead of running the binary, so an untrusted YAML can't silently execute arbitrary commands. Default: off. |  |
 | &nbsp;`‑‑catalog`&nbsp; | flag | Wrap the emitted DCAT-US v3 Dataset inside a dcat:Catalog envelope (Catalog{dataset:[...]}). Useful for federation harvesters (data.gov, CKAN ingest) that expect Catalog-shaped top-level metadata. Default: off (Dataset-only, backwards-compatible). |  |
 | &nbsp;`‑‑profile`&nbsp; | string | Metadata projection profile to use. Embedded names: dcat-us-v3 (default), dcat-ap-v3, croissant. A path to a custom YAML profile is also accepted; embedded names always win over same-named files. See resources/profiles/README.md for the schema and authoring guide. |  |
 | &nbsp;`‑‑force`&nbsp; | flag | Force recomputing cardinality and unique values even if a stats cache file exists. |  |

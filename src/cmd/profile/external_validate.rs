@@ -22,7 +22,11 @@
 //! `wait-timeout` is a queued follow-up if validators start hanging
 //! on huge inputs.
 
-use std::{io::Write, process::Command};
+use std::{
+    ffi::{OsStr, OsString},
+    io::Write,
+    process::Command,
+};
 
 use serde_json::Value;
 use tempfile::NamedTempFile;
@@ -32,18 +36,6 @@ use super::{
     projection::{ProjectionWarning, Severity},
 };
 
-/// Run the profile's external validator (if any) against `block`.
-///
-/// Returns an empty Vec when:
-///
-/// * `profile.validation.external` is `None` (validator not configured).
-/// * The validator command exits with status 0.
-///
-/// Returns one or more `ProjectionWarning`s when the validator is
-/// configured but: (a) the binary isn't on PATH (single `Info`-level
-/// notice), (b) spawn fails (single `Recommended`-level OS error), or
-/// (c) the command exits non-zero (one warning per non-empty stderr
-/// or stdout line).
 pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> {
     let Some(cfg) = profile.validation.external.as_ref() else {
         return Vec::new();
@@ -66,8 +58,13 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
         },
     };
 
-    let path_str = tmp.path().to_string_lossy().to_string();
-    let resolved_args = resolve_args(&cfg.args, &path_str);
+    // Keep the tempfile path as an `OsString` so non-UTF-8 paths
+    // (legal on Unix, possible on Windows) pass through to the
+    // spawned validator verbatim. `to_string_lossy()` would silently
+    // mangle such paths and the validator would then complain that
+    // the file doesn't exist.
+    let path_os = tmp.path().as_os_str().to_owned();
+    let resolved_args = resolve_args(&cfg.args, &path_os);
 
     let mut cmd = Command::new(&cfg.command);
     cmd.args(&resolved_args);
@@ -123,9 +120,17 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
             continue;
         }
         warnings.push(ProjectionWarning {
-            field: format!("external_validate/{label}"),
+            // Keep `field` stable. The rest of the projection
+            // pipeline treats it as a JSON-LD key / pointer;
+            // encoding a user-configurable label here (which may
+            // contain `/` or whitespace) would make it look like
+            // a JSON pointer and confuse downstream filtering.
+            // The validator label is already carried in the
+            // message so users can still trace findings back to
+            // their source.
+            field: "external_validate".to_string(),
             severity,
-            message: trimmed.to_string(),
+            message: format!("{label}: {trimmed}"),
         });
     }
 
@@ -162,15 +167,39 @@ fn write_tempfile(block: &Value) -> Result<NamedTempFile, std::io::Error> {
 /// no arg contains the token, append `path` as a final argument so
 /// validators that take "file as last positional" still work without
 /// explicit templating.
-fn resolve_args(args: &[String], path: &str) -> Vec<String> {
+///
+/// Args themselves come from YAML and are guaranteed UTF-8, but the
+/// substituted path is an `OsStr` so non-UTF-8 tempfile paths flow
+/// through to the spawned process unchanged. The output is
+/// `Vec<OsString>`, which `Command::args` accepts directly.
+fn resolve_args(args: &[String], path: &OsStr) -> Vec<OsString> {
     let has_token = args.iter().any(|a| a.contains("{file}"));
     if has_token {
-        args.iter().map(|a| a.replace("{file}", path)).collect()
+        args.iter()
+            .map(|a| substitute_file_token(a, path))
+            .collect()
     } else {
-        let mut out: Vec<String> = args.to_vec();
-        out.push(path.to_string());
+        let mut out: Vec<OsString> = args.iter().map(OsString::from).collect();
+        out.push(path.to_os_string());
         out
     }
+}
+
+/// Build a single arg by splitting around the literal `{file}`
+/// markers and stitching the OsStr `path` in between, so the path
+/// segment retains its native (potentially non-UTF-8) bytes while
+/// the surrounding template chars come from the (always UTF-8)
+/// YAML arg string.
+fn substitute_file_token(arg: &str, path: &OsStr) -> OsString {
+    let parts: Vec<&str> = arg.split("{file}").collect();
+    let mut out = OsString::new();
+    for (i, part) in parts.iter().enumerate() {
+        if i > 0 {
+            out.push(path);
+        }
+        out.push(part);
+    }
+    out
 }
 
 /// Parse the configured severity string ("required" / "recommended"
@@ -336,9 +365,13 @@ validation:
         let warnings = validate(&profile, &json!({}));
         assert_eq!(warnings.len(), 2);
         assert!(matches!(warnings[0].severity, Severity::Required));
-        assert_eq!(warnings[0].message, "first issue");
-        assert_eq!(warnings[1].message, "second issue");
-        assert_eq!(warnings[0].field, "external_validate/fake-validator");
+        // Field stays stable so downstream filters can target a
+        // single string; the validator label lives in the message
+        // so users can still trace findings back to source.
+        assert_eq!(warnings[0].field, "external_validate");
+        assert_eq!(warnings[1].field, "external_validate");
+        assert_eq!(warnings[0].message, "fake-validator: first issue");
+        assert_eq!(warnings[1].message, "fake-validator: second issue");
     }
 
     #[test]
@@ -361,7 +394,9 @@ validation:
         let profile = load_from_str(yaml, "t").unwrap();
         let warnings = validate(&profile, &json!({}));
         assert_eq!(warnings.len(), 1);
-        assert_eq!(warnings[0].message, "stdout-finding");
+        // Default label is the command name when none is configured.
+        assert_eq!(warnings[0].message, "sh: stdout-finding");
+        assert_eq!(warnings[0].field, "external_validate");
     }
 
     #[test]
@@ -411,14 +446,16 @@ validation:
 "#;
         let profile = load_from_str(yaml, "t").unwrap();
         let warnings = validate(&profile, &json!({"@type": "dcat:Dataset"}));
-        // First stdout line carries the substituted path.
+        // First stdout line carries the substituted path (now
+        // prefixed with the label-as-command + ": " per the stable
+        // message format).
         assert!(
-            warnings.iter().any(|w| w.message.starts_with("got: /")),
+            warnings.iter().any(|w| w.message.starts_with("sh: got: /")),
             "{{file}} substitution must place the tempfile path in arg slot"
         );
         // Second confirms the file is non-empty (block was serialized).
         assert!(
-            warnings.iter().any(|w| w.message == "nonempty"),
+            warnings.iter().any(|w| w.message == "sh: nonempty"),
             "tempfile must contain the serialized JSON-LD"
         );
     }
@@ -442,10 +479,13 @@ validation:
         let warnings = validate(&profile, &json!({}));
         // The tempfile path was appended as the final positional arg
         // after "_", and `$1` (counting from the script's first arg
-        // after `-c <script>`) prints it.
+        // after `-c <script>`) prints it. Message format is
+        // "<label>: <line>"; no label set so the command name `sh`
+        // is used.
         assert!(
-            warnings[0].message.starts_with("last arg: /"),
-            "missing {{file}} token must append path as last arg"
+            warnings[0].message.starts_with("sh: last arg: /"),
+            "missing {{file}} token must append path as last arg; got `{}`",
+            warnings[0].message
         );
     }
 
@@ -479,14 +519,44 @@ validation:
             "--input".to_string(),
             "{file}".to_string(),
         ];
-        let out = resolve_args(&args, "/tmp/x.json");
-        assert_eq!(out, vec!["validate", "--input", "/tmp/x.json"]);
+        let out = resolve_args(&args, OsStr::new("/tmp/x.json"));
+        let expected: Vec<OsString> = ["validate", "--input", "/tmp/x.json"]
+            .iter()
+            .map(OsString::from)
+            .collect();
+        assert_eq!(out, expected);
     }
 
     #[test]
     fn resolve_args_appends_when_token_absent() {
         let args = vec!["validate".to_string(), "--strict".to_string()];
-        let out = resolve_args(&args, "/tmp/x.json");
-        assert_eq!(out, vec!["validate", "--strict", "/tmp/x.json"]);
+        let out = resolve_args(&args, OsStr::new("/tmp/x.json"));
+        let expected: Vec<OsString> = ["validate", "--strict", "/tmp/x.json"]
+            .iter()
+            .map(OsString::from)
+            .collect();
+        assert_eq!(out, expected);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resolve_args_preserves_non_utf8_path_bytes() {
+        // Unix paths can contain arbitrary bytes including invalid
+        // UTF-8 sequences. The substituted path must reach
+        // Command::args verbatim — using to_string_lossy() instead
+        // (the pre-fix code path) would replace those bytes with
+        // U+FFFD and the spawned validator would then get a path
+        // that doesn't exist on disk.
+        use std::os::unix::ffi::OsStrExt;
+        let raw = b"/tmp/\xFFnon-utf8\xFE.json";
+        let path = OsStr::from_bytes(raw);
+        let args = vec!["--input".to_string(), "{file}".to_string()];
+        let out = resolve_args(&args, path);
+        // The second arg must be exactly the original byte sequence.
+        assert_eq!(
+            out[1].as_bytes(),
+            raw,
+            "non-UTF-8 path bytes must survive substitution"
+        );
     }
 }

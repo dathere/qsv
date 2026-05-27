@@ -136,6 +136,15 @@ pub struct ProfileSpec {
     /// profiles can round-trip vendor extensions.
     #[serde(flatten)]
     pub extras: Map<String, Value>,
+
+    /// Where this profile was loaded from. NOT deserialized — set
+    /// by `load()` after parsing. Direct `load_from_str` callers
+    /// (tests, in-memory construction) get the `Embedded` default
+    /// so unit tests don't trip the orchestrator's untrusted-source
+    /// gate; real CLI usage always goes through `load()`, which
+    /// overrides this with the resolved source.
+    #[serde(skip)]
+    pub source: ProfileSource,
 }
 
 // -----------------------------------------------------------------------
@@ -332,6 +341,34 @@ pub enum RequiredLevel {
     Optional,
 }
 
+/// Tag identifying where the profile was loaded from. Set by
+/// `load()`; used by the orchestrator to gate trust-sensitive
+/// features (e.g. spawning external validators).
+///
+/// The `Embedded` default is for tests / direct `load_from_str`
+/// callers that bypass `load()`. Real CLI invocations always go
+/// through `load()`, which sets the source explicitly.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ProfileSource {
+    /// Bundled with the qsv binary (`EMBEDDED` table). Trusted at
+    /// build time; safe to spawn declared validators without an
+    /// explicit per-invocation opt-in.
+    #[default]
+    Embedded,
+    /// Loaded from a YAML file on disk. Treated as untrusted: the
+    /// orchestrator requires an explicit CLI opt-in
+    /// (`--allow-external-validator`) before spawning any binary
+    /// the file declares.
+    FilePath,
+}
+
+impl ProfileSource {
+    /// True when the profile shipped with the qsv binary.
+    pub fn is_embedded(self) -> bool {
+        matches!(self, Self::Embedded)
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct DiscoveryMerge {
@@ -458,27 +495,29 @@ pub struct RecordSetSpec {
 /// Returns a `CliError::Other` with a helpful list of bundled names when
 /// neither lookup succeeds.
 ///
-/// The returned profile is also `dry_compile`-validated — every
-/// template inside the profile is parsed by minijinja so a malformed
-/// embedded YAML (or a user-supplied file with a typo) fails at
-/// `load` time rather than mid-projection. This matches the doc
-/// claim on the `EMBEDDED` constant. Tests + low-level call sites
-/// that want raw parsing without compilation can still use
-/// `load_from_str` directly.
+/// The returned profile is `dry_compile`-validated (every template
+/// is parsed by minijinja so a malformed YAML fails here rather
+/// than mid-projection) and has its `source` field stamped with
+/// the resolution path — `Embedded` for bundled profiles, `FilePath`
+/// for on-disk YAML. The orchestrator reads `source` to gate
+/// trust-sensitive features such as external validator spawn.
+/// Tests + low-level callers that want raw parsing without
+/// compilation can still use `load_from_str` directly (those keep
+/// the `Embedded` default).
 pub fn load(arg: &str) -> CliResult<ProfileSpec> {
     let needle = arg.to_ascii_lowercase();
-    let profile = if let Some((_, raw)) = EMBEDDED
+    let (mut profile, source) = if let Some((_, raw)) = EMBEDDED
         .iter()
         .find(|(n, _)| n.eq_ignore_ascii_case(&needle))
     {
-        load_from_str(raw, arg)?
+        (load_from_str(raw, arg)?, ProfileSource::Embedded)
     } else {
         let path = std::path::Path::new(arg);
         if path.is_file() {
             let raw = std::fs::read_to_string(path).map_err(|e| {
                 CliError::Other(format!("could not read --profile file `{arg}`: {e}"))
             })?;
-            load_from_str(&raw, arg)?
+            (load_from_str(&raw, arg)?, ProfileSource::FilePath)
         } else {
             return Err(CliError::Other(format!(
                 "unknown --profile `{arg}`; embedded profiles: [{}]. To use a file path, point at \
@@ -487,6 +526,7 @@ pub fn load(arg: &str) -> CliResult<ProfileSpec> {
             )));
         }
     };
+    profile.source = source;
     // Validate every template at load time — malformed profiles
     // surface here, not deep inside a render. Errors are wrapped to
     // include the profile name + label.

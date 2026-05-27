@@ -999,6 +999,8 @@ fn format_mailto(value: &str) -> minijinja::Value {
 /// `sha256_of` global — streaming SHA-256 of a local file as lowercase
 /// hex. Returns minijinja undefined on read failure (best-effort).
 fn sha256_of(path: &str) -> minijinja::Value {
+    use std::fmt::Write as _;
+
     use sha2::{Digest, Sha256};
     let Ok(mut file) = std::fs::File::open(path) else {
         return minijinja::Value::UNDEFINED;
@@ -1014,7 +1016,15 @@ fn sha256_of(path: &str) -> minijinja::Value {
         }
     }
     let digest = hasher.finalize();
-    minijinja::Value::from(format!("{digest:x}"))
+    // Manually hex-encode the digest bytes: sha2 0.11 returns
+    // `hybrid_array::Array<u8, _>`, which does not implement `LowerHex`
+    // (so `format!("{digest:x}")` no longer compiles). Iterating
+    // works on both 0.10 (GenericArray derefs to slice) and 0.11.
+    let mut hex = String::with_capacity(digest.len() * 2);
+    for b in digest.iter() {
+        let _ = write!(&mut hex, "{b:02x}");
+    }
+    minijinja::Value::from(hex)
 }
 
 /// `blake3_of` global — BLAKE3 digest of a local file as lowercase hex.

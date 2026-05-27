@@ -1,0 +1,235 @@
+{
+  "@type": "dcat:Catalog",
+  "dct:title": "Catalog of Example Dataset (init-context override)",
+  "dct:conformsTo": {
+    "@type": "dct:Standard",
+    "@id": "https://resources.data.gov/resources/dcat-us3/"
+  },
+  "dcat:dataset": [
+    {
+      "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
+      "@type": "dcat:Dataset",
+      "dct:title": "Example Dataset (init-context override)",
+      "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
+      "dct:identifier": "example-dataset",
+      "dct:modified": "2024-12-31T23:59:59Z",
+      "dct:issued": "2024-01-01",
+      "dct:publisher": {
+        "@type": "foaf:Agent",
+        "foaf:name": "Example Agency"
+      },
+      "dcat:contactPoint": {
+        "@type": "vcard:Individual",
+        "vcard:fn": "Jane Doe",
+        "vcard:hasEmail": "mailto:jane.doe@example.gov"
+      },
+      "dcat:keyword": [
+        "climate",
+        "transportation"
+      ],
+      "dcat:theme": [
+        "transportation"
+      ],
+      "dct:temporal": [
+        {
+          "@type": "dct:PeriodOfTime",
+          "dcat:startDate": "2023-06-12",
+          "dcat:endDate": "2023-06-16"
+        }
+      ],
+      "dcat-us:bureauCode": [
+        "015:11"
+      ],
+      "dcat-us:programCode": [
+        "015:001"
+      ],
+      "dcat-us:accessLevel": "public",
+      "dct:conformsTo": [
+        {
+          "@type": "dct:Standard",
+          "@id": "https://resources.data.gov/resources/dcat-us3/"
+        }
+      ],
+      "dct:language": "en",
+      "dcat:landingPage": "https://example.gov/datasets/example-dataset",
+      "dcat:describedBy": "https://example.gov/datasets/example-dataset/data-dictionary.json",
+      "dct:rights": "U.S. Government Work",
+      "dct:accessRights": "public",
+      "dcat-us:purpose": "Track example metric over time.",
+      "skos:scopeNote": "Records cover calendar years 2020-2024 only.",
+      "dcat-us:liabilityStatement": "Provided as-is; verify before operational use.",
+      "dcat:inSeries": "https://example.gov/datasets/example-series",
+      "dct:accrualPeriodicity": {
+        "@id": "http://publications.europa.eu/resource/authority/frequency/ANNUAL"
+      },
+      "dct:created": "2023-06-15",
+      "dcat:version": "1.2.0",
+      "dcat:versionNotes": "Q3 2024 refresh — added new sensors and corrected historical timestamps.",
+      "dcat:distribution": [
+        {
+          "@type": "dcat:Distribution",
+          "dct:title": "example",
+          "dct:description": "Single-CSV distribution of the example dataset.",
+          "dcat:downloadURL": "https://example.gov/datasets/example-dataset/data.csv",
+          "dcat:mediaType": "text/csv",
+          "dct:format": "CSV",
+          "dct:license": "http://creativecommons.org/licenses/by/4.0/",
+          "dcat:accessURL": "https://example.gov/datasets/example-dataset",
+          "dct:rights": "U.S. Government Work",
+          "dct:modified": "2024-12-15T08:30:00",
+          "dcat-us:accessRestriction": {
+            "type": "none"
+          },
+          "dcat-us:useRestriction": {
+            "type": "none"
+          },
+          "dcat-us:cuiRestriction": {
+            "type": "none"
+          },
+          "dct:language": "en",
+          "dct:conformsTo": [
+            {
+              "@type": "dct:Standard",
+              "@id": "https://www.w3.org/TR/tabular-data-model/"
+            }
+          ],
+          "dcat:byteSize": "757",
+          "dcat:checksum": {
+            "@type": "spdx:Checksum",
+            "spdx:algorithm": "SHA-256",
+            "spdx:checksumValue": "f7bb07018bf2548e53c1d7e289fb7650835a7f84636181f546e6992540543344"
+          },
+          "csvw:tableSchema": {
+            "columns": [
+              {
+                "name": "sample_id",
+                "titles": [
+                  "sample_id"
+                ],
+                "datatype": "string",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "S-2023-0001",
+                "qsv:max": "S-2023-0010"
+              },
+              {
+                "name": "collection_date",
+                "titles": [
+                  "collection_date"
+                ],
+                "datatype": "date",
+                "qsv:cardinality": 5,
+                "qsv:nullcount": 0,
+                "qsv:min": "2023-06-12",
+                "qsv:max": "2023-06-16"
+              },
+              {
+                "name": "state",
+                "titles": [
+                  "state"
+                ],
+                "datatype": "string",
+                "qsv:cardinality": 5,
+                "qsv:nullcount": 0,
+                "qsv:min": "IA",
+                "qsv:max": "NE"
+              },
+              {
+                "name": "county",
+                "titles": [
+                  "county"
+                ],
+                "datatype": "string",
+                "qsv:cardinality": 5,
+                "qsv:nullcount": 0,
+                "qsv:min": "McLean",
+                "qsv:max": "York"
+              },
+              {
+                "name": "ph",
+                "titles": [
+                  "ph"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "5.9",
+                "qsv:max": "7.9"
+              },
+              {
+                "name": "organic_carbon_pct",
+                "titles": [
+                  "organic_carbon_pct"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "0.71",
+                "qsv:max": "3.15"
+              },
+              {
+                "name": "nitrogen_pct",
+                "titles": [
+                  "nitrogen_pct"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "0.06",
+                "qsv:max": "0.24"
+              },
+              {
+                "name": "clay_pct",
+                "titles": [
+                  "clay_pct"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "17.2",
+                "qsv:max": "35.7"
+              },
+              {
+                "name": "sand_pct",
+                "titles": [
+                  "sand_pct"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "12.8",
+                "qsv:max": "41.8"
+              },
+              {
+                "name": "silt_pct",
+                "titles": [
+                  "silt_pct"
+                ],
+                "datatype": "double",
+                "qsv:cardinality": 10,
+                "qsv:nullcount": 0,
+                "qsv:min": "41.0",
+                "qsv:max": "52.2"
+              },
+              {
+                "name": "depth_cm",
+                "titles": [
+                  "depth_cm"
+                ],
+                "datatype": "integer",
+                "qsv:cardinality": 2,
+                "qsv:nullcount": 0,
+                "qsv:min": "0",
+                "qsv:max": "15"
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "dct:publisher": {
+    "@type": "foaf:Agent",
+    "foaf:name": "Example Agency"
+  }
+}

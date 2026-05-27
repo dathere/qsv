@@ -1,0 +1,11 @@
+REQUEST_ID,CREATED_ON,REQUEST_TYPE,REQUEST_ORIGIN,STATUS,DEPARTMENT,NEIGHBORHOOD,COUNCIL_DISTRICT,WARD,X,Y
+3001001,2024-02-01 08:15:00,Pothole,Call Center,Closed,DPW - Street Maintenance,Squirrel Hill South,8,14,-79.9210,40.4395
+3001002,2024-02-01 09:30:00,Building - Commercial,311 Mobile App,Open,Permits Licenses and Inspections,Downtown,6,2,-80.0036,40.4406
+3001003,2024-02-01 10:45:00,Snow/Ice removal,Call Center,Closed,DPW - Street Maintenance,Carrick,4,29,-79.9928,40.3978
+3001004,2024-02-01 11:20:00,Refuse Violations,311 Online,Closed,Refuse,East Liberty,9,11,-79.9197,40.4633
+3001005,2024-02-01 13:00:00,Street Light - Repair,Call Center,Closed,DPW - Street Lights,Bloomfield,7,8,-79.9530,40.4622
+3001006,2024-02-01 14:15:00,Graffiti,311 Mobile App,Open,Public Works - Operations,Lawrenceville,9,9,-79.9612,40.4669
+3001007,2024-02-01 15:30:00,Tree - Hazardous,Call Center,Closed,DPW - Forestry,Highland Park,7,11,-79.9234,40.4837
+3001008,2024-02-01 16:00:00,Potholes,311 Online,Closed,DPW - Street Maintenance,Brookline,4,19,-80.0148,40.3995
+3001009,2024-02-01 16:45:00,Building - Residential,Call Center,Open,Permits Licenses and Inspections,Mount Washington,2,19,-80.0207,40.4307
+3001010,2024-02-01 17:20:00,Weeds/Debris,311 Mobile App,Closed,Refuse,Hazelwood,5,15,-79.9456,40.4109

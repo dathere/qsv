@@ -12,6 +12,7 @@ Bundled today:
 | `dcat-us-v3` | DCAT-US v3 (resources.data.gov) | JSON Schema (vendored GSA bundle under `resources/dcat-us-v3/`) |
 | `dcat-ap-v3` | DCAT-AP v3 (data.europa.eu) | disabled (upstream ships SHACL, not JSON Schema) |
 | `croissant`  | Croissant 1.0 (mlcommons.org)  | disabled (no published JSON Schema) |
+| `geoconnex`  | Geoconnex hydrologic linked-data (docs.geoconnex.us) | disabled (upstream ships SHACL via `pyshacl`); Phase 1 dataset-level only — see `resources/geoconnex/shacl/README.md` for what's covered. **Gated behind the `geoconnex` cargo feature** — bundled in `qsv` (via `distrib_features`) and as an opt-in for `qsvdp` (`-F datapusher_plus,geoconnex`); not available in `qsvlite` / `qsvmcp` |
 
 ## Authoring a custom profile
 
@@ -181,3 +182,21 @@ Adding a new embedded resource means vendoring the file under
 source + re-vendor procedure) and registering one
 `(name, include_str!(path))` tuple in
 `src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES`.
+
+The `geoconnex` profile uses the same `pyshacl` machinery against
+the Internet of Water's Geoconnex SHACL shapes (vendored under
+`resources/geoconnex/shacl/`, embedded as `geoconnex-shacl-shapes`):
+
+```yaml
+validation:
+  enabled: false
+  external:
+    command: "pyshacl"
+    args: ["-s", "{shapes}", "-sf", "turtle", "-df", "json-ld", "-f", "human", "{file}"]
+    label: "pyshacl"
+    install_hint: "pip install pyshacl (https://github.com/RDFLib/pySHACL)"
+    resources:
+      - name: "shapes"
+        embedded: "geoconnex-shacl-shapes"
+        suffix: ".ttl"
+```

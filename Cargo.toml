@@ -403,6 +403,7 @@ distrib_features = [
     "fetch",
     "foreach",
     "geocode",
+    "geoconnex",
     "luau",
     "mcp",
     "polars",
@@ -459,6 +460,13 @@ python = ["pyo3"]
 # (temporal_resolution, guess_accrual_periodicity). yaml_serde parses the
 # scheming spec YAML. See `qsv profile --help`.
 profile = ["dep:sha2", "polars", "yaml_serde"]
+# geoconnex: bundled SHACL-validated linked-data profile for hydrologic
+# features (https://docs.geoconnex.us/). Embeds the Geoconnex SHACL
+# shapes (~10KB Turtle bundle) so `qsv profile --profile geoconnex
+# --validate-dcat` can spawn `pyshacl` without external file deps.
+# Requires `profile`. Available in qsv (via distrib_features) and as an
+# opt-in for qsvdp; NOT in qsvlite or qsvmcp.
+geoconnex = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]

@@ -36,6 +36,15 @@ use crate::{CliError, CliResult};
 /// validated at load time (template syntax checked, vocabulary references
 /// resolved) so a malformed bundled profile causes a hard error rather
 /// than silently producing degraded output.
+///
+/// The `geoconnex` profile is gated behind the `geoconnex` cargo
+/// feature: present in qsv (default via `distrib_features`) and as an
+/// opt-in for qsvdp (`-F datapusher_plus,geoconnex`), absent from
+/// qsvlite / qsvmcp. The two `cfg`'d table definitions below differ
+/// only by that one tuple; users who hit `--profile geoconnex` on a
+/// build without the feature get the standard "unknown profile" error
+/// from `load()` listing the actually-bundled names.
+#[cfg(not(feature = "geoconnex"))]
 pub const EMBEDDED: &[(&str, &str)] = &[
     (
         "dcat-us-v3",
@@ -48,6 +57,26 @@ pub const EMBEDDED: &[(&str, &str)] = &[
     (
         "croissant",
         include_str!("../../../resources/profiles/croissant.yaml"),
+    ),
+];
+
+#[cfg(feature = "geoconnex")]
+pub const EMBEDDED: &[(&str, &str)] = &[
+    (
+        "dcat-us-v3",
+        include_str!("../../../resources/profiles/dcat-us-v3.yaml"),
+    ),
+    (
+        "dcat-ap-v3",
+        include_str!("../../../resources/profiles/dcat-ap-v3.yaml"),
+    ),
+    (
+        "croissant",
+        include_str!("../../../resources/profiles/croissant.yaml"),
+    ),
+    (
+        "geoconnex",
+        include_str!("../../../resources/profiles/geoconnex.yaml"),
     ),
 ];
 

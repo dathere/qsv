@@ -313,6 +313,18 @@ pub fn wrap_as_catalog(
         .and_then(|c| c.type_.clone())
         .unwrap_or_else(|| "dcat:Catalog".to_string());
 
+    // Roborev #2531: the title and inner-dataset keys are now
+    // profile-configurable so schema.org-rooted profiles (Croissant,
+    // Geoconnex) can avoid emitting `dct:title` / `dcat:dataset`
+    // on their envelopes when neither prefix is declared in
+    // `@context`. Defaults preserve the DCAT-shaped behaviour.
+    let title_key = envelope
+        .and_then(|c| c.title_key.clone())
+        .unwrap_or_else(|| "dct:title".to_string());
+    let dataset_key = envelope
+        .and_then(|c| c.dataset_key.clone())
+        .unwrap_or_else(|| "dcat:dataset".to_string());
+
     // Build a ctx that exposes the inner Dataset alongside the regular
     // analysis vars (pkg/res/stats/dpp/etc.). Catalog templates use
     // this so they can pull values from the rendered Dataset via
@@ -327,11 +339,12 @@ pub fn wrap_as_catalog(
     let mj_with_inner = minijinja::Value::from_serialize(&ctx_with_inner);
 
     // Title derived from the catalog template if any; otherwise fall back
-    // to the legacy "Catalog of <dct:title>" convention. The title
-    // template now sees the same ctx_with_inner as catalog.fields, so
-    // it can reference pkg/res/stats in addition to inner[...] (a
-    // backward-compatible superset — legacy templates that only used
-    // `inner` keep working unchanged).
+    // to the legacy "Catalog of <inner title>" convention reading from
+    // whichever key the profile declares. The title template sees the
+    // same ctx_with_inner as catalog.fields, so it can reference
+    // pkg/res/stats in addition to inner[...] (a backward-compatible
+    // superset — legacy templates that only used `inner` keep working
+    // unchanged).
     let title = if let Some(CatalogBlock {
         title_template: Some(tpl),
         ..
@@ -339,27 +352,26 @@ pub fn wrap_as_catalog(
     {
         match render_to_string(env, &mj_with_inner, tpl) {
             Ok(s) if !s.trim().is_empty() => s,
-            _ => legacy_catalog_title(&dataset),
+            _ => legacy_catalog_title(&dataset, &title_key),
         }
     } else {
-        legacy_catalog_title(&dataset)
+        legacy_catalog_title(&dataset, &title_key)
     };
 
     let mut catalog = serde_json::Map::new();
 
-    // Roborev #2490: the Catalog envelope carries CURIE keys
-    // (`dct:title`, `dct:conformsTo`, `dcat:dataset`, plus any
-    // inherited Dataset keys) so it needs its own `@context`.
-    // Without one, the envelope itself isn't valid JSON-LD.
-    // Source the context from the profile's dataset block — the inner
-    // Dataset still keeps its own `@context` for self-containment, so
-    // the redundancy is intentional (JSON-LD allows nested
-    // re-declaration).
+    // Roborev #2490: the Catalog envelope carries CURIE keys (title,
+    // conformsTo, dataset, plus any inherited Dataset keys) so it
+    // needs its own `@context`. Without one, the envelope itself
+    // isn't valid JSON-LD. Source the context from the profile's
+    // dataset block — the inner Dataset still keeps its own
+    // `@context` for self-containment, so the redundancy is
+    // intentional (JSON-LD allows nested re-declaration).
     if let Some(context) = &profile.dataset.context {
         catalog.insert("@context".to_string(), context.clone());
     }
     catalog.insert("@type".to_string(), Value::String(cat_type));
-    catalog.insert("dct:title".to_string(), Value::String(title));
+    catalog.insert(title_key, Value::String(title));
 
     if let Some(envelope) = envelope
         && let Some(conforms_to) = &envelope.conforms_to
@@ -391,7 +403,7 @@ pub fn wrap_as_catalog(
         }
     }
 
-    catalog.insert("dcat:dataset".to_string(), Value::Array(vec![dataset]));
+    catalog.insert(dataset_key, Value::Array(vec![dataset]));
 
     Value::Object(catalog)
 }
@@ -411,9 +423,9 @@ fn build_ctx_with_inner(analysis_ctx: &Value, dataset: &Value) -> Value {
     }
 }
 
-fn legacy_catalog_title(dataset: &Value) -> String {
+fn legacy_catalog_title(dataset: &Value, title_key: &str) -> String {
     dataset
-        .get("dct:title")
+        .get(title_key)
         .and_then(Value::as_str)
         .map(|t| format!("Catalog of {t}"))
         .unwrap_or_else(|| "qsv profile catalog".to_string())

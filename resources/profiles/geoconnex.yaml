@@ -171,17 +171,19 @@ dataset:
     # (minCount 1 on each). Only emit when both are available — an
     # incomplete Publisher block would fail SHACL, and Dataset's
     # schema:publisher property doesn't have minCount 1 so omitting
-    # it entirely is the safer default.
+    # it entirely is the safer default. Use `or` (vs `| default`) so
+    # a CKAN package with maintainer set to "" (common when only
+    # publisher is filled in) still falls through to pkg.publisher.
     - path: "schema:publisher"
       template: |
-        {%- set name = pkg.maintainer | default(pkg.publisher | default("")) -%}
-        {%- set email = pkg.maintainer_email | default("") -%}
+        {%- set name = pkg.maintainer or pkg.publisher or "" -%}
+        {%- set email = pkg.maintainer_email or "" -%}
         {%- if name != "" and email != "" -%}
         { "@type": "schema:Organization",
           "schema:name": {{ name | tojson }},
           "schema:email": {{ email | tojson }} }
         {%- endif -%}
-      emit_when: '{{ (pkg.maintainer | default(pkg.publisher | default(""))) != "" and (pkg.maintainer_email | default("")) != "" }}'
+      emit_when: '{{ (pkg.maintainer or pkg.publisher or "") != "" and (pkg.maintainer_email or "") != "" }}'
 
     # DatasetShape's schema:creator is recommended/optional with no
     # datatype constraint. Emit a typed Person node when an author
@@ -265,6 +267,14 @@ distribution:
 
 catalog:
   type: "schema:DataCatalog"
+  # The geoconnex @context above declares neither `dct:` nor `dcat:`,
+  # so the default catalog wrapper keys (dct:title / dcat:dataset)
+  # would land as un-namespaced CURIEs that don't expand. Pin the
+  # title slot onto schema:name and the inner-dataset slot onto
+  # schema:dataset (schema.org's canonical DataCatalog→Dataset
+  # property; https://schema.org/DataCatalog).
+  title_key: "schema:name"
+  dataset_key: "schema:dataset"
   title_template: '{%- if inner["schema:name"] -%}Catalog of {{ inner["schema:name"] }}{%- else -%}Geoconnex DataCatalog{%- endif -%}'
   inherit_from_dataset:
     - "schema:publisher"

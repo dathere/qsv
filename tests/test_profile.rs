@@ -461,6 +461,71 @@ fn geoconnex_validation_is_disabled_noop() {
     );
 }
 
+#[cfg(feature = "geoconnex")]
+#[test]
+fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
+    // Roborev #2531 (Medium): the catalog wrapper used to hard-code
+    // `dct:title` and `dcat:dataset`, which break the JSON-LD envelope
+    // for profiles whose @context doesn't declare those prefixes. The
+    // geoconnex profile pins `title_key: schema:name` and
+    // `dataset_key: schema:dataset` so the envelope's keys land in the
+    // same namespace as everything else under @context. This test locks
+    // that wiring in.
+    let wrk = Workdir::new("geoconnex_catalog_schema_keys");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "geoconnex",
+        "--catalog",
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let catalog = out
+        .pointer("/dcat")
+        .and_then(|v| v.as_object())
+        .expect("catalog envelope object");
+
+    assert_eq!(
+        catalog.get("@type").and_then(|v| v.as_str()),
+        Some("schema:DataCatalog"),
+    );
+    assert!(
+        catalog.contains_key("schema:name"),
+        "catalog title must land at schema:name, got keys: {:?}",
+        catalog.keys().collect::<Vec<_>>(),
+    );
+    assert!(
+        catalog.contains_key("schema:dataset"),
+        "inner Dataset must land at schema:dataset, got keys: {:?}",
+        catalog.keys().collect::<Vec<_>>(),
+    );
+    // DCAT/DCT keys must NOT leak onto a schema.org-rooted envelope.
+    assert!(
+        !catalog.contains_key("dct:title"),
+        "envelope must not carry dct:title when @context has no dct: prefix",
+    );
+    assert!(
+        !catalog.contains_key("dcat:dataset"),
+        "envelope must not carry dcat:dataset when @context has no dcat: prefix",
+    );
+
+    // Inner Dataset still has its own schema:Dataset typing intact.
+    assert_eq!(
+        out.pointer("/dcat/schema:dataset/0/@type")
+            .and_then(|v| v.as_str()),
+        Some("schema:Dataset"),
+    );
+}
+
 // =========================================================================
 // Croissant 1.0 profile smoke tests
 // =========================================================================

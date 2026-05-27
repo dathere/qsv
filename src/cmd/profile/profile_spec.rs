@@ -335,14 +335,28 @@ pub struct DistributionBlock {
 pub struct CatalogBlock {
     #[serde(default, rename = "type")]
     pub type_:                Option<String>,
-    /// minijinja template producing the catalog's `dct:title`. The
-    /// inner Dataset is exposed as `inner["..."]` (e.g.
-    /// `inner["dct:title"]`), and the analysis ctx
-    /// (`pkg`/`res`/`stats`/`dpp`/...) is available too. When unset,
-    /// the title falls back to the legacy
-    /// "Catalog of <inner dct:title>" convention.
+    /// minijinja template producing the catalog's title. The inner
+    /// Dataset is exposed as `inner["..."]` (e.g.  `inner["dct:title"]`
+    /// for DCAT, `inner["schema:name"]` for schema.org-rooted profiles),
+    /// and the analysis ctx (`pkg`/`res`/`stats`/`dpp`/...) is available
+    /// too. When unset, the title falls back to the legacy "Catalog of
+    /// <inner title>" convention which reads from whichever key the
+    /// profile declares as `title_key`.
     #[serde(default)]
     pub title_template:       Option<String>,
+    /// JSON-LD key under which the catalog title is emitted on the
+    /// envelope. Defaults to `dct:title` (DCAT-shaped). Schema.org-
+    /// rooted profiles (Croissant, Geoconnex) should set this to
+    /// `schema:name` so the envelope doesn't carry DCAT terms its
+    /// `@context` doesn't define.
+    #[serde(default)]
+    pub title_key:            Option<String>,
+    /// JSON-LD key under which the inner Dataset is wrapped on the
+    /// envelope. Defaults to `dcat:dataset` (DCAT-shaped). Schema.org-
+    /// rooted profiles should set this to `schema:dataset` for
+    /// envelope/context consistency.
+    #[serde(default)]
+    pub dataset_key:          Option<String>,
     /// Top-level Dataset keys to copy onto the Catalog envelope
     /// verbatim (typical: `dct:publisher`). For renaming,
     /// transforming, or conditional inheritance use a `fields[]`

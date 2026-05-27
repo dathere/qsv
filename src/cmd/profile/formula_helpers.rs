@@ -76,6 +76,13 @@ pub fn register(env: &mut Environment) {
     env.add_filter("format_range", format_range);
     env.add_filter("format_coordinates", format_coordinates);
 
+    // --- filters (profile-engine additions) ---------------------------
+    env.add_filter("only_if_absolute_iri", only_if_absolute_iri);
+    env.add_filter("basename", basename);
+    env.add_filter("file_stem", file_stem);
+    env.add_filter("sanitize_iso_8601_interval", sanitize_iso_8601_interval);
+    env.add_filter("format_mailto", format_mailto);
+
     // --- globals (pure / non-SQL) -------------------------------------
     env.add_function("calculate_bbox_area", calculate_bbox_area);
     env.add_function("spatial_extent_wkt", spatial_extent_wkt);
@@ -88,6 +95,14 @@ pub fn register(env: &mut Environment) {
     env.add_function("spatial_resolution_in_meters", spatial_resolution_in_meters);
     env.add_function("get_column_null_percentage", get_column_null_percentage);
     env.add_function("get_column_stats", get_column_stats);
+
+    // --- globals (profile-engine additions, file-aware) ---------------
+    env.add_function("sha256_of", sha256_of);
+    env.add_function("blake3_of", blake3_of);
+    env.add_function("file_size_of", file_size_of);
+    env.add_function("compress_format", compress_format);
+    env.add_function("package_format", package_format);
+    env.add_function("build_csvw_schema", build_csvw_schema);
 
     // --- globals (SQL-backed) -----------------------------------------
     // Backed by Polars SQL over the input CSV (see sql_backend.rs).
@@ -898,6 +913,192 @@ fn format_thousands(n: f64, decimals: usize) -> String {
         with_commas.push(c);
     }
     format!("{sign}{with_commas}{dec_part}")
+}
+
+// =========================================================================
+// Profile-engine helpers (added for YAML-driven projection)
+// =========================================================================
+
+/// `only_if_absolute_iri` filter — passes the value through if it parses
+/// as an absolute IRI with http/https/ftp/ftps/file scheme; otherwise
+/// returns minijinja's undefined sentinel so `| default(...)` chains
+/// can route to a fallback. Used by `dcat:landingPage`, `dcat:accessURL`,
+/// and similar IRI-typed slots to reject bare strings.
+fn only_if_absolute_iri(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    for prefix in ["http://", "https://", "ftp://", "ftps://", "file://"] {
+        if lower.starts_with(prefix) {
+            return minijinja::Value::from(trimmed.to_string());
+        }
+    }
+    minijinja::Value::UNDEFINED
+}
+
+/// `basename` filter — returns the final path segment of `value`. Used
+/// to derive a `dct:title` fallback from the URL's last segment.
+fn basename(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// `file_stem` filter — returns the basename minus its extension. Used
+/// to derive a tempfile-stem-aware `dcat:Distribution.dct:title`.
+fn file_stem(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// `sanitize_iso_8601_interval` filter — rejects interval / repeating
+/// ISO 8601 syntax (`R/P1Y`, `2024-01-01/2024-06-30`). Useful for
+/// `dct:modified` / `dct:issued` slots where a pure instant is expected;
+/// instead of forwarding a malformed interval, returns Jinja undefined
+/// so the field is suppressed.
+fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.starts_with("R/") || trimmed.starts_with('R') && trimmed.contains("/P") {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.contains('/') && !trimmed.starts_with("http") {
+        // Likely interval form like 2024-01-01/2024-06-30.
+        return minijinja::Value::UNDEFINED;
+    }
+    minijinja::Value::from(trimmed.to_string())
+}
+
+/// `format_mailto` filter — trims whitespace and prepends `mailto:` if
+/// missing. Returns minijinja undefined for empty input so chained
+/// `| default` fallbacks work.
+fn format_mailto(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.to_ascii_lowercase().starts_with("mailto:") {
+        minijinja::Value::from(trimmed.to_string())
+    } else {
+        minijinja::Value::from(format!("mailto:{trimmed}"))
+    }
+}
+
+/// `sha256_of` global — streaming SHA-256 of a local file as lowercase
+/// hex. Returns minijinja undefined on read failure (best-effort).
+fn sha256_of(path: &str) -> minijinja::Value {
+    use sha2::{Digest, Sha256};
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    use std::io::Read;
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return minijinja::Value::UNDEFINED,
+        }
+    }
+    let digest = hasher.finalize();
+    minijinja::Value::from(format!("{digest:x}"))
+}
+
+/// `blake3_of` global — BLAKE3 digest of a local file as lowercase hex.
+/// Uses the qsv-wide blake3 dep with mmap+rayon for large-file speed.
+fn blake3_of(path: &str) -> minijinja::Value {
+    let mut hasher = blake3::Hasher::new();
+    if hasher.update_mmap_rayon(path).is_err() {
+        return minijinja::Value::UNDEFINED;
+    }
+    let digest = hasher.finalize();
+    minijinja::Value::from(digest.to_hex().to_string())
+}
+
+/// `file_size_of` global — byte length of a local file as a string.
+/// Matches the GSA `dcat:byteSize` convention (number serialized as
+/// string). Returns minijinja undefined on stat failure.
+fn file_size_of(path: &str) -> minijinja::Value {
+    match std::fs::metadata(path) {
+        Ok(m) => minijinja::Value::from(m.len().to_string()),
+        Err(_) => minijinja::Value::UNDEFINED,
+    }
+}
+
+/// `compress_format` global — IANA media type for single-file
+/// compressors derived from the path's extension. Returns minijinja
+/// undefined when the extension is unrecognized.
+fn compress_format(path: &str) -> minijinja::Value {
+    let lower = path.to_ascii_lowercase();
+    let m = match () {
+        _ if lower.ends_with(".gz") => "application/gzip",
+        _ if lower.ends_with(".zst") => "application/zstd",
+        _ if lower.ends_with(".bz2") => "application/x-bzip2",
+        _ if lower.ends_with(".xz") => "application/x-xz",
+        _ if lower.ends_with(".br") => "application/brotli",
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    minijinja::Value::from(m.to_string())
+}
+
+/// `package_format` global — IANA media type for archive containers
+/// derived from the path's extension. Returns minijinja undefined when
+/// the extension is unrecognized.
+fn package_format(path: &str) -> minijinja::Value {
+    let lower = path.to_ascii_lowercase();
+    let m = match () {
+        _ if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") => "application/gzip",
+        _ if lower.ends_with(".tar") => "application/x-tar",
+        _ if lower.ends_with(".zip") => "application/zip",
+        _ if lower.ends_with(".7z") => "application/x-7z-compressed",
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    minijinja::Value::from(m.to_string())
+}
+
+/// `build_csvw_schema` global — walks a stats array and emits a
+/// `{ columns: [...] }` shape suitable for `csvw:tableSchema`. The
+/// `vocab_table` argument names a profile vocabulary that maps qsv
+/// stats types to the target schema's datatype IRIs (default
+/// `"csvw_datatype"`).
+///
+/// The vocabulary lookup itself happens via the `lookup` helper in
+/// the field template; this global only emits the column structure.
+fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
+    use minijinja::value::ValueKind;
+    if stats.kind() != ValueKind::Seq {
+        return minijinja::Value::UNDEFINED;
+    }
+    let mut columns: Vec<serde_json::Value> = Vec::new();
+    if let Ok(iter) = stats.try_iter() {
+        for col in iter {
+            let field = col
+                .get_attr("field")
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_default();
+            let datatype = col
+                .get_attr("type")
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_string))
+                .unwrap_or_else(|| "String".to_string());
+            columns.push(serde_json::json!({
+                "name": field,
+                "qsv:type": datatype,
+            }));
+        }
+    }
+    minijinja::Value::from_serialize(serde_json::json!({ "columns": columns }))
 }
 
 // =====================================================================

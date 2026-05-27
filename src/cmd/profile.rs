@@ -87,6 +87,13 @@ profile options:
                               CKAN ingest) that expect Catalog-shaped
                               top-level metadata. Default: off
                               (Dataset-only, backwards-compatible).
+    --profile <name|path>     Metadata projection profile to use. Embedded
+                              names: dcat-us-v3 (default), dcat-ap-v3,
+                              croissant. A path to a custom YAML profile
+                              is also accepted; embedded names always win
+                              over same-named files. See
+                              resources/profiles/README.md for the schema
+                              and authoring guide.
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -121,8 +128,11 @@ mod curie;
 mod dcat;
 mod dcat_discover;
 mod dcat_validate;
+mod discovery_merge;
 mod formula_engine;
 mod formula_helpers;
+mod profile_spec;
+mod projection;
 mod spec;
 mod sql_backend;
 
@@ -138,6 +148,7 @@ struct Args {
     flag_validate_dcat:          bool,
     flag_strict_dcat:            bool,
     flag_catalog:                bool,
+    flag_profile:                Option<String>,
     flag_no_ckan:                bool,
     flag_force:                  bool,
     flag_jobs:                   Option<usize>,

@@ -1,0 +1,6 @@
+# Placeholder — populated in Stage 7.
+name: croissant
+version: 0.0.0-placeholder
+dataset:
+  type: sc:Dataset
+  fields: []

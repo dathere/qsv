@@ -1,0 +1,6 @@
+# Placeholder — populated in Stage 6.
+name: dcat-ap-v3
+version: 0.0.0-placeholder
+dataset:
+  type: dcat:Dataset
+  fields: []

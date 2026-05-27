@@ -24,6 +24,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+    - name: Free disk space
+      uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be   # v1.3.1
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: false
+        swap-storage: true
     - uses: actions/checkout@v6
     - name: apt-get update Ubuntu, libwayland-dev
       run: |

@@ -36,6 +36,30 @@ use super::{
     projection::{ProjectionWarning, Severity},
 };
 
+/// Compile-time-bundled resources resolvable by
+/// `ExternalValidatorResource.embedded`. Each entry is an
+/// `(<name>, <content>)` pair sourced via `include_str!`. Custom
+/// YAML profiles can reference any name listed here from their
+/// `validation.external.resources[].embedded` field but cannot
+/// register new entries — that's a qsv-release-time decision.
+///
+/// Adding a new resource: vendor the file under `resources/<slug>/`
+/// (with a sibling `README.md` documenting source + re-vendor
+/// procedure) and add one tuple here.
+pub const EMBEDDED_RESOURCES: &[(&str, &str)] = &[(
+    "dcat-ap-v3-shacl-shapes",
+    include_str!("../../../resources/dcat-ap-v3/shacl/dcat-ap-SHACL.ttl"),
+)];
+
+/// Resolve an embedded-resource identifier to its content (or
+/// `None` when the name isn't bundled).
+fn lookup_embedded(name: &str) -> Option<&'static str> {
+    EMBEDDED_RESOURCES
+        .iter()
+        .find(|(n, _)| *n == name)
+        .map(|(_, c)| *c)
+}
+
 pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> {
     let Some(cfg) = profile.validation.external.as_ref() else {
         return Vec::new();
@@ -44,10 +68,43 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
     let severity = parse_severity(cfg.default_severity.as_deref());
     let label = cfg.label.as_deref().unwrap_or(cfg.command.as_str());
 
+    // Validate the resource declarations BEFORE any I/O so a
+    // misconfigured profile fails fast with an actionable message.
+    // Reserved-name + unknown-embedded checks are Required-severity
+    // because they reflect a YAML bug, not a runtime gap.
+    for r in &cfg.resources {
+        if r.name == "file" {
+            return vec![ProjectionWarning {
+                field:    "external_validate".to_string(),
+                severity: Severity::Required,
+                message:  format!(
+                    "profile `{}`: external validator resource name `file` is reserved for the \
+                     implicit JSON-LD tempfile. Rename the resource.",
+                    profile.name
+                ),
+            }];
+        }
+        if lookup_embedded(&r.embedded).is_none() {
+            let known: Vec<&str> = EMBEDDED_RESOURCES.iter().map(|(n, _)| *n).collect();
+            return vec![ProjectionWarning {
+                field:    "external_validate".to_string(),
+                severity: Severity::Required,
+                message:  format!(
+                    "profile `{}`: external validator resource `{}` references unknown embedded \
+                     `{}`; known: [{}]",
+                    profile.name,
+                    r.name,
+                    r.embedded,
+                    known.join(", ")
+                ),
+            }];
+        }
+    }
+
     // Write the rendered JSON-LD to a tempfile. mlcroissant + pyshacl
     // both accept a file path; piping on stdin would need per-tool
     // flags. Keep the contract uniform.
-    let mut tmp = match write_tempfile(block) {
+    let mut tmp_jsonld = match write_jsonld_tempfile(block) {
         Ok(t) => t,
         Err(e) => {
             return vec![ProjectionWarning {
@@ -58,13 +115,39 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
         },
     };
 
-    // Keep the tempfile path as an `OsString` so non-UTF-8 paths
-    // (legal on Unix, possible on Windows) pass through to the
-    // spawned validator verbatim. `to_string_lossy()` would silently
-    // mangle such paths and the validator would then complain that
-    // the file doesn't exist.
-    let path_os = tmp.path().as_os_str().to_owned();
-    let resolved_args = resolve_args(&cfg.args, &path_os);
+    // Materialize each declared resource tempfile (e.g. SHACL
+    // shapes). Tempfiles must outlive the spawn — keep them in a
+    // Vec alongside their token bindings.
+    let mut resource_tmps: Vec<NamedTempFile> = Vec::with_capacity(cfg.resources.len());
+    let mut extras: Vec<(String, OsString)> = Vec::with_capacity(cfg.resources.len());
+    for r in &cfg.resources {
+        let content =
+            lookup_embedded(&r.embedded).expect("resource embedded existence checked above");
+        let suffix = r.suffix.as_deref().unwrap_or(".tmp");
+        let tmp = match write_resource_tempfile(content, suffix) {
+            Ok(t) => t,
+            Err(e) => {
+                return vec![ProjectionWarning {
+                    field:    "external_validate".to_string(),
+                    severity: Severity::Recommended,
+                    message:  format!(
+                        "could not materialize resource `{}` ({}) tempfile for `{label}`: {e}",
+                        r.name, r.embedded
+                    ),
+                }];
+            },
+        };
+        extras.push((r.name.clone(), tmp.path().as_os_str().to_owned()));
+        resource_tmps.push(tmp);
+    }
+
+    // Keep the JSON-LD tempfile path as `OsString` so non-UTF-8
+    // paths (legal on Unix, possible on Windows) pass through to
+    // the spawned validator verbatim. `to_string_lossy()` would
+    // silently mangle such paths and the validator would then
+    // complain that the file doesn't exist.
+    let jsonld_path = tmp_jsonld.path().as_os_str().to_owned();
+    let resolved_args = resolve_args(&cfg.args, &jsonld_path, &extras);
 
     let mut cmd = Command::new(&cfg.command);
     cmd.args(&resolved_args);
@@ -75,7 +158,7 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
             // installed on this machine. The install hint (when
             // provided) gives the user a one-line path to fixing
             // the gap without leaving the terminal.
-            let _ = tmp.flush();
+            let _ = tmp_jsonld.flush();
             let hint = cfg
                 .install_hint
                 .as_deref()
@@ -98,6 +181,10 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
             }];
         },
     };
+
+    // Bind so resource tempfiles outlive the spawn explicitly
+    // (the Vec drops here, taking the NamedTempFiles with it).
+    drop(resource_tmps);
 
     if output.status.success() {
         return Vec::new();
@@ -155,7 +242,7 @@ pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> 
 /// validator's error line numbers line up with something a human can
 /// actually grep. The tempfile is returned so its `Drop` only fires
 /// after the caller has spawned and waited on the validator.
-fn write_tempfile(block: &Value) -> Result<NamedTempFile, std::io::Error> {
+fn write_jsonld_tempfile(block: &Value) -> Result<NamedTempFile, std::io::Error> {
     let mut tmp = NamedTempFile::with_suffix(".json")?;
     let bytes = serde_json::to_vec_pretty(block).unwrap_or_else(|_| b"{}".to_vec());
     tmp.write_all(&bytes)?;
@@ -163,42 +250,93 @@ fn write_tempfile(block: &Value) -> Result<NamedTempFile, std::io::Error> {
     Ok(tmp)
 }
 
-/// Substitute the literal `{file}` token in each arg with `path`. If
-/// no arg contains the token, append `path` as a final argument so
-/// validators that take "file as last positional" still work without
-/// explicit templating.
+/// Write `content` to a `NamedTempFile` with the given suffix so
+/// validators that key off file extension (e.g. `pyshacl` reading
+/// `.ttl` as Turtle) can dispatch correctly. The suffix should
+/// include the leading dot (e.g. `.ttl`, `.jsonld`).
+fn write_resource_tempfile(content: &str, suffix: &str) -> Result<NamedTempFile, std::io::Error> {
+    let mut tmp = NamedTempFile::with_suffix(suffix)?;
+    tmp.write_all(content.as_bytes())?;
+    tmp.flush()?;
+    Ok(tmp)
+}
+
+/// Substitute the literal `{file}` token in each arg with
+/// `file_path`. Named tokens in `extras` (e.g. `{shapes}`) are
+/// substituted with the corresponding `OsString` path. If no
+/// `{file}` token appears anywhere in `args`, `file_path` is
+/// appended as a final argument so validators that take "file as
+/// last positional" still work without explicit templating; the
+/// same fallback does NOT apply to named extras (their position
+/// is always explicit).
 ///
-/// Args themselves come from YAML and are guaranteed UTF-8, but the
-/// substituted path is an `OsStr` so non-UTF-8 tempfile paths flow
-/// through to the spawned process unchanged. The output is
-/// `Vec<OsString>`, which `Command::args` accepts directly.
-fn resolve_args(args: &[String], path: &OsStr) -> Vec<OsString> {
-    let has_token = args.iter().any(|a| a.contains("{file}"));
-    if has_token {
-        args.iter()
-            .map(|a| substitute_file_token(a, path))
-            .collect()
+/// Args themselves come from YAML and are guaranteed UTF-8, but
+/// substituted paths are `OsStr`/`OsString` so non-UTF-8 tempfile
+/// paths flow through to the spawned process unchanged. The output
+/// is `Vec<OsString>`, which `Command::args` accepts directly.
+fn resolve_args(
+    args: &[String],
+    file_path: &OsStr,
+    extras: &[(String, OsString)],
+) -> Vec<OsString> {
+    let has_file_token = args.iter().any(|a| a.contains("{file}"));
+    let substituted: Vec<OsString> = args
+        .iter()
+        .map(|a| substitute_tokens(a, file_path, extras))
+        .collect();
+    if has_file_token {
+        substituted
     } else {
-        let mut out: Vec<OsString> = args.iter().map(OsString::from).collect();
-        out.push(path.to_os_string());
+        let mut out = substituted;
+        out.push(file_path.to_os_string());
         out
     }
 }
 
-/// Build a single arg by splitting around the literal `{file}`
-/// markers and stitching the OsStr `path` in between, so the path
-/// segment retains its native (potentially non-UTF-8) bytes while
-/// the surrounding template chars come from the (always UTF-8)
-/// YAML arg string.
-fn substitute_file_token(arg: &str, path: &OsStr) -> OsString {
-    let parts: Vec<&str> = arg.split("{file}").collect();
+/// Walk `arg` looking for `{<name>}` tokens. `{file}` resolves to
+/// `file_path`; other names resolve via `extras`. Unknown tokens
+/// (and unclosed braces) pass through as literal text so a
+/// validator that genuinely wants `{foo}` in its CLI gets it
+/// verbatim.
+///
+/// Stitches the OsStr path segments into an `OsString` so the
+/// substituted bytes pass through `Command::args` unchanged on all
+/// platforms.
+fn substitute_tokens(arg: &str, file_path: &OsStr, extras: &[(String, OsString)]) -> OsString {
     let mut out = OsString::new();
-    for (i, part) in parts.iter().enumerate() {
-        if i > 0 {
-            out.push(path);
+    let mut rest = arg;
+    while let Some(open) = rest.find('{') {
+        // Push the literal prefix up to and not including `{`.
+        out.push(&rest[..open]);
+        let after_open = &rest[open + 1..];
+        let Some(close) = after_open.find('}') else {
+            // No closing brace — push the rest verbatim (including
+            // the unmatched `{`) and bail out of the loop.
+            out.push(&rest[open..]);
+            return out;
+        };
+        let name = &after_open[..close];
+        let resolved: Option<&OsStr> = if name == "file" {
+            Some(file_path)
+        } else {
+            extras
+                .iter()
+                .find(|(n, _)| n == name)
+                .map(|(_, p)| p.as_os_str())
+        };
+        match resolved {
+            Some(p) => out.push(p),
+            None => {
+                // Unknown token — pass through as literal so the
+                // validator sees exactly what the user wrote.
+                out.push("{");
+                out.push(name);
+                out.push("}");
+            },
         }
-        out.push(part);
+        rest = &after_open[close + 1..];
     }
+    out.push(rest);
     out
 }
 
@@ -519,7 +657,7 @@ validation:
             "--input".to_string(),
             "{file}".to_string(),
         ];
-        let out = resolve_args(&args, OsStr::new("/tmp/x.json"));
+        let out = resolve_args(&args, OsStr::new("/tmp/x.json"), &[]);
         let expected: Vec<OsString> = ["validate", "--input", "/tmp/x.json"]
             .iter()
             .map(OsString::from)
@@ -530,7 +668,7 @@ validation:
     #[test]
     fn resolve_args_appends_when_token_absent() {
         let args = vec!["validate".to_string(), "--strict".to_string()];
-        let out = resolve_args(&args, OsStr::new("/tmp/x.json"));
+        let out = resolve_args(&args, OsStr::new("/tmp/x.json"), &[]);
         let expected: Vec<OsString> = ["validate", "--strict", "/tmp/x.json"]
             .iter()
             .map(OsString::from)
@@ -551,12 +689,175 @@ validation:
         let raw = b"/tmp/\xFFnon-utf8\xFE.json";
         let path = OsStr::from_bytes(raw);
         let args = vec!["--input".to_string(), "{file}".to_string()];
-        let out = resolve_args(&args, path);
+        let out = resolve_args(&args, path, &[]);
         // The second arg must be exactly the original byte sequence.
         assert_eq!(
             out[1].as_bytes(),
             raw,
             "non-UTF-8 path bytes must survive substitution"
+        );
+    }
+
+    #[test]
+    fn resolve_args_substitutes_named_extras() {
+        // {file} and {shapes} both substitute in one pass; unknown
+        // tokens pass through verbatim so a validator can still get
+        // `{literal-brace}` in its CLI if it expects one.
+        let args = vec![
+            "-s".to_string(),
+            "{shapes}".to_string(),
+            "-d".to_string(),
+            "{file}".to_string(),
+            "--note=keep-{verbatim}".to_string(),
+        ];
+        let extras = vec![("shapes".to_string(), OsString::from("/tmp/shapes.ttl"))];
+        let out = resolve_args(&args, OsStr::new("/tmp/data.json"), &extras);
+        let expected: Vec<OsString> = [
+            "-s",
+            "/tmp/shapes.ttl",
+            "-d",
+            "/tmp/data.json",
+            "--note=keep-{verbatim}",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
+        assert_eq!(out, expected);
+    }
+
+    #[test]
+    fn embedded_resources_table_includes_dcat_ap_v3_shapes() {
+        // Lock in the embedded resource name DCAT-AP v3 references
+        // from its YAML — a typo here would silently break the
+        // shipped profile.
+        assert!(
+            lookup_embedded("dcat-ap-v3-shacl-shapes").is_some(),
+            "EMBEDDED_RESOURCES must include the DCAT-AP v3 SHACL shapes by canonical name"
+        );
+        let shapes = lookup_embedded("dcat-ap-v3-shacl-shapes").unwrap();
+        // Sanity check: the bundle is real Turtle, not e.g. an HTML
+        // 404 page caught by a bad re-vendor step.
+        assert!(
+            shapes.contains("@prefix shacl:"),
+            "embedded SHACL shapes must declare the SHACL prefix"
+        );
+        assert!(
+            shapes.contains("dcat:Dataset"),
+            "embedded SHACL shapes must reference dcat:Dataset"
+        );
+    }
+
+    #[test]
+    fn lookup_embedded_returns_none_for_unknown() {
+        assert!(lookup_embedded("does-not-exist").is_none());
+        assert!(lookup_embedded("").is_none());
+    }
+
+    #[test]
+    fn resource_with_reserved_name_file_is_rejected() {
+        // The implicit `{file}` token always points at the rendered
+        // JSON-LD tempfile, so a resource named `file` would shadow
+        // it. The framework must reject that loudly.
+        let yaml = r#"
+name: t
+dataset:
+  type: dcat:Dataset
+validation:
+  enabled: false
+  external:
+    command: "sh"
+    args: ["-c", "exit 0"]
+    resources:
+      - name: "file"
+        embedded: "dcat-ap-v3-shacl-shapes"
+"#;
+        let profile = load_from_str(yaml, "t").unwrap();
+        let warnings = validate(&profile, &json!({}));
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(warnings[0].severity, Severity::Required));
+        assert!(
+            warnings[0].message.contains("`file` is reserved"),
+            "reserved-name error must call out the conflict; got `{}`",
+            warnings[0].message
+        );
+    }
+
+    #[test]
+    fn resource_with_unknown_embedded_is_rejected() {
+        let yaml = r#"
+name: t
+dataset:
+  type: dcat:Dataset
+validation:
+  enabled: false
+  external:
+    command: "sh"
+    args: ["-c", "exit 0"]
+    resources:
+      - name: "shapes"
+        embedded: "no-such-bundled-resource-12345"
+"#;
+        let profile = load_from_str(yaml, "t").unwrap();
+        let warnings = validate(&profile, &json!({}));
+        assert_eq!(warnings.len(), 1);
+        assert!(matches!(warnings[0].severity, Severity::Required));
+        assert!(
+            warnings[0].message.contains("unknown embedded"),
+            "unknown-embedded error must say so; got `{}`",
+            warnings[0].message
+        );
+        assert!(
+            warnings[0].message.contains("dcat-ap-v3-shacl-shapes"),
+            "error must list known embedded names so users can spot typos; got `{}`",
+            warnings[0].message
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn resource_tempfile_is_materialized_with_correct_suffix() {
+        // The resource tempfile must (a) exist when the validator
+        // runs, (b) carry the configured suffix, (c) hold the
+        // embedded content. Using `sh` to echo back the metadata
+        // proves all three in one spawn.
+        let yaml = r#"
+name: t
+dataset:
+  type: dcat:Dataset
+validation:
+  enabled: false
+  external:
+    command: "sh"
+    args:
+      - "-c"
+      - 'echo "shapes-path: $1"; head -c 100 "$1"; exit 1'
+      - "_"
+      - "{shapes}"
+    label: "fake-validator"
+    resources:
+      - name: "shapes"
+        embedded: "dcat-ap-v3-shacl-shapes"
+        suffix: ".ttl"
+"#;
+        let profile = load_from_str(yaml, "t").unwrap();
+        let warnings = validate(&profile, &json!({}));
+        // The shapes tempfile path was substituted and exists.
+        let path_line = warnings
+            .iter()
+            .find_map(|w| w.message.strip_prefix("fake-validator: shapes-path: "))
+            .expect("shapes path substituted into args");
+        assert!(
+            path_line.starts_with('/'),
+            "shapes path must be an absolute tempfile path; got `{path_line}`"
+        );
+        assert!(
+            path_line.ends_with(".ttl"),
+            "suffix `.ttl` must apply to the materialized tempfile; got `{path_line}`"
+        );
+        // The content is real Turtle (head of the SHACL bundle).
+        assert!(
+            warnings.iter().any(|w| w.message.contains("@prefix")),
+            "shapes content must be the embedded SHACL Turtle; got warnings: {warnings:#?}"
         );
     }
 }

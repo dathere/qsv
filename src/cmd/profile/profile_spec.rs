@@ -436,6 +436,76 @@ dataset:
     }
 
     #[test]
+    fn embedded_dcat_ap_v3_parses_and_dry_compiles() {
+        let spec = load("dcat-ap-v3").expect("embedded load");
+        assert_eq!(spec.name, "dcat-ap-v3");
+        // DCAT-AP ships SHACL upstream; built-in validator is disabled.
+        assert!(!spec.validation.enabled);
+        assert!(spec.discovery_merge.enabled);
+        assert!(!spec.dataset.fields.is_empty());
+        assert!(spec.distribution.is_some());
+        assert!(spec.catalog.is_some());
+        assert_eq!(spec.field_mappings.len(), 28);
+        // EU theme vocab is the AP-specific addition.
+        assert!(spec.vocabularies.contains_key("eu_theme"));
+        assert!(spec.vocabularies.contains_key("license_iri"));
+        assert!(spec.vocabularies.contains_key("accrual_periodicity"));
+        assert!(spec.vocabularies.contains_key("iso_639_1"));
+        assert!(spec.vocabularies.contains_key("csvw_datatype"));
+        super::super::projection::dry_compile(&spec).expect("dry_compile");
+    }
+
+    #[test]
+    fn embedded_croissant_parses_and_dry_compiles() {
+        let spec = load("croissant").expect("embedded load");
+        assert_eq!(spec.name, "croissant");
+        // Croissant relies on the mlcommons Python validator; built-in
+        // validator + discovery merge are both disabled.
+        assert!(!spec.validation.enabled);
+        assert!(!spec.discovery_merge.enabled);
+        assert!(!spec.dataset.fields.is_empty());
+        assert!(spec.distribution.is_some());
+        assert!(spec.catalog.is_some());
+        // Croissant is the only profile that uses the recordsets block
+        // (per-column cr:Field expansion).
+        assert!(!spec.recordsets.is_empty());
+        assert_eq!(spec.field_mappings.len(), 16);
+        assert!(spec.vocabularies.contains_key("license_iri"));
+        assert!(spec.vocabularies.contains_key("croissant_datatype"));
+        super::super::projection::dry_compile(&spec).expect("dry_compile");
+    }
+
+    /// Parametric CI gate: every entry in `EMBEDDED` must parse cleanly
+    /// and `dry_compile` without error. Adding a new profile to the
+    /// bundle automatically inherits this coverage — no per-profile
+    /// test edit required.
+    #[test]
+    fn all_embedded_profiles_parse_and_dry_compile() {
+        assert!(
+            !EMBEDDED.is_empty(),
+            "EMBEDDED must contain at least one profile"
+        );
+        for (name, _) in EMBEDDED {
+            let spec = load(name)
+                .unwrap_or_else(|e| panic!("embedded profile `{name}` failed to load: {e}"));
+            assert_eq!(
+                spec.name.to_ascii_lowercase(),
+                name.to_ascii_lowercase(),
+                "embedded profile `{name}` reports mismatched spec.name `{}`",
+                spec.name
+            );
+            // Every shipped profile must have a non-empty dataset block;
+            // a profile with no dataset fields would produce empty output.
+            assert!(
+                !spec.dataset.fields.is_empty(),
+                "embedded profile `{name}` has no dataset fields"
+            );
+            super::super::projection::dry_compile(&spec)
+                .unwrap_or_else(|e| panic!("embedded profile `{name}` failed dry_compile: {e}"));
+        }
+    }
+
+    #[test]
     fn unknown_name_errors_with_list() {
         let err = load("not-a-real-profile").unwrap_err();
         let msg = err.to_string();

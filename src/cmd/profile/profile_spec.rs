@@ -194,6 +194,15 @@ pub struct Validation {
 /// substituted for the literal `{file}` token in `args`, or appended
 /// as the last argument when no `{file}` token is present.
 ///
+/// Additional input files (e.g. SHACL shapes for `pyshacl`) can be
+/// declared via `resources`. Each entry is looked up in
+/// `external_validate::EMBEDDED_RESOURCES` (a compile-time
+/// `include_str!`-bundled set), written to a tempfile with the
+/// declared suffix, and substituted for `{<name>}` in `args`.
+/// Custom YAML profiles can reference any embedded name but
+/// cannot register new ones (the set is fixed at qsv release
+/// time, matching how `EMBEDDED` profiles are fixed).
+///
 /// A non-zero exit code is treated as "validation failed" — each
 /// non-empty stderr line becomes one `ProjectionWarning` with
 /// severity `default_severity`. Exit code zero is treated as
@@ -210,6 +219,8 @@ pub struct ExternalValidator {
     /// Arguments. The literal token `{file}` is replaced with the
     /// tempfile path holding the rendered JSON-LD. When no `{file}`
     /// token is present, the path is appended as the last argument.
+    /// Named tokens declared in `resources` (e.g. `{shapes}`) are
+    /// substituted with the corresponding tempfile path.
     #[serde(default)]
     pub args:             Vec<String>,
     /// Severity assigned to each surfaced finding. One of
@@ -228,6 +239,37 @@ pub struct ExternalValidator {
     /// E.g. "pip install mlcroissant (https://github.com/mlcommons/croissant)".
     #[serde(default)]
     pub install_hint:     Option<String>,
+    /// Additional input files materialized as tempfiles before
+    /// spawn. Each entry's `embedded` name resolves against the
+    /// `external_validate::EMBEDDED_RESOURCES` table; its content
+    /// is written to a tempfile with the declared `suffix` and
+    /// substituted for `{<name>}` in `args`. Names must NOT be
+    /// `"file"` (reserved for the implicit JSON-LD tempfile).
+    #[serde(default)]
+    pub resources:        Vec<ExternalValidatorResource>,
+}
+
+/// One named tempfile resource for an `ExternalValidator`. The
+/// content is sourced from a compile-time `include_str!`-bundled
+/// table (`external_validate::EMBEDDED_RESOURCES`) so custom YAML
+/// profiles can reference SHACL shapes / shape catalogs / etc. by
+/// name without re-shipping the underlying bytes. The framework
+/// validates `embedded` resolves at spawn time and emits a
+/// `Required`-severity warning otherwise.
+#[derive(Debug, Clone, Default, Deserialize)]
+#[allow(dead_code)]
+pub struct ExternalValidatorResource {
+    /// Token name. Used in `args` as `{<name>}`. Reserved value:
+    /// `"file"` (would shadow the implicit JSON-LD path).
+    pub name:     String,
+    /// Logical embedded-resource identifier. Resolved against
+    /// `external_validate::EMBEDDED_RESOURCES` at spawn time.
+    pub embedded: String,
+    /// File suffix for the materialized tempfile (e.g. `.ttl`,
+    /// `.jsonld`, `.xml`). Default `.tmp`. The suffix helps
+    /// validators that key off file extension to pick a parser.
+    #[serde(default)]
+    pub suffix:   Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -600,7 +642,9 @@ dataset:
     fn embedded_dcat_ap_v3_parses_and_dry_compiles() {
         let spec = load("dcat-ap-v3").expect("embedded load");
         assert_eq!(spec.name, "dcat-ap-v3");
-        // DCAT-AP ships SHACL upstream; built-in validator is disabled.
+        // Built-in JSON-Schema validator stays off; DCAT-AP ships
+        // SHACL upstream and the external validator below wires it
+        // up to pyshacl.
         assert!(!spec.validation.enabled);
         assert!(spec.discovery_merge.enabled);
         assert!(!spec.dataset.fields.is_empty());
@@ -613,6 +657,21 @@ dataset:
         assert!(spec.vocabularies.contains_key("accrual_periodicity"));
         assert!(spec.vocabularies.contains_key("iso_639_1"));
         assert!(spec.vocabularies.contains_key("csvw_datatype"));
+        // External pyshacl validator is configured and references
+        // the embedded SHACL shapes by name.
+        let external = spec
+            .validation
+            .external
+            .as_ref()
+            .expect("dcat-ap-v3 should declare external pyshacl validator");
+        assert_eq!(external.command, "pyshacl");
+        let shapes_resource = external
+            .resources
+            .iter()
+            .find(|r| r.name == "shapes")
+            .expect("shapes resource must be declared");
+        assert_eq!(shapes_resource.embedded, "dcat-ap-v3-shacl-shapes");
+        assert_eq!(shapes_resource.suffix.as_deref(), Some(".ttl"));
         super::super::projection::dry_compile(&spec).expect("dry_compile");
     }
 

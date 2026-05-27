@@ -132,9 +132,10 @@ field_mappings:
 # Schema validation: disabled
 # =========================================================================
 # DCAT-AP ships SHACL constraints upstream
-# (https://github.com/SEMICeu/DCAT-AP). qsv's JSON-Schema validator
-# can't consume SHACL today, so JSON Schema validation is opt-out for
-# this profile. Future enhancement: a sibling SHACL backend.
+# (https://github.com/SEMICeu/DCAT-AP). qsv's built-in JSON-Schema
+# validator can't consume SHACL, so `enabled: false` keeps it off;
+# the `external` block below points at `pyshacl` for actual
+# constraint checking when it's installed locally.
 validation:
   enabled: false
   strippable_curie_prefixes:
@@ -149,6 +150,34 @@ validation:
     - "csvw:"
     - "locn:"
     - "qsv:"
+  # pyshacl is the canonical SHACL engine
+  # (https://github.com/RDFLib/pySHACL). Install via
+  # `pip install pyshacl`. qsv runs it under `--validate-dcat`;
+  # findings surface as ProjectionWarnings at `default_severity`.
+  # The SHACL shapes from SEMICeu DCAT-AP v3.0.0 ship embedded in
+  # the qsv binary (see resources/dcat-ap-v3/shacl/README.md and
+  # src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES);
+  # qsv writes them to a tempfile at spawn time so users don't
+  # need to keep a copy on disk.
+  external:
+    command: "pyshacl"
+    args:
+      - "-s"
+      - "{shapes}"
+      - "-sf"
+      - "turtle"
+      - "-df"
+      - "json-ld"
+      - "-f"
+      - "human"
+      - "{file}"
+    label: "pyshacl"
+    default_severity: "recommended"
+    install_hint: "pip install pyshacl (https://github.com/RDFLib/pySHACL)"
+    resources:
+      - name: "shapes"
+        embedded: "dcat-ap-v3-shacl-shapes"
+        suffix: ".ttl"
 
 # =========================================================================
 # Dataset projection

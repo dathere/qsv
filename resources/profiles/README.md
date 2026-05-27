@@ -137,6 +137,7 @@ Two orthogonal validators are available on every profile:
 | `default_severity` | Severity for each surfaced finding. One of `required` / `recommended` (default) / `optional` / `info`. |
 | `label` | Friendly name used in warning messages instead of the raw `command` value. Useful when the command is e.g. `python3 -m mlcroissant ...`. |
 | `install_hint` | Optional free-form text appended to the missing-binary warning (typically a one-line install command + project URL). |
+| `resources` | Optional list of additional tempfile inputs to materialize before spawn. Each entry has `name` (token used in `args` as `{<name>}`), `embedded` (logical name resolved against the qsv-bundled `EMBEDDED_RESOURCES` table), and an optional `suffix` (default `.tmp`). The implicit `{file}` token (rendered JSON-LD) is always available — using `name: "file"` here is rejected at spawn time. |
 
 A non-zero exit code surfaces one warning per non-empty stderr line
 (falling back to stdout when stderr is empty). Exit 0 = empty Vec.
@@ -155,3 +156,28 @@ validation:
     default_severity: "recommended"
     install_hint: "pip install mlcroissant (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant)"
 ```
+
+DCAT-AP v3 uses this for `pyshacl`, which needs both the rendered
+JSON-LD AND the SHACL shapes file. The shapes file is vendored
+under `resources/dcat-ap-v3/shacl/` and shipped embedded in the
+qsv binary; the profile references it by logical name:
+
+```yaml
+validation:
+  enabled: false
+  external:
+    command: "pyshacl"
+    args: ["-s", "{shapes}", "-sf", "turtle", "-df", "json-ld", "-f", "human", "{file}"]
+    label: "pyshacl"
+    install_hint: "pip install pyshacl (https://github.com/RDFLib/pySHACL)"
+    resources:
+      - name: "shapes"
+        embedded: "dcat-ap-v3-shacl-shapes"
+        suffix: ".ttl"
+```
+
+Adding a new embedded resource means vendoring the file under
+`resources/<slug>/` (with a sibling `README.md` documenting the
+source + re-vendor procedure) and registering one
+`(name, include_str!(path))` tuple in
+`src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES`.

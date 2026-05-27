@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsv.dathere.com/dcat-us-v3/qsv-overlay-dataset.json",
+  "title": "qsv DCAT-US v3 Dataset overlay",
+  "description": "Wraps the vendored GSA Dataset.json with property definitions for the dcat-us:* namespace extensions qsv profile emits (bureauCode, programCode). Lets schema-aware tooling validate the shape of these extensions rather than silently ignoring them. Tracks the GSA bundle commit referenced in MANIFEST.json.",
+  "allOf": [
+    { "$ref": "https://resources.data.gov/dcat-us/3.0.0/definitions/dataset" }
+  ],
+  "properties": {
+    "dcat-us:bureauCode": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9]{3}:[0-9]{2}$",
+        "description": "OMB MAX A-11 bureau code in NNN:NN form (e.g. 015:11)."
+      }
+    },
+    "dcat-us:programCode": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^[0-9]{3}:[0-9]{3}$",
+        "description": "OMB MAX A-11 program code in NNN:NNN form (e.g. 015:001)."
+      }
+    }
+  }
+}

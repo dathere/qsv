@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/organization",
+  "title": "Organization",
+  "description": "An organization involved with a resource, including parent or child organizations",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/organizations/census-bureau"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Organization"
+    },
+    "name": {
+      "title": "name",
+      "description": "The full name of the Organization",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "foaf:name",
+        "range": "xsd:string"
+      },
+      "examples": ["National Climate Data Center", "U.S. Census Bureau"],
+      "requirementLevel": "Mandatory"
+    },
+    "subOrganizationOf": {
+      "title": "suborganization of",
+      "description": "Represents hierarchical containment of Organizations or OrganizationalUnits; indicates an Organization which contains this Organization",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "#"
+      },
+      "_oldDocs": {
+        "uri": "org:subOrganizationOf",
+        "range": "org:Organization"
+      },
+      "requirementLevel": "Optional"
+    },
+    "altLabel": {
+      "title": "alternative label",
+      "description": "alternative name (trading name, colloquial name) for an organization",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "skos:altLabel",
+        "range": "xsd:string"
+      },
+      "examples": ["NCDC", "Census Bureau"],
+      "requirementLevel": "Optional"
+    },
+    "notation": {
+      "title": "notation",
+      "description": "List of abbreviations or codes from code lists for an organization (e.g. DOI, DOD)",
+      "type": ["null", "array"],
+      "items": {
+        "title": "Abbreviation",
+        "type": "string"
+      },
+      "_oldDocs": {
+        "uri": "skos:notation",
+        "range": "xsd:string"
+      },
+      "examples": [["USCB", "CB"]],
+      "requirementLevel": "Optional"
+    },
+    "prefLabel": {
+      "title": "preferred label",
+      "description": "Preferred or legal name of the organization",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "skos:prefLabel",
+        "range": "xsd:string"
+      },
+      "examples": ["United States Census Bureau"],
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["name"],
+  "_oldDocs": {
+    "rdfClass": "org:Organization",
+    "rationale": "Improving the org:Organization class in DCAT-US 3.0 by supporting prefLabel, alternative labels, and abbreviations is essential to enhance organization representation. This enhancement accommodates variations in organization naming, promotes data interoperability, and improves discoverability within datasets. By incorporating these features, DCAT-US 3.0 aligns with best practices in data representation, enhances data search and transparency, and optimizes the overall usability of data resources.",
+    "subclassOf": "foaf:Agent"
+  },
+  "examples": [
+    {
+      "@type": "Organization",
+      "name": "National Climate Data Center",
+      "altLabel": "NCDC"
+    },
+    {
+      "@id": "https://example.gov/organizations/census-bureau",
+      "@type": "Organization",
+      "name": "U.S. Census Bureau",
+      "prefLabel": "United States Census Bureau",
+      "altLabel": "Census Bureau",
+      "notation": ["USCB", "CB"],
+      "subOrganizationOf": [
+        {
+          "@id": "https://example.gov/organizations/doc",
+          "@type": "Organization",
+          "name": "U.S. Department of Commerce"
+        }
+      ]
+    }
+  ]
+}

@@ -32,6 +32,14 @@ perf.data*
 !.claude/skills/manifest.json
 !.claude/skills/examples/*.*
 !.claude/skills/tests/fixtures/*.csv
+# Profile golden fixtures + init-context template
+!tests/resources/profile/golden/*.expected.json
+!tests/resources/profile/golden/*.csv
+# auto-generated stats cache files must NOT be committed even though
+# they match the *.csv whitelist above
+tests/resources/profile/golden/*.stats.csv
+tests/resources/profile/golden/*.stats.csv.*
+!tests/resources/profile/dcat-init-context.json
 *.log
 *.log.gz
 *.bak

@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/metric",
+  "title": "Metric",
+  "description": "A standard used to measure one aspect of data quality",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/metrics/record-completeness"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Metric"
+    },
+    "expectedDataType": {
+      "title": "expected datatype",
+      "description": "Represents the expected data type for the metric's observed value (e.g., xsd:boolean, xsd:double etc...)",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dqv:expectedDataType",
+        "range": "xsd:anySimpleType"
+      },
+      "examples": ["xsd:decimal", "xsd:double"],
+      "requirementLevel": "Mandatory"
+    },
+    "inDimension": {
+      "title": "in dimension",
+      "description": "Represents the dimensions a quality metric, certificate and annotation allow a measurement of.",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dqv:inDimension",
+        "range": "dqv:Dimension"
+      },
+      "examples": [
+        "https://example.gov/dimensions/completeness",
+        "https://www.w3.org/TR/vocab-dqv/#dqv:completeness"
+      ],
+      "requirementLevel": "Mandatory"
+    },
+    "definition": {
+      "title": "definition",
+      "description": "Definition of the metric.",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "skos:definition",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "Percentage of non-null values in the dataset.",
+        "The percentage of non-null values for required fields in a dataset. A value of 1.0 indicates 100% completeness."
+      ],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": ["expectedDataType", "inDimension"],
+  "_oldDocs": {
+    "rdfClass": "dqv:Metric",
+    "rationale": "Introducing dqv:Metric in the DCAT-US profile enhances dataset quality assessment and management by aligning with international data quality standards. It allows data publishers to systematically define and communicate dataset quality characteristics, promoting transparency and informed data utilization, fostering trust, and supporting responsible data sharing within the DCAT-US ecosystem."
+  },
+  "examples": [
+    {
+      "@type": "Metric",
+      "expectedDataType": "xsd:decimal",
+      "inDimension": "https://example.gov/dimensions/completeness",
+      "definition": "Percentage of non-null values in the dataset."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://qsv.dathere.com/dcat-us-v3/qsv-overlay-catalog.json",
+  "title": "qsv DCAT-US v3 Catalog overlay",
+  "description": "Wraps the vendored GSA Catalog.json. Currently a transparent passthrough; reserved for future qsv-specific Catalog-level extensions. Tracks the GSA bundle commit referenced in MANIFEST.json.",
+  "allOf": [
+    { "$ref": "https://resources.data.gov/dcat-us/3.0.0/definitions/catalog" }
+  ]
+}

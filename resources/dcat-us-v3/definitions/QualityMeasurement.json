@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/qualitymeasurement",
+  "title": "QualityMeasurement",
+  "description": "A measurement of a resource against a specific quality metric",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/quality-measurements/completeness-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "QualityMeasurement"
+    },
+    "isMeasurementOf": {
+      "title": "is measurement of",
+      "description": "The metric being observed",
+      "$ref": "/dcat-us/3.0.0/definitions/metric",
+      "_oldDocs": {
+        "uri": "dqv:isMeasurementOf",
+        "range": "dqv:Metric"
+      },
+      "requirementLevel": "Mandatory"
+    },
+    "value": {
+      "title": "value",
+      "description": "The value computed by metric",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dqv:value",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["98.5"],
+      "requirementLevel": "Mandatory"
+    },
+    "unitMeasure": {
+      "title": "unit of measure",
+      "description": "Unit of measure associated with the value",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "sdmx-attribute:unitMeasure",
+        "range": "rdfs:Resource"
+      },
+      "examples": ["percent"],
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["isMeasurementOf", "value"],
+  "_oldDocs": {
+    "rdfClass": "dqv:QualityMeasurement",
+    "rationale": "The inclusion of dqv:QualityMeasurement in DCAT-US assists end-users in better evaluating the fitness of use of resources. This optional class enhances data quality assessment, aligns with international standards (DQV), and enables more precise evaluation against specific quality metrics, ultimately improving data usability and adherence to recognized quality assessment practices."
+  },
+  "examples": [
+    {
+      "@type": "QualityMeasurement",
+      "isMeasurementOf": {
+        "expectedDataType": "xsd:decimal",
+        "inDimension": "https://example.gov/dimensions/completeness"
+      },
+      "value": "98.5",
+      "unitMeasure": "percent"
+    }
+  ]
+}

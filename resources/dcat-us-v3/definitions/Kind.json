@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/kind",
+  "title": "Kind",
+  "description": "Contact information for an individual or entity",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/contacts/climate-support-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Kind"
+    },
+    "address": {
+      "title": "address",
+      "description": "The address of the contact",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/address"
+      },
+      "_oldDocs": {
+        "uri": "vcard:address",
+        "range": "vcard:Address"
+      },
+      "requirementLevel": "Optional"
+    },
+    "hasEmail": {
+      "title": "Email",
+      "description": "Email address for the contact in mailto: format (for example, mailto:support@example.gov)",
+      "pattern": "^mailto:[\\w\\_\\~\\!\\$\\&\\'\\(\\)\\*\\+\\,\\;\\=\\:.-]+@[\\w.-]+\\.[\\w.-]+?$",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "vcard:hasEmail",
+        "range": "rdfs:Resource"
+      },
+      "examples": [
+        "mailto:climate-support@example.gov",
+        "mailto:jane.smith@example.gov"
+      ],
+      "requirementLevel": "Mandatory"
+    },
+    "family-name": {
+      "title": "family name",
+      "description": "The family name of the contact",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:family-name",
+        "range": "xsd:string"
+      },
+      "examples": ["Smith"],
+      "requirementLevel": "Optional"
+    },
+    "fn": {
+      "title": "formatted name",
+      "description": "The formatted text of the name of the contact",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "vcard:fn",
+        "range": "xsd:string"
+      },
+      "examples": ["Climate Data Support Team", "Dr. Jane Smith"],
+      "requirementLevel": "Mandatory"
+    },
+    "given-name": {
+      "title": "given name",
+      "description": "The given name of the contact",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:given-name",
+        "range": "xsd:string"
+      },
+      "examples": ["Jane"],
+      "requirementLevel": "Optional"
+    },
+    "organization-name": {
+      "title": "organization name",
+      "description": "The name of the organization to contact",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:organization-name",
+        "range": "xsd:string"
+      },
+      "examples": ["National Climate Data Center"],
+      "requirementLevel": "Optional"
+    },
+    "tel": {
+      "title": "telephone",
+      "description": "The telephone number for the contact",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:tel",
+        "range": "rdfs:Resource"
+      },
+      "examples": ["+1-555-123-4567"],
+      "requirementLevel": "Optional"
+    },
+    "title": {
+      "title": "position title",
+      "description": "The position role of the person to contact",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:title",
+        "range": "xsd:string"
+      },
+      "examples": ["Senior Climate Data Scientist"],
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["hasEmail", "fn"],
+  "_oldDocs": {
+    "rdfClass": "vcard:Kind",
+    "rationale": "The introduction of vcard:Kind in DCAT-US 3.0 is driven by the need for standardized, reliable, and interoperable Point of Contact information, ultimately improving the accessibility and usability of data resources within the DCAT-US ecosystem."
+  },
+  "examples": [
+    {
+      "@type": "Kind",
+      "fn": "Climate Data Support Team",
+      "hasEmail": "mailto:climate-support@example.gov",
+      "organization-name": "National Climate Data Center",
+      "tel": "+1-555-123-4567"
+    },
+    {
+      "@type": "Kind",
+      "fn": "Dr. Jane Smith",
+      "hasEmail": "mailto:jane.smith@example.gov"
+    }
+  ]
+}

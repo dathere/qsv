@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/activity",
+  "title": "Activity",
+  "description": "An activity related to creating, changing, or using a resource",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/activities/data-processing-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Activity"
+    },
+    "category": {
+      "title": "category",
+      "description": "List of categories for the Activity",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:type",
+        "range": "skos:Concept"
+      },
+      "requirementLevel": "Optional"
+    },
+    "label": {
+      "title": "label",
+      "description": "A human-readable label for the activity",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "rdfs:label",
+        "range": "xsd:string"
+      },
+      "examples": ["Data Collection", "Data Processing and Quality Assurance"],
+      "requirementLevel": "Mandatory"
+    }
+  },
+  "required": ["label"],
+  "_oldDocs": {
+    "rdfClass": "prov:Activity",
+    "rationale": "Integrating prov:Activity into the DCAT-US schema offers a streamlined, generic class to represent a myriad of operations, such as initiatives, projects, and ongoing activities, without the complexity of managing numerous specialized classes. This inclusion not only simplifies the representation of varied activities under a unified semantic framework but also enhances data provenance tracking and interoperability across diverse systems and domains. Consequently, it provides a flexible, future-proof approach to accommodate evolving types of activities without necessitating continual schema modifications."
+  },
+  "examples": [
+    {
+      "@type": "Activity",
+      "label": "Data Collection",
+      "category": ["https://example.gov/concepts/data-collection"]
+    }
+  ]
+}

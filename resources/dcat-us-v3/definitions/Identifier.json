@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/identifier",
+  "title": "Identifier",
+  "description": "A unique identifier and optionally it's scheme and other relevant information",
+  "anyOf": [
+    {
+      "type": "string",
+      "title": "Simple string identifier"
+    },
+    {
+      "type": "object",
+      "title": "Identifier as a complex object",
+      "properties": {
+        "@id": {
+          "type": "string",
+          "format": "iri"
+        },
+        "@type": {
+          "type": "string",
+          "default": "Identifier"
+        },
+        "schemaAgency": {
+          "title": "schema agency",
+          "description": "The name of the agency that issued the identifier",
+          "type": ["null", "string"]
+        },
+        "creator": {
+          "title": "creator",
+          "description": "the agency that manages the identifier scheme",
+          "anyOf": [
+            {
+              "type": "null",
+              "title": "Null allowed when not required"
+            },
+            {
+              "$ref": "/dcat-us/3.0.0/definitions/organization",
+              "description": "inline description of the creator"
+            }
+          ]
+        },
+        "issued": {
+          "title": "issued",
+          "description": "The date of formal issuance (e.g., publication) of the Identifier",
+          "anyOf": [
+            {
+              "type": "null",
+              "title": "Null allowed when not required"
+            },
+            {
+              "title": "Date string",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}$",
+                  "description": "A year in YYYY format"
+                },
+                {
+                  "type": "string",
+                  "pattern": "^[0-9]{4}-[0-9]{2}$",
+                  "description": "A year and month in YYYY-MM format"
+                }
+              ]
+            }
+          ]
+        },
+        "version": {
+          "title": "version",
+          "description": "version of the identifier scheme",
+          "type": ["null", "string"]
+        },
+        "notation": {
+          "title": "notation",
+          "description": "abbreviation or code from code lists for an identifier",
+          "type": ["null", "string"]
+        }
+      },
+      "required": []
+    }
+  ],
+  "_oldDocs": {
+    "rdfClass": "adms:Identifier",
+    "rationale": "Incorporating adms:Identifier in the DCAT-US profile fosters a culture of data governance and trust by transparently documenting the authority behind each identifier. This enhances data reliability and credibility, boosting confidence for DCAT-US users. Additionally, it enables versatile data access using multiple identifiers, enhancing overall data accessibility and usability for diverse stakeholders."
+  }
+}

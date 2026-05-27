@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/userestriction",
+  "title": "UseRestriction",
+  "description": "Rules or legal limits on how a resource may be used",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/restrictions/use-restriction-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "UseRestriction"
+    },
+    "restrictionNote": {
+      "title": "restriction note",
+      "description": "Significant information pertaining to the use or reproduction of the data",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcat-us:restrictionNote",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "This data may be used for any purpose without restriction.",
+        "This data may be used for research purposes. Commercial use requires written permission from the data steward."
+      ],
+      "requirementLevel": "Optional"
+    },
+    "restrictionStatus": {
+      "title": "restriction status",
+      "description": "Indication of whether or not there are use restrictions on the archival materials, consider using a controlled vocabulary such as https://www.archives.gov/research/catalog/lcdrg/authority-lists/use-restriction-status",
+      "$ref": "/dcat-us/3.0.0/definitions/concept",
+      "_oldDocs": {
+        "uri": "dcat-us:restrictionStatus",
+        "range": "skos:Concept"
+      },
+      "examples": ["Restricted - Fully", "Unrestricted"],
+      "requirementLevel": "Mandatory"
+    },
+    "specificRestriction": {
+      "title": "specific restriction",
+      "description": "Authority, code list entry, or policy reference that defines the specific use restriction; consider using a controlled vocabulary such as the NARA https://www.archives.gov/research/catalog/lcdrg/authority-lists/specific-use-restriction",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/concept",
+          "description": "inline description of the specific restriction"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcat-us:specificRestriction",
+        "range": "skos:Concept"
+      },
+      "examples": ["Copyright", "Trademark"],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": ["restrictionStatus"],
+  "_oldDocs": {
+    "rdfClass": "dcat-us:UseRestriction",
+    "rationale": "The introduction of dcat-us:UseRestriction in DCAT-US 3.0, aligned with NARA (National Archives and Records Administration) guidelines, enhances compliance and interoperability with NARA-specific use restriction standards. This enables organizations to accurately convey NARA-specific restrictions on data resources, ensuring adherence to archival and data preservation requirements, and promoting consistent data management practices within the DCAT-US framework."
+  },
+  "examples": [
+    {
+      "@type": "UseRestriction",
+      "restrictionStatus": "Restricted - Fully",
+      "specificRestriction": "Trademark",
+      "restrictionNote": "This data may be used for any purpose without restriction."
+    }
+  ]
+}

@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/address",
+  "title": "Address",
+  "description": "A single physical address",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/addresses/hq-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Address"
+    },
+    "country-name": {
+      "title": "country",
+      "description": "The country of the Address",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:country-name",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["United States"],
+      "requirementLevel": "Recommended"
+    },
+    "locality": {
+      "title": "locality",
+      "description": "The city of the Address",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:locality",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["Asheville", "Washington"],
+      "requirementLevel": "Recommended"
+    },
+    "postal-code": {
+      "title": "postal code",
+      "description": "The postal code of the Address",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:postal-code",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["28801", "20230"],
+      "requirementLevel": "Recommended"
+    },
+    "region": {
+      "title": "administrative area",
+      "description": "The administrative area of the Address. Depending on the country, this corresponds to a province, a county, a region, or a state",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:region",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["NC", "DC"],
+      "requirementLevel": "Recommended"
+    },
+    "street-address": {
+      "title": "street address",
+      "description": "The street name and civic number of an Address",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "vcard:street-address",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["151 Patton Avenue", "1401 Constitution Ave NW"],
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": [],
+  "_oldDocs": {
+    "rdfClass": "locn:Address",
+    "rationale": "Incorporating locn:Address from the W3C Location ontology [[LOCN]] into DCAT-US provides a standardized, structured, and extensible format to represent physical addresses, facilitating consistent, interoperable, and precise sharing of location information across various datasets and digital platforms."
+  },
+  "examples": [
+    {
+      "@type": "Address",
+      "street-address": "151 Patton Avenue",
+      "locality": "Asheville",
+      "region": "NC",
+      "postal-code": "28801",
+      "country-name": "United States"
+    }
+  ]
+}

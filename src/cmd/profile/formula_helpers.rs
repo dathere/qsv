@@ -76,6 +76,13 @@ pub fn register(env: &mut Environment) {
     env.add_filter("format_range", format_range);
     env.add_filter("format_coordinates", format_coordinates);
 
+    // --- filters (profile-engine additions) ---------------------------
+    env.add_filter("only_if_absolute_iri", only_if_absolute_iri);
+    env.add_filter("basename", basename);
+    env.add_filter("file_stem", file_stem);
+    env.add_filter("sanitize_iso_8601_interval", sanitize_iso_8601_interval);
+    env.add_filter("format_mailto", format_mailto);
+
     // --- globals (pure / non-SQL) -------------------------------------
     env.add_function("calculate_bbox_area", calculate_bbox_area);
     env.add_function("spatial_extent_wkt", spatial_extent_wkt);
@@ -88,6 +95,17 @@ pub fn register(env: &mut Environment) {
     env.add_function("spatial_resolution_in_meters", spatial_resolution_in_meters);
     env.add_function("get_column_null_percentage", get_column_null_percentage);
     env.add_function("get_column_stats", get_column_stats);
+
+    // --- globals (profile-engine additions, file-aware) ---------------
+    env.add_function("sha256_of", sha256_of);
+    env.add_function("blake3_of", blake3_of);
+    env.add_function("file_size_of", file_size_of);
+    env.add_function("compress_format", compress_format);
+    env.add_function("package_format", package_format);
+    env.add_function("build_csvw_schema", build_csvw_schema);
+    env.add_function("bbox_from_dpps", bbox_from_dpps);
+    env.add_function("temporal_from_dpps", temporal_from_dpps);
+    env.add_function("build_croissant_fields", build_croissant_fields);
 
     // --- globals (SQL-backed) -----------------------------------------
     // Backed by Polars SQL over the input CSV (see sql_backend.rs).
@@ -898,6 +916,358 @@ fn format_thousands(n: f64, decimals: usize) -> String {
         with_commas.push(c);
     }
     format!("{sign}{with_commas}{dec_part}")
+}
+
+// =========================================================================
+// Profile-engine helpers (added for YAML-driven projection)
+// =========================================================================
+
+/// `only_if_absolute_iri` filter — passes the value through if it parses
+/// as an absolute IRI with http/https/ftp/ftps/file scheme; otherwise
+/// returns minijinja's undefined sentinel so `| default(...)` chains
+/// can route to a fallback. Used by `dcat:landingPage`, `dcat:accessURL`,
+/// and similar IRI-typed slots to reject bare strings.
+fn only_if_absolute_iri(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    let lower = trimmed.to_ascii_lowercase();
+    for prefix in ["http://", "https://", "ftp://", "ftps://", "file://"] {
+        if lower.starts_with(prefix) {
+            return minijinja::Value::from(trimmed.to_string());
+        }
+    }
+    minijinja::Value::UNDEFINED
+}
+
+/// `basename` filter — returns the final path segment of `value`. Used
+/// to derive a `dct:title` fallback from the URL's last segment.
+fn basename(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// `file_stem` filter — returns the basename minus its extension. Used
+/// to derive a tempfile-stem-aware `dcat:Distribution.dct:title`.
+fn file_stem(value: &str) -> String {
+    std::path::Path::new(value)
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| value.to_string())
+}
+
+/// `sanitize_iso_8601_interval` filter — rejects interval / repeating
+/// ISO 8601 syntax (`R/P1Y`, `2024-01-01/2024-06-30`). Useful for
+/// `dct:modified` / `dct:issued` slots where a pure instant is expected;
+/// instead of forwarding a malformed interval, returns Jinja undefined
+/// so the field is suppressed.
+fn sanitize_iso_8601_interval(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.starts_with("R/") || trimmed.starts_with('R') && trimmed.contains("/P") {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.contains('/') && !trimmed.starts_with("http") {
+        // Likely interval form like 2024-01-01/2024-06-30.
+        return minijinja::Value::UNDEFINED;
+    }
+    minijinja::Value::from(trimmed.to_string())
+}
+
+/// `format_mailto` filter — trims whitespace and prepends `mailto:` if
+/// missing. Returns minijinja undefined for empty input so chained
+/// `| default` fallbacks work.
+fn format_mailto(value: &str) -> minijinja::Value {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    if trimmed.to_ascii_lowercase().starts_with("mailto:") {
+        minijinja::Value::from(trimmed.to_string())
+    } else {
+        minijinja::Value::from(format!("mailto:{trimmed}"))
+    }
+}
+
+/// `sha256_of` global — streaming SHA-256 of a local file as lowercase
+/// hex. Returns minijinja undefined on read failure (best-effort).
+fn sha256_of(path: &str) -> minijinja::Value {
+    use sha2::{Digest, Sha256};
+    let Ok(mut file) = std::fs::File::open(path) else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 65536];
+    use std::io::Read;
+    loop {
+        match file.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => hasher.update(&buf[..n]),
+            Err(_) => return minijinja::Value::UNDEFINED,
+        }
+    }
+    let digest = hasher.finalize();
+    minijinja::Value::from(format!("{digest:x}"))
+}
+
+/// `blake3_of` global — BLAKE3 digest of a local file as lowercase hex.
+/// Uses the qsv-wide blake3 dep with mmap+rayon for large-file speed.
+fn blake3_of(path: &str) -> minijinja::Value {
+    let mut hasher = blake3::Hasher::new();
+    if hasher.update_mmap_rayon(path).is_err() {
+        return minijinja::Value::UNDEFINED;
+    }
+    let digest = hasher.finalize();
+    minijinja::Value::from(digest.to_hex().to_string())
+}
+
+/// `file_size_of` global — byte length of a local file as a string.
+/// Matches the GSA `dcat:byteSize` convention (number serialized as
+/// string). Returns minijinja undefined on stat failure.
+fn file_size_of(path: &str) -> minijinja::Value {
+    match std::fs::metadata(path) {
+        Ok(m) => minijinja::Value::from(m.len().to_string()),
+        Err(_) => minijinja::Value::UNDEFINED,
+    }
+}
+
+/// `compress_format` global — IANA media type for single-file
+/// compressors derived from the path's extension. Returns minijinja
+/// undefined when the extension is unrecognized.
+fn compress_format(path: &str) -> minijinja::Value {
+    let lower = path.to_ascii_lowercase();
+    let m = match () {
+        _ if lower.ends_with(".gz") => "application/gzip",
+        _ if lower.ends_with(".zst") => "application/zstd",
+        _ if lower.ends_with(".bz2") => "application/x-bzip2",
+        _ if lower.ends_with(".xz") => "application/x-xz",
+        _ if lower.ends_with(".br") => "application/brotli",
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    minijinja::Value::from(m.to_string())
+}
+
+/// `package_format` global — IANA media type for archive containers
+/// derived from the path's extension. Returns minijinja undefined when
+/// the extension is unrecognized.
+fn package_format(path: &str) -> minijinja::Value {
+    let lower = path.to_ascii_lowercase();
+    let m = match () {
+        _ if lower.ends_with(".tar.gz") || lower.ends_with(".tgz") => "application/gzip",
+        _ if lower.ends_with(".tar") => "application/x-tar",
+        _ if lower.ends_with(".zip") => "application/zip",
+        _ if lower.ends_with(".7z") => "application/x-7z-compressed",
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    minijinja::Value::from(m.to_string())
+}
+
+/// `build_csvw_schema` global — walks a stats map (column-name → stats
+/// blob, the shape produced by `context.rs::build_dpps`) and emits a
+/// `{ columns: [...] }` shape suitable for `csvw:tableSchema`. Each
+/// column entry carries `name`, `titles`, `datatype`, plus the
+/// `qsv:cardinality`, `qsv:nullcount`, `qsv:min`, `qsv:max` extensions
+/// that the legacy `dcat.rs::build_distribution` emitted.
+///
+/// The datatype mapping uses the legacy `csvw_datatype` rule directly
+/// so wire-shape parity with the pre-YAML engine is preserved.
+fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
+    // Serialize the minijinja Value once into a JSON Value so we can
+    // walk it with native serde_json calls (works for both object and
+    // array shapes; recordset templates iterate via index instead).
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(cols) = stats_json.as_object() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let columns: Vec<serde_json::Value> = cols
+        .iter()
+        .map(|(name, blob)| {
+            // Legacy convention: per-column blob may carry a nested
+            // `stats` sub-object (Schema mode) or be flat (DPPS mode).
+            let stats_obj = blob.get("stats").unwrap_or(blob);
+            serde_json::json!({
+                "name":             name,
+                "titles":           [name],
+                "datatype":         csvw_datatype_legacy(stats_obj.get("type")),
+                "qsv:cardinality":  stats_obj.get("cardinality"),
+                "qsv:nullcount":    stats_obj.get("nullcount"),
+                "qsv:min":          stats_obj.get("min"),
+                "qsv:max":          stats_obj.get("max"),
+            })
+        })
+        .collect();
+    minijinja::Value::from_serialize(serde_json::json!({ "columns": columns }))
+}
+
+/// Mirror of the legacy `dcat::csvw_datatype` — maps qsv stats type
+/// strings to CSVW datatype IRIs. Kept here so the helper is
+/// self-contained and `dcat.rs` can be deleted in Stage 4 cleanup.
+fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
+    match t.and_then(serde_json::Value::as_str) {
+        Some("Integer") => "integer",
+        Some("Float") => "double",
+        Some("Boolean") => "boolean",
+        Some("Date") => "date",
+        Some("DateTime") => "dateTime",
+        Some("NULL") => "string",
+        _ => "string",
+    }
+}
+
+/// `bbox_from_dpps` global — derives a `dct:Location` array from the
+/// inferred LAT/LON column metadata in `dpp` and the per-column
+/// min/max in `stats`. Returns an array suitable for the
+/// `dct:spatial` slot (v3 cardinality 0..*), or undefined when no
+/// lat/lon columns were detected. Mirrors the legacy
+/// `dcat::bbox_from_dpps` so wire-shape parity is preserved.
+fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
+    let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let lat = dpp_json
+        .get("LAT_FIELD")
+        .and_then(serde_json::Value::as_str);
+    let lon = dpp_json
+        .get("LON_FIELD")
+        .and_then(serde_json::Value::as_str);
+    let (Some(lat), Some(lon)) = (lat, lon) else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let lookup = |field: &str, key: &str| -> Option<f64> {
+        let blob = stats_json.get(field)?;
+        let inner = blob.get("stats").unwrap_or(blob);
+        let v = inner.get(key)?;
+        v.as_f64()
+            .or_else(|| v.as_i64().map(|i| i as f64))
+            .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+    };
+    let (min_lon, max_lon, min_lat, max_lat) = match (
+        lookup(lon, "min"),
+        lookup(lon, "max"),
+        lookup(lat, "min"),
+        lookup(lat, "max"),
+    ) {
+        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    let polygon = format!(
+        "POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} \
+         {min_lat}, {min_lon} {min_lat}))"
+    );
+    minijinja::Value::from_serialize(serde_json::json!([{
+        "@type": "dct:Location",
+        "dcat:bbox": polygon,
+    }]))
+}
+
+/// `temporal_from_dpps` global — derives a `dct:PeriodOfTime` array,
+/// one entry per inferred date column. Returns undefined when no
+/// date columns were detected. Mirrors the legacy
+/// `dcat::temporal_from_dpps` (v3 cardinality 0..*).
+fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
+    let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(dates) = dpp_json
+        .get("DATE_FIELDS")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for field_v in dates {
+        let Some(field) = field_v.as_str() else {
+            continue;
+        };
+        let blob = stats_json
+            .get(field)
+            .and_then(|b| b.get("stats").or(Some(b)));
+        let Some(start) = blob.and_then(|b| b.get("min")).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(end) = blob.and_then(|b| b.get("max")).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        out.push(serde_json::json!({
+            "@type":          "dct:PeriodOfTime",
+            "dcat:startDate": start,
+            "dcat:endDate":   end,
+        }));
+    }
+    if out.is_empty() {
+        return minijinja::Value::UNDEFINED;
+    }
+    minijinja::Value::from_serialize(out)
+}
+
+/// `build_croissant_fields` global — walks a stats map (column-name →
+/// stats blob) and emits a flat array of `cr:Field` objects suitable
+/// for Croissant's `recordSet[0].field` slot. The datatype maps
+/// through the profile's `croissant_datatype` vocabulary (sc:Text /
+/// sc:Integer / sc:Float / sc:Date / sc:DateTime / sc:Boolean / sc:URL).
+///
+/// Distinct from `build_csvw_schema`: that helper emits CSVW-shaped
+/// `{columns: [...]}` for DCAT's `csvw:tableSchema`; this one emits
+/// a top-level array of Field entries for Croissant's
+/// `cr:RecordSet.field`.
+fn build_croissant_fields(stats: minijinja::Value) -> minijinja::Value {
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(cols) = stats_json.as_object() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let fields: Vec<serde_json::Value> = cols
+        .iter()
+        .map(|(name, blob)| {
+            let stats_obj = blob.get("stats").unwrap_or(blob);
+            let qsv_type = stats_obj
+                .get("type")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("String");
+            // Map via Croissant atomic types; default sc:Text.
+            let datatype = match qsv_type {
+                "Integer" => "sc:Integer",
+                "Float" => "sc:Float",
+                "Boolean" => "sc:Boolean",
+                "Date" => "sc:Date",
+                "DateTime" => "sc:DateTime",
+                "URL" => "sc:URL",
+                _ => "sc:Text",
+            };
+            serde_json::json!({
+                "@type":              "cr:Field",
+                "@id":                format!("main-table/{name}"),
+                "name":               name,
+                "description":        format!("Column `{name}` from the source CSV."),
+                "dataType":           datatype,
+                "qsv:cardinality":    stats_obj.get("cardinality"),
+                "qsv:nullcount":      stats_obj.get("nullcount"),
+            })
+        })
+        .collect();
+    minijinja::Value::from_serialize(fields)
 }
 
 // =====================================================================

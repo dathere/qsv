@@ -1,0 +1,244 @@
+# Croissant 1.0 ML metadata profile (https://github.com/mlcommons/croissant)
+#
+# Emits a schema.org-rooted JSON-LD document conforming to Croissant
+# 1.0. The @context inlines the schema.org @vocab plus the cr: and
+# dct: prefix shorthands, matching the canonical Croissant
+# examples. Per-column RecordSet/Field expansion is engine-native
+# (projection::emit_recordset honors `for_each_column: true`).
+#
+# Validation: disabled (no published JSON Schema upstream; Croissant
+# uses Python validator https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
+# Discovery: disabled (Croissant isn't typically discovered from
+# CKAN-shaped publisher metadata).
+
+name: croissant
+version: 1.0.0
+about: Croissant ML metadata format (mlcommons.org)
+about_url: https://github.com/mlcommons/croissant
+
+# =========================================================================
+# Named vocabularies
+# =========================================================================
+
+vocabularies:
+  # Same license_iri table — Croissant doesn't define its own license
+  # vocabulary; users supply IRIs / SPDX identifiers / free text.
+  license_iri:
+    cc-by:     "http://creativecommons.org/licenses/by/4.0/"          # DevSkim: ignore DS137138
+    cc-by-sa:  "http://creativecommons.org/licenses/by-sa/4.0/"       # DevSkim: ignore DS137138
+    cc-zero:   "http://creativecommons.org/publicdomain/zero/1.0/"    # DevSkim: ignore DS137138
+    odc-by:    "http://opendatacommons.org/licenses/by/1.0/"          # DevSkim: ignore DS137138
+    odc-pddl:  "http://opendatacommons.org/licenses/pddl/1.0/"        # DevSkim: ignore DS137138
+
+  # qsv stats type → Croissant/schema.org datatype IRI. Atomic types
+  # only; ML-specific (cr:BoundingBox, cr:Split, cr:Label) require
+  # explicit user opt-in via formula output.
+  croissant_datatype:
+    String:      "sc:Text"
+    Integer:     "sc:Integer"
+    Float:       "sc:Float"
+    Boolean:     "sc:Boolean"
+    Date:        "sc:Date"
+    DateTime:    "sc:DateTime"
+    URL:         "sc:URL"
+    NULL:        "sc:Text"
+
+# =========================================================================
+# CKAN → Croissant pointer mappings
+# =========================================================================
+# Croissant top-level keys are schema.org bare names (no namespace
+# prefix); `@vocab` in the @context resolves them to schema.org IRIs.
+
+field_mappings:
+  - { ckan: "/package/title",                target: "/dcat/name" }
+  - { ckan: "/package/notes",                target: "/dcat/description" }
+  - { ckan: "/package/name",                 target: "/dcat/identifier" }
+  - { ckan: "/package/metadata_created",     target: "/dcat/datePublished" }
+  - { ckan: "/package/metadata_modified",    target: "/dcat/dateModified" }
+  - { ckan: "/package/publisher",            target: "/dcat/publisher" }
+  - { ckan: "/package/author",               target: "/dcat/creator" }
+  - { ckan: "/package/tags",                 target: "/dcat/keywords" }
+  - { ckan: "/package/language",             target: "/dcat/inLanguage" }
+  - { ckan: "/package/landing_page",         target: "/dcat/url" }
+  - { ckan: "/package/url",                  target: "/dcat/url" }
+  - { ckan: "/package/version",              target: "/dcat/version" }
+  - { ckan: "/resource/url",                 target: "/dcat/distribution/0/contentUrl" }
+  - { ckan: "/resource/format",              target: "/dcat/distribution/0/encodingFormat" }
+  - { ckan: "/resource/license_id",          target: "/dcat/license" }
+  - { ckan: "/resource/license",             target: "/dcat/license" }
+
+# =========================================================================
+# Schema validation: disabled
+# =========================================================================
+# Croissant uses a Python validator (mlcroissant); JSON Schema isn't
+# upstream. Future enhancement: invoke the Python validator
+# out-of-process when available.
+validation:
+  enabled: false
+  strippable_curie_prefixes: []
+
+# =========================================================================
+# Dataset projection
+# =========================================================================
+# Croissant's @context is an inline map, not a single URI. Field
+# paths use schema.org bare keys since @vocab resolves them.
+
+dataset:
+  type: "sc:Dataset"
+  context:
+    "@language":  "en"
+    "@vocab":     "https://schema.org/"
+    cr:           "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
+    dct:          "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
+    conformsTo:   "dct:conformsTo"
+  fields:
+    - path: "name"
+      template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
+      required_level: required
+
+    - path: "description"
+      template: '{{ pkg.notes | default("") }}'
+      required_level: required
+
+    - path: "identifier"
+      template: '{{ pkg.name | default("") }}'
+      emit_when: '{{ (pkg.name | default("")) != "" }}'
+
+    - path: "conformsTo"
+      template: 'http://mlcommons.org/croissant/1.0'
+
+    - path: "license"
+      template: |
+        {%- set raw = (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
+      emit_when: '{{ (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) != "" }}'
+
+    - path: "url"
+      template: '{{ (pkg.landing_page | default(pkg.url | default(""))) | only_if_absolute_iri }}'
+      emit_when: '{{ (pkg.landing_page | default(pkg.url | default(""))) != "" }}'
+
+    - path: "creator"
+      template: |
+        {%- set name = pkg.author | default(pkg.publisher | default("")) -%}
+        {%- if name != "" -%}{ "@type": "Organization", "name": {{ name | tojson }} }{%- endif -%}
+      emit_when: '{{ (pkg.author | default(pkg.publisher | default(""))) != "" }}'
+
+    - path: "publisher"
+      template: |
+        {%- set name = pkg.publisher | default(pkg.author | default("")) -%}
+        {%- if name != "" -%}{ "@type": "Organization", "name": {{ name | tojson }} }{%- endif -%}
+      emit_when: '{{ (pkg.publisher | default(pkg.author | default(""))) != "" }}'
+
+    - path: "datePublished"
+      template: '{{ pkg.metadata_created | default("") }}'
+      emit_when: '{{ (pkg.metadata_created | default("")) != "" }}'
+
+    - path: "dateModified"
+      template: '{{ pkg.metadata_modified | default("") | sanitize_iso_8601_interval }}'
+      emit_when: '{{ (pkg.metadata_modified | default("")) != "" }}'
+
+    - path: "keywords"
+      template: |
+        {%- if pkg.tags -%}
+        [{% for t in pkg.tags %}{% if not loop.first %},{% endif %}
+        {%- if t is string %}{{ t | tojson }}{% else %}{{ (t.name | default(t)) | tojson }}{% endif -%}
+        {% endfor %}]
+        {%- endif -%}
+      emit_when: '{{ pkg.tags is defined and pkg.tags | length > 0 }}'
+
+    - path: "inLanguage"
+      template: '{{ lookup("iso_639_1", pkg.language | default("")) | default(pkg.language | default("")) }}'
+      emit_when: '{{ (pkg.language | default("")) != "" }}'
+
+    - path: "version"
+      template: '{{ pkg.version | default("") }}'
+      emit_when: '{{ (pkg.version | default("")) != "" }}'
+
+# =========================================================================
+# Distribution projection — schema.org FileObject shape
+# =========================================================================
+# Croissant Distribution is sc:FileObject (or sc:FileSet for multi-
+# file datasets). We emit one FileObject per CKAN resource. Hash
+# default is BLAKE3 since Croissant has no SPDX-mandated algorithm
+# and qsv's native blake3 (mmap + rayon) is markedly faster than
+# SHA-256 on multi-GB ML training data.
+
+distribution:
+  type: "sc:FileObject"
+  # Croissant uses bare `distribution` (schema.org @vocab resolves it)
+  # rather than the DCAT `dcat:distribution` shape.
+  path: "distribution"
+  fields:
+    - path: "name"
+      template: '{{ res.name | default(source_label | basename) | default("data.csv") }}'
+
+    - path: "description"
+      template: '{{ res.description | default("") }}'
+      emit_when: '{{ (res.description | default("")) != "" }}'
+
+    - path: "contentUrl"
+      template: '{{ (res.url | default("")) | only_if_absolute_iri }}'
+      emit_when: '{{ (res.url | default("")) != "" }}'
+
+    - path: "qsv:sourcePath"
+      template: '{{ source_label }}'
+
+    - path: "encodingFormat"
+      template: '{{ res.format | default("text/csv") }}'
+
+    - path: "contentSize"
+      template: '{{ file_size_of(local_path) }}'
+      emit_when: '{{ file_size_of(local_path) is defined }}'
+
+    # Croissant's sha256 / md5 / blake3 keys are inlined as direct
+    # properties on FileObject. We pick BLAKE3 for performance.
+    - path: "cr:fileFingerprint"
+      template: |
+        { "@type": "cr:Checksum",
+          "cr:algorithm": "BLAKE3",
+          "cr:checksumValue": {{ blake3_of(local_path) | tojson }} }
+      emit_when: '{{ blake3_of(local_path) is defined }}'
+
+# =========================================================================
+# RecordSets — one cr:Field per CSV column
+# =========================================================================
+# Croissant requires at least one cr:RecordSet per Dataset (1..*).
+# The for_each_column flag drives the engine to iterate the stats
+# map and emit one Field per CSV column. qsv stats type maps to
+# Croissant atomic dataType via the croissant_datatype vocabulary.
+
+recordsets:
+  - path: "recordSet"
+    for_each_column: false
+    template: |
+      [{
+        "@type": "cr:RecordSet",
+        "@id": "main-table",
+        "name": "main-table",
+        "description": "One record per CSV row.",
+        "field": {{ build_croissant_fields(stats) | tojson }}
+      }]
+
+# =========================================================================
+# Catalog: not applicable
+# =========================================================================
+# Croissant 1.0 has no Catalog envelope; --catalog with this profile
+# falls back to a minimal sc:DataCatalog shell wrapping a single
+# sc:Dataset. Provided primarily for federation parity.
+
+catalog:
+  type: "sc:DataCatalog"
+  title_template: '{%- if inner.name -%}Catalog of {{ inner.name }}{%- else -%}Croissant DataCatalog{%- endif -%}'
+  inherit_from_dataset:
+    - "publisher"
+  conforms_to: "http://mlcommons.org/croissant/1.0"        # DevSkim: ignore DS137138
+
+# =========================================================================
+# Discovery merge — disabled
+# =========================================================================
+# Croissant typically lives alongside ML training datasets, not in
+# CKAN-style data portals, so publisher-DCAT-discovery isn't
+# applicable.
+
+discovery_merge:
+  enabled: false

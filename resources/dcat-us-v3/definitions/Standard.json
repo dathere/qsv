@@ -1,0 +1,242 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/standard",
+  "title": "Standard",
+  "description": "A standard or specification that another resource conforms to",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/standards/dcat-us-3"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "Standard"
+    },
+    "created": {
+      "title": "creation date",
+      "description": "The date on which the Standard has been first created",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:created",
+        "range": "xsd:date"
+      },
+      "examples": ["2023-01-01", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "description": {
+      "title": "description",
+      "description": "Plain-language summary of the standard",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:description",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "Data Catalog Vocabulary - United States Profile version 3.0",
+        "The DCAT-US 3.0 schema defines a standard metadata format for data catalogs in the United States government, based on W3C DCAT."
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "identifier": {
+      "title": "identifier",
+      "description": "The unique identifier for the Standard, e.g. the URI or other unique identifier in the context of the Catalog",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/identifier",
+          "description": "inline description of Identifier"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:identifier",
+        "range": "xsd:string"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "otherIdentifier": {
+      "title": "other identifier",
+      "description": "A list of identifiers for the Standard besides the main identifier, e.g. the URI or other unique identifiers in the context of the Catalog",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/identifier"
+      },
+      "requirementLevel": "Optional"
+    },
+    "issued": {
+      "title": "issued",
+      "description": "The date of formal issuance (e.g., publication) of the Standard",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:issued",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2024-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Recommended"
+    },
+    "modified": {
+      "title": "last modified",
+      "description": "The most recent date on which the Standard was changed or modified",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:modified",
+        "range": "xsd:date"
+      },
+      "examples": ["2024-06-01", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "title": {
+      "title": "title",
+      "description": "Human-readable title of the standard",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:title",
+        "range": "xsd:string"
+      },
+      "examples": [
+        "DCAT-US 3.0",
+        "DCAT-US 3.0 - Data Catalog Vocabulary United States Profile"
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "category": {
+      "title": "category",
+      "description": "List of categories for the Standard",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "requirementLevel": "Optional"
+    },
+    "inScheme": {
+      "title": "in scheme",
+      "description": "The reference register to which the Standard belongs",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/conceptscheme",
+          "description": "inline description of ConceptScheme"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "skos:inScheme",
+        "range": "skos:ConceptScheme"
+      },
+      "requirementLevel": "Recommended"
+    }
+  },
+  "required": [],
+  "_oldDocs": {
+    "rdfClass": "dcterms:Standard",
+    "rationale": "The inclusion of dcterms:Standard in DCAT-US accommodates standard references through URLs or custom, detailed descriptions when specific standards are not available, promoting flexibility and completeness in resource metadata."
+  },
+  "examples": [
+    {
+      "@type": "Standard",
+      "title": "DCAT-US 3.0",
+      "description": "Data Catalog Vocabulary - United States Profile version 3.0",
+      "issued": "2024-01-15",
+      "identifier": {
+        "@type": "Identifier",
+        "notation": "DCAT-US-3.0",
+        "schemaAgency": "U.S. General Services Administration"
+      },
+      "inScheme": {
+        "@type": "ConceptScheme",
+        "title": "Federal Data Standards",
+        "description": "A collection of data standards used by federal agencies"
+      }
+    }
+  ]
+}

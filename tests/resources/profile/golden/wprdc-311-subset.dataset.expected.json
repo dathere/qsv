@@ -1,0 +1,220 @@
+{
+  "@type": "dcat:Dataset",
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
+  "dct:title": "Example Dataset (init-context override)",
+  "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
+  "dct:identifier": "example-dataset",
+  "dct:issued": "2024-01-01",
+  "dct:modified": "2024-12-31T23:59:59Z",
+  "dct:publisher": {
+    "@type": "foaf:Agent",
+    "foaf:name": "Example Agency"
+  },
+  "dcat:contactPoint": {
+    "@type": "vcard:Individual",
+    "vcard:fn": "Jane Doe",
+    "vcard:hasEmail": "mailto:jane.doe@example.gov"
+  },
+  "dcat:keyword": [
+    "climate",
+    "transportation"
+  ],
+  "dcat:theme": [
+    "transportation"
+  ],
+  "dct:spatial": [
+    {
+      "@type": "dct:Location",
+      "dcat:bbox": "POLYGON((-80.0207 40.3978, -80.0207 40.4837, -79.9197 40.4837, -79.9197 40.3978, -80.0207 40.3978))"
+    }
+  ],
+  "dcat-us:bureauCode": [
+    "015:11"
+  ],
+  "dcat-us:programCode": [
+    "015:001"
+  ],
+  "dcat-us:accessLevel": "public",
+  "dct:conformsTo": [
+    {
+      "@type": "dct:Standard",
+      "@id": "https://resources.data.gov/resources/dcat-us3/"
+    }
+  ],
+  "dct:language": "en",
+  "dcat:landingPage": "https://example.gov/datasets/example-dataset",
+  "dcat:describedBy": "https://example.gov/datasets/example-dataset/data-dictionary.json",
+  "dct:rights": "U.S. Government Work",
+  "dct:accessRights": "public",
+  "dcat-us:purpose": "Track example metric over time.",
+  "skos:scopeNote": "Records cover calendar years 2020-2024 only.",
+  "dcat-us:liabilityStatement": "Provided as-is; verify before operational use.",
+  "dcat:inSeries": "https://example.gov/datasets/example-series",
+  "dct:accrualPeriodicity": {
+    "@id": "http://publications.europa.eu/resource/authority/frequency/ANNUAL"
+  },
+  "dct:created": "2023-06-15",
+  "dcat:version": "1.2.0",
+  "dcat:versionNotes": "Q3 2024 refresh — added new sensors and corrected historical timestamps.",
+  "dcat:distribution": [
+    {
+      "@type": "dcat:Distribution",
+      "dct:title": "example",
+      "dct:description": "Single-CSV distribution of the example dataset.",
+      "dcat:downloadURL": "https://example.gov/datasets/example-dataset/data.csv",
+      "dcat:mediaType": "text/csv",
+      "dct:format": "CSV",
+      "dct:license": "http://creativecommons.org/licenses/by/4.0/",
+      "dcat:accessURL": "https://example.gov/datasets/example-dataset",
+      "dct:rights": "U.S. Government Work",
+      "dct:modified": "2024-12-15T08:30:00",
+      "dcat-us:accessRestriction": {
+        "type": "none"
+      },
+      "dcat-us:useRestriction": {
+        "type": "none"
+      },
+      "dcat-us:cuiRestriction": {
+        "type": "none"
+      },
+      "dct:language": "en",
+      "dct:conformsTo": [
+        {
+          "@type": "dct:Standard",
+          "@id": "https://www.w3.org/TR/tabular-data-model/"
+        }
+      ],
+      "dcat:byteSize": "1295",
+      "dcat:checksum": {
+        "@type": "spdx:Checksum",
+        "spdx:algorithm": "SHA-256",
+        "spdx:checksumValue": "810690c257210c867534414f3b1f4003f3cd72aa26286bf59a6f6e6f72ee1a51"
+      },
+      "csvw:tableSchema": {
+        "columns": [
+          {
+            "datatype": "integer",
+            "name": "COUNCIL_DISTRICT",
+            "qsv:cardinality": 7,
+            "qsv:max": "9",
+            "qsv:min": "2",
+            "qsv:nullcount": 0,
+            "titles": [
+              "COUNCIL_DISTRICT"
+            ]
+          },
+          {
+            "datatype": "dateTime",
+            "name": "CREATED_ON",
+            "qsv:cardinality": 10,
+            "qsv:max": "2024-02-01T17:20:00+00:00",
+            "qsv:min": "2024-02-01T08:15:00+00:00",
+            "qsv:nullcount": 0,
+            "titles": [
+              "CREATED_ON"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "DEPARTMENT",
+            "qsv:cardinality": 6,
+            "qsv:max": "Refuse",
+            "qsv:min": "DPW - Forestry",
+            "qsv:nullcount": 0,
+            "titles": [
+              "DEPARTMENT"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "NEIGHBORHOOD",
+            "qsv:cardinality": 10,
+            "qsv:max": "Squirrel Hill South",
+            "qsv:min": "Bloomfield",
+            "qsv:nullcount": 0,
+            "titles": [
+              "NEIGHBORHOOD"
+            ]
+          },
+          {
+            "datatype": "integer",
+            "name": "REQUEST_ID",
+            "qsv:cardinality": 10,
+            "qsv:max": "3001010",
+            "qsv:min": "3001001",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_ID"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "REQUEST_ORIGIN",
+            "qsv:cardinality": 3,
+            "qsv:max": "Call Center",
+            "qsv:min": "311 Mobile App",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_ORIGIN"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "REQUEST_TYPE",
+            "qsv:cardinality": 10,
+            "qsv:max": "Weeds/Debris",
+            "qsv:min": "Building - Commercial",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_TYPE"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "STATUS",
+            "qsv:cardinality": 2,
+            "qsv:max": "Open",
+            "qsv:min": "Closed",
+            "qsv:nullcount": 0,
+            "titles": [
+              "STATUS"
+            ]
+          },
+          {
+            "datatype": "integer",
+            "name": "WARD",
+            "qsv:cardinality": 8,
+            "qsv:max": "29",
+            "qsv:min": "2",
+            "qsv:nullcount": 0,
+            "titles": [
+              "WARD"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "X",
+            "qsv:cardinality": 10,
+            "qsv:max": "-79.9197",
+            "qsv:min": "-80.0207",
+            "qsv:nullcount": 0,
+            "titles": [
+              "X"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "Y",
+            "qsv:cardinality": 10,
+            "qsv:max": "40.4837",
+            "qsv:min": "40.3978",
+            "qsv:nullcount": 0,
+            "titles": [
+              "Y"
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

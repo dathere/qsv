@@ -36,26 +36,21 @@ profile options:
                               resource dicts plus optional JSON-Pointer
                               overrides for the final DCAT block. Replaces
                               the older --package-meta / --resource-meta
-                              flags. Shape:
-                                {
-                                  "package":  {"title": "...", ...},
-                                  "resource": {"format": "CSV", ...},
-                                  "dataset_info": {
-                                    "/dcat/dct:title": "Force override"
-                                  }
-                                }
-                              Each leaf value may also be wrapped as
-                              {"value": ..., "force": true} to mark it
-                              as overriding any value discovered from
-                              the URL's existing DCAT markup. For
-                              dataset_info entries, `force: true` is
-                              honored at merge time: discovered DCAT
-                              will NOT overlay forced paths even when
-                              the inferred projection left them
-                              absent. (Force on package/resource
-                              entries is accepted and stripped but
-                              has no merge-time effect yet — needs
-                              a CKAN→DCAT pointer mapping table.)
+                              flags. Top-level keys: `package`, `resource`,
+                              `dataset_info`. Each leaf value may be wrapped
+                              as {"value": ..., "force": true} to mark it as
+                              overriding any value discovered from URL DCAT
+                              markup AND any value qsv inferred. Force is
+                              honored across all three subtrees: dataset_info
+                              entries override their target path verbatim;
+                              package / resource entries route through the
+                              active profile's `field_mappings:` table (e.g.
+                              `package.title force=true` lands at
+                              `/dcat/dct:title`, beating inference and
+                              discovery). Forced values for slots the profile
+                              does not surface are silently dropped (no-op).
+                              See tests/resources/profile/dcat-init-context.README.md
+                              for a fully-populated example.
     --no-dcat                 Skip the DCAT-US v3 projection block.
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
@@ -70,11 +65,26 @@ profile options:
     --dcat-discovery-timeout <secs>  Per-request timeout for DCAT-markup
                               discovery probes. Default: 5.
     --validate-dcat           Validate the emitted dcat block against the
-                              embedded minimal DCAT-US v3 schema (covers
-                              the mandatory fields). Violations append to
-                              dcat_warnings by default.
+                              vendored GSA DCAT-US v3 JSON Schema bundle
+                              (see resources/dcat-us-v3/). Catches missing
+                              mandatory fields, cardinality issues, and
+                              shape violations across the full v3 spec.
+                              Violations append to dcat_warnings by default.
     --strict-dcat             With --validate-dcat, fail the command on
                               any schema violation instead of warning.
+    --catalog                 Wrap the emitted DCAT-US v3 Dataset inside a
+                              dcat:Catalog envelope (Catalog{dataset:[...]}).
+                              Useful for federation harvesters (data.gov,
+                              CKAN ingest) that expect Catalog-shaped
+                              top-level metadata. Default: off
+                              (Dataset-only, backwards-compatible).
+    --profile <name|path>     Metadata projection profile to use. Embedded
+                              names: dcat-us-v3 (default), dcat-ap-v3,
+                              croissant. A path to a custom YAML profile
+                              is also accepted; embedded names always win
+                              over same-named files. See
+                              resources/profiles/README.md for the schema
+                              and authoring guide.
     --force                   Force recomputing cardinality and unique values
                               even if a stats cache file exists.
     -j, --jobs <arg>          The number of jobs to run in parallel for the
@@ -103,11 +113,13 @@ use serde_json::{Value, json};
 use crate::{CliError, CliResult, util};
 
 mod context;
-mod dcat;
 mod dcat_discover;
 mod dcat_validate;
+mod discovery_merge;
 mod formula_engine;
 mod formula_helpers;
+mod profile_spec;
+mod projection;
 mod spec;
 mod sql_backend;
 
@@ -122,6 +134,8 @@ struct Args {
     flag_dcat_discovery_timeout: Option<u64>,
     flag_validate_dcat:          bool,
     flag_strict_dcat:            bool,
+    flag_catalog:                bool,
+    flag_profile:                Option<String>,
     flag_no_ckan:                bool,
     flag_force:                  bool,
     flag_jobs:                   Option<usize>,
@@ -177,6 +191,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => None,
     };
 
+    // --- 1b. load the projection profile (YAML-driven engine) -------------
+    // Defaults to "dcat-us-v3" when --profile is omitted, preserving the
+    // pre-YAML-engine behavior. The dry_compile pass catches malformed
+    // templates BEFORE we run stats / frequency / formula evaluation, so
+    // a typo in a profile YAML doesn't burn 30s of upstream work first.
+    let profile_arg = args.flag_profile.as_deref().unwrap_or("dcat-us-v3");
+    // load() validates templates via dry_compile internally — a
+    // malformed embedded profile or a user-supplied file with a typo
+    // surfaces here before stats / frequency / formulas run.
+    let profile = profile_spec::load(profile_arg)?;
+
     // --- 2. run stats + frequency, build analysis context -----------------
     let ctx_args = context::ContextArgs {
         input_path:      &input_path,
@@ -186,6 +211,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         force:           args.flag_force,
         memcheck:        args.flag_memcheck,
         initial_context: args.flag_initial_context.as_deref(),
+        profile:         &profile,
     };
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
 
@@ -254,7 +280,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 .or_insert_with(|| Value::String(dt.to_string()));
         }
     }
-    merge_formula_results(&mut package, &mut resource, &formula_results);
+    merge_formula_results(
+        &mut package,
+        &mut resource,
+        &formula_results,
+        &analysis.forced_package_fields,
+        &analysis.forced_resource_fields,
+    );
 
     // When the input was a URL, stamp it as the resource URL so the DCAT
     // projection's `dcat:downloadURL` slot gets populated (subject to the
@@ -338,23 +370,50 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        // Pass both the on-disk `input_path` (used for `fs::metadata` →
-        // `dcat:byteSize`) and the human-facing `display_input` (used
-        // for `qsv:sourcePath` and the Distribution title default) so
-        // URL/stdin inputs neither lose byte-size metadata nor leak the
-        // random tempfile suffix into emitted DCAT.
-        let (dcat_block, dcat_build_warnings) = dcat::build(
-            &package,
-            &[resource.clone()],
-            &dpp,
-            &stats,
-            &input_path,
-            &display_input,
-            args.flag_dcat_legacy_license,
+        // Build the projection context: the YAML's field templates
+        // reference these top-level names. `pkg` and `res` are the
+        // merged CKAN package + resource; `source_label` is the
+        // user-facing path/URL/"stdin"; `local_path` is the actual
+        // on-disk file (tempfile path for URL/stdin inputs); `stats`
+        // is the dpps stats array used by csvw:tableSchema.
+        // Roborev #2490 finding #4: thread the --dcat-legacy-license
+        // flag into the projection context so the YAML templates can
+        // optionally re-emit dct:license at the Dataset level (DCAT
+        // v1.1 back-compat). Strict v3 keeps license on Distribution
+        // only; the flag is off by default.
+        let projection_ctx = json!({
+            "pkg":            package,
+            "res":            resource,
+            "stats":          stats,
+            "dpp":            dpp,
+            "source_label":   display_input,
+            "local_path":     input_path,
+            "legacy_license": args.flag_dcat_legacy_license,
+        });
+        // Always project in Dataset mode first, so the discovery merge
+        // applies to the Dataset's top-level keys before the Catalog
+        // envelope is wrapped around them (Roborev #2490 finding #1).
+        // Wrapping first would push discovered Dataset metadata onto
+        // the outer Catalog (where keys like `dct:contactPoint`
+        // shouldn't live) instead of the inner Dataset.
+        let (dataset_block, mut projection_warnings) = projection::project(
+            &profile,
+            &projection_ctx,
+            projection::ProjectionMode::Dataset,
+        )?;
+        let merged_dataset = discovery_merge::merge(
+            &profile,
+            dataset_block,
+            discovered_dcat.as_ref(),
+            &analysis.forced_dcat_paths,
         );
-        let merged_dcat = match discovered_dcat.as_ref() {
-            Some(disc) => merge_discovered(dcat_block, disc, &analysis.forced_dcat_paths),
-            None => dcat_block,
+        let merged_dcat = if args.flag_catalog {
+            let (catalog_block, cat_warnings) =
+                projection::wrap_in_catalog_envelope(&profile, merged_dataset, &projection_ctx)?;
+            projection_warnings.extend(cat_warnings);
+            catalog_block
+        } else {
+            merged_dataset
         };
         out_map.insert("dcat".to_string(), merged_dcat);
         // Stash the build-time warnings for now; we'll insert them
@@ -362,8 +421,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // their say so the final dcat_warnings array reflects the
         // emitted dcat block, not an intermediate snapshot.
         out_map.insert(
-            "__pending_dcat_warnings".to_string(),
-            serde_json::to_value(&dcat_build_warnings).unwrap_or(json!([])),
+            "__pending_projection_warnings".to_string(),
+            serde_json::to_value(&projection_warnings).unwrap_or(json!([])),
         );
         // Surface the raw discovered DCAT alongside the merged block so
         // downstream tooling can diff or audit what came from the
@@ -373,15 +432,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // --initial-context's `dataset_info` JSON-Pointer overrides are the
-    // final escape hatch — applied unconditionally over inference,
-    // discovery, the CKAN block, and formula output. Must run BEFORE
-    // schema validation so an override that supplies a missing
-    // mandatory field doesn't trip --strict-dcat. Per plan §4c.
+    // --initial-context's `dataset_info` JSON-Pointer overrides are
+    // applied first — unconditionally over inference, discovery, the
+    // CKAN block, and formula output. Must run BEFORE schema
+    // validation so an override that supplies a missing mandatory
+    // field doesn't trip --strict-dcat. Per plan §4c.
     if let Some(overrides) = analysis.dataset_info.as_object()
         && !overrides.is_empty()
     {
         apply_pointer_overrides(&mut output, overrides);
+    }
+
+    // §5.4: forced `(dcat_pointer, value)` pairs from all three
+    // subtrees (dataset_info, package, resource — package/resource keys
+    // translated via the active profile's `field_mappings:` table, see
+    // `ProfileSpec::translate_ckan_ptr`). Applied AFTER apply_pointer_overrides so a
+    // `{value, force: true}` wrapper beats both inferred metadata
+    // AND publisher-discovered DCAT, with last-write-wins on
+    // aliasing pointers. Still runs BEFORE schema validation so a
+    // forced field can rescue --strict-dcat the same way
+    // dataset_info entries do.
+    if !analysis.forced_values.is_empty() {
+        apply_force_overrides(&mut output, &analysis.forced_values);
     }
 
     // Phase 6 (post-override): JSON Schema validation runs on the
@@ -392,19 +464,24 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // then merges schema violations into the final dcat_warnings array.
     if !args.flag_no_dcat {
         let out_map = output.as_object_mut().unwrap();
-        let stashed: Vec<dcat::DcatWarning> = out_map
-            .remove("__pending_dcat_warnings")
+        let stashed: Vec<projection::ProjectionWarning> = out_map
+            .remove("__pending_projection_warnings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
+        // Stale-warning filter consults the final dcat shape. For
+        // Catalog mode the build-time warnings still reference Dataset
+        // fields by name (`dcat:contactPoint`), so the filter must walk
+        // into `dcat:dataset[0]` when it's present.
         let final_dcat_snapshot = out_map.get("dcat").cloned();
-        let mut dcat_warnings: Vec<dcat::DcatWarning> = stashed
+        let mut dcat_warnings: Vec<projection::ProjectionWarning> = stashed
             .into_iter()
             .filter(|w| !final_dcat_has_field(final_dcat_snapshot.as_ref(), &w.field))
             .collect();
+
         if args.flag_validate_dcat
             && let Some(final_dcat) = out_map.get("dcat")
         {
-            let validation = dcat_validate::validate_dataset(final_dcat);
+            let validation = dcat_validate::validate(&profile, final_dcat);
             if !validation.is_empty() && args.flag_strict_dcat {
                 let summary = validation
                     .iter()
@@ -473,12 +550,21 @@ fn merge_formula_results(
     package: &mut Value,
     resource: &mut Value,
     results: &[formula_engine::FormulaResult],
+    forced_package_fields: &std::collections::HashSet<String>,
+    forced_resource_fields: &std::collections::HashSet<String>,
 ) {
     if results.is_empty() {
         return;
     }
 
     // Pass 1: stamp `formula` results onto the package/resource fields.
+    // Roborev #2491: skip fields the user marked `force: true` in the
+    // initial-context so a spec formula can't overwrite the forced
+    // CKAN value before projection. The forced value already lives in
+    // package/resource via normalize_value_force; preserving it here
+    // honors the documented "force beats inferred" guarantee while
+    // still letting the value flow through the profile templates for
+    // shaping.
     {
         let pkg = ensure_object(package);
         let res = ensure_object(resource);
@@ -489,9 +575,15 @@ fn merge_formula_results(
             let value = r.value.clone().unwrap_or(Value::Null);
             match r.scope.as_str() {
                 "dataset" => {
+                    if forced_package_fields.contains(&r.field_name) {
+                        continue;
+                    }
                     pkg.insert(r.field_name.clone(), value);
                 },
                 "resource" => {
+                    if forced_resource_fields.contains(&r.field_name) {
+                        continue;
+                    }
                     res.insert(r.field_name.clone(), value);
                 },
                 _ => {},
@@ -501,7 +593,10 @@ fn merge_formula_results(
 
     // Pass 2: collect `suggestion_formula` results under
     // package.dpp_suggestions. Done after pass 1 finishes so we hold no
-    // overlapping mutable borrows of `package`.
+    // overlapping mutable borrows of `package`. Suggestions are
+    // advisory and live in a separate namespace; they are NOT subject
+    // to the force-skip (a suggestion that targets `spatial_extent`
+    // doesn't overwrite a forced `pkg.publisher`).
     let mut sugg_entries: Vec<(String, Value)> = Vec::new();
     for r in results {
         if r.kind != "suggestion_formula" {
@@ -614,7 +709,7 @@ fn stdin_to_tempfile() -> CliResult<tempfile::NamedTempFile> {
 }
 
 /// §5.8: run `qsv validate` against `input_path` and return any RFC4180
-/// failures as `DcatWarning`s. Best-effort — spawn errors, missing
+/// failures as `ProjectionWarning`s. Best-effort — spawn errors, missing
 /// binary, or non-UTF-8 stderr all silently degrade to "no warnings"
 /// rather than failing the whole profile run.
 ///
@@ -637,7 +732,7 @@ fn run_profile_validation(
     input_path: &str,
     no_headers: bool,
     delimiter: Option<crate::config::Delimiter>,
-) -> Vec<dcat::DcatWarning> {
+) -> Vec<projection::ProjectionWarning> {
     let start = std::time::Instant::now();
     let Ok(qsv_path) = util::current_exe() else {
         return Vec::new();
@@ -672,9 +767,9 @@ fn run_profile_validation(
                 .to_string()
         })
         .unwrap_or_else(|| "qsv validate failed with no error message".to_string());
-    vec![dcat::DcatWarning {
+    vec![projection::ProjectionWarning {
         field:    "qsv:validation".to_string(),
-        severity: dcat::Severity::Required,
+        severity: projection::Severity::Required,
         message:  format!("input failed `qsv validate` (RFC4180): {msg}"),
     }]
 }
@@ -825,63 +920,24 @@ fn apply_pointer_overrides(root: &mut Value, overrides: &serde_json::Map<String,
     }
 }
 
-/// Merge a discovered DCAT-US v3 dataset object into our auto-inferred
-/// projection per the Phase 4b precedence rules:
+/// §5.4: apply forced `(dcat_pointer, value)` pairs after
+/// `apply_pointer_overrides` so a user's `{value, force: true}`
+/// markings beat both inferred output AND discovered DCAT. Mirrors
+/// `apply_pointer_overrides`'s skip-non-pointer behaviour but takes
+/// a `&[(String, Value)]` instead of a Map so insertion order is
+/// preserved (matters when two forced leaves alias the same pointer
+/// via the active profile's `field_mappings:` table — last-write-wins).
 ///
-///   * Inferred values (including those seeded from `--initial-context`) always win — discovered
-///     DCAT only fills slots the inferred output left absent.
-///   * Top-level scalar / object keys present in `discovered` but not in `inferred` are copied over
-///     verbatim.
-///   * Array slots (`dct:spatial`, `dct:temporal`, `dcat:keyword`, `dcat:theme`) get the discovered
-///     array only when the inferred side is missing entirely; we don't try to merge per-element.
-///   * `dcat:distribution` is left alone — per-distribution merging is out of scope until we have a
-///     per-resource identity scheme.
-///   * `@context` and `@type` are never overwritten.
-///
-/// §5.4: `forced_dcat_paths` is the list of JSON-Pointer paths (in the
-/// dataset_info form, e.g. `/dcat/dct:title`) that the user wrapped with
-/// `{value, force: true}`. For each discovered top-level key, we
-/// translate to the same path space (`/dcat/<key>`) and skip the overlay
-/// if it's present in the forced set — so a user can mark a field
-/// "intentionally absent" and prevent publisher DCAT from filling it
-/// in. Forced paths that target nested leaves
-/// (e.g. `/dcat/dcat:contactPoint/vcard:fn`) only block the merge when
-/// the corresponding TOP-LEVEL DCAT key (`dcat:contactPoint` here)
-/// would have been merged whole — nested-leaf forcing is satisfied
-/// by the later pointer-override pass.
-///
-/// **Roborev #2469:** discovered keys are escaped via RFC 6901 token
-/// rules (`~` → `~0`, `/` → `~1`) before being interpolated into the
-/// candidate path so that JSON-LD properties carrying `/` or `~`
-/// (e.g. full IRIs like `http://purl.org/dc/terms/title`) compare
-/// correctly against forced paths written in their escaped form.
-fn merge_discovered(inferred: Value, discovered: &Value, forced_dcat_paths: &[String]) -> Value {
-    let (Value::Object(mut inf), Some(disc)) = (inferred, discovered.as_object()) else {
-        return Value::Object(serde_json::Map::new());
-    };
-    for (k, v) in disc {
-        if k == "@context" || k == "@type" || k == "dcat:distribution" {
+/// `forced_values` comes from `context::collect_forced_paths` and
+/// already has any `package/<key>` / `resource/<key>` pointers
+/// translated to their target counterparts.
+fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
+    for (ptr, new_value) in forced_values {
+        if !ptr.starts_with('/') {
             continue;
         }
-        if inf.contains_key(k) {
-            continue;
-        }
-        // §5.4 + #2469: skip if user marked this top-level DCAT key as
-        // forced. Discovered → inferred path translation: discovered
-        // key `k` maps to dataset_info pointer `/dcat/<escaped-k>`.
-        // RFC 6901 escaping is required so keys containing `/` or `~`
-        // (full IRI properties etc.) compare against forced paths
-        // written in their canonical escaped form.
-        let candidate = format!("/dcat/{}", escape_json_pointer_token(k));
-        let is_forced = forced_dcat_paths
-            .iter()
-            .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
-        if is_forced {
-            continue;
-        }
-        inf.insert(k.clone(), v.clone());
+        set_by_pointer(root, ptr, new_value.clone());
     }
-    Value::Object(inf)
 }
 
 /// Escape a single token for use inside a JSON Pointer per RFC 6901
@@ -1055,178 +1111,12 @@ mod tests {
         assert_eq!(root, json!({"x": 1}));
     }
 
-    #[test]
-    fn pointer_handles_escape_sequences() {
-        // RFC 6901: ~0 → ~ and ~1 → / in path tokens.
-        let mut root = json!({});
-        set_by_pointer(&mut root, "/has~1slash/has~0tilde", json!("v"));
-        assert_eq!(
-            root.pointer("/has~1slash/has~0tilde")
-                .and_then(|v| v.as_str()),
-            Some("v")
-        );
-    }
+    // merge_discovered tests removed — discovery merge now lives in
+    // `super::discovery_merge::merge` and is covered by that module's
+    // unit tests plus the new integration tests in tests/test_profile.rs
+    // (Roborev PR-#3908 Copilot finding).
 
-    use super::{escape_json_pointer_token, merge_discovered};
-
-    #[test]
-    fn merge_fills_gaps_only() {
-        let inferred = json!({
-            "@type": "dcat:Dataset",
-            "dct:title": "Inferred Title",
-        });
-        let discovered = json!({
-            "dct:title": "Discovered Title", // collision — inferred wins
-            "dct:rights": "Discovered Rights", // gap — discovered fills
-        });
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        assert_eq!(
-            merged.pointer("/dct:title").and_then(|v| v.as_str()),
-            Some("Inferred Title"),
-            "inferred always wins on collision"
-        );
-        assert_eq!(
-            merged.pointer("/dct:rights").and_then(|v| v.as_str()),
-            Some("Discovered Rights"),
-            "discovered fills the gap"
-        );
-    }
-
-    #[test]
-    fn merge_never_overwrites_context_or_type() {
-        let inferred = json!({
-            "@context": "https://inferred",
-            "@type": "dcat:Dataset",
-        });
-        let discovered = json!({
-            "@context": "https://discovered",
-            "@type": "dcat:OtherType",
-        });
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        assert_eq!(
-            merged.pointer("/@context").and_then(|v| v.as_str()),
-            Some("https://inferred")
-        );
-        assert_eq!(
-            merged.pointer("/@type").and_then(|v| v.as_str()),
-            Some("dcat:Dataset")
-        );
-    }
-
-    #[test]
-    fn merge_skips_distribution_array() {
-        let inferred = json!({"dcat:distribution": [{"@type": "dcat:Distribution"}]});
-        let discovered = json!({"dcat:distribution": [{"dct:title": "Discovered Dist"}]});
-        let merged = merge_discovered(inferred, &discovered, &[]);
-        // Distribution array is left untouched — per-resource merging
-        // is out of scope until a per-distribution identity scheme exists.
-        assert_eq!(
-            merged
-                .pointer("/dcat:distribution/0/@type")
-                .and_then(|v| v.as_str()),
-            Some("dcat:Distribution")
-        );
-        assert!(
-            merged.pointer("/dcat:distribution/0/dct:title").is_none(),
-            "discovered distribution must not be merged"
-        );
-    }
-
-    // §5.4: force semantics — forced top-level keys block discovered overlay.
-    #[test]
-    fn merge_skips_discovered_for_forced_top_level_key() {
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:title": "From Publisher"});
-        // User marked /dcat/dct:title as forced; discovered must NOT fill it.
-        let forced = vec!["/dcat/dct:title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("dct:title").is_none(),
-            "forced top-level key must not be overlaid by discovered, got: {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_skips_discovered_when_force_path_is_nested_under_top_level() {
-        // /dcat/dcat:contactPoint/vcard:fn is nested — but the top-level
-        // dcat:contactPoint would be merged whole otherwise, which would
-        // include the (forced-absent) vcard:fn from discovered. Block it.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({
-            "dcat:contactPoint": {"vcard:fn": "From Publisher", "vcard:hasEmail": "x@y.gov"}
-        });
-        let forced = vec!["/dcat/dcat:contactPoint/vcard:fn".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("dcat:contactPoint").is_none(),
-            "forced nested path must block the whole-object overlay, got: {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_still_overlays_unrelated_keys_when_one_is_forced() {
-        // Force only one key; other discovered keys still fill gaps.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({
-            "dct:title":       "Forced Out",
-            "dct:description": "Should Land"
-        });
-        let forced = vec!["/dcat/dct:title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(merged.get("dct:title").is_none());
-        assert_eq!(
-            merged.get("dct:description").and_then(|v| v.as_str()),
-            Some("Should Land")
-        );
-    }
-
-    #[test]
-    fn merge_ignores_forced_paths_outside_dcat_subtree() {
-        // /ckan/package/title isn't in /dcat/ space — must NOT affect merge.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:title": "Lands"});
-        let forced = vec!["/ckan/package/title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert_eq!(
-            merged.get("dct:title").and_then(|v| v.as_str()),
-            Some("Lands")
-        );
-    }
-
-    // Roborev #2469: discovered keys that themselves contain `/` or `~`
-    // (full IRI properties, the rare CURIE with a tilde) must be escaped
-    // per RFC 6901 before being compared against forced paths. Without
-    // escaping, the candidate path `/dcat/http://purl.org/dc/terms/title`
-    // has too many segments and never matches the user's forced path.
-    #[test]
-    fn merge_force_match_handles_full_iri_keys_via_rfc6901_escaping() {
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"http://purl.org/dc/terms/title": "From Publisher"});
-        // User writes the forced path with each `/` token-escaped to `~1`
-        // and each `~` to `~0`. The single-token full IRI value becomes:
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert!(
-            merged.get("http://purl.org/dc/terms/title").is_none(),
-            "full-IRI forced key must block discovered overlay after RFC 6901 escaping, got: \
-             {merged:?}",
-        );
-    }
-
-    #[test]
-    fn merge_force_does_not_match_unrelated_keys_after_escaping() {
-        // Regression sanity: escaping must not over-eagerly match unrelated
-        // discovered keys. Forced full-IRI path for `terms/title` must NOT
-        // block the unrelated `dct:identifier` key.
-        let inferred = json!({"@type": "dcat:Dataset"});
-        let discovered = json!({"dct:identifier": "id-123"});
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
-        let merged = merge_discovered(inferred, &discovered, &forced);
-        assert_eq!(
-            merged.get("dct:identifier").and_then(|v| v.as_str()),
-            Some("id-123"),
-        );
-    }
+    use super::escape_json_pointer_token;
 
     #[test]
     fn escape_json_pointer_token_matches_rfc6901() {

@@ -1,0 +1,550 @@
+# DCAT-US v3 projection profile
+#
+# Mirrors the legacy hardcoded dcat.rs engine (replaced commit-by-commit
+# across the YAML-driven projection migration). Field order, vocabularies,
+# fallback chains, and severity tags are byte-equivalent to the legacy
+# output — locked by the golden parity tests under
+# tests/resources/profile/golden/.
+#
+# Spec references (cross-checked against):
+#   * https://github.com/GSA/dcat-us/
+#   * https://resources.data.gov/resources/dcat-us3/
+#   * The vendored GSA bundle under resources/dcat-us-v3/
+#
+# When editing this file, bump the `version:` field semver-style and
+# re-run the golden parity tests. CI hard-fails on drift.
+
+name: dcat-us-v3
+version: 3.0.0
+about: DCAT-US v3 metadata projection (resources.data.gov)
+about_url: https://resources.data.gov/resources/dcat-us3/
+
+# =========================================================================
+# Named vocabularies
+# =========================================================================
+# Lookup tables exposed to templates via `lookup("table", key)`. Tables are
+# case-insensitive; for RFC 5646 language tags the helper strips subtags
+# (en-US → en) before the lookup.
+
+vocabularies:
+  # CKAN license slug → canonical IRI. http:// scheme is deliberate per
+  # the CC / ODC canonical identifiers (changing to https:// breaks
+  # round-tripping with DCAT consumers).
+  license_iri:
+    cc-by:     "http://creativecommons.org/licenses/by/4.0/"          # DevSkim: ignore DS137138
+    cc-by-sa:  "http://creativecommons.org/licenses/by-sa/4.0/"       # DevSkim: ignore DS137138
+    cc-zero:   "http://creativecommons.org/publicdomain/zero/1.0/"    # DevSkim: ignore DS137138
+    odc-by:    "http://opendatacommons.org/licenses/by/1.0/"          # DevSkim: ignore DS137138
+    odc-pddl:  "http://opendatacommons.org/licenses/pddl/1.0/"        # DevSkim: ignore DS137138
+
+  # CKAN frequency slug → EU controlled-vocab IRI (publications.europa.eu).
+  # Slugs come from CKAN convention; EU IRIs use http:// per their
+  # canonical identifiers.
+  accrual_periodicity:
+    daily:          "http://publications.europa.eu/resource/authority/frequency/DAILY"      # DevSkim: ignore DS137138
+    "r/p1d":        "http://publications.europa.eu/resource/authority/frequency/DAILY"      # DevSkim: ignore DS137138
+    weekly:         "http://publications.europa.eu/resource/authority/frequency/WEEKLY"     # DevSkim: ignore DS137138
+    "r/p7d":        "http://publications.europa.eu/resource/authority/frequency/WEEKLY"     # DevSkim: ignore DS137138
+    "r/p1w":        "http://publications.europa.eu/resource/authority/frequency/WEEKLY"     # DevSkim: ignore DS137138
+    biweekly:       "http://publications.europa.eu/resource/authority/frequency/BIWEEKLY"   # DevSkim: ignore DS137138
+    fortnightly:    "http://publications.europa.eu/resource/authority/frequency/BIWEEKLY"   # DevSkim: ignore DS137138
+    "r/p14d":       "http://publications.europa.eu/resource/authority/frequency/BIWEEKLY"   # DevSkim: ignore DS137138
+    "r/p2w":        "http://publications.europa.eu/resource/authority/frequency/BIWEEKLY"   # DevSkim: ignore DS137138
+    monthly:        "http://publications.europa.eu/resource/authority/frequency/MONTHLY"    # DevSkim: ignore DS137138
+    "r/p1m":        "http://publications.europa.eu/resource/authority/frequency/MONTHLY"    # DevSkim: ignore DS137138
+    bimonthly:      "http://publications.europa.eu/resource/authority/frequency/BIMONTHLY"  # DevSkim: ignore DS137138
+    "r/p2m":        "http://publications.europa.eu/resource/authority/frequency/BIMONTHLY"  # DevSkim: ignore DS137138
+    quarterly:      "http://publications.europa.eu/resource/authority/frequency/QUARTERLY"  # DevSkim: ignore DS137138
+    "r/p3m":        "http://publications.europa.eu/resource/authority/frequency/QUARTERLY"  # DevSkim: ignore DS137138
+    semiannual:     "http://publications.europa.eu/resource/authority/frequency/ANNUAL_2"   # DevSkim: ignore DS137138
+    biannual:       "http://publications.europa.eu/resource/authority/frequency/ANNUAL_2"   # DevSkim: ignore DS137138
+    "r/p6m":        "http://publications.europa.eu/resource/authority/frequency/ANNUAL_2"   # DevSkim: ignore DS137138
+    annual:         "http://publications.europa.eu/resource/authority/frequency/ANNUAL"     # DevSkim: ignore DS137138
+    annually:       "http://publications.europa.eu/resource/authority/frequency/ANNUAL"     # DevSkim: ignore DS137138
+    yearly:         "http://publications.europa.eu/resource/authority/frequency/ANNUAL"     # DevSkim: ignore DS137138
+    "r/p1y":        "http://publications.europa.eu/resource/authority/frequency/ANNUAL"     # DevSkim: ignore DS137138
+    irregular:      "http://publications.europa.eu/resource/authority/frequency/IRREG"      # DevSkim: ignore DS137138
+    continuous:     "http://publications.europa.eu/resource/authority/frequency/CONT"       # DevSkim: ignore DS137138
+    realtime:       "http://publications.europa.eu/resource/authority/frequency/CONT"       # DevSkim: ignore DS137138
+    "real-time":    "http://publications.europa.eu/resource/authority/frequency/CONT"       # DevSkim: ignore DS137138
+
+  # Free-text language → ISO 639-1 2-letter code. Both 2-letter codes and
+  # English names are accepted; RFC 5646 subtags (en-US) are stripped by
+  # the lookup helper before matching.
+  iso_639_1:
+    en:           en
+    english:      en
+    es:           es
+    spanish:      es
+    fr:           fr
+    french:       fr
+    de:           de
+    german:       de
+    it:           it
+    italian:      it
+    pt:           pt
+    portuguese:   pt
+    nl:           nl
+    dutch:        nl
+    ja:           ja
+    japanese:     ja
+    ko:           ko
+    korean:       ko
+    zh:           zh
+    chinese:      zh
+    ru:           ru
+    russian:      ru
+    ar:           ar
+    arabic:       ar
+    hi:           hi
+    hindi:        hi
+
+  # qsv stats type → CSVW datatype IRI. Used by csvw:tableSchema's
+  # per-column datatype slot.
+  csvw_datatype:
+    String:        "string"
+    Integer:       "integer"
+    Float:         "decimal"
+    Date:          "date"
+    DateTime:      "dateTime"
+    NULL:          "string"
+
+# =========================================================================
+# CKAN → DCAT pointer mappings (force-override + warning-filter use only)
+# =========================================================================
+# Same 56 entries the legacy ckan_to_dcat::CKAN_TO_DCAT table held, in the
+# same declaration order so aliases like `package.url` vs
+# `package.landing_page` resolve identically.
+
+field_mappings:
+  # add_core_identity (package → Dataset top-level)
+  - { ckan: "/package/title",                target: "/dcat/dct:title" }
+  - { ckan: "/package/notes",                target: "/dcat/dct:description" }
+  - { ckan: "/package/name",                 target: "/dcat/dct:identifier" }
+  - { ckan: "/package/metadata_created",     target: "/dcat/dct:issued" }
+  - { ckan: "/package/metadata_modified",    target: "/dcat/dct:modified" }
+  - { ckan: "/package/created",              target: "/dcat/dct:created" }
+  # add_provenance
+  - { ckan: "/package/publisher",            target: "/dcat/dct:publisher" }
+  - { ckan: "/package/author",               target: "/dcat/dct:publisher" }
+  # add_contact_point (composite — scalar parts not independently forceable)
+  - { ckan: "/package/contact_point",        target: "/dcat/dcat:contactPoint" }
+  # add_classification
+  - { ckan: "/package/tags",                 target: "/dcat/dcat:keyword" }
+  - { ckan: "/package/groups",               target: "/dcat/dcat:theme" }
+  # add_governance
+  - { ckan: "/package/language",             target: "/dcat/dct:language" }
+  - { ckan: "/package/accrualPeriodicity",   target: "/dcat/dct:accrualPeriodicity" }
+  - { ckan: "/package/frequency",            target: "/dcat/dct:accrualPeriodicity" }
+  - { ckan: "/package/update_frequency",     target: "/dcat/dct:accrualPeriodicity" }
+  - { ckan: "/package/dcat-us:accessLevel",  target: "/dcat/dcat-us:accessLevel" }
+  - { ckan: "/package/access_level",         target: "/dcat/dcat-us:accessLevel" }
+  # add_us_codes
+  - { ckan: "/package/bureauCode",           target: "/dcat/dcat-us:bureauCode" }
+  - { ckan: "/package/programCode",          target: "/dcat/dcat-us:programCode" }
+  # add_extended_metadata
+  - { ckan: "/package/landing_page",         target: "/dcat/dcat:landingPage" }
+  - { ckan: "/package/url",                  target: "/dcat/dcat:landingPage" }
+  - { ckan: "/package/data_dictionary",      target: "/dcat/dcat:describedBy" }
+  - { ckan: "/package/describedBy",          target: "/dcat/dcat:describedBy" }
+  - { ckan: "/package/rights",               target: "/dcat/dct:rights" }
+  - { ckan: "/package/accessRights",         target: "/dcat/dct:accessRights" }
+  - { ckan: "/package/access_rights",        target: "/dcat/dct:accessRights" }
+  - { ckan: "/package/purpose",              target: "/dcat/dcat-us:purpose" }
+  - { ckan: "/package/scopeNote",            target: "/dcat/skos:scopeNote" }
+  - { ckan: "/package/scope_note",           target: "/dcat/skos:scopeNote" }
+  - { ckan: "/package/liabilityStatement",   target: "/dcat/dcat-us:liabilityStatement" }
+  - { ckan: "/package/liability_statement",  target: "/dcat/dcat-us:liabilityStatement" }
+  - { ckan: "/package/inSeries",             target: "/dcat/dcat:inSeries" }
+  - { ckan: "/package/in_series",            target: "/dcat/dcat:inSeries" }
+  - { ckan: "/package/temporalResolution",   target: "/dcat/dcat:temporalResolution" }
+  - { ckan: "/package/version",              target: "/dcat/dcat:version" }
+  - { ckan: "/package/versionNotes",         target: "/dcat/dcat:versionNotes" }
+  - { ckan: "/package/version_notes",        target: "/dcat/dcat:versionNotes" }
+  # build_distribution (resource → Distribution[0])
+  - { ckan: "/resource/name",                target: "/dcat/dcat:distribution/0/dct:title" }
+  - { ckan: "/resource/description",         target: "/dcat/dcat:distribution/0/dct:description" }
+  - { ckan: "/resource/url",                 target: "/dcat/dcat:distribution/0/dcat:downloadURL" }
+  - { ckan: "/resource/accessURL",           target: "/dcat/dcat:distribution/0/dcat:accessURL" }
+  - { ckan: "/resource/format",              target: "/dcat/dcat:distribution/0/dct:format" }
+  - { ckan: "/resource/mediaType",           target: "/dcat/dcat:distribution/0/dcat:mediaType" }
+  - { ckan: "/resource/license_id",          target: "/dcat/dcat:distribution/0/dct:license" }
+  - { ckan: "/resource/license",             target: "/dcat/dcat:distribution/0/dct:license" }
+  - { ckan: "/resource/last_modified",       target: "/dcat/dcat:distribution/0/dct:modified" }
+  - { ckan: "/resource/modified",            target: "/dcat/dcat:distribution/0/dct:modified" }
+  - { ckan: "/resource/rights",              target: "/dcat/dcat:distribution/0/dct:rights" }
+  - { ckan: "/resource/language",            target: "/dcat/dcat:distribution/0/dct:language" }
+  - { ckan: "/resource/conformsTo",          target: "/dcat/dcat:distribution/0/dct:conformsTo" }
+  - { ckan: "/resource/access_restriction",  target: "/dcat/dcat:distribution/0/dcat-us:accessRestriction" }
+  - { ckan: "/resource/use_restriction",     target: "/dcat/dcat:distribution/0/dcat-us:useRestriction" }
+  - { ckan: "/resource/cui_restriction",     target: "/dcat/dcat:distribution/0/dcat-us:cuiRestriction" }
+
+# =========================================================================
+# Schema validation
+# =========================================================================
+# When `enabled: true`, dcat_validate.rs loads the JSON Schema bundle from
+# `schema_dir` and validates the projection block against `entry_dataset`
+# (or `entry_catalog` when `--catalog`). The strippable_curie_prefixes
+# list collapses `<prefix>:<localname>` keys for validation so the schema
+# (which uses bare local names) sees the right shape.
+validation:
+  enabled: true
+  schema_dir: resources/dcat-us-v3/
+  entry_dataset: qsv-overlay-dataset.json
+  entry_catalog: qsv-overlay-catalog.json
+  strippable_curie_prefixes:
+    - "dct:"
+    - "dcat:"
+    - "foaf:"
+    - "vcard:"
+    - "skos:"
+    - "spdx:"
+    - "xsd:"
+    - "geosparql:"
+    - "csvw:"
+    - "locn:"
+    - "qsv:"
+
+# =========================================================================
+# Dataset projection
+# =========================================================================
+# Field order here is the legacy add_* function order — drives the
+# serde_json::Map insertion order surfaced to consumers.
+dataset:
+  type: "dcat:Dataset"
+  context: "https://doi-do.github.io/dcat-us/context.jsonld"
+  fields:
+    # ------ add_core_identity ------
+    - path: "dct:title"
+      template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
+      required_level: required
+
+    - path: "dct:description"
+      template: '{{ pkg.notes | default("") }}'
+      emit_when: '{{ (pkg.notes | default("")) != "" }}'
+
+    - path: "dct:identifier"
+      template: '{{ pkg.name | default("") }}'
+      emit_when: '{{ (pkg.name | default("")) != "" }}'
+
+    - path: "dct:issued"
+      template: '{{ pkg.metadata_created | default("") }}'
+      emit_when: '{{ (pkg.metadata_created | default("")) != "" }}'
+
+    - path: "dct:modified"
+      template: '{{ pkg.metadata_modified | default("") | sanitize_iso_8601_interval }}'
+      emit_when: '{{ (pkg.metadata_modified | default("")) != "" }}'
+
+    # ------ add_provenance ------
+    - path: "dct:publisher"
+      template: |
+        { "@type": "foaf:Agent",
+          "foaf:name": {{ (pkg.publisher | default(pkg.author | default(""))) | tojson }} }
+      emit_when: '{{ (pkg.publisher | default(pkg.author | default(""))) != "" }}'
+
+    # ------ add_contact_point ------
+    # Two-tier fallback: explicit contact_point object → maintainer pair.
+    # Required-level — drives the well-known "missing contactPoint" warning.
+    - path: "dcat:contactPoint"
+      template: |
+        {% if pkg.contact_point and pkg.contact_point.fn and pkg.contact_point.hasEmail -%}
+        { "@type": "vcard:Individual",
+          "vcard:fn": {{ pkg.contact_point.fn | tojson }},
+          "vcard:hasEmail": {{ (pkg.contact_point.hasEmail | format_mailto | string) | tojson }} }
+        {%- elif pkg.maintainer and pkg.maintainer_email -%}
+        { "@type": "vcard:Individual",
+          "vcard:fn": {{ pkg.maintainer | tojson }},
+          "vcard:hasEmail": {{ (pkg.maintainer_email | format_mailto | string) | tojson }} }
+        {%- endif %}
+      required_level: required
+
+    # ------ add_classification ------
+    - path: "dcat:keyword"
+      template: |
+        {%- if pkg.tags -%}
+        [{% for t in pkg.tags %}{% if not loop.first %},{% endif %}
+        {%- if t is string %}{{ t | tojson }}{% else %}{{ (t.name | default(t)) | tojson }}{% endif -%}
+        {% endfor %}]
+        {%- endif -%}
+      emit_when: '{{ pkg.tags is defined and pkg.tags | length > 0 }}'
+
+    - path: "dcat:theme"
+      template: |
+        {%- if pkg.groups -%}
+        [{% for g in pkg.groups %}{% if not loop.first %},{% endif %}
+        {%- if g.name is defined %}{{ g.name | tojson }}{% else %}{{ g | tojson }}{% endif -%}
+        {% endfor %}]
+        {%- endif -%}
+      emit_when: '{{ pkg.groups is defined and pkg.groups | length > 0 }}'
+
+    # ------ add_coverage ------
+    # Spatial: prefer WKT suggestion from formula evaluation, fall back to
+    # qsv-inferred lat/lon bbox via bbox_from_dpps. Both branches yield an
+    # array of dct:Location per DCAT-US v3 cardinality (0..*).
+    # Spatial: prefer WKT suggestion from formula evaluation, fall back to
+    # qsv-inferred lat/lon bbox via bbox_from_dpps. The emit_when guard
+    # suppresses the field entirely when neither source is available —
+    # without it, bbox_from_dpps returning UNDEFINED renders the string
+    # "null" via `| tojson` and coerce_json_or_string keeps it as a
+    # literal string, leaving a malformed `"dct:spatial": "null"` in
+    # the output (Roborev #2490).
+    - path: "dct:spatial"
+      template: |
+        {%- set wkt = pkg.dpp_suggestions.spatial_extent.value | default("") -%}
+        {%- set bbox = bbox_from_dpps(dpp, stats) -%}
+        {%- if wkt != "" -%}
+        [{
+          "@type": "dct:Location",
+          "locn:geometry": {
+            "@type": "http://www.opengis.net/ont/geosparql#wktLiteral",
+            "@value": {{ wkt | tojson }}
+          }
+        }]
+        {%- elif bbox -%}{{ bbox | tojson }}{%- endif -%}
+      emit_when: '{{ (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" or bbox_from_dpps(dpp, stats) is defined }}'
+
+    - path: "dct:temporal"
+      template: |
+        {%- set tp = temporal_from_dpps(dpp, stats) -%}
+        {%- if tp -%}{{ tp | tojson }}{%- endif -%}
+
+    # ------ add_us_codes ------
+    # bureauCode + programCode are array-typed in DCAT-US v3. CKAN
+    # convention also accepts comma-separated strings.
+    - path: "dcat-us:bureauCode"
+      template: |
+        {%- if pkg.bureauCode is string -%}
+        [{% for s in pkg.bureauCode.split(',') %}{% if not loop.first %},{% endif %}{{ s | trim | tojson }}{% endfor %}]
+        {%- elif pkg.bureauCode -%}
+        {{ pkg.bureauCode | tojson }}
+        {%- endif -%}
+      emit_when: '{{ pkg.bureauCode is defined and pkg.bureauCode | length > 0 }}'
+      required_level: recommended
+
+    - path: "dcat-us:programCode"
+      template: |
+        {%- if pkg.programCode is string -%}
+        [{% for s in pkg.programCode.split(',') %}{% if not loop.first %},{% endif %}{{ s | trim | tojson }}{% endfor %}]
+        {%- elif pkg.programCode -%}
+        {{ pkg.programCode | tojson }}
+        {%- endif -%}
+      emit_when: '{{ pkg.programCode is defined and pkg.programCode | length > 0 }}'
+      required_level: recommended
+
+    # ------ add_governance ------
+    - path: "dcat-us:accessLevel"
+      template: '{{ pkg["dcat-us:accessLevel"] | default(pkg.access_level | default("public")) }}'
+
+    - path: "dct:conformsTo"
+      template: |
+        [{ "@type": "dct:Standard",
+           "@id":   "https://resources.data.gov/resources/dcat-us3/" }]
+
+    - path: "dct:language"
+      template: '{{ lookup("iso_639_1", pkg.language | default("")) }}'
+      emit_when: '{{ (pkg.language | default("")) != "" }}'
+
+    # --dcat-legacy-license: re-emit dct:license on the Dataset
+    # alongside the v3-required Distribution-level copy. Gated on the
+    # `legacy_license` flag threaded into projection_ctx by
+    # profile.rs::run (Roborev #2490 finding #4). Off by default per
+    # strict v3.
+    - path: "dct:license"
+      template: |
+        {%- set raw = (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
+      emit_when: '{{ legacy_license and (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) != "" }}'
+
+    # ------ add_extended_metadata ------
+    - path: "dcat:landingPage"
+      template: '{{ (pkg.landing_page | default(pkg.url | default(""))) | only_if_absolute_iri }}'
+      emit_when: '{{ (pkg.landing_page | default(pkg.url | default(""))) != "" }}'
+
+    - path: "dcat:describedBy"
+      template: '{{ (pkg.data_dictionary | default(pkg.describedBy | default(""))) | only_if_absolute_iri }}'
+      emit_when: '{{ (pkg.data_dictionary | default(pkg.describedBy | default(""))) != "" }}'
+
+    - path: "dct:rights"
+      template: '{{ pkg.rights | default("") }}'
+      emit_when: '{{ (pkg.rights | default("")) != "" }}'
+
+    - path: "dct:accessRights"
+      template: '{{ (pkg.access_rights | default(pkg.accessRights | default(""))) }}'
+      emit_when: '{{ (pkg.access_rights | default(pkg.accessRights | default(""))) != "" }}'
+
+    - path: "dcat-us:purpose"
+      template: '{{ pkg.purpose | default("") }}'
+      emit_when: '{{ (pkg.purpose | default("")) != "" }}'
+
+    - path: "skos:scopeNote"
+      template: '{{ (pkg.scopeNote | default(pkg.scope_note | default(""))) }}'
+      emit_when: '{{ (pkg.scopeNote | default(pkg.scope_note | default(""))) != "" }}'
+
+    - path: "dcat-us:liabilityStatement"
+      template: '{{ (pkg.liabilityStatement | default(pkg.liability_statement | default(""))) }}'
+      emit_when: '{{ (pkg.liabilityStatement | default(pkg.liability_statement | default(""))) != "" }}'
+
+    - path: "dcat:inSeries"
+      template: '{{ (pkg.inSeries | default(pkg.in_series | default(""))) | only_if_absolute_iri }}'
+      emit_when: '{{ (pkg.inSeries | default(pkg.in_series | default(""))) != "" }}'
+
+    # accrual_periodicity: slug → EU vocab IRI (object with @id) when
+    # recognized; verbatim string otherwise.
+    - path: "dct:accrualPeriodicity"
+      template: |
+        {%- set slug = pkg.accrualPeriodicity | default(pkg.frequency | default(pkg.update_frequency | default(pkg.dpp_suggestions.accrual_periodicity.value | default("")))) -%}
+        {%- if slug != "" -%}
+        {%- set iri = lookup("accrual_periodicity", slug) -%}
+        {%- if iri -%}
+        { "@id": {{ iri | tojson }} }
+        {%- else -%}
+        {{ slug | tojson }}
+        {%- endif -%}
+        {%- endif -%}
+      emit_when: '{{ (pkg.accrualPeriodicity | default(pkg.frequency | default(pkg.update_frequency | default(pkg.dpp_suggestions.accrual_periodicity.value | default(""))))) != "" }}'
+
+    - path: "dcat:temporalResolution"
+      template: '{{ pkg.temporalResolution | default(pkg.dpp_suggestions.temporal_resolution.value | default("")) }}'
+      emit_when: '{{ (pkg.temporalResolution | default(pkg.dpp_suggestions.temporal_resolution.value | default(""))) != "" }}'
+
+    - path: "dct:created"
+      template: '{{ pkg.created | default("") }}'
+      emit_when: '{{ (pkg.created | default("")) != "" }}'
+
+    - path: "dcat:version"
+      template: '{{ pkg.version | default("") }}'
+      emit_when: '{{ (pkg.version | default("")) != "" }}'
+
+    - path: "dcat:versionNotes"
+      template: '{{ (pkg.versionNotes | default(pkg.version_notes | default(""))) }}'
+      emit_when: '{{ (pkg.versionNotes | default(pkg.version_notes | default(""))) != "" }}'
+
+# =========================================================================
+# Distribution projection
+# =========================================================================
+# Each Distribution carries file-derived facts (byteSize, checksum,
+# compress/package format) plus per-resource fallbacks for license and
+# language.
+distribution:
+  type: "dcat:Distribution"
+  fields:
+    - path: "dct:title"
+      template: '{{ res.name | default(source_label | basename) | default("data.csv") }}'
+
+    - path: "dct:description"
+      template: '{{ res.description | default("") }}'
+      emit_when: '{{ (res.description | default("")) != "" }}'
+
+    - path: "dcat:downloadURL"
+      template: '{{ (res.url | default("")) | only_if_absolute_iri }}'
+      emit_when: '{{ (res.url | default("")) != "" }}'
+
+    - path: "qsv:sourcePath"
+      template: '{{ source_label }}'
+
+    - path: "dcat:mediaType"
+      template: 'text/csv'
+
+    - path: "dct:format"
+      template: '{{ res.format | default("CSV") }}'
+
+    # Legacy license_value emits a plain string (URL or opaque license
+    # text) — GSA Distribution.json declares this as a free-form string,
+    # not a JSON-LD @id object. Known slugs (cc-by, etc.) resolve to
+    # their canonical IRI via the license_iri vocab.
+    - path: "dct:license"
+      template: |
+        {%- set raw = (res.license_id | default(res.license | default(pkg.license_id | default(pkg.license | default(""))))) -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
+      emit_when: '{{ (res.license_id | default(res.license | default(pkg.license_id | default(pkg.license | default(""))))) != "" }}'
+
+    - path: "dcat:accessURL"
+      template: '{{ (res.accessURL | default("")) | only_if_absolute_iri }}'
+      emit_when: '{{ (res.accessURL | default("")) != "" }}'
+
+    - path: "dct:rights"
+      template: '{{ res.rights | default("") }}'
+      emit_when: '{{ (res.rights | default("")) != "" }}'
+
+    - path: "dct:modified"
+      template: '{{ res.last_modified | default(res.modified | default("")) }}'
+      emit_when: '{{ (res.last_modified | default(res.modified | default(""))) != "" }}'
+
+    - path: "dcat-us:accessRestriction"
+      template: '{{ res.access_restriction | tojson }}'
+      emit_when: '{{ res.access_restriction is defined and res.access_restriction is not none }}'
+
+    - path: "dcat-us:useRestriction"
+      template: '{{ res.use_restriction | tojson }}'
+      emit_when: '{{ res.use_restriction is defined and res.use_restriction is not none }}'
+
+    - path: "dcat-us:cuiRestriction"
+      template: '{{ res.cui_restriction | tojson }}'
+      emit_when: '{{ res.cui_restriction is defined and res.cui_restriction is not none }}'
+
+    - path: "dct:language"
+      template: '{{ lookup("iso_639_1", res.language | default(pkg.language | default(""))) }}'
+      emit_when: '{{ (res.language | default(pkg.language | default(""))) != "" }}'
+
+    - path: "dct:conformsTo"
+      template: |
+        {%- set ct = res.conformsTo -%}
+        {%- if ct is sequence and ct is not string -%}
+        [{% for s in ct %}{% if not loop.first %},{% endif %}
+        {%- if s is mapping %}{{ s | tojson }}
+        {%- else %}{ "@type": "dct:Standard", "@id": {{ s | tojson }} }{% endif -%}
+        {% endfor %}]
+        {%- elif ct is mapping -%}
+        [{{ ct | tojson }}]
+        {%- elif ct -%}
+        [{ "@type": "dct:Standard", "@id": {{ ct | tojson }} }]
+        {%- endif -%}
+      emit_when: '{{ res.conformsTo is defined and res.conformsTo }}'
+
+    - path: "dcat:byteSize"
+      template: '{{ file_size_of(local_path) }}'
+      emit_when: '{{ file_size_of(local_path) is defined }}'
+
+    - path: "dcat:checksum"
+      template: |
+        { "@type": "spdx:Checksum",
+          "spdx:algorithm": "SHA-256",
+          "spdx:checksumValue": {{ sha256_of(local_path) | tojson }} }
+      emit_when: '{{ sha256_of(local_path) is defined }}'
+
+    - path: "dcat:compressFormat"
+      template: '{{ compress_format(local_path) | default(compress_format(source_label)) }}'
+      emit_when: '{{ compress_format(local_path) is defined or compress_format(source_label) is defined }}'
+
+    - path: "dcat:packageFormat"
+      template: '{{ package_format(local_path) | default(package_format(source_label)) }}'
+      emit_when: '{{ package_format(local_path) is defined or package_format(source_label) is defined }}'
+
+    - path: "dcat:spatialResolutionInMeters"
+      template: '{{ pkg.dpp_suggestions.spatial_resolution_in_meters.value | default("") }}'
+      emit_when: '{{ (pkg.dpp_suggestions.spatial_resolution_in_meters.value | default("")) != "" }}'
+
+    - path: "csvw:tableSchema"
+      template: '{{ build_csvw_schema(stats) | tojson }}'
+      emit_when: '{{ stats is defined and stats }}'
+
+# =========================================================================
+# Catalog envelope
+# =========================================================================
+catalog:
+  type: "dcat:Catalog"
+  title_template: '{%- if inner["dct:title"] -%}Catalog of {{ inner["dct:title"] }}{%- else -%}qsv profile catalog{%- endif -%}'
+  inherit_from_dataset:
+    - "dct:publisher"
+  conforms_to: "https://resources.data.gov/resources/dcat-us3/"
+
+# =========================================================================
+# Discovery merge policy
+# =========================================================================
+discovery_merge:
+  enabled: true
+  never_overwrite:
+    - "@context"
+    - "@type"
+    - "dcat:distribution"
+  default_strategy: fill-if-absent

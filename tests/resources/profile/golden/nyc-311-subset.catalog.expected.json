@@ -1,0 +1,225 @@
+{
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
+  "@type": "dcat:Catalog",
+  "dct:title": "Example Dataset (init-context override)",
+  "dct:conformsTo": {
+    "@type": "dct:Standard",
+    "@id": "https://resources.data.gov/resources/dcat-us3/"
+  },
+  "dct:publisher": {
+    "@type": "foaf:Agent",
+    "foaf:name": "Example Agency"
+  },
+  "dcat:dataset": [
+    {
+      "@type": "dcat:Dataset",
+      "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
+      "dct:title": "Example Dataset (seed)",
+      "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
+      "dct:identifier": "example-dataset",
+      "dct:issued": "2024-01-01",
+      "dct:modified": "2024-12-15",
+      "dct:publisher": {
+        "@type": "foaf:Agent",
+        "foaf:name": "Example Agency"
+      },
+      "dcat:contactPoint": {
+        "@type": "vcard:Individual",
+        "vcard:fn": "Jane Doe",
+        "vcard:hasEmail": "mailto:jane.doe@example.gov"
+      },
+      "dcat:keyword": [
+        "climate",
+        "transportation"
+      ],
+      "dcat:theme": [
+        "transportation"
+      ],
+      "dct:spatial": [
+        {
+          "@type": "dct:Location",
+          "dcat:bbox": "POLYGON((-74.001 40.6779, -74.001 40.8526, -73.8639 40.8526, -73.8639 40.6779, -74.001 40.6779))"
+        }
+      ],
+      "dcat-us:bureauCode": [
+        "015:11"
+      ],
+      "dcat-us:programCode": [
+        "015:001"
+      ],
+      "dcat-us:accessLevel": "public",
+      "dct:conformsTo": [
+        {
+          "@type": "dct:Standard",
+          "@id": "https://resources.data.gov/resources/dcat-us3/"
+        }
+      ],
+      "dct:language": "en",
+      "dcat:landingPage": "https://example.gov/datasets/example-dataset",
+      "dcat:describedBy": "https://example.gov/datasets/example-dataset/data-dictionary.json",
+      "dct:rights": "U.S. Government Work",
+      "dct:accessRights": "public",
+      "dcat-us:purpose": "Track example metric over time.",
+      "skos:scopeNote": "Records cover calendar years 2020-2024 only.",
+      "dcat-us:liabilityStatement": "Provided as-is; verify before operational use.",
+      "dcat:inSeries": "https://example.gov/datasets/example-series",
+      "dct:accrualPeriodicity": {
+        "@id": "http://publications.europa.eu/resource/authority/frequency/ANNUAL"
+      },
+      "dct:created": "2023-06-15",
+      "dcat:version": "1.2.0",
+      "dcat:versionNotes": "Q3 2024 refresh — added new sensors and corrected historical timestamps.",
+      "dcat:distribution": [
+        {
+          "@type": "dcat:Distribution",
+          "dct:title": "example",
+          "dct:description": "Single-CSV distribution of the example dataset.",
+          "dcat:downloadURL": "https://example.gov/datasets/example-dataset/data.csv",
+          "dcat:mediaType": "text/csv",
+          "dct:format": "CSV",
+          "dct:license": "http://creativecommons.org/licenses/by/4.0/",
+          "dcat:accessURL": "https://example.gov/datasets/example-dataset",
+          "dct:rights": "U.S. Government Work",
+          "dct:modified": "2024-12-15T08:30:00",
+          "dcat-us:accessRestriction": {
+            "type": "none"
+          },
+          "dcat-us:useRestriction": {
+            "type": "none"
+          },
+          "dcat-us:cuiRestriction": {
+            "type": "none"
+          },
+          "dct:language": "en",
+          "dct:conformsTo": [
+            {
+              "@type": "dct:Standard",
+              "@id": "https://www.w3.org/TR/tabular-data-model/"
+            }
+          ],
+          "dcat:byteSize": "1189",
+          "dcat:checksum": {
+            "@type": "spdx:Checksum",
+            "spdx:algorithm": "SHA-256",
+            "spdx:checksumValue": "d68e8e7d6f4a10f997003c98615cc582e6efe02ad0576ce8ef554cf92a03ac57"
+          },
+          "csvw:tableSchema": {
+            "columns": [
+              {
+                "datatype": "string",
+                "name": "agency",
+                "qsv:cardinality": 5,
+                "qsv:max": "NYPD",
+                "qsv:min": "DEP",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "agency"
+                ]
+              },
+              {
+                "datatype": "dateTime",
+                "name": "closed_date",
+                "qsv:cardinality": 9,
+                "qsv:max": "2024-01-17T09:00:00+00:00",
+                "qsv:min": "2024-01-15T17:45:00+00:00",
+                "qsv:nullcount": 2,
+                "titles": [
+                  "closed_date"
+                ]
+              },
+              {
+                "datatype": "string",
+                "name": "complaint_type",
+                "qsv:cardinality": 10,
+                "qsv:max": "Water System",
+                "qsv:min": "Blocked Driveway",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "complaint_type"
+                ]
+              },
+              {
+                "datatype": "dateTime",
+                "name": "created_date",
+                "qsv:cardinality": 10,
+                "qsv:max": "2024-01-15T17:30:00+00:00",
+                "qsv:min": "2024-01-15T08:23:00+00:00",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "created_date"
+                ]
+              },
+              {
+                "datatype": "string",
+                "name": "descriptor",
+                "qsv:cardinality": 9,
+                "qsv:max": "Trash",
+                "qsv:min": "Controller",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "descriptor"
+                ]
+              },
+              {
+                "datatype": "integer",
+                "name": "incident_zip",
+                "qsv:cardinality": 10,
+                "qsv:max": "11385",
+                "qsv:min": "10001",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "incident_zip"
+                ]
+              },
+              {
+                "datatype": "double",
+                "name": "latitude",
+                "qsv:cardinality": 10,
+                "qsv:max": "40.8526",
+                "qsv:min": "40.6779",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "latitude"
+                ]
+              },
+              {
+                "datatype": "double",
+                "name": "longitude",
+                "qsv:cardinality": 10,
+                "qsv:max": "-73.8639",
+                "qsv:min": "-74.001",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "longitude"
+                ]
+              },
+              {
+                "datatype": "string",
+                "name": "status",
+                "qsv:cardinality": 2,
+                "qsv:max": "Open",
+                "qsv:min": "Closed",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "status"
+                ]
+              },
+              {
+                "datatype": "integer",
+                "name": "unique_key",
+                "qsv:cardinality": 10,
+                "qsv:max": "55001243",
+                "qsv:min": "55001234",
+                "qsv:nullcount": 0,
+                "titles": [
+                  "unique_key"
+                ]
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ],
+  "dct:modified": "2024-12-31T23:59:59Z"
+}

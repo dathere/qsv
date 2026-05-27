@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://resources.data.gov/dcat-us/3.0.0/definitions/dataservice",
+  "title": "DataService",
+  "description": "A service that provides access to data or data processing functions",
+  "type": "object",
+  "properties": {
+    "@id": {
+      "type": "string",
+      "format": "iri",
+      "examples": ["https://example.gov/data-services/climate-api-001"]
+    },
+    "@type": {
+      "type": "string",
+      "default": "DataService"
+    },
+    "contactPoint": {
+      "title": "contact point",
+      "description": "Contact information for questions about the Data Service. Include an email address that is continuously monitored",
+      "type": "array",
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/kind"
+      },
+      "_oldDocs": {
+        "uri": "dcat:contactPoint",
+        "range": "vcard:Kind"
+      },
+      "requirementLevel": "Mandatory"
+    },
+    "endpointDescription": {
+      "title": "endpoint description",
+      "description": "List of endpoint descriptions with operations and parameters (for example, OpenAPI or similar service documentation)",
+      "type": ["null", "array"],
+      "items": {
+        "type": "string"
+      },
+      "_oldDocs": {
+        "uri": "dcat:endpointDescription",
+        "range": "rdfs:Resource"
+      },
+      "examples": [
+        ["https://api.example.gov/climate/v1/openapi.json"],
+        ["https://api.example.gov/climate/docs/openapi.json"]
+      ],
+      "requirementLevel": "Recommended"
+    },
+    "endpointURL": {
+      "title": "endpoint URL",
+      "description": "A list of root locations or primary endpoints of the service (a Web-resolvable IRI)",
+      "type": "array",
+      "items": {
+        "type": "string",
+        "title": "URLs",
+        "description": "The root location or primary endpoint of the service (a Web-resolvable IRI)",
+        "format": "iri"
+      },
+      "_oldDocs": {
+        "uri": "dcat:endpointURL",
+        "range": "rdfs:Resource"
+      },
+      "examples": [
+        ["https://api.example.gov/climate/v1"],
+        [
+          "https://api.example.gov/climate/v1",
+          "https://api.example.gov/climate/v2"
+        ]
+      ],
+      "requirementLevel": "Mandatory"
+    },
+    "keyword": {
+      "title": "keyword/tag",
+      "description": "List of keywords or tags describing the data service",
+      "type": ["null", "array"],
+      "items": {
+        "title": "Non-empty strings",
+        "type": "string",
+        "minLength": 1
+      },
+      "_oldDocs": {
+        "uri": "dcat:keyword",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        ["climate", "weather", "API"],
+        ["climate", "weather", "temperature", "API", "REST"]
+      ],
+      "requirementLevel": "Optional"
+    },
+    "servesDataset": {
+      "title": "serves dataset",
+      "description": "List of datasets this service provides access to",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/dataset"
+      },
+      "_oldDocs": {
+        "uri": "dcat:servesDataset",
+        "range": "dcat:Dataset"
+      },
+      "requirementLevel": "Recommended"
+    },
+    "spatialResolutionInMeters": {
+      "title": "spatial resolution in meters",
+      "description": "The minimum spatial separation resolvable in a Data Service, measured in meters",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcat:spatialResolutionInMeters",
+        "range": "rdfs:Literal typed as xsd:decimal"
+      },
+      "examples": ["1000"],
+      "requirementLevel": "Optional"
+    },
+    "temporalResolution": {
+      "title": "temporal resolution",
+      "description": "The minimum time period resolvable by the Data Service",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcat:temporalResolution",
+        "range": "rdfs:Literal typed as xsd:duration"
+      },
+      "examples": ["P1D"],
+      "requirementLevel": "Optional"
+    },
+    "theme": {
+      "title": "theme/category",
+      "description": "List of themes or categories for the data service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "_oldDocs": {
+        "uri": "dcat:theme",
+        "range": "skos:Concept"
+      },
+      "requirementLevel": "Optional"
+    },
+    "accessRights": {
+      "title": "access rights",
+      "description": "Information about whether the data service is publicly accessible, restricted, or not public",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "string",
+          "description": "Text description of the access rights"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:accessRights",
+        "range": "dcterms:RightsStatement"
+      },
+      "examples": ["Public access with no restrictions"],
+      "requirementLevel": "Optional"
+    },
+    "conformsTo": {
+      "title": "conforms to",
+      "description": "List of general standards or specifications that the Data Service endpoints implement",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/standard"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:conformsTo",
+        "range": "dcterms:Standard"
+      },
+      "requirementLevel": "Optional"
+    },
+    "created": {
+      "title": "creation date",
+      "description": "The date on which the Data Service was first created",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:created",
+        "range": "rdfs:Literal typed as xsd:date or xsd:dateTime"
+      },
+      "examples": ["2020-01-15", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "creator": {
+      "title": "creator",
+      "description": "List of agents primarily responsible for producing the Data Service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/agent"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:creator",
+        "range": "foaf:Agent"
+      },
+      "requirementLevel": "Optional"
+    },
+    "description": {
+      "title": "description",
+      "description": "Plain-language summary of the data service",
+      "type": ["null", "string"],
+      "_oldDocs": {
+        "uri": "dcterms:description",
+        "range": "rdfs:Literal"
+      },
+      "examples": [
+        "A RESTful API providing access to historical and real-time climate data including temperature, precipitation, and atmospheric conditions."
+      ],
+      "requirementLevel": "Optional"
+    },
+    "identifier": {
+      "title": "identifier",
+      "description": "The unique identifier for the Data Service, e.g. the URI or other unique identifier in the context of the Catalog",
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "$ref": "/dcat-us/3.0.0/definitions/identifier",
+          "description": "inline description of Identifier"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:identifier",
+        "range": "rdfs:Literal"
+      },
+      "requirementLevel": "Optional"
+    },
+    "otherIdentifier": {
+      "title": "other identifier",
+      "description": "A list of identifiers for the Data Service besides the main identifier, e.g. the URI or other unique identifiers in the context of the Catalog",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/identifier"
+      },
+      "requirementLevel": "Optional"
+    },
+    "language": {
+      "title": "language",
+      "description": "ISO 639-1 language code values supported by the data service, such as en or es, full list can be seen at https://id.loc.gov/vocabulary/iso639-1.html",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "title": "Language code",
+          "maxLength": 2
+        },
+        {
+          "type": "array",
+          "title": "List of lanuages",
+          "items": {
+            "title": "Language code",
+            "type": "string",
+            "maxLength": 2
+          }
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:language",
+        "range": "dcterms:LinguisticSystem"
+      },
+      "examples": ["en", ["en", "es"]],
+      "requirementLevel": "Optional"
+    },
+    "license": {
+      "title": "license",
+      "description": "License that governs how the data service can be used or reused",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "type": "string",
+          "description": "Full text of the license"
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:license",
+        "range": "dcterms:LicenseDocument"
+      },
+      "examples": ["https://creativecommons.org/publicdomain/zero/1.0/"],
+      "requirementLevel": "Recommended"
+    },
+    "modified": {
+      "title": "update/modification date",
+      "description": "The most recent date on which the Data Service was changed or modified",
+      "anyOf": [
+        {
+          "type": "null",
+          "title": "Null allowed when not required"
+        },
+        {
+          "title": "Date string",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "string",
+              "format": "date"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}$",
+              "description": "A year in YYYY format"
+            },
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}$",
+              "description": "A year and month in YYYY-MM format"
+            }
+          ]
+        }
+      ],
+      "_oldDocs": {
+        "uri": "dcterms:modified",
+        "range": "rdfs:Literal (typed as xsd:date, xsd:dateTime, xsd:gYear or xsd:gYearMonth)"
+      },
+      "examples": ["2024-03-20", "2024-01-15T10:30:00Z", "2024", "2024-01"],
+      "requirementLevel": "Optional"
+    },
+    "publisher": {
+      "title": "publisher",
+      "description": "Person or organization responsible for publishing and making the data service available",
+      "$ref": "/dcat-us/3.0.0/definitions/agent",
+      "_oldDocs": {
+        "uri": "dcterms:publisher",
+        "range": "foaf:Agent"
+      },
+      "requirementLevel": "Mandatory"
+    },
+    "rights": {
+      "title": "rights",
+      "description": "Rights statements not already covered by license or accessRights, such as copyright or policy restrictions",
+      "type": ["null", "array"],
+      "items": {
+        "type": "string"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:rights",
+        "range": "dcterms:RightsStatement"
+      },
+      "examples": [
+        [
+          "Data provided by the National Climate Data Center is in the public domain."
+        ]
+      ],
+      "requirementLevel": "Optional"
+    },
+    "rightsHolder": {
+      "title": "rights holder",
+      "description": "A list of Agents (organizations) holding rights on the Data Service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/organization"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:rightsHolder",
+        "range": "org:Organization"
+      },
+      "requirementLevel": "Optional"
+    },
+    "spatial": {
+      "title": "spatial/geographic coverage",
+      "description": "A geographic region that is covered by the Data Service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/location"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:spatial",
+        "range": "dcterms:Location"
+      },
+      "requirementLevel": "Optional"
+    },
+    "temporal": {
+      "title": "temporal coverage",
+      "description": "Time periods covered by the data service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/periodoftime"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:temporal",
+        "range": "dcterms:PeriodOfTime"
+      },
+      "requirementLevel": "Optional"
+    },
+    "title": {
+      "title": "title",
+      "description": "Human-readable title of the data service",
+      "type": "string",
+      "_oldDocs": {
+        "uri": "dcterms:title",
+        "range": "rdfs:Literal"
+      },
+      "examples": ["Climate Data REST API"],
+      "requirementLevel": "Mandatory"
+    },
+    "category": {
+      "title": "category",
+      "description": "List of high-level categories for the data service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/concept"
+      },
+      "_oldDocs": {
+        "uri": "dcterms:type",
+        "range": "skos:Concept"
+      },
+      "requirementLevel": "Optional"
+    },
+    "hasQualityMeasurement": {
+      "title": "quality measurement",
+      "description": "Quality measurements for the data service (for example, availability, response time, or reliability)",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/qualitymeasurement"
+      },
+      "_oldDocs": {
+        "uri": "dqv:hasQualityMeasurement",
+        "range": "dqv:QualityMeasurement"
+      },
+      "requirementLevel": "Optional"
+    },
+    "qualifiedAttribution": {
+      "title": "qualified attribution",
+      "description": "List of agents with specific responsibilities for the data service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/attribution"
+      },
+      "_oldDocs": {
+        "uri": "prov:qualifiedAttribution",
+        "range": "prov:Attribution"
+      },
+      "requirementLevel": "Optional"
+    },
+    "wasUsedBy": {
+      "title": "was used by",
+      "description": "List of activities that used or tested the data service",
+      "type": ["null", "array"],
+      "items": {
+        "$ref": "/dcat-us/3.0.0/definitions/activity"
+      },
+      "_oldDocs": {
+        "uri": "prov:wasUsedBy",
+        "range": "prov:Activity"
+      },
+      "requirementLevel": "Optional"
+    }
+  },
+  "required": ["contactPoint", "endpointURL", "publisher", "title"],
+  "_oldDocs": {
+    "rdfClass": "dcat:DataService",
+    "rationale": "Introducing dcat:DataService is essential as it clarifies the representation of data services, addressing the confusion caused by using dcat:Distribution to describe services in DCAT 1. This addition promotes clear communication of service-related information, improving discoverability, and facilitating seamless integration and usage by data consumers and applications."
+  },
+  "examples": [
+    {
+      "@type": "DataService",
+      "title": "Climate Data API",
+      "description": "RESTful API providing access to historical climate observations.",
+      "endpointURL": ["https://api.example.gov/climate/v1"],
+      "endpointDescription": [
+        "https://api.example.gov/climate/v1/openapi.json"
+      ],
+      "contactPoint": [
+        {
+          "fn": "API Support Team",
+          "hasEmail": "mailto:api-support@example.gov"
+        }
+      ],
+      "publisher": {
+        "name": "National Climate Data Center"
+      },
+      "keyword": ["climate", "weather", "API"],
+      "license": "https://creativecommons.org/publicdomain/zero/1.0/",
+      "servesDataset": [
+        {
+          "@id": "https://example.gov/datasets/climate-observations-2024",
+          "@type": "Dataset",
+          "title": "Climate Observations 2024",
+          "description": "Annual climate observation data.",
+          "contactPoint": {
+            "fn": "Climate Support",
+            "hasEmail": "mailto:climate@example.gov"
+          },
+          "publisher": {
+            "name": "National Climate Data Center"
+          },
+          "identifier": "https://example.gov/datasets/climate-observations-2024"
+        }
+      ],
+      "identifier": "https://example.gov/services/climate-api"
+    }
+  ]
+}

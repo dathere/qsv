@@ -281,9 +281,17 @@ dataset:
     # Spatial: prefer WKT suggestion from formula evaluation, fall back to
     # qsv-inferred lat/lon bbox via bbox_from_dpps. Both branches yield an
     # array of dct:Location per DCAT-US v3 cardinality (0..*).
+    # Spatial: prefer WKT suggestion from formula evaluation, fall back to
+    # qsv-inferred lat/lon bbox via bbox_from_dpps. The emit_when guard
+    # suppresses the field entirely when neither source is available —
+    # without it, bbox_from_dpps returning UNDEFINED renders the string
+    # "null" via `| tojson` and coerce_json_or_string keeps it as a
+    # literal string, leaving a malformed `"dct:spatial": "null"` in
+    # the output (Roborev #2490).
     - path: "dct:spatial"
       template: |
         {%- set wkt = pkg.dpp_suggestions.spatial_extent.value | default("") -%}
+        {%- set bbox = bbox_from_dpps(dpp, stats) -%}
         {%- if wkt != "" -%}
         [{
           "@type": "dct:Location",
@@ -292,7 +300,8 @@ dataset:
             "@value": {{ wkt | tojson }}
           }
         }]
-        {%- else -%}{{ bbox_from_dpps(dpp, stats) | tojson }}{%- endif -%}
+        {%- elif bbox -%}{{ bbox | tojson }}{%- endif -%}
+      emit_when: '{{ (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" or bbox_from_dpps(dpp, stats) is defined }}'
 
     - path: "dct:temporal"
       template: |
@@ -334,6 +343,17 @@ dataset:
     - path: "dct:language"
       template: '{{ lookup("iso_639_1", pkg.language | default("")) }}'
       emit_when: '{{ (pkg.language | default("")) != "" }}'
+
+    # --dcat-legacy-license: re-emit dct:license on the Dataset
+    # alongside the v3-required Distribution-level copy. Gated on the
+    # `legacy_license` flag threaded into projection_ctx by
+    # profile.rs::run (Roborev #2490 finding #4). Off by default per
+    # strict v3.
+    - path: "dct:license"
+      template: |
+        {%- set raw = (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
+      emit_when: '{{ legacy_license and (pkg.license_id | default(pkg.license | default(res.license_id | default(res.license | default(""))))) != "" }}'
 
     # ------ add_extended_metadata ------
     - path: "dcat:landingPage"

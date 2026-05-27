@@ -350,13 +350,17 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 ///    discovered.
 ///
 /// Subtree handling:
-/// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/dcat/dct:title`); used
-///   verbatim.
-/// - `package/<key>` — translated to a target pointer via
-///   `profile.translate_ckan_ptr("/package/<key>")`. Untranslated keys (slots this profile does not
-///   surface) are silently skipped — `force: true` on those is a documented no-op.
-/// - `resource/<key>` — translated similarly via `/resource/<key>`. The target side typically
-///   points at `/dcat/dcat:distribution/0/...` for the single-Distribution model.
+/// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/dcat/dct:title`); the raw
+///   value is written directly to that pointer via `apply_force_overrides`. dataset_info bypasses
+///   the profile's templates by design — users who need direct DCAT shape control reach for this
+///   knob.
+/// - `package/<key>` and `resource/<key>` — translated to a target pointer via
+///   `profile.translate_ckan_ptr(...)` and recorded in `paths` so `discovery_merge::merge` won't
+///   overlay them. The value is NOT recorded in `values` because it's already living in the merged
+///   `package`/`resource` (via `normalize_value_force` upstream), and will flow through the
+///   profile's templates normally — that's how shaped fields like `dct:publisher` (Agent object)
+///   and `dcat:contactPoint` (vcard:Individual object) get their proper JSON-LD shape. Writing the
+///   raw CKAN value to the target pointer would bypass that shaping (Roborev #2490 finding #5).
 ///
 /// Returns insertion-ordered vectors; duplicates are not deduped (the
 /// merge / override paths use set-membership semantics per-key).
@@ -368,7 +372,9 @@ fn collect_forced_paths(
     let mut values: Vec<(String, Value)> = Vec::new();
 
     // dataset_info — keys are already /dcat/... pointers (or the
-    // profile's target address space for non-DCAT profiles).
+    // profile's target address space for non-DCAT profiles). These
+    // get the raw-write treatment because they target the projection
+    // output directly.
     if let Some(ds_info) = raw_doc.get("dataset_info").and_then(Value::as_object) {
         for (key, val) in ds_info {
             if let Some(inner) = forced_inner(val) {
@@ -379,15 +385,22 @@ fn collect_forced_paths(
     }
 
     // package + resource — CKAN keys translated to target pointers via
-    // the active profile's field_mappings.
+    // the active profile's field_mappings. Path is recorded for
+    // discovery-merge protection only; the value is intentionally NOT
+    // added to `values` so the profile's templates shape it normally
+    // (e.g. `dct:publisher` template wraps the string in a foaf:Agent
+    // object). The forced value already lives in the merged
+    // package/resource via `normalize_value_force` upstream.
     for (top, key_prefix) in [("package", "/package/"), ("resource", "/resource/")] {
         if let Some(obj) = raw_doc.get(top).and_then(Value::as_object) {
             for (key, val) in obj {
-                if let Some(inner) = forced_inner(val) {
+                if forced_inner(val).is_some() {
                     let ckan_ptr = format!("{key_prefix}{key}");
                     if let Some(target_ptr) = profile.translate_ckan_ptr(&ckan_ptr) {
                         paths.push(target_ptr.to_string());
-                        values.push((target_ptr.to_string(), normalize_value_force(inner.clone())));
+                        // No values.push(...): the value flows through
+                        // normal projection so shaped fields stay
+                        // properly typed.
                     }
                 }
             }
@@ -577,18 +590,25 @@ mod load_initial_context_tests {
 
         let doc = json!({
             "package": {
-                // package-side force now IS collected — translated via
-                // ckan_to_dcat to the /dcat/dct:title DCAT pointer.
+                // package-side force registers its target path for
+                // discovery-merge protection. Roborev #2490 finding
+                // #5: the raw value is NOT added to `values` so the
+                // profile templates shape it (e.g. publisher → Agent
+                // object); the value lives in the merged package via
+                // normalize_value_force.
                 "title": {"value": "X", "force": true},
                 // unknown CKAN key (no DCAT counterpart) — silently dropped.
                 "scheming_version": {"value": "2.0", "force": true},
             },
             "resource": {
                 // resource-side force, translated to the /dcat/...
-                // distribution[0] subtree.
+                // distribution[0] subtree (path only, value flows
+                // through normal projection).
                 "url": {"value": "https://x.gov/d.csv", "force": true},
             },
             "dataset_info": {
+                // dataset_info bypasses templates by design — both
+                // path and value are recorded for raw-write semantics.
                 "/dcat/dct:title":       {"value": "Override", "force": true},
                 "/dcat/dct:description": {"value": "no force", "force": false},
                 "/dcat/dct:identifier":  "plain string",
@@ -612,13 +632,25 @@ mod load_initial_context_tests {
             paths.contains(&"/dcat/dcat:distribution/0/dcat:downloadURL".to_string()),
             "resource.url force must translate to distribution[0].downloadURL"
         );
-        // Sanity on values: distribution URL force must carry the inner
-        // string value (post-unwrap), not the {value, force} wrapper.
-        let url_val = values
-            .iter()
-            .find(|(p, _)| p == "/dcat/dcat:distribution/0/dcat:downloadURL")
-            .map(|(_, v)| v.clone());
-        assert_eq!(url_val, Some(json!("https://x.gov/d.csv")));
+        // Only dataset_info forces populate `values` now (raw-write
+        // pathway). package/resource forces flow through normal
+        // projection so they don't appear here.
+        let dataset_info_value_paths: Vec<&str> = values.iter().map(|(p, _)| p.as_str()).collect();
+        assert!(
+            dataset_info_value_paths.contains(&"/dcat/dct:title"),
+            "dataset_info /dcat/dct:title raw-write value must be recorded"
+        );
+        assert!(
+            dataset_info_value_paths.contains(&"/dcat/dct:rights"),
+            "dataset_info /dcat/dct:rights raw-write value must be recorded"
+        );
+        // resource.url's value should NOT be in `values` — it flows
+        // through projection so the dcat:downloadURL template's
+        // only_if_absolute_iri filter still validates the IRI.
+        assert!(
+            !dataset_info_value_paths.contains(&"/dcat/dcat:distribution/0/dcat:downloadURL"),
+            "resource.url force value must flow through projection, not raw-write"
+        );
     }
 
     #[test]

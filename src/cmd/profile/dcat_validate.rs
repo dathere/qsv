@@ -239,18 +239,50 @@ fn build_validator(entry_json: &str) -> Result<Validator, String> {
 // Public API
 // -----------------------------------------------------------------------------
 
-/// Validate `block` against the appropriate vendored DCAT-US v3
-/// schema (Dataset overlay or Catalog overlay, chosen by inspecting
-/// `@type`). Returns one `ProjectionWarning` per violation; an empty
-/// Vec indicates the block is conformant.
+/// Validate `block` against the profile's declared schema bundle.
+/// Returns one `ProjectionWarning` per violation; an empty Vec
+/// indicates the block is conformant.
 ///
 /// When `profile.validation.enabled == false`, validation is a no-op
 /// (returns an empty Vec). Non-DCAT profiles use this to opt out of
 /// JSON-Schema validation entirely.
+///
+/// Only the vendored DCAT-US v3 GSA bundle is supported today. The
+/// profile is expected to declare `schema_dir: resources/dcat-us-v3/`
+/// (matching `EMBEDDED_SCHEMA_DIR`); any other `schema_dir` produces a
+/// single `Recommended`-severity warning explaining that arbitrary
+/// schema-bundle loading is a queued follow-up (Roborev #2490 finding
+/// #6). The embedded validators are still used when the profile points
+/// at the bundled directory so DCAT-US v3 validation behaves
+/// unchanged.
 pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> {
     if !profile.validation.enabled {
         return Vec::new();
     }
+
+    // The embedded validators hold the vendored GSA DCAT-US v3
+    // bundle. A profile whose `schema_dir` matches this directory
+    // path gets validated against the embedded validators; anything
+    // else short-circuits with a heads-up warning rather than
+    // silently misvalidating against the wrong schema.
+    const EMBEDDED_SCHEMA_DIR: &str = "resources/dcat-us-v3/";
+    if let Some(dir) = &profile.validation.schema_dir
+        && !dir.is_empty()
+        && dir.trim_end_matches('/') != EMBEDDED_SCHEMA_DIR.trim_end_matches('/')
+    {
+        return vec![ProjectionWarning {
+            field:    "dcat_validate".to_string(),
+            severity: Severity::Recommended,
+            message:  format!(
+                "profile `{}` declares schema_dir=`{}` but qsv currently only ships the embedded \
+                 GSA DCAT-US v3 bundle at `{EMBEDDED_SCHEMA_DIR}`. JSON Schema validation against \
+                 custom bundles is a queued follow-up; the projection was emitted but not \
+                 validated.",
+                profile.name, dir
+            ),
+        }];
+    }
+
     let prefixes: Vec<&str> = profile
         .validation
         .strippable_curie_prefixes

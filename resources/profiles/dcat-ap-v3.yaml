@@ -222,6 +222,7 @@ dataset:
     - path: "dct:spatial"
       template: |
         {%- set wkt = pkg.dpp_suggestions.spatial_extent.value | default("") -%}
+        {%- set bbox = bbox_from_dpps(dpp, stats) -%}
         {%- if wkt != "" -%}
         [{
           "@type": "dct:Location",
@@ -230,7 +231,8 @@ dataset:
             "@value": {{ wkt | tojson }}
           }
         }]
-        {%- else -%}{{ bbox_from_dpps(dpp, stats) | tojson }}{%- endif -%}
+        {%- elif bbox -%}{{ bbox | tojson }}{%- endif -%}
+      emit_when: '{{ (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" or bbox_from_dpps(dpp, stats) is defined }}'
 
     - path: "dct:temporal"
       template: |

@@ -1,4 +1,5 @@
 {
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "@type": "dcat:Catalog",
   "dct:title": "Example Dataset (init-context override)",
   "dct:conformsTo": {
@@ -34,7 +35,6 @@
       "dcat:theme": [
         "transportation"
       ],
-      "dct:spatial": "null",
       "dct:temporal": [
         {
           "@type": "dct:PeriodOfTime",

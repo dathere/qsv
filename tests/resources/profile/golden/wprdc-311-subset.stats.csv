@@ -1,0 +1,12 @@
+field,type,is_ascii,sum,min,max,range,sort_order,sortiness,min_length,max_length,sum_length,avg_length,stddev_length,variance_length,cv_length,mean,sem,geometric_mean,harmonic_mean,stddev,variance,cv,nullcount,n_negative,n_zero,n_positive,max_precision,sparsity,cardinality,uniqueness_ratio
+REQUEST_ID,Integer,,30010055,3001001,3001010,9,Ascending,1,,,,,,,,3001005.5,0.9083,3001005.5,3001005.5,2.8723,8.25,0.0001,0,0,0,10,,0,10,1
+CREATED_ON,DateTime,,,2024-02-01T08:15:00+00:00,2024-02-01T17:20:00+00:00,0.37847,Ascending,1,,,,,,,,2024-02-01T13:16:00+00:00,0.03988,19754.55278,19754.55278,0.1261,0.0159,0.0006,0,,,,,0,10,1
+REQUEST_TYPE,String,true,,Building - Commercial,Weeds/Debris,,Unsorted,-0.1111,7,22,148,14.8,5.4553,29.76,0.3686,,,,,,,,0,,,,,0,10,1
+REQUEST_ORIGIN,String,true,,311 Mobile App,Call Center,,Unsorted,-0.1111,10,14,117,11.7,1.5524,2.41,0.1327,,,,,,,,0,,,,,0,3,0.3
+STATUS,String,true,,Closed,Open,,Unsorted,0.3333,4,6,54,5.4,0.9165,0.84,0.1697,,,,,,,,0,,,,,0,2,0.2
+DEPARTMENT,String,true,,DPW - Forestry,Refuse,,Unsorted,0.3333,6,32,206,20.6,8.8679,78.64,0.4305,,,,,,,,0,,,,,0,6,0.6
+NEIGHBORHOOD,String,true,,Bloomfield,Squirrel Hill South,,Unsorted,-0.3333,7,19,116,11.6,3.5833,12.84,0.3089,,,,,,,,0,,,,,0,10,1
+COUNCIL_DISTRICT,Integer,,61,2,9,7,Unsorted,-0.3333,,,,,,,,6.1,0.6993,5.6028,5.001,2.2113,4.89,36.2514,0,0,0,10,,0,7,0.7
+WARD,Integer,,137,2,29,27,Unsorted,0.1111,,,,,,,,13.7,2.2318,11.4374,8.3628,7.0576,49.81,51.5155,0,0,0,10,,0,8,0.8
+X,Float,,-799.6558,-80.0207,-79.9197,0.101,Unsorted,-0.1111,,,,,,,,-79.9656,0.0119,,,0.0375,0.0014,-0.047,0,10,0,0,4,0,10,1
+Y,Float,,404.3951,40.3978,40.4837,0.0859,Unsorted,0.1111,,,,,,,,40.4395,0.009,40.4395,40.4395,0.0283,0.0008,0.07,0,0,0,10,4,0,10,1

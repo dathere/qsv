@@ -270,7 +270,7 @@ pub enum RequiredLevel {
     Optional,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct DiscoveryMerge {
     /// When `false`, discovery-merge is a no-op for this profile.
@@ -285,6 +285,26 @@ pub struct DiscoveryMerge {
     /// `never`.
     #[serde(default)]
     pub default_strategy: Option<String>,
+}
+
+// Hand-rolled Default so callers that build a ProfileSpec without
+// deserializing (e.g. tests, in-memory construction) see the same
+// "fill-if-absent enabled" behavior documented for omitted
+// `discovery_merge:` blocks. The serde `default = "default_true"`
+// annotation only fires during deserialization; #[derive(Default)]
+// would leave `enabled: false` which silently disables merging.
+impl Default for DiscoveryMerge {
+    fn default() -> Self {
+        Self {
+            enabled:          true,
+            never_overwrite:  vec![
+                "@context".to_string(),
+                "@type".to_string(),
+                "dcat:distribution".to_string(),
+            ],
+            default_strategy: Some("fill-if-absent".to_string()),
+        }
+    }
 }
 
 /// Croissant-specific RecordSet declaration. The engine emits one

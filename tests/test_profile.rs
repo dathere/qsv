@@ -451,6 +451,199 @@ fn croissant_distribution_uses_file_object_type() {
     assert_eq!(file_obj_type, "sc:FileObject");
 }
 
+// =========================================================================
+// Roborev #2490 regression guards
+// =========================================================================
+
+#[test]
+fn catalog_envelope_carries_top_level_context() {
+    // Finding #2: the Catalog envelope contains CURIE keys
+    // (`dct:title`, `dct:conformsTo`, `dcat:dataset`) so it needs its
+    // own @context to be valid JSON-LD. Without one downstream
+    // JSON-LD consumers can't resolve the outer keys.
+    let wrk = Workdir::new("catalog_context_guard");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--catalog", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let context = out
+        .pointer("/dcat/@context")
+        .and_then(|v| v.as_str())
+        .expect("Catalog envelope must carry @context");
+    assert!(
+        context.contains("doi-do") || context.contains("dcat-us"),
+        "Catalog @context must be the DCAT-US context URI, got `{context}`",
+    );
+}
+
+#[test]
+fn catalog_mode_merges_discovered_into_inner_dataset_not_envelope() {
+    // Finding #1: in Catalog mode, discovered metadata must land on
+    // the inner Dataset (dcat:dataset[0]), not on the outer Catalog
+    // envelope. The test runs through the orchestrator end-to-end;
+    // since seed_geo_csv has no URL-discovered DCAT it's a structural
+    // assertion that envelope keys don't accidentally pick up
+    // Dataset-only fields (`dct:contactPoint`, `dcat:keyword`, etc).
+    let wrk = Workdir::new("catalog_merge_target");
+    seed_geo_csv(&wrk);
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--catalog", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    // Outer envelope keys: @context, @type, dct:title, dct:conformsTo,
+    // dcat:dataset, plus optionally dct:publisher.
+    let envelope_keys: Vec<String> = out
+        .pointer("/dcat")
+        .and_then(|v| v.as_object())
+        .map(|o| o.keys().cloned().collect())
+        .unwrap_or_default();
+    let leaked = envelope_keys.iter().find(|k| {
+        matches!(
+            k.as_str(),
+            "dcat:contactPoint" | "dcat:keyword" | "dcat:theme" | "dct:spatial" | "dct:temporal"
+        )
+    });
+    assert!(
+        leaked.is_none(),
+        "Catalog envelope must not carry Dataset-only keys (found `{leaked:?}`)",
+    );
+    // The Dataset keys must live in dcat:dataset[0].
+    let inner_ds = out
+        .pointer("/dcat/dcat:dataset/0")
+        .and_then(|v| v.as_object())
+        .expect("dcat:dataset[0] missing");
+    assert!(
+        inner_ds.contains_key("dct:title"),
+        "inner Dataset must carry dct:title",
+    );
+}
+
+#[test]
+fn spatial_field_suppressed_when_no_lat_lon_columns() {
+    // Finding #3: bbox_from_dpps returning UNDEFINED previously
+    // rendered as the literal string "null" via `| tojson` because
+    // coerce_json_or_string left non-{,[ strings alone. The
+    // emit_when guard now suppresses the field entirely. Fixture:
+    // usda-soil-subset.csv has no lat/lon columns.
+    let wrk = Workdir::new("spatial_no_latlon");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/usda-soil-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/dcat/dct:spatial").is_none(),
+        "dct:spatial must be absent when no bbox is available; got `{:?}`",
+        out.pointer("/dcat/dct:spatial"),
+    );
+}
+
+#[test]
+fn dcat_legacy_license_emits_dataset_level_license() {
+    // Finding #4: --dcat-legacy-license previously parsed but didn't
+    // thread into the projection context. With the flag set, the
+    // YAML's gated dct:license template must emit on the Dataset
+    // alongside the Distribution-level copy.
+    let wrk = Workdir::new("dcat_legacy_license");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(&ctx_path, r#"{"package": {"license_id": "cc-by"}}"#).unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--dcat-legacy-license",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let dataset_license = out
+        .pointer("/dcat/dct:license")
+        .and_then(|v| v.as_str())
+        .expect("--dcat-legacy-license must emit dct:license on Dataset");
+    assert!(
+        dataset_license.contains("creativecommons.org"),
+        "Dataset-level license must be the resolved IRI, got `{dataset_license}`",
+    );
+    // Distribution-level license must STILL be there (v3 mandate).
+    assert!(
+        out.pointer("/dcat/dcat:distribution/0/dct:license")
+            .is_some(),
+        "Distribution-level dct:license must also be present (strict v3)",
+    );
+}
+
+#[test]
+fn dcat_legacy_license_off_keeps_license_distribution_only() {
+    // Companion to the above: without --dcat-legacy-license, the
+    // Dataset must NOT carry dct:license (strict v3 default).
+    let wrk = Workdir::new("dcat_legacy_license_off");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(&ctx_path, r#"{"package": {"license_id": "cc-by"}}"#).unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    assert!(
+        out.pointer("/dcat/dct:license").is_none(),
+        "strict v3 must NOT emit dct:license on Dataset by default",
+    );
+}
+
+#[test]
+fn forced_package_publisher_flows_through_profile_template() {
+    // Finding #5: forcing package.publisher previously wrote a raw
+    // string to dct:publisher (bypassing the foaf:Agent wrapper). The
+    // fix routes CKAN-side forces through normal projection so the
+    // template still wraps the value as an Agent object.
+    let wrk = Workdir::new("force_publisher_shape");
+    seed_geo_csv(&wrk);
+    let ctx_path = wrk.path("init.json");
+    std::fs::write(
+        &ctx_path,
+        r#"{"package": {"publisher": {"value": "Forced Publisher", "force": true}}}"#,
+    )
+    .unwrap();
+    let mut cmd = wrk.command("profile");
+    cmd.args([
+        "in.csv",
+        "--initial-context",
+        ctx_path.to_str().unwrap(),
+        "-o",
+        "out.json",
+    ]);
+    wrk.assert_success(&mut cmd);
+    let out = read_output(&wrk, "out.json");
+    let publisher = out
+        .pointer("/dcat/dct:publisher")
+        .expect("dct:publisher must be emitted");
+    assert!(
+        publisher.is_object(),
+        "forced publisher must be a foaf:Agent object, got: {publisher:?}",
+    );
+    assert_eq!(
+        publisher.pointer("/foaf:name").and_then(|v| v.as_str()),
+        Some("Forced Publisher"),
+    );
+    assert_eq!(
+        publisher.pointer("/@type").and_then(|v| v.as_str()),
+        Some("foaf:Agent"),
+    );
+}
+
 #[test]
 fn profile_spec_less_emits_dpp_block() {
     let wrk = Workdir::new("profile_spec_less");

@@ -160,6 +160,36 @@ pub fn project(
     Ok((block, warnings))
 }
 
+/// Wrap a Dataset block inside the profile's Catalog envelope.
+///
+/// Companion to `project(..., Dataset)` — call this after
+/// `discovery_merge::merge` has applied so the discovered metadata
+/// lands on the inner Dataset (Roborev #2490 finding #1), not on the
+/// outer Catalog envelope. The returned Catalog block carries its own
+/// `@context` (mirrored from the Dataset block) so the envelope is
+/// itself valid JSON-LD.
+///
+/// Re-uses the existing `wrap_as_catalog` helper which already
+/// understands `profile.catalog`. We build a fresh minijinja
+/// environment because the helper only needs it for the optional
+/// `title_template` + any catalog-only fields. `analysis_ctx` flows
+/// through so catalog templates can reach the same `pkg`/`res`/`stats`
+/// values the Dataset templates see.
+pub fn wrap_in_catalog_envelope(
+    profile: &ProfileSpec,
+    dataset: Value,
+    analysis_ctx: &Value,
+) -> CliResult<(Value, Vec<ProjectionWarning>)> {
+    let mut env = Environment::new();
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
+    formula_helpers::register(&mut env);
+    register_profile_helpers(&mut env, profile);
+    let mj_ctx = minijinja::Value::from_serialize(analysis_ctx);
+    let mut warnings: Vec<ProjectionWarning> = Vec::new();
+    let block = wrap_as_catalog(&env, &mj_ctx, profile, dataset, &mut warnings);
+    Ok((block, warnings))
+}
+
 // -----------------------------------------------------------------------
 // Field emission
 // -----------------------------------------------------------------------
@@ -293,6 +323,18 @@ pub fn wrap_as_catalog(
     };
 
     let mut catalog = serde_json::Map::new();
+
+    // Roborev #2490: the Catalog envelope carries CURIE keys
+    // (`dct:title`, `dct:conformsTo`, `dcat:dataset`, plus any
+    // inherited Dataset keys) so it needs its own `@context`.
+    // Without one, the envelope itself isn't valid JSON-LD.
+    // Source the context from the profile's dataset block — the inner
+    // Dataset still keeps its own `@context` for self-containment, so
+    // the redundancy is intentional (JSON-LD allows nested
+    // re-declaration).
+    if let Some(context) = &profile.dataset.context {
+        catalog.insert("@context".to_string(), context.clone());
+    }
     catalog.insert("@type".to_string(), Value::String(cat_type));
     catalog.insert("dct:title".to_string(), Value::String(title));
 

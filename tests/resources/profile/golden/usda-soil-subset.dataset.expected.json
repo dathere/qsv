@@ -22,7 +22,6 @@
   "dcat:theme": [
     "transportation"
   ],
-  "dct:spatial": "null",
   "dct:temporal": [
     {
       "@type": "dct:PeriodOfTime",

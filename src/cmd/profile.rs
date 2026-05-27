@@ -377,30 +377,45 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // user-facing path/URL/"stdin"; `local_path` is the actual
         // on-disk file (tempfile path for URL/stdin inputs); `stats`
         // is the dpps stats array used by csvw:tableSchema.
+        // Roborev #2490 finding #4: thread the --dcat-legacy-license
+        // flag into the projection context so the YAML templates can
+        // optionally re-emit dct:license at the Dataset level (DCAT
+        // v1.1 back-compat). Strict v3 keeps license on Distribution
+        // only; the flag is off by default.
         let projection_ctx = json!({
-            "pkg":          package,
-            "res":          resource,
-            "stats":        stats,
-            "dpp":          dpp,
-            "source_label": display_input,
-            "local_path":   input_path,
+            "pkg":            package,
+            "res":            resource,
+            "stats":          stats,
+            "dpp":            dpp,
+            "source_label":   display_input,
+            "local_path":     input_path,
+            "legacy_license": args.flag_dcat_legacy_license,
         });
-        // Project once in the requested mode. Catalog mode bakes the
-        // catalog envelope into the same call so the stale-warning
-        // filter consults the right shape downstream.
-        let mode = if args.flag_catalog {
-            projection::ProjectionMode::Catalog
-        } else {
-            projection::ProjectionMode::Dataset
-        };
-        let (dcat_block, projection_warnings) =
-            projection::project(&profile, &projection_ctx, mode)?;
-        let merged_dcat = discovery_merge::merge(
+        // Always project in Dataset mode first, so the discovery merge
+        // applies to the Dataset's top-level keys before the Catalog
+        // envelope is wrapped around them (Roborev #2490 finding #1).
+        // Wrapping first would push discovered Dataset metadata onto
+        // the outer Catalog (where keys like `dct:contactPoint`
+        // shouldn't live) instead of the inner Dataset.
+        let (dataset_block, mut projection_warnings) = projection::project(
             &profile,
-            dcat_block,
+            &projection_ctx,
+            projection::ProjectionMode::Dataset,
+        )?;
+        let merged_dataset = discovery_merge::merge(
+            &profile,
+            dataset_block,
             discovered_dcat.as_ref(),
             &analysis.forced_dcat_paths,
         );
+        let merged_dcat = if args.flag_catalog {
+            let (catalog_block, cat_warnings) =
+                projection::wrap_in_catalog_envelope(&profile, merged_dataset, &projection_ctx)?;
+            projection_warnings.extend(cat_warnings);
+            catalog_block
+        } else {
+            merged_dataset
+        };
         out_map.insert("dcat".to_string(), merged_dcat);
         // Stash the build-time warnings for now; we'll insert them
         // after dataset_info overrides + schema validation have had

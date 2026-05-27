@@ -1,11 +1,11 @@
 {
-  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "@type": "dcat:Dataset",
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "dct:title": "Example Dataset (init-context override)",
   "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
   "dct:identifier": "example-dataset",
-  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:issued": "2024-01-01",
+  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:publisher": {
     "@type": "foaf:Agent",
     "foaf:name": "Example Agency"
@@ -93,114 +93,114 @@
       "csvw:tableSchema": {
         "columns": [
           {
-            "name": "unique_key",
-            "titles": [
-              "unique_key"
-            ],
-            "datatype": "integer",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "55001234",
-            "qsv:max": "55001243"
-          },
-          {
-            "name": "created_date",
-            "titles": [
-              "created_date"
-            ],
-            "datatype": "dateTime",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "2024-01-15T08:23:00+00:00",
-            "qsv:max": "2024-01-15T17:30:00+00:00"
-          },
-          {
-            "name": "closed_date",
-            "titles": [
-              "closed_date"
-            ],
-            "datatype": "dateTime",
-            "qsv:cardinality": 9,
-            "qsv:nullcount": 2,
-            "qsv:min": "2024-01-15T17:45:00+00:00",
-            "qsv:max": "2024-01-17T09:00:00+00:00"
-          },
-          {
+            "datatype": "string",
             "name": "agency",
+            "qsv:cardinality": 5,
+            "qsv:max": "NYPD",
+            "qsv:min": "DEP",
+            "qsv:nullcount": 0,
             "titles": [
               "agency"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 5,
-            "qsv:nullcount": 0,
-            "qsv:min": "DEP",
-            "qsv:max": "NYPD"
+            ]
           },
           {
+            "datatype": "dateTime",
+            "name": "closed_date",
+            "qsv:cardinality": 9,
+            "qsv:max": "2024-01-17T09:00:00+00:00",
+            "qsv:min": "2024-01-15T17:45:00+00:00",
+            "qsv:nullcount": 2,
+            "titles": [
+              "closed_date"
+            ]
+          },
+          {
+            "datatype": "string",
             "name": "complaint_type",
+            "qsv:cardinality": 10,
+            "qsv:max": "Water System",
+            "qsv:min": "Blocked Driveway",
+            "qsv:nullcount": 0,
             "titles": [
               "complaint_type"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "Blocked Driveway",
-            "qsv:max": "Water System"
+            ]
           },
           {
+            "datatype": "dateTime",
+            "name": "created_date",
+            "qsv:cardinality": 10,
+            "qsv:max": "2024-01-15T17:30:00+00:00",
+            "qsv:min": "2024-01-15T08:23:00+00:00",
+            "qsv:nullcount": 0,
+            "titles": [
+              "created_date"
+            ]
+          },
+          {
+            "datatype": "string",
             "name": "descriptor",
+            "qsv:cardinality": 9,
+            "qsv:max": "Trash",
+            "qsv:min": "Controller",
+            "qsv:nullcount": 0,
             "titles": [
               "descriptor"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 9,
-            "qsv:nullcount": 0,
-            "qsv:min": "Controller",
-            "qsv:max": "Trash"
+            ]
           },
           {
+            "datatype": "integer",
             "name": "incident_zip",
+            "qsv:cardinality": 10,
+            "qsv:max": "11385",
+            "qsv:min": "10001",
+            "qsv:nullcount": 0,
             "titles": [
               "incident_zip"
-            ],
-            "datatype": "integer",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "10001",
-            "qsv:max": "11385"
+            ]
           },
           {
+            "datatype": "double",
             "name": "latitude",
+            "qsv:cardinality": 10,
+            "qsv:max": "40.8526",
+            "qsv:min": "40.6779",
+            "qsv:nullcount": 0,
             "titles": [
               "latitude"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "40.6779",
-            "qsv:max": "40.8526"
+            ]
           },
           {
+            "datatype": "double",
             "name": "longitude",
+            "qsv:cardinality": 10,
+            "qsv:max": "-73.8639",
+            "qsv:min": "-74.001",
+            "qsv:nullcount": 0,
             "titles": [
               "longitude"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "-74.001",
-            "qsv:max": "-73.8639"
+            ]
           },
           {
+            "datatype": "string",
             "name": "status",
+            "qsv:cardinality": 2,
+            "qsv:max": "Open",
+            "qsv:min": "Closed",
+            "qsv:nullcount": 0,
             "titles": [
               "status"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 2,
+            ]
+          },
+          {
+            "datatype": "integer",
+            "name": "unique_key",
+            "qsv:cardinality": 10,
+            "qsv:max": "55001243",
+            "qsv:min": "55001234",
             "qsv:nullcount": 0,
-            "qsv:min": "Closed",
-            "qsv:max": "Open"
+            "titles": [
+              "unique_key"
+            ]
           }
         ]
       }

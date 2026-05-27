@@ -1,11 +1,11 @@
 {
-  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "@type": "dcat:Dataset",
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "dct:title": "Example Dataset (init-context override)",
   "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
   "dct:identifier": "example-dataset",
-  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:issued": "2024-01-01",
+  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:publisher": {
     "@type": "foaf:Agent",
     "foaf:name": "Example Agency"
@@ -93,125 +93,125 @@
       "csvw:tableSchema": {
         "columns": [
           {
-            "name": "REQUEST_ID",
-            "titles": [
-              "REQUEST_ID"
-            ],
             "datatype": "integer",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "3001001",
-            "qsv:max": "3001010"
-          },
-          {
-            "name": "CREATED_ON",
-            "titles": [
-              "CREATED_ON"
-            ],
-            "datatype": "dateTime",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "2024-02-01T08:15:00+00:00",
-            "qsv:max": "2024-02-01T17:20:00+00:00"
-          },
-          {
-            "name": "REQUEST_TYPE",
-            "titles": [
-              "REQUEST_TYPE"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "Building - Commercial",
-            "qsv:max": "Weeds/Debris"
-          },
-          {
-            "name": "REQUEST_ORIGIN",
-            "titles": [
-              "REQUEST_ORIGIN"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 3,
-            "qsv:nullcount": 0,
-            "qsv:min": "311 Mobile App",
-            "qsv:max": "Call Center"
-          },
-          {
-            "name": "STATUS",
-            "titles": [
-              "STATUS"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 2,
-            "qsv:nullcount": 0,
-            "qsv:min": "Closed",
-            "qsv:max": "Open"
-          },
-          {
-            "name": "DEPARTMENT",
-            "titles": [
-              "DEPARTMENT"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 6,
-            "qsv:nullcount": 0,
-            "qsv:min": "DPW - Forestry",
-            "qsv:max": "Refuse"
-          },
-          {
-            "name": "NEIGHBORHOOD",
-            "titles": [
-              "NEIGHBORHOOD"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "Bloomfield",
-            "qsv:max": "Squirrel Hill South"
-          },
-          {
             "name": "COUNCIL_DISTRICT",
+            "qsv:cardinality": 7,
+            "qsv:max": "9",
+            "qsv:min": "2",
+            "qsv:nullcount": 0,
             "titles": [
               "COUNCIL_DISTRICT"
-            ],
-            "datatype": "integer",
-            "qsv:cardinality": 7,
-            "qsv:nullcount": 0,
-            "qsv:min": "2",
-            "qsv:max": "9"
+            ]
           },
           {
+            "datatype": "dateTime",
+            "name": "CREATED_ON",
+            "qsv:cardinality": 10,
+            "qsv:max": "2024-02-01T17:20:00+00:00",
+            "qsv:min": "2024-02-01T08:15:00+00:00",
+            "qsv:nullcount": 0,
+            "titles": [
+              "CREATED_ON"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "DEPARTMENT",
+            "qsv:cardinality": 6,
+            "qsv:max": "Refuse",
+            "qsv:min": "DPW - Forestry",
+            "qsv:nullcount": 0,
+            "titles": [
+              "DEPARTMENT"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "NEIGHBORHOOD",
+            "qsv:cardinality": 10,
+            "qsv:max": "Squirrel Hill South",
+            "qsv:min": "Bloomfield",
+            "qsv:nullcount": 0,
+            "titles": [
+              "NEIGHBORHOOD"
+            ]
+          },
+          {
+            "datatype": "integer",
+            "name": "REQUEST_ID",
+            "qsv:cardinality": 10,
+            "qsv:max": "3001010",
+            "qsv:min": "3001001",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_ID"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "REQUEST_ORIGIN",
+            "qsv:cardinality": 3,
+            "qsv:max": "Call Center",
+            "qsv:min": "311 Mobile App",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_ORIGIN"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "REQUEST_TYPE",
+            "qsv:cardinality": 10,
+            "qsv:max": "Weeds/Debris",
+            "qsv:min": "Building - Commercial",
+            "qsv:nullcount": 0,
+            "titles": [
+              "REQUEST_TYPE"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "STATUS",
+            "qsv:cardinality": 2,
+            "qsv:max": "Open",
+            "qsv:min": "Closed",
+            "qsv:nullcount": 0,
+            "titles": [
+              "STATUS"
+            ]
+          },
+          {
+            "datatype": "integer",
             "name": "WARD",
+            "qsv:cardinality": 8,
+            "qsv:max": "29",
+            "qsv:min": "2",
+            "qsv:nullcount": 0,
             "titles": [
               "WARD"
-            ],
-            "datatype": "integer",
-            "qsv:cardinality": 8,
-            "qsv:nullcount": 0,
-            "qsv:min": "2",
-            "qsv:max": "29"
+            ]
           },
           {
+            "datatype": "double",
             "name": "X",
+            "qsv:cardinality": 10,
+            "qsv:max": "-79.9197",
+            "qsv:min": "-80.0207",
+            "qsv:nullcount": 0,
             "titles": [
               "X"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "-80.0207",
-            "qsv:max": "-79.9197"
+            ]
           },
           {
+            "datatype": "double",
             "name": "Y",
+            "qsv:cardinality": 10,
+            "qsv:max": "40.4837",
+            "qsv:min": "40.3978",
+            "qsv:nullcount": 0,
             "titles": [
               "Y"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "40.3978",
-            "qsv:max": "40.4837"
+            ]
           }
         ]
       }

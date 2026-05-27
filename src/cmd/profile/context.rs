@@ -38,6 +38,11 @@ pub struct ContextArgs<'a> {
     pub force:           bool,
     pub memcheck:        bool,
     pub initial_context: Option<&'a str>,
+    /// Active profile — drives the CKAN→target mapping in
+    /// `collect_forced_paths`. Threaded through here so context
+    /// construction stays decoupled from the orchestrator's profile
+    /// load.
+    pub profile:         &'a super::profile_spec::ProfileSpec,
 }
 
 /// Result of the analysis pass — the JSON context plus the column headers we
@@ -178,7 +183,7 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
     // round-trip it through the analysis context so the orchestrator
     // doesn't need a separate loader call.
     let (package, mut resource, dataset_info, forced_dcat_paths, forced_values) =
-        load_initial_context(args.initial_context)?;
+        load_initial_context(args.initial_context, args.profile)?;
     // Default resource.name from the input file stem if not explicitly seeded.
     if !resource.is_object() {
         resource = json!({});
@@ -338,29 +343,32 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 /// (before `normalize_value_force` strips the wrappers) and collect
 /// every `{value, force: true}`-marked leaf as both:
 ///
-/// 1. A DCAT JSON-Pointer path (the `paths` return value) for `merge_discovered`'s skip-test — same
-///    shape as before.
-/// 2. A `(dcat_pointer, value)` pair (the `values` return value) for the new
-///    `apply_force_overrides` step in `profile.rs::run`, which applies forced leaves LAST so they
-///    beat inferred and discovered.
+/// 1. A target JSON-Pointer path (the `paths` return value) for `discovery_merge::merge`'s
+///    skip-test — same shape as before.
+/// 2. A `(target_pointer, value)` pair (the `values` return value) for the `apply_force_overrides`
+///    step in `profile.rs::run`, which applies forced leaves LAST so they beat inferred and
+///    discovered.
 ///
 /// Subtree handling:
-/// - `dataset_info/<key>` — key is already a DCAT JSON pointer (e.g. `/dcat/dct:title`); used
+/// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/dcat/dct:title`); used
 ///   verbatim.
-/// - `package/<key>` — translated to a DCAT pointer via
-///   `ckan_to_dcat::translate_ckan_ptr("/package/<key>")`. Untranslated keys (CKAN slots qsv
-///   profile does not surface in DCAT) are silently skipped — `force: true` on those is a
-///   documented no-op.
-/// - `resource/<key>` — translated similarly via `/resource/<key>`. The DCAT side targets
-///   `/dcat/dcat:distribution/0/...` per the single-Distribution model.
+/// - `package/<key>` — translated to a target pointer via
+///   `profile.translate_ckan_ptr("/package/<key>")`. Untranslated keys (slots this profile does not
+///   surface) are silently skipped — `force: true` on those is a documented no-op.
+/// - `resource/<key>` — translated similarly via `/resource/<key>`. The target side typically
+///   points at `/dcat/dcat:distribution/0/...` for the single-Distribution model.
 ///
 /// Returns insertion-ordered vectors; duplicates are not deduped (the
 /// merge / override paths use set-membership semantics per-key).
-fn collect_forced_paths(raw_doc: &Value) -> (Vec<String>, Vec<(String, Value)>) {
+fn collect_forced_paths(
+    raw_doc: &Value,
+    profile: &super::profile_spec::ProfileSpec,
+) -> (Vec<String>, Vec<(String, Value)>) {
     let mut paths: Vec<String> = Vec::new();
     let mut values: Vec<(String, Value)> = Vec::new();
 
-    // dataset_info — keys are already /dcat/... pointers.
+    // dataset_info — keys are already /dcat/... pointers (or the
+    // profile's target address space for non-DCAT profiles).
     if let Some(ds_info) = raw_doc.get("dataset_info").and_then(Value::as_object) {
         for (key, val) in ds_info {
             if let Some(inner) = forced_inner(val) {
@@ -370,15 +378,16 @@ fn collect_forced_paths(raw_doc: &Value) -> (Vec<String>, Vec<(String, Value)>) 
         }
     }
 
-    // package + resource — CKAN keys translated to DCAT pointers.
+    // package + resource — CKAN keys translated to target pointers via
+    // the active profile's field_mappings.
     for (top, key_prefix) in [("package", "/package/"), ("resource", "/resource/")] {
         if let Some(obj) = raw_doc.get(top).and_then(Value::as_object) {
             for (key, val) in obj {
                 if let Some(inner) = forced_inner(val) {
                     let ckan_ptr = format!("{key_prefix}{key}");
-                    if let Some(dcat_ptr) = super::ckan_to_dcat::translate_ckan_ptr(&ckan_ptr) {
-                        paths.push(dcat_ptr.to_string());
-                        values.push((dcat_ptr.to_string(), normalize_value_force(inner.clone())));
+                    if let Some(target_ptr) = profile.translate_ckan_ptr(&ckan_ptr) {
+                        paths.push(target_ptr.to_string());
+                        values.push((target_ptr.to_string(), normalize_value_force(inner.clone())));
                     }
                 }
             }
@@ -416,16 +425,17 @@ fn forced_inner(v: &Value) -> Option<&Value> {
 ///
 /// §5.4: `force: true` wrappers anywhere under `dataset_info` /
 /// `package` / `resource` are *additionally* recorded twice — once as
-/// a DCAT JSON-Pointer path (consulted by `merge_discovered` to refuse
-/// publisher-DCAT overlay) and once as a `(dcat_pointer, value)` pair
-/// (consumed by the new `apply_force_overrides` step in `profile.rs`,
-/// which applies forced leaves LAST so they beat inferred and
-/// discovered metadata too). Package / resource keys are routed
-/// through the `ckan_to_dcat` translation table; CKAN slots qsv
-/// profile does not surface in DCAT are silently dropped (a
-/// documented no-op rather than a translation error).
+/// a target JSON-Pointer path (consulted by `discovery_merge::merge` to refuse
+/// publisher-DCAT overlay) and once as a `(target_pointer, value)` pair
+/// (consumed by `apply_force_overrides` in `profile.rs`, which applies
+/// forced leaves LAST so they beat inferred and discovered metadata
+/// too). Package / resource keys are routed through the active
+/// profile's `field_mappings` table; slots this profile doesn't
+/// surface are silently dropped (a documented no-op rather than a
+/// translation error).
 pub(super) fn load_initial_context(
     path: Option<&str>,
+    profile: &super::profile_spec::ProfileSpec,
 ) -> CliResult<(Value, Value, Value, Vec<String>, Vec<(String, Value)>)> {
     let Some(path) = path else {
         return Ok((json!({}), json!({}), json!({}), Vec::new(), Vec::new()));
@@ -445,7 +455,7 @@ pub(super) fn load_initial_context(
     }
     // §5.4: collect forced paths + values from all three subtrees
     // BEFORE normalize_value_force strips the wrappers.
-    let (forced_paths, forced_values) = collect_forced_paths(&doc);
+    let (forced_paths, forced_values) = collect_forced_paths(&doc, profile);
 
     let package = normalize_value_force(doc.get("package").cloned().unwrap_or(json!({})));
     let resource = normalize_value_force(doc.get("resource").cloned().unwrap_or(json!({})));
@@ -556,9 +566,14 @@ mod load_initial_context_tests {
     }
 
     // §5.4: collect_forced_paths.
+    fn test_profile() -> super::super::profile_spec::ProfileSpec {
+        super::super::profile_spec::load("dcat-us-v3").expect("embedded dcat-us-v3 profile")
+    }
+
     #[test]
     fn collect_forced_collects_force_true_across_all_three_subtrees() {
         use super::collect_forced_paths;
+        let profile = test_profile();
 
         let doc = json!({
             "package": {
@@ -580,7 +595,7 @@ mod load_initial_context_tests {
                 "/dcat/dct:rights":      {"value": null, "force": true},
             }
         });
-        let (mut paths, values) = collect_forced_paths(&doc);
+        let (mut paths, values) = collect_forced_paths(&doc, &profile);
         paths.sort();
         // package.title and dataset_info both target the same /dcat/dct:title
         // pointer — duplicates are intentionally preserved so the merge /
@@ -609,6 +624,7 @@ mod load_initial_context_tests {
     #[test]
     fn collect_forced_empty_when_no_force_wrappers() {
         use super::collect_forced_paths;
+        let profile = test_profile();
 
         // Plain values without {value, force} wrappers — both outputs
         // empty.
@@ -617,7 +633,7 @@ mod load_initial_context_tests {
             "resource":     {"url":   "plain"},
             "dataset_info": {"/dcat/dct:title": "plain"},
         });
-        let (paths, values) = collect_forced_paths(&doc);
+        let (paths, values) = collect_forced_paths(&doc, &profile);
         assert!(paths.is_empty());
         assert!(values.is_empty());
     }
@@ -625,6 +641,7 @@ mod load_initial_context_tests {
     #[test]
     fn collect_forced_does_not_panic_on_non_object_subtrees() {
         use super::collect_forced_paths;
+        let profile = test_profile();
 
         // Pathological shape — must not panic.
         let doc = json!({
@@ -632,7 +649,7 @@ mod load_initial_context_tests {
             "package":      "also not an object",
             "resource":     42,
         });
-        let (paths, values) = collect_forced_paths(&doc);
+        let (paths, values) = collect_forced_paths(&doc, &profile);
         assert!(paths.is_empty());
         assert!(values.is_empty());
     }

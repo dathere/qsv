@@ -279,8 +279,8 @@ dataset:
 
     # ------ add_coverage ------
     # Spatial: prefer WKT suggestion from formula evaluation, fall back to
-    # qsv-inferred bounding box. The legacy bbox_from_dpps inline logic is
-    # still produced by the inference path; we re-emit it verbatim here.
+    # qsv-inferred lat/lon bbox via bbox_from_dpps. Both branches yield an
+    # array of dct:Location per DCAT-US v3 cardinality (0..*).
     - path: "dct:spatial"
       template: |
         {%- set wkt = pkg.dpp_suggestions.spatial_extent.value | default("") -%}
@@ -292,8 +292,12 @@ dataset:
             "@value": {{ wkt | tojson }}
           }
         }]
-        {%- endif -%}
-      emit_when: '{{ (pkg.dpp_suggestions.spatial_extent.value | default("")) != "" }}'
+        {%- else -%}{{ bbox_from_dpps(dpp, stats) | tojson }}{%- endif -%}
+
+    - path: "dct:temporal"
+      template: |
+        {%- set tp = temporal_from_dpps(dpp, stats) -%}
+        {%- if tp -%}{{ tp | tojson }}{%- endif -%}
 
     # ------ add_us_codes ------
     # bureauCode + programCode are array-typed in DCAT-US v3. CKAN
@@ -424,17 +428,14 @@ distribution:
     - path: "dct:format"
       template: '{{ res.format | default("CSV") }}'
 
+    # Legacy license_value emits a plain string (URL or opaque license
+    # text) — GSA Distribution.json declares this as a free-form string,
+    # not a JSON-LD @id object. Known slugs (cc-by, etc.) resolve to
+    # their canonical IRI via the license_iri vocab.
     - path: "dct:license"
       template: |
         {%- set raw = (res.license_id | default(res.license | default(pkg.license_id | default(pkg.license | default(""))))) -%}
-        {%- if raw != "" -%}
-        {%- set iri = lookup("license_iri", raw) -%}
-        {%- if iri -%}
-        { "@id": {{ iri | tojson }} }
-        {%- else -%}
-        {{ raw | tojson }}
-        {%- endif -%}
-        {%- endif -%}
+        {%- if raw != "" -%}{{ lookup("license_iri", raw) | default(raw) }}{%- endif -%}
       emit_when: '{{ (res.license_id | default(res.license | default(pkg.license_id | default(pkg.license | default(""))))) != "" }}'
 
     - path: "dcat:accessURL"

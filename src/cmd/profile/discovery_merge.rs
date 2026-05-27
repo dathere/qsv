@@ -20,16 +20,11 @@ use serde_json::{Map, Value};
 
 use super::profile_spec::ProfileSpec;
 
-/// Public entry point. Returns the merged Dataset block.
-///
-/// Today's semantics (minimum-viable Phase 4b): the inferred projection
-/// wins; discovered only fills gaps (`fill-if-absent`). Full override
-/// semantics is queued as plan §5.4.
 pub fn merge(
     profile: &ProfileSpec,
     inferred: Value,
-    discovered: Option<Value>,
-    forced_paths: &[String],
+    discovered: Option<&Value>,
+    forced_dcat_paths: &[String],
 ) -> Value {
     let Some(discovered) = discovered else {
         return inferred;
@@ -40,7 +35,7 @@ pub fn merge(
     let Value::Object(mut inferred_obj) = inferred else {
         return inferred;
     };
-    let Value::Object(discovered_obj) = discovered else {
+    let Some(discovered_obj) = discovered.as_object() else {
         return Value::Object(inferred_obj);
     };
 
@@ -52,21 +47,32 @@ pub fn merge(
         .unwrap_or("fill-if-absent");
 
     for (key, value) in discovered_obj {
-        if never.iter().any(|k| k == &key) {
+        if never.iter().any(|k| k == key) {
             continue;
         }
-        if is_forced(&key, forced_paths) {
+        if strategy != "overlay-array" && inferred_obj.contains_key(key) {
+            // fill-if-absent: inferred always wins.
             continue;
         }
-        merge_one(&mut inferred_obj, &key, value, strategy);
+        // Skip when the user marked this top-level DCAT key as forced.
+        // Discovered key `k` maps to dataset_info pointer
+        // `/dcat/<escaped-k>` per the legacy semantics.
+        let candidate = format!("/dcat/{}", escape_token(key));
+        let is_forced = forced_dcat_paths
+            .iter()
+            .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
+        if is_forced {
+            continue;
+        }
+        merge_one(&mut inferred_obj, key, value.clone(), strategy);
     }
     Value::Object(inferred_obj)
 }
 
-fn is_forced(key: &str, forced_paths: &[String]) -> bool {
-    forced_paths
-        .iter()
-        .any(|p| p == key || p == &format!("/{key}") || p.starts_with(&format!("/{key}/")))
+/// RFC 6901 §4 token escape. Internal copy so this module doesn't
+/// depend on profile.rs.
+fn escape_token(token: &str) -> String {
+    token.replace('~', "~0").replace('/', "~1")
 }
 
 fn merge_one(out: &mut Map<String, Value>, key: &str, value: Value, strategy: &str) {
@@ -127,7 +133,7 @@ discovery_merge:
             "dct:title": "OVERRIDE",
             "dct:description": "Filled"
         });
-        let merged = merge(&profile, inferred, Some(discovered), &[]);
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
         // dct:title stays inferred (fill-if-absent), description is filled.
         assert_eq!(
             merged.get("dct:title").and_then(Value::as_str),
@@ -144,7 +150,7 @@ discovery_merge:
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
         let inferred = json!({ "@type": "dcat:Dataset", "@context": "ctx-inferred" });
         let discovered = json!({ "@context": "ctx-discovered" });
-        let merged = merge(&profile, inferred, Some(discovered), &[]);
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
         assert_eq!(
             merged.get("@context").and_then(Value::as_str),
             Some("ctx-inferred")
@@ -156,13 +162,33 @@ discovery_merge:
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
         let inferred = json!({ "@type": "dcat:Dataset" });
         let discovered = json!({ "dct:title": "Discovered Title" });
+        // Forced paths use the dataset_info form: /dcat/<key>.
         let merged = merge(
             &profile,
             inferred,
-            Some(discovered),
-            &["/dct:title".to_string()],
+            Some(&discovered),
+            &["/dcat/dct:title".to_string()],
         );
         assert!(merged.get("dct:title").is_none());
+    }
+
+    #[test]
+    fn forced_nested_path_blocks_top_level_merge() {
+        // A forced leaf path like /dcat/dcat:contactPoint/vcard:fn should
+        // also block the top-level contactPoint key from being copied
+        // wholesale from the discovered block.
+        let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
+        let inferred = json!({ "@type": "dcat:Dataset" });
+        let discovered = json!({
+            "dcat:contactPoint": {"@type": "vcard:Individual", "vcard:fn": "DISCOVERED"}
+        });
+        let merged = merge(
+            &profile,
+            inferred,
+            Some(&discovered),
+            &["/dcat/dcat:contactPoint/vcard:fn".to_string()],
+        );
+        assert!(merged.get("dcat:contactPoint").is_none());
     }
 
     #[test]
@@ -177,7 +203,7 @@ discovery_merge:
         let profile = load_from_str(yaml, "t").unwrap();
         let inferred = json!({ "@type": "sc:Dataset" });
         let discovered = json!({ "name": "Discovered" });
-        let merged = merge(&profile, inferred.clone(), Some(discovered), &[]);
+        let merged = merge(&profile, inferred.clone(), Some(&discovered), &[]);
         assert_eq!(merged, inferred);
     }
 
@@ -194,7 +220,7 @@ discovery_merge:
         let profile = load_from_str(yaml, "t").unwrap();
         let inferred = json!({ "dcat:keyword": ["a", "b"] });
         let discovered = json!({ "dcat:keyword": ["c", "d"] });
-        let merged = merge(&profile, inferred, Some(discovered), &[]);
+        let merged = merge(&profile, inferred, Some(&discovered), &[]);
         let kw = merged
             .get("dcat:keyword")
             .and_then(Value::as_array)

@@ -204,6 +204,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => None,
     };
 
+    // --- 1b. load the projection profile (YAML-driven engine) -------------
+    // Defaults to "dcat-us-v3" when --profile is omitted, preserving the
+    // pre-YAML-engine behavior. The dry_compile pass catches malformed
+    // templates BEFORE we run stats / frequency / formula evaluation, so
+    // a typo in a profile YAML doesn't burn 30s of upstream work first.
+    let profile_arg = args.flag_profile.as_deref().unwrap_or("dcat-us-v3");
+    let profile = profile_spec::load(profile_arg)?;
+    projection::dry_compile(&profile)?;
+
     // --- 2. run stats + frequency, build analysis context -----------------
     let ctx_args = context::ContextArgs {
         input_path:      &input_path,
@@ -213,6 +222,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         force:           args.flag_force,
         memcheck:        args.flag_memcheck,
         initial_context: args.flag_initial_context.as_deref(),
+        profile:         &profile,
     };
     let analysis = context::build(&ctx_args, spec_opt.as_ref())?;
 
@@ -365,32 +375,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_dcat {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
-        // Pass both the on-disk `input_path` (used for `fs::metadata` →
-        // `dcat:byteSize`) and the human-facing `display_input` (used
-        // for `qsv:sourcePath` and the Distribution title default) so
-        // URL/stdin inputs neither lose byte-size metadata nor leak the
-        // random tempfile suffix into emitted DCAT.
-        let (dcat_block, dcat_build_warnings) = dcat::build(
-            &package,
-            &[resource.clone()],
-            &dpp,
-            &stats,
-            &input_path,
-            &display_input,
-            args.flag_dcat_legacy_license,
-        );
-        let merged_dcat = match discovered_dcat.as_ref() {
-            Some(disc) => merge_discovered(dcat_block, disc, &analysis.forced_dcat_paths),
-            None => dcat_block,
+        // Build the projection context: the YAML's field templates
+        // reference these top-level names. `pkg` and `res` are the
+        // merged CKAN package + resource; `source_label` is the
+        // user-facing path/URL/"stdin"; `local_path` is the actual
+        // on-disk file (tempfile path for URL/stdin inputs); `stats`
+        // is the dpps stats array used by csvw:tableSchema.
+        let projection_ctx = json!({
+            "pkg":          package,
+            "res":          resource,
+            "stats":        stats,
+            "dpp":          dpp,
+            "source_label": display_input,
+            "local_path":   input_path,
+        });
+        // Project once in the requested mode. Catalog mode bakes the
+        // catalog envelope into the same call so the stale-warning
+        // filter consults the right shape downstream.
+        let mode = if args.flag_catalog {
+            projection::ProjectionMode::Catalog
+        } else {
+            projection::ProjectionMode::Dataset
         };
+        let (dcat_block, projection_warnings) =
+            projection::project(&profile, &projection_ctx, mode)?;
+        let merged_dcat = discovery_merge::merge(
+            &profile,
+            dcat_block,
+            discovered_dcat.as_ref(),
+            &analysis.forced_dcat_paths,
+        );
         out_map.insert("dcat".to_string(), merged_dcat);
         // Stash the build-time warnings for now; we'll insert them
         // after dataset_info overrides + schema validation have had
         // their say so the final dcat_warnings array reflects the
         // emitted dcat block, not an intermediate snapshot.
         out_map.insert(
-            "__pending_dcat_warnings".to_string(),
-            serde_json::to_value(&dcat_build_warnings).unwrap_or(json!([])),
+            "__pending_projection_warnings".to_string(),
+            serde_json::to_value(&projection_warnings).unwrap_or(json!([])),
         );
         // Surface the raw discovered DCAT alongside the merged block so
         // downstream tooling can diff or audit what came from the
@@ -431,32 +453,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // then merges schema violations into the final dcat_warnings array.
     if !args.flag_no_dcat {
         let out_map = output.as_object_mut().unwrap();
-        let stashed: Vec<dcat::DcatWarning> = out_map
-            .remove("__pending_dcat_warnings")
+        let stashed: Vec<projection::ProjectionWarning> = out_map
+            .remove("__pending_projection_warnings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
-        // Stale-warning filter consults the Dataset shape (BEFORE any
-        // Catalog wrap so the build-time field names — `dcat:contactPoint`
-        // etc. — still live at the top of the dcat block).
+        // Stale-warning filter consults the final dcat shape. For
+        // Catalog mode the build-time warnings still reference Dataset
+        // fields by name (`dcat:contactPoint`), so the filter must walk
+        // into `dcat:dataset[0]` when it's present.
         let final_dcat_snapshot = out_map.get("dcat").cloned();
-        let mut dcat_warnings: Vec<dcat::DcatWarning> = stashed
+        let mut dcat_warnings: Vec<projection::ProjectionWarning> = stashed
             .into_iter()
             .filter(|w| !final_dcat_has_field(final_dcat_snapshot.as_ref(), &w.field))
             .collect();
-
-        // --catalog: wrap the emitted Dataset inside a dcat:Catalog
-        // envelope so federation harvesters (data.gov, CKAN ingest) see
-        // a Catalog-shaped block. Runs AFTER the stale-warning filter
-        // (so build-time Dataset field names still resolve) but BEFORE
-        // schema validation (so validate_dataset_or_catalog picks the
-        // Catalog overlay via @type and enforces Catalog-level required
-        // keys on the envelope).
-        if args.flag_catalog
-            && let Some(dataset) = out_map.remove("dcat")
-        {
-            let catalog_block = catalog::wrap_as_catalog(dataset);
-            out_map.insert("dcat".to_string(), catalog_block);
-        }
 
         if args.flag_validate_dcat
             && let Some(final_dcat) = out_map.get("dcat")
@@ -473,7 +482,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     validation.len()
                 )));
             }
-            dcat_warnings.extend(validation);
+            dcat_warnings.extend(
+                validation
+                    .into_iter()
+                    .map(projection::ProjectionWarning::from),
+            );
         }
 
         // §5.8: profile-driven validation. When the spec opts in by
@@ -486,11 +499,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .as_ref()
             .is_some_and(super::profile::spec::Spec::has_validators)
         {
-            dcat_warnings.extend(run_profile_validation(
-                &input_path,
-                args.flag_no_headers,
-                args.flag_delimiter,
-            ));
+            dcat_warnings.extend(
+                run_profile_validation(&input_path, args.flag_no_headers, args.flag_delimiter)
+                    .into_iter()
+                    .map(projection::ProjectionWarning::from),
+            );
         }
 
         if !dcat_warnings.is_empty() {

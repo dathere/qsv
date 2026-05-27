@@ -67,6 +67,23 @@ impl From<RequiredLevel> for Severity {
     }
 }
 
+// Bridge from the legacy `DcatWarning` shape so the orchestrator can
+// extend `Vec<ProjectionWarning>` with output from `dcat_validate::*`
+// and `run_profile_validation` while Stage 5 refactors those modules
+// to return `ProjectionWarning` directly.
+impl From<super::dcat::DcatWarning> for ProjectionWarning {
+    fn from(w: super::dcat::DcatWarning) -> Self {
+        ProjectionWarning {
+            field:    w.field,
+            severity: match w.severity {
+                super::dcat::Severity::Required => Severity::Required,
+                super::dcat::Severity::Recommended => Severity::Recommended,
+            },
+            message:  w.message,
+        }
+    }
+}
+
 // -----------------------------------------------------------------------
 // Engine entry point
 // -----------------------------------------------------------------------
@@ -81,6 +98,12 @@ pub fn project(
     mode: ProjectionMode,
 ) -> CliResult<(Value, Vec<ProjectionWarning>)> {
     let mut env = Environment::new();
+    // ChainableUndefined lets templates walk through missing
+    // intermediate keys (`pkg.dpp_suggestions.spatial_extent.value`)
+    // without raising, so `| default("")` actually catches the miss.
+    // Mirrors the legacy `dcat.rs` engine's behavior where absent
+    // CKAN keys silently fall through to defaults.
+    env.set_undefined_behavior(minijinja::UndefinedBehavior::Chainable);
     formula_helpers::register(&mut env);
     register_profile_helpers(&mut env, profile);
 

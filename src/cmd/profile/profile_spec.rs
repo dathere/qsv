@@ -57,6 +57,21 @@ pub fn list_embedded() -> Vec<&'static str> {
     EMBEDDED.iter().map(|(n, _)| *n).collect()
 }
 
+impl ProfileSpec {
+    /// Translate a CKAN-side pointer (e.g. `/package/title`) to its
+    /// target counterpart (e.g. `/dcat/dct:title`) per the profile's
+    /// `field_mappings:` table. Returns `None` when the CKAN pointer
+    /// isn't mapped (the legacy `ckan_to_dcat::translate_ckan_ptr`
+    /// behavior). Used by `context.rs::collect_forced_paths` for the
+    /// force-override pathway.
+    pub fn translate_ckan_ptr(&self, ckan_ptr: &str) -> Option<&str> {
+        self.field_mappings
+            .iter()
+            .find(|m| m.ckan == ckan_ptr)
+            .map(|m| m.target.as_str())
+    }
+}
+
 // -----------------------------------------------------------------------
 // Top-level spec
 // -----------------------------------------------------------------------
@@ -358,7 +373,6 @@ dataset:
             assert_eq!(spec.name.to_ascii_lowercase(), "dcat-us-v3");
         }
     }
-
 
     #[test]
     fn embedded_dcat_us_v3_parses_and_dry_compiles() {

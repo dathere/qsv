@@ -103,6 +103,8 @@ pub fn register(env: &mut Environment) {
     env.add_function("compress_format", compress_format);
     env.add_function("package_format", package_format);
     env.add_function("build_csvw_schema", build_csvw_schema);
+    env.add_function("bbox_from_dpps", bbox_from_dpps);
+    env.add_function("temporal_from_dpps", temporal_from_dpps);
 
     // --- globals (SQL-backed) -----------------------------------------
     // Backed by Polars SQL over the input CSV (see sql_backend.rs).
@@ -1066,39 +1068,155 @@ fn package_format(path: &str) -> minijinja::Value {
     minijinja::Value::from(m.to_string())
 }
 
-/// `build_csvw_schema` global — walks a stats array and emits a
-/// `{ columns: [...] }` shape suitable for `csvw:tableSchema`. The
-/// `vocab_table` argument names a profile vocabulary that maps qsv
-/// stats types to the target schema's datatype IRIs (default
-/// `"csvw_datatype"`).
+/// `build_csvw_schema` global — walks a stats map (column-name → stats
+/// blob, the shape produced by `context.rs::build_dpps`) and emits a
+/// `{ columns: [...] }` shape suitable for `csvw:tableSchema`. Each
+/// column entry carries `name`, `titles`, `datatype`, plus the
+/// `qsv:cardinality`, `qsv:nullcount`, `qsv:min`, `qsv:max` extensions
+/// that the legacy `dcat.rs::build_distribution` emitted.
 ///
-/// The vocabulary lookup itself happens via the `lookup` helper in
-/// the field template; this global only emits the column structure.
+/// The datatype mapping uses the legacy `csvw_datatype` rule directly
+/// so wire-shape parity with the pre-YAML engine is preserved.
 fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
-    use minijinja::value::ValueKind;
-    if stats.kind() != ValueKind::Seq {
+    // Serialize the minijinja Value once into a JSON Value so we can
+    // walk it with native serde_json calls (works for both object and
+    // array shapes; recordset templates iterate via index instead).
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(cols) = stats_json.as_object() else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let columns: Vec<serde_json::Value> = cols
+        .iter()
+        .map(|(name, blob)| {
+            // Legacy convention: per-column blob may carry a nested
+            // `stats` sub-object (Schema mode) or be flat (DPPS mode).
+            let stats_obj = blob.get("stats").unwrap_or(blob);
+            serde_json::json!({
+                "name":             name,
+                "titles":           [name],
+                "datatype":         csvw_datatype_legacy(stats_obj.get("type")),
+                "qsv:cardinality":  stats_obj.get("cardinality"),
+                "qsv:nullcount":    stats_obj.get("nullcount"),
+                "qsv:min":          stats_obj.get("min"),
+                "qsv:max":          stats_obj.get("max"),
+            })
+        })
+        .collect();
+    minijinja::Value::from_serialize(serde_json::json!({ "columns": columns }))
+}
+
+/// Mirror of the legacy `dcat::csvw_datatype` — maps qsv stats type
+/// strings to CSVW datatype IRIs. Kept here so the helper is
+/// self-contained and `dcat.rs` can be deleted in Stage 4 cleanup.
+fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
+    match t.and_then(serde_json::Value::as_str) {
+        Some("Integer") => "integer",
+        Some("Float") => "double",
+        Some("Boolean") => "boolean",
+        Some("Date") => "date",
+        Some("DateTime") => "dateTime",
+        Some("NULL") => "string",
+        _ => "string",
+    }
+}
+
+/// `bbox_from_dpps` global — derives a `dct:Location` array from the
+/// inferred LAT/LON column metadata in `dpp` and the per-column
+/// min/max in `stats`. Returns an array suitable for the
+/// `dct:spatial` slot (v3 cardinality 0..*), or undefined when no
+/// lat/lon columns were detected. Mirrors the legacy
+/// `dcat::bbox_from_dpps` so wire-shape parity is preserved.
+fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
+    let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let lat = dpp_json
+        .get("LAT_FIELD")
+        .and_then(serde_json::Value::as_str);
+    let lon = dpp_json
+        .get("LON_FIELD")
+        .and_then(serde_json::Value::as_str);
+    let (Some(lat), Some(lon)) = (lat, lon) else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let lookup = |field: &str, key: &str| -> Option<f64> {
+        let blob = stats_json.get(field)?;
+        let inner = blob.get("stats").unwrap_or(blob);
+        let v = inner.get(key)?;
+        v.as_f64()
+            .or_else(|| v.as_i64().map(|i| i as f64))
+            .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+    };
+    let (min_lon, max_lon, min_lat, max_lat) = match (
+        lookup(lon, "min"),
+        lookup(lon, "max"),
+        lookup(lat, "min"),
+        lookup(lat, "max"),
+    ) {
+        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
+        _ => return minijinja::Value::UNDEFINED,
+    };
+    let polygon = format!(
+        "POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} \
+         {min_lat}, {min_lon} {min_lat}))"
+    );
+    minijinja::Value::from_serialize(serde_json::json!([{
+        "@type": "dct:Location",
+        "dcat:bbox": polygon,
+    }]))
+}
+
+/// `temporal_from_dpps` global — derives a `dct:PeriodOfTime` array,
+/// one entry per inferred date column. Returns undefined when no
+/// date columns were detected. Mirrors the legacy
+/// `dcat::temporal_from_dpps` (v3 cardinality 0..*).
+fn temporal_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::Value {
+    let dpp_json: serde_json::Value = match serde_json::to_value(&dpp) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let stats_json: serde_json::Value = match serde_json::to_value(&stats) {
+        Ok(v) => v,
+        Err(_) => return minijinja::Value::UNDEFINED,
+    };
+    let Some(dates) = dpp_json
+        .get("DATE_FIELDS")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return minijinja::Value::UNDEFINED;
+    };
+    let mut out: Vec<serde_json::Value> = Vec::new();
+    for field_v in dates {
+        let Some(field) = field_v.as_str() else {
+            continue;
+        };
+        let blob = stats_json
+            .get(field)
+            .and_then(|b| b.get("stats").or(Some(b)));
+        let Some(start) = blob.and_then(|b| b.get("min")).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(end) = blob.and_then(|b| b.get("max")).and_then(|v| v.as_str()) else {
+            continue;
+        };
+        out.push(serde_json::json!({
+            "@type":          "dct:PeriodOfTime",
+            "dcat:startDate": start,
+            "dcat:endDate":   end,
+        }));
+    }
+    if out.is_empty() {
         return minijinja::Value::UNDEFINED;
     }
-    let mut columns: Vec<serde_json::Value> = Vec::new();
-    if let Ok(iter) = stats.try_iter() {
-        for col in iter {
-            let field = col
-                .get_attr("field")
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_string))
-                .unwrap_or_default();
-            let datatype = col
-                .get_attr("type")
-                .ok()
-                .and_then(|v| v.as_str().map(str::to_string))
-                .unwrap_or_else(|| "String".to_string());
-            columns.push(serde_json::json!({
-                "name": field,
-                "qsv:type": datatype,
-            }));
-        }
-    }
-    minijinja::Value::from_serialize(serde_json::json!({ "columns": columns }))
+    minijinja::Value::from_serialize(out)
 }
 
 // =====================================================================

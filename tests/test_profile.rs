@@ -37,6 +37,108 @@ fn read_output(wrk: &Workdir, name: &str) -> Value {
     serde_json::from_str(&raw).unwrap()
 }
 
+/// Strip the only path-dependent field (qsv:sourcePath) from a dcat
+/// block so it matches the goldens captured by jq normalization in
+/// Stage 2 of the YAML-engine migration.
+fn normalize_dcat_for_parity(mut dcat: Value) -> Value {
+    fn strip_dist(dist_array: &mut Value) {
+        if let Some(arr) = dist_array.as_array_mut() {
+            for d in arr {
+                if let Some(o) = d.as_object_mut() {
+                    o.remove("qsv:sourcePath");
+                }
+            }
+        }
+    }
+    if let Some(obj) = dcat.as_object_mut() {
+        if let Some(d) = obj.get_mut("dcat:distribution") {
+            strip_dist(d);
+        }
+        // Catalog mode nests the Dataset under dcat:dataset[0].
+        if let Some(Value::Array(arr)) = obj.get_mut("dcat:dataset") {
+            for ds in arr {
+                if let Some(ds_obj) = ds.as_object_mut()
+                    && let Some(d) = ds_obj.get_mut("dcat:distribution")
+                {
+                    strip_dist(d);
+                }
+            }
+        }
+    }
+    dcat
+}
+
+#[test]
+fn dcat_us_v3_golden_parity_dataset() {
+    for fix in ["nyc-311-subset", "usda-soil-subset", "wprdc-311-subset"] {
+        let wrk = Workdir::new(&format!("parity_dataset_{fix}"));
+        let src = format!("tests/resources/profile/golden/{fix}.csv");
+        let abs_src = std::env::current_dir().unwrap().join(&src);
+        std::fs::copy(&abs_src, wrk.path("in.csv")).expect("copy fixture");
+        let ic_src = std::env::current_dir()
+            .unwrap()
+            .join("tests/resources/profile/dcat-init-context.json");
+        std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+
+        let mut cmd = wrk.command("profile");
+        cmd.args([
+            "in.csv",
+            "--profile",
+            "dcat-us-v3",
+            "--initial-context",
+            "ic.json",
+            "-o",
+            "out.json",
+        ]);
+        wrk.assert_success(&mut cmd);
+
+        let out = read_output(&wrk, "out.json");
+        let actual = normalize_dcat_for_parity(out["dcat"].clone());
+        let golden_path = format!("tests/resources/profile/golden/{fix}.dataset.expected.json");
+        let golden_raw =
+            std::fs::read_to_string(std::env::current_dir().unwrap().join(&golden_path))
+                .expect("read golden");
+        let golden: Value = serde_json::from_str(&golden_raw).expect("parse golden");
+        assert_eq!(actual, golden, "dcat-us-v3 dataset parity drift on `{fix}`");
+    }
+}
+
+#[test]
+fn dcat_us_v3_golden_parity_catalog() {
+    for fix in ["nyc-311-subset", "usda-soil-subset", "wprdc-311-subset"] {
+        let wrk = Workdir::new(&format!("parity_catalog_{fix}"));
+        let src = format!("tests/resources/profile/golden/{fix}.csv");
+        let abs_src = std::env::current_dir().unwrap().join(&src);
+        std::fs::copy(&abs_src, wrk.path("in.csv")).expect("copy fixture");
+        let ic_src = std::env::current_dir()
+            .unwrap()
+            .join("tests/resources/profile/dcat-init-context.json");
+        std::fs::copy(&ic_src, wrk.path("ic.json")).expect("copy ic");
+
+        let mut cmd = wrk.command("profile");
+        cmd.args([
+            "in.csv",
+            "--profile",
+            "dcat-us-v3",
+            "--catalog",
+            "--initial-context",
+            "ic.json",
+            "-o",
+            "out.json",
+        ]);
+        wrk.assert_success(&mut cmd);
+
+        let out = read_output(&wrk, "out.json");
+        let actual = normalize_dcat_for_parity(out["dcat"].clone());
+        let golden_path = format!("tests/resources/profile/golden/{fix}.catalog.expected.json");
+        let golden_raw =
+            std::fs::read_to_string(std::env::current_dir().unwrap().join(&golden_path))
+                .expect("read golden");
+        let golden: Value = serde_json::from_str(&golden_raw).expect("parse golden");
+        assert_eq!(actual, golden, "dcat-us-v3 catalog parity drift on `{fix}`");
+    }
+}
+
 #[test]
 fn profile_spec_less_emits_dpp_block() {
     let wrk = Workdir::new("profile_spec_less");

@@ -1,11 +1,11 @@
 {
-  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "@type": "dcat:Dataset",
+  "@context": "https://doi-do.github.io/dcat-us/context.jsonld",
   "dct:title": "Example Dataset (init-context override)",
   "dct:description": "A demo dataset showing every --initial-context slot the qsv profile command will read.",
   "dct:identifier": "example-dataset",
-  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:issued": "2024-01-01",
+  "dct:modified": "2024-12-31T23:59:59Z",
   "dct:publisher": {
     "@type": "foaf:Agent",
     "foaf:name": "Example Agency"
@@ -22,11 +22,12 @@
   "dcat:theme": [
     "transportation"
   ],
+  "dct:spatial": "null",
   "dct:temporal": [
     {
       "@type": "dct:PeriodOfTime",
-      "dcat:startDate": "2023-06-12",
-      "dcat:endDate": "2023-06-16"
+      "dcat:endDate": "2023-06-16",
+      "dcat:startDate": "2023-06-12"
     }
   ],
   "dcat-us:bureauCode": [
@@ -94,125 +95,125 @@
       "csvw:tableSchema": {
         "columns": [
           {
-            "name": "sample_id",
-            "titles": [
-              "sample_id"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "S-2023-0001",
-            "qsv:max": "S-2023-0010"
-          },
-          {
-            "name": "collection_date",
-            "titles": [
-              "collection_date"
-            ],
-            "datatype": "date",
-            "qsv:cardinality": 5,
-            "qsv:nullcount": 0,
-            "qsv:min": "2023-06-12",
-            "qsv:max": "2023-06-16"
-          },
-          {
-            "name": "state",
-            "titles": [
-              "state"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 5,
-            "qsv:nullcount": 0,
-            "qsv:min": "IA",
-            "qsv:max": "NE"
-          },
-          {
-            "name": "county",
-            "titles": [
-              "county"
-            ],
-            "datatype": "string",
-            "qsv:cardinality": 5,
-            "qsv:nullcount": 0,
-            "qsv:min": "McLean",
-            "qsv:max": "York"
-          },
-          {
-            "name": "ph",
-            "titles": [
-              "ph"
-            ],
             "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "5.9",
-            "qsv:max": "7.9"
-          },
-          {
-            "name": "organic_carbon_pct",
-            "titles": [
-              "organic_carbon_pct"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "0.71",
-            "qsv:max": "3.15"
-          },
-          {
-            "name": "nitrogen_pct",
-            "titles": [
-              "nitrogen_pct"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "0.06",
-            "qsv:max": "0.24"
-          },
-          {
             "name": "clay_pct",
+            "qsv:cardinality": 10,
+            "qsv:max": "35.7",
+            "qsv:min": "17.2",
+            "qsv:nullcount": 0,
             "titles": [
               "clay_pct"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "17.2",
-            "qsv:max": "35.7"
+            ]
           },
           {
-            "name": "sand_pct",
+            "datatype": "date",
+            "name": "collection_date",
+            "qsv:cardinality": 5,
+            "qsv:max": "2023-06-16",
+            "qsv:min": "2023-06-12",
+            "qsv:nullcount": 0,
             "titles": [
-              "sand_pct"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "12.8",
-            "qsv:max": "41.8"
+              "collection_date"
+            ]
           },
           {
-            "name": "silt_pct",
+            "datatype": "string",
+            "name": "county",
+            "qsv:cardinality": 5,
+            "qsv:max": "York",
+            "qsv:min": "McLean",
+            "qsv:nullcount": 0,
             "titles": [
-              "silt_pct"
-            ],
-            "datatype": "double",
-            "qsv:cardinality": 10,
-            "qsv:nullcount": 0,
-            "qsv:min": "41.0",
-            "qsv:max": "52.2"
+              "county"
+            ]
           },
           {
+            "datatype": "integer",
             "name": "depth_cm",
+            "qsv:cardinality": 2,
+            "qsv:max": "15",
+            "qsv:min": "0",
+            "qsv:nullcount": 0,
             "titles": [
               "depth_cm"
-            ],
-            "datatype": "integer",
-            "qsv:cardinality": 2,
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "nitrogen_pct",
+            "qsv:cardinality": 10,
+            "qsv:max": "0.24",
+            "qsv:min": "0.06",
             "qsv:nullcount": 0,
-            "qsv:min": "0",
-            "qsv:max": "15"
+            "titles": [
+              "nitrogen_pct"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "organic_carbon_pct",
+            "qsv:cardinality": 10,
+            "qsv:max": "3.15",
+            "qsv:min": "0.71",
+            "qsv:nullcount": 0,
+            "titles": [
+              "organic_carbon_pct"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "ph",
+            "qsv:cardinality": 10,
+            "qsv:max": "7.9",
+            "qsv:min": "5.9",
+            "qsv:nullcount": 0,
+            "titles": [
+              "ph"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "sample_id",
+            "qsv:cardinality": 10,
+            "qsv:max": "S-2023-0010",
+            "qsv:min": "S-2023-0001",
+            "qsv:nullcount": 0,
+            "titles": [
+              "sample_id"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "sand_pct",
+            "qsv:cardinality": 10,
+            "qsv:max": "41.8",
+            "qsv:min": "12.8",
+            "qsv:nullcount": 0,
+            "titles": [
+              "sand_pct"
+            ]
+          },
+          {
+            "datatype": "double",
+            "name": "silt_pct",
+            "qsv:cardinality": 10,
+            "qsv:max": "52.2",
+            "qsv:min": "41.0",
+            "qsv:nullcount": 0,
+            "titles": [
+              "silt_pct"
+            ]
+          },
+          {
+            "datatype": "string",
+            "name": "state",
+            "qsv:cardinality": 5,
+            "qsv:max": "NE",
+            "qsv:min": "IA",
+            "qsv:nullcount": 0,
+            "titles": [
+              "state"
+            ]
           }
         ]
       }

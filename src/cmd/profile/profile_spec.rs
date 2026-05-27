@@ -359,6 +359,25 @@ dataset:
         }
     }
 
+
+    #[test]
+    fn embedded_dcat_us_v3_parses_and_dry_compiles() {
+        let spec = load("dcat-us-v3").expect("embedded load");
+        assert_eq!(spec.name, "dcat-us-v3");
+        assert!(spec.validation.enabled);
+        assert!(!spec.dataset.fields.is_empty());
+        assert!(spec.distribution.is_some());
+        assert!(spec.catalog.is_some());
+        assert_eq!(spec.field_mappings.len(), 53);
+        // Vocabularies populated.
+        assert!(spec.vocabularies.contains_key("license_iri"));
+        assert!(spec.vocabularies.contains_key("accrual_periodicity"));
+        assert!(spec.vocabularies.contains_key("iso_639_1"));
+        assert!(spec.vocabularies.contains_key("csvw_datatype"));
+        // Templates all compile.
+        super::super::projection::dry_compile(&spec).expect("dry_compile");
+    }
+
     #[test]
     fn unknown_name_errors_with_list() {
         let err = load("not-a-real-profile").unwrap_err();

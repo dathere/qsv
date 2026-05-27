@@ -477,8 +477,13 @@ fn lookup_in_vocab(
 /// Best-effort syntax check of every template in `profile`. Returns
 /// `Ok(())` on success; surfaces the first compile error otherwise.
 ///
-/// Called by `profile_spec::load` (when wired) so a malformed embedded
-/// profile fails at binary startup, not deep inside a render.
+/// Called by `profile_spec::load` so a malformed embedded profile
+/// fails at binary startup, not deep inside a render. Checks both the
+/// main `template` AND the optional `emit_when` guard on every field
+/// (dataset, distribution, catalog), plus the catalog title template
+/// and every recordset entry. A guard with a syntax error would
+/// otherwise silently render-fail in `render_truthy` and drop the
+/// field at projection time (Roborev #2495).
 pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
     let mut env = Environment::new();
     formula_helpers::register(&mut env);
@@ -502,6 +507,9 @@ pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
     if let Some(dist) = &profile.distribution {
         for field in &dist.fields {
             check(&format!("distribution/{}", field.path), &field.template)?;
+            if let Some(guard) = &field.emit_when {
+                check(&format!("distribution/{} (emit_when)", field.path), guard)?;
+            }
         }
     }
     if let Some(cat) = &profile.catalog {
@@ -510,6 +518,9 @@ pub fn dry_compile(profile: &ProfileSpec) -> CliResult<()> {
         }
         for field in &cat.fields {
             check(&format!("catalog/{}", field.path), &field.template)?;
+            if let Some(guard) = &field.emit_when {
+                check(&format!("catalog/{} (emit_when)", field.path), guard)?;
+            }
         }
     }
     for rs in &profile.recordsets {
@@ -688,5 +699,55 @@ recordsets:
         assert_eq!(arr[0].get("name").and_then(Value::as_str), Some("id"));
         assert_eq!(arr[1].get("name").and_then(Value::as_str), Some("name"));
         assert_eq!(arr[2].get("name").and_then(Value::as_str), Some("value"));
+    }
+
+    #[test]
+    fn dry_compile_rejects_malformed_distribution_emit_when() {
+        // Roborev #2495 finding #1: dry_compile now extends the
+        // emit_when syntax check to distribution + catalog field
+        // guards. A typo in a distribution emit_when must fail at
+        // load time, not silently render-fail to false at
+        // projection time.
+        let yaml = r#"
+name: bad-dist-guard
+dataset:
+  type: dcat:Dataset
+distribution:
+  type: dcat:Distribution
+  fields:
+    - path: dcat:downloadURL
+      template: "https://example.com/x.csv"
+      emit_when: "{{ pkg.foo | }}"
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let err = dry_compile(&profile).expect_err("malformed emit_when must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("distribution/dcat:downloadURL (emit_when)"),
+            "error must locate distribution emit_when, got: {msg}",
+        );
+    }
+
+    #[test]
+    fn dry_compile_rejects_malformed_catalog_emit_when() {
+        // Roborev #2495 finding #1: same coverage for catalog fields.
+        let yaml = r#"
+name: bad-catalog-guard
+dataset:
+  type: dcat:Dataset
+catalog:
+  type: dcat:Catalog
+  fields:
+    - path: dct:license
+      template: "https://example.com/license"
+      emit_when: "{% if foo %"
+"#;
+        let profile = load_from_str(yaml, "test").unwrap();
+        let err = dry_compile(&profile).expect_err("malformed catalog emit_when must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("catalog/dct:license (emit_when)"),
+            "error must locate catalog emit_when, got: {msg}",
+        );
     }
 }

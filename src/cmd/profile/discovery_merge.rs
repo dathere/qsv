@@ -228,4 +228,60 @@ discovery_merge:
         let strs: Vec<&str> = kw.iter().filter_map(Value::as_str).collect();
         assert_eq!(strs, vec!["a", "b", "c", "d"]);
     }
+
+    #[test]
+    fn forced_full_iri_key_blocks_matching_discovered_key() {
+        // Roborev #2495 finding #2: regression coverage migrated from
+        // the deleted merge_discovered tests. A forced path that
+        // targets a full-IRI JSON-LD property
+        // (`http://purl.org/dc/terms/title`) must use RFC 6901
+        // escaping so the candidate path comparison sees the same
+        // form. The discovered key carries the unescaped IRI; the
+        // forced path uses `~1` for each `/`.
+        let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
+        let inferred = json!({ "@type": "dcat:Dataset" });
+        let discovered = json!({
+            "http://purl.org/dc/terms/title": "Discovered IRI Title"
+        });
+        // Escaped per RFC 6901: each `/` → `~1`. Block.
+        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let merged = merge(&profile, inferred, Some(&discovered), &forced);
+        assert!(
+            merged.get("http://purl.org/dc/terms/title").is_none(),
+            "forced full-IRI path must block the matching discovered key"
+        );
+    }
+
+    #[test]
+    fn forced_full_iri_key_does_not_block_unrelated_discovered_key() {
+        // Companion: escaping must NOT over-match. A forced path for
+        // `terms/title` shouldn't block the unrelated `dct:identifier`
+        // discovered key.
+        let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
+        let inferred = json!({ "@type": "dcat:Dataset" });
+        let discovered = json!({ "dct:identifier": "id-123" });
+        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let merged = merge(&profile, inferred, Some(&discovered), &forced);
+        assert_eq!(
+            merged.get("dct:identifier").and_then(Value::as_str),
+            Some("id-123"),
+            "forced IRI path must not over-match unrelated discovered keys"
+        );
+    }
+
+    #[test]
+    fn escape_token_handles_rfc6901_round_trip() {
+        // The internal escape_token must follow RFC 6901 §4: `~` →
+        // `~0` first, then `/` → `~1` (order matters to avoid
+        // double-escaping the `~` introduced by `/`).
+        assert_eq!(escape_token(""), "");
+        assert_eq!(escape_token("plain"), "plain");
+        assert_eq!(escape_token("a/b"), "a~1b");
+        assert_eq!(escape_token("a~b"), "a~0b");
+        assert_eq!(escape_token("a~/b"), "a~0~1b");
+        assert_eq!(
+            escape_token("http://purl.org/dc/terms/title"),
+            "http:~1~1purl.org~1dc~1terms~1title",
+        );
+    }
 }

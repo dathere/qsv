@@ -897,6 +897,13 @@ fn croissant_all_unique_dataset_reuses_profileschema_cache() {
         "id,measure\n1,10.5\n2,20.5\n3,30.5\n4,40.5\n5,50.5\n",
     );
 
+    // Cache reuse requires `cache_mtime > input_mtime` (strict). On coarse
+    // (1s) filesystem timestamp resolution the input and the first-run
+    // cache could land in the same tick, forcing a regeneration on run 2
+    // and making this test flaky. Sleep so the input is strictly older
+    // than the cache the first run generates.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
     let cache = wrk.path("in.stats.csv.data.jsonl");
 
     // Run 1: generates the ProfileSchema stats cache.

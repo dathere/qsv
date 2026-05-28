@@ -102,17 +102,17 @@ via the active profile's `field_mappings:` table (see
 `resources/profiles/dcat-us-v3.yaml`; the lookup itself is
 `ProfileSpec::translate_ckan_ptr`). The most common entries:
 
-| CKAN pointer           | DCAT pointer                                  |
-|------------------------|-----------------------------------------------|
-| `/package/title`       | `/dcat/dct:title`                             |
-| `/package/notes`       | `/dcat/dct:description`                       |
-| `/package/version`     | `/dcat/dcat:version`                          |
-| `/package/bureauCode`  | `/dcat/dcat-us:bureauCode`                    |
-| `/resource/url`        | `/dcat/dcat:distribution/0/dcat:downloadURL`  |
-| `/resource/format`     | `/dcat/dcat:distribution/0/dct:format`        |
-| `/resource/conformsTo` | `/dcat/dcat:distribution/0/dct:conformsTo`    |
+| CKAN pointer           | Projection pointer                                 |
+|------------------------|----------------------------------------------------|
+| `/package/title`       | `/projection/dct:title`                            |
+| `/package/notes`       | `/projection/dct:description`                      |
+| `/package/version`     | `/projection/dcat:version`                         |
+| `/package/bureauCode`  | `/projection/dcat-us:bureauCode`                   |
+| `/resource/url`        | `/projection/dcat:distribution/0/dcat:downloadURL` |
+| `/resource/format`     | `/projection/dcat:distribution/0/dct:format`       |
+| `/resource/conformsTo` | `/projection/dcat:distribution/0/dct:conformsTo`   |
 
-CKAN slots without a DCAT counterpart (e.g. `package.scheming_version`)
+CKAN slots without a projection counterpart (e.g. `package.scheming_version`)
 silently drop their `force` flag — a documented no-op rather than a
 translation error.
 
@@ -162,7 +162,7 @@ With `--catalog`, the emitted `dcat` block is wrapped inside a
 federation harvesters (data.gov, CKAN ingest). The Catalog inherits
 the enclosed Dataset's title (prefixed with `Catalog of `) and
 publisher. All `dataset_info` and force overrides apply to the
-Dataset BEFORE the Catalog wrap — pointer paths like `/dcat/dct:title`
+Dataset BEFORE the Catalog wrap — pointer paths like `/projection/dct:title`
 target the inner Dataset, not the Catalog envelope.
 
 `--validate --catalog` runs the Catalog overlay schema

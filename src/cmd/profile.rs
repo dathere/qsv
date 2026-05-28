@@ -1,20 +1,74 @@
 static USAGE: &str = r#"
-Extract, derive & infer metadata from a CSV (local path or URL) - using the statistical profile of a
-dataset, mapped and driven by a metadata scheming YAML spec. CKAN/DCAT metadata is optionally
-discovered and ingested as a base layer when the input is a URL with DCAT markup.
+Profile a CSV (local path or URL) and emit a `.metadata.json` file carrying
+five top-level blocks:
 
-This is the non-interactive, qsv-native FAIRification counterpart to what datapusher-plus (DP+)
-does in CKAN: run statistical + frequency analysis on the input, build a Jinja2 context with the results,
-then evaluate Jinja2 formulae/suggestions using this context as declared in the scheming YAML.
-The resulting `.metadata.json` carries both a CKAN-shaped block and a best-effort DCAT v3
-projection (starting with DCAT-US v3), DP+ to prepopulate CKAN packages.
+  `dpp`        — inferred dataset signals: lat/lon/date columns, file size,
+                 row count, encoding, etc. (the legacy datapusher-plus
+                 inference block).
+  `stats`      — per-column summary statistics from `qsv stats`.
+  `frequency`  — per-column value counts from `qsv frequency`.
+  `ckan`       — a CKAN-shaped block (package + resources) that
+                 datapusher-plus consumes to prepopulate CKAN packages.
+  `projection` — the dataset re-expressed in the active profile's metadata
+                 vocabulary. Default is DCAT-US v3; bundled alternates are
+                 dcat-ap-v3 (EU portals), croissant (ML/AI registries) and
+                 geoconnex (water-data federations). Consumable directly by
+                 data.gov harvesters, EU DCAT-AP catalogs, mlcommons /
+                 Hugging Face / Kaggle, and Internet of Water tooling.
 
-Helpers and filters are a native Rust port of DP+'s `jinja2_helpers.py`, built on `minijinja`.
+Behind the scenes qsv runs the same statistical + frequency analysis
+datapusher-plus (DP+) runs in CKAN, builds a Jinja2 evaluation context from
+the results, and — when an optional CKAN scheming YAML spec is supplied —
+evaluates the spec's `formula` / `suggestion_formula` templates against that
+context. Jinja2 helpers and filters are a native Rust port of DP+'s
+`jinja2_helpers.py`, built on `minijinja`.
 
-For an example spec file, see:
+When the input is a URL whose response carries DCAT markup (HTTP
+`Link: rel=describedBy`), qsv discovers the publisher's stated metadata and
+merges it as a base layer beneath the inferred projection.
+
+For an example CKAN scheming YAML spec, see:
   https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_profile.rs.
+
+Examples:
+
+  # Quick: dpp/stats/frequency + default DCAT-US v3 projection.
+  $ qsv profile data.csv
+
+  # Pipe stdin; output defaults to `stdin.metadata.json`.
+  $ cat data.csv | qsv profile
+
+  # URL input: discover the publisher's DCAT markup and merge it as a base layer.
+  $ qsv profile https://data.example.gov/datasets/sample.csv
+
+  # Seed publisher/contact info from a JSON file; write to a chosen output path.
+  $ qsv profile data.csv --initial-context publisher.json -o data.metadata.json
+
+  # data.gov-style harvest: validate against DCAT-US v3 JSON Schema, abort on
+  # violations, wrap in a Catalog envelope.
+  $ qsv profile data.csv --validate --strict --catalog -o data.metadata.json
+
+  # DCAT-AP v3 for EU data portals; `pyshacl` validates the bundled SHACL shapes.
+  $ qsv profile open-data.csv --profile dcat-ap-v3 --validate --strict
+
+  # Croissant JSON-LD for an ML dataset; `mlcroissant` validates the output.
+  $ qsv profile train.csv --profile croissant --validate -o train.croissant.json
+
+  # Geoconnex JSON-LD for hydrologic data (qsv built with the `geoconnex` feature).
+  $ qsv profile gages.csv --profile geoconnex --validate --strict
+
+  # Evaluate a CKAN scheming spec: Jinja2 formulas compute spatial/temporal
+  # extents, accrual periodicity, and other derived fields.
+  $ qsv profile data.csv --spec dataset-druf.yaml -o data.metadata.json
+
+  # CKAN-only output: drop the `projection` block, keep dpp/stats/frequency/ckan.
+  $ qsv profile data.csv --no-projection --spec dataset-druf.yaml
+
+  # Custom YAML profile from disk (embedded names always win over same-named
+  # files, so use a non-clashing name for custom profiles).
+  $ qsv profile data.csv --profile ./my-org-dcat.yaml --validate
 
 Usage:
     qsv profile [options] [<input>]

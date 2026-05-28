@@ -34,7 +34,7 @@ profile options:
                               stats) is emitted; no formulas are evaluated.
     --initial-context <json>  JSON file providing seed values for the package /
                               resource dicts plus optional JSON-Pointer
-                              overrides for the final DCAT block. Replaces
+                              overrides for the final projection block. Replaces
                               the older --package-meta / --resource-meta
                               flags. Top-level keys: `package`, `resource`,
                               `dataset_info`. Each leaf value may be wrapped
@@ -428,7 +428,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             &profile,
             dataset_block,
             discovered_dcat.as_ref(),
-            &analysis.forced_dcat_paths,
+            &analysis.forced_paths,
         );
         let merged_dcat = if args.flag_catalog {
             let (catalog_block, cat_warnings) =

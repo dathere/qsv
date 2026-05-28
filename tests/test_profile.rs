@@ -1371,7 +1371,8 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
 
     // dataset_info override is last-write-wins.
     assert_eq!(
-        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title")
+            .and_then(|v| v.as_str()),
         Some("Final Override Wins"),
         "dataset_info JSON-Pointer override must win over the package seed"
     );
@@ -1385,7 +1386,8 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
 
     // language is normalized en-US → en (Phase 2d behaviour).
     assert_eq!(
-        out.pointer("/projection/dct:language").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:language")
+            .and_then(|v| v.as_str()),
         Some("en"),
     );
 
@@ -1695,7 +1697,8 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
     let out = read_output(&wrk, "out.json");
     // 1. Pointer-override-wrapped license lands as the inner string.
     assert_eq!(
-        out.pointer("/projection/dct:license").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:license")
+            .and_then(|v| v.as_str()),
         Some("https://creativecommons.org/licenses/by/4.0/"),
         "forced-with-value license must land as the inner value (no wrapper leak), got: {}",
         out.pointer("/projection/dct:license")
@@ -2131,11 +2134,13 @@ fn profile_emits_dataset_level_created_version_versionnotes() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:created").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:created")
+            .and_then(|v| v.as_str()),
         Some("2023-06-15")
     );
     assert_eq!(
-        out.pointer("/projection/dcat:version").and_then(|v| v.as_str()),
+        out.pointer("/projection/dcat:version")
+            .and_then(|v| v.as_str()),
         Some("1.2.0")
     );
     assert_eq!(
@@ -2212,7 +2217,8 @@ fn profile_force_on_package_title_flows_via_ckan_to_dcat() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title")
+            .and_then(|v| v.as_str()),
         Some("FORCED VIA PACKAGE"),
         "package.title force=true must land at /dcat/dct:title: {out:#}"
     );
@@ -2272,7 +2278,8 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title")
+            .and_then(|v| v.as_str()),
         Some("Forced via dataset_info"),
         "dataset_info force=true must beat inferred: {out:#}"
     );

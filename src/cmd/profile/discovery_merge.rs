@@ -24,7 +24,7 @@ pub fn merge(
     profile: &ProfileSpec,
     inferred: Value,
     discovered: Option<&Value>,
-    forced_dcat_paths: &[String],
+    forced_paths: &[String],
 ) -> Value {
     let Some(discovered) = discovered else {
         return inferred;
@@ -68,7 +68,7 @@ pub fn merge(
         let inferred_arr = inferred_obj
             .remove(dkey)
             .unwrap_or_else(|| Value::Array(Vec::new()));
-        let merged = merge_distribution_array(inferred_arr, disc_arr, cfg, forced_dcat_paths, dkey);
+        let merged = merge_distribution_array(inferred_arr, disc_arr, cfg, forced_paths, dkey);
         inferred_obj.insert(dkey.to_string(), merged);
     }
 
@@ -86,9 +86,9 @@ pub fn merge(
         }
         // Skip when the user marked this top-level DCAT key as forced.
         // Discovered key `k` maps to dataset_info pointer
-        // `/dcat/<escaped-k>` per the legacy semantics.
-        let candidate = format!("/dcat/{}", escape_token(key));
-        let is_forced = forced_dcat_paths
+        // `/projection/<escaped-k>` per the legacy semantics.
+        let candidate = format!("/projection/{}", escape_token(key));
+        let is_forced = forced_paths
             .iter()
             .any(|p| p == &candidate || p.starts_with(&format!("{candidate}/")));
         if is_forced {
@@ -146,7 +146,7 @@ fn merge_one(out: &mut Map<String, Value>, key: &str, value: Value, strategy: &s
 /// match any inferred entry are appended only when
 /// `append_unmatched: true`.
 ///
-/// `forced_dcat_paths` honors the same `dataset_info` force-override
+/// `forced_paths` honors the same `dataset_info` force-override
 /// semantics that the outer `merge` uses for top-level keys: any
 /// publisher field whose pointer matches a forced path exactly, or
 /// is the parent of one (forced sub-key under a publisher field), is
@@ -163,7 +163,7 @@ fn merge_distribution_array(
     inferred: Value,
     discovered: &Value,
     cfg: &super::profile_spec::DistributionMerge,
-    forced_dcat_paths: &[String],
+    forced_paths: &[String],
     dist_key: &str,
 ) -> Value {
     let mut inferred_arr = coerce_to_array(inferred);
@@ -176,7 +176,7 @@ fn merge_distribution_array(
     };
 
     let field_strategy = cfg.field_strategy.as_deref().unwrap_or("fill-if-absent");
-    let dist_prefix = format!("/dcat/{}", escape_token(dist_key));
+    let dist_prefix = format!("/projection/{}", escape_token(dist_key));
 
     for disc in disc_slice {
         let Value::Object(disc_obj) = disc else {
@@ -193,7 +193,7 @@ fn merge_distribution_array(
                     for (k, v) in disc_obj {
                         // Honor dataset_info force overrides: skip
                         // publisher fields whose JSON pointer
-                        // (`/dcat/<dist_key>/<idx>/<field>`) is
+                        // (`/projection/<dist_key>/<idx>/<field>`) is
                         // forced exactly or has a forced sub-key
                         // beneath it. Mirrors the top-level
                         // forced-path semantics in `merge` so users
@@ -201,7 +201,7 @@ fn merge_distribution_array(
                         // silently overwritten by per-distribution
                         // merging.
                         let field_path = format!("{dist_prefix}/{idx}/{}", escape_token(k));
-                        let is_forced = forced_dcat_paths
+                        let is_forced = forced_paths
                             .iter()
                             .any(|p| p == &field_path || p.starts_with(&format!("{field_path}/")));
                         if is_forced {
@@ -326,19 +326,19 @@ discovery_merge:
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
         let inferred = json!({ "@type": "dcat:Dataset" });
         let discovered = json!({ "dct:title": "Discovered Title" });
-        // Forced paths use the dataset_info form: /dcat/<key>.
+        // Forced paths use the dataset_info form: /projection/<key>.
         let merged = merge(
             &profile,
             inferred,
             Some(&discovered),
-            &["/dcat/dct:title".to_string()],
+            &["/projection/dct:title".to_string()],
         );
         assert!(merged.get("dct:title").is_none());
     }
 
     #[test]
     fn forced_nested_path_blocks_top_level_merge() {
-        // A forced leaf path like /dcat/dcat:contactPoint/vcard:fn should
+        // A forced leaf path like /projection/dcat:contactPoint/vcard:fn should
         // also block the top-level contactPoint key from being copied
         // wholesale from the discovered block.
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
@@ -350,7 +350,7 @@ discovery_merge:
             &profile,
             inferred,
             Some(&discovered),
-            &["/dcat/dcat:contactPoint/vcard:fn".to_string()],
+            &["/projection/dcat:contactPoint/vcard:fn".to_string()],
         );
         assert!(merged.get("dcat:contactPoint").is_none());
     }
@@ -408,7 +408,7 @@ discovery_merge:
             "http://purl.org/dc/terms/title": "Discovered IRI Title"
         });
         // Escaped per RFC 6901: each `/` → `~1`. Block.
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let forced = vec!["/projection/http:~1~1purl.org~1dc~1terms~1title".to_string()];
         let merged = merge(&profile, inferred, Some(&discovered), &forced);
         assert!(
             merged.get("http://purl.org/dc/terms/title").is_none(),
@@ -424,7 +424,7 @@ discovery_merge:
         let profile = load_from_str(PROFILE_WITH_NEVER, "t").unwrap();
         let inferred = json!({ "@type": "dcat:Dataset" });
         let discovered = json!({ "dct:identifier": "id-123" });
-        let forced = vec!["/dcat/http:~1~1purl.org~1dc~1terms~1title".to_string()];
+        let forced = vec!["/projection/http:~1~1purl.org~1dc~1terms~1title".to_string()];
         let merged = merge(&profile, inferred, Some(&discovered), &forced);
         assert_eq!(
             merged.get("dct:identifier").and_then(Value::as_str),
@@ -781,7 +781,7 @@ discovery_merge:
     #[test]
     fn dist_merge_honors_forced_path_on_distribution_field() {
         // Roborev #2499 finding #1: a forced dataset_info path at
-        // /dcat/dcat:distribution/0/<field> must block the publisher
+        // /projection/dcat:distribution/0/<field> must block the publisher
         // overlay on that field even when the inferred value is
         // absent. Without the forced-path check, publisher metadata
         // would silently fill the user's intentional override gap.
@@ -802,7 +802,7 @@ discovery_merge:
         });
         // User forced the title on inferred[0] (the leaf they wanted
         // to override via --initial-context dataset_info).
-        let forced = vec!["/dcat/dcat:distribution/0/dct:title".to_string()];
+        let forced = vec!["/projection/dcat:distribution/0/dct:title".to_string()];
         let merged = merge(&profile, inferred, Some(&discovered), &forced);
         let dist = merged.get("dcat:distribution").unwrap().as_array().unwrap();
         assert!(
@@ -820,7 +820,7 @@ discovery_merge:
     #[test]
     fn dist_merge_honors_forced_nested_path_under_distribution_field() {
         // A forced path INSIDE a publisher field
-        // (`/dcat/dcat:distribution/0/dcat-us:accessRestriction/some-key`)
+        // (`/projection/dcat:distribution/0/dcat-us:accessRestriction/some-key`)
         // must block the publisher from replacing the whole parent
         // field. Mirrors the top-level
         // `forced_nested_path_blocks_top_level_merge` semantics for
@@ -837,7 +837,8 @@ discovery_merge:
                 "dcat-us:accessRestriction": {"label": "PUBLISHER"},
             }],
         });
-        let forced = vec!["/dcat/dcat:distribution/0/dcat-us:accessRestriction/label".to_string()];
+        let forced =
+            vec!["/projection/dcat:distribution/0/dcat-us:accessRestriction/label".to_string()];
         let merged = merge(&profile, inferred, Some(&discovered), &forced);
         let dist = merged.get("dcat:distribution").unwrap().as_array().unwrap();
         assert!(
@@ -849,7 +850,7 @@ discovery_merge:
     #[test]
     fn dist_merge_unrelated_forced_path_does_not_block() {
         // Companion: a forced path on a sibling distribution
-        // (`/dcat/dcat:distribution/1/...`) must NOT block overlay
+        // (`/projection/dcat:distribution/1/...`) must NOT block overlay
         // on index 0. Index-specific guarding is required so a user
         // override on one resource doesn't silently lock down the
         // whole array.
@@ -867,7 +868,7 @@ discovery_merge:
         });
         // Forced path targets index 1, not 0. Has no effect on
         // matched entry at index 0.
-        let forced = vec!["/dcat/dcat:distribution/1/dct:title".to_string()];
+        let forced = vec!["/projection/dcat:distribution/1/dct:title".to_string()];
         let merged = merge(&profile, inferred, Some(&discovered), &forced);
         let dist = merged.get("dcat:distribution").unwrap().as_array().unwrap();
         assert_eq!(

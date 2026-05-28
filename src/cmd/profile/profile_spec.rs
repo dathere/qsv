@@ -88,7 +88,7 @@ pub fn list_embedded() -> Vec<&'static str> {
 
 impl ProfileSpec {
     /// Translate a CKAN-side pointer (e.g. `/package/title`) to its
-    /// target counterpart (e.g. `/dcat/dct:title`) per the profile's
+    /// target counterpart (e.g. `/projection/dct:title`) per the profile's
     /// `field_mappings:` table. Returns `None` when the CKAN pointer
     /// isn't mapped (the legacy `ckan_to_dcat::translate_ckan_ptr`
     /// behavior). Used by `context.rs::collect_forced_paths` for the
@@ -182,7 +182,7 @@ pub struct ProfileSpec {
 
 /// One CKAN→target pointer mapping. Both pointers are RFC 6901-ish; the
 /// CKAN side is rooted under `/package/...` or `/resource/...` and the
-/// target side under the projection's address space (e.g. `/dcat/...`
+/// target side under the projection's address space (e.g. `/projection/...`
 /// for DCAT-US v3, top-level keys for Croissant).
 #[derive(Debug, Clone, Deserialize)]
 pub struct FieldMapping {

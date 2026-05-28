@@ -881,6 +881,78 @@ fn croissant_extended_stats_survive_lean_stats_cache_reuse() {
 }
 
 #[test]
+fn croissant_all_unique_dataset_reuses_profileschema_cache() {
+    // Regression for the mode-detection fix (roborev #2581/#2582): for an
+    // all-unique dataset `stats --mode` leaves `mode` empty (None) even
+    // though --mode ran, so cache-sufficiency must key off `mode_count`
+    // (which stays Some(0)) rather than `mode`. Otherwise a freshly
+    // generated ProfileSchema cache is wrongly judged insufficient and
+    // regenerated on every run. Reverting the predicate to `mode.is_some()`
+    // makes this test fail (the cache mtime would advance on the 2nd run).
+    let wrk = Workdir::new("croissant_all_unique_cache");
+    // Every value in every column is unique → no column has a mode value,
+    // but the numeric column still has quartiles.
+    wrk.create_from_string(
+        "in.csv",
+        "id,measure\n1,10.5\n2,20.5\n3,30.5\n4,40.5\n5,50.5\n",
+    );
+
+    let cache = wrk.path("in.stats.csv.data.jsonl");
+
+    // Run 1: generates the ProfileSchema stats cache.
+    let mut cmd1 = wrk.command("profile");
+    cmd1.args(["in.csv", "--profile", "croissant", "-o", "out1.json"]);
+    wrk.assert_success(&mut cmd1);
+    let mtime1 = std::fs::metadata(&cache)
+        .expect("stats cache must exist after first run")
+        .modified()
+        .expect("cache mtime");
+
+    // Sleep past coarse (1s) filesystem mtime resolution so a regeneration
+    // on the second run would be detectable.
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+
+    // Run 2 (no --force): must REUSE the cache, not regenerate it.
+    let mut cmd2 = wrk.command("profile");
+    cmd2.args(["in.csv", "--profile", "croissant", "-o", "out2.json"]);
+    wrk.assert_success(&mut cmd2);
+    let mtime2 = std::fs::metadata(&cache)
+        .expect("stats cache still present")
+        .modified()
+        .expect("cache mtime");
+
+    assert_eq!(
+        mtime1, mtime2,
+        "ProfileSchema cache for an all-unique dataset must be reused, not regenerated",
+    );
+
+    // Extended stats still surface (the numeric all-unique column has
+    // quartiles even though no column has a mode value).
+    let out = read_output(&wrk, "out2.json");
+    let mut term_codes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for f in out
+        .pointer("/projection/recordSet/0/field")
+        .and_then(|v| v.as_array())
+        .expect("field array")
+    {
+        if let Some(anns) = f.get("annotation").and_then(|v| v.as_array()) {
+            for a in anns {
+                if let Some(tc) = a.pointer("/dataType/termCode").and_then(|v| v.as_str()) {
+                    term_codes.insert(tc.to_string());
+                }
+            }
+        }
+    }
+    for expected in ["Median", "FirstQuartile", "ThirdQuartile"] {
+        assert!(
+            term_codes.contains(expected),
+            "extended stat `{expected}` must be present for an all-unique numeric column; saw \
+             {term_codes:?}",
+        );
+    }
+}
+
+#[test]
 fn croissant_uses_bare_distribution_key_not_dcat_namespaced() {
     // Croissant's @vocab=schema.org resolves bare `distribution` →
     // schema.org/distribution. DCAT-namespaced `dcat:distribution`

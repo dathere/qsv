@@ -129,30 +129,42 @@ validation:
 dataset:
   type: "sc:Dataset"
   context:
-    "@language":     "en"
-    "@vocab":        "https://schema.org/"
-    sc:              "https://schema.org/"
-    cr:              "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
-    rai:             "http://mlcommons.org/croissant/RAI/"    # DevSkim: ignore DS137138
-    dct:             "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
-    citeAs:          "cr:citeAs"
-    column:          "cr:column"
-    conformsTo:      "dct:conformsTo"
-    data:            { "@id": "cr:data",        "@type": "@json" }
-    dataType:        { "@id": "cr:dataType",    "@type": "@vocab" }
-    extract:         "cr:extract"
-    field:           "cr:field"
-    fileObject:      "cr:fileObject"
-    fileSet:         "cr:fileSet"
-    includes:        "cr:includes"
-    isLiveDataset:   "cr:isLiveDataset"
-    key:             "cr:key"
-    recordSet:       "cr:recordSet"
-    references:      "cr:references"
-    regex:           "cr:regex"
-    source:          "cr:source"
-    subField:        "cr:subField"
-    transform:       "cr:transform"
+    "@language":        "en"
+    "@vocab":           "https://schema.org/"
+    sc:                 "https://schema.org/"
+    cr:                 "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
+    rai:                "http://mlcommons.org/croissant/RAI/"    # DevSkim: ignore DS137138
+    dct:                "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
+    citeAs:             "cr:citeAs"
+    column:             "cr:column"
+    conformsTo:         "dct:conformsTo"
+    data:               { "@id": "cr:data",        "@type": "@json" }
+    dataType:           { "@id": "cr:dataType",    "@type": "@vocab" }
+    equivalentProperty: "cr:equivalentProperty"
+    examples:           { "@id": "cr:examples",    "@type": "@json" }
+    extract:            "cr:extract"
+    field:              "cr:field"
+    fileObject:         "cr:fileObject"
+    fileProperty:       "cr:fileProperty"
+    fileSet:            "cr:fileSet"
+    format:             "cr:format"
+    includes:           "cr:includes"
+    isLiveDataset:      "cr:isLiveDataset"
+    jsonPath:           "cr:jsonPath"
+    key:                "cr:key"
+    md5:                "cr:md5"
+    parentField:        "cr:parentField"
+    path:               "cr:path"
+    recordSet:          "cr:recordSet"
+    references:         "cr:references"
+    regex:              "cr:regex"
+    repeated:           "cr:repeated"
+    replace:            "cr:replace"
+    samplingRate:       "cr:samplingRate"
+    separator:          "cr:separator"
+    source:             "cr:source"
+    subField:           "cr:subField"
+    transform:          "cr:transform"
   fields:
     - path: "name"
       template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
@@ -255,9 +267,14 @@ distribution:
       template: '{{ res.description | default("") }}'
       emit_when: '{{ (res.description | default("")) != "" }}'
 
+    # 1.1: contentUrl is mandatory on FileObject. Prefer an absolute
+    # `res.url` if one was supplied (URL inputs, --initial-context), else
+    # fall back to the basename — the canonical 1.1 example uses a
+    # relative path (`"contentUrl": "data/data.csv"`) so a bare basename
+    # is spec-conformant and keeps mlcroissant's mandatory-property
+    # check satisfied for local-file inputs.
     - path: "contentUrl"
-      template: '{{ (res.url | default("")) | only_if_absolute_iri }}'
-      emit_when: '{{ (res.url | default("")) != "" }}'
+      template: '{{ res.url | default(res.name | default(source_label | basename) | default("data.csv")) }}'
 
     - path: "qsv:sourcePath"
       template: '{{ source_label }}'

@@ -182,8 +182,11 @@ pub struct ProfileSpec {
 
 /// One CKAN→target pointer mapping. Both pointers are RFC 6901-ish; the
 /// CKAN side is rooted under `/package/...` or `/resource/...` and the
-/// target side under the projection's address space (e.g. `/projection/...`
-/// for DCAT-US v3, top-level keys for Croissant).
+/// target side is a JSON pointer into the emitted projection block. All
+/// bundled profiles share the `/projection/...` root regardless of their
+/// JSON-LD vocabulary (e.g. `/projection/dct:title` for DCAT-US v3,
+/// `/projection/name` for Croissant, `/projection/schema:name` for
+/// Geoconnex).
 #[derive(Debug, Clone, Deserialize)]
 pub struct FieldMapping {
     pub ckan:   String,

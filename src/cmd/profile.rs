@@ -75,8 +75,15 @@ profile options:
                               cardinality issues, and shape violations.
                               Violations append to projection_warnings by
                               default.
-    --strict                  With --validate, fail the command on any
-                              validation finding instead of warning.
+    --strict                  With --validate, fail the command on JSON
+                              Schema violations or non-Info external-
+                              validator findings (Required/Recommended
+                              severities) instead of just warning.
+                              RFC4180 structural failures from
+                              `qsv validate` (emitted when a spec
+                              declares `validators`) are always
+                              appended as warnings regardless of
+                              --strict.
     --allow-external-validator
                               Opt in to spawning the validator binary
                               declared by `validation.external` when the

@@ -157,13 +157,23 @@ are silently skipped — this is best-effort, not enforcement.
 
 ## `--catalog` mode
 
-With `--catalog`, the emitted `dcat` block is wrapped inside a
+With `--catalog`, the emitted projection block is wrapped inside a
 `dcat:Catalog` envelope (`Catalog{dataset:[...]}`) suitable for
 federation harvesters (data.gov, CKAN ingest). The Catalog inherits
 the enclosed Dataset's title (prefixed with `Catalog of `) and
-publisher. All `dataset_info` and force overrides apply to the
-Dataset BEFORE the Catalog wrap — pointer paths like `/projection/dct:title`
-target the inner Dataset, not the Catalog envelope.
+publisher.
+
+In `--catalog` mode the inner Dataset is nested at
+`/projection/dcat:dataset/0/...` (or `/projection/schema:dataset/0/...`
+for schema.org-rooted profiles like Geoconnex). `dataset_info` and
+force-value overrides apply to the *full output* after the Catalog
+wrap, so a bare `/projection/dct:title` writes to the Catalog
+envelope itself; to override an inner-Dataset slot use the nested
+path, e.g. `/projection/dcat:dataset/0/dct:title`. Discovery-merge
+force-protection still operates on the pre-wrap Dataset, so a
+forced `/projection/dct:title` does correctly shield the Dataset's
+title from being overwritten by discovered publisher metadata even
+under `--catalog`.
 
 `--validate --catalog` runs the Catalog overlay schema
 (`resources/dcat-us-v3/qsv-overlay-catalog.json`) which enforces

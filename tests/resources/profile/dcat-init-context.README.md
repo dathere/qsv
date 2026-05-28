@@ -133,9 +133,9 @@ Each key is an RFC 6901 JSON Pointer relative to the **whole output**:
 
 ```json
 "dataset_info": {
-  "/dcat/dct:title":                 "Force override",
-  "/dcat/dcat:distribution/0/dct:license": "https://opendatacommons.org/licenses/by/1-0/",
-  "/dcat/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
+  "/projection/dct:title":                 "Force override",
+  "/projection/dcat:distribution/0/dct:license": "https://opendatacommons.org/licenses/by/1-0/",
+  "/projection/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
 }
 ```
 
@@ -165,7 +165,7 @@ publisher. All `dataset_info` and force overrides apply to the
 Dataset BEFORE the Catalog wrap — pointer paths like `/dcat/dct:title`
 target the inner Dataset, not the Catalog envelope.
 
-`--validate-dcat --catalog` runs the Catalog overlay schema
+`--validate --catalog` runs the Catalog overlay schema
 (`resources/dcat-us-v3/qsv-overlay-catalog.json`) which enforces
 Catalog-level required keys on the envelope.
 
@@ -175,5 +175,5 @@ Catalog-level required keys on the envelope.
 * v1.1 → v3 migration guide:
   <https://resources.data.gov/resources/dcat-us-3-migration/>
 * Authoritative JSON Schema 2020-12 definitions + examples
-  (vendored under `resources/dcat-us-v3/` for `--validate-dcat`):
+  (vendored under `resources/dcat-us-v3/` for `--validate`):
   <https://github.com/GSA/dcat-us/tree/main/jsonschema>

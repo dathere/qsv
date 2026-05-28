@@ -152,7 +152,7 @@ validation:
     - "qsv:"
   # pyshacl is the canonical SHACL engine
   # (https://github.com/RDFLib/pySHACL). Install via
-  # `pip install pyshacl`. qsv runs it under `--validate-dcat`;
+  # `pip install pyshacl`. qsv runs it under `--validate`;
   # findings surface as ProjectionWarnings at `default_severity`.
   # The SHACL shapes from SEMICeu DCAT-AP v3.0.0 ship embedded in
   # the qsv binary (see resources/dcat-ap-v3/shacl/README.md and

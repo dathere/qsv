@@ -46,12 +46,13 @@ profile options:
                               package / resource entries route through the
                               active profile's `field_mappings:` table (e.g.
                               `package.title force=true` lands at
-                              `/dcat/dct:title`, beating inference and
+                              `/projection/dct:title`, beating inference and
                               discovery). Forced values for slots the profile
                               does not surface are silently dropped (no-op).
                               See tests/resources/profile/dcat-init-context.README.md
                               for a fully-populated example.
-    --no-dcat                 Skip the DCAT-US v3 projection block.
+    --no-projection           Skip the metadata projection block (dcat/croissant/
+                              geoconnex, depending on the active profile).
     --no-ckan                 Skip the CKAN-shape block.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
                               Dataset alongside the v3-required
@@ -64,22 +65,26 @@ profile options:
                               publisher's stated metadata as a base layer.
     --dcat-discovery-timeout <secs>  Per-request timeout for DCAT-markup
                               discovery probes. Default: 5.
-    --validate-dcat           Validate the emitted dcat block against the
-                              vendored GSA DCAT-US v3 JSON Schema bundle
-                              (see resources/dcat-us-v3/). Catches missing
-                              mandatory fields, cardinality issues, and
-                              shape violations across the full v3 spec.
-                              Violations append to dcat_warnings by default.
-    --strict-dcat             With --validate-dcat, fail the command on
-                              any schema violation instead of warning.
+    --validate                Validate the emitted projection block against
+                              the active profile's declared validators. For
+                              dcat-us-v3 that's the vendored GSA JSON Schema
+                              bundle (see resources/dcat-us-v3/); for
+                              dcat-ap-v3 / geoconnex it's pyshacl over the
+                              bundled SHACL shapes; for croissant it's
+                              mlcroissant. Catches missing mandatory fields,
+                              cardinality issues, and shape violations.
+                              Violations append to projection_warnings by
+                              default.
+    --strict                  With --validate, fail the command on any
+                              validation finding instead of warning.
     --allow-external-validator
                               Opt in to spawning the validator binary
                               declared by `validation.external` when the
                               profile was loaded from an arbitrary YAML
                               file. Bundled profiles (dcat-us-v3,
-                              dcat-ap-v3, croissant) always run their
-                              declared external validators because the
-                              profile content is vetted at qsv release
+                              dcat-ap-v3, croissant, geoconnex) always run
+                              their declared external validators because
+                              the profile content is vetted at qsv release
                               time. Without this flag, file-loaded
                               profiles emit a Recommended-severity
                               warning instead of running the binary, so
@@ -145,12 +150,12 @@ struct Args {
     arg_input:                     Option<String>,
     flag_spec:                     Option<String>,
     flag_initial_context:          Option<String>,
-    flag_no_dcat:                  bool,
+    flag_no_projection:            bool,
     flag_dcat_legacy_license:      bool,
     flag_no_dcat_discovery:        bool,
     flag_dcat_discovery_timeout:   Option<u64>,
-    flag_validate_dcat:            bool,
-    flag_strict_dcat:              bool,
+    flag_validate:                 bool,
+    flag_strict:                   bool,
     flag_allow_external_validator: bool,
     flag_catalog:                  bool,
     flag_profile:                  Option<String>,
@@ -277,7 +282,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         analysis.context.get("dppf").cloned().unwrap_or(json!({})),
     );
 
-    // Build the merged package/resource once so both --no-ckan and --no-dcat
+    // Build the merged package/resource once so both --no-ckan and --no-projection
     // share the same post-formula state.
     let mut package = analysis
         .context
@@ -385,7 +390,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         serde_json::to_value(&formula_results).unwrap_or(json!([])),
     );
 
-    if !args.flag_no_dcat {
+    if !args.flag_no_projection {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
         // Build the projection context: the YAML's field templates
@@ -433,18 +438,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         } else {
             merged_dataset
         };
-        out_map.insert("dcat".to_string(), merged_dcat);
+        out_map.insert("projection".to_string(), merged_dcat);
         // Stash the build-time warnings for now; we'll insert them
         // after dataset_info overrides + schema validation have had
-        // their say so the final dcat_warnings array reflects the
-        // emitted dcat block, not an intermediate snapshot.
+        // their say so the final projection_warnings array reflects
+        // the emitted projection block, not an intermediate snapshot.
         out_map.insert(
             "__pending_projection_warnings".to_string(),
             serde_json::to_value(&projection_warnings).unwrap_or(json!([])),
         );
         // Surface the raw discovered DCAT alongside the merged block so
         // downstream tooling can diff or audit what came from the
-        // publisher vs what qsv inferred.
+        // publisher vs what qsv inferred. The discovered payload is
+        // always DCAT-shaped (HTTP Link: rel=describedBy markup) even
+        // when the active profile is Croissant or Geoconnex, so the
+        // `dcat_discovered` key keeps its DCAT-specific name.
         if let Some(d) = discovered_dcat {
             out_map.insert("dcat_discovered".to_string(), d);
         }
@@ -454,64 +462,65 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // applied first — unconditionally over inference, discovery, the
     // CKAN block, and formula output. Must run BEFORE schema
     // validation so an override that supplies a missing mandatory
-    // field doesn't trip --strict-dcat. Per plan §4c.
+    // field doesn't trip --strict. Per plan §4c.
     if let Some(overrides) = analysis.dataset_info.as_object()
         && !overrides.is_empty()
     {
         apply_pointer_overrides(&mut output, overrides);
     }
 
-    // §5.4: forced `(dcat_pointer, value)` pairs from all three
+    // §5.4: forced `(projection_pointer, value)` pairs from all three
     // subtrees (dataset_info, package, resource — package/resource keys
     // translated via the active profile's `field_mappings:` table, see
     // `ProfileSpec::translate_ckan_ptr`). Applied AFTER apply_pointer_overrides so a
     // `{value, force: true}` wrapper beats both inferred metadata
     // AND publisher-discovered DCAT, with last-write-wins on
     // aliasing pointers. Still runs BEFORE schema validation so a
-    // forced field can rescue --strict-dcat the same way
-    // dataset_info entries do.
+    // forced field can rescue --strict the same way dataset_info
+    // entries do.
     if !analysis.forced_values.is_empty() {
         apply_force_overrides(&mut output, &analysis.forced_values);
     }
 
     // Phase 6 (post-override): JSON Schema validation runs on the
-    // emitted dcat block, after dataset_info overrides have applied.
-    // Pulls the stashed build-time warnings back out, drops any whose
-    // referenced field is now present in the final dcat block (the
-    // dataset_info override or discovered-DCAT merge satisfied them),
-    // then merges schema violations into the final dcat_warnings array.
-    if !args.flag_no_dcat {
+    // emitted projection block, after dataset_info overrides have
+    // applied. Pulls the stashed build-time warnings back out, drops
+    // any whose referenced field is now present in the final
+    // projection block (the dataset_info override or discovered-DCAT
+    // merge satisfied them), then merges schema violations into the
+    // final projection_warnings array.
+    if !args.flag_no_projection {
         let out_map = output.as_object_mut().unwrap();
         let stashed: Vec<projection::ProjectionWarning> = out_map
             .remove("__pending_projection_warnings")
             .and_then(|v| serde_json::from_value(v).ok())
             .unwrap_or_default();
-        // Stale-warning filter consults the final dcat shape. For
-        // Catalog mode the build-time warnings still reference Dataset
-        // fields by name (`dcat:contactPoint`), so the filter must walk
-        // into `dcat:dataset[0]` when it's present.
-        let final_dcat_snapshot = out_map.get("dcat").cloned();
-        let mut dcat_warnings: Vec<projection::ProjectionWarning> = stashed
+        // Stale-warning filter consults the final projection shape.
+        // For Catalog mode the build-time warnings still reference
+        // Dataset fields by name (`dcat:contactPoint`), so the filter
+        // must walk into `dcat:dataset[0]` when it's present.
+        let final_projection_snapshot = out_map.get("projection").cloned();
+        let mut projection_warnings: Vec<projection::ProjectionWarning> = stashed
             .into_iter()
-            .filter(|w| !final_dcat_has_field(final_dcat_snapshot.as_ref(), &w.field))
+            .filter(|w| !final_projection_has_field(final_projection_snapshot.as_ref(), &w.field))
             .collect();
 
-        if args.flag_validate_dcat
-            && let Some(final_dcat) = out_map.get("dcat")
+        if args.flag_validate
+            && let Some(final_projection) = out_map.get("projection")
         {
-            let validation = dcat_validate::validate(&profile, final_dcat);
-            if !validation.is_empty() && args.flag_strict_dcat {
+            let validation = dcat_validate::validate(&profile, final_projection);
+            if !validation.is_empty() && args.flag_strict {
                 let summary = validation
                     .iter()
                     .map(|w| format!("  - {}: {}", w.field, w.message))
                     .collect::<Vec<_>>()
                     .join("\n");
                 return Err(CliError::Other(format!(
-                    "qsv profile --strict-dcat: {} schema violation(s):\n{summary}",
+                    "qsv profile --strict: {} schema violation(s):\n{summary}",
                     validation.len()
                 )));
             }
-            dcat_warnings.extend(validation);
+            projection_warnings.extend(validation);
 
             // Out-of-process validator (e.g. mlcroissant, pyshacl).
             // Runs in parallel to the built-in JSON-Schema validator;
@@ -535,7 +544,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 && !allow_external
             {
                 let label = cfg.label.as_deref().unwrap_or(cfg.command.as_str());
-                dcat_warnings.push(projection::ProjectionWarning {
+                projection_warnings.push(projection::ProjectionWarning {
                     field:    "external_validate".to_string(),
                     severity: projection::Severity::Recommended,
                     message:  format!(
@@ -546,47 +555,47 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     ),
                 });
             } else if allow_external {
-                let external = external_validate::validate(&profile, final_dcat);
+                let external = external_validate::validate(&profile, final_projection);
                 let external_findings: Vec<_> = external
                     .iter()
                     .filter(|w| !matches!(w.severity, projection::Severity::Info))
                     .collect();
-                if !external_findings.is_empty() && args.flag_strict_dcat {
+                if !external_findings.is_empty() && args.flag_strict {
                     let summary = external_findings
                         .iter()
                         .map(|w| format!("  - {}: {}", w.field, w.message))
                         .collect::<Vec<_>>()
                         .join("\n");
                     return Err(CliError::Other(format!(
-                        "qsv profile --strict-dcat: {} external validator finding(s):\n{summary}",
+                        "qsv profile --strict: {} external validator finding(s):\n{summary}",
                         external_findings.len()
                     )));
                 }
-                dcat_warnings.extend(external);
+                projection_warnings.extend(external);
             }
         }
 
         // §5.8: profile-driven validation. When the spec opts in by
         // declaring any `validators`, run `qsv validate` against the
-        // input and merge any RFC4180 failures into dcat_warnings.
-        // Triggered regardless of --validate-dcat so users get a
-        // useful structural signal even without enabling JSON-Schema
-        // validation against the emitted dcat block.
+        // input and merge any RFC4180 failures into projection_warnings.
+        // Triggered regardless of --validate so users get a useful
+        // structural signal even without enabling JSON-Schema
+        // validation against the emitted projection block.
         if spec_opt
             .as_ref()
             .is_some_and(super::profile::spec::Spec::has_validators)
         {
-            dcat_warnings.extend(run_profile_validation(
+            projection_warnings.extend(run_profile_validation(
                 &input_path,
                 args.flag_no_headers,
                 args.flag_delimiter,
             ));
         }
 
-        if !dcat_warnings.is_empty() {
+        if !projection_warnings.is_empty() {
             out_map.insert(
-                "dcat_warnings".to_string(),
-                serde_json::to_value(&dcat_warnings).unwrap_or(json!([])),
+                "projection_warnings".to_string(),
+                serde_json::to_value(&projection_warnings).unwrap_or(json!([])),
             );
         }
     }
@@ -979,7 +988,7 @@ fn strip_compound_csv_ext(path: &str) -> String {
 
 /// Apply `--initial-context.dataset_info` JSON-Pointer → Value
 /// overrides to the assembled output JSON. Each key in `overrides`
-/// must be an RFC 6901 JSON Pointer (e.g. `/dcat/dct:title`); the
+/// must be an RFC 6901 JSON Pointer (e.g. `/projection/dct:title`); the
 /// value replaces whatever was at that path. Missing parents are
 /// created as objects on demand.
 ///
@@ -1016,7 +1025,7 @@ fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
     }
 }
 
-/// Returns true when the final dcat block carries a non-null,
+/// Returns true when the final projection block carries a non-null,
 /// non-empty value for `field` (a JSON-LD key like `"dcat:contactPoint"`
 /// or a nested path like `"dcat:distribution/0/dct:license"`). Used
 /// to filter stale build-time warnings after `dataset_info` overrides
@@ -1027,8 +1036,8 @@ fn apply_force_overrides(root: &mut Value, forced_values: &[(String, Value)]) {
 /// resolved via JSON Pointer (with a leading `/` added if absent).
 /// Returns false for any unparseable / missing field — the safe
 /// default is "keep the warning".
-fn final_dcat_has_field(final_dcat: Option<&Value>, field: &str) -> bool {
-    let Some(dcat) = final_dcat else {
+fn final_projection_has_field(final_projection: Option<&Value>, field: &str) -> bool {
+    let Some(projection) = final_projection else {
         return false;
     };
     if field.is_empty() {
@@ -1036,7 +1045,7 @@ fn final_dcat_has_field(final_dcat: Option<&Value>, field: &str) -> bool {
     }
     // Top-level field name (the common case for build-time warnings).
     if !field.contains('/')
-        && let Some(v) = dcat.get(field)
+        && let Some(v) = projection.get(field)
     {
         return !is_value_empty(v);
     }
@@ -1046,7 +1055,9 @@ fn final_dcat_has_field(final_dcat: Option<&Value>, field: &str) -> bool {
     } else {
         format!("/{field}")
     };
-    dcat.pointer(&pointer).is_some_and(|v| !is_value_empty(v))
+    projection
+        .pointer(&pointer)
+        .is_some_and(|v| !is_value_empty(v))
 }
 
 fn is_value_empty(v: &Value) -> bool {
@@ -1140,14 +1151,15 @@ mod tests {
 
     #[test]
     fn pointer_overrides_set_existing_leaf() {
-        let mut root = json!({"dcat": {"dct:title": "old"}});
-        let overrides = json!({"/dcat/dct:title": "new"})
+        let mut root = json!({"projection": {"dct:title": "old"}});
+        let overrides = json!({"/projection/dct:title": "new"})
             .as_object()
             .unwrap()
             .clone();
         apply_pointer_overrides(&mut root, &overrides);
         assert_eq!(
-            root.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+            root.pointer("/projection/dct:title")
+                .and_then(|v| v.as_str()),
             Some("new")
         );
     }
@@ -1155,13 +1167,13 @@ mod tests {
     #[test]
     fn pointer_overrides_create_missing_parents() {
         let mut root = json!({});
-        let overrides = json!({"/dcat/dcat-us:bureauCode": ["015:11"]})
+        let overrides = json!({"/projection/dcat-us:bureauCode": ["015:11"]})
             .as_object()
             .unwrap()
             .clone();
         apply_pointer_overrides(&mut root, &overrides);
         assert_eq!(
-            root.pointer("/dcat/dcat-us:bureauCode/0")
+            root.pointer("/projection/dcat-us:bureauCode/0")
                 .and_then(|v| v.as_str()),
             Some("015:11")
         );
@@ -1361,25 +1373,25 @@ mod tests {
         // Regression for the array-corruption finding: previously this
         // would replace the distribution array with {"0": {...}}.
         let mut root = json!({
-            "dcat": {
+            "projection": {
                 "dcat:distribution": [
                     {"@type": "dcat:Distribution", "dct:license": "old"}
                 ]
             }
         });
-        let overrides = json!({"/dcat/dcat:distribution/0/dct:license": "new"})
+        let overrides = json!({"/projection/dcat:distribution/0/dct:license": "new"})
             .as_object()
             .unwrap()
             .clone();
         apply_pointer_overrides(&mut root, &overrides);
         // Array shape must be preserved
         assert!(
-            root.pointer("/dcat/dcat:distribution")
+            root.pointer("/projection/dcat:distribution")
                 .is_some_and(|v| v.is_array()),
             "distribution must remain an array, got: {root:#}"
         );
         assert_eq!(
-            root.pointer("/dcat/dcat:distribution/0/dct:license")
+            root.pointer("/projection/dcat:distribution/0/dct:license")
                 .and_then(|v| v.as_str()),
             Some("new")
         );

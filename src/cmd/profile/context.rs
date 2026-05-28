@@ -562,7 +562,7 @@ pub(super) fn load_initial_context(
     //   "/dcat/dcat:contactPoint": {"value": {...}, "force": true}
     // unwraps to the inner value before being written to the output.
     // Otherwise the wrapper object itself becomes the DCAT value and
-    // the override fails to rescue --strict-dcat validation.
+    // the override fails to rescue --strict validation.
     let dataset_info = normalize_value_force(doc.get("dataset_info").cloned().unwrap_or(json!({})));
     Ok((
         package,

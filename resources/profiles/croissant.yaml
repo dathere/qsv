@@ -81,7 +81,7 @@ validation:
   # `mlcroissant` is the reference validator shipped by MLCommons
   # (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
   # Install via `pip install mlcroissant`. qsv runs it under
-  # `--validate-dcat`; findings surface as ProjectionWarnings at
+  # `--validate`; findings surface as ProjectionWarnings at
   # `default_severity`. Missing-binary cases never fail the run.
   external:
     command: "mlcroissant"

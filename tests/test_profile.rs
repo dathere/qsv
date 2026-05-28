@@ -93,7 +93,7 @@ fn dcat_us_v3_golden_parity_dataset() {
         wrk.assert_success(&mut cmd);
 
         let out = read_output(&wrk, "out.json");
-        let actual = normalize_dcat_for_parity(out["dcat"].clone());
+        let actual = normalize_dcat_for_parity(out["projection"].clone());
         let golden_path = format!("tests/resources/profile/golden/{fix}.dataset.expected.json");
         let golden_raw =
             std::fs::read_to_string(std::env::current_dir().unwrap().join(&golden_path))
@@ -129,7 +129,7 @@ fn dcat_us_v3_golden_parity_catalog() {
         wrk.assert_success(&mut cmd);
 
         let out = read_output(&wrk, "out.json");
-        let actual = normalize_dcat_for_parity(out["dcat"].clone());
+        let actual = normalize_dcat_for_parity(out["projection"].clone());
         let golden_path = format!("tests/resources/profile/golden/{fix}.catalog.expected.json");
         let golden_raw =
             std::fs::read_to_string(std::env::current_dir().unwrap().join(&golden_path))
@@ -173,7 +173,7 @@ fn dcat_ap_v3_emits_no_dcat_us_extensions() {
 
     let out = read_output(&wrk, "out.json");
     let dcat_keys: Vec<String> = out
-        .pointer("/dcat")
+        .pointer("/projection")
         .and_then(|v| v.as_object())
         .map(|o| o.keys().cloned().collect())
         .unwrap_or_default();
@@ -214,7 +214,7 @@ fn dcat_ap_v3_distribution_carries_access_url() {
 
     let out = read_output(&wrk, "out.json");
     let access_url = out
-        .pointer("/dcat/dcat:distribution/0/dcat:accessURL")
+        .pointer("/projection/dcat:distribution/0/dcat:accessURL")
         .and_then(|v| v.as_str())
         .expect("dcat:accessURL on Distribution[0]");
     assert!(
@@ -239,7 +239,7 @@ fn dcat_ap_v3_conforms_to_targets_spec_url() {
 
     let out = read_output(&wrk, "out.json");
     let conforms = out
-        .pointer("/dcat/dct:conformsTo/0/@id")
+        .pointer("/projection/dct:conformsTo/0/@id")
         .and_then(|v| v.as_str())
         .expect("dct:conformsTo[0].@id");
     assert!(
@@ -250,7 +250,7 @@ fn dcat_ap_v3_conforms_to_targets_spec_url() {
 
 #[test]
 fn dcat_ap_v3_validation_is_disabled_noop() {
-    // DCAT-AP ships SHACL, not JSON Schema. --validate-dcat with this
+    // DCAT-AP ships SHACL, not JSON Schema. --validate with this
     // profile must succeed without producing schema-level violations
     // (in-projection required_level warnings are still allowed).
     let wrk = Workdir::new("dcat_ap_v3_validation_off");
@@ -270,7 +270,7 @@ fn dcat_ap_v3_validation_is_disabled_noop() {
         "dcat-ap-v3",
         "--initial-context",
         "ic.json",
-        "--validate-dcat",
+        "--validate",
         "-o",
         "out.json",
     ]);
@@ -278,7 +278,7 @@ fn dcat_ap_v3_validation_is_disabled_noop() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -330,7 +330,7 @@ fn geoconnex_emits_schema_dataset_type() {
 
     let out = read_output(&wrk, "out.json");
     assert_eq!(
-        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        out.pointer("/projection/@type").and_then(|v| v.as_str()),
         Some("schema:Dataset"),
         "Geoconnex Dataset @type must be schema:Dataset",
     );
@@ -357,7 +357,7 @@ fn geoconnex_context_declares_schema_org_with_trailing_slash() {
 
     let out = read_output(&wrk, "out.json");
     let context = out
-        .pointer("/dcat/@context")
+        .pointer("/projection/@context")
         .and_then(|v| v.as_object())
         .expect("@context object");
     assert_eq!(
@@ -396,7 +396,7 @@ fn geoconnex_provider_is_always_emitted() {
 
     let out = read_output(&wrk, "out.json");
     let provider = out
-        .pointer("/dcat/schema:provider")
+        .pointer("/projection/schema:provider")
         .expect("schema:provider must be emitted unconditionally");
     let provider_type = provider
         .pointer("/@type")
@@ -418,7 +418,7 @@ fn geoconnex_provider_is_always_emitted() {
 #[cfg(feature = "geoconnex")]
 #[test]
 fn geoconnex_validation_is_disabled_noop() {
-    // Geoconnex ships SHACL upstream, not JSON Schema. --validate-dcat
+    // Geoconnex ships SHACL upstream, not JSON Schema. --validate
     // with this profile must succeed without producing any
     // dcat_validate-field warnings (the in-process JSON-Schema
     // validator is gated by validation.enabled = false). pyshacl-side
@@ -435,7 +435,7 @@ fn geoconnex_validation_is_disabled_noop() {
         "in.csv",
         "--profile",
         "geoconnex",
-        "--validate-dcat",
+        "--validate",
         "-o",
         "out.json",
     ]);
@@ -443,7 +443,7 @@ fn geoconnex_validation_is_disabled_noop() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -490,7 +490,7 @@ fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
 
     let out = read_output(&wrk, "out.json");
     let catalog = out
-        .pointer("/dcat")
+        .pointer("/projection")
         .and_then(|v| v.as_object())
         .expect("catalog envelope object");
 
@@ -520,7 +520,7 @@ fn geoconnex_catalog_uses_schema_org_keys_not_dcat() {
 
     // Inner Dataset still has its own schema:Dataset typing intact.
     assert_eq!(
-        out.pointer("/dcat/schema:dataset/0/@type")
+        out.pointer("/projection/schema:dataset/0/@type")
             .and_then(|v| v.as_str()),
         Some("schema:Dataset"),
     );
@@ -567,7 +567,7 @@ fn geoconnex_publisher_falls_through_empty_maintainer_to_publisher() {
 
     let out = read_output(&wrk, "out.json");
     let publisher_name = out
-        .pointer("/dcat/schema:publisher/schema:name")
+        .pointer("/projection/schema:publisher/schema:name")
         .and_then(|v| v.as_str())
         .expect(
             "schema:publisher must be emitted when maintainer is blank but publisher + email are \
@@ -579,7 +579,7 @@ fn geoconnex_publisher_falls_through_empty_maintainer_to_publisher() {
     );
     // Sanity: the email side of the AND-guard also wired through.
     assert_eq!(
-        out.pointer("/dcat/schema:publisher/schema:email")
+        out.pointer("/projection/schema:publisher/schema:email")
             .and_then(|v| v.as_str()),
         Some("contact@agency.gov"),
     );
@@ -603,12 +603,12 @@ fn croissant_uses_schema_org_context_and_sc_dataset_type() {
 
     let out = read_output(&wrk, "out.json");
     assert_eq!(
-        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        out.pointer("/projection/@type").and_then(|v| v.as_str()),
         Some("sc:Dataset"),
         "Croissant Dataset @type must be sc:Dataset",
     );
     let context = out
-        .pointer("/dcat/@context")
+        .pointer("/projection/@context")
         .and_then(|v| v.as_object())
         .expect("@context object");
     assert_eq!(
@@ -632,7 +632,7 @@ fn croissant_conforms_to_targets_mlcommons_spec() {
 
     let out = read_output(&wrk, "out.json");
     let conforms = out
-        .pointer("/dcat/conformsTo")
+        .pointer("/projection/conformsTo")
         .and_then(|v| v.as_str())
         .expect("conformsTo");
     assert!(
@@ -655,7 +655,7 @@ fn croissant_emits_recordset_with_one_field_per_csv_column() {
 
     let out = read_output(&wrk, "out.json");
     let record_sets = out
-        .pointer("/dcat/recordSet")
+        .pointer("/projection/recordSet")
         .and_then(|v| v.as_array())
         .expect("recordSet array");
     assert_eq!(
@@ -708,11 +708,11 @@ fn croissant_uses_bare_distribution_key_not_dcat_namespaced() {
 
     let out = read_output(&wrk, "out.json");
     assert!(
-        out.pointer("/dcat/distribution").is_some(),
+        out.pointer("/projection/distribution").is_some(),
         "Croissant Dataset must carry bare `distribution`",
     );
     assert!(
-        out.pointer("/dcat/dcat:distribution").is_none(),
+        out.pointer("/projection/dcat:distribution").is_none(),
         "Croissant Dataset must not carry dcat:distribution",
     );
 }
@@ -731,7 +731,7 @@ fn croissant_distribution_uses_file_object_type() {
 
     let out = read_output(&wrk, "out.json");
     let file_obj_type = out
-        .pointer("/dcat/distribution/0/@type")
+        .pointer("/projection/distribution/0/@type")
         .and_then(|v| v.as_str())
         .expect("distribution[0].@type");
     assert_eq!(file_obj_type, "sc:FileObject");
@@ -754,7 +754,7 @@ fn catalog_envelope_carries_top_level_context() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let context = out
-        .pointer("/dcat/@context")
+        .pointer("/projection/@context")
         .and_then(|v| v.as_str())
         .expect("Catalog envelope must carry @context");
     assert!(
@@ -780,7 +780,7 @@ fn catalog_mode_merges_discovered_into_inner_dataset_not_envelope() {
     // Outer envelope keys: @context, @type, dct:title, dct:conformsTo,
     // dcat:dataset, plus optionally dct:publisher.
     let envelope_keys: Vec<String> = out
-        .pointer("/dcat")
+        .pointer("/projection")
         .and_then(|v| v.as_object())
         .map(|o| o.keys().cloned().collect())
         .unwrap_or_default();
@@ -796,7 +796,7 @@ fn catalog_mode_merges_discovered_into_inner_dataset_not_envelope() {
     );
     // The Dataset keys must live in dcat:dataset[0].
     let inner_ds = out
-        .pointer("/dcat/dcat:dataset/0")
+        .pointer("/projection/dcat:dataset/0")
         .and_then(|v| v.as_object())
         .expect("dcat:dataset[0] missing");
     assert!(
@@ -822,9 +822,9 @@ fn spatial_field_suppressed_when_no_lat_lon_columns() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert!(
-        out.pointer("/dcat/dct:spatial").is_none(),
+        out.pointer("/projection/dct:spatial").is_none(),
         "dct:spatial must be absent when no bbox is available; got `{:?}`",
-        out.pointer("/dcat/dct:spatial"),
+        out.pointer("/projection/dct:spatial"),
     );
 }
 
@@ -850,7 +850,7 @@ fn dcat_legacy_license_emits_dataset_level_license() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let dataset_license = out
-        .pointer("/dcat/dct:license")
+        .pointer("/projection/dct:license")
         .and_then(|v| v.as_str())
         .expect("--dcat-legacy-license must emit dct:license on Dataset");
     assert!(
@@ -859,7 +859,7 @@ fn dcat_legacy_license_emits_dataset_level_license() {
     );
     // Distribution-level license must STILL be there (v3 mandate).
     assert!(
-        out.pointer("/dcat/dcat:distribution/0/dct:license")
+        out.pointer("/projection/dcat:distribution/0/dct:license")
             .is_some(),
         "Distribution-level dct:license must also be present (strict v3)",
     );
@@ -884,7 +884,7 @@ fn dcat_legacy_license_off_keeps_license_distribution_only() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert!(
-        out.pointer("/dcat/dct:license").is_none(),
+        out.pointer("/projection/dct:license").is_none(),
         "strict v3 must NOT emit dct:license on Dataset by default",
     );
 }
@@ -914,7 +914,7 @@ fn forced_package_publisher_flows_through_profile_template() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let publisher = out
-        .pointer("/dcat/dct:publisher")
+        .pointer("/projection/dct:publisher")
         .expect("dct:publisher must be emitted");
     assert!(
         publisher.is_object(),
@@ -976,7 +976,7 @@ dataset_fields:
 
     let out = read_output(&wrk, "out.json");
     let title = out
-        .pointer("/dcat/dct:title")
+        .pointer("/projection/dct:title")
         .and_then(|v| v.as_str())
         .expect("dct:title");
     assert_eq!(
@@ -1028,7 +1028,7 @@ dataset_fields:
 
     let out = read_output(&wrk, "out.json");
     let publisher_name = out
-        .pointer("/dcat/dct:publisher/foaf:name")
+        .pointer("/projection/dct:publisher/foaf:name")
         .and_then(|v| v.as_str())
         .expect("dct:publisher.foaf:name");
     assert_eq!(
@@ -1079,7 +1079,7 @@ resource_fields:
 
     let out = read_output(&wrk, "out.json");
     let license = out
-        .pointer("/dcat/dcat:distribution/0/dct:license")
+        .pointer("/projection/dcat:distribution/0/dct:license")
         .and_then(|v| v.as_str())
         .expect("Distribution.dct:license");
     // cc-by resolves to the CC-BY 4.0 IRI; cc-by-sa would resolve to
@@ -1135,7 +1135,7 @@ fn profile_spec_less_emits_dpp_block() {
     // DCAT block is emitted by default. dct:spatial is an array of
     // dct:Location per DCAT-US v3; the bbox-derived POLYGON lives at
     // index 0 when no formula has run.
-    let spatial = out.pointer("/dcat/dct:spatial").expect("dct:spatial");
+    let spatial = out.pointer("/projection/dct:spatial").expect("dct:spatial");
     assert!(spatial.is_array(), "dct:spatial must be an array");
     let bbox = spatial
         .pointer("/0/dcat:bbox")
@@ -1148,7 +1148,7 @@ fn profile_spec_less_emits_dpp_block() {
 
     // tableSchema includes one column per CSV header.
     let cols = out
-        .pointer("/dcat/dcat:distribution/0/csvw:tableSchema/columns")
+        .pointer("/projection/dcat:distribution/0/csvw:tableSchema/columns")
         .and_then(|v| v.as_array())
         .expect("csvw:tableSchema.columns");
     assert_eq!(cols.len(), 6);
@@ -1208,7 +1208,7 @@ fn profile_with_druf_spec_evaluates_spatial_extent_wkt() {
     // that the suggestion populated it. dct:spatial is an array per v3 —
     // the WKT Location lives at index 0.
     let wkt = out
-        .pointer("/dcat/dct:spatial/0/locn:geometry/@value")
+        .pointer("/projection/dct:spatial/0/locn:geometry/@value")
         .and_then(|v| v.as_str())
         .expect("dcat spatial wkt");
     assert_eq!(wkt, value);
@@ -1220,11 +1220,14 @@ fn profile_no_dcat_flag_skips_dcat_block() {
     seed_geo_csv(&wrk);
 
     let mut cmd = wrk.command("profile");
-    cmd.args(["in.csv", "--no-dcat", "-o", "out.json"]);
+    cmd.args(["in.csv", "--no-projection", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
 
     let out = read_output(&wrk, "out.json");
-    assert!(out.get("dcat").is_none(), "expected no dcat block");
+    assert!(
+        out.get("projection").is_none(),
+        "expected no projection block"
+    );
     assert!(
         out.get("ckan").is_some(),
         "ckan block should still be present"
@@ -1243,7 +1246,7 @@ fn profile_no_ckan_flag_skips_ckan_block() {
     let out = read_output(&wrk, "out.json");
     assert!(out.get("ckan").is_none(), "expected no ckan block");
     assert!(
-        out.get("dcat").is_some(),
+        out.get("projection").is_some(),
         "dcat block should still be present"
     );
 }
@@ -1305,7 +1308,7 @@ fn profile_stdin_input_is_accepted() {
     // DCAT distribution's qsv:sourcePath must also read "stdin", not the
     // tempfile path. This is the specific roborev #2453 regression check.
     let source_path = parsed
-        .pointer("/dcat/dcat:distribution/0/qsv:sourcePath")
+        .pointer("/projection/dcat:distribution/0/qsv:sourcePath")
         .and_then(|v| v.as_str());
     assert_eq!(
         source_path,
@@ -1319,7 +1322,7 @@ fn profile_stdin_input_is_accepted() {
     // Emitted as a string per GSA Distribution.json's
     // type=["null","string"] (xsd:nonNegativeInteger stored as string).
     let byte_size = parsed
-        .pointer("/dcat/dcat:distribution/0/dcat:byteSize")
+        .pointer("/projection/dcat:distribution/0/dcat:byteSize")
         .and_then(serde_json::Value::as_str)
         .and_then(|s| s.parse::<u64>().ok());
     assert_eq!(
@@ -1349,7 +1352,7 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
                 "metadata_modified": "R/P1Y"
             },
             "dataset_info": {
-                "/dcat/dct:title": "Final Override Wins"
+                "/projection/dct:title": "Final Override Wins"
             }
         }"#,
     )
@@ -1368,21 +1371,21 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
 
     // dataset_info override is last-write-wins.
     assert_eq!(
-        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
         Some("Final Override Wins"),
         "dataset_info JSON-Pointer override must win over the package seed"
     );
 
     // package.notes flows into the projection as dct:description.
     assert_eq!(
-        out.pointer("/dcat/dct:description")
+        out.pointer("/projection/dct:description")
             .and_then(|v| v.as_str()),
         Some("loaded via --initial-context")
     );
 
     // language is normalized en-US → en (Phase 2d behaviour).
     assert_eq!(
-        out.pointer("/dcat/dct:language").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:language").and_then(|v| v.as_str()),
         Some("en"),
     );
 
@@ -1390,18 +1393,18 @@ fn profile_initial_context_seeds_package_and_overrides_via_dataset_info() {
     // sanitizer drops it so dct:modified is absent (frequency goes to
     // accrualPeriodicity, queued for Phase 5).
     assert!(
-        out.pointer("/dcat/dct:modified").is_none(),
+        out.pointer("/projection/dct:modified").is_none(),
         "ISO 8601 interval must be rejected from dct:modified"
     );
 
     // license moved to Distribution in Phase 2c — must not appear on
     // the Dataset by default.
     assert!(
-        out.pointer("/dcat/dct:license").is_none(),
+        out.pointer("/projection/dct:license").is_none(),
         "dct:license must live on Distribution in strict v3"
     );
     let dist_license = out
-        .pointer("/dcat/dcat:distribution/0/dct:license")
+        .pointer("/projection/dcat:distribution/0/dct:license")
         .and_then(|v| v.as_str())
         .expect("dct:license on Distribution");
     assert!(dist_license.contains("creativecommons.org"));
@@ -1460,11 +1463,11 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
 
     // Mandatory v3 fields.
     for path in [
-        "/dcat/dct:title",
-        "/dcat/dct:description",
-        "/dcat/dct:identifier",
-        "/dcat/dct:publisher",
-        "/dcat/dcat:contactPoint",
+        "/projection/dct:title",
+        "/projection/dct:description",
+        "/projection/dct:identifier",
+        "/projection/dct:publisher",
+        "/projection/dcat:contactPoint",
     ] {
         assert!(
             out.pointer(path).is_some(),
@@ -1473,19 +1476,19 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
     }
     // Recommended v3 fields added in Phase 5.
     for path in [
-        "/dcat/dcat:landingPage",
-        "/dcat/dcat:describedBy",
-        "/dcat/dct:rights",
-        "/dcat/dct:accessRights",
-        "/dcat/dcat-us:bureauCode",
-        "/dcat/dcat-us:programCode",
-        "/dcat/dct:accrualPeriodicity",
-        "/dcat/dcat-us:purpose",
-        "/dcat/skos:scopeNote",
-        "/dcat/dcat-us:liabilityStatement",
-        "/dcat/dcat:inSeries",
-        "/dcat/dct:language",
-        "/dcat/dct:conformsTo",
+        "/projection/dcat:landingPage",
+        "/projection/dcat:describedBy",
+        "/projection/dct:rights",
+        "/projection/dct:accessRights",
+        "/projection/dcat-us:bureauCode",
+        "/projection/dcat-us:programCode",
+        "/projection/dct:accrualPeriodicity",
+        "/projection/dcat-us:purpose",
+        "/projection/skos:scopeNote",
+        "/projection/dcat-us:liabilityStatement",
+        "/projection/dcat:inSeries",
+        "/projection/dct:language",
+        "/projection/dct:conformsTo",
     ] {
         assert!(
             out.pointer(path).is_some(),
@@ -1494,11 +1497,11 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
     }
     // Distribution-level v3 additions.
     for path in [
-        "/dcat/dcat:distribution/0/dct:license",
-        "/dcat/dcat:distribution/0/dcat:accessURL",
-        "/dcat/dcat:distribution/0/dct:modified",
-        "/dcat/dcat:distribution/0/dct:rights",
-        "/dcat/dcat:distribution/0/dcat-us:accessRestriction",
+        "/projection/dcat:distribution/0/dct:license",
+        "/projection/dcat:distribution/0/dcat:accessURL",
+        "/projection/dcat:distribution/0/dct:modified",
+        "/projection/dcat:distribution/0/dct:rights",
+        "/projection/dcat:distribution/0/dcat-us:accessRestriction",
     ] {
         assert!(
             out.pointer(path).is_some(),
@@ -1507,9 +1510,9 @@ fn profile_with_full_initial_context_emits_all_recommended_v3_fields() {
     }
     // No dcat_warnings expected — every mandatory/recommended slot was seeded.
     assert!(
-        out.get("dcat_warnings").is_none(),
+        out.get("projection_warnings").is_none(),
         "expected no dcat_warnings when everything is populated, got: {:?}",
-        out.get("dcat_warnings"),
+        out.get("projection_warnings"),
     );
 }
 
@@ -1522,7 +1525,7 @@ fn profile_warns_when_contactpoint_missing() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .expect("dcat_warnings array");
     let cp = warnings
@@ -1573,7 +1576,7 @@ fn profile_runs_validation_when_spec_declares_validators() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -1637,7 +1640,7 @@ fn profile_validation_honors_forwarded_delimiter_flag() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -1679,8 +1682,8 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
         },
         "resource": {"name": "data"},
         "dataset_info": {
-            "/dcat/dct:license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
-            "/dcat/dct:rights":  {"value": null, "force": true}
+            "/projection/dct:license": {"value": "https://creativecommons.org/licenses/by/4.0/", "force": true},
+            "/projection/dct:rights":  {"value": null, "force": true}
         }
     });
     wrk.create_from_string("ic.json", &serde_json::to_string_pretty(&ic).unwrap());
@@ -1692,20 +1695,20 @@ fn dataset_info_force_blocks_discovered_overlay_at_forced_path() {
     let out = read_output(&wrk, "out.json");
     // 1. Pointer-override-wrapped license lands as the inner string.
     assert_eq!(
-        out.pointer("/dcat/dct:license").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:license").and_then(|v| v.as_str()),
         Some("https://creativecommons.org/licenses/by/4.0/"),
         "forced-with-value license must land as the inner value (no wrapper leak), got: {}",
-        out.pointer("/dcat/dct:license")
+        out.pointer("/projection/dct:license")
             .map(ToString::to_string)
             .unwrap_or_default(),
     );
     // 2. The {value: null, force: true} wrapper unwraps to literal null; pointer-override writes
     //    that null at the path. Round-trip check.
     assert_eq!(
-        out.pointer("/dcat/dct:rights"),
+        out.pointer("/projection/dct:rights"),
         Some(&serde_json::Value::Null),
         "forced-null rights must round-trip to literal null, got: {:?}",
-        out.pointer("/dcat/dct:rights"),
+        out.pointer("/projection/dct:rights"),
     );
 }
 
@@ -1732,7 +1735,7 @@ fn profile_skips_validation_when_spec_has_no_validators() {
 }
 
 #[test]
-fn validate_dcat_passes_on_full_initial_context() {
+fn validate_passes_on_full_initial_context() {
     let wrk = Workdir::new("profile_validate_pass");
     seed_geo_csv(&wrk);
     let ctx_path = wrk.path("init.json");
@@ -1757,7 +1760,7 @@ fn validate_dcat_passes_on_full_initial_context() {
         "in.csv",
         "--initial-context",
         ctx_path.to_str().unwrap(),
-        "--validate-dcat",
+        "--validate",
         "-o",
         "out.json",
     ]);
@@ -1765,7 +1768,7 @@ fn validate_dcat_passes_on_full_initial_context() {
     let out = read_output(&wrk, "out.json");
     // No schema-violation warnings expected — all mandatory keys populated.
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -1786,15 +1789,15 @@ fn validate_dcat_passes_on_full_initial_context() {
 }
 
 #[test]
-fn validate_dcat_flags_missing_contactpoint() {
+fn validate_flags_missing_contactpoint() {
     let wrk = Workdir::new("profile_validate_missing_cp");
     seed_geo_csv(&wrk);
     let mut cmd = wrk.command("profile");
-    cmd.args(["in.csv", "--validate-dcat", "-o", "out.json"]);
+    cmd.args(["in.csv", "--validate", "-o", "out.json"]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .expect("dcat_warnings array");
     // The contact-point warning from the in-projection check fires
@@ -1811,32 +1814,26 @@ fn validate_dcat_flags_missing_contactpoint() {
 }
 
 #[test]
-fn strict_dcat_fails_command_on_violation() {
+fn strict_fails_command_on_violation() {
     let wrk = Workdir::new("profile_strict");
     seed_geo_csv(&wrk);
     let mut cmd = wrk.command("profile");
-    cmd.args([
-        "in.csv",
-        "--validate-dcat",
-        "--strict-dcat",
-        "-o",
-        "out.json",
-    ]);
+    cmd.args(["in.csv", "--validate", "--strict", "-o", "out.json"]);
     let output = cmd.output().expect("spawn qsv profile");
     assert!(
         !output.status.success(),
-        "expected non-zero exit under --strict-dcat with missing fields, got: {:?}",
+        "expected non-zero exit under --strict with missing fields, got: {:?}",
         output.status,
     );
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
-        stderr.contains("strict-dcat") && stderr.contains("violation"),
-        "expected strict-dcat violation message in stderr, got: {stderr}"
+        stderr.contains("--strict") && stderr.contains("violation"),
+        "expected --strict violation message in stderr, got: {stderr}"
     );
     // out.json must not exist when the command failed.
     assert!(
         !wrk.path("out.json").exists(),
-        "out.json should not be written when --strict-dcat fails"
+        "out.json should not be written when --strict fails"
     );
 }
 
@@ -1844,18 +1841,18 @@ fn strict_dcat_fails_command_on_violation() {
 fn dataset_info_override_supplies_field_before_strict_validation() {
     // Roborev finding 2439#4: validation must run AFTER dataset_info
     // overrides. A user who supplies a missing mandatory field via a
-    // JSON-Pointer override should not be blocked by --strict-dcat.
+    // JSON-Pointer override should not be blocked by --strict.
     let wrk = Workdir::new("profile_strict_with_override");
     seed_geo_csv(&wrk);
     let ctx_path = wrk.path("init.json");
     // Note: NO contact_point in package — would normally fail
-    // --strict-dcat. The dataset_info override supplies it directly.
+    // --strict. The dataset_info override supplies it directly.
     std::fs::write(
         &ctx_path,
         r#"{
             "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
             "dataset_info": {
-                "/dcat/dcat:contactPoint": {
+                "/projection/dcat:contactPoint": {
                     "@type":          "vcard:Individual",
                     "vcard:fn":       "Override",
                     "vcard:hasEmail": "mailto:override@example.gov"
@@ -1869,15 +1866,15 @@ fn dataset_info_override_supplies_field_before_strict_validation() {
         "in.csv",
         "--initial-context",
         ctx_path.to_str().unwrap(),
-        "--validate-dcat",
-        "--strict-dcat",
+        "--validate",
+        "--strict",
         "-o",
         "out.json",
     ]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     assert_eq!(
-        out.pointer("/dcat/dcat:contactPoint/vcard:fn")
+        out.pointer("/projection/dcat:contactPoint/vcard:fn")
             .and_then(|v| v.as_str()),
         Some("Override"),
         "dataset_info override must apply before validation"
@@ -1896,7 +1893,7 @@ fn dataset_info_override_clears_stale_warnings() {
         &ctx_path,
         r#"{
             "dataset_info": {
-                "/dcat/dcat:contactPoint": {
+                "/projection/dcat:contactPoint": {
                     "@type":          "vcard:Individual",
                     "vcard:fn":       "Override",
                     "vcard:hasEmail": "mailto:o@x.gov"
@@ -1916,7 +1913,7 @@ fn dataset_info_override_clears_stale_warnings() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     let warnings: Vec<Value> = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -1933,7 +1930,7 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
     // Roborev 2440#2: dataset_info entries written in the
     // {"value": ..., "force": true} wrapper form must unwrap to their
     // inner value before being applied. With the unwrap in place,
-    // a wrapped override of a mandatory field rescues --strict-dcat.
+    // a wrapped override of a mandatory field rescues --strict.
     let wrk = Workdir::new("profile_wrapped_strict");
     seed_geo_csv(&wrk);
     let ctx_path = wrk.path("init.json");
@@ -1942,7 +1939,7 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
         r#"{
             "package": {"title": "X", "notes": "Y", "name": "x", "publisher": "P"},
             "dataset_info": {
-                "/dcat/dcat:contactPoint": {
+                "/projection/dcat:contactPoint": {
                     "value": {
                         "@type":          "vcard:Individual",
                         "vcard:fn":       "Wrapped",
@@ -1959,18 +1956,18 @@ fn wrapped_dataset_info_override_rescues_strict_validation() {
         "in.csv",
         "--initial-context",
         ctx_path.to_str().unwrap(),
-        "--validate-dcat",
-        "--strict-dcat",
+        "--validate",
+        "--strict",
         "-o",
         "out.json",
     ]);
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "out.json");
     // Wrapper unwrapped → inner vcard:Individual landed at the
-    // contactPoint slot, validation passed (otherwise --strict-dcat
+    // contactPoint slot, validation passed (otherwise --strict
     // would have aborted).
     assert_eq!(
-        out.pointer("/dcat/dcat:contactPoint/vcard:fn")
+        out.pointer("/projection/dcat:contactPoint/vcard:fn")
             .and_then(|v| v.as_str()),
         Some("Wrapped"),
         "wrapper must unwrap; the {{value, force}} object itself must NOT become the \
@@ -1994,18 +1991,18 @@ fn profile_catalog_flag_wraps_dataset() {
 
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        out.pointer("/projection/@type").and_then(|v| v.as_str()),
         Some("dcat:Catalog"),
         "expected Catalog envelope when --catalog is set: {out:#}"
     );
     assert!(
-        out.pointer("/dcat/dcat:dataset")
+        out.pointer("/projection/dcat:dataset")
             .and_then(|v| v.as_array())
             .is_some_and(|a| a.len() == 1),
         "Catalog must carry exactly one Dataset"
     );
     assert_eq!(
-        out.pointer("/dcat/dcat:dataset/0/@type")
+        out.pointer("/projection/dcat:dataset/0/@type")
             .and_then(|v| v.as_str()),
         Some("dcat:Dataset"),
         "inner element of dcat:dataset must keep its Dataset shape"
@@ -2013,7 +2010,7 @@ fn profile_catalog_flag_wraps_dataset() {
     // dct:modified must NOT be auto-emitted on the Catalog envelope
     // (single-CSV inputs have no independent catalog-level mtime).
     assert!(
-        out.pointer("/dcat/dct:modified").is_none(),
+        out.pointer("/projection/dct:modified").is_none(),
         "Catalog envelope must omit dct:modified for single-CSV runs"
     );
 }
@@ -2028,7 +2025,7 @@ fn profile_omits_catalog_wrapper_by_default() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        out.pointer("/projection/@type").and_then(|v| v.as_str()),
         Some("dcat:Dataset"),
         "default mode must keep Dataset shape: {out:#}"
     );
@@ -2047,11 +2044,11 @@ fn profile_emits_checksum_for_local_file() {
 
     let out = read_output(&wrk, "in.csv.metadata.json");
     let alg = out
-        .pointer("/dcat/dcat:distribution/0/dcat:checksum/spdx:algorithm")
+        .pointer("/projection/dcat:distribution/0/dcat:checksum/spdx:algorithm")
         .and_then(|v| v.as_str());
     assert_eq!(alg, Some("SHA-256"));
     let emitted = out
-        .pointer("/dcat/dcat:distribution/0/dcat:checksum/spdx:checksumValue")
+        .pointer("/projection/dcat:distribution/0/dcat:checksum/spdx:checksumValue")
         .and_then(|v| v.as_str())
         .expect("checksumValue present");
     assert_eq!(emitted.len(), 64, "SHA-256 hex is 64 chars: got {emitted}");
@@ -2095,13 +2092,13 @@ fn profile_emits_compress_format_for_csv_gz_input() {
 
     let out = read_output(&wrk, "in.csv.gz.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dcat:distribution/0/dcat:compressFormat")
+        out.pointer("/projection/dcat:distribution/0/dcat:compressFormat")
             .and_then(|v| v.as_str()),
         Some("application/gzip"),
         "expected dcat:compressFormat=application/gzip for .csv.gz input: {out:#}"
     );
     assert!(
-        out.pointer("/dcat/dcat:distribution/0/dcat:packageFormat")
+        out.pointer("/projection/dcat:distribution/0/dcat:packageFormat")
             .is_none(),
         "single-file compression must NOT also emit packageFormat"
     );
@@ -2134,15 +2131,15 @@ fn profile_emits_dataset_level_created_version_versionnotes() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dct:created").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:created").and_then(|v| v.as_str()),
         Some("2023-06-15")
     );
     assert_eq!(
-        out.pointer("/dcat/dcat:version").and_then(|v| v.as_str()),
+        out.pointer("/projection/dcat:version").and_then(|v| v.as_str()),
         Some("1.2.0")
     );
     assert_eq!(
-        out.pointer("/dcat/dcat:versionNotes")
+        out.pointer("/projection/dcat:versionNotes")
             .and_then(|v| v.as_str()),
         Some("Q3 refresh")
     );
@@ -2171,18 +2168,18 @@ fn profile_emits_distribution_language_and_conformsto() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dcat:distribution/0/dct:language")
+        out.pointer("/projection/dcat:distribution/0/dct:language")
             .and_then(|v| v.as_str()),
         Some("en")
     );
     // conformsTo is an array of dct:Standard objects per v3 cardinality.
     assert_eq!(
-        out.pointer("/dcat/dcat:distribution/0/dct:conformsTo/0/@type")
+        out.pointer("/projection/dcat:distribution/0/dct:conformsTo/0/@type")
             .and_then(|v| v.as_str()),
         Some("dct:Standard")
     );
     assert_eq!(
-        out.pointer("/dcat/dcat:distribution/0/dct:conformsTo/0/@id")
+        out.pointer("/projection/dcat:distribution/0/dct:conformsTo/0/@id")
             .and_then(|v| v.as_str()),
         Some("https://www.w3.org/TR/tabular-data-model/")
     );
@@ -2215,7 +2212,7 @@ fn profile_force_on_package_title_flows_via_ckan_to_dcat() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
         Some("FORCED VIA PACKAGE"),
         "package.title force=true must land at /dcat/dct:title: {out:#}"
     );
@@ -2243,7 +2240,7 @@ fn profile_force_on_resource_url_translates_to_download_url() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dcat:distribution/0/dcat:downloadURL")
+        out.pointer("/projection/dcat:distribution/0/dcat:downloadURL")
             .and_then(|v| v.as_str()),
         Some("https://forced.example.gov/data.csv"),
         "resource.url force=true must land at /dcat/dcat:distribution/0/dcat:downloadURL: {out:#}"
@@ -2263,7 +2260,7 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
           "package":      {"title":"Plain","notes":"Bar","publisher":"Agency"},
           "resource":     {},
           "dataset_info": {
-            "/dcat/dct:title": {"value": "Forced via dataset_info", "force": true}
+            "/projection/dct:title": {"value": "Forced via dataset_info", "force": true}
           }
         }"#,
     )
@@ -2275,7 +2272,7 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/dct:title").and_then(|v| v.as_str()),
+        out.pointer("/projection/dct:title").and_then(|v| v.as_str()),
         Some("Forced via dataset_info"),
         "dataset_info force=true must beat inferred: {out:#}"
     );
@@ -2283,7 +2280,7 @@ fn profile_force_on_dataset_info_beats_plain_dataset_info() {
 
 #[test]
 fn profile_validate_catalog_runs_catalog_overlay() {
-    // With --catalog --validate-dcat, the validator picks the Catalog
+    // With --catalog --validate, the validator picks the Catalog
     // overlay schema by @type. A minimal-but-valid Catalog (one
     // fully-populated Dataset inside) must validate clean against the
     // GSA Catalog schema — no Required-severity warnings.
@@ -2313,11 +2310,11 @@ fn profile_validate_catalog_runs_catalog_overlay() {
         .arg("--initial-context")
         .arg(ctx_path.to_str().unwrap())
         .arg("--catalog")
-        .arg("--validate-dcat");
+        .arg("--validate");
     wrk.assert_success(&mut cmd);
     let out = read_output(&wrk, "in.csv.metadata.json");
     assert_eq!(
-        out.pointer("/dcat/@type").and_then(|v| v.as_str()),
+        out.pointer("/projection/@type").and_then(|v| v.as_str()),
         Some("dcat:Catalog"),
         "--catalog must produce a Catalog envelope"
     );
@@ -2325,7 +2322,7 @@ fn profile_validate_catalog_runs_catalog_overlay() {
     // satisfied. Recommended-severity warnings would surface as
     // best-practice nudges; this test guards the strict bar.
     let required_warnings: Vec<&Value> = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
@@ -2457,7 +2454,7 @@ fn external_validator_gated_for_file_loaded_profile_without_flag() {
         "in.csv",
         "--profile",
         yaml_path.to_str().unwrap(),
-        "--validate-dcat",
+        "--validate",
         "-o",
         "out.json",
     ]);
@@ -2465,7 +2462,7 @@ fn external_validator_gated_for_file_loaded_profile_without_flag() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -2511,7 +2508,7 @@ fn external_validator_runs_for_file_loaded_profile_with_flag() {
         "in.csv",
         "--profile",
         yaml_path.to_str().unwrap(),
-        "--validate-dcat",
+        "--validate",
         "--allow-external-validator",
         "-o",
         "out.json",
@@ -2520,7 +2517,7 @@ fn external_validator_runs_for_file_loaded_profile_with_flag() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();
@@ -2552,8 +2549,8 @@ fn external_validator_runs_for_file_loaded_profile_with_flag() {
 
 #[cfg(unix)]
 #[test]
-fn external_validator_strict_dcat_fails_on_file_loaded_findings() {
-    // With --strict-dcat AND --allow-external-validator, non-Info
+fn external_validator_strict_fails_on_file_loaded_findings() {
+    // With --strict AND --allow-external-validator, non-Info
     // findings (Recommended/Required) from an external validator
     // must fail the command the same way schema violations do.
     let wrk = Workdir::new("ext_gate_strict");
@@ -2568,9 +2565,9 @@ fn external_validator_strict_dcat_fails_on_file_loaded_findings() {
         "in.csv",
         "--profile",
         yaml_path.to_str().unwrap(),
-        "--validate-dcat",
+        "--validate",
         "--allow-external-validator",
-        "--strict-dcat",
+        "--strict",
         "-o",
         "out.json",
     ]);
@@ -2599,7 +2596,7 @@ fn external_validator_embedded_profile_skips_gate_warning() {
         "in.csv",
         "--profile",
         "croissant",
-        "--validate-dcat",
+        "--validate",
         "-o",
         "out.json",
     ]);
@@ -2607,7 +2604,7 @@ fn external_validator_embedded_profile_skips_gate_warning() {
 
     let out = read_output(&wrk, "out.json");
     let warnings = out
-        .get("dcat_warnings")
+        .get("projection_warnings")
         .and_then(|v| v.as_array())
         .cloned()
         .unwrap_or_default();

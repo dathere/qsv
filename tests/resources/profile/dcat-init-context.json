@@ -49,7 +49,7 @@
     "rights": "U.S. Government Work"
   },
   "dataset_info": {
-    "/dcat/dct:title": "Example Dataset (init-context override)",
-    "/dcat/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
+    "/projection/dct:title": "Example Dataset (init-context override)",
+    "/projection/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
   }
 }

@@ -152,7 +152,7 @@ dataset:
     isLiveDataset:      "cr:isLiveDataset"
     jsonPath:           "cr:jsonPath"
     key:                "cr:key"
-    md5:                "cr:md5"
+    md5:                "cr:md5"  # DevSkim: ignore DS126858 — JSON-LD @context shortcut term (vocabulary mapping `md5` → `cr:md5`), not actual MD5 hash usage. qsv emits sha256 below.
     parentField:        "cr:parentField"
     path:               "cr:path"
     recordSet:          "cr:recordSet"
@@ -329,14 +329,12 @@ recordsets:
           {%- for col_name, col_blob in stats | items -%}
             {%- set st = col_blob.stats | default(col_blob) -%}
             {%- set qsv_type = st.type | default("String") -%}
-            {%- set dt = ({
-                "Integer":  "sc:Integer",
-                "Float":    "sc:Float",
-                "Boolean":  "sc:Boolean",
-                "Date":     "sc:Date",
-                "DateTime": "sc:DateTime",
-                "URL":      "sc:URL",
-              })[qsv_type] | default("sc:Text") -%}
+            {# Resolve qsv stats type → Croissant atomic dataType via
+               the `croissant_datatype` vocabulary defined above. Keeps
+               the type mapping in one place; missing keys (i.e. any
+               qsv stats type not declared in the vocabulary) fall
+               through to `sc:Text` via the `default` filter. #}
+            {%- set dt = lookup("croissant_datatype", qsv_type) | default("sc:Text") -%}
             {%- if not ns.first %},{% endif -%}
             {%- set ns.first = false -%}
             {

@@ -738,6 +738,114 @@ fn croissant_distribution_uses_file_object_type() {
     assert_eq!(file_obj_type, "cr:FileObject");
 }
 
+
+#[test]
+fn croissant_distribution_emits_canonical_sha256_not_legacy_fingerprint() {
+    // Croissant 1.1 puts the file hash in a direct `sha256` property
+    // on cr:FileObject (the algorithm mlcroissant validates against).
+    // The pre-1.1 `cr:fileFingerprint` + `cr:Checksum` nested shape is
+    // explicitly retired in this profile; assert both halves so a
+    // future YAML edit can't silently regress back to the 1.0 layout.
+    let wrk = Workdir::new("croissant_sha256");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let sha256 = out
+        .pointer("/projection/distribution/0/sha256")
+        .and_then(|v| v.as_str())
+        .expect("distribution[0].sha256 must be present");
+    assert_eq!(
+        sha256.len(),
+        64,
+        "sha256 must be 64 hex chars, got `{sha256}` (len={})",
+        sha256.len(),
+    );
+    assert!(
+        sha256.chars().all(|c| c.is_ascii_hexdigit()),
+        "sha256 must be lowercase hex, got `{sha256}`",
+    );
+    // Pre-1.1 fingerprint shape must be gone — both as a direct key
+    // on the FileObject and anywhere under the projection root.
+    assert!(
+        out.pointer("/projection/distribution/0/cr:fileFingerprint")
+            .is_none(),
+        "cr:fileFingerprint must not be emitted in 1.1 projection",
+    );
+    let projection_str =
+        serde_json::to_string(out.pointer("/projection").unwrap()).expect("serialize projection");
+    assert!(
+        !projection_str.contains("cr:fileFingerprint"),
+        "cr:fileFingerprint must not appear anywhere in the 1.1 projection",
+    );
+    assert!(
+        !projection_str.contains("cr:Checksum"),
+        "cr:Checksum (the legacy nested fingerprint shape) must not appear in the 1.1 projection",
+    );
+}
+
+#[test]
+fn croissant_recordset_fields_wire_source_to_file_object() {
+    // Croissant 1.1: every cr:Field carries a `source` block pointing
+    // back to a FileObject (`fileObject.@id`) and an extract directive
+    // (`extract.column`). That's how Croissant ties schema metadata to
+    // actual bytes. Without this assertion, the YAML's per-Field
+    // template could silently drop the source block and tests would
+    // still pass on field count / type / dataType alone.
+    let wrk = Workdir::new("croissant_field_source");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+
+    // Sanity: the FileObject @id every Field references must exist.
+    let file_object_id = out
+        .pointer("/projection/distribution/0/@id")
+        .and_then(|v| v.as_str())
+        .expect("distribution[0].@id (Field.source.fileObject must reference this)");
+
+    let fields = out
+        .pointer("/projection/recordSet/0/field")
+        .and_then(|v| v.as_array())
+        .expect("recordSet[0].field");
+    assert!(!fields.is_empty(), "must emit at least one cr:Field");
+
+    for f in fields {
+        let name = f
+            .get("name")
+            .and_then(|v| v.as_str())
+            .expect("field.name");
+        let file_obj_ref = f
+            .pointer("/source/fileObject/@id")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("field `{name}` missing source.fileObject.@id"));
+        assert_eq!(
+            file_obj_ref, file_object_id,
+            "field `{name}` source.fileObject.@id must reference the FileObject @id",
+        );
+        let column = f
+            .pointer("/source/extract/column")
+            .and_then(|v| v.as_str())
+            .unwrap_or_else(|| panic!("field `{name}` missing source.extract.column"));
+        assert_eq!(
+            column, name,
+            "field `{name}` source.extract.column must equal field.name (canonical 1.1 mapping)",
+        );
+    }
+}
+
 // =========================================================================
 // Roborev #2490 regression guards
 // =========================================================================

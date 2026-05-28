@@ -78,12 +78,12 @@ profile options:
     --strict                  With --validate, fail the command on JSON
                               Schema violations or non-Info external-
                               validator findings (Required/Recommended
-                              severities) instead of just warning.
+                              severities) instead of just warning. Note:
                               RFC4180 structural failures from
                               `qsv validate` (emitted when a spec
                               declares `validators`) are always
-                              appended as warnings regardless of
-                              --strict.
+                              appended as warnings, regardless of this
+                              flag.
     --allow-external-validator
                               Opt in to spawning the validator binary
                               declared by `validation.external` when the

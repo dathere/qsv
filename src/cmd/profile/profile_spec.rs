@@ -744,7 +744,8 @@ dataset:
         // Croissant is the only profile that uses the recordsets block
         // (per-column cr:Field expansion).
         assert!(!spec.recordsets.is_empty());
-        assert_eq!(spec.field_mappings.len(), 16);
+        // 1.1: added /package/citation → /projection/citeAs mapping.
+        assert_eq!(spec.field_mappings.len(), 17);
         assert!(spec.vocabularies.contains_key("license_iri"));
         assert!(spec.vocabularies.contains_key("croissant_datatype"));
         super::super::projection::dry_compile(&spec).expect("dry_compile");

@@ -1,10 +1,30 @@
-# Croissant 1.0 ML metadata profile (https://github.com/mlcommons/croissant)
+# Croissant 1.1 ML metadata profile (https://github.com/mlcommons/croissant)
 #
 # Emits a schema.org-rooted JSON-LD document conforming to Croissant
-# 1.0. The @context inlines the schema.org @vocab plus the cr: and
-# dct: prefix shorthands, matching the canonical Croissant
-# examples. Per-column RecordSet/Field expansion is engine-native
-# (projection::emit_recordset honors `for_each_column: true`).
+# 1.1. The @context inlines the full canonical 1.1 prefix table plus
+# the cr: shortcut terms (`recordSet`, `field`, `fileObject`, `source`,
+# `extract`, `column`, `dataType`, ...), so emitted JSON uses bare
+# property names exactly as the spec's canonical examples do.
+#
+# 1.1 deltas vs 1.0 in this profile:
+#   * conformsTo bumped from .../croissant/1.0 → .../croissant/1.1
+#   * @context expanded to the canonical 1.1 shape (adds `sc:`,
+#     `rai:`, and the cr: shortcut term table)
+#   * Distribution @type switched from `sc:FileObject` to `cr:FileObject`
+#     (canonical 1.1 — Croissant defines its own FileObject class)
+#   * FileObject and RecordSet now carry `@id` slugs (required for
+#     JSON-LD identity / cross-references between Field.source and the
+#     FileObject it sources from)
+#   * Hash field switched from the non-canonical
+#     `cr:fileFingerprint`+`cr:Checksum` nested shape to the canonical
+#     direct `sha256` property mlcroissant validates against. BLAKE3
+#     remains the faster option but is not in the Croissant vocabulary;
+#     spec-compliance wins here.
+#   * cr:Field entries now carry the canonical
+#     `source.{fileObject:{@id}, extract:{column}}` block, wiring each
+#     field back to its origin column in the FileObject.
+#   * Optional 1.1 field `citeAs` surfaces when `pkg.citation` is
+#     present in the seed metadata.
 #
 # Validation: disabled (no published JSON Schema upstream; Croissant
 # uses Python validator https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
@@ -12,8 +32,8 @@
 # CKAN-shaped publisher metadata).
 
 name: croissant
-version: 1.0.0
-about: Croissant ML metadata format (mlcommons.org)
+version: 1.1.0
+about: Croissant 1.1 ML metadata format (mlcommons.org)
 about_url: https://github.com/mlcommons/croissant
 
 # =========================================================================
@@ -32,7 +52,9 @@ vocabularies:
 
   # qsv stats type → Croissant/schema.org datatype IRI. Atomic types
   # only; ML-specific (cr:BoundingBox, cr:Split, cr:Label) require
-  # explicit user opt-in via formula output.
+  # explicit user opt-in via formula output. NB: the recordSet template
+  # inlines this mapping directly (see `recordsets:` below) so the
+  # vocabulary entry here is informational; future helpers may consult it.
   croissant_datatype:
     String:      "sc:Text"
     Integer:     "sc:Integer"
@@ -62,6 +84,7 @@ field_mappings:
   - { ckan: "/package/landing_page",         target: "/projection/url" }
   - { ckan: "/package/url",                  target: "/projection/url" }
   - { ckan: "/package/version",              target: "/projection/version" }
+  - { ckan: "/package/citation",             target: "/projection/citeAs" }
   - { ckan: "/resource/url",                 target: "/projection/distribution/0/contentUrl" }
   - { ckan: "/resource/format",              target: "/projection/distribution/0/encodingFormat" }
   - { ckan: "/resource/license_id",          target: "/projection/license" }
@@ -97,16 +120,51 @@ validation:
 # Dataset projection
 # =========================================================================
 # Croissant's @context is an inline map, not a single URI. Field
-# paths use schema.org bare keys since @vocab resolves them.
+# paths use schema.org bare keys since @vocab resolves them. The
+# context below mirrors the canonical 1.1 example
+# (https://github.com/mlcommons/croissant/blob/main/docs/croissant-spec-1.1.md)
+# so mlcroissant's JSON-LD expansion lands on the same IRIs the spec
+# expects.
 
 dataset:
   type: "sc:Dataset"
   context:
-    "@language":  "en"
-    "@vocab":     "https://schema.org/"
-    cr:           "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
-    dct:          "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
-    conformsTo:   "dct:conformsTo"
+    "@language":        "en"
+    "@vocab":           "https://schema.org/"
+    sc:                 "https://schema.org/"
+    cr:                 "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
+    rai:                "http://mlcommons.org/croissant/RAI/"    # DevSkim: ignore DS137138
+    dct:                "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
+    citeAs:             "cr:citeAs"
+    column:             "cr:column"
+    conformsTo:         "dct:conformsTo"
+    data:               { "@id": "cr:data",        "@type": "@json" }
+    dataType:           { "@id": "cr:dataType",    "@type": "@vocab" }
+    equivalentProperty: "cr:equivalentProperty"
+    examples:           { "@id": "cr:examples",    "@type": "@json" }
+    extract:            "cr:extract"
+    field:              "cr:field"
+    fileObject:         "cr:fileObject"
+    fileProperty:       "cr:fileProperty"
+    fileSet:            "cr:fileSet"
+    format:             "cr:format"
+    includes:           "cr:includes"
+    isLiveDataset:      "cr:isLiveDataset"
+    jsonPath:           "cr:jsonPath"
+    key:                "cr:key"
+    md5:                "cr:md5"  # DevSkim: ignore DS126858 — JSON-LD @context shortcut term (vocabulary mapping `md5` → `cr:md5`), not actual MD5 hash usage. qsv emits sha256 below.
+    parentField:        "cr:parentField"
+    path:               "cr:path"
+    recordSet:          "cr:recordSet"
+    references:         "cr:references"
+    regex:              "cr:regex"
+    repeated:           "cr:repeated"
+    replace:            "cr:replace"
+    samplingRate:       "cr:samplingRate"
+    separator:          "cr:separator"
+    source:             "cr:source"
+    subField:           "cr:subField"
+    transform:          "cr:transform"
   fields:
     - path: "name"
       template: '{{ pkg.title | default(source_label | basename | file_stem) | default("dataset") }}'
@@ -121,7 +179,7 @@ dataset:
       emit_when: '{{ (pkg.name | default("")) != "" }}'
 
     - path: "conformsTo"
-      template: 'http://mlcommons.org/croissant/1.0'
+      template: 'http://mlcommons.org/croissant/1.1'
 
     - path: "license"
       template: |
@@ -170,21 +228,38 @@ dataset:
       template: '{{ pkg.version | default("") }}'
       emit_when: '{{ (pkg.version | default("")) != "" }}'
 
+    # 1.1: `citeAs` is a first-class cr: term defined in the @context;
+    # populate it from the CKAN `citation` slot when the publisher
+    # supplied one. Free-form text per the spec (BibTeX, APA, plain
+    # prose — Croissant doesn't constrain the format).
+    - path: "citeAs"
+      template: '{{ pkg.citation | default("") }}'
+      emit_when: '{{ (pkg.citation | default("")) != "" }}'
+
 # =========================================================================
-# Distribution projection — schema.org FileObject shape
+# Distribution projection — Croissant FileObject shape
 # =========================================================================
-# Croissant Distribution is sc:FileObject (or sc:FileSet for multi-
-# file datasets). We emit one FileObject per CKAN resource. Hash
-# default is BLAKE3 since Croissant has no SPDX-mandated algorithm
-# and qsv's native blake3 (mmap + rayon) is markedly faster than
-# SHA-256 on multi-GB ML training data.
+# Croissant 1.1 distributions use `cr:FileObject` (or `cr:FileSet` for
+# multi-file datasets). We emit one FileObject per CKAN resource and
+# stamp a stable `@id` slug ("data.csv") so the recordSet's per-Field
+# `source.fileObject.@id` can reference it.
+#
+# Hash: the canonical 1.1 example uses a direct `sha256` property on
+# FileObject (mirrored as `md5` when SHA-256 isn't available). We emit
+# `sha256` since it's the algorithm mlcroissant treats as canonical.
+# BLAKE3 is faster on multi-GB ML training data but is NOT in the
+# Croissant vocabulary; for 1.1 conformance we trade speed for
+# validator-friendliness.
 
 distribution:
-  type: "sc:FileObject"
+  type: "cr:FileObject"
   # Croissant uses bare `distribution` (schema.org @vocab resolves it)
   # rather than the DCAT `dcat:distribution` shape.
   path: "distribution"
   fields:
+    - path: "@id"
+      template: 'data.csv'
+
     - path: "name"
       template: '{{ res.name | default(source_label | basename) | default("data.csv") }}'
 
@@ -192,9 +267,21 @@ distribution:
       template: '{{ res.description | default("") }}'
       emit_when: '{{ (res.description | default("")) != "" }}'
 
+    # 1.1: contentUrl is mandatory on FileObject. Prefer an absolute
+    # `res.url` if one was supplied (URL inputs, --initial-context), else
+    # fall back to the source basename — the canonical 1.1 example uses
+    # a relative path (`"contentUrl": "data/data.csv"`) so a bare
+    # basename is spec-conformant and keeps mlcroissant's mandatory-
+    # property check satisfied for local-file inputs.
+    #
+    # Note: `res.name` is deliberately NOT in this fallback chain.
+    # `context::build` defaults it from `Path::file_stem()` (no
+    # extension — `in.csv` → `in`), and a user-supplied `res.name` via
+    # --initial-context is typically a human label ("NYC 311 May 2024
+    # sample"), not a usable content URL. `source_label | basename`
+    # preserves the extension and is the right value for both cases.
     - path: "contentUrl"
-      template: '{{ (res.url | default("")) | only_if_absolute_iri }}'
-      emit_when: '{{ (res.url | default("")) != "" }}'
+      template: '{{ res.url | default(source_label | basename) | default("data.csv") }}'
 
     - path: "qsv:sourcePath"
       template: '{{ source_label }}'
@@ -206,22 +293,27 @@ distribution:
       template: '{{ file_size_of(local_path) }}'
       emit_when: '{{ file_size_of(local_path) is defined }}'
 
-    # Croissant's sha256 / md5 / blake3 keys are inlined as direct
-    # properties on FileObject. We pick BLAKE3 for performance.
-    - path: "cr:fileFingerprint"
-      template: |
-        { "@type": "cr:Checksum",
-          "cr:algorithm": "BLAKE3",
-          "cr:checksumValue": {{ blake3_of(local_path) | tojson }} }
-      emit_when: '{{ blake3_of(local_path) is defined }}'
+    # 1.1: SHA-256 lands as a direct property on FileObject (canonical).
+    # The pre-1.1 `cr:fileFingerprint` + `cr:Checksum` nested shape has
+    # been retired here — mlcroissant validates against this slot.
+    - path: "sha256"
+      template: '{{ sha256_of(local_path) }}'
+      emit_when: '{{ sha256_of(local_path) is defined }}'
 
 # =========================================================================
-# RecordSets — one cr:Field per CSV column
+# RecordSets — one cr:Field per CSV column, wired to the FileObject
 # =========================================================================
-# Croissant requires at least one cr:RecordSet per Dataset (1..*).
-# The for_each_column flag drives the engine to iterate the stats
-# map and emit one Field per CSV column. qsv stats type maps to
-# Croissant atomic dataType via the croissant_datatype vocabulary.
+# Croissant 1.1 requires at least one cr:RecordSet per Dataset (1..*).
+# Each cr:Field carries a `source` block that points back to a
+# FileObject (`@id: data.csv`) and an extract directive (here, a
+# column name) — that's how Croissant ties schema metadata to actual
+# bytes. We render the field array inline (rather than via the
+# build_croissant_fields helper) so we can include the canonical
+# 1.1 `source` block; the helper emits a 1.0-style flat field list.
+#
+# qsv:* keys carry qsv-specific diagnostic info (cardinality, null
+# count). They're outside the Croissant vocabulary; mlcroissant should
+# tolerate them as opaque JSON-LD nodes.
 
 recordsets:
   - path: "recordSet"
@@ -232,13 +324,40 @@ recordsets:
         "@id": "main-table",
         "name": "main-table",
         "description": "One record per CSV row.",
-        "field": {{ build_croissant_fields(stats) | tojson }}
+        "field": [
+          {%- set ns = namespace(first=true) -%}
+          {%- for col_name, col_blob in stats | items -%}
+            {%- set st = col_blob.stats | default(col_blob) -%}
+            {%- set qsv_type = st.type | default("String") -%}
+            {# Resolve qsv stats type → Croissant atomic dataType via
+               the `croissant_datatype` vocabulary defined above. Keeps
+               the type mapping in one place; missing keys (i.e. any
+               qsv stats type not declared in the vocabulary) fall
+               through to `sc:Text` via the `default` filter. #}
+            {%- set dt = lookup("croissant_datatype", qsv_type) | default("sc:Text") -%}
+            {%- if not ns.first %},{% endif -%}
+            {%- set ns.first = false -%}
+            {
+              "@type": "cr:Field",
+              "@id": {{ ("main-table/" ~ col_name) | tojson }},
+              "name": {{ col_name | tojson }},
+              "description": {{ ("Column `" ~ col_name ~ "` from the source CSV.") | tojson }},
+              "dataType": {{ dt | tojson }},
+              "source": {
+                "fileObject": { "@id": "data.csv" },
+                "extract": { "column": {{ col_name | tojson }} }
+              },
+              "qsv:cardinality": {{ st.cardinality | tojson }},
+              "qsv:nullcount": {{ st.nullcount | tojson }}
+            }
+          {%- endfor %}
+        ]
       }]
 
 # =========================================================================
 # Catalog: not applicable
 # =========================================================================
-# Croissant 1.0 has no Catalog envelope; --catalog with this profile
+# Croissant 1.1 has no Catalog envelope; --catalog with this profile
 # falls back to a minimal sc:DataCatalog shell wrapping a single
 # sc:Dataset. Provided primarily for federation parity.
 
@@ -247,7 +366,7 @@ catalog:
   title_template: '{%- if inner.name -%}Catalog of {{ inner.name }}{%- else -%}Croissant DataCatalog{%- endif -%}'
   inherit_from_dataset:
     - "publisher"
-  conforms_to: "http://mlcommons.org/croissant/1.0"        # DevSkim: ignore DS137138
+  conforms_to: "http://mlcommons.org/croissant/1.1"        # DevSkim: ignore DS137138
 
 # =========================================================================
 # Discovery merge — disabled

@@ -766,8 +766,13 @@ fn croissant_distribution_emits_canonical_sha256_not_legacy_fingerprint() {
         "sha256 must be 64 hex chars, got `{sha256}` (len={})",
         sha256.len(),
     );
+    // `is_ascii_hexdigit()` alone accepts uppercase A-F, which would
+    // let a regression to uppercase digests slip past this check.
+    // `sha256_of` emits lowercase hex; enforce that explicitly.
     assert!(
-        sha256.chars().all(|c| c.is_ascii_hexdigit()),
+        sha256
+            .chars()
+            .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)),
         "sha256 must be lowercase hex, got `{sha256}`",
     );
     // Pre-1.1 fingerprint shape must be gone — both as a direct key

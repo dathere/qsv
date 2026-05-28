@@ -81,6 +81,12 @@ pub type ByteString = Vec<u8>;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum StatsMode {
     Schema,
+    /// Like `Schema`, but additionally computes quartiles (q1/median/q3)
+    /// and mode. Used by `qsv profile` so its descriptive-statistics
+    /// projection (e.g. the Croissant annotations) can surface the full
+    /// extended stat set on a fresh run without a pre-built `--everything`
+    /// stats cache.
+    ProfileSchema,
     Frequency,
     FrequencyForceStats,
     #[cfg(feature = "polars")]
@@ -2766,6 +2772,33 @@ pub fn write_json_record<W: std::io::Write>(
 
 /// get stats records from stats.csv.data.jsonl file, or if its invalid, by running the stats
 /// command returns tuple (`csv_fields`, `csv_stats`)
+/// Does a reused stats cache contain everything `mode` needs?
+///
+/// The stats cache (`<input>.stats.csv.data.jsonl`) is keyed only by
+/// mtime, not by the `StatsMode` that produced it, so a cache built by a
+/// leaner mode can be reused by a richer one. Most modes only need the
+/// base cardinality/types set any cache carries, so they always pass.
+/// `StatsMode::ProfileSchema` additionally needs mode + quartiles; a cache
+/// from `qsv schema` (StatsMode::Schema) lacks both. Since no
+/// producing-mode marker is stored, sufficiency is detected from the data:
+///   * `--mode` populates the `mode_count` metadata field for every column (even `Some(0)` for an
+///     all-unique column, where the `mode` value itself is `None`); a lean cache leaves
+///     `mode_count` `None`. We test `mode_count`, not `mode`, so all-unique datasets aren't
+///     mistaken for a lean cache and needlessly regenerated on every run.
+///   * `--quartiles` populates `q2_median` for numeric columns, so require it only when the dataset
+///     actually has a numeric column.
+fn stats_satisfy_mode(stats: &[StatsData], mode: StatsMode) -> bool {
+    if mode != StatsMode::ProfileSchema {
+        return true;
+    }
+    let has_mode = stats.iter().any(|s| s.mode_count.is_some());
+    let has_numeric = stats
+        .iter()
+        .any(|s| s.r#type == "Integer" || s.r#type == "Float");
+    let has_quartiles = stats.iter().any(|s| s.q2_median.is_some());
+    has_mode && (!has_numeric || has_quartiles)
+}
+
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,
@@ -2875,6 +2908,17 @@ pub fn get_stats_records(
             }
         }
         stats_data_loaded = !csv_stats.is_empty();
+
+        // Mode-aware cache reuse: the cache is keyed only by mtime, not by
+        // the StatsMode that produced it. A cache built by a leaner mode
+        // (e.g. `qsv schema`, StatsMode::Schema — no --quartiles/--mode)
+        // doesn't satisfy ProfileSchema's need for quartiles + mode. If the
+        // loaded stats lack what the requested mode requires, discard them
+        // so the regeneration path below recomputes with the right flags.
+        if stats_data_loaded && !stats_satisfy_mode(&csv_stats, requested_mode) {
+            csv_stats.clear();
+            stats_data_loaded = false;
+        }
     }
 
     // otherwise, run stats command to generate stats.csv.data.jsonl file
@@ -2931,6 +2975,19 @@ pub fn get_stats_records(
                 // we're generating schema, so we need cardinality and to infer-dates
                 format!(
                     "stats\t{input}\t--round\t4\t--cardinality\
+                    \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
+                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
+                    dates_whitelist = stats_args.flag_dates_whitelist
+                )
+            },
+            StatsMode::ProfileSchema => {
+                // mode is StatsMode::ProfileSchema
+                // same as Schema, plus quartiles (q1/median/q3) and mode so
+                // `qsv profile`'s descriptive-statistics projection has the
+                // full extended stat set without a pre-built stats cache.
+                format!(
+                    "stats\t{input}\t--round\t4\t--cardinality\
+                    \t--quartiles\t--mode\
                     \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
                     \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
                     dates_whitelist = stats_args.flag_dates_whitelist

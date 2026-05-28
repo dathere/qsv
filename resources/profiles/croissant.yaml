@@ -135,6 +135,16 @@ dataset:
     cr:                 "http://mlcommons.org/croissant/"        # DevSkim: ignore DS137138
     rai:                "http://mlcommons.org/croissant/RAI/"    # DevSkim: ignore DS137138
     dct:                "http://purl.org/dc/terms/"              # DevSkim: ignore DS137138
+    # DDI-CDI SummaryStatisticType controlled vocabulary — the canonical
+    # 1.1 "descriptive statistics" example types each field-level
+    # annotation's dataType with a term from this set (e.g. ArithmeticMean
+    # = ddi-stats:7975ed0, Maximum = ddi-stats:8321e79).
+    ddi-stats:          "http://rdf-vocabulary.ddialliance.org/cv/SummaryStatisticType/2.1.2/"  # DevSkim: ignore DS137138
+    # `annotation` is the spec's statistics-attachment mechanism on both
+    # RecordSet (record count) and Field (per-column summary stats).
+    # Aliased to cr:annotation so the bare key expands canonically rather
+    # than resolving to schema.org/annotation via @vocab.
+    annotation:         "cr:annotation"
     citeAs:             "cr:citeAs"
     column:             "cr:column"
     conformsTo:         "dct:conformsTo"
@@ -311,6 +321,26 @@ distribution:
 # build_croissant_fields helper) so we can include the canonical
 # 1.1 `source` block; the helper emits a 1.0-style flat field list.
 #
+# Descriptive statistics follow the spec's "Representing Descriptive
+# Statistics" application (croissant-spec-1.1 §application). Statistics
+# are attached via the `annotation` mechanism:
+#   * RecordSet-level: the row count, typed with Wikidata's Cardinality
+#     term (Q4049983), per the canonical `person/count` example.
+#   * Field-level: an `annotation` array of summary statistics qsv
+#     computed (min, max, mean, median, stddev, variance, range, sum,
+#     q1, q3, mode), each typed with a DDI-CDI SummaryStatisticType
+#     term (ddi-stats:* — e.g. ArithmeticMean = 7975ed0) as a
+#     sc:DefinedTerm. min/max also carry the schema.org
+#     `equivalentProperty` (sc:minValue / sc:maxValue) the spec shows.
+#     Annotations are emitted only when qsv actually produced the stat
+#     for that column (numeric stats are null for text columns, etc.).
+#
+# Value-frequency distributions ("the distribution of values in a field
+# is a statistic on the field") have no canonical scalar slot in 1.1, so
+# each column's top-N value counts are emitted as a dedicated inline
+# cr:RecordSet (`<col>-frequency`) of {value, count, percentage} rows —
+# a first-class, queryable Croissant shape rather than an opaque blob.
+#
 # qsv:* keys carry qsv-specific diagnostic info (cardinality, null
 # count). They're outside the Croissant vocabulary; mlcroissant should
 # tolerate them as opaque JSON-LD nodes.
@@ -319,16 +349,37 @@ recordsets:
   - path: "recordSet"
     for_each_column: false
     template: |
+      {%- set dts = "http://rdf-vocabulary.ddialliance.org/cv/SummaryStatisticType/2.1.2/" -%}{# DevSkim: ignore DS137138 — RDF vocabulary IRI (http-scheme term identifier), not a fetched endpoint #}
+      {# (suffix, qsv stats key, DDI termCode, human name, ddi-stats fragment) #}
+      {%- set numeric_stats = [
+        ["mean",     "mean",      "ArithmeticMean",    "Arithmetic mean",    "7975ed0"],
+        ["median",   "q2_median", "Median",            "Median",             "66851a3"],
+        ["stddev",   "stddev",    "StandardDeviation", "Standard deviation", "690ab50"],
+        ["variance", "variance",  "Variance",          "Variance",           "700bc90"],
+        ["range",    "range",     "Range",             "Range",              "87ba2ec"],
+        ["sum",      "sum",       "Sum",               "Sum",                "a0ec870"],
+        ["q1",       "q1",        "FirstQuartile",     "First quartile",     "350c70a"],
+        ["q3",       "q3",        "ThirdQuartile",     "Third quartile",     "ebe9990"]
+      ] -%}
       [{
         "@type": "cr:RecordSet",
         "@id": "main-table",
         "name": "main-table",
         "description": "One record per CSV row.",
+        "annotation": [
+          {
+            "@type": "cr:Field",
+            "name": "main-table/count",
+            "value": {{ dpp.RECORD_COUNT | default(0) | tojson }},
+            "dataType": "http://www.wikidata.org/entity/Q4049983"{# DevSkim: ignore DS137138 — Wikidata entity IRI (Cardinality term Q4049983), not a fetched endpoint #}
+          }
+        ],
         "field": [
           {%- set ns = namespace(first=true) -%}
           {%- for col_name, col_blob in stats | items -%}
             {%- set st = col_blob.stats | default(col_blob) -%}
             {%- set qsv_type = st.type | default("String") -%}
+            {%- set is_numeric = qsv_type in ["Integer", "Float"] -%}
             {# Resolve qsv stats type → Croissant atomic dataType via
                the `croissant_datatype` vocabulary defined above. Keeps
                the type mapping in one place; missing keys (i.e. any
@@ -347,12 +398,114 @@ recordsets:
                 "fileObject": { "@id": "data.csv" },
                 "extract": { "column": {{ col_name | tojson }} }
               },
+              "annotation": [
+                {%- set ann = namespace(first=true) -%}
+                {# Minimum / Maximum: carry the schema.org equivalentProperty
+                   for numeric columns; emitted bare (numeric) for numeric
+                   types, quoted (lexical extent) otherwise. #}
+                {%- if st.min is defined and st.min is not none and (st.min | string) != "" -%}
+                  {%- set ann.first = false -%}
+                  {
+                    "@id": {{ ("main-table/" ~ col_name ~ "/min") | tojson }},
+                    "value": {% if is_numeric %}{{ st.min }}{% else %}{{ st.min | tojson }}{% endif %},
+                    "dataType": {
+                      "@type": "sc:DefinedTerm",
+                      "termCode": "Minimum",
+                      "name": "Minimum",
+                      "@id": "ddi-stats:a1d0ec6",
+                      "inDefinedTermSet": {{ dts | tojson }}
+                    }{% if is_numeric %},
+                    "equivalentProperty": "sc:minValue"{% endif %}
+                  }
+                {%- endif -%}
+                {%- if st.max is defined and st.max is not none and (st.max | string) != "" -%}
+                  {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
+                  {
+                    "@id": {{ ("main-table/" ~ col_name ~ "/max") | tojson }},
+                    "value": {% if is_numeric %}{{ st.max }}{% else %}{{ st.max | tojson }}{% endif %},
+                    "dataType": {
+                      "@type": "sc:DefinedTerm",
+                      "termCode": "Maximum",
+                      "name": "Maximum",
+                      "@id": "ddi-stats:8321e79",
+                      "inDefinedTermSet": {{ dts | tojson }}
+                    }{% if is_numeric %},
+                    "equivalentProperty": "sc:maxValue"{% endif %}
+                  }
+                {%- endif -%}
+                {# Numeric summary stats — emitted only when qsv produced
+                   the value (null for text columns / disabled stats). #}
+                {%- for d in numeric_stats -%}
+                  {%- set sval = st[d[1]] -%}
+                  {%- if sval is defined and sval is not none -%}
+                    {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
+                    {
+                      "@id": {{ ("main-table/" ~ col_name ~ "/" ~ d[0]) | tojson }},
+                      "value": {{ sval | tojson }},
+                      "dataType": {
+                        "@type": "sc:DefinedTerm",
+                        "termCode": {{ d[2] | tojson }},
+                        "name": {{ d[3] | tojson }},
+                        "@id": {{ ("ddi-stats:" ~ d[4]) | tojson }},
+                        "inDefinedTermSet": {{ dts | tojson }}
+                      }
+                    }
+                  {%- endif -%}
+                {%- endfor -%}
+                {# Mode (most frequent value) — string-valued, no schema.org
+                   numeric equivalent. #}
+                {%- if st.mode is defined and st.mode is not none and (st.mode | string) != "" -%}
+                  {%- if not ann.first %},{% endif -%}{%- set ann.first = false -%}
+                  {
+                    "@id": {{ ("main-table/" ~ col_name ~ "/mode") | tojson }},
+                    "value": {{ st.mode | tojson }},
+                    "dataType": {
+                      "@type": "sc:DefinedTerm",
+                      "termCode": "Mode",
+                      "name": "Mode",
+                      "@id": "ddi-stats:650be61",
+                      "inDefinedTermSet": {{ dts | tojson }}
+                    }
+                  }
+                {%- endif -%}
+              ],
               "qsv:cardinality": {{ st.cardinality | tojson }},
               "qsv:nullcount": {{ st.nullcount | tojson }}
             }
           {%- endfor %}
         ]
-      }]
+      }
+      {# Per-column value-frequency distributions as inline cr:RecordSets.
+         Croissant 1.1 has no scalar histogram slot, so each column's
+         top-N counts (qsv frequency, capped at 25 by profile) become a
+         queryable RecordSet of {value, count, percentage} rows. #}
+      {%- for col_name, col_blob in stats | items -%}
+        {%- set freq_rows = frequency[col_name] | default([]) -%}
+        {%- if freq_rows | length > 0 -%}
+        ,{
+          "@type": "cr:RecordSet",
+          "@id": {{ (col_name ~ "-frequency") | tojson }},
+          "name": {{ (col_name ~ "-frequency") | tojson }},
+          "description": {{ ("Value-frequency distribution for column `" ~ col_name ~ "` (top " ~ (freq_rows | length) ~ " values).") | tojson }},
+          "field": [
+            { "@type": "cr:Field", "@id": {{ (col_name ~ "-frequency/value") | tojson }}, "name": "value", "dataType": "sc:Text" },
+            { "@type": "cr:Field", "@id": {{ (col_name ~ "-frequency/count") | tojson }}, "name": "count", "dataType": "sc:Integer" },
+            { "@type": "cr:Field", "@id": {{ (col_name ~ "-frequency/percentage") | tojson }}, "name": "percentage", "dataType": "sc:Float" }
+          ],
+          "data": [
+            {%- for row in freq_rows -%}
+              {%- if not loop.first %},{% endif %}
+              {
+                {{ (col_name ~ "-frequency/value") | tojson }}: {{ row.value | tojson }},
+                {{ (col_name ~ "-frequency/count") | tojson }}: {{ row.count | tojson }},
+                {{ (col_name ~ "-frequency/percentage") | tojson }}: {{ row.percentage | tojson }}
+              }
+            {%- endfor %}
+          ]
+        }
+        {%- endif -%}
+      {%- endfor %}
+      ]
 
 # =========================================================================
 # Catalog: not applicable

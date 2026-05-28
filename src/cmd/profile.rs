@@ -108,6 +108,16 @@ profile options:
     --no-projection           Skip the metadata projection block (dcat/croissant/
                               geoconnex, depending on the active profile).
     --no-ckan                 Skip the CKAN-shape block.
+    --croissant-frequency     Embed per-column value-frequency distributions in
+                              the metadata projection. The croissant profile
+                              renders them as inline cr:RecordSets (one
+                              `<col>-frequency` RecordSet of {value, count,
+                              percentage} rows per column), per the spec's
+                              "distribution of values is a statistic on the
+                              field" guidance. Off by default (keeps the
+                              projection compact); the raw counts always remain
+                              in the top-level `frequency` block regardless.
+                              Other bundled profiles ignore this flag.
     --dcat-legacy-license     Transitional: re-emit dct:license on the
                               Dataset alongside the v3-required
                               Distribution-level copy. Default: off
@@ -221,6 +231,7 @@ struct Args {
     flag_catalog:                  bool,
     flag_profile:                  Option<String>,
     flag_no_ckan:                  bool,
+    flag_croissant_frequency:      bool,
     flag_force:                    bool,
     flag_jobs:                     Option<usize>,
     flag_output:                   Option<String>,
@@ -454,6 +465,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if !args.flag_no_projection {
         let dpp = analysis.context.get("dpp").cloned().unwrap_or(json!({}));
         let stats = analysis.context.get("dpps").cloned().unwrap_or(json!({}));
+        // Per-column frequency (dppf), threaded into the projection
+        // context so profiles can re-express value-count distributions in
+        // their own vocabulary (e.g. the Croissant profile emits one
+        // nested cr:RecordSet of inline {value,count,percentage} rows per
+        // column, per the spec's "distribution of values is a statistic on
+        // the field" guidance). Opt-in via --croissant-frequency to keep
+        // the projection compact by default; an empty map makes the
+        // profile templates emit no frequency block. The raw counts always
+        // remain in the top-level `frequency` output block regardless.
+        let frequency = if args.flag_croissant_frequency {
+            analysis.context.get("dppf").cloned().unwrap_or(json!({}))
+        } else {
+            json!({})
+        };
         // Build the projection context: the YAML's field templates
         // reference these top-level names. `pkg` and `res` are the
         // merged CKAN package + resource; `source_label` is the
@@ -469,6 +494,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             "pkg":            package,
             "res":            resource,
             "stats":          stats,
+            "frequency":      frequency,
             "dpp":            dpp,
             "source_label":   display_input,
             "local_path":     input_path,

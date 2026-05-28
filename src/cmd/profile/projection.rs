@@ -10,7 +10,7 @@
 //! Warnings collected during projection (missing required fields,
 //! template render errors, vocabulary misses) flow back as
 //! `ProjectionWarning` entries so the orchestrator can re-emit them in
-//! the `dcat_warnings` array.
+//! the `projection_warnings` array.
 
 use minijinja::Environment;
 use serde::{Deserialize, Serialize};
@@ -47,7 +47,7 @@ pub enum ProjectionMode {
 
 /// Severity-tagged warning surfaced during projection. The orchestrator
 /// concatenates these with `dcat_validate::validate()` output so users
-/// see all problems in one `dcat_warnings` array.
+/// see all problems in one `projection_warnings` array.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ProjectionWarning {
     /// JSON-LD key (`dct:title`) or full pointer (`dcat:distribution/0/dct:license`)

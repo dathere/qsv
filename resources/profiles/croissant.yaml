@@ -50,22 +50,22 @@ vocabularies:
 # prefix); `@vocab` in the @context resolves them to schema.org IRIs.
 
 field_mappings:
-  - { ckan: "/package/title",                target: "/dcat/name" }
-  - { ckan: "/package/notes",                target: "/dcat/description" }
-  - { ckan: "/package/name",                 target: "/dcat/identifier" }
-  - { ckan: "/package/metadata_created",     target: "/dcat/datePublished" }
-  - { ckan: "/package/metadata_modified",    target: "/dcat/dateModified" }
-  - { ckan: "/package/publisher",            target: "/dcat/publisher" }
-  - { ckan: "/package/author",               target: "/dcat/creator" }
-  - { ckan: "/package/tags",                 target: "/dcat/keywords" }
-  - { ckan: "/package/language",             target: "/dcat/inLanguage" }
-  - { ckan: "/package/landing_page",         target: "/dcat/url" }
-  - { ckan: "/package/url",                  target: "/dcat/url" }
-  - { ckan: "/package/version",              target: "/dcat/version" }
-  - { ckan: "/resource/url",                 target: "/dcat/distribution/0/contentUrl" }
-  - { ckan: "/resource/format",              target: "/dcat/distribution/0/encodingFormat" }
-  - { ckan: "/resource/license_id",          target: "/dcat/license" }
-  - { ckan: "/resource/license",             target: "/dcat/license" }
+  - { ckan: "/package/title",                target: "/projection/name" }
+  - { ckan: "/package/notes",                target: "/projection/description" }
+  - { ckan: "/package/name",                 target: "/projection/identifier" }
+  - { ckan: "/package/metadata_created",     target: "/projection/datePublished" }
+  - { ckan: "/package/metadata_modified",    target: "/projection/dateModified" }
+  - { ckan: "/package/publisher",            target: "/projection/publisher" }
+  - { ckan: "/package/author",               target: "/projection/creator" }
+  - { ckan: "/package/tags",                 target: "/projection/keywords" }
+  - { ckan: "/package/language",             target: "/projection/inLanguage" }
+  - { ckan: "/package/landing_page",         target: "/projection/url" }
+  - { ckan: "/package/url",                  target: "/projection/url" }
+  - { ckan: "/package/version",              target: "/projection/version" }
+  - { ckan: "/resource/url",                 target: "/projection/distribution/0/contentUrl" }
+  - { ckan: "/resource/format",              target: "/projection/distribution/0/encodingFormat" }
+  - { ckan: "/resource/license_id",          target: "/projection/license" }
+  - { ckan: "/resource/license",             target: "/projection/license" }
 
 # =========================================================================
 # Schema validation: disabled
@@ -81,7 +81,7 @@ validation:
   # `mlcroissant` is the reference validator shipped by MLCommons
   # (https://github.com/mlcommons/croissant/tree/main/python/mlcroissant).
   # Install via `pip install mlcroissant`. qsv runs it under
-  # `--validate-dcat`; findings surface as ProjectionWarnings at
+  # `--validate`; findings surface as ProjectionWarnings at
   # `default_severity`. Missing-binary cases never fail the run.
   external:
     command: "mlcroissant"

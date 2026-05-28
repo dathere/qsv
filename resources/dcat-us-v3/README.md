@@ -3,7 +3,7 @@
 These JSON Schema 2020-12 definitions are vendored verbatim from
 [GSA/dcat-us](https://github.com/GSA/dcat-us). They drive the
 optional schema validation pass exposed by `qsv profile`'s
-`--validate-dcat` and `--strict-dcat` flags.
+`--validate` and `--strict` flags.
 
 ## Pin
 

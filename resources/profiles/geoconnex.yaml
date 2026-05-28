@@ -66,19 +66,19 @@ vocabularies:
 # lands in the output JSON).
 
 field_mappings:
-  - { ckan: "/package/title",                target: "/dcat/schema:name" }
-  - { ckan: "/package/notes",                target: "/dcat/schema:description" }
-  - { ckan: "/package/name",                 target: "/dcat/schema:identifier" }
-  - { ckan: "/package/publisher",            target: "/dcat/schema:provider" }
-  - { ckan: "/package/author",               target: "/dcat/schema:creator" }
-  - { ckan: "/package/tags",                 target: "/dcat/schema:keywords" }
-  - { ckan: "/package/license_id",           target: "/dcat/schema:license" }
-  - { ckan: "/package/accrualPeriodicity",   target: "/dcat/dc:accrualPeriodicity" }
-  - { ckan: "/package/frequency",            target: "/dcat/dc:accrualPeriodicity" }
+  - { ckan: "/package/title",                target: "/projection/schema:name" }
+  - { ckan: "/package/notes",                target: "/projection/schema:description" }
+  - { ckan: "/package/name",                 target: "/projection/schema:identifier" }
+  - { ckan: "/package/publisher",            target: "/projection/schema:provider" }
+  - { ckan: "/package/author",               target: "/projection/schema:creator" }
+  - { ckan: "/package/tags",                 target: "/projection/schema:keywords" }
+  - { ckan: "/package/license_id",           target: "/projection/schema:license" }
+  - { ckan: "/package/accrualPeriodicity",   target: "/projection/dc:accrualPeriodicity" }
+  - { ckan: "/package/frequency",            target: "/projection/dc:accrualPeriodicity" }
   # Distribution[0] → schema:DataDownload
-  - { ckan: "/resource/name",                target: "/dcat/schema:distribution/0/schema:name" }
-  - { ckan: "/resource/url",                 target: "/dcat/schema:distribution/0/schema:contentUrl" }
-  - { ckan: "/resource/format",              target: "/dcat/schema:distribution/0/schema:encodingFormat" }
+  - { ckan: "/resource/name",                target: "/projection/schema:distribution/0/schema:name" }
+  - { ckan: "/resource/url",                 target: "/projection/schema:distribution/0/schema:contentUrl" }
+  - { ckan: "/resource/format",              target: "/projection/schema:distribution/0/schema:encodingFormat" }
 
 # =========================================================================
 # Schema validation: disabled (SHACL upstream)

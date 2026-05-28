@@ -123,11 +123,11 @@ Two orthogonal validators are available on every profile:
   validates the rendered block against the vendored GSA DCAT-US v3
   bundle under `resources/dcat-us-v3/`. Today only the DCAT-US v3
   bundle ships with qsv; any other `schema_dir` emits a heads-up
-  warning. Triggered by `--validate-dcat`.
+  warning. Triggered by `--validate`.
 * **`validation.external`** — an out-of-process validator (e.g.
   `mlcroissant`, `pyshacl`) spawned with the rendered JSON-LD on
   disk. Runs orthogonal to JSON Schema: a profile may use either,
-  both, or neither. Also gated by `--validate-dcat`.
+  both, or neither. Also gated by `--validate`.
 
 ### External validator config
 
@@ -142,7 +142,7 @@ Two orthogonal validators are available on every profile:
 
 A non-zero exit code surfaces one warning per non-empty stderr line
 (falling back to stdout when stderr is empty). Exit 0 = empty Vec.
-Findings respect `--strict-dcat`: when set, a non-`Info` external
+Findings respect `--strict`: when set, a non-`Info` external
 finding fails the command the same way a JSON Schema violation does.
 
 Croissant uses this to wire up the canonical Python validator:

@@ -479,7 +479,7 @@ profile = ["dep:sha2", "polars", "yaml_serde"]
 # geoconnex: bundled SHACL-validated linked-data profile for hydrologic
 # features (https://docs.geoconnex.us/). Embeds the Geoconnex SHACL
 # shapes (~10KB Turtle bundle) so `qsv profile --profile geoconnex
-# --validate-dcat` can spawn `pyshacl` without external file deps.
+# --validate` can spawn `pyshacl` without external file deps.
 # Requires `profile`. Available in qsv (via distrib_features) and as an
 # opt-in for qsvdp; NOT in qsvlite or qsvmcp.
 geoconnex = ["profile"]

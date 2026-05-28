@@ -100,7 +100,7 @@ impl Spec {
 
     /// §5.8: does any field carry a non-empty `validators` entry? Used by
     /// `profile.rs::run` as the trigger to invoke `qsv validate` against
-    /// the input and surface RFC4180 failures as `dcat_warnings`. The
+    /// the input and surface RFC4180 failures as `projection_warnings`. The
     /// validators' string content isn't interpreted (yet) — its presence
     /// is treated as the user opting into validation.
     pub fn has_validators(&self) -> bool {

@@ -102,17 +102,17 @@ via the active profile's `field_mappings:` table (see
 `resources/profiles/dcat-us-v3.yaml`; the lookup itself is
 `ProfileSpec::translate_ckan_ptr`). The most common entries:
 
-| CKAN pointer           | DCAT pointer                                  |
-|------------------------|-----------------------------------------------|
-| `/package/title`       | `/dcat/dct:title`                             |
-| `/package/notes`       | `/dcat/dct:description`                       |
-| `/package/version`     | `/dcat/dcat:version`                          |
-| `/package/bureauCode`  | `/dcat/dcat-us:bureauCode`                    |
-| `/resource/url`        | `/dcat/dcat:distribution/0/dcat:downloadURL`  |
-| `/resource/format`     | `/dcat/dcat:distribution/0/dct:format`        |
-| `/resource/conformsTo` | `/dcat/dcat:distribution/0/dct:conformsTo`    |
+| CKAN pointer           | Projection pointer                                 |
+|------------------------|----------------------------------------------------|
+| `/package/title`       | `/projection/dct:title`                            |
+| `/package/notes`       | `/projection/dct:description`                      |
+| `/package/version`     | `/projection/dcat:version`                         |
+| `/package/bureauCode`  | `/projection/dcat-us:bureauCode`                   |
+| `/resource/url`        | `/projection/dcat:distribution/0/dcat:downloadURL` |
+| `/resource/format`     | `/projection/dcat:distribution/0/dct:format`       |
+| `/resource/conformsTo` | `/projection/dcat:distribution/0/dct:conformsTo`   |
 
-CKAN slots without a DCAT counterpart (e.g. `package.scheming_version`)
+CKAN slots without a projection counterpart (e.g. `package.scheming_version`)
 silently drop their `force` flag — a documented no-op rather than a
 translation error.
 
@@ -133,9 +133,9 @@ Each key is an RFC 6901 JSON Pointer relative to the **whole output**:
 
 ```json
 "dataset_info": {
-  "/dcat/dct:title":                 "Force override",
-  "/dcat/dcat:distribution/0/dct:license": "https://opendatacommons.org/licenses/by/1-0/",
-  "/dcat/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
+  "/projection/dct:title":                 "Force override",
+  "/projection/dcat:distribution/0/dct:license": "https://opendatacommons.org/licenses/by/1-0/",
+  "/projection/dct:modified": {"value": "2024-12-31T23:59:59Z", "force": true}
 }
 ```
 
@@ -157,15 +157,25 @@ are silently skipped — this is best-effort, not enforcement.
 
 ## `--catalog` mode
 
-With `--catalog`, the emitted `dcat` block is wrapped inside a
+With `--catalog`, the emitted projection block is wrapped inside a
 `dcat:Catalog` envelope (`Catalog{dataset:[...]}`) suitable for
 federation harvesters (data.gov, CKAN ingest). The Catalog inherits
 the enclosed Dataset's title (prefixed with `Catalog of `) and
-publisher. All `dataset_info` and force overrides apply to the
-Dataset BEFORE the Catalog wrap — pointer paths like `/dcat/dct:title`
-target the inner Dataset, not the Catalog envelope.
+publisher.
 
-`--validate-dcat --catalog` runs the Catalog overlay schema
+In `--catalog` mode the inner Dataset is nested at
+`/projection/dcat:dataset/0/...` (or `/projection/schema:dataset/0/...`
+for schema.org-rooted profiles like Geoconnex). `dataset_info` and
+force-value overrides apply to the *full output* after the Catalog
+wrap, so a bare `/projection/dct:title` writes to the Catalog
+envelope itself; to override an inner-Dataset slot use the nested
+path, e.g. `/projection/dcat:dataset/0/dct:title`. Discovery-merge
+force-protection still operates on the pre-wrap Dataset, so a
+forced `/projection/dct:title` does correctly shield the Dataset's
+title from being overwritten by discovered publisher metadata even
+under `--catalog`.
+
+`--validate --catalog` runs the Catalog overlay schema
 (`resources/dcat-us-v3/qsv-overlay-catalog.json`) which enforces
 Catalog-level required keys on the envelope.
 
@@ -175,5 +185,5 @@ Catalog-level required keys on the envelope.
 * v1.1 → v3 migration guide:
   <https://resources.data.gov/resources/dcat-us-3-migration/>
 * Authoritative JSON Schema 2020-12 definitions + examples
-  (vendored under `resources/dcat-us-v3/` for `--validate-dcat`):
+  (vendored under `resources/dcat-us-v3/` for `--validate`):
   <https://github.com/GSA/dcat-us/tree/main/jsonschema>

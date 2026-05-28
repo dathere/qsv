@@ -118,66 +118,66 @@ vocabularies:
 
 field_mappings:
   # add_core_identity (package → Dataset top-level)
-  - { ckan: "/package/title",                target: "/dcat/dct:title" }
-  - { ckan: "/package/notes",                target: "/dcat/dct:description" }
-  - { ckan: "/package/name",                 target: "/dcat/dct:identifier" }
-  - { ckan: "/package/metadata_created",     target: "/dcat/dct:issued" }
-  - { ckan: "/package/metadata_modified",    target: "/dcat/dct:modified" }
-  - { ckan: "/package/created",              target: "/dcat/dct:created" }
+  - { ckan: "/package/title",                target: "/projection/dct:title" }
+  - { ckan: "/package/notes",                target: "/projection/dct:description" }
+  - { ckan: "/package/name",                 target: "/projection/dct:identifier" }
+  - { ckan: "/package/metadata_created",     target: "/projection/dct:issued" }
+  - { ckan: "/package/metadata_modified",    target: "/projection/dct:modified" }
+  - { ckan: "/package/created",              target: "/projection/dct:created" }
   # add_provenance
-  - { ckan: "/package/publisher",            target: "/dcat/dct:publisher" }
-  - { ckan: "/package/author",               target: "/dcat/dct:publisher" }
+  - { ckan: "/package/publisher",            target: "/projection/dct:publisher" }
+  - { ckan: "/package/author",               target: "/projection/dct:publisher" }
   # add_contact_point (composite — scalar parts not independently forceable)
-  - { ckan: "/package/contact_point",        target: "/dcat/dcat:contactPoint" }
+  - { ckan: "/package/contact_point",        target: "/projection/dcat:contactPoint" }
   # add_classification
-  - { ckan: "/package/tags",                 target: "/dcat/dcat:keyword" }
-  - { ckan: "/package/groups",               target: "/dcat/dcat:theme" }
+  - { ckan: "/package/tags",                 target: "/projection/dcat:keyword" }
+  - { ckan: "/package/groups",               target: "/projection/dcat:theme" }
   # add_governance
-  - { ckan: "/package/language",             target: "/dcat/dct:language" }
-  - { ckan: "/package/accrualPeriodicity",   target: "/dcat/dct:accrualPeriodicity" }
-  - { ckan: "/package/frequency",            target: "/dcat/dct:accrualPeriodicity" }
-  - { ckan: "/package/update_frequency",     target: "/dcat/dct:accrualPeriodicity" }
-  - { ckan: "/package/dcat-us:accessLevel",  target: "/dcat/dcat-us:accessLevel" }
-  - { ckan: "/package/access_level",         target: "/dcat/dcat-us:accessLevel" }
+  - { ckan: "/package/language",             target: "/projection/dct:language" }
+  - { ckan: "/package/accrualPeriodicity",   target: "/projection/dct:accrualPeriodicity" }
+  - { ckan: "/package/frequency",            target: "/projection/dct:accrualPeriodicity" }
+  - { ckan: "/package/update_frequency",     target: "/projection/dct:accrualPeriodicity" }
+  - { ckan: "/package/dcat-us:accessLevel",  target: "/projection/dcat-us:accessLevel" }
+  - { ckan: "/package/access_level",         target: "/projection/dcat-us:accessLevel" }
   # add_us_codes
-  - { ckan: "/package/bureauCode",           target: "/dcat/dcat-us:bureauCode" }
-  - { ckan: "/package/programCode",          target: "/dcat/dcat-us:programCode" }
+  - { ckan: "/package/bureauCode",           target: "/projection/dcat-us:bureauCode" }
+  - { ckan: "/package/programCode",          target: "/projection/dcat-us:programCode" }
   # add_extended_metadata
-  - { ckan: "/package/landing_page",         target: "/dcat/dcat:landingPage" }
-  - { ckan: "/package/url",                  target: "/dcat/dcat:landingPage" }
-  - { ckan: "/package/data_dictionary",      target: "/dcat/dcat:describedBy" }
-  - { ckan: "/package/describedBy",          target: "/dcat/dcat:describedBy" }
-  - { ckan: "/package/rights",               target: "/dcat/dct:rights" }
-  - { ckan: "/package/accessRights",         target: "/dcat/dct:accessRights" }
-  - { ckan: "/package/access_rights",        target: "/dcat/dct:accessRights" }
-  - { ckan: "/package/purpose",              target: "/dcat/dcat-us:purpose" }
-  - { ckan: "/package/scopeNote",            target: "/dcat/skos:scopeNote" }
-  - { ckan: "/package/scope_note",           target: "/dcat/skos:scopeNote" }
-  - { ckan: "/package/liabilityStatement",   target: "/dcat/dcat-us:liabilityStatement" }
-  - { ckan: "/package/liability_statement",  target: "/dcat/dcat-us:liabilityStatement" }
-  - { ckan: "/package/inSeries",             target: "/dcat/dcat:inSeries" }
-  - { ckan: "/package/in_series",            target: "/dcat/dcat:inSeries" }
-  - { ckan: "/package/temporalResolution",   target: "/dcat/dcat:temporalResolution" }
-  - { ckan: "/package/version",              target: "/dcat/dcat:version" }
-  - { ckan: "/package/versionNotes",         target: "/dcat/dcat:versionNotes" }
-  - { ckan: "/package/version_notes",        target: "/dcat/dcat:versionNotes" }
+  - { ckan: "/package/landing_page",         target: "/projection/dcat:landingPage" }
+  - { ckan: "/package/url",                  target: "/projection/dcat:landingPage" }
+  - { ckan: "/package/data_dictionary",      target: "/projection/dcat:describedBy" }
+  - { ckan: "/package/describedBy",          target: "/projection/dcat:describedBy" }
+  - { ckan: "/package/rights",               target: "/projection/dct:rights" }
+  - { ckan: "/package/accessRights",         target: "/projection/dct:accessRights" }
+  - { ckan: "/package/access_rights",        target: "/projection/dct:accessRights" }
+  - { ckan: "/package/purpose",              target: "/projection/dcat-us:purpose" }
+  - { ckan: "/package/scopeNote",            target: "/projection/skos:scopeNote" }
+  - { ckan: "/package/scope_note",           target: "/projection/skos:scopeNote" }
+  - { ckan: "/package/liabilityStatement",   target: "/projection/dcat-us:liabilityStatement" }
+  - { ckan: "/package/liability_statement",  target: "/projection/dcat-us:liabilityStatement" }
+  - { ckan: "/package/inSeries",             target: "/projection/dcat:inSeries" }
+  - { ckan: "/package/in_series",            target: "/projection/dcat:inSeries" }
+  - { ckan: "/package/temporalResolution",   target: "/projection/dcat:temporalResolution" }
+  - { ckan: "/package/version",              target: "/projection/dcat:version" }
+  - { ckan: "/package/versionNotes",         target: "/projection/dcat:versionNotes" }
+  - { ckan: "/package/version_notes",        target: "/projection/dcat:versionNotes" }
   # build_distribution (resource → Distribution[0])
-  - { ckan: "/resource/name",                target: "/dcat/dcat:distribution/0/dct:title" }
-  - { ckan: "/resource/description",         target: "/dcat/dcat:distribution/0/dct:description" }
-  - { ckan: "/resource/url",                 target: "/dcat/dcat:distribution/0/dcat:downloadURL" }
-  - { ckan: "/resource/accessURL",           target: "/dcat/dcat:distribution/0/dcat:accessURL" }
-  - { ckan: "/resource/format",              target: "/dcat/dcat:distribution/0/dct:format" }
-  - { ckan: "/resource/mediaType",           target: "/dcat/dcat:distribution/0/dcat:mediaType" }
-  - { ckan: "/resource/license_id",          target: "/dcat/dcat:distribution/0/dct:license" }
-  - { ckan: "/resource/license",             target: "/dcat/dcat:distribution/0/dct:license" }
-  - { ckan: "/resource/last_modified",       target: "/dcat/dcat:distribution/0/dct:modified" }
-  - { ckan: "/resource/modified",            target: "/dcat/dcat:distribution/0/dct:modified" }
-  - { ckan: "/resource/rights",              target: "/dcat/dcat:distribution/0/dct:rights" }
-  - { ckan: "/resource/language",            target: "/dcat/dcat:distribution/0/dct:language" }
-  - { ckan: "/resource/conformsTo",          target: "/dcat/dcat:distribution/0/dct:conformsTo" }
-  - { ckan: "/resource/access_restriction",  target: "/dcat/dcat:distribution/0/dcat-us:accessRestriction" }
-  - { ckan: "/resource/use_restriction",     target: "/dcat/dcat:distribution/0/dcat-us:useRestriction" }
-  - { ckan: "/resource/cui_restriction",     target: "/dcat/dcat:distribution/0/dcat-us:cuiRestriction" }
+  - { ckan: "/resource/name",                target: "/projection/dcat:distribution/0/dct:title" }
+  - { ckan: "/resource/description",         target: "/projection/dcat:distribution/0/dct:description" }
+  - { ckan: "/resource/url",                 target: "/projection/dcat:distribution/0/dcat:downloadURL" }
+  - { ckan: "/resource/accessURL",           target: "/projection/dcat:distribution/0/dcat:accessURL" }
+  - { ckan: "/resource/format",              target: "/projection/dcat:distribution/0/dct:format" }
+  - { ckan: "/resource/mediaType",           target: "/projection/dcat:distribution/0/dcat:mediaType" }
+  - { ckan: "/resource/license_id",          target: "/projection/dcat:distribution/0/dct:license" }
+  - { ckan: "/resource/license",             target: "/projection/dcat:distribution/0/dct:license" }
+  - { ckan: "/resource/last_modified",       target: "/projection/dcat:distribution/0/dct:modified" }
+  - { ckan: "/resource/modified",            target: "/projection/dcat:distribution/0/dct:modified" }
+  - { ckan: "/resource/rights",              target: "/projection/dcat:distribution/0/dct:rights" }
+  - { ckan: "/resource/language",            target: "/projection/dcat:distribution/0/dct:language" }
+  - { ckan: "/resource/conformsTo",          target: "/projection/dcat:distribution/0/dct:conformsTo" }
+  - { ckan: "/resource/access_restriction",  target: "/projection/dcat:distribution/0/dcat-us:accessRestriction" }
+  - { ckan: "/resource/use_restriction",     target: "/projection/dcat:distribution/0/dcat-us:useRestriction" }
+  - { ckan: "/resource/cui_restriction",     target: "/projection/dcat:distribution/0/dcat-us:cuiRestriction" }
 
 # =========================================================================
 # Schema validation

@@ -1,8 +1,8 @@
 //! Opt-in JSON Schema validation of the emitted dcat block.
 //!
-//! Activated by `--validate-dcat`; with `--strict-dcat` the command
+//! Activated by `--validate`; with `--strict` the command
 //! fails on any schema error instead of appending to the
-//! `dcat_warnings` array.
+//! `projection_warnings` array.
 //!
 //! ## Schema bundle
 //!

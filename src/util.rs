@@ -81,6 +81,12 @@ pub type ByteString = Vec<u8>;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum StatsMode {
     Schema,
+    /// Like `Schema`, but additionally computes quartiles (q1/median/q3)
+    /// and mode. Used by `qsv profile` so its descriptive-statistics
+    /// projection (e.g. the Croissant annotations) can surface the full
+    /// extended stat set on a fresh run without a pre-built `--everything`
+    /// stats cache.
+    ProfileSchema,
     Frequency,
     FrequencyForceStats,
     #[cfg(feature = "polars")]
@@ -2931,6 +2937,19 @@ pub fn get_stats_records(
                 // we're generating schema, so we need cardinality and to infer-dates
                 format!(
                     "stats\t{input}\t--round\t4\t--cardinality\
+                    \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
+                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
+                    dates_whitelist = stats_args.flag_dates_whitelist
+                )
+            },
+            StatsMode::ProfileSchema => {
+                // mode is StatsMode::ProfileSchema
+                // same as Schema, plus quartiles (q1/median/q3) and mode so
+                // `qsv profile`'s descriptive-statistics projection has the
+                // full extended stat set without a pre-built stats cache.
+                format!(
+                    "stats\t{input}\t--round\t4\t--cardinality\
+                    \t--quartiles\t--mode\
                     \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
                     \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
                     dates_whitelist = stats_args.flag_dates_whitelist

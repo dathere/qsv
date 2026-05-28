@@ -94,7 +94,11 @@ pub fn build(args: &ContextArgs, _spec: Option<&Spec>) -> CliResult<AnalysisCont
         flag_output:          None,
     };
 
-    let (headers_record, stats) = util::get_stats_records(&schema_args, StatsMode::Schema)?;
+    // ProfileSchema mode = Schema + quartiles + mode, so the Croissant
+    // (and any future) descriptive-statistics projection surfaces the full
+    // extended stat set (median/q1/q3/mode) on a fresh run, not just when a
+    // richer `--everything` stats cache happens to exist.
+    let (headers_record, stats) = util::get_stats_records(&schema_args, StatsMode::ProfileSchema)?;
     let headers: Vec<String> = headers_record
         .iter()
         .map(|h| std::str::from_utf8(h).unwrap_or("").to_string())

@@ -649,8 +649,18 @@ fn croissant_emits_recordset_with_one_field_per_csv_column() {
         .join("tests/resources/profile/golden/nyc-311-subset.csv");
     std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
 
+    // --croissant-frequency opts the value-frequency RecordSets in
+    // (off by default); the schema RecordSet + stat annotations are always
+    // emitted regardless.
     let mut cmd = wrk.command("profile");
-    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    cmd.args([
+        "in.csv",
+        "--profile",
+        "croissant",
+        "--croissant-frequency",
+        "-o",
+        "out.json",
+    ]);
     wrk.assert_success(&mut cmd);
 
     let out = read_output(&wrk, "out.json");
@@ -658,22 +668,40 @@ fn croissant_emits_recordset_with_one_field_per_csv_column() {
         .pointer("/projection/recordSet")
         .and_then(|v| v.as_array())
         .expect("recordSet array");
+
+    // The first RecordSet is the schema RecordSet (one cr:Field per
+    // column); the rest are per-column value-frequency RecordSets.
+    let main = &record_sets[0];
+    assert_eq!(main.get("@id").and_then(|v| v.as_str()), Some("main-table"));
     assert_eq!(
-        record_sets.len(),
-        1,
-        "Croissant minimal Dataset has 1 RecordSet"
+        main.get("@type").and_then(|v| v.as_str()),
+        Some("cr:RecordSet")
     );
+
+    // RecordSet-level count annotation (Wikidata Cardinality term).
+    let count_ann = main
+        .pointer("/annotation/0")
+        .expect("main-table count annotation");
     assert_eq!(
-        record_sets[0].get("@type").and_then(|v| v.as_str()),
-        Some("cr:RecordSet"),
+        count_ann.get("dataType").and_then(|v| v.as_str()),
+        Some("http://www.wikidata.org/entity/Q4049983"),
     );
-    let fields = record_sets[0]
+    assert!(
+        count_ann
+            .get("value")
+            .and_then(serde_json::Value::as_u64)
+            .is_some(),
+        "count annotation must carry a numeric row count",
+    );
+
+    let fields = main
         .get("field")
         .and_then(|v| v.as_array())
         .expect("recordSet[0].field array");
     // nyc-311-subset.csv has 10 columns.
     assert_eq!(fields.len(), 10, "must emit one cr:Field per CSV column");
-    // All fields are cr:Field with a schema.org dataType.
+    // All fields are cr:Field with a schema.org dataType and a
+    // descriptive-statistics annotation array (min/max/mean/...).
     for f in fields {
         assert_eq!(
             f.get("@type").and_then(|v| v.as_str()),
@@ -687,6 +715,114 @@ fn croissant_emits_recordset_with_one_field_per_csv_column() {
         assert!(
             dtype.starts_with("sc:"),
             "dataType must use schema.org vocab, got `{dtype}`",
+        );
+        let annotations = f
+            .get("annotation")
+            .and_then(|v| v.as_array())
+            .expect("field.annotation array");
+        // Every column has at least min + max stats from the schema pass.
+        assert!(
+            !annotations.is_empty(),
+            "each field must carry descriptive-statistics annotations",
+        );
+        for ann in annotations {
+            assert!(
+                ann.get("@id").is_some()
+                    && ann.get("value").is_some()
+                    && ann.get("dataType").is_some(),
+                "each stat annotation needs @id, value and dataType",
+            );
+        }
+    }
+
+    // Per-column value-frequency RecordSets follow the schema RecordSet.
+    let freq_sets: Vec<&serde_json::Value> = record_sets
+        .iter()
+        .filter(|rs| {
+            rs.get("@id")
+                .and_then(|v| v.as_str())
+                .is_some_and(|id| id.ends_with("-frequency"))
+        })
+        .collect();
+    assert!(
+        !freq_sets.is_empty(),
+        "must emit per-column value-frequency RecordSets",
+    );
+    let fs = freq_sets[0];
+    assert_eq!(
+        fs.get("@type").and_then(|v| v.as_str()),
+        Some("cr:RecordSet")
+    );
+    let fnames: Vec<&str> = fs
+        .get("field")
+        .and_then(|v| v.as_array())
+        .expect("frequency field array")
+        .iter()
+        .filter_map(|f| f.get("name").and_then(|v| v.as_str()))
+        .collect();
+    assert_eq!(fnames, vec!["value", "count", "percentage"]);
+    let data = fs
+        .get("data")
+        .and_then(|v| v.as_array())
+        .expect("frequency data array");
+    assert!(
+        !data.is_empty(),
+        "frequency RecordSet must carry inline data rows"
+    );
+}
+
+#[test]
+fn croissant_frequency_off_by_default_extended_stats_on_fresh_run() {
+    // Without --croissant-frequency, no value-frequency RecordSets are
+    // emitted (only the schema RecordSet). And on a fresh run (no
+    // pre-built --everything stats cache), the extended descriptive
+    // statistics — median, quartiles and mode — still surface, because
+    // `profile` uses the ProfileSchema stats mode (Schema + quartiles +
+    // mode).
+    let wrk = Workdir::new("croissant_freq_default");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let record_sets = out
+        .pointer("/projection/recordSet")
+        .and_then(|v| v.as_array())
+        .expect("recordSet array");
+    // No frequency RecordSets by default.
+    assert!(
+        record_sets.iter().all(|rs| !rs
+            .get("@id")
+            .and_then(|v| v.as_str())
+            .is_some_and(|id| id.ends_with("-frequency"))),
+        "frequency RecordSets must be opt-in via --croissant-frequency",
+    );
+
+    // At least one numeric column must carry the extended stats. Collect
+    // every termCode seen across all fields' annotations.
+    let mut term_codes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for f in record_sets[0]
+        .get("field")
+        .and_then(|v| v.as_array())
+        .expect("field array")
+    {
+        if let Some(anns) = f.get("annotation").and_then(|v| v.as_array()) {
+            for a in anns {
+                if let Some(tc) = a.pointer("/dataType/termCode").and_then(|v| v.as_str()) {
+                    term_codes.insert(tc.to_string());
+                }
+            }
+        }
+    }
+    for expected in ["Median", "FirstQuartile", "ThirdQuartile", "Mode"] {
+        assert!(
+            term_codes.contains(expected),
+            "extended stat `{expected}` must surface on a fresh run; saw {term_codes:?}",
         );
     }
 }

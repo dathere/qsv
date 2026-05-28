@@ -684,7 +684,9 @@ fn croissant_emits_recordset_with_one_field_per_csv_column() {
         .expect("main-table count annotation");
     assert_eq!(
         count_ann.get("dataType").and_then(|v| v.as_str()),
-        Some("http://www.wikidata.org/entity/Q4049983"),
+        Some("http://www.wikidata.org/entity/Q4049983"), /* DevSkim: ignore DS137138 — Wikidata
+                                                          * IRI assertion, not a fetched
+                                                          * endpoint */
     );
     assert!(
         count_ann
@@ -823,6 +825,57 @@ fn croissant_frequency_off_by_default_extended_stats_on_fresh_run() {
         assert!(
             term_codes.contains(expected),
             "extended stat `{expected}` must surface on a fresh run; saw {term_codes:?}",
+        );
+    }
+}
+
+#[test]
+fn croissant_extended_stats_survive_lean_stats_cache_reuse() {
+    // Regression for the mode-aware cache-reuse fix: `qsv schema` writes a
+    // lean stats cache (StatsMode::Schema — no quartiles/mode). A
+    // subsequent `qsv profile` (no --force) must NOT silently reuse that
+    // lean cache and drop the extended-stat annotations; the ProfileSchema
+    // mode detects the cache is insufficient and regenerates with
+    // quartiles + mode.
+    let wrk = Workdir::new("croissant_lean_cache");
+    let src = std::env::current_dir()
+        .unwrap()
+        .join("tests/resources/profile/golden/nyc-311-subset.csv");
+    std::fs::copy(&src, wrk.path("in.csv")).expect("copy fixture");
+
+    // 1. Prime a lean cache via `qsv schema`.
+    let mut schema_cmd = wrk.command("schema");
+    schema_cmd.arg("in.csv");
+    wrk.assert_success(&mut schema_cmd);
+
+    // 2. Profile WITHOUT --force, so cache reuse is in play.
+    let mut cmd = wrk.command("profile");
+    cmd.args(["in.csv", "--profile", "croissant", "-o", "out.json"]);
+    wrk.assert_success(&mut cmd);
+
+    let out = read_output(&wrk, "out.json");
+    let record_sets = out
+        .pointer("/projection/recordSet")
+        .and_then(|v| v.as_array())
+        .expect("recordSet array");
+    let mut term_codes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for f in record_sets[0]
+        .get("field")
+        .and_then(|v| v.as_array())
+        .expect("field array")
+    {
+        if let Some(anns) = f.get("annotation").and_then(|v| v.as_array()) {
+            for a in anns {
+                if let Some(tc) = a.pointer("/dataType/termCode").and_then(|v| v.as_str()) {
+                    term_codes.insert(tc.to_string());
+                }
+            }
+        }
+    }
+    for expected in ["Median", "FirstQuartile", "ThirdQuartile", "Mode"] {
+        assert!(
+            term_codes.contains(expected),
+            "extended stat `{expected}` must survive lean-cache reuse; saw {term_codes:?}",
         );
     }
 }

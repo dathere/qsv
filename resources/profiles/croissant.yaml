@@ -349,7 +349,7 @@ recordsets:
   - path: "recordSet"
     for_each_column: false
     template: |
-      {%- set dts = "http://rdf-vocabulary.ddialliance.org/cv/SummaryStatisticType/2.1.2/" -%}
+      {%- set dts = "http://rdf-vocabulary.ddialliance.org/cv/SummaryStatisticType/2.1.2/" -%}{# DevSkim: ignore DS137138 — RDF vocabulary IRI (http-scheme term identifier), not a fetched endpoint #}
       {# (suffix, qsv stats key, DDI termCode, human name, ddi-stats fragment) #}
       {%- set numeric_stats = [
         ["mean",     "mean",      "ArithmeticMean",    "Arithmetic mean",    "7975ed0"],
@@ -371,7 +371,7 @@ recordsets:
             "@type": "cr:Field",
             "name": "main-table/count",
             "value": {{ dpp.RECORD_COUNT | default(0) | tojson }},
-            "dataType": "http://www.wikidata.org/entity/Q4049983"
+            "dataType": "http://www.wikidata.org/entity/Q4049983"{# DevSkim: ignore DS137138 — Wikidata entity IRI (Cardinality term Q4049983), not a fetched endpoint #}
           }
         ],
         "field": [

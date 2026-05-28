@@ -2781,15 +2781,17 @@ pub fn write_json_record<W: std::io::Write>(
 /// `StatsMode::ProfileSchema` additionally needs mode + quartiles; a cache
 /// from `qsv schema` (StatsMode::Schema) lacks both. Since no
 /// producing-mode marker is stored, sufficiency is detected from the data:
-///   * `--mode` populates `mode` for every non-empty column, so an all-`None` `mode` means the
-///     cache was built without it.
+///   * `--mode` populates the `mode_count` metadata field for every column (even `Some(0)` for an
+///     all-unique column, where the `mode` value itself is `None`); a lean cache leaves
+///     `mode_count` `None`. We test `mode_count`, not `mode`, so all-unique datasets aren't
+///     mistaken for a lean cache and needlessly regenerated on every run.
 ///   * `--quartiles` populates `q2_median` for numeric columns, so require it only when the dataset
 ///     actually has a numeric column.
 fn stats_satisfy_mode(stats: &[StatsData], mode: StatsMode) -> bool {
     if mode != StatsMode::ProfileSchema {
         return true;
     }
-    let has_mode = stats.iter().any(|s| s.mode.is_some());
+    let has_mode = stats.iter().any(|s| s.mode_count.is_some());
     let has_numeric = stats
         .iter()
         .any(|s| s.r#type == "Integer" || s.r#type == "Float");

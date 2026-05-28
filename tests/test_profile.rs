@@ -734,7 +734,8 @@ fn croissant_distribution_uses_file_object_type() {
         .pointer("/projection/distribution/0/@type")
         .and_then(|v| v.as_str())
         .expect("distribution[0].@type");
-    assert_eq!(file_obj_type, "sc:FileObject");
+    // Croissant 1.1: FileObject is in the cr: vocabulary, not sc:.
+    assert_eq!(file_obj_type, "cr:FileObject");
 }
 
 // =========================================================================

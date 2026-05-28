@@ -920,9 +920,9 @@ fn croissant_all_unique_dataset_reuses_profileschema_cache() {
     std::thread::sleep(std::time::Duration::from_millis(1100));
 
     // Run 2 (no --force): must REUSE the cache, not regenerate it.
-    let mut cmd2 = wrk.command("profile");
-    cmd2.args(["in.csv", "--profile", "croissant", "-o", "out2.json"]);
-    wrk.assert_success(&mut cmd2);
+    let mut cmd_2 = wrk.command("profile");
+    cmd_2.args(["in.csv", "--profile", "croissant", "-o", "out2.json"]);
+    wrk.assert_success(&mut cmd_2);
     let mtime2 = std::fs::metadata(&cache)
         .expect("stats cache still present")
         .modified()

@@ -738,7 +738,6 @@ fn croissant_distribution_uses_file_object_type() {
     assert_eq!(file_obj_type, "cr:FileObject");
 }
 
-
 #[test]
 fn croissant_distribution_emits_canonical_sha256_not_legacy_fingerprint() {
     // Croissant 1.1 puts the file hash in a direct `sha256` property
@@ -823,10 +822,7 @@ fn croissant_recordset_fields_wire_source_to_file_object() {
     assert!(!fields.is_empty(), "must emit at least one cr:Field");
 
     for f in fields {
-        let name = f
-            .get("name")
-            .and_then(|v| v.as_str())
-            .expect("field.name");
+        let name = f.get("name").and_then(|v| v.as_str()).expect("field.name");
         let file_obj_ref = f
             .pointer("/source/fileObject/@id")
             .and_then(|v| v.as_str())

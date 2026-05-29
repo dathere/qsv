@@ -2515,6 +2515,34 @@ mod tests {
     }
 
     #[test]
+    fn test_format_examples_blockquote_closed_with_blank_line() {
+        // A literal `> [!NOTE]` admonition followed by normal prose must be
+        // separated by a blank line, otherwise CommonMark absorbs the prose as
+        // a lazy continuation of the blockquote (mis-scoping it into the note).
+        let input = lines(&[
+            "> [!NOTE]",
+            "> All variables are strings.",
+            "Additional filters are available:",
+        ]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("> All variables are strings.\n\nAdditional filters are available:"),
+            "blockquote must be closed with a blank line before following prose, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_consecutive_blockquote_lines_not_split() {
+        // Adjacent `>` lines stay in one blockquote (no blank line between them).
+        let input = lines(&["> line one", "> line two", "after"]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("> line one\n> line two\n\nafter"),
+            "consecutive blockquote lines should not be split, got:\n{md}"
+        );
+    }
+
+    #[test]
     fn test_format_examples_comment_as_last_line() {
         let input = lines(&["# Trailing comment"]);
         let md = format_examples(&input);

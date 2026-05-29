@@ -1415,8 +1415,10 @@ fn template_floor_ceil() {
 #[test]
 fn template_floor_out_of_range() {
     let wrk = Workdir::new("template_floor_out_of_range");
-    // 1e400 overflows f64 to infinity; floor must error, not saturate to i64::MAX.
-    wrk.create_from_string("data.csv", "v\n1e400\n");
+    // 1e400 overflows f64 to infinity; 9223372036854775808 is 2^63 (one past
+    // i64::MAX, a FINITE value that must still error rather than saturate);
+    // 42 is in range. floor must error on the first two, succeed on the last.
+    wrk.create_from_string("data.csv", "v\n1e400\n9223372036854775808\n42\n");
 
     let mut cmd = wrk.command("template");
     cmd.arg("--template")
@@ -1424,7 +1426,10 @@ fn template_floor_out_of_range() {
         .arg("data.csv");
 
     let got: String = wrk.stdout(&mut cmd);
-    assert!(got.contains("RENDERING ERROR"), "got: {got}");
+    let lines: Vec<&str> = got.lines().collect();
+    assert!(lines[0].contains("RENDERING ERROR"), "got: {got}");
+    assert!(lines[1].contains("RENDERING ERROR"), "got: {got}");
+    assert_eq!(lines[2], "42", "got: {got}");
 }
 
 #[test]

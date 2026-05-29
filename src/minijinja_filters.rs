@@ -129,7 +129,12 @@ fn as_f64(value: &Value) -> Result<f64, Error> {
 // error rather than silently saturating to 0/i64::MIN/i64::MAX from an `as`
 // cast.
 fn to_i64(rounded: f64) -> Result<i64, Error> {
-    if rounded.is_finite() && (i64::MIN as f64..=i64::MAX as f64).contains(&rounded) {
+    // Exclusive upper bound: `i64::MAX as f64` rounds UP to 2^63
+    // (9223372036854775808.0), which is one past i64::MAX, so an inclusive
+    // `..=` check would admit 2^63 and saturate it to i64::MAX on cast. i64::MIN
+    // (-2^63) is exactly representable as f64, so the lower bound stays inclusive.
+    const UPPER_EXCLUSIVE: f64 = 9_223_372_036_854_775_808.0; // 2^63
+    if rounded.is_finite() && rounded >= i64::MIN as f64 && rounded < UPPER_EXCLUSIVE {
         Ok(rounded as i64)
     } else {
         Err(Error::new(

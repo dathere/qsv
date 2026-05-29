@@ -79,6 +79,7 @@ mod clitypes;
 mod cmd;
 mod config;
 mod index;
+mod minijinja_filters;
 mod odhtcache;
 mod select;
 mod util;

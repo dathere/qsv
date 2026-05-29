@@ -587,6 +587,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         template_content = fs::read_to_string(template_file)?;
         let mut env = Environment::new();
         env.set_unknown_method_callback(unknown_method_callback);
+        crate::minijinja_filters::register(&mut env);
         env.add_template("template", &template_content)?;
         payload_content_type = ContentType::Json;
         env

@@ -113,6 +113,9 @@ pub fn register(env: &mut Environment) {
     // for the duration of the render pass, then cleared.
     env.add_function("temporal_resolution", temporal_resolution);
     env.add_function("guess_accrual_periodicity", guess_accrual_periodicity);
+
+    // shared data-wrangling filters (regex, datefmt, slugify, padding, etc.)
+    crate::minijinja_filters::register(env);
 }
 
 // =====================================================================

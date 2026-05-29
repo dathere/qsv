@@ -1343,3 +1343,283 @@ fn template_globals_json_invalid() {
     let got: String = wrk.output_stderr(&mut cmd);
     assert!(got.contains("Failed to parse globals JSON file"));
 }
+
+// ---------------------------------------------------------------------------
+// shared minijinja_filters (regex, floor/ceil, datefmt, padding, slugify,
+// blake3, fromjson, coalesce)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn template_regex_replace() {
+    let wrk = Workdir::new("template_regex_replace");
+    wrk.create_from_string("data.csv", "phone\n(212) 555-0100\n800.555.0199\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ phone|regex_replace(\"[^0-9]\", \"\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2125550100\n8005550199");
+}
+
+#[test]
+fn template_regex_replace_captures() {
+    let wrk = Workdir::new("template_regex_replace_captures");
+    wrk.create_from_string("data.csv", "zip\n2125550100\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ zip|regex_replace(\"([0-9]{3})([0-9]{4})$\", \"${1}-${2}\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "212555-0100");
+}
+
+#[test]
+fn template_regex_match_and_find() {
+    let wrk = Workdir::new("template_regex_match_and_find");
+    wrk.create_from_string("data.csv", "id\nABC123\nxx\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg(
+            "{% if id|regex_match(\"^[A-Z]{3}[0-9]+$\") %}OK {{ id|regex_find(\"[0-9]+\") }}{% \
+             else %}NO{% endif %}\n\n",
+        )
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "OK 123\nNO");
+}
+
+#[test]
+fn template_floor_ceil() {
+    let wrk = Workdir::new("template_floor_ceil");
+    wrk.create_from_string("data.csv", "v\n42.7\n42.1\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
+        .arg("data.csv");
+
+    // floor/ceil return floats; pipe |int (next test) for clean integers.
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "42.0/43.0\n42.0/43.0");
+}
+
+#[test]
+fn template_floor_ceil_int() {
+    let wrk = Workdir::new("template_floor_ceil_int");
+    wrk.create_from_string("data.csv", "v\n42.7\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor|int }}/{{ v|ceil|int }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "42/43");
+}
+
+#[test]
+fn template_floor_ceil_large_integers() {
+    let wrk = Workdir::new("template_floor_ceil_large_integers");
+    // Integer inputs must pass through EXACTLY, including values beyond f64's
+    // 2^53 exact range (9007199254740993 = 2^53+1), i64::MAX, i64::MIN, and
+    // large unsigned IDs (9223372036854775808 = i64::MAX+1, 18446744073709551615
+    // = u64::MAX) via the u64 fast path. An f64 round-trip would corrupt these.
+    let values = [
+        "9007199254740993",
+        "9223372036854775807",
+        "-9223372036854775808",
+        "9223372036854775808",
+        "18446744073709551615",
+    ];
+    let data = format!("v\n{}\n", values.join("\n"));
+    wrk.create_from_string("data.csv", &data);
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    let expected = values
+        .iter()
+        .map(|v| format!("{v}/{v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn template_floor_integer_too_large() {
+    let wrk = Workdir::new("template_floor_integer_too_large");
+    // Integer literals that fit neither i64 nor u64 cannot be represented
+    // exactly; floor/ceil must error rather than silently approximate via f64.
+    // 18446744073709551616 = u64::MAX+1; -9223372036854775809 = i64::MIN-1.
+    wrk.create_from_string(
+        "data.csv",
+        "v\n18446744073709551616\n-9223372036854775809\n42\n",
+    );
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let lines: Vec<&str> = got.lines().collect();
+    assert!(lines[0].contains("RENDERING ERROR"), "got: {got}");
+    assert!(lines[1].contains("RENDERING ERROR"), "got: {got}");
+    assert_eq!(lines[2], "42", "got: {got}");
+}
+
+#[test]
+fn template_floor_non_numeric() {
+    let wrk = Workdir::new("template_floor_non_numeric");
+    wrk.create_from_string("data.csv", "v\nabc\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}\n\n")
+        .arg("data.csv");
+
+    // non-numeric input surfaces a per-row rendering error, not a crash
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains("RENDERING ERROR"), "got: {got}");
+}
+
+#[test]
+fn template_datefmt() {
+    let wrk = Workdir::new("template_datefmt");
+    wrk.create_from_string("data.csv", "d\n3/4/2022\n\"March 4, 2022\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ d|datefmt(\"%Y-%m-%d\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2022-03-04\n2022-03-04");
+}
+
+#[test]
+fn template_datefmt_prefer_dmy() {
+    let wrk = Workdir::new("template_datefmt_prefer_dmy");
+    wrk.create_from_string("data.csv", "d\n3/4/2022\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ d|datefmt(\"%Y-%m-%d\", true) }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2022-04-03");
+}
+
+#[test]
+fn template_padding() {
+    let wrk = Workdir::new("template_padding");
+    wrk.create_from_string("data.csv", "v\n42\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("[{{ v|zfill(5) }}][{{ v|lpad(5) }}][{{ v|rpad(5, \"*\") }}]\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "[00042][   42][42***]");
+}
+
+#[test]
+fn template_slugify() {
+    let wrk = Workdir::new("template_slugify");
+    wrk.create_from_string("data.csv", "title\n\"NYC 311 Data!\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ title|slugify }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "nyc-311-data");
+}
+
+#[test]
+fn template_blake3() {
+    let wrk = Workdir::new("template_blake3");
+    wrk.create_from_string("data.csv", "v\nhello\nhello\nworld\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|blake3 }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3);
+    // deterministic + 64-char hex digest
+    assert_eq!(lines[0], lines[1]);
+    assert_ne!(lines[0], lines[2]);
+    assert_eq!(lines[0].len(), 64);
+    assert!(lines[0].chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn template_fromjson() {
+    let wrk = Workdir::new("template_fromjson");
+    wrk.create_from_string("data.csv", "j\n\"{\"\"a\"\":1,\"\"b\"\":2}\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ (j|fromjson).a }}-{{ (j|parse_json).b }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "1-2");
+}
+
+#[test]
+fn template_coalesce() {
+    let wrk = Workdir::new("template_coalesce");
+    wrk.create_from_string("data.csv", "a,b\n,x\n,\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ coalesce(a, b, \"fallback\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "x\nfallback");
+}
+
+#[test]
+fn template_regex_invalid_pattern() {
+    let wrk = Workdir::new("template_regex_invalid_pattern");
+    wrk.create_from_string("data.csv", "v\nfoo\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|regex_match(\"[\") }}\n\n")
+        .arg("data.csv");
+
+    // bad pattern surfaces as a per-row rendering error, not a crash
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains("RENDERING ERROR"), "got: {got}");
+}

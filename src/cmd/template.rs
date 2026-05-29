@@ -57,6 +57,23 @@ Status: {% if active|to_bool %}Active{% else %}Inactive{% endif %}
 > qsv's custom filters (substr, format_float, human_count, human_float_count, round_banker &
 > str_to_bool) do not require casting for convenience.
 
+Additional qsv-specific data-wrangling filters/functions (available in all binary variants):
+```
+regex_replace(pattern, replacement)  Replace ALL regex matches ($1/${name} capture refs).
+regex_match(pattern)                 True if the regex matches anywhere, e.g. in {% if %}.
+regex_find(pattern)                  First whole regex match, or "" if none.
+floor / ceil                         Round down / up. Integer inputs stay exact; fractional
+                                     inputs return a float (pipe |int, e.g. v|floor|int).
+datefmt(fmt[, prefer_dmy])           Parse a messy date string (19+ formats) & reformat with
+                                     a chrono format string, e.g. d|datefmt("%Y-%m-%d").
+zfill(width)                         Left-pad with zeros (keeps leading sign), "42"|zfill(5)="00042".
+lpad(width[, fill]) / rpad(...)      Left/right pad to width with fill char (default space).
+slugify                              URL/DB/CKAN-safe slug, "NYC 311 Data!"|slugify="nyc-311-data".
+blake3                               BLAKE3 hex digest of the value (stable surrogate/content keys).
+fromjson / parse_json                Parse a JSON string into an indexable value, (j|fromjson).key.
+coalesce(a, b, ...)                  First argument that is not undefined/none/empty string.
+```
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_template.rs.
 For a relatively complex MiniJinja template, see https://github.com/dathere/qsv/blob/master/scripts/template.tpl
 
@@ -706,6 +723,9 @@ fn register_qsv_extensions(env: &mut Environment) {
     env.add_filter("round_banker", round_banker);
     env.add_filter("to_bool", to_bool);
     env.add_filter("lookup", lookup_filter);
+
+    // shared data-wrangling filters (regex, datefmt, slugify, padding, etc.)
+    crate::minijinja_filters::register(env);
 }
 
 // Normalize a string into the canonical key form used by both register_lookup

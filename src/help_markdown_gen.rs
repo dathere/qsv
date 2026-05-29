@@ -1457,6 +1457,24 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
+        // Literal blockquote lines (e.g. GitHub `> [!NOTE]` admonitions). Emit
+        // verbatim, then close the blockquote with a blank line once the next
+        // non-empty line is not itself a blockquote line — otherwise that line
+        // is absorbed as a lazy continuation of the blockquote (CommonMark),
+        // mis-scoping following text into the note.
+        if trimmed.starts_with('>') {
+            md.push_str(&linkify_bare_urls(trimmed));
+            md.push('\n');
+            let next_is_quote = lines
+                .get(idx + 1..)
+                .and_then(|remaining| remaining.iter().find(|l| !l.trim().is_empty()))
+                .is_some_and(|l| l.trim().starts_with('>'));
+            if !next_is_quote {
+                md.push('\n');
+            }
+            continue;
+        }
+
         // Any other text (description paragraphs within examples)
         md.push_str(&linkify_bare_urls(trimmed));
         maybe_append_colon_break(&mut md, trimmed);
@@ -2493,6 +2511,34 @@ mod tests {
         assert!(
             md.contains("> First comment\n> Second comment\n\n"),
             "Consecutive comments should be in one blockquote, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_blockquote_closed_with_blank_line() {
+        // A literal `> [!NOTE]` admonition followed by normal prose must be
+        // separated by a blank line, otherwise CommonMark absorbs the prose as
+        // a lazy continuation of the blockquote (mis-scoping it into the note).
+        let input = lines(&[
+            "> [!NOTE]",
+            "> All variables are strings.",
+            "Additional filters are available:",
+        ]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("> All variables are strings.\n\nAdditional filters are available:"),
+            "blockquote must be closed with a blank line before following prose, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_examples_consecutive_blockquote_lines_not_split() {
+        // Adjacent `>` lines stay in one blockquote (no blank line between them).
+        let input = lines(&["> line one", "> line two", "after"]);
+        let md = format_examples(&input);
+        assert!(
+            md.contains("> line one\n> line two\n\nafter"),
+            "consecutive blockquote lines should not be split, got:\n{md}"
         );
     }
 

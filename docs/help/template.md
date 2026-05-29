@@ -73,6 +73,7 @@ qsv template --template-file template.tpl data.csv
 >  filters for math operations and when a MiniJinja filter/function requires it.
 > qsv's custom filters (substr, format_float, human_count, human_float_count, round_banker &
 > str_to_bool) do not require casting for convenience.
+
 Additional qsv-specific data-wrangling filters/functions (available in all binary variants):  
 ```
 regex_replace(pattern, replacement)  Replace ALL regex matches ($1/${name} capture refs).

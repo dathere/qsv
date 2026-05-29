@@ -1457,6 +1457,24 @@ fn format_examples(lines: &[String]) -> String {
             continue;
         }
 
+        // Literal blockquote lines (e.g. GitHub `> [!NOTE]` admonitions). Emit
+        // verbatim, then close the blockquote with a blank line once the next
+        // non-empty line is not itself a blockquote line — otherwise that line
+        // is absorbed as a lazy continuation of the blockquote (CommonMark),
+        // mis-scoping following text into the note.
+        if trimmed.starts_with('>') {
+            md.push_str(&linkify_bare_urls(trimmed));
+            md.push('\n');
+            let next_is_quote = lines
+                .get(idx + 1..)
+                .and_then(|remaining| remaining.iter().find(|l| !l.trim().is_empty()))
+                .is_some_and(|l| l.trim().starts_with('>'));
+            if !next_is_quote {
+                md.push('\n');
+            }
+            continue;
+        }
+
         // Any other text (description paragraphs within examples)
         md.push_str(&linkify_bare_urls(trimmed));
         maybe_append_colon_break(&mut md, trimmed);

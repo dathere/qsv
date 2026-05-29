@@ -62,7 +62,15 @@ pub fn register(env: &mut Environment) {
 // `Regex` is internally Arc-backed, so cloning out of the cache is cheap and
 // lets us drop the read lock before matching (rayon threads never serialize on
 // a held lock during the actual match).
+//
+// The cache is bounded: a pattern can come from row data (e.g.
+// `{{ v|regex_match(pattern_column) }}`), so an unbounded cache could retain one
+// compiled regex per distinct row and exhaust memory. Once the cache is full we
+// stop inserting (still compiling on demand, just without caching), which keeps
+// the common case of a handful of literal patterns fully cached while capping
+// worst-case memory for data-dependent patterns.
 static REGEX_CACHE: OnceLock<RwLock<HashMap<String, Regex>>> = OnceLock::new();
+const REGEX_CACHE_MAX: usize = 256;
 
 fn compiled(pattern: &str) -> Result<Regex, Error> {
     let cache = REGEX_CACHE.get_or_init(|| RwLock::new(HashMap::new()));
@@ -77,7 +85,9 @@ fn compiled(pattern: &str) -> Result<Regex, Error> {
             format!("invalid regex `{pattern}`: {e}"),
         )
     })?;
-    if let Ok(mut map) = cache.write() {
+    if let Ok(mut map) = cache.write()
+        && map.len() < REGEX_CACHE_MAX
+    {
         map.insert(pattern.to_owned(), re.clone());
     }
     Ok(re)
@@ -115,13 +125,26 @@ fn as_f64(value: &Value) -> Result<f64, Error> {
 }
 
 // Return an integer (whole number) so `{{ "42.7"|floor }}` renders `42`, not
-// `42.0`.
+// `42.0`. NaN/infinity and values outside the i64 range surface a template
+// error rather than silently saturating to 0/i64::MIN/i64::MAX from an `as`
+// cast.
+fn to_i64(rounded: f64) -> Result<i64, Error> {
+    if rounded.is_finite() && (i64::MIN as f64..=i64::MAX as f64).contains(&rounded) {
+        Ok(rounded as i64)
+    } else {
+        Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!("value `{rounded}` is not a finite integer in i64 range"),
+        ))
+    }
+}
+
 fn floor(value: &Value) -> Result<i64, Error> {
-    Ok(as_f64(value)?.floor() as i64)
+    to_i64(as_f64(value)?.floor())
 }
 
 fn ceil(value: &Value) -> Result<i64, Error> {
-    Ok(as_f64(value)?.ceil() as i64)
+    to_i64(as_f64(value)?.ceil())
 }
 
 // --- dates ---------------------------------------------------------------

@@ -1413,6 +1413,21 @@ fn template_floor_ceil() {
 }
 
 #[test]
+fn template_floor_out_of_range() {
+    let wrk = Workdir::new("template_floor_out_of_range");
+    // 1e400 overflows f64 to infinity; floor must error, not saturate to i64::MAX.
+    wrk.create_from_string("data.csv", "v\n1e400\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains("RENDERING ERROR"), "got: {got}");
+}
+
+#[test]
 fn template_datefmt() {
     let wrk = Workdir::new("template_datefmt");
     wrk.create_from_string("data.csv", "d\n3/4/2022\n\"March 4, 2022\"\n");

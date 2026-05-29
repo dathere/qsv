@@ -111,52 +111,28 @@ fn regex_find(value: &Value, pattern: &str) -> Result<String, Error> {
 
 // --- numeric -------------------------------------------------------------
 
-// Clamp a rounded f64 to i64, erroring instead of saturating. NaN/infinity and
-// values outside the i64 range surface a template error rather than silently
-// becoming 0/i64::MIN/i64::MAX from an `as` cast.
-fn to_i64(rounded: f64) -> Result<i64, Error> {
-    // Exclusive upper bound: `i64::MAX as f64` rounds UP to 2^63
-    // (9223372036854775808.0), which is one past i64::MAX, so an inclusive
-    // `..=` check would admit 2^63 and saturate it to i64::MAX on cast. i64::MIN
-    // (-2^63) is exactly representable as f64, so the lower bound stays inclusive.
-    const UPPER_EXCLUSIVE: f64 = 9_223_372_036_854_775_808.0; // 2^63
-    if rounded.is_finite() && rounded >= i64::MIN as f64 && rounded < UPPER_EXCLUSIVE {
-        Ok(rounded as i64)
-    } else {
-        Err(Error::new(
-            ErrorKind::InvalidOperation,
-            format!("value `{rounded}` is not a finite integer in i64 range"),
-        ))
-    }
-}
-
-// floor/ceil of an integer is the integer itself, so when the value is already
-// an integer string we return it directly. This is both semantically exact and
-// avoids the f64 round-trip that would otherwise reject valid boundary inputs
-// like i64::MAX (9223372036854775807 rounds UP to 2^63 as f64). Only genuinely
-// fractional inputs take the f64 path (with the to_i64 range guard). String
-// coercion mirrors `format_float`/`round_banker` so users needn't `|float`.
-fn round_to_i64(value: &Value, op: fn(f64) -> f64) -> Result<i64, Error> {
+// Coerce a value (string or number) to f64. Mirrors the string-friendly
+// behavior of `format_float`/`round_banker` in template.rs so users don't have
+// to `|float` first. Only non-numeric input errors; NaN/infinity parse through.
+fn as_f64(value: &Value) -> Result<f64, Error> {
     let s = value.to_string();
-    let trimmed = s.trim();
-    if let Ok(i) = trimmed.parse::<i64>() {
-        return Ok(i);
-    }
-    let f = trimmed.parse::<f64>().map_err(|_| {
+    s.trim().parse::<f64>().map_err(|_| {
         Error::new(
             ErrorKind::InvalidOperation,
             format!("expected a number, got `{s}`"),
         )
-    })?;
-    to_i64(op(f))
+    })
 }
 
-fn floor(value: &Value) -> Result<i64, Error> {
-    round_to_i64(value, f64::floor)
+// floor/ceil return a float (e.g. `42.7|floor` -> `42.0`). Keeping the result
+// in f64 avoids the precision/range pitfalls of an i64 cast for huge values;
+// pipe `|int` when an integer is wanted (`{{ v|floor|int }}`).
+fn floor(value: &Value) -> Result<f64, Error> {
+    Ok(as_f64(value)?.floor())
 }
 
-fn ceil(value: &Value) -> Result<i64, Error> {
-    round_to_i64(value, f64::ceil)
+fn ceil(value: &Value) -> Result<f64, Error> {
+    Ok(as_f64(value)?.ceil())
 }
 
 // --- dates ---------------------------------------------------------------

@@ -80,7 +80,8 @@ qsv also adds these data-wrangling filters/functions (available in all binary va
 regex_replace(pattern, replacement)  Replace ALL regex matches ($1/${name} capture refs).
 regex_match(pattern)                 True if the regex matches anywhere. e.g. in {% if %}.
 regex_find(pattern)                  First whole regex match, or "" if none.
-floor / ceil                         Round a number down / up to a whole integer.
+floor / ceil                         Round a number down / up (returns a float;
+pipe |int for an integer, e.g. v|floor|int).
 datefmt(fmt[, prefer_dmy])           Parse a messy date string (19+ formats) & reformat
 with a chrono format string. e.g. d|datefmt("%Y-%m-%d").
 zfill(width)                         Left-pad with zeros (keeps leading sign). "42"|zfill(5)="00042".

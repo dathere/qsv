@@ -1407,50 +1407,40 @@ fn template_floor_ceil() {
         .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
         .arg("data.csv");
 
+    // floor/ceil return floats; pipe |int (next test) for clean integers.
     let got: String = wrk.stdout(&mut cmd);
     wrk.assert_success(&mut cmd);
-    assert_eq!(got, "42/43\n42/43");
+    assert_eq!(got, "42.0/43.0\n42.0/43.0");
 }
 
 #[test]
-fn template_floor_out_of_range() {
-    let wrk = Workdir::new("template_floor_out_of_range");
-    // 1e400 overflows f64 to infinity; 9223372036854775808 is 2^63 (one past
-    // i64::MAX, a FINITE value that must still error rather than saturate);
-    // 42 is in range. floor must error on the first two, succeed on the last.
-    wrk.create_from_string("data.csv", "v\n1e400\n9223372036854775808\n42\n");
+fn template_floor_ceil_int() {
+    let wrk = Workdir::new("template_floor_ceil_int");
+    wrk.create_from_string("data.csv", "v\n42.7\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor|int }}/{{ v|ceil|int }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "42/43");
+}
+
+#[test]
+fn template_floor_non_numeric() {
+    let wrk = Workdir::new("template_floor_non_numeric");
+    wrk.create_from_string("data.csv", "v\nabc\n");
 
     let mut cmd = wrk.command("template");
     cmd.arg("--template")
         .arg("{{ v|floor }}\n\n")
         .arg("data.csv");
 
+    // non-numeric input surfaces a per-row rendering error, not a crash
     let got: String = wrk.stdout(&mut cmd);
-    let lines: Vec<&str> = got.lines().collect();
-    assert!(lines[0].contains("RENDERING ERROR"), "got: {got}");
-    assert!(lines[1].contains("RENDERING ERROR"), "got: {got}");
-    assert_eq!(lines[2], "42", "got: {got}");
-}
-
-#[test]
-fn template_floor_ceil_i64_boundaries() {
-    let wrk = Workdir::new("template_floor_ceil_i64_boundaries");
-    // i64::MAX/i64::MIN are valid integer inputs. They must round-trip exactly
-    // (floor/ceil of an integer is the integer), NOT be rejected by the f64
-    // range guard (i64::MAX parses to 2^63 as f64).
-    wrk.create_from_string("data.csv", "v\n9223372036854775807\n-9223372036854775808\n");
-
-    let mut cmd = wrk.command("template");
-    cmd.arg("--template")
-        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
-        .arg("data.csv");
-
-    let got: String = wrk.stdout(&mut cmd);
-    wrk.assert_success(&mut cmd);
-    assert_eq!(
-        got,
-        "9223372036854775807/9223372036854775807\n-9223372036854775808/-9223372036854775808"
-    );
+    assert!(got.contains("RENDERING ERROR"), "got: {got}");
 }
 
 #[test]

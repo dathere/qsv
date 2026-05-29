@@ -113,18 +113,28 @@ fn regex_find(value: &Value, pattern: &str) -> Result<String, Error> {
 
 // floor/ceil of an integer is the integer itself, so integer-string inputs pass
 // through unchanged. This keeps large integers (e.g. IDs beyond f64's 2^53 exact
-// range, up to i64) exact instead of being rounded by an f64 round-trip. Only
-// genuinely fractional inputs go through f64 — those return a float (e.g.
-// `42.7|floor` -> `42.0`); pipe `|int` when an integer is wanted. String
-// coercion mirrors `format_float`/`round_banker` so users needn't `|float`.
-// Returns a Value (integer for integer inputs, float for fractional ones); no
-// i64 cast, so there are no saturation/range pitfalls. NaN/infinity parse
+// range) exact instead of being rounded by an f64 round-trip: i64 covers signed
+// values, u64 covers large unsigned IDs. An integer that fits NEITHER cannot be
+// represented exactly, so we error rather than silently approximating it through
+// f64 — honoring the "integers stay exact" contract. Only genuinely fractional
+// inputs go through f64, returning a float (e.g. `42.7|floor` -> `42.0`); pipe
+// `|int` when an integer is wanted. String coercion mirrors
+// `format_float`/`round_banker` so users needn't `|float`. NaN/infinity parse
 // through the f64 path transparently; only non-numeric input errors.
 fn round_value(value: &Value, op: fn(f64) -> f64) -> Result<Value, Error> {
     let s = value.to_string();
     let trimmed = s.trim();
     if let Ok(i) = trimmed.parse::<i64>() {
         return Ok(Value::from(i));
+    }
+    if let Ok(u) = trimmed.parse::<u64>() {
+        return Ok(Value::from(u));
+    }
+    if is_integer_syntax(trimmed) {
+        return Err(Error::new(
+            ErrorKind::InvalidOperation,
+            format!("integer `{trimmed}` is too large to represent exactly"),
+        ));
     }
     let f = trimmed.parse::<f64>().map_err(|_| {
         Error::new(
@@ -133,6 +143,14 @@ fn round_value(value: &Value, op: fn(f64) -> f64) -> Result<Value, Error> {
         )
     })?;
     Ok(Value::from(op(f)))
+}
+
+// True when `s` is a plain integer literal (optional sign, then only ASCII
+// digits) — used to distinguish an out-of-range integer (which must error)
+// from a fractional/scientific value (which takes the f64 path).
+fn is_integer_syntax(s: &str) -> bool {
+    let digits = s.strip_prefix(['+', '-']).unwrap_or(s);
+    !digits.is_empty() && digits.bytes().all(|b| b.is_ascii_digit())
 }
 
 fn floor(value: &Value) -> Result<Value, Error> {

@@ -1432,12 +1432,18 @@ fn template_floor_ceil_int() {
 fn template_floor_ceil_large_integers() {
     let wrk = Workdir::new("template_floor_ceil_large_integers");
     // Integer inputs must pass through EXACTLY, including values beyond f64's
-    // 2^53 exact range (9007199254740993 = 2^53+1) and i64::MAX. An f64
-    // round-trip would corrupt these (i64::MAX rounds to 2^63).
-    wrk.create_from_string(
-        "data.csv",
-        "v\n9007199254740993\n9223372036854775807\n-9223372036854775808\n",
-    );
+    // 2^53 exact range (9007199254740993 = 2^53+1), i64::MAX, i64::MIN, and
+    // large unsigned IDs (9223372036854775808 = i64::MAX+1, 18446744073709551615
+    // = u64::MAX) via the u64 fast path. An f64 round-trip would corrupt these.
+    let values = [
+        "9007199254740993",
+        "9223372036854775807",
+        "-9223372036854775808",
+        "9223372036854775808",
+        "18446744073709551615",
+    ];
+    let data = format!("v\n{}\n", values.join("\n"));
+    wrk.create_from_string("data.csv", &data);
 
     let mut cmd = wrk.command("template");
     cmd.arg("--template")
@@ -1446,13 +1452,35 @@ fn template_floor_ceil_large_integers() {
 
     let got: String = wrk.stdout(&mut cmd);
     wrk.assert_success(&mut cmd);
-    let expected = [
-        "9007199254740993/9007199254740993",
-        "9223372036854775807/9223372036854775807",
-        "-9223372036854775808/-9223372036854775808",
-    ]
-    .join("\n");
+    let expected = values
+        .iter()
+        .map(|v| format!("{v}/{v}"))
+        .collect::<Vec<_>>()
+        .join("\n");
     assert_eq!(got, expected);
+}
+
+#[test]
+fn template_floor_integer_too_large() {
+    let wrk = Workdir::new("template_floor_integer_too_large");
+    // Integer literals that fit neither i64 nor u64 cannot be represented
+    // exactly; floor/ceil must error rather than silently approximate via f64.
+    // 18446744073709551616 = u64::MAX+1; -9223372036854775809 = i64::MIN-1.
+    wrk.create_from_string(
+        "data.csv",
+        "v\n18446744073709551616\n-9223372036854775809\n42\n",
+    );
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let lines: Vec<&str> = got.lines().collect();
+    assert!(lines[0].contains("RENDERING ERROR"), "got: {got}");
+    assert!(lines[1].contains("RENDERING ERROR"), "got: {got}");
+    assert_eq!(lines[2], "42", "got: {got}");
 }
 
 #[test]

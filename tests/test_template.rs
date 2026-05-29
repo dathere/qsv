@@ -1433,6 +1433,27 @@ fn template_floor_out_of_range() {
 }
 
 #[test]
+fn template_floor_ceil_i64_boundaries() {
+    let wrk = Workdir::new("template_floor_ceil_i64_boundaries");
+    // i64::MAX/i64::MIN are valid integer inputs. They must round-trip exactly
+    // (floor/ceil of an integer is the integer), NOT be rejected by the f64
+    // range guard (i64::MAX parses to 2^63 as f64).
+    wrk.create_from_string("data.csv", "v\n9223372036854775807\n-9223372036854775808\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(
+        got,
+        "9223372036854775807/9223372036854775807\n-9223372036854775808/-9223372036854775808"
+    );
+}
+
+#[test]
 fn template_datefmt() {
     let wrk = Workdir::new("template_datefmt");
     wrk.create_from_string("data.csv", "d\n3/4/2022\n\"March 4, 2022\"\n");

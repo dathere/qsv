@@ -829,6 +829,9 @@ fn croissant_frequency_off_by_default_extended_stats_on_fresh_run() {
     }
 }
 
+// Primes the cache with `qsv schema`, which is only built into feature_capable
+// binaries (qsv) — not qsvdp, which enables `profile` but not `schema`.
+#[cfg(feature = "feature_capable")]
 #[test]
 fn croissant_extended_stats_survive_lean_stats_cache_reuse() {
     // Regression for the mode-aware cache-reuse fix: `qsv schema` writes a

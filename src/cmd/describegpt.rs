@@ -163,6 +163,10 @@ describegpt options:
                            non-null value - primary keys, surrogate keys, sequence numbers) are
                            deterministically classified as "unique_id", overriding any token the LLM
                            returned for that field.
+                           For Date/DateTime fields, the LLM also infers the column's strftime date
+                           format (e.g. "date:%m/%d/%Y"); the dictionary's Min/Max are then rendered
+                           in that inferred format (via the `datefmt` MiniJinja filter) so they match
+                           how the dates actually appear in the data, instead of qsv's normalized form.
     --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
                            as JSON context and refines each field's Label, Description and
                            (when --infer-content-type is set) Content Type using cross-field
@@ -6509,6 +6513,112 @@ p_fewshot_examples = ""
         assert!(
             rendered.contains("Top-level grouping. | category |  |"),
             "row 2 missing content_type cell:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn dictionary_body_min_max_use_inferred_date_format() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.flag_infer_content_type = true;
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let entries = vec![
+            // date with an inferred `:<fmt>` suffix — Min/Max (normalized to
+            // %Y-%m-%d by stats) must be reformatted to the inferred format.
+            dictionary::DictionaryEntry {
+                name:         "created".to_string(),
+                r#type:       "Date".to_string(),
+                label:        "Created".to_string(),
+                description:  "Creation date.".to_string(),
+                content_type: "date:%m/%d/%Y".to_string(),
+                min:          "2013-01-24".to_string(),
+                max:          "2013-12-31".to_string(),
+                cardinality:  100,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     "01/24/2013 [5]".to_string(),
+            },
+            // datetime with an inferred format (contains colons) over an RFC3339 min/max.
+            dictionary::DictionaryEntry {
+                name:         "ts".to_string(),
+                r#type:       "DateTime".to_string(),
+                label:        "Timestamp".to_string(),
+                description:  "Event time.".to_string(),
+                content_type: "datetime:%m/%d/%Y %I:%M:%S %p".to_string(),
+                min:          "2013-01-24T00:00:00+00:00".to_string(),
+                max:          "2013-01-24T13:30:00+00:00".to_string(),
+                cardinality:  100,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     String::new(),
+            },
+            // bare `date` token (no inferred fmt) — Min/Max stay as-is.
+            dictionary::DictionaryEntry {
+                name:         "plain".to_string(),
+                r#type:       "Date".to_string(),
+                label:        "Plain".to_string(),
+                description:  "No inferred format.".to_string(),
+                content_type: "date".to_string(),
+                min:          "2013-01-24".to_string(),
+                max:          "2013-12-31".to_string(),
+                cardinality:  100,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     String::new(),
+            },
+            // non-date content type — Min/Max untouched even though numeric.
+            dictionary::DictionaryEntry {
+                name:         "amount".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "Amount".to_string(),
+                description:  "A number.".to_string(),
+                content_type: "category".to_string(),
+                min:          "1".to_string(),
+                max:          "1000".to_string(),
+                cardinality:  100,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     String::new(),
+            },
+        ];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let addl_col_names = formatters::extract_ordered_addl_cols(&entries);
+        let rendered =
+            render_dictionary_md_body(&args, &entries, &addl_col_names, model, base_url, &shared)
+                .unwrap();
+
+        // date column: %Y-%m-%d Min/Max reformatted to %m/%d/%Y
+        assert!(
+            rendered.contains("| date:%m/%d/%Y | 01/24/2013 | 12/31/2013 |"),
+            "date Min/Max not reformatted to inferred format:\n{rendered}"
+        );
+        // datetime column: RFC3339 Min/Max reformatted to the inferred datetime format
+        assert!(
+            rendered.contains(
+                "| datetime:%m/%d/%Y %I:%M:%S %p | 01/24/2013 12:00:00 AM | 01/24/2013 01:30:00 \
+                 PM |"
+            ),
+            "datetime Min/Max not reformatted to inferred format:\n{rendered}"
+        );
+        // bare date token: Min/Max unchanged
+        assert!(
+            rendered.contains("| date | 2013-01-24 | 2013-12-31 |"),
+            "bare date Min/Max should be unchanged:\n{rendered}"
+        );
+        // non-date content type: Min/Max unchanged
+        assert!(
+            rendered.contains("| category | 1 | 1000 |"),
+            "non-date Min/Max should be unchanged:\n{rendered}"
         );
     }
 

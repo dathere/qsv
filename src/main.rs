@@ -66,6 +66,7 @@ mod index;
 mod lookup;
 #[cfg(feature = "mcp")]
 mod mcp_skills_gen;
+mod minijinja_filters;
 mod odhtcache;
 mod select;
 mod util;

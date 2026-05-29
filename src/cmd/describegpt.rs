@@ -1360,6 +1360,7 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
     static ENV: LazyLock<Environment<'static>> = LazyLock::new(|| {
         let mut env = Environment::new();
         minijinja_contrib::add_to_environment(&mut env);
+        crate::minijinja_filters::register(&mut env);
         // Preserve trailing newlines so default templates byte-match the legacy
         // `format!()` output.
         env.set_keep_trailing_newline(true);
@@ -2027,6 +2028,7 @@ fn get_prompt(
 
     // add all the Mini Jinja contrib filters to the environment
     minijinja_contrib::add_to_environment(&mut env);
+    crate::minijinja_filters::register(&mut env);
 
     // Build context with all variables needed for template rendering
     let json_add = match get_output_format(args)? {

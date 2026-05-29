@@ -1343,3 +1343,197 @@ fn template_globals_json_invalid() {
     let got: String = wrk.output_stderr(&mut cmd);
     assert!(got.contains("Failed to parse globals JSON file"));
 }
+
+// ---------------------------------------------------------------------------
+// shared minijinja_filters (regex, floor/ceil, datefmt, padding, slugify,
+// blake3, fromjson, coalesce)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn template_regex_replace() {
+    let wrk = Workdir::new("template_regex_replace");
+    wrk.create_from_string("data.csv", "phone\n(212) 555-0100\n800.555.0199\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ phone|regex_replace(\"[^0-9]\", \"\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2125550100\n8005550199");
+}
+
+#[test]
+fn template_regex_replace_captures() {
+    let wrk = Workdir::new("template_regex_replace_captures");
+    wrk.create_from_string("data.csv", "zip\n2125550100\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ zip|regex_replace(\"([0-9]{3})([0-9]{4})$\", \"${1}-${2}\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "212555-0100");
+}
+
+#[test]
+fn template_regex_match_and_find() {
+    let wrk = Workdir::new("template_regex_match_and_find");
+    wrk.create_from_string("data.csv", "id\nABC123\nxx\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg(
+            "{% if id|regex_match(\"^[A-Z]{3}[0-9]+$\") %}OK {{ id|regex_find(\"[0-9]+\") }}{% \
+             else %}NO{% endif %}\n\n",
+        )
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "OK 123\nNO");
+}
+
+#[test]
+fn template_floor_ceil() {
+    let wrk = Workdir::new("template_floor_ceil");
+    wrk.create_from_string("data.csv", "v\n42.7\n42.1\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "42/43\n42/43");
+}
+
+#[test]
+fn template_datefmt() {
+    let wrk = Workdir::new("template_datefmt");
+    wrk.create_from_string("data.csv", "d\n3/4/2022\n\"March 4, 2022\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ d|datefmt(\"%Y-%m-%d\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2022-03-04\n2022-03-04");
+}
+
+#[test]
+fn template_datefmt_prefer_dmy() {
+    let wrk = Workdir::new("template_datefmt_prefer_dmy");
+    wrk.create_from_string("data.csv", "d\n3/4/2022\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ d|datefmt(\"%Y-%m-%d\", true) }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "2022-04-03");
+}
+
+#[test]
+fn template_padding() {
+    let wrk = Workdir::new("template_padding");
+    wrk.create_from_string("data.csv", "v\n42\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("[{{ v|zfill(5) }}][{{ v|lpad(5) }}][{{ v|rpad(5, \"*\") }}]\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "[00042][   42][42***]");
+}
+
+#[test]
+fn template_slugify() {
+    let wrk = Workdir::new("template_slugify");
+    wrk.create_from_string("data.csv", "title\n\"NYC 311 Data!\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ title|slugify }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "nyc-311-data");
+}
+
+#[test]
+fn template_blake3() {
+    let wrk = Workdir::new("template_blake3");
+    wrk.create_from_string("data.csv", "v\nhello\nhello\nworld\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|blake3 }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3);
+    // deterministic + 64-char hex digest
+    assert_eq!(lines[0], lines[1]);
+    assert_ne!(lines[0], lines[2]);
+    assert_eq!(lines[0].len(), 64);
+    assert!(lines[0].chars().all(|c| c.is_ascii_hexdigit()));
+}
+
+#[test]
+fn template_fromjson() {
+    let wrk = Workdir::new("template_fromjson");
+    wrk.create_from_string("data.csv", "j\n\"{\"\"a\"\":1,\"\"b\"\":2}\"\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ (j|fromjson).a }}-{{ (j|parse_json).b }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "1-2");
+}
+
+#[test]
+fn template_coalesce() {
+    let wrk = Workdir::new("template_coalesce");
+    wrk.create_from_string("data.csv", "a,b\n,x\n,\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ coalesce(a, b, \"fallback\") }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    assert_eq!(got, "x\nfallback");
+}
+
+#[test]
+fn template_regex_invalid_pattern() {
+    let wrk = Workdir::new("template_regex_invalid_pattern");
+    wrk.create_from_string("data.csv", "v\nfoo\n");
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|regex_match(\"[\") }}\n\n")
+        .arg("data.csv");
+
+    // bad pattern surfaces as a per-row rendering error, not a crash
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains("RENDERING ERROR"), "got: {got}");
+}

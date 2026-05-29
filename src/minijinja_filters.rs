@@ -111,28 +111,36 @@ fn regex_find(value: &Value, pattern: &str) -> Result<String, Error> {
 
 // --- numeric -------------------------------------------------------------
 
-// Coerce a value (string or number) to f64. Mirrors the string-friendly
-// behavior of `format_float`/`round_banker` in template.rs so users don't have
-// to `|float` first. Only non-numeric input errors; NaN/infinity parse through.
-fn as_f64(value: &Value) -> Result<f64, Error> {
+// floor/ceil of an integer is the integer itself, so integer-string inputs pass
+// through unchanged. This keeps large integers (e.g. IDs beyond f64's 2^53 exact
+// range, up to i64) exact instead of being rounded by an f64 round-trip. Only
+// genuinely fractional inputs go through f64 — those return a float (e.g.
+// `42.7|floor` -> `42.0`); pipe `|int` when an integer is wanted. String
+// coercion mirrors `format_float`/`round_banker` so users needn't `|float`.
+// Returns a Value (integer for integer inputs, float for fractional ones); no
+// i64 cast, so there are no saturation/range pitfalls. NaN/infinity parse
+// through the f64 path transparently; only non-numeric input errors.
+fn round_value(value: &Value, op: fn(f64) -> f64) -> Result<Value, Error> {
     let s = value.to_string();
-    s.trim().parse::<f64>().map_err(|_| {
+    let trimmed = s.trim();
+    if let Ok(i) = trimmed.parse::<i64>() {
+        return Ok(Value::from(i));
+    }
+    let f = trimmed.parse::<f64>().map_err(|_| {
         Error::new(
             ErrorKind::InvalidOperation,
             format!("expected a number, got `{s}`"),
         )
-    })
+    })?;
+    Ok(Value::from(op(f)))
 }
 
-// floor/ceil return a float (e.g. `42.7|floor` -> `42.0`). Keeping the result
-// in f64 avoids the precision/range pitfalls of an i64 cast for huge values;
-// pipe `|int` when an integer is wanted (`{{ v|floor|int }}`).
-fn floor(value: &Value) -> Result<f64, Error> {
-    Ok(as_f64(value)?.floor())
+fn floor(value: &Value) -> Result<Value, Error> {
+    round_value(value, f64::floor)
 }
 
-fn ceil(value: &Value) -> Result<f64, Error> {
-    Ok(as_f64(value)?.ceil())
+fn ceil(value: &Value) -> Result<Value, Error> {
+    round_value(value, f64::ceil)
 }
 
 // --- dates ---------------------------------------------------------------

@@ -1429,6 +1429,33 @@ fn template_floor_ceil_int() {
 }
 
 #[test]
+fn template_floor_ceil_large_integers() {
+    let wrk = Workdir::new("template_floor_ceil_large_integers");
+    // Integer inputs must pass through EXACTLY, including values beyond f64's
+    // 2^53 exact range (9007199254740993 = 2^53+1) and i64::MAX. An f64
+    // round-trip would corrupt these (i64::MAX rounds to 2^63).
+    wrk.create_from_string(
+        "data.csv",
+        "v\n9007199254740993\n9223372036854775807\n-9223372036854775808\n",
+    );
+
+    let mut cmd = wrk.command("template");
+    cmd.arg("--template")
+        .arg("{{ v|floor }}/{{ v|ceil }}\n\n")
+        .arg("data.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+    wrk.assert_success(&mut cmd);
+    let expected = [
+        "9007199254740993/9007199254740993",
+        "9223372036854775807/9223372036854775807",
+        "-9223372036854775808/-9223372036854775808",
+    ]
+    .join("\n");
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn template_floor_non_numeric() {
     let wrk = Workdir::new("template_floor_non_numeric");
     wrk.create_from_string("data.csv", "v\nabc\n");

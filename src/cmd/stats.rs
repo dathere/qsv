@@ -2879,52 +2879,11 @@ fn init_date_inference(
     Ok(())
 }
 
-/// Minimal struct for parsing sniff JSON output when resolving "sniff" dates-whitelist
-#[derive(Deserialize)]
-struct SniffResult {
-    fields: Vec<String>,
-    types:  Vec<String>,
-}
-
-/// Resolves the "sniff" special value in dates-whitelist by running `qsv sniff --json`
-/// and extracting column names that have Date or DateTime types.
+/// Resolves the "sniff" special value in dates-whitelist by sniffing the file
+/// in-process (via `sniff::date_columns`) and extracting the column names that have
+/// Date or DateTime types.
 fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
-    let qsv_bin = util::current_exe()?;
-
-    let output = std::process::Command::new(qsv_bin)
-        .args(["sniff", "--json", "--stats-types"])
-        .arg(input_path)
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return fail_clierror!("Failed to sniff file for date columns: {}", stderr.trim());
-    }
-
-    // Parse JSON output (platform-specific)
-    // simd_json mutates its input buffer; serde_json doesn't care.
-    #[cfg_attr(target_endian = "big", allow(unused_mut))]
-    let mut json_bytes = output.stdout;
-    let sniff_result: SniffResult = cfg_select! {
-        target_endian = "little" => simd_json::from_slice(&mut json_bytes)
-            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
-        _ => serde_json::from_slice(&json_bytes)
-            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
-    };
-
-    // Extract column names where type is Date or DateTime
-    let date_columns: Vec<&str> = sniff_result
-        .fields
-        .iter()
-        .zip(sniff_result.types.iter())
-        .filter_map(|(field, typ)| {
-            if typ == "Date" || typ == "DateTime" {
-                Some(field.as_str())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let date_columns = crate::cmd::sniff::date_columns(input_path)?;
 
     if date_columns.is_empty() {
         log::info!("sniff: no Date/DateTime columns found");

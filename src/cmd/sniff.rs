@@ -1190,3 +1190,80 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
         Ok(())
     }
 }
+
+/// Sniffs a local file in-process and returns the names of columns detected as
+/// `Date` or `DateTime`, in field order.
+///
+/// Used by `stats --infer-dates` to resolve the "sniff" dates-whitelist WITHOUT
+/// forking a `qsv sniff` subprocess (which would reload the qsv binary, re-sample
+/// the input, and JSON round-trip the result). It reuses `get_file_to_sniff`
+/// (so snappy decompression, symlink/canonicalization and delimiter handling stay
+/// identical to the command) and mirrors the `qsv sniff --stats-types <path>`
+/// defaults the subprocess used: sample the first 1000 rows (the `--sample`
+/// default), auto-detect the delimiter, and honor the file's dmy/mdy preference.
+pub(crate) fn date_columns(input_path: &std::path::Path) -> CliResult<Vec<String>> {
+    let args = Args {
+        arg_input:           Some(input_path.to_string_lossy().into_owned()),
+        flag_sample:         1000.0,
+        flag_prefer_dmy:     false,
+        flag_json:           true,
+        flag_save_urlsample: None,
+        flag_pretty_json:    false,
+        flag_delimiter:      None,
+        flag_quote:          None,
+        flag_progressbar:    false,
+        flag_timeout:        30,
+        flag_user_agent:     None,
+        flag_stats_types:    true,
+        flag_no_infer:       false,
+        flag_just_mime:      false,
+        flag_quick:          false,
+        flag_harvest_mode:   false,
+    };
+
+    // get_file_to_sniff is async only for the remote-URL branch; for a local path
+    // it resolves on the first poll, so block_on drives it without a tokio runtime.
+    let tmpdir = tempfile::tempdir()?;
+    let sfile_info = block_on(get_file_to_sniff(&args, &tmpdir))?;
+    let tempfile_to_delete = sfile_info.file_to_sniff.clone();
+
+    let conf = Config::new(Some(sfile_info.file_to_sniff.clone()).as_ref())
+        .flexible(true)
+        .delimiter(args.flag_delimiter);
+    let rdr = conf.clone().skip_format_check(true).reader_file()?;
+
+    let dt_preference = if conf.get_dmy_preference() {
+        DatePreference::DmyFormat
+    } else {
+        DatePreference::MdyFormat
+    };
+
+    let sniff_results = Sniffer::new()
+        .sample_size(SampleSize::Records(1000))
+        .date_preference(dt_preference)
+        .sniff_reader(rdr.into_inner());
+
+    let date_cols = match sniff_results {
+        Ok(metadata) => metadata
+            .fields
+            .iter()
+            .zip(metadata.types.iter())
+            .filter_map(|(field, typ)| {
+                let typ = typ.to_string();
+                if typ == "Date" || typ == "DateTime" {
+                    Some(field.to_string())
+                } else {
+                    None
+                }
+            })
+            .collect(),
+        Err(e) => {
+            cleanup_tempfile(sfile_info.tempfile_flag, tempfile_to_delete)?;
+            return fail_clierror!("Failed to sniff file for date columns: {e}");
+        },
+    };
+
+    cleanup_tempfile(sfile_info.tempfile_flag, tempfile_to_delete)?;
+
+    Ok(date_cols)
+}

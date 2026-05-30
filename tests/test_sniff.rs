@@ -740,9 +740,16 @@ fn sniff_symlink() {
 
 // Build a wide CSV (rows ~1KB each) of `n` data rows with columns id,code,pad.
 // `code` is an unsigned integer for all but the last `flip_last` rows, which make
-// it Text. The rows are deliberately wide so that the default first-N (≈ n*1KB
-// bytes) contiguous sample stops well before the late rows - only a distributed
-// (indexed) sample reaches them.
+// it Text.
+//
+// The rows are deliberately wide because csv_nose's `SampleSize::Records(k)` does
+// not read exactly k rows - it reads ≈ k KiB of bytes (k * 1024) and parses
+// whatever rows fit. So with the default `--sample 1000`, the contiguous sample is
+// ≈ 1 MiB. With ~1KB rows that is ~1000 rows, stopping well before the late rows;
+// with narrow rows it would instead slurp the whole (small) file and the
+// non-indexed control would also see the late values. The width is what forces the
+// contiguous sample to miss the tail, so only a distributed (indexed) sample
+// reaches it.
 fn late_type_rows(n: usize, flip_last: usize) -> Vec<Vec<String>> {
     let pad = "x".repeat(1000);
     let mut rows = vec![svec!["id", "code", "pad"]];
@@ -846,6 +853,29 @@ fn sniff_indexed_sample_budget() {
         "got: {got}"
     );
     assert!(got.contains(r#""sampled_records":100"#));
+    assert!(got.contains(r#""num_records":2000"#));
+}
+
+// A --sample budget smaller than the ~25 fixed positional rows must NOT be honored
+// by distributing (which would over-report sampled_records); it falls back to the
+// contiguous first-N sample so sampled_records stays within the requested budget.
+#[test]
+fn sniff_indexed_tiny_budget() {
+    let wrk = Workdir::new("sniff_indexed_tiny_budget");
+    wrk.create_indexed("late.csv", late_type_rows(2000, 5));
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("--sample").arg("10").arg("late.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // budget (10) < 25 fixed rows -> contiguous fallback: sampled_records == budget,
+    // and the late tail flip is (correctly) not seen with so small a sample
+    assert!(got.contains(r#""sampled_records":10"#), "got: {got}");
+    assert!(
+        got.contains(r#""types":["Unsigned","Unsigned","Text"]"#),
+        "got: {got}"
+    );
     assert!(got.contains(r#""num_records":2000"#));
 }
 

@@ -1259,10 +1259,16 @@ fn distributed_types(
         };
 
         let total = idx.count();
-        // Small file: the existing contiguous sample already reads (nearly)
-        // everything, so distributed sampling buys nothing. 25 == the count of fixed
-        // positional rows.
-        if total <= budget as u64 || total <= 25 {
+        // FIXED_ROWS is the max number of fixed positional rows we always include
+        // (first 5 + last 5 + 5 each around Q1/Q2/Q3).
+        const FIXED_ROWS: u64 = 25;
+        // Fall back to the contiguous sample when distributed sampling buys nothing
+        // or would violate the --sample budget:
+        //  - total <= budget: the contiguous sample already reads ~everything;
+        //  - total <= FIXED_ROWS: too small to distribute meaningfully;
+        //  - budget < FIXED_ROWS: the fixed windows alone (~25 rows) would exceed the requested
+        //    budget, over-reporting sampled_records.
+        if total <= budget as u64 || total <= FIXED_ROWS || (budget as u64) < FIXED_ROWS {
             return Ok(None);
         }
         let last = total - 1;

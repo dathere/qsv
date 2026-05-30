@@ -28,9 +28,10 @@ See <https://opensource.googleblog.com/2025/11/announcing-magika-10-now-faster-s
 When the `magika` feature is not enabled in a build (e.g., MUSL builds, qsvlite, qsvdp), it falls back
 to the file-format library which provides basic MIME type detection.
 
-NOTE: This command "sniffs" a CSV's schema by sampling the first n rows (default: 1000)
-of a file. Its inferences are sometimes wrong if the the file is too small to infer a pattern
-or if the CSV has unusual formatting - with atypical delimiters, quotes, etc.
+> [!NOTE]
+> This command "sniffs" a CSV's schema by sampling the first n rows (default: 1000)
+> of a file. Its inferences are sometimes wrong if the the file is too small to infer a pattern
+> or if the CSV has unusual formatting - with atypical delimiters, quotes, etc.
 
 In such cases, selectively use the --sample, --delimiter and --quote options to improve
 the accuracy of the sniffed schema.

@@ -57,7 +57,8 @@ You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environme
 or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
 CPUs)), or by setting the --jobs option.
 
-NOTE: "Complete" Frequency Tables:  
+> [!NOTE]
+> "Complete" Frequency Tables:
 
 By default, ID columns will have an "<ALL UNIQUE>" value with count equal to
 rowcount and percentage set to 100 with a rank of 0. This is done by using the

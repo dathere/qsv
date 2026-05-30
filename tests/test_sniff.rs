@@ -737,3 +737,144 @@ fn sniff_symlink() {
     assert!(got.contains("Num Fields: 3"));
     assert!(got.contains("Num Records: 2"));
 }
+
+// Build a wide CSV (rows ~1KB each) of `n` data rows with columns id,code,pad.
+// `code` is an unsigned integer for all but the last `flip_last` rows, which make
+// it Text. The rows are deliberately wide so that the default first-N (≈ n*1KB
+// bytes) contiguous sample stops well before the late rows - only a distributed
+// (indexed) sample reaches them.
+fn late_type_rows(n: usize, flip_last: usize) -> Vec<Vec<String>> {
+    let pad = "x".repeat(1000);
+    let mut rows = vec![svec!["id", "code", "pad"]];
+    for i in 0..n {
+        let code = if i >= n - flip_last {
+            format!("X{i}")
+        } else {
+            i.to_string()
+        };
+        rows.push(vec![i.to_string(), code, pad.clone()]);
+    }
+    rows
+}
+
+// With a CSV index, sniff draws a distributed sample (incl. the last 5 rows), so a
+// column that only turns Text near the end of the file is correctly inferred.
+#[test]
+fn sniff_indexed_distributed_late_type() {
+    let wrk = Workdir::new("sniff_indexed_distributed_late_type");
+    wrk.create_indexed("late.csv", late_type_rows(2000, 5));
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("late.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // `code` is detected as Text because the distributed sample includes the tail
+    assert!(
+        got.contains(r#""types":["Unsigned","Text","Text"]"#),
+        "got: {got}"
+    );
+    assert!(got.contains(r#""num_records":2000"#));
+    assert!(got.contains(r#""estimated":false"#));
+    // the distributed sample fills the budget exactly to the --sample default
+    assert!(got.contains(r#""sampled_records":1000"#));
+}
+
+// Control: the same data WITHOUT an index. The first-N contiguous sample never
+// reaches the late rows, so `code` is mis-inferred as Unsigned - documenting the
+// improvement the index provides.
+#[test]
+fn sniff_nonindexed_misses_late_type() {
+    let wrk = Workdir::new("sniff_nonindexed_misses_late_type");
+    wrk.create("late.csv", late_type_rows(2000, 5));
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("late.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    assert!(
+        got.contains(r#""types":["Unsigned","Unsigned","Text"]"#),
+        "got: {got}"
+    );
+    assert!(got.contains(r#""num_records":2000"#));
+}
+
+// Distributed sampling must read & round-trip records using the DETECTED delimiter,
+// not the comma default - otherwise non-comma indexed files (here, tab-delimited)
+// would be parsed/serialized incorrectly in PASS 2.
+#[test]
+fn sniff_indexed_tab_delimited() {
+    let wrk = Workdir::new("sniff_indexed_tab_delimited");
+    wrk.create_with_delim("late.tsv", late_type_rows(2000, 5), b'\t');
+
+    // index the tab-delimited file
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("late.tsv");
+    wrk.run(&mut idx_cmd);
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("late.tsv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // tab delimiter detected, 3 fields parsed correctly, and `code` is Text because
+    // the distributed sample (read with the tab delimiter) includes the tail rows
+    assert!(got.contains(r#""delimiter_char":"\t""#), "got: {got}");
+    assert!(got.contains(r#""num_fields":3"#), "got: {got}");
+    assert!(
+        got.contains(r#""types":["Unsigned","Text","Text"]"#),
+        "got: {got}"
+    );
+    assert!(got.contains(r#""num_records":2000"#));
+}
+
+// A --sample budget smaller than the default still draws a distributed sample that
+// includes the tail rows when indexed.
+#[test]
+fn sniff_indexed_sample_budget() {
+    let wrk = Workdir::new("sniff_indexed_sample_budget");
+    wrk.create_indexed("late.csv", late_type_rows(2000, 5));
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("--sample").arg("100").arg("late.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    assert!(
+        got.contains(r#""types":["Unsigned","Text","Text"]"#),
+        "got: {got}"
+    );
+    assert!(got.contains(r#""sampled_records":100"#));
+    assert!(got.contains(r#""num_records":2000"#));
+}
+
+// Small indexed file: distributed sampling is skipped (no benefit), so the result
+// matches the plain contiguous sniff - no regression.
+#[test]
+fn sniff_indexed_small() {
+    let wrk = Workdir::new("sniff_indexed_small");
+    wrk.create_indexed(
+        "small.csv",
+        vec![
+            svec!["id", "code"],
+            svec!["1", "10"],
+            svec!["2", "20"],
+            svec!["3", "30"],
+            svec!["4", "40"],
+            svec!["5", "50"],
+        ],
+    );
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("small.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    assert!(
+        got.contains(r#""types":["Unsigned","Unsigned"]"#),
+        "got: {got}"
+    );
+    assert!(got.contains(r#""num_records":5"#));
+    assert!(got.contains(r#""sampled_records":5"#));
+}

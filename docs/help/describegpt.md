@@ -57,7 +57,8 @@ It was also tested with OpenAI, TogetherAI, OpenRouter and Google Gemini cloud p
 For Gemini, use the base URL "<https://generativelanguage.googleapis.com/v1beta/openai">.
 Local LLMs tested include Ollama, Jan and LM Studio.
 
-NOTE: LLMs are prone to inaccurate information being produced. Verify output results before using them.
+> [!NOTE]
+> LLMs are prone to inaccurate information being produced. Verify output results before using them.
 
 CACHING:  
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results

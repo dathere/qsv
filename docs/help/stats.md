@@ -13,12 +13,14 @@
 
 Compute summary statistics & infers data types for each column in a CSV.
 
-> IMPORTANT: `stats` is heavily optimized for speed. It ASSUMES the CSV is well-formed & UTF-8 encoded.
+> [!IMPORTANT]
+> `stats` is heavily optimized for speed. It ASSUMES the CSV is well-formed & UTF-8 encoded.
 > This allows it to employ numerous performance optimizations (skip repetitive UTF-8 validation, skip
 > bounds checks, cache results, etc.) that may result in undefined behavior if the CSV is not well-formed.
 > All these optimizations are GUARANTEED to work with well-formed CSVs.
 > If you encounter problems generating stats, use `qsv validate` FIRST to confirm the CSV is valid.
 
+> [!NOTE]
 > For MAXIMUM PERFORMANCE, create an index for the CSV first with 'qsv index' to enable multithreading,
 > or set --cache-threshold option or set the QSV_AUTOINDEX_SIZE environment variable to automatically
 > create an index when the file size is greater than the specified size (in bytes).

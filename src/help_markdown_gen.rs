@@ -1050,6 +1050,24 @@ fn maybe_append_colon_break(md: &mut String, trimmed: &str) {
     }
 }
 
+/// If a trimmed line begins with a `NOTE:`, `WARNING:`, or `IMPORTANT:` marker,
+/// return the corresponding GitHub Alert keyword and the remaining text after
+/// the marker (trimmed). Used to render these admonitions as GitHub Alerts:
+/// <https://docs.github.com/en/get-started/writing-on-github/getting-started-with-writing-and-formatting-on-github/basic-writing-and-formatting-syntax#alerts>
+fn match_alert_marker(trimmed: &str) -> Option<(&'static str, &str)> {
+    const MARKERS: [(&str, &str); 3] = [
+        ("NOTE:", "NOTE"),
+        ("WARNING:", "WARNING"),
+        ("IMPORTANT:", "IMPORTANT"),
+    ];
+    for (marker, kind) in MARKERS {
+        if let Some(rest) = trimmed.strip_prefix(marker) {
+            return Some((kind, rest.trim()));
+        }
+    }
+    None
+}
+
 /// Format description lines into markdown
 fn format_description(lines: &[String]) -> String {
     let mut md = String::new();
@@ -1057,6 +1075,10 @@ fn format_description(lines: &[String]) -> String {
     let mut in_fenced_block = false;
     let mut prev_empty = false;
     let mut prev_was_heading = false;
+    // Whether we are currently inside a GitHub Alert blockquote (started by a
+    // NOTE:/WARNING:/IMPORTANT: marker). Continuation lines are emitted as
+    // blockquote lines until the next blank line closes the alert.
+    let mut in_alert = false;
 
     for (i, line) in lines.iter().enumerate() {
         let trimmed = line.trim();
@@ -1068,6 +1090,24 @@ fn format_description(lines: &[String]) -> String {
             &mut in_code_block,
             &mut in_fenced_block,
         ) {
+            prev_empty = false;
+            continue;
+        }
+
+        // Continuation of a GitHub Alert: keep absorbing non-empty lines as
+        // blockquote lines; a blank line ends the alert. This takes precedence
+        // over heading/code/list detection so the whole admonition stays in one
+        // blockquote.
+        if in_alert {
+            if trimmed.is_empty() {
+                in_alert = false;
+                md.push('\n');
+                prev_empty = true;
+                continue;
+            }
+            md.push_str("> ");
+            md.push_str(&linkify_bare_urls(trimmed));
+            md.push('\n');
             prev_empty = false;
             continue;
         }
@@ -1162,6 +1202,25 @@ fn format_description(lines: &[String]) -> String {
                 md.push('\n');
                 prev_empty = true;
             }
+            continue;
+        }
+
+        // GitHub Alert markers (NOTE:/WARNING:/IMPORTANT:) at the start of a
+        // line are rendered as GitHub Alerts. A blank line must precede the
+        // blockquote for it to render, so emit one if the previous output isn't
+        // already blank.
+        if let Some((kind, rest)) = match_alert_marker(trimmed) {
+            if !md.is_empty() && !prev_empty {
+                md.push('\n');
+            }
+            let _ = writeln!(md, "> [!{kind}]");
+            if !rest.is_empty() {
+                md.push_str("> ");
+                md.push_str(&linkify_bare_urls(rest));
+                md.push('\n');
+            }
+            in_alert = true;
+            prev_empty = false;
             continue;
         }
 
@@ -2511,6 +2570,50 @@ mod tests {
         assert!(
             md.contains("> First comment\n> Second comment\n\n"),
             "Consecutive comments should be in one blockquote, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_description_note_marker_becomes_github_alert() {
+        // A NOTE: marker at the start of a line becomes a GitHub Alert, with
+        // continuation lines absorbed into the blockquote until a blank line.
+        let input = lines(&[
+            "Find the difference between two CSVs.",
+            "",
+            "NOTE: diff does not support stdin.",
+            "      Keys must be unique within each CSV.",
+            "",
+            "Following prose.",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            md.contains(
+                "> [!NOTE]\n> diff does not support stdin.\n> Keys must be unique within each \
+                 CSV.\n\nFollowing prose."
+            ),
+            "NOTE: marker should become a GitHub Alert, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_description_marker_only_line_alert() {
+        // A bare `IMPORTANT:` line (no trailing text) still opens the alert and
+        // absorbs the following lines.
+        let input = lines(&["IMPORTANT:", "Column order is preserved.", "", "After."]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("> [!IMPORTANT]\n> Column order is preserved.\n\nAfter."),
+            "bare IMPORTANT: line should open an alert, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_format_description_warning_marker_alert() {
+        let input = lines(&["WARNING: This command can be dangerous.", "", "More text."]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("> [!WARNING]\n> This command can be dangerous.\n\nMore text."),
+            "WARNING: marker should become a GitHub Alert, got:\n{md}"
         );
     }
 

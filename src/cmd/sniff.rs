@@ -69,13 +69,20 @@ sniff arguments:
                              
 sniff options:
     --sample <size>          First n rows to sample to sniff out the metadata.
-                             When sample size is between 0 and 1 exclusive, 
+                             When sample size is between 0 and 1 exclusive,
                              it is treated as a percentage of the CSV to sample
                              (e.g. 0.20 is 20 percent).
                              When it is zero, the entire file will be sampled.
                              When the input is a URL, the sample size dictates
                              how many lines to sample without having to
                              download the entire file. Ignored when --no-infer is enabled.
+                             When sniffing a local file that has a CSV index, the
+                             sample budget is instead drawn as a DISTRIBUTED sample
+                             (the first & last 5 rows, 5 rows each around the 25th,
+                             50th & 75th percentiles, and the rest random across the
+                             whole file) rather than just the first n rows. This
+                             improves type/date inference for values that only appear
+                             late in the file. Run `qsv index` to create an index.
                              [default: 1000]
     --prefer-dmy             Prefer to parse dates in dmy format. Otherwise, use mdy format.
                              Ignored when --no-infer is enabled.
@@ -122,6 +129,7 @@ Common options:
 use std::sync::{LazyLock, Mutex};
 use std::{
     cmp::min,
+    collections::BTreeSet,
     fmt, fs,
     io::{Seek, SeekFrom, Write, copy},
     path::PathBuf,
@@ -140,6 +148,7 @@ use indicatif::{HumanBytes, ProgressBar, ProgressDrawTarget, ProgressStyle};
 #[cfg(feature = "magika")]
 use magika::Session;
 use qsv_tabwriter::TabWriter;
+use rand::{RngExt, rngs::StdRng};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tempfile::NamedTempFile;
@@ -1089,8 +1098,28 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect();
-            let sniffedtypes = metadata
-                .types
+
+            // For a local file with a fresh CSV index, infer types from a
+            // distributed sample (first/last/quartile windows + random rows up to
+            // the --sample budget) instead of just the first N rows, catching
+            // types/dates that only appear late in the file. Falls back to the
+            // contiguous PASS 1 types when not indexed or on any issue.
+            let mut effective_sampled_records = sampled_records;
+            let types_source = if sfile_info.downloaded_records == 0
+                && !sample_all
+                && let Some((dist_types, dist_count)) = distributed_types(
+                    &conf,
+                    &metadata,
+                    sample_size as usize,
+                    dt_preference,
+                    &tmpdir,
+                )? {
+                effective_sampled_records = dist_count;
+                dist_types
+            } else {
+                metadata.types.clone()
+            };
+            let sniffedtypes: Vec<String> = types_source
                 .iter()
                 .map(std::string::ToString::to_string)
                 .collect();
@@ -1127,10 +1156,10 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 }),
                 retrieved_size: sfile_info.retrieved_size,
                 file_size: sfile_info.file_size,
-                sampled_records: if sampled_records > num_records {
+                sampled_records: if effective_sampled_records > num_records {
                     num_records
                 } else {
-                    sampled_records
+                    effective_sampled_records
                 },
                 estimated,
                 num_records,
@@ -1191,6 +1220,149 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
     }
 }
 
+/// When `conf`'s input has a fresh CSV index, draw a *distributed* sample of rows
+/// and infer column types from it, instead of relying on the first-N contiguous
+/// sample. The distributed sample is the union of:
+///   - the first 5 rows
+///   - the last 5 rows
+///   - 5 rows around the median (Q2)
+///   - 5 rows around Q1 (25th percentile)
+///   - 5 rows around Q3 (75th percentile)
+///   - random rows drawn until the `budget` (the `--sample` size) is reached
+///
+/// This catches types/dates that only reveal themselves late in a file, which a
+/// first-N contiguous sample misses (e.g. a code column that is all-numeric for
+/// the first 1000 rows but alphanumeric near the end, or a date column whose
+/// values only appear in the tail).
+///
+/// `dialect_meta` is the authoritative dialect from the contiguous PASS 1 sniff.
+/// We FORCE its delimiter and quote on this PASS 2 sniff so that dialect, header
+/// and preamble detection are NOT re-run on the (non-contiguous) distributed
+/// sample - csv_nose's detection requires contiguous-from-start records and would
+/// otherwise misfire. We only consume the inferred `types` from this pass.
+///
+/// Returns `Ok(Some((types, sampled_count)))` on success, or `Ok(None)` when the
+/// input is not indexed, has preamble rows, is small enough that the contiguous
+/// sample already covers it, or PASS 2 fails (graceful fallback - the optimization
+/// must never fail the whole sniff). The caller keeps its PASS 1 types on `None`.
+fn distributed_types(
+    conf: &Config,
+    dialect_meta: &csv_nose::Metadata,
+    budget: usize,
+    dt_preference: DatePreference,
+    tmpdir: &tempfile::TempDir,
+) -> CliResult<Option<(Vec<csv_nose::Type>, usize)>> {
+    // The index addresses raw file records and cannot account for a preamble/header
+    // offset, so for files with preamble rows we fall back to the contiguous sample.
+    if dialect_meta.dialect.header.num_preamble_rows > 0 {
+        return Ok(None);
+    }
+
+    let has_header = dialect_meta.dialect.header.has_header_row;
+
+    // Build an index handle whose header setting matches the detected dialect so
+    // count()/seek() row indices line up with our 0-based data-row math, and whose
+    // delimiter is the one PASS 1 detected so records are split (and round-tripped
+    // to the PASS 2 temp file) correctly for non-comma dialects (TSV, SSV, etc.).
+    let idx_conf = conf
+        .clone()
+        .no_headers(!has_header)
+        .delimiter(Some(Delimiter(dialect_meta.dialect.delimiter)));
+    let Some(mut idx) = idx_conf.indexed()? else {
+        return Ok(None);
+    };
+
+    let total = idx.count();
+    // Small file: the existing contiguous sample already reads (nearly) everything,
+    // so distributed sampling buys nothing. 25 == the count of fixed positional rows.
+    if total <= budget as u64 || total <= 25 {
+        return Ok(None);
+    }
+    let last = total - 1;
+
+    // --- select distributed row indices (0-based over data rows) ---
+    // BTreeSet keeps indices sorted (so seeks move forward, minimizing I/O) and
+    // dedups overlapping windows automatically.
+    let mut selected: BTreeSet<u64> = BTreeSet::new();
+
+    // first 5 and last 5
+    for i in 0..5 {
+        selected.insert(i);
+    }
+    for i in total - 5..total {
+        selected.insert(i);
+    }
+    // +-2 windows around Q1, Q2 (median) and Q3
+    for anchor in [total / 4, total / 2, 3 * total / 4] {
+        let lo = anchor.saturating_sub(2);
+        let hi = (anchor + 2).min(last);
+        for i in lo..=hi {
+            selected.insert(i);
+        }
+    }
+
+    // fill the remaining budget with random rows (total > budget guaranteed above,
+    // so rejection sampling always terminates)
+    let random_needed = budget.saturating_sub(selected.len());
+    if random_needed > 0 {
+        let mut rng: StdRng = rand::make_rng();
+        let target = selected.len() + random_needed;
+        while selected.len() < target {
+            selected.insert(rng.random_range(0..total));
+        }
+    }
+    let sampled_count = selected.len();
+
+    // --- PASS 2: write the distributed rows to a temp CSV, then sniff with the
+    // PASS 1 dialect forced. The temp file lives in `tmpdir`, so it is removed when
+    // the caller's TempDir drops. ---
+    let dist_path = tmpdir.path().join("qsv_sniff_distributed.csv");
+    let dist_path_str = dist_path.to_string_lossy().into_owned();
+
+    let mut wtr = Config::new(Some(dist_path_str.clone()).as_ref())
+        .no_headers(true)
+        .flexible(true)
+        .delimiter(Some(Delimiter(dialect_meta.dialect.delimiter)))
+        .writer()?;
+
+    if has_header {
+        // clone the header out before the seek/read loop, as both borrow idx mutably
+        let header = idx.byte_headers()?.clone();
+        wtr.write_byte_record(&header)?;
+    }
+
+    for &i in &selected {
+        idx.seek(i)?;
+        let Some(rec) = idx.byte_records().next() else {
+            // the index claimed a record we cannot read; degrade gracefully
+            return Ok(None);
+        };
+        wtr.write_byte_record(&rec?)?;
+    }
+    wtr.flush()?;
+    drop(wtr);
+
+    let dist_rdr = Config::new(Some(dist_path_str).as_ref())
+        .skip_format_check(true)
+        .flexible(true)
+        .reader_file()?;
+
+    let pass2 = Sniffer::new()
+        .sample_size(SampleSize::All)
+        .date_preference(dt_preference)
+        .delimiter(dialect_meta.dialect.delimiter)
+        .quote(dialect_meta.dialect.quote)
+        .sniff_reader(dist_rdr.into_inner());
+
+    match pass2 {
+        Ok(meta) => Ok(Some((meta.types, sampled_count))),
+        Err(e) => {
+            log::warn!("distributed-sample type inference failed, using contiguous sample: {e}");
+            Ok(None)
+        },
+    }
+}
+
 /// Sniffs a local file in-process and returns the names of columns detected as
 /// `Date` or `DateTime`, in field order.
 ///
@@ -1244,19 +1416,28 @@ pub(crate) fn date_columns(input_path: &std::path::Path) -> CliResult<Vec<String
         .sniff_reader(rdr.into_inner());
 
     let date_cols = match sniff_results {
-        Ok(metadata) => metadata
-            .fields
-            .iter()
-            .zip(metadata.types.iter())
-            .filter_map(|(field, typ)| {
-                let typ = typ.to_string();
-                if typ == "Date" || typ == "DateTime" {
-                    Some(field.to_string())
-                } else {
-                    None
-                }
-            })
-            .collect(),
+        Ok(metadata) => {
+            // When the input is indexed, infer types from a distributed sample
+            // (first/last/quartile windows + random) so date columns whose values
+            // only appear late in the file are still detected. Falls back to the
+            // contiguous PASS 1 types when not indexed or on any issue.
+            let types = match distributed_types(&conf, &metadata, 1000, dt_preference, &tmpdir) {
+                Ok(Some((dist_types, _))) => dist_types,
+                _ => metadata.types.clone(),
+            };
+            metadata
+                .fields
+                .iter()
+                .zip(types.iter())
+                .filter_map(|(field, typ)| {
+                    if matches!(*typ, csv_nose::Type::Date | csv_nose::Type::DateTime) {
+                        Some(field.to_string())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        },
         Err(e) => {
             cleanup_tempfile(sfile_info.tempfile_flag, tempfile_to_delete)?;
             return fail_clierror!("Failed to sniff file for date columns: {e}");

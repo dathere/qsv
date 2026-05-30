@@ -52,8 +52,8 @@ pub(super) fn format_dictionary_json(
                 "type": e.r#type,
                 "label": e.label,
                 "description": e.description,
-                "min": if e.min.is_empty() { Value::Null } else { Value::String(e.min.clone()) },
-                "max": if e.max.is_empty() { Value::Null } else { Value::String(e.max.clone()) },
+                "min": if e.min.is_empty() { Value::Null } else { Value::String(super::dictionary::format_date_value(&e.content_type, &e.min).into_owned()) },
+                "max": if e.max.is_empty() { Value::Null } else { Value::String(super::dictionary::format_date_value(&e.content_type, &e.max).into_owned()) },
                 "cardinality": e.cardinality,
                 "enumeration": if e.enumeration.is_empty() { Value::Null } else { Value::String(e.enumeration.clone()) },
                 "null_count": e.null_count,
@@ -345,6 +345,30 @@ fn build_x_qsv(
             "content_type".to_string(),
             Value::String(entry.content_type.clone()),
         );
+        // Date/DateTime Min/Max aren't representable as JSON Schema
+        // minimum/maximum, so for an inferred date format surface the range in
+        // x-qsv, formatted to match the column's real presentation (and the
+        // markdown/JSON/TOON dictionaries).
+        if super::dictionary::content_type_date_format(&entry.content_type).is_some() {
+            if !entry.min.is_empty() {
+                x_qsv.insert(
+                    "min".to_string(),
+                    Value::String(
+                        super::dictionary::format_date_value(&entry.content_type, &entry.min)
+                            .into_owned(),
+                    ),
+                );
+            }
+            if !entry.max.is_empty() {
+                x_qsv.insert(
+                    "max".to_string(),
+                    Value::String(
+                        super::dictionary::format_date_value(&entry.content_type, &entry.max)
+                            .into_owned(),
+                    ),
+                );
+            }
+        }
     }
     if !entry.examples.is_empty() {
         x_qsv.insert(
@@ -560,6 +584,75 @@ mod tests {
         let entries = vec![sample_entry("col", "email")];
         let json = format_dictionary_json(&entries, 10, 5, 25, true, &[]);
         assert_eq!(json["fields"][0]["content_type"], "email");
+    }
+
+    fn date_entry(
+        name: &str,
+        content_type: &str,
+        ty: &str,
+        min: &str,
+        max: &str,
+    ) -> DictionaryEntry {
+        let mut e = sample_entry(name, content_type);
+        e.r#type = ty.to_string();
+        e.min = min.to_string();
+        e.max = max.to_string();
+        e
+    }
+
+    #[test]
+    fn json_formats_date_min_max_to_inferred_format() {
+        // date with an inferred `:<fmt>` suffix: RFC3339 Min/Max reformatted.
+        let date = date_entry(
+            "created",
+            "date:%m/%d/%Y",
+            "Date",
+            "2013-01-24",
+            "2013-12-31",
+        );
+        // datetime whose inferred format contains colons.
+        let dt = date_entry(
+            "ts",
+            "datetime:%m/%d/%Y %I:%M:%S %p",
+            "DateTime",
+            "2013-01-24T13:30:00+00:00",
+            "",
+        );
+        // bare date token (no suffix) is left unchanged.
+        let bare = date_entry("plain", "date", "Date", "2013-01-24", "2013-12-31");
+        // non-date content type is left unchanged.
+        let other = date_entry("amount", "category", "Integer", "1", "1000");
+
+        let json = format_dictionary_json(&[date, dt, bare, other], 10, 5, 25, true, &[]);
+        assert_eq!(json["fields"][0]["min"], "01/24/2013");
+        assert_eq!(json["fields"][0]["max"], "12/31/2013");
+        assert_eq!(json["fields"][1]["min"], "01/24/2013 01:30:00 PM");
+        assert_eq!(json["fields"][1]["max"], Value::Null); // empty stays null
+        assert_eq!(json["fields"][2]["min"], "2013-01-24"); // bare token unchanged
+        assert_eq!(json["fields"][3]["min"], "1"); // non-date unchanged
+    }
+
+    #[test]
+    fn jsonschema_x_qsv_carries_formatted_date_min_max() {
+        let date = date_entry(
+            "created",
+            "date:%m/%d/%Y",
+            "Date",
+            "2013-01-24",
+            "2013-12-31",
+        );
+        let bare = date_entry("plain", "date", "Date", "2013-01-24", "2013-12-31");
+        let schema =
+            format_dictionary_jsonschema(&[date, bare], "test.csv", 10, 5, 25, true, false, false);
+        let xq = &schema["properties"]["created"]["x-qsv"];
+        assert_eq!(xq["min"], "01/24/2013");
+        assert_eq!(xq["max"], "12/31/2013");
+        // bare date token: no inferred format, so no x-qsv min/max.
+        let xq_bare = &schema["properties"]["plain"]["x-qsv"];
+        assert!(
+            xq_bare.get("min").is_none() && xq_bare.get("max").is_none(),
+            "bare date token must not add x-qsv min/max: {xq_bare}"
+        );
     }
 
     #[test]

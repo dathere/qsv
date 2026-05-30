@@ -927,6 +927,47 @@ fn stats_typesonly_dates_whitelist_sniff() {
     assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
+// The "sniff" dates-whitelist is resolved to concrete date columns and cached with provenance
+// (flag_dates_whitelist_raw == "sniff") so a subsequent "sniff" run on an unchanged file reuses
+// the sniffed whitelist instead of re-sniffing. Verify both the cached provenance and that the
+// warm run produces byte-identical output.
+#[test]
+fn stats_dates_whitelist_sniff_cache_provenance() {
+    use std::path::Path;
+
+    let wrk = Workdir::new("stats_dates_whitelist_sniff_cache_provenance");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // first (cold) run with the "sniff" whitelist; force caching
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .args(["--dates-whitelist", "sniff"])
+        .args(["--cache-threshold", "1"])
+        .arg(test_file.clone());
+    let cold: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    // the cache sidecar must record the resolved date columns AND that they were sniff-derived
+    let sidecar = wrk.path("boston311-100.stats.csv.json");
+    assert!(Path::new(&sidecar).exists());
+    let json = std::fs::read_to_string(&sidecar).unwrap();
+    // provenance: the original, unresolved whitelist value
+    assert!(json.contains("\"flag_dates_whitelist_raw\": \"sniff\""));
+    // resolved whitelist holds the sniffed DateTime columns, not the "sniff" keyword
+    assert!(json.contains("open_dt"));
+    assert!(!json.contains("\"flag_dates_whitelist\": \"sniff\""));
+
+    // second (warm) run on the unchanged file must reuse the cached whitelist (no re-sniff)
+    // and produce byte-identical output
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--infer-dates")
+        .args(["--dates-whitelist", "sniff"])
+        .args(["--cache-threshold", "1"])
+        .arg(test_file);
+    let warm: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(cold, warm);
+}
+
 #[test]
 fn stats_typesonly_cache_threshold_zero() {
     use std::path::Path;

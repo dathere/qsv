@@ -496,6 +496,12 @@ struct StatsArgs {
     flag_nulls: bool,
     flag_infer_dates: bool,
     flag_dates_whitelist: String,
+    // the original, unresolved --dates-whitelist value (e.g. "sniff") that produced
+    // flag_dates_whitelist. Lets a future "sniff" run on an unchanged file reuse the
+    // sniff-resolved whitelist from this cache instead of re-sniffing. Excluded from the
+    // cache-validity comparison (zeroed before comparing).
+    #[serde(default)]
+    flag_dates_whitelist_raw: String,
     flag_prefer_dmy: bool,
     flag_no_headers: bool,
     flag_delimiter: String,
@@ -586,6 +592,7 @@ impl StatsArgs {
             flag_nulls: get_bool("flag_nulls"),
             flag_infer_dates: get_bool("flag_infer_dates"),
             flag_dates_whitelist: get_str("flag_dates_whitelist"),
+            flag_dates_whitelist_raw: get_str("flag_dates_whitelist_raw"),
             flag_prefer_dmy: get_bool("flag_prefer_dmy"),
             flag_no_headers: get_bool("flag_no_headers"),
             flag_delimiter: get_str("flag_delimiter"),
@@ -1260,6 +1267,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_nulls: args.flag_nulls,
         flag_infer_dates: args.flag_infer_dates,
         flag_dates_whitelist: args.flag_dates_whitelist.clone(),
+        // populated just before the cache sidecar is written; kept empty here so it is
+        // ignored by the cache-validity comparison below
+        flag_dates_whitelist_raw: String::new(),
         flag_prefer_dmy: args.flag_prefer_dmy,
         flag_no_headers: args.flag_no_headers,
         flag_delimiter: args
@@ -1395,8 +1405,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let resolved_whitelist =
         if args.flag_infer_dates && args.flag_dates_whitelist.eq_ignore_ascii_case("sniff") {
             if let Some(ref path) = rconfig.path {
-                log::info!("Resolving dates-whitelist 'sniff' for {}", path.display());
-                resolve_sniff_whitelist(path)?
+                resolve_sniff_whitelist_cached(path, &args)?
             } else {
                 // No path available - shouldn't happen after stdin handling
                 args.flag_dates_whitelist.clone()
@@ -1494,6 +1503,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // compare them when checking if the args are the same
                     stat_args.canonical_input_path = String::new();
                     stat_args.canonical_stats_path = String::new();
+                    // raw whitelist is provenance metadata, not part of cache validity
+                    stat_args.flag_dates_whitelist_raw = String::new();
                     stat_args.record_count = 0;
                     stat_args.date_generated = String::new();
                     time_saved = stat_args.compute_duration_ms;
@@ -1765,6 +1776,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     wtr.flush()?;
+
+    // record the original (unresolved) --dates-whitelist value (e.g. "sniff") in the cache
+    // sidecar so a future "sniff" run on an unchanged file can reuse this sniff-resolved
+    // whitelist instead of re-sniffing
+    current_stats_args
+        .flag_dates_whitelist_raw
+        .clone_from(&args.flag_dates_whitelist);
 
     if let Some(pb) = stdin_tempfile_path {
         // remove the temp file we created to store stdin
@@ -2879,52 +2897,83 @@ fn init_date_inference(
     Ok(())
 }
 
-/// Minimal struct for parsing sniff JSON output when resolving "sniff" dates-whitelist
-#[derive(Deserialize)]
-struct SniffResult {
-    fields: Vec<String>,
-    types:  Vec<String>,
+/// Resolves the "sniff" dates-whitelist, reusing a previously sniff-resolved whitelist from a
+/// current stats cache when possible to avoid re-sniffing.
+///
+/// Because "sniff" is the DEFAULT `--dates-whitelist`, the sniff used to run on every
+/// `stats --infer-dates` invocation — even warm-cache hits — solely to rebuild the cache-key
+/// whitelist. When a stats cache sidecar exists, is newer than the input file (so the file is
+/// unchanged since the cache was built), and its whitelist was itself sniff-derived, the sniffed
+/// column set is deterministic and identical, so we reuse it and skip the sniff entirely. Falls
+/// back to an in-process sniff otherwise (no cache, stale cache, `--force`, or a cache whose
+/// whitelist came from an explicit list rather than "sniff").
+fn resolve_sniff_whitelist_cached(input_path: &std::path::Path, args: &Args) -> CliResult<String> {
+    if !args.flag_force
+        && let Some(cached) = read_current_sniff_whitelist(input_path, args)
+    {
+        log::info!("Reusing sniff-resolved dates-whitelist from current stats cache");
+        return Ok(cached);
+    }
+    log::info!(
+        "Resolving dates-whitelist 'sniff' for {}",
+        input_path.display()
+    );
+    resolve_sniff_whitelist(input_path)
 }
 
-/// Resolves the "sniff" special value in dates-whitelist by running `qsv sniff --json`
-/// and extracting column names that have Date or DateTime types.
-fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
-    let qsv_bin = util::current_exe()?;
-
-    let output = std::process::Command::new(qsv_bin)
-        .args(["sniff", "--json", "--stats-types"])
-        .arg(input_path)
-        .output()?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return fail_clierror!("Failed to sniff file for date columns: {}", stderr.trim());
+/// Returns the sniff-resolved dates-whitelist stored in the stats cache sidecar, but only if the
+/// sidecar exists, is newer than the input file (i.e. the file is unchanged since the cache was
+/// built), and its whitelist was itself derived from "sniff" (recorded in
+/// `flag_dates_whitelist_raw`). Returns `None` otherwise, signalling that a fresh sniff is needed.
+fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Option<String> {
+    let stats_file = stats_path(input_path, false, args.flag_weight.is_some()).ok()?;
+    if !stats_file.exists() {
+        return None;
     }
 
-    // Parse JSON output (platform-specific)
-    // simd_json mutates its input buffer; serde_json doesn't care.
-    #[cfg_attr(target_endian = "big", allow(unused_mut))]
-    let mut json_bytes = output.stdout;
-    let sniff_result: SniffResult = cfg_select! {
-        target_endian = "little" => simd_json::from_slice(&mut json_bytes)
-            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
-        _ => serde_json::from_slice(&json_bytes)
-            .map_err(|e| CliError::Other(format!("Failed to parse sniff JSON: {e}")))?,
-    };
+    // the input file must be unchanged since the cache was built
+    let stats_modified = fs::metadata(&stats_file).and_then(|m| m.modified()).ok()?;
+    let input_modified = fs::metadata(input_path).and_then(|m| m.modified()).ok()?;
+    if stats_modified <= input_modified {
+        return None;
+    }
 
-    // Extract column names where type is Date or DateTime
-    let date_columns: Vec<&str> = sniff_result
-        .fields
-        .iter()
-        .zip(sniff_result.types.iter())
-        .filter_map(|(field, typ)| {
-            if typ == "Date" || typ == "DateTime" {
-                Some(field.as_str())
-            } else {
-                None
-            }
-        })
-        .collect();
+    let sidecar = stats_file.with_extension("csv.json");
+    let json_str = fs::read_to_string(&sidecar).ok()?;
+
+    #[cfg(target_endian = "little")]
+    let cached: StatsArgs = {
+        let mut json_buffer = json_str.into_bytes();
+        let value = simd_json::to_owned_value(&mut json_buffer).ok()?;
+        StatsArgs::from_owned_value(&value).ok()?
+    };
+    #[cfg(target_endian = "big")]
+    let cached: StatsArgs = serde_json::from_str(&json_str).ok()?;
+
+    // Only reuse when the cache actually performed sniff-based date inference. A cache built
+    // WITHOUT --infer-dates stores the unresolved literal "sniff" keyword in flag_dates_whitelist
+    // (resolution is gated on --infer-dates), and reusing that would skip sniffing and leave the
+    // literal keyword as the whitelist, breaking date inference. Requiring flag_infer_dates (and
+    // guarding against the literal "sniff" value defensively) ensures the stored whitelist is a
+    // genuinely resolved column set (or the _qsv_no_date_columns_found sentinel).
+    if cached.flag_infer_dates
+        && cached
+            .flag_dates_whitelist_raw
+            .eq_ignore_ascii_case("sniff")
+        && !cached.flag_dates_whitelist.is_empty()
+        && !cached.flag_dates_whitelist.eq_ignore_ascii_case("sniff")
+    {
+        Some(cached.flag_dates_whitelist)
+    } else {
+        None
+    }
+}
+
+/// Resolves the "sniff" special value in dates-whitelist by sniffing the file
+/// in-process (via `sniff::date_columns`) and extracting the column names that have
+/// Date or DateTime types.
+fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
+    let date_columns = crate::cmd::sniff::date_columns(input_path)?;
 
     if date_columns.is_empty() {
         log::info!("sniff: no Date/DateTime columns found");

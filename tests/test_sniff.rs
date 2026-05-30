@@ -856,9 +856,11 @@ fn sniff_indexed_sample_budget() {
     assert!(got.contains(r#""num_records":2000"#));
 }
 
-// A --sample budget smaller than the ~25 fixed positional rows must NOT be honored
-// by distributing (which would over-report sampled_records); it falls back to the
-// contiguous first-N sample so sampled_records stays within the requested budget.
+// A --sample budget smaller than the ~25 fixed positional rows is NOT honored by
+// distributing (which would over-report sampled_records); it falls back to the
+// contiguous sniffer. That sniffer floors the sample at SNIFF_MIN_ROWS (20) for
+// reliable detection, and sampled_records must report the actual number sniffed
+// (20), not the smaller requested budget.
 #[test]
 fn sniff_indexed_tiny_budget() {
     let wrk = Workdir::new("sniff_indexed_tiny_budget");
@@ -869,14 +871,46 @@ fn sniff_indexed_tiny_budget() {
 
     let got: String = wrk.stdout(&mut cmd);
 
-    // budget (10) < 25 fixed rows -> contiguous fallback: sampled_records == budget,
-    // and the late tail flip is (correctly) not seen with so small a sample
-    assert!(got.contains(r#""sampled_records":10"#), "got: {got}");
+    // budget (10) < 25 fixed rows -> contiguous fallback, floored to 20 rows.
+    // sampled_records reports the truthful 20, and the late tail flip is (correctly)
+    // not seen with so small a sample.
+    assert!(got.contains(r#""sampled_records":20"#), "got: {got}");
     assert!(
         got.contains(r#""types":["Unsigned","Unsigned","Text"]"#),
         "got: {got}"
     );
     assert!(got.contains(r#""num_records":2000"#));
+}
+
+// A tiny --sample is sniffed using far more than the requested number of rows: the
+// contiguous sniffer floors at SNIFF_MIN_ROWS (20), and sampled_records must report
+// that floored size honestly, not the smaller requested budget.
+#[test]
+fn sniff_tiny_sample_reports_floored_size() {
+    let wrk = Workdir::new("sniff_tiny_sample_reports_floored_size");
+    // 30 rows: `code` is Unsigned for rows 0-14, then Text from row 15 on. A literal
+    // first-5 sample would call it Unsigned; sniffing past the floor sees the flip.
+    let mut rows = vec![svec!["id", "code"]];
+    for i in 0..30 {
+        let code = if i >= 15 {
+            format!("X{i}")
+        } else {
+            i.to_string()
+        };
+        rows.push(vec![i.to_string(), code]);
+    }
+    wrk.create("flip15.csv", rows);
+
+    let mut cmd = wrk.command("sniff");
+    cmd.arg("--json").arg("--sample").arg("5").arg("flip15.csv");
+
+    let got: String = wrk.stdout(&mut cmd);
+
+    // sampled_records reports the floored 20 (not the requested 5), and far more than
+    // 5 rows are examined - so the row-15 Text flip is detected.
+    assert!(got.contains(r#""sampled_records":20"#), "got: {got}");
+    assert!(got.contains(r#""types":["Unsigned","Text"]"#), "got: {got}");
+    assert!(got.contains(r#""num_records":30"#));
 }
 
 // Small indexed file: distributed sampling is skipped (no benefit), so the result

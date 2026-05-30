@@ -850,6 +850,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
+/// Minimum number of rows the contiguous sniffer samples, regardless of a smaller
+/// `--sample` budget - too few rows make dialect/type detection unreliable.
+const SNIFF_MIN_ROWS: usize = 20;
+
 #[allow(clippy::unused_async)] // false positive lint
 async fn sniff_main(mut args: Args) -> CliResult<()> {
     if args.flag_harvest_mode {
@@ -1023,7 +1027,13 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
     // for a local file and stdin, set sampled_records to the sample size
     // for a remote file, set sampled_records to the number of rows downloaded
     let sampled_records = if sfile_info.downloaded_records == 0 {
-        sample_size as usize
+        if sample_all {
+            sample_size as usize
+        } else {
+            // the contiguous sniffer floors the sample at SNIFF_MIN_ROWS (below),
+            // so report the number actually sniffed, not a smaller requested budget
+            (sample_size as usize).max(SNIFF_MIN_ROWS)
+        }
     } else {
         sample_all = true;
         sfile_info.downloaded_records
@@ -1065,11 +1075,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
                 .sniff_reader(rdr.into_inner())
         }
     } else {
-        let mut sniff_size = sample_size as usize;
-        // sample_size is at least 20
-        if sniff_size < 20 {
-            sniff_size = 20;
-        }
+        let sniff_size = (sample_size as usize).max(SNIFF_MIN_ROWS);
         log::info!("Sniffing {sniff_size} rows...");
         if let Some(delimiter) = args.flag_delimiter {
             Sniffer::new()

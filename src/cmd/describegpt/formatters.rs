@@ -47,13 +47,25 @@ pub(super) fn format_dictionary_json(
     let entries_json: Vec<Value> = entries
         .iter()
         .map(|e| {
+            // Reformat date Min/Max to the inferred format only when
+            // --infer-content-type is set; otherwise the legacy output stays
+            // byte-identical (content_type is also only emitted in that path).
+            let minmax = |v: &str| -> Value {
+                if v.is_empty() {
+                    Value::Null
+                } else if infer_content_type {
+                    Value::String(super::dictionary::format_date_value(&e.content_type, v).into_owned())
+                } else {
+                    Value::String(v.to_string())
+                }
+            };
             let mut entry_obj = json!({
                 "name": e.name,
                 "type": e.r#type,
                 "label": e.label,
                 "description": e.description,
-                "min": if e.min.is_empty() { Value::Null } else { Value::String(super::dictionary::format_date_value(&e.content_type, &e.min).into_owned()) },
-                "max": if e.max.is_empty() { Value::Null } else { Value::String(super::dictionary::format_date_value(&e.content_type, &e.max).into_owned()) },
+                "min": minmax(&e.min),
+                "max": minmax(&e.max),
                 "cardinality": e.cardinality,
                 "enumeration": if e.enumeration.is_empty() { Value::Null } else { Value::String(e.enumeration.clone()) },
                 "null_count": e.null_count,
@@ -630,6 +642,24 @@ mod tests {
         assert_eq!(json["fields"][1]["max"], Value::Null); // empty stays null
         assert_eq!(json["fields"][2]["min"], "2013-01-24"); // bare token unchanged
         assert_eq!(json["fields"][3]["min"], "1"); // non-date unchanged
+    }
+
+    #[test]
+    fn json_does_not_reformat_min_max_when_flag_off() {
+        // With infer_content_type=false the legacy output must stay byte-identical,
+        // even if an entry carries a date content_type: Min/Max are NOT reformatted
+        // and content_type is omitted.
+        let date = date_entry(
+            "created",
+            "date:%m/%d/%Y",
+            "Date",
+            "2013-01-24",
+            "2013-12-31",
+        );
+        let json = format_dictionary_json(&[date], 10, 5, 25, false, &[]);
+        assert_eq!(json["fields"][0]["min"], "2013-01-24");
+        assert_eq!(json["fields"][0]["max"], "2013-12-31");
+        assert!(json["fields"][0].get("content_type").is_none());
     }
 
     #[test]

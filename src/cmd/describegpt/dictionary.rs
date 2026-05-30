@@ -206,6 +206,40 @@ pub(super) fn content_type_base(token: &str) -> &str {
     token.split(':').next().unwrap_or(token)
 }
 
+/// Extract the strftime format suffix from a `date`/`datetime` `content_type`,
+/// when present and syntactically valid (e.g. `"date:%m/%d/%Y"` →
+/// `Some("%m/%d/%Y")`). Bare tokens and non-date content types yield `None`.
+pub(super) fn content_type_date_format(content_type: &str) -> Option<&str> {
+    let fmt = content_type
+        .strip_prefix("datetime:")
+        .or_else(|| content_type.strip_prefix("date:"))?;
+    (!fmt.is_empty() && is_valid_strftime(fmt)).then_some(fmt)
+}
+
+/// Reformat an (RFC 3339-normalized) date string `value` using the strftime
+/// format carried by `content_type`, when present. Returns `value` unchanged
+/// when there is no inferred format, the value is empty, or it cannot be parsed.
+///
+/// This mirrors the markdown dictionary template's `datefmt` filter so the
+/// JSON/TOON/JSONSchema outputs present date Min/Max in the same inferred
+/// format as the markdown dictionary, instead of qsv's normalized RFC 3339.
+pub(super) fn format_date_value<'a>(
+    content_type: &str,
+    value: &'a str,
+) -> std::borrow::Cow<'a, str> {
+    use std::borrow::Cow;
+    if value.is_empty() {
+        return Cow::Borrowed(value);
+    }
+    let Some(fmt) = content_type_date_format(content_type) else {
+        return Cow::Borrowed(value);
+    };
+    match qsv_dateparser::parse_with_preference(value, false) {
+        Ok(dt) => Cow::Owned(dt.format(fmt).to_string()),
+        Err(_) => Cow::Borrowed(value),
+    }
+}
+
 /// LLM-inferred fields for a single dictionary column, keyed by field name in the
 /// map returned by `parse_llm_dictionary_response`. `content_type` stays empty
 /// unless `--infer-content-type` is set.

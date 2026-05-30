@@ -935,6 +935,8 @@ fn stats_typesonly_dates_whitelist_sniff() {
 fn stats_dates_whitelist_sniff_cache_provenance() {
     use std::path::Path;
 
+    use serde_json::Value;
+
     let wrk = Workdir::new("stats_dates_whitelist_sniff_cache_provenance");
     let test_file = wrk.load_test_file("boston311-100.csv");
 
@@ -946,15 +948,22 @@ fn stats_dates_whitelist_sniff_cache_provenance() {
         .arg(test_file.clone());
     let cold: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
-    // the cache sidecar must record the resolved date columns AND that they were sniff-derived
+    // the cache sidecar must record the resolved date columns AND that they were sniff-derived.
+    // Parse the JSON and assert on fields (rather than raw substrings) so the test is robust to
+    // serialization formatting changes.
     let sidecar = wrk.path("boston311-100.stats.csv.json");
     assert!(Path::new(&sidecar).exists());
-    let json = std::fs::read_to_string(&sidecar).unwrap();
+    let json: Value = serde_json::from_str(&std::fs::read_to_string(&sidecar).unwrap()).unwrap();
+
     // provenance: the original, unresolved whitelist value
-    assert!(json.contains("\"flag_dates_whitelist_raw\": \"sniff\""));
+    assert_eq!(json["flag_dates_whitelist_raw"], "sniff");
     // resolved whitelist holds the sniffed DateTime columns, not the "sniff" keyword
-    assert!(json.contains("open_dt"));
-    assert!(!json.contains("\"flag_dates_whitelist\": \"sniff\""));
+    let resolved = json["flag_dates_whitelist"].as_str().unwrap();
+    assert_ne!(resolved, "sniff");
+    assert!(
+        resolved.contains("open_dt"),
+        "resolved whitelist was {resolved:?}"
+    );
 
     // second (warm) run on the unchanged file must reuse the cached whitelist (no re-sniff)
     // and produce byte-identical output
@@ -966,6 +975,34 @@ fn stats_dates_whitelist_sniff_cache_provenance() {
     let warm: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
     assert_eq!(cold, warm);
+}
+
+// Regression: a stats cache built WITHOUT --infer-dates stores the unresolved literal "sniff"
+// whitelist (since "sniff" is the --dates-whitelist default and resolution is gated on
+// --infer-dates). A later `--infer-dates --dates-whitelist sniff` run on the unchanged file must
+// NOT reuse that literal keyword — doing so would skip sniffing and leave "sniff" as the
+// whitelist, breaking date inference. It must sniff and infer dates correctly.
+#[test]
+fn stats_dates_whitelist_sniff_no_reuse_of_non_infer_cache() {
+    let wrk = Workdir::new("stats_dates_whitelist_sniff_no_reuse_of_non_infer_cache");
+    let test_file = wrk.load_test_file("boston311-100.csv");
+
+    // build a cache WITHOUT --infer-dates (stores literal "sniff", flag_infer_dates=false)
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--cache-threshold", "1"]).arg(test_file.clone());
+    wrk.run(&mut cmd);
+
+    // now run WITH --infer-dates on the unchanged file; date inference must still work
+    let mut cmd = wrk.command("stats");
+    cmd.args(["--typesonly"])
+        .arg("--infer-dates")
+        .args(["--dates-whitelist", "sniff"])
+        .args(["--cache-threshold", "1"])
+        .arg(test_file);
+    let got: String = wrk.stdout(&mut cmd);
+
+    let expected = wrk.load_test_resource("boston311-100-typesonly-withdates-stats.csv");
+    assert_eq!(dos2unix(&got), dos2unix(&expected).trim_end());
 }
 
 #[test]

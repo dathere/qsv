@@ -2950,10 +2950,18 @@ fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Op
     #[cfg(target_endian = "big")]
     let cached: StatsArgs = serde_json::from_str(&json_str).ok()?;
 
-    if cached
-        .flag_dates_whitelist_raw
-        .eq_ignore_ascii_case("sniff")
+    // Only reuse when the cache actually performed sniff-based date inference. A cache built
+    // WITHOUT --infer-dates stores the unresolved literal "sniff" keyword in flag_dates_whitelist
+    // (resolution is gated on --infer-dates), and reusing that would skip sniffing and leave the
+    // literal keyword as the whitelist, breaking date inference. Requiring flag_infer_dates (and
+    // guarding against the literal "sniff" value defensively) ensures the stored whitelist is a
+    // genuinely resolved column set (or the _qsv_no_date_columns_found sentinel).
+    if cached.flag_infer_dates
+        && cached
+            .flag_dates_whitelist_raw
+            .eq_ignore_ascii_case("sniff")
         && !cached.flag_dates_whitelist.is_empty()
+        && !cached.flag_dates_whitelist.eq_ignore_ascii_case("sniff")
     {
         Some(cached.flag_dates_whitelist)
     } else {

@@ -21,6 +21,7 @@ Also, it will fail if the JSON documents are not consistent with one another,
 as the first JSON line will be used to infer the headers of the CSV output.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_jsonl.rs>.
+See also <https://github.com/dathere/qsv/wiki/Conversion-and-IO#jsonl>
 
 
 <a name="usage"></a>

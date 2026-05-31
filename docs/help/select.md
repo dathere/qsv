@@ -134,6 +134,7 @@ qsv select '\"Date - Opening\",\"Date - Actual Closing\"'
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_select.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#select>
 
 <a name="usage"></a>
 

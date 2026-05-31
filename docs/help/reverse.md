@@ -19,6 +19,8 @@ or when keys are not unique and order of rows with the same key needs to be pres
 Note that if the CSV is not indexed, this operation will require reading all of the
 CSV data into memory
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#reverse>
+
 
 <a name="usage"></a>
 

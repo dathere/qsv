@@ -8,6 +8,7 @@ have a specific delimiter or record separator, and this is where 'qsv fmt' is
 useful.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_fmt.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#fmt
 
 Usage:
     qsv fmt [options] [<input>]

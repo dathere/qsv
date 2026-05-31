@@ -67,6 +67,7 @@ qsv sortcheck --natural --json file.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#sortcheck>
 
 <a name="usage"></a>
 

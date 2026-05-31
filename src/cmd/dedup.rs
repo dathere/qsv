@@ -33,6 +33,7 @@ Examples:
   qsv dedup -s col1,col2 --dupes-output dupes.csv unsorted.csv -o deduped.csv
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs.
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#dedup
 
 Usage:
     qsv dedup [options] [<input>]

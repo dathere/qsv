@@ -249,6 +249,7 @@ Examples:
   qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --join-keys cust_id,prod_id --join-type left
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs.
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#moarstats
 
 Usage:
     qsv moarstats [options] [<input>]

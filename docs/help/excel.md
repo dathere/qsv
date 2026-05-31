@@ -141,6 +141,7 @@ qsv excel --metadata Short input.xlsx
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_excel.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Conversion-and-IO#excel>
 
 <a name="usage"></a>
 

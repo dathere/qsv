@@ -62,6 +62,7 @@ Examples:
   qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination {}.zip" input.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_split.rs.
+See also https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#split
 
 Usage:
     qsv split [options] (--size <arg> | --chunks <arg> | --kb-size <arg>) <outdir> [<input>]

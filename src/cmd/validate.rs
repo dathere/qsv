@@ -178,6 +178,7 @@ Examples:
 
 For more examples, see the tests included in this file (denoted by '#[test]') or see
 https://github.com/dathere/qsv/blob/master/tests/test_validate.rs.
+See also https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate
 
 Usage:
     qsv validate schema [--no-format-validation] [<json-schema>]

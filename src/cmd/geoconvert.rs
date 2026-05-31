@@ -17,6 +17,8 @@ Alternatively specify the latitude and longitude columns with the --latitude and
 
   $ qsv geoconvert file.csv csv geojson --latitude lat --longitude lon
 
+See also https://github.com/dathere/qsv/wiki/Geospatial#geoconvert
+
 Usage:
     qsv geoconvert [options] (<input>) (<input-format>) (<output-format>)
     qsv geoconvert --help

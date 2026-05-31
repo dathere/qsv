@@ -71,6 +71,7 @@ qsv cat rows path/to/files_to_combine.infile-list -o combined.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_cat.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#cat>
 
 <a name="usage"></a>
 

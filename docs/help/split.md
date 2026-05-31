@@ -106,6 +106,7 @@ qsv split outdir --filter "powershell Compress-Archive -Path $FILE -Destination 
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_split.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#split>
 
 <a name="usage"></a>
 

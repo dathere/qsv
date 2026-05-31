@@ -18,6 +18,7 @@ of one or more files. It supports keyed hashing, key derivation, variable-length
 and checksum verification. When no file is given, or when "-" is given, reads stdin.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_blake3.rs>.
+See also <https://github.com/dathere/qsv/wiki/Indexing-Compression-Diff#blake3>
 
 
 <a name="usage"></a>

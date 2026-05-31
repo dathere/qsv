@@ -82,6 +82,7 @@ It is discouraged because the embedded spaces can cause problems later on.
 (see <https://lerner.co.il/2013/11/30/quoting-postgresql/> for more info).
 
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_safenames.rs>.
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#safenames>
 
 
 <a name="usage"></a>

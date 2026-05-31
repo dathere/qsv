@@ -11,6 +11,7 @@ non-equi & asof joins and its output columns can be coalesced (no duplicate colu
 Returns the shape of the join result (number of rows, number of columns) to stderr.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_joinp.rs.
+See also https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#joinp
 
 Usage:
     qsv joinp [options] <columns1> <input1> <columns2> <input2>

@@ -127,7 +127,8 @@ Examples:
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_describegpt.rs.
 
 For more detailed info on how describegpt works and how to prepare a prompt file,
-see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md
+see https://github.com/dathere/qsv/blob/master/docs/Describegpt.md and
+https://github.com/dathere/qsv/wiki/AI-and-Documentation#describegpt
 
 Usage:
     qsv describegpt [options] [<input>]

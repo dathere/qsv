@@ -283,6 +283,7 @@ qsv moarstats data.csv --bivariate --join-inputs customers.csv,products.csv --jo
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_moarstats.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#moarstats>
 
 <a name="usage"></a>
 

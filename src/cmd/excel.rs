@@ -68,6 +68,7 @@ qsv excel --metadata JSON input.xlsx
 qsv excel --metadata Short input.xlsx
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_excel.rs.
+See also https://github.com/dathere/qsv/wiki/Conversion-and-IO#excel
 
 Usage:
     qsv excel [options] [<input>]

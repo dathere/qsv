@@ -53,6 +53,7 @@ Examples:
       qsv --sorted dedup > new-sorted-deduped-records.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs.
+See also https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#exclude
 
 Usage:
     qsv exclude [options] <columns1> <input1> <columns2> <input2>

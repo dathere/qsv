@@ -27,6 +27,8 @@ Note that formatting a table requires buffering all CSV data into memory.
 Therefore, you should use the 'sample' or 'slice' command to trim down large
 CSV data before formatting it with this command.
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#table>
+
 
 <a name="usage"></a>
 

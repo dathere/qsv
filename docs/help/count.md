@@ -72,6 +72,7 @@ qsv count --width --json data.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_count.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#count>
 
 <a name="usage"></a>
 

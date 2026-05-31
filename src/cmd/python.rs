@@ -81,6 +81,7 @@ Some usage examples:
   If any record has an invalid result, an exitcode of 1 is returned and an error count is logged.
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_py.rs.
+See also https://github.com/dathere/qsv/wiki/Scripting-Luau-Python#py
 
 Usage:
     qsv py map [options] -n <expression> [<input>]

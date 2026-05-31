@@ -10,6 +10,8 @@ its snappy-compressed variants (CSV.sz, TSV.sz, Tab.sz & SSV.sz).
 
 Press 'q' to exit. Press '?' for help.
 
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#lens
+
 Usage:
     qsv lens [options] [<input>]
     qsv lens --help

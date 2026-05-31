@@ -105,6 +105,7 @@ qsv synthesize data.csv --dictionary dict.json -n 1000 > synthetic.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_synthesize.rs).
 
+See also <https://github.com/dathere/qsv/wiki/AI-and-Documentation#synthesize>
 
 <a name="usage"></a>
 

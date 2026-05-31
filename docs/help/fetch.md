@@ -179,6 +179,7 @@ qsv fetch URL data.csv --http-header "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC12
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs).
 
+See also <https://github.com/dathere/qsv/wiki/HTTP-and-Web#fetch>
 
 <a name="usage"></a>
 

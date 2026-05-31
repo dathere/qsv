@@ -20,6 +20,7 @@ There is also a condensed view (-c or --condense) that will shorten the
 contents of each field to provide a summary view.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_flatten.rs>.
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#flatten>
 
 
 <a name="usage"></a>

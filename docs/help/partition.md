@@ -40,6 +40,7 @@ nyc311-Queens.csv
 nyc311-Staten_Island.csv
 
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_partition.rs>.
+See also <https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#partition>
 
 
 <a name="usage"></a>

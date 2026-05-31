@@ -27,6 +27,7 @@ the first match.
 When the CSV is indexed, a faster parallel search is used.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_searchset.rs.
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#searchset
 
 Usage:
     qsv searchset [options] (<regexset-file>) [<input>]

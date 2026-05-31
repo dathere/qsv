@@ -99,6 +99,7 @@ qsv --sorted dedup > new-sorted-deduped-records.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_exclude.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#exclude>
 
 <a name="usage"></a>
 

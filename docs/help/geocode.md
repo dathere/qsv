@@ -457,6 +457,7 @@ input_data.csv -o output_data_with_fips.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Geospatial#geocode>
 
 <a name="usage"></a>
 

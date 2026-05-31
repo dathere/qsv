@@ -154,6 +154,7 @@ Examples:
   qsv sample --sketch-in a.sk,b.sk 1000 -o merged.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_sample.rs.
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#sample
 
 Usage:
     qsv sample [options] <sample-size> [<input>]

@@ -24,6 +24,8 @@ However, if the environment variable QSV_AUTOINDEX_SIZE is set, qsv will
 automatically create an index when the input file size >= specified size (bytes).
 It will also automatically update stale indices as well.
 
+See also <https://github.com/dathere/qsv/wiki/Indexing-Compression-Diff#index>
+
 
 <a name="usage"></a>
 

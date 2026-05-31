@@ -23,6 +23,8 @@ You may also choose to specify the column name by its index (in this case 1).
 Specifying a column as a number is prioritized by index rather than name.
 If there is no newline (\n) at the end of the input data, it may be added to the output.
 
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#edit
+
 Usage:
     qsv edit [options] <input> <column> <row> <value>
     qsv edit --help

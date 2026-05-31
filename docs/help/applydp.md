@@ -181,6 +181,7 @@ qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullN
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#applydp>
 
 <a name="usage"></a>
 

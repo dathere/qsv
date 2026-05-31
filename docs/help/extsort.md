@@ -23,6 +23,8 @@ when --select is NOT set, it sorts any input text file (not just CSVs) on a
 line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers,
 otherwise, the first line will not be included in the external sort.
 
+See also <https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#extsort>
+
 
 <a name="usage"></a>
 

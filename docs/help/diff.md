@@ -100,6 +100,7 @@ qsv diff --no-headers-left --no-headers-right left.csv right.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_diff.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Indexing-Compression-Diff#diff>
 
 <a name="usage"></a>
 

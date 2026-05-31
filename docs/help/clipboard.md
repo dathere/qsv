@@ -32,6 +32,7 @@ pipe into qsv clipboard using the --save or -s flag:
 qsv clipboard | qsv stats | qsv clipboard -s
 ```
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#clipboard>
 
 <a name="usage"></a>
 

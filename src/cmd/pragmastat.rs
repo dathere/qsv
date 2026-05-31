@@ -128,6 +128,8 @@ Full Pragmastat manual:
   https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf
   https://pragmastat.dev/ (latest version)
 
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#pragmastat
+
 Usage:
     qsv pragmastat [options] [<input>]
     qsv pragmastat --help

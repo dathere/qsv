@@ -165,6 +165,7 @@ $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_K
 
 
 For more extensive examples, see <https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs>.
+See also <https://github.com/dathere/qsv/wiki/HTTP-and-Web#fetchpost>
 
 
 <a name="usage"></a>

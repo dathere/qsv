@@ -63,6 +63,7 @@ Polars to optimize the query and gives the user the option to tailor the schema 
 query needs (e.g. using a Decimal type with explicit precision and scale instead of a Float type).
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_schema.rs>.
+See also <https://github.com/dathere/qsv/wiki/Validation-and-Schema#schema>
 
 
 <a name="usage"></a>

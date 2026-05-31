@@ -13,6 +13,8 @@
 
 Drop a CSV file's header.
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#behead>
+
 
 <a name="usage"></a>
 

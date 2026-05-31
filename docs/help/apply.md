@@ -316,6 +316,7 @@ qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vig
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_apply.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#apply>
 
 <a name="usage"></a>
 

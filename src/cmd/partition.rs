@@ -25,6 +25,7 @@ will create the following files, each containing the data for each borough:
     nyc311-Staten_Island.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_partition.rs.
+See also https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#partition
 
 Usage:
     qsv partition [options] <column> <outdir> [<input>]

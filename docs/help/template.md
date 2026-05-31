@@ -93,6 +93,7 @@ coalesce(a, b, ...)                  First argument that is not undefined/none/e
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_template.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Scripting-Luau-Python#template>
 For a relatively complex MiniJinja template, see <https://github.com/dathere/qsv/blob/master/scripts/template.tpl>
 
 <a name="usage"></a>

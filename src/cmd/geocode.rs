@@ -287,6 +287,7 @@ qsv geocode reverse wgs84_coordinate_col --country US -f \
     input_data.csv -o output_data_with_fips.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_geocode.rs.
+See also https://github.com/dathere/qsv/wiki/Geospatial#geocode
 
 Usage:
 qsv geocode suggest [--formatstr=<string>] [options] <column> [<input>]

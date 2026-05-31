@@ -52,6 +52,7 @@ qsv foreach query -u -c from_query 'search {}' queries.csv > results.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_foreach.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Scripting-Luau-Python#foreach>
 If any child command exits with a non-zero status, foreach finishes processing
 all rows but then exits with a non-zero status of its own.
 

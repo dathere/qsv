@@ -31,6 +31,7 @@ For an example CKAN scheming YAML spec, see:
   https://github.com/dathere/datapusher-plus/blob/main/ckanext/datapusher_plus/dataset-druf.yaml
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_profile.rs.
+See also https://github.com/dathere/qsv/wiki/Metadata-Profiling
 
 Examples:
 

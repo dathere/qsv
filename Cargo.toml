@@ -83,16 +83,17 @@ codegen-units = 1
 debug         = false
 lto           = true
 opt-level     = 3
+panic         = "abort"
 strip         = true
 
 [profile.release-samply]
 inherits = "release"
 debug    = true
+panic    = "unwind"
 strip    = false
 
 [profile.release-nightly]
 inherits = "release"
-panic    = "abort"
 
 [dependencies]
 anstream = { version = "1.0", optional = true }

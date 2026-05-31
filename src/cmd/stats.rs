@@ -125,6 +125,7 @@ Examples:
   qsv stats -E --cache-threshold -5000005 nyc311.csv
 
 For more examples, see https://github.com/dathere/qsv/tree/master/resources/test
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#stats
 
 If the polars feature is enabled, support additional tabular file formats and
 compression formats:

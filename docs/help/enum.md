@@ -158,6 +158,7 @@ qsv enum --hash "/record|name|address/" data.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#enum>
 
 <a name="usage"></a>
 

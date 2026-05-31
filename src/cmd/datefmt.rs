@@ -34,6 +34,7 @@ Examples:
   qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_weekday file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#datefmt
 
 Usage:
 qsv datefmt [--formatstr=<string>] [options] <column> [<input>]

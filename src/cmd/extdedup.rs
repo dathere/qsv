@@ -18,6 +18,8 @@ This command has TWO modes of operation.
 
 A duplicate count will be sent to <stderr>.
 
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#extdedup
+
 Usage:
     qsv extdedup [options] [<input>] [<output>]
     qsv extdedup --help

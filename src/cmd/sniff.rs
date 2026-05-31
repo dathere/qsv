@@ -43,6 +43,7 @@ Examples:
   qsv sniff --sample 0.20 data.ssv
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sniff.rs.
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#sniff
 
 Usage:
     qsv sniff [options] [<input>]

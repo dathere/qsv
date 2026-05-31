@@ -61,6 +61,7 @@ qsv transpose --long /^name/ data.csv
 ```
 
 See <https://github.com/dathere/qsv/blob/master/tests/test_transpose.rs> for more examples.
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#transpose>
 
 <a name="usage"></a>
 

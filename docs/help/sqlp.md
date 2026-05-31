@@ -297,6 +297,7 @@ qsv sqlp data.csv 'explain select * from data where col1 > 10 order by col2 desc
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sqlp.rs).
 
+See also <https://github.com/dathere/qsv/wiki/SQL-and-Polars#sqlp>
 
 <a name="usage"></a>
 

@@ -39,6 +39,7 @@ Examples:
   qsv sortcheck --natural --json file.csv
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_sortcheck.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#sortcheck
 
 Usage:
     qsv sortcheck [options] [<input>]

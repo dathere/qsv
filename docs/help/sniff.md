@@ -72,6 +72,7 @@ qsv sniff --sample 0.20 data.ssv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_sniff.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#sniff>
 
 <a name="usage"></a>
 

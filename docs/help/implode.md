@@ -57,6 +57,7 @@ By default, all input rows are buffered in memory and groups are emitted in the
 order keys are first seen. If the input is already sorted by the key column(s),
 use --sorted to stream groups as they are seen (memory proportional to the
 largest group, not the whole input).
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#implode>
 
 <a name="usage"></a>
 

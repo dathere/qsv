@@ -38,6 +38,7 @@ Examples:
   $ qsv scoresql data.csv script.sql
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs.
+See also https://github.com/dathere/qsv/wiki/SQL-and-Polars#scoresql
 
 Usage:
     qsv scoresql [options] <input>... <sql>

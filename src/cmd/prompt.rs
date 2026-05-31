@@ -15,6 +15,8 @@ Examples:
   qsv prompt -m 'Select a spreadsheet to export to CSV' -F xlsx,xls,ods | \
       qsv excel - | qsv prompt -m 'Save exported CSV to...' --fd-output
 
+See also https://github.com/dathere/qsv/wiki/Conversion-and-IO#prompt
+
 Usage:
     qsv prompt [options]
     qsv prompt --help

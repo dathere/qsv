@@ -11,6 +11,8 @@ This command has TWO modes of operation.
    line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers, 
    otherwise, the first line will not be included in the external sort.
 
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#extsort
+
 Usage:
     qsv extsort [options] [<input>] [<output>]
     qsv extsort --help

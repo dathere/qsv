@@ -28,6 +28,7 @@ The none aggregation is not supported in group-by mode.
 If --values is omitted, a single "count" column is produced.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs>.
+See also <https://github.com/dathere/qsv/wiki/SQL-and-Polars#pivotp>
 
 
 <a name="usage"></a>

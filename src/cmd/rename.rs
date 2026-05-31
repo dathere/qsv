@@ -27,6 +27,7 @@ Examples:
   $ qsv rename '"Date - Opening","Date - Actual Closing"'
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_rename.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#rename
 
 Usage:
     qsv rename [options] [--] <headers> [<input>]

@@ -49,6 +49,7 @@ Examples:
   qsv slice --start 9 --len 10 --invert --json data.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_slice.rs.
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#slice
 
 Usage:
     qsv slice [options] [<input>]

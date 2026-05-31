@@ -1,6 +1,8 @@
 static USAGE: &str = r#"
 Drop a CSV file's header.
 
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#behead
+
 Usage:
     qsv behead [options] [<input>]
     qsv behead --help

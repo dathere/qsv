@@ -209,6 +209,7 @@ For all other conversions you can output the datapackage created by specifying `
   $ qsv to xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_to.rs.
+See also https://github.com/dathere/qsv/wiki/Conversion-and-IO#to
 
 Usage:
     qsv to parquet [options] <destination> [<input>...]

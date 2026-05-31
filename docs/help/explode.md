@@ -38,6 +38,7 @@ John,yellow
 Mary,red
 ```
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#explode>
 
 <a name="usage"></a>
 

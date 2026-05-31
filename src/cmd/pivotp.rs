@@ -16,6 +16,7 @@ GROUP-BY MODE (without <on-cols>):
   If --values is omitted, a single "count" column is produced.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_pivotp.rs.
+See also https://github.com/dathere/qsv/wiki/SQL-and-Polars#pivotp
 
 Usage:
     qsv pivotp [options] <on-cols> <input>

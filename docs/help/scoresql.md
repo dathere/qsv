@@ -72,6 +72,7 @@ qsv scoresql data.csv script.sql
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_scoresql.rs).
 
+See also <https://github.com/dathere/qsv/wiki/SQL-and-Polars#scoresql>
 
 <a name="usage"></a>
 

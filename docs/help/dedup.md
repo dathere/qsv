@@ -67,6 +67,7 @@ qsv dedup -s col1,col2 --dupes-output dupes.csv unsorted.csv -o deduped.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_dedup.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#dedup>
 
 <a name="usage"></a>
 

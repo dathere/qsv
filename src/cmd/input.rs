@@ -24,6 +24,7 @@ This command is typically used at the beginning of a data pipeline (thus the nam
 to normalize & prepare CSVs for further processing with other qsv commands.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_input.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#input
 
 Usage:
     qsv input [options] [<input>]

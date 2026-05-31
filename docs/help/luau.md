@@ -229,6 +229,7 @@ Detailed descriptions of these helpers can be found in the "setup_helpers" secti
 the bottom of this file and on the Wiki (<https://github.com/dathere/qsv/wiki>)
 
 For more detailed examples, see <https://github.com/dathere/qsv/blob/master/tests/test_luau.rs>.
+See also <https://github.com/dathere/qsv/wiki/Scripting-Luau-Python#luau>
 
 
 <a name="usage"></a>

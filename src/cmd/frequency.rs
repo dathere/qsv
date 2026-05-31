@@ -69,6 +69,7 @@ This is useful when you want to apply limits only to columns with a large number
 of unique items and not to columns with a small number of unique items.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs.
+See also https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#frequency
 
 Usage:
     qsv frequency [options] [<input>]

@@ -20,6 +20,8 @@ John,yellow
 Mary,red
 ```
 
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#explode
+
 Usage:
     qsv explode [options] <column> <separator> [<input>]
     qsv explode --help

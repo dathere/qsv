@@ -21,6 +21,7 @@ joins are done case sensitively, but this can be disabled with the --ignore-case
 flag.
 
 For examples, see <https://github.com/dathere/qsv/blob/master/tests/test_join.rs>.
+See also <https://github.com/dathere/qsv/wiki/Joins-and-Set-Ops#join>
 
 
 <a name="usage"></a>

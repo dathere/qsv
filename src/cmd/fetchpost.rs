@@ -139,6 +139,7 @@ Note that you can pass as many key-value pairs by using --http-header option rep
   $ qsv fetchpost https://httpbin.org/post col1-col3 data.csv -H "X-Api-Key:TEST_KEY" -H "X-Api-Secret:ABC123XYZ"
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_fetch.rs.
+See also https://github.com/dathere/qsv/wiki/HTTP-and-Web#fetchpost
 
 Usage:
     qsv fetchpost (<url-column>) (<column-list> | --payload-tpl <file>) [--jaq <selector> | --jaqfile <file>] [--http-header <k:v>...] [options] [<input>]

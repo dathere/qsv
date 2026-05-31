@@ -63,6 +63,7 @@ qsv replace '([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})' \
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_replace.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#replace>
 
 <a name="usage"></a>
 

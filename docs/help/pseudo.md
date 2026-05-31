@@ -58,6 +58,7 @@ ID-1000,cyan
 
 
 For more examples, see <https://github.com/dathere/qsv/blob/master/tests/test_pseudo.rs>.
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#pseudo>
 
 
 <a name="usage"></a>

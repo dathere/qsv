@@ -13,6 +13,7 @@ current (i.e. stats generated with --cardinality and --infer-dates options) and 
 skip recomputing stats.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_tojsonl.rs.
+See also https://github.com/dathere/qsv/wiki/Conversion-and-IO#tojsonl
 
 Usage:
     qsv tojsonl [options] [<input>]

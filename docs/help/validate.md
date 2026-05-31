@@ -210,6 +210,7 @@ qsv validate files.infile-list schema.json
 For more examples, see the tests included in this file (denoted by '#[test]') or see
 
 <https://github.com/dathere/qsv/blob/master/tests/test_validate.rs>.
+See also <https://github.com/dathere/qsv/wiki/Validation-and-Schema#validate>
 
 <a name="usage"></a>
 

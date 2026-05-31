@@ -76,6 +76,7 @@ Examples:
   qsv enum --hash "/record|name|address/" data.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_enumerate.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#enum
 
 Usage:
     qsv enum [options] [<input>]

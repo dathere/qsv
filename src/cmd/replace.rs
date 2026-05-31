@@ -38,6 +38,7 @@ with '<EMAIL>' in the file.csv file.
 
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_replace.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#replace
 
 Usage:
     qsv replace [options] <pattern> <replacement> [<input>]

@@ -71,6 +71,7 @@ qsv datefmt OpenDate,CloseDate --formatstr '%u' --rename Open_weekday,Close_week
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_datefmt.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#datefmt>
 
 <a name="usage"></a>
 

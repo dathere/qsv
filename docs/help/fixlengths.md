@@ -22,6 +22,8 @@ given must be a file and not stdin.
 Alternatively, if --length is set, then all records are forced to that length.
 This requires a single pass and can be done with stdin.
 
+See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#fixlengths>
+
 
 <a name="usage"></a>
 

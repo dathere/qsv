@@ -47,6 +47,7 @@ qsv diff --no-headers-output left.csv right.csv
 qsv diff --no-headers-left --no-headers-right left.csv right.csv
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_diff.rs
+See also https://github.com/dathere/qsv/wiki/Indexing-Compression-Diff#diff
 
 Usage:
     qsv diff [options] [<input-left>] [<input-right>]

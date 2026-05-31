@@ -243,6 +243,7 @@ qsv to xlsx datapackage.xlsx --stats --print-package file1.csv file2.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_to.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Conversion-and-IO#to>
 
 <a name="usage"></a>
 

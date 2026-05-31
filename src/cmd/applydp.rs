@@ -119,6 +119,7 @@ Examples:
   qsv applydp dynfmt --formatstr 'Sir/Madam {FirstName} {MI}. {LastName}' -c FullName file.csv
 
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_applydp.rs.
+See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#applydp
 
 Usage:
 qsv applydp operations <operations> [options] <column> [<input>]

@@ -30,6 +30,8 @@ line-by-line basis.
 
 A duplicate count will be sent to <stderr>.
 
+See also <https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#extdedup>
+
 
 <a name="usage"></a>
 

@@ -43,6 +43,7 @@ Examples:
   qsv search --preview-match 5 'warning' data.csv
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_search.rs.
+See also https://github.com/dathere/qsv/wiki/Selection-and-Inspection#search
 
 Usage:
     qsv search [options] <regex> [<input>]

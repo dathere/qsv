@@ -83,6 +83,7 @@ qsv search --preview-match 5 'warning' data.csv
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_search.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Selection-and-Inspection#search>
 
 <a name="usage"></a>
 

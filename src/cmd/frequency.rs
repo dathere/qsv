@@ -46,28 +46,27 @@ You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environme
 or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
 CPUs)), or by setting the --jobs option.
 
-NOTE: "Complete" Frequency Tables:
+"COMPLETE" FREQUENCY TABLES FOR ID COLUMNS:
+By default, ID columns will have an `<ALL UNIQUE>` value with count equal to
+rowcount and percentage set to 100 with a rank of 0. This is done by using the
+stats cache to fetch each column's cardinality - allowing qsv to short-circuit
+frequency compilation and eliminate the need to maintain a hashmap for ID columns.
 
-    By default, ID columns will have an "<ALL UNIQUE>" value with count equal to
-    rowcount and percentage set to 100 with a rank of 0. This is done by using the
-    stats cache to fetch each column's cardinality - allowing qsv to short-circuit
-    frequency compilation and eliminate the need to maintain a hashmap for ID columns.
+If you wish to compile a "complete" frequency table even for ID columns, set
+QSV_STATSCACHE_MODE to "none". This will force the frequency command to compute
+frequencies for all columns regardless of cardinality, even for ID columns.
 
-    If you wish to compile a "complete" frequency table even for ID columns, set
-    QSV_STATSCACHE_MODE to "none". This will force the frequency command to compute
-    frequencies for all columns regardless of cardinality, even for ID columns.
+In this case, the unique limit (--unq-limit) option is particularly useful when
+a column has all unique values  and --limit is set to 0.
+Without a unique limit, the frequency table for that column will be the same as
+the number of rows in the data.
+With a unique limit, the frequency table will be a sample of N unique values,
+all with a count of 1.
 
-    In this case, the unique limit (--unq-limit) option is particularly useful when
-    a column has all unique values  and --limit is set to 0.
-    Without a unique limit, the frequency table for that column will be the same as
-    the number of rows in the data.
-    With a unique limit, the frequency table will be a sample of N unique values,
-    all with a count of 1.
-
-    The --lmt-threshold option also allows you to apply the --limit and --unq-limit
-    options only when the number of unique items in a column >= threshold.
-    This is useful when you want to apply limits only to columns with a large number
-    of unique items and not to columns with a small number of unique items.
+The --lmt-threshold option also allows you to apply the --limit and --unq-limit
+options only when the number of unique items in a column >= threshold.
+This is useful when you want to apply limits only to columns with a large number
+of unique items and not to columns with a small number of unique items.
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_frequency.rs.
 

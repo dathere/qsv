@@ -57,10 +57,8 @@ You can override this behavior by setting the QSV_FREQ_CHUNK_MEMORY_MB environme
 or any non-u64 value (e.g. -1 or "auto") for CPU-based chunking (1 chunk = num records/number of
 CPUs)), or by setting the --jobs option.
 
-> [!NOTE]
-> "Complete" Frequency Tables:
-
-By default, ID columns will have an "<ALL UNIQUE>" value with count equal to
+"COMPLETE" FREQUENCY TABLES FOR ID COLUMNS:  
+By default, ID columns will have an `<ALL UNIQUE>` value with count equal to
 rowcount and percentage set to 100 with a rank of 0. This is done by using the
 stats cache to fetch each column's cardinality - allowing qsv to short-circuit
 frequency compilation and eliminate the need to maintain a hashmap for ID columns.

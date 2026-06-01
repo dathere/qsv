@@ -265,6 +265,10 @@ fn erf(x: f64) -> f64 {
 }
 
 /// The standard-normal cumulative distribution function, `Phi(x)`.
+// Not a midpoint: this is the CDF identity Phi(x) = (1 + erf(x/sqrt(2)))/2.
+// clippy::manual_midpoint pattern-matches `0.5 * (a + b)` but f64::midpoint
+// would obscure the formula and carries no precision benefit here.
+#[allow(clippy::manual_midpoint)]
 fn normal_cdf(x: f64) -> f64 {
     0.5 * (1.0 + erf(x / std::f64::consts::SQRT_2))
 }

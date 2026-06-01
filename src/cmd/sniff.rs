@@ -1199,7 +1199,8 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
         }
         let sniff_error_json = json!({
             "title": "sniff error",
-            "detail": format!("{}", sniff_error.unwrap()),
+            // safety: we just created this string above, so it's safe to unwrap
+            "detail": &sniff_error.unwrap().to_string(),
             "meta": {
                 "detected_mime_type": file_type,
                 "detected_label": file_label,

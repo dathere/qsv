@@ -20,6 +20,12 @@
 //! the old `qsv_ckan_stubs.py` defaults and `ckanext.datapusher_plus.config`
 //! upstream defaults.
 
+// minijinja's `Function`/`Filter` trait bounds require by-value args
+// (`Value`, `Kwargs`, `Rest<Value>`, owned `String`) to satisfy its `ArgType`
+// machinery, so clippy::needless_pass_by_value fires on every registered
+// helper here even though the signatures cannot take references.
+#![allow(clippy::needless_pass_by_value)]
+
 use std::cell::RefCell;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime};
@@ -1054,6 +1060,12 @@ fn file_size_of(path: &str) -> minijinja::Value {
 /// `compress_format` global — IANA media type for single-file
 /// compressors derived from the path's extension. Returns minijinja
 /// undefined when the extension is unrecognized.
+// `lower` is already ASCII-lowercased, so the case-sensitivity lint is moot;
+// the `match ()` guard idiom intentionally uses `_` arms over `ends_with`.
+#[allow(
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::ignored_unit_patterns
+)]
 fn compress_format(path: &str) -> minijinja::Value {
     let lower = path.to_ascii_lowercase();
     let m = match () {
@@ -1070,6 +1082,13 @@ fn compress_format(path: &str) -> minijinja::Value {
 /// `package_format` global — IANA media type for archive containers
 /// derived from the path's extension. Returns minijinja undefined when
 /// the extension is unrecognized.
+// `lower` is already ASCII-lowercased, and `.tar.gz`/`.tgz` double-extension
+// matching cannot be expressed via `Path::extension`, so the `ends_with`
+// guards stay; the `match ()` idiom intentionally uses `_` arms.
+#[allow(
+    clippy::case_sensitive_file_extension_comparisons,
+    clippy::ignored_unit_patterns
+)]
 fn package_format(path: &str) -> minijinja::Value {
     let lower = path.to_ascii_lowercase();
     let m = match () {

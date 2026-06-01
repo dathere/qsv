@@ -236,6 +236,9 @@ fn fromjson(value: &Value) -> Result<Value, Error> {
 
 // Return the first argument that is neither undefined, none, nor an empty
 // string. Broader than the single-fallback `default`/`d` builtin.
+// `Rest<Value>` must be taken by value to satisfy minijinja's filter trait
+// bounds, so clippy::needless_pass_by_value is a false positive here.
+#[allow(clippy::needless_pass_by_value)]
 fn coalesce(args: Rest<Value>) -> Value {
     args.iter()
         .find(|v| !v.is_undefined() && !v.is_none() && !v.as_str().is_some_and(str::is_empty))

@@ -331,6 +331,7 @@ fn count_rows(args: &ContextArgs) -> CliResult<u64> {
 
 /// Which optional execution flags the target subprocess supports. Used by
 /// `append_csv_flags` to gate the forwarded flag set per command.
+#[derive(Clone, Copy)]
 struct FreqOrCount {
     jobs:     bool,
     force:    bool,

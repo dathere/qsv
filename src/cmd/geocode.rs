@@ -2459,7 +2459,7 @@ fn search_index(
             let url = Url::parse(cell)
                 .map_err(|_| CliError::Other("Invalid URL".to_string()))
                 .ok()?;
-            let host = url.host_str().unwrap_or_default().to_string();
+            let host = url.host_str().unwrap_or_default();
             // try to resolve the host to an IP address using cached DNS lookup
             cached_dns_lookup(host)?
         };
@@ -2573,8 +2573,8 @@ fn search_index(
     key = "String",
     convert = r#"{ host.to_owned() }"#
 )]
-fn cached_dns_lookup(host: String) -> Option<IpAddr> {
-    dns_lookup::lookup_host(&host)
+fn cached_dns_lookup(host: &str) -> Option<IpAddr> {
+    dns_lookup::lookup_host(host)
         .map(|ips| {
             ips.into_iter()
                 .next()

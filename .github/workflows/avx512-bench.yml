@@ -1,0 +1,156 @@
+name: AVX-512 bench (Polars)
+
+# Manual A/B benchmark to answer: does dropping the Polars `avx512` feature
+# cost runtime on x86_64? Builds two binaries that differ ONLY in
+# `polars/avx512`, then benchmarks sqlp/joinp/stats with hyperfine.
+#
+# x86_64-ONLY BY CONSTRUCTION: `avx512` is gated to x86_64 in Cargo.toml (the
+# [target.'cfg(target_arch = "x86_64")'.dependencies] polars line). On any other
+# arch the feature is never enabled, so this benchmark is only meaningful — and
+# `runs-on` must stay — on an x86_64 runner.
+#
+# NOTE: GitHub-hosted runners do NOT guarantee an AVX-512-capable CPU. The
+# "Detect CPU" step reports whether this one has it; the A/B only reflects
+# AVX-512 when it does. Re-run (allocation varies) or use a self-hosted
+# AVX-512 box.
+
+on:
+  workflow_dispatch:
+    inputs:
+      rows:
+        description: "Rows in the benchmark CSV"
+        default: "2000000"
+      runs:
+        description: "hyperfine runs per command"
+        default: "10"
+
+concurrency:
+  group: avx512-bench-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # RUSTFLAGS is left at its default and IDENTICAL for both builds, so the only
+  # difference is the polars `avx512` feature. Polars dispatches its AVX-512
+  # kernels at runtime via CPU detection, so the feature-enabled binary uses
+  # them automatically on capable hardware. If a future polars instead gates
+  # AVX-512 behind a global target-feature, add `-C target-feature=+avx512f`
+  # to the WITH-avx512 build only.
+
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Detect CPU / AVX-512
+        run: |
+          MODEL=$(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | xargs)
+          {
+            echo "## AVX-512 benchmark"
+            echo "### Runner CPU"
+            echo "- Model: \`$MODEL\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+          if grep -qm1 avx512f /proc/cpuinfo; then
+            FLAGS=$(grep -m1 flags /proc/cpuinfo | grep -o 'avx512[a-z_]*' | sort -u | tr '\n' ' ')
+            echo "- AVX-512: ✅ present ($FLAGS)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- AVX-512: ❌ NOT present — the A/B below is meaningless on this runner; re-run or use an AVX-512 runner." >> "$GITHUB_STEP_SUMMARY"
+            echo "::warning::Runner lacks AVX-512; benchmark will not reflect AVX-512."
+          fi
+
+      # Third-party actions pinned to full commit SHAs (Codacy security rule).
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-06-01
+        with:
+          toolchain: stable
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+
+      - name: Install hyperfine
+        run: |
+          wget -q https://github.com/sharkdp/hyperfine/releases/download/v1.19.0/hyperfine_1.19.0_amd64.deb
+          sudo dpkg -i hyperfine_1.19.0_amd64.deb
+
+      - name: Generate benchmark data
+        # Pass the dispatch input via env (never interpolate ${{ }} into the
+        # script body) and validate it is numeric, to avoid shell injection.
+        env:
+          ROWS: ${{ inputs.rows }}
+        run: |
+          case "$ROWS" in ''|*[!0-9]*) echo "rows must be a positive integer, got: $ROWS"; exit 1;; esac
+          python3 - "$ROWS" <<'PY'
+          import random, sys
+          random.seed(42)
+          names = ["alpha","bravo","charlie","delta","echo","foxtrot","golf","hotel"]
+          n = int(sys.argv[1])
+          with open("bench.csv", "w") as f:
+              f.write("id,grp,x,y,name,dt\n")
+              for i in range(n):
+                  g = random.randint(1, 5000)
+                  f.write(f"{i},g{g},{random.random()*1000:.4f},{random.randint(0,100000)},{random.choice(names)},2024-{random.randint(1,12):02d}-{random.randint(1,28):02d}\n")
+          with open("dim.csv", "w") as f:
+              f.write("grp,label\n")
+              for g in range(1, 5001):
+                  f.write(f"g{g},label_{g}\n")
+          PY
+          ls -lh bench.csv dim.csv
+
+      # `avx512` is gated to x86_64 via the
+      # [target.'cfg(target_arch = "x86_64")'.dependencies] table in Cargo.toml,
+      # whose `polars` line is the ONLY place avx512 is enabled. This runner is
+      # x86_64, so we A/B by toggling that line's feature list between [] and
+      # ["avx512"]. The regex anchors on the single-line `optional = true }`
+      # form, so it never touches the multi-line base `polars` dependency.
+      - name: Build WITHOUT avx512
+        run: |
+          sed -i -E 's/(version = "0\.53", features = )\[[^]]*\](, optional = true)/\1[]\2/' Cargo.toml
+          echo "x86_64 polars line:"; grep -n 'features = \[.*optional = true' Cargo.toml || true
+          cargo build --release --bin qsv --features polars,feature_capable
+          cp target/release/qsv ./qsv_noavx512
+
+      - name: Build WITH avx512
+        run: |
+          sed -i -E 's/(version = "0\.53", features = )\[[^]]*\](, optional = true)/\1["avx512"]\2/' Cargo.toml
+          echo "x86_64 polars line:"; grep -n 'features = \[.*optional = true' Cargo.toml || true
+          cargo build --release --bin qsv --features polars,feature_capable
+          cp target/release/qsv ./qsv_avx512
+
+      - name: Restore Cargo.toml
+        if: always()
+        run: git checkout -- Cargo.toml Cargo.lock
+
+      - name: Binary sizes
+        run: |
+          {
+            echo "### Binary sizes (-F polars,feature_capable, release)"
+            echo '```'
+            ls -l qsv_noavx512 qsv_avx512 | awk '{printf "%12d  %s\n", $5, $NF}'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Benchmark
+        # Pass the dispatch input via env and validate it is numeric (no ${{ }}
+        # interpolation into the script body) to avoid shell injection.
+        env:
+          RUNS: ${{ inputs.runs }}
+        run: |
+          case "$RUNS" in ''|*[!0-9]*) echo "runs must be a positive integer, got: $RUNS"; exit 1;; esac
+          R="$RUNS"
+          SQL="SELECT grp, COUNT(*) c, SUM(x) sx, AVG(y) ay FROM _t_1 GROUP BY grp"
+          echo "### Benchmarks (median of $R runs, avx512 OFF vs ON)" >> "$GITHUB_STEP_SUMMARY"
+
+          run_bench () {  # $1=label  $2..=args
+            local label="$1"; shift
+            hyperfine --warmup 1 --runs "$R" --export-markdown "bench_$label.md" \
+              -n "avx512-OFF" "./qsv_noavx512 $*" \
+              -n "avx512-ON"  "./qsv_avx512 $*"
+            { echo "#### $label"; cat "bench_$label.md"; } >> "$GITHUB_STEP_SUMMARY"
+          }
+
+          run_bench sqlp  sqlp bench.csv "\"$SQL\"" --output /dev/null
+          run_bench joinp joinp grp bench.csv grp dim.csv --output /dev/null
+          run_bench stats stats bench.csv --everything --output /dev/null
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: avx512-bench-results
+          path: bench_*.md

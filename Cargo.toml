@@ -222,10 +222,12 @@ pragmastat = "12.1"
 polars = { version = "0.53", features = [
     "asof_join",
     "avro",
-    "avx512",
+    # "avx512" is x86_64-only — enabled via the
+    # [target.'cfg(target_arch = "x86_64")'.dependencies] table below
+    # (AVX-512 is an x86 ISA extension; inert on aarch64 et al.)
     # "aws",
     "binary_encoding",
-    "bitwise",
+    # "bitwise",
     "business",
     # "cloud",
     "coalesce",
@@ -234,15 +236,21 @@ polars = { version = "0.53", features = [
     "csv",
     "decompress",
     "diagonal_concat",
-    "dtype-full",
-    "extract_jsonpath",
+    # "dtype-full",
+    "dtype-date",
+    "dtype-datetime",
+    "dtype-time",
+    "dtype-duration",
+    "dtype-categorical",
+    "dtype-decimal",
+    # "extract_jsonpath",
     "iejoin",
     "ipc",
     "json",
     "lazy",
     "list_eval",
     "streaming",
-    "object",
+    # "object",
     "parquet",
     "performant",
     "pivot",
@@ -250,8 +258,8 @@ polars = { version = "0.53", features = [
     "semi_anti_join",
     "serde-lazy",
     "strings",
-    "string_normalize",
-    "string_pad",
+    # "string_normalize",
+    # "string_pad",
     "sql",
     "timezones",
 ], optional = true }
@@ -411,6 +419,14 @@ polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optiona
 # Code paths that use it are guarded by #[cfg(not(target_endian = "big"))].
 [target.'cfg(not(target_endian = "big"))'.dependencies]
 datasketches = { version = "0.3", features = ["frequencies", "hll", "tdigest"] }
+
+# AVX-512 is an x86_64-only ISA extension; Polars' avx512 kernels are inert on
+# other targets, so gate the feature to x86_64. Cargo unions these features with
+# the base `polars` dependency above, so x86_64 builds get avx512 while
+# aarch64 (and other arches) don't carry it. Polars dispatches the AVX-512
+# kernels at runtime, so enabling it for all x86_64 builds is safe.
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+polars = { version = "0.53", features = ["avx512"], optional = true }
 
 [features]
 default = ["jemallocator"]

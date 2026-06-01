@@ -1235,7 +1235,7 @@ mod tests {
 
     use serde_json::json;
 
-    use super::{apply_pointer_overrides, set_by_pointer};
+    use super::apply_pointer_overrides;
 
     #[test]
     fn pointer_overrides_set_existing_leaf() {

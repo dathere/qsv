@@ -956,8 +956,7 @@ fn basename(value: &str) -> String {
     std::path::Path::new(value)
         .file_name()
         .and_then(|s| s.to_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| value.to_string())
+        .map_or_else(|| value.to_string(), str::to_string)
 }
 
 /// `file_stem` filter — returns the basename minus its extension. Used
@@ -966,8 +965,7 @@ fn file_stem(value: &str) -> String {
     std::path::Path::new(value)
         .file_stem()
         .and_then(|s| s.to_str())
-        .map(str::to_string)
-        .unwrap_or_else(|| value.to_string())
+        .map_or_else(|| value.to_string(), str::to_string)
 }
 
 /// `sanitize_iso_8601_interval` filter — rejects interval / repeating
@@ -1030,7 +1028,7 @@ fn sha256_of(path: &str) -> minijinja::Value {
     // (so `format!("{digest:x}")` no longer compiles). Iterating
     // works on both 0.10 (GenericArray derefs to slice) and 0.11.
     let mut hex = String::with_capacity(digest.len() * 2);
-    for b in digest.iter() {
+    for b in &digest {
         let _ = write!(&mut hex, "{b:02x}");
     }
     minijinja::Value::from(hex)
@@ -1188,14 +1186,13 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
             .or_else(|| v.as_i64().map(|i| i as f64))
             .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
     };
-    let (min_lon, max_lon, min_lat, max_lat) = match (
+    let (Some(min_lon), Some(max_lon), Some(min_lat), Some(max_lat)) = (
         lookup(lon, "min"),
         lookup(lon, "max"),
         lookup(lat, "min"),
         lookup(lat, "max"),
-    ) {
-        (Some(a), Some(b), Some(c), Some(d)) => (a, b, c, d),
-        _ => return minijinja::Value::UNDEFINED,
+    ) else {
+        return minijinja::Value::UNDEFINED;
     };
     let polygon = format!(
         "POLYGON(({min_lon} {min_lat}, {min_lon} {max_lat}, {max_lon} {max_lat}, {max_lon} \

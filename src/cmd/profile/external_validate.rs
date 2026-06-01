@@ -341,15 +341,14 @@ fn substitute_tokens(arg: &str, file_path: &OsStr, extras: &[(String, OsString)]
                 .find(|(n, _)| n == name)
                 .map(|(_, p)| p.as_os_str())
         };
-        match resolved {
-            Some(p) => out.push(p),
-            None => {
-                // Unknown token — pass through as literal so the
-                // validator sees exactly what the user wrote.
-                out.push("{");
-                out.push(name);
-                out.push("}");
-            },
+        if let Some(p) = resolved {
+            out.push(p)
+        } else {
+            // Unknown token — pass through as literal so the
+            // validator sees exactly what the user wrote.
+            out.push("{");
+            out.push(name);
+            out.push("}");
         }
         rest = &after_open[close + 1..];
     }

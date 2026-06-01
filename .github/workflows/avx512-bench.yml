@@ -59,10 +59,11 @@ jobs:
             echo "::warning::Runner lacks AVX-512; benchmark will not reflect AVX-512."
           fi
 
-      - uses: dtolnay/rust-toolchain@master
+      # Third-party actions pinned to full commit SHAs (Codacy security rule).
+      - uses: dtolnay/rust-toolchain@3c5f7ea28cd621ae0bf5283f0e981fb97b8a7af9 # master @ 2026-06-01
         with:
           toolchain: stable
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
       - name: Install hyperfine
         run: |

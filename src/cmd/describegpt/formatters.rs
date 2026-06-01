@@ -85,7 +85,15 @@ pub(super) fn format_dictionary_json(
                     };
                     obj.insert(key.clone(), json_value);
                 }
-                obj.insert("examples".to_string(), json!(e.examples));
+                // Reformat date Examples to the inferred format only when
+                // --infer-content-type is set, mirroring the `minmax` closure
+                // so legacy output stays byte-identical when the flag is off.
+                let examples = if infer_content_type {
+                    super::dictionary::format_date_examples(&e.content_type, &e.examples)
+                } else {
+                    e.examples.clone()
+                };
+                obj.insert("examples".to_string(), json!(examples));
             }
 
             entry_obj
@@ -325,7 +333,15 @@ fn build_property_schema(
                 if bare.is_empty() {
                     return None;
                 }
-                let value = coerce_value(bare, qsv_type);
+                // Reformat date values to the inferred format so schema examples
+                // match the date-formatted Min/Max in x-qsv, but only when
+                // --infer-content-type is set (mirrors x-qsv min/max gating).
+                let bare = if infer_content_type {
+                    super::dictionary::format_date_value(&entry.content_type, bare)
+                } else {
+                    std::borrow::Cow::Borrowed(bare)
+                };
+                let value = coerce_value(&bare, qsv_type);
                 value_matches_json_type(&value, json_type).then_some(value)
             })
             .collect();
@@ -645,6 +661,33 @@ mod tests {
     }
 
     #[test]
+    fn json_reformats_date_examples_to_inferred_format() {
+        // Examples carry a time component from raw frequency values; with the
+        // flag on they're reformatted to the inferred date-only format (counts
+        // preserved), consistent with Min/Max. With the flag off, unchanged.
+        let mut date = date_entry(
+            "created",
+            "date:%m/%d/%Y",
+            "Date",
+            "2013-01-24",
+            "2013-12-31",
+        );
+        date.examples = "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string();
+
+        let on = format_dictionary_json(std::slice::from_ref(&date), 10, 5, 25, true, &[]);
+        assert_eq!(
+            on["fields"][0]["examples"],
+            "01/24/2013 [5]\n01/07/2014 [3]"
+        );
+
+        let off = format_dictionary_json(std::slice::from_ref(&date), 10, 5, 25, false, &[]);
+        assert_eq!(
+            off["fields"][0]["examples"],
+            "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]"
+        );
+    }
+
+    #[test]
     fn json_does_not_reformat_min_max_when_flag_off() {
         // With infer_content_type=false the legacy output must stay byte-identical,
         // even if an entry carries a date content_type: Min/Max are NOT reformatted
@@ -718,6 +761,35 @@ mod tests {
             row.contains("Label\tDesc\temail\t"),
             "row missing content_type cell: {row}"
         );
+    }
+
+    #[test]
+    fn jsonschema_reformats_date_examples_to_inferred_format() {
+        // A Date property (json type "string") whose raw examples carry a time
+        // component: with the flag on, the property's `examples` array is
+        // reformatted to the inferred date-only format like x-qsv min/max.
+        let mut date = date_entry(
+            "created",
+            "date:%m/%d/%Y",
+            "Date",
+            "2013-01-24",
+            "2013-12-31",
+        );
+        date.examples = "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string();
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&date),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+        );
+        let examples = schema["properties"]["created"]["examples"]
+            .as_array()
+            .expect("date property should emit examples");
+        assert_eq!(examples, &[json!("01/24/2013"), json!("01/07/2014")]);
     }
 
     #[test]

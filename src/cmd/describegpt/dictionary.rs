@@ -240,6 +240,36 @@ pub(super) fn format_date_value<'a>(
     }
 }
 
+/// Reformat the value part of each `"value [count]"` example line to the
+/// `content_type`'s inferred date format, so the Examples column reads
+/// consistently with the date-formatted Min/Max. Passthrough when
+/// `content_type` carries no date format and on the `<ALL_UNIQUE>` sentinel.
+/// The trailing ` [count]` suffix is preserved verbatim, and values that
+/// cannot be parsed (frequency aggregation buckets like `Other…`/`(NULL)…`,
+/// truncated `value…` entries) are left unchanged by `format_date_value`.
+pub(super) fn format_date_examples(content_type: &str, examples: &str) -> String {
+    if examples == "<ALL_UNIQUE>" || content_type_date_format(content_type).is_none() {
+        return examples.to_string();
+    }
+    examples
+        .lines()
+        .map(|line| {
+            // Split off a trailing " [count]" suffix (rfind so values that
+            // themselves contain "[" aren't truncated mid-value), reformat the
+            // value, then rejoin value + suffix.
+            if let Some(idx) = line.rfind(" [")
+                && line.ends_with(']')
+            {
+                let (value, suffix) = line.split_at(idx);
+                format!("{}{suffix}", format_date_value(content_type, value))
+            } else {
+                format_date_value(content_type, line).into_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// LLM-inferred fields for a single dictionary column, keyed by field name in the
 /// map returned by `parse_llm_dictionary_response`. `content_type` stays empty
 /// unless `--infer-content-type` is set.
@@ -1191,6 +1221,48 @@ mod tests {
             addl_cols:    IndexMap::new(),
             examples:     String::new(),
         }
+    }
+
+    #[test]
+    fn format_date_examples_reformats_values_keeps_counts() {
+        // DateTime values with a time component, inferred date-only format:
+        // values are reformatted, " [count]" suffixes preserved verbatim.
+        let out = format_date_examples(
+            "date:%m/%d/%Y",
+            "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]",
+        );
+        assert_eq!(out, "01/24/2013 [5]\n01/07/2014 [3]");
+    }
+
+    #[test]
+    fn format_date_examples_idempotent_when_already_formatted() {
+        let out = format_date_examples("date:%m/%d/%Y", "01/24/2013 [5]");
+        assert_eq!(out, "01/24/2013 [5]");
+    }
+
+    #[test]
+    fn format_date_examples_passthrough_cases() {
+        // No inferred format → unchanged.
+        assert_eq!(
+            format_date_examples("date", "01/24/2013 12:00:00 AM [5]"),
+            "01/24/2013 12:00:00 AM [5]"
+        );
+        // Non-date content type → unchanged.
+        assert_eq!(
+            format_date_examples("category", "alpha [9]\nbeta [3]"),
+            "alpha [9]\nbeta [3]"
+        );
+        // <ALL_UNIQUE> sentinel and empty input → unchanged.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "<ALL_UNIQUE>"),
+            "<ALL_UNIQUE>"
+        );
+        assert_eq!(format_date_examples("date:%m/%d/%Y", ""), "");
+        // Unparseable frequency-bucket values pass through, real dates still format.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "Other… [4091]\n01/24/2013 12:00:00 AM [5]"),
+            "Other… [4091]\n01/24/2013 [5]"
+        );
     }
 
     #[test]

@@ -70,8 +70,13 @@ jobs:
           sudo dpkg -i hyperfine_1.19.0_amd64.deb
 
       - name: Generate benchmark data
+        # Pass the dispatch input via env (never interpolate ${{ }} into the
+        # script body) and validate it is numeric, to avoid shell injection.
+        env:
+          ROWS: ${{ inputs.rows }}
         run: |
-          python3 - "${{ inputs.rows }}" <<'PY'
+          case "$ROWS" in ''|*[!0-9]*) echo "rows must be a positive integer, got: $ROWS"; exit 1;; esac
+          python3 - "$ROWS" <<'PY'
           import random, sys
           random.seed(42)
           names = ["alpha","bravo","charlie","delta","echo","foxtrot","golf","hotel"]
@@ -122,8 +127,13 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Benchmark
+        # Pass the dispatch input via env and validate it is numeric (no ${{ }}
+        # interpolation into the script body) to avoid shell injection.
+        env:
+          RUNS: ${{ inputs.runs }}
         run: |
-          R="${{ inputs.runs }}"
+          case "$RUNS" in ''|*[!0-9]*) echo "runs must be a positive integer, got: $RUNS"; exit 1;; esac
+          R="$RUNS"
           SQL="SELECT grp, COUNT(*) c, SUM(x) sx, AVG(y) ay FROM _t_1 GROUP BY grp"
           echo "### Benchmarks (median of $R runs, avx512 OFF vs ON)" >> "$GITHUB_STEP_SUMMARY"
 

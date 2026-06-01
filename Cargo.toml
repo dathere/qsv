@@ -236,7 +236,16 @@ polars = { version = "0.53", features = [
     "csv",
     "decompress",
     "diagonal_concat",
-    # "dtype-full",
+    # "dtype-full" replaced by the specific dtypes qsv uses. The small-int
+    # dtypes are required: util.rs builds Polars schemas with UInt8/UInt16 for
+    # small non-negative integer columns, and sqlp's editable .pschema.json
+    # documents Int8/Int16/UInt8/UInt16 as valid cast targets. These kernels
+    # are feature-gated in Polars, so they must be enabled explicitly (u8/u16
+    # were only surviving transitively; i8/i16 were lost with dtype-full).
+    "dtype-i8",
+    "dtype-i16",
+    "dtype-u8",
+    "dtype-u16",
     "dtype-date",
     "dtype-datetime",
     "dtype-time",

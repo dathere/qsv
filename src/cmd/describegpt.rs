@@ -4794,8 +4794,9 @@ fn yaml_scalar(s: &str) -> String {
 /// True when `s` would be parsed by a YAML consumer as a non-string implicit
 /// scalar (bool, null, integer, float, or `YYYY-MM-DD` timestamp), so a string
 /// value must be quoted to preserve its type. Uses the liberal YAML 1.1 bool/null
-/// set; numeric detection defers to Rust's `i64`/`f64` parsers (which also cover
-/// `inf`/`nan`).
+/// set; numeric detection covers plain decimals (via Rust's `i64`/`f64` parsers,
+/// which also handle `inf`/`nan`), YAML `_` digit separators (`1_000`,
+/// `1_000.5`), and radix-prefixed integers (`0xFF`, `0o17`, `0b1010`).
 fn is_yaml_implicit_typed(s: &str) -> bool {
     // YAML 1.1 booleans / nulls (case-insensitive), plus the `~` null indicator.
     if matches!(
@@ -4804,8 +4805,32 @@ fn is_yaml_implicit_typed(s: &str) -> bool {
     ) {
         return true;
     }
-    // Integer or float (covers leading +/-, exponents, inf/nan).
+    // Decimal integer or float, including YAML's `_` digit separators (e.g.
+    // `1_000`, `1_000.5`): Rust's parsers reject underscores, so retry on the
+    // underscore-stripped form. Stripping a non-numeric identifier like
+    // `v_1` -> `v1` still fails to parse, so this won't over-quote.
     if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
+        return true;
+    }
+    if s.contains('_') {
+        let bare = s.replace('_', "");
+        if bare.parse::<i64>().is_ok() || bare.parse::<f64>().is_ok() {
+            return true;
+        }
+    }
+    // Radix-prefixed integers (YAML/programmer forms), allowing `_` separators.
+    let radix = |prefixes: [&str; 2], valid: fn(char) -> bool| {
+        prefixes.iter().any(|p| {
+            s.strip_prefix(p).is_some_and(|rest| {
+                let digits = rest.replace('_', "");
+                !digits.is_empty() && digits.chars().all(valid)
+            })
+        })
+    };
+    if radix(["0x", "0X"], |c| c.is_ascii_hexdigit())
+        || radix(["0o", "0O"], |c| ('0'..='7').contains(&c))
+        || radix(["0b", "0B"], |c| c == '0' || c == '1')
+    {
         return true;
     }
     // `YYYY-MM-DD` prefix — the canonical YAML !!timestamp / ISO date form.
@@ -7149,6 +7174,16 @@ p_fewshot_examples = ""
         assert_eq!(yaml_scalar("False"), "\"False\"");
         assert_eq!(yaml_scalar("null"), "\"null\"");
         assert_eq!(yaml_scalar("2026-01-01"), "\"2026-01-01\"");
+        // YAML integer forms that pass the plain char-set check but Rust's parser
+        // misses: radix prefixes and `_` digit separators.
+        assert_eq!(yaml_scalar("0xFF"), "\"0xFF\"");
+        assert_eq!(yaml_scalar("0b1010"), "\"0b1010\"");
+        assert_eq!(yaml_scalar("0o17"), "\"0o17\"");
+        assert_eq!(yaml_scalar("1_000"), "\"1_000\"");
+        assert_eq!(yaml_scalar("1_000.5"), "\"1_000.5\"");
+        // Underscore / 0x-looking identifiers that aren't numbers stay plain.
+        assert_eq!(yaml_scalar("v_1"), "v_1");
+        assert_eq!(yaml_scalar("0xZZ_label"), "0xZZ_label");
         // Special chars are still quoted + escaped.
         assert_eq!(yaml_scalar("a: b"), "\"a: b\"");
     }

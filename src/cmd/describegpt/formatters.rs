@@ -568,19 +568,14 @@ pub(super) struct SemanticMdData {
 /// sentinel). The primary key is inferred only when exactly one column is fully
 /// unique and non-null; otherwise it is omitted.
 pub(super) fn build_semanticmd_data(entries: &[DictionaryEntry]) -> SemanticMdData {
-    // Total row count estimated as the max of (distinct + nulls) across columns.
-    // A fully-unique non-null column has distinct == row_count, so it pins this
-    // estimate; columns with duplicates contribute a smaller value.
-    let row_count = entries
-        .iter()
-        .map(|e| e.cardinality + e.null_count)
-        .max()
-        .unwrap_or(0);
-
-    // Primary key candidates: non-null AND fully unique (distinct == row_count).
+    // Primary key candidates rely on the deterministic `<ALL_UNIQUE>` examples
+    // sentinel (qsv `frequency` emits it only when `cardinality == rowcount`, i.e.
+    // every row carries a distinct value) combined with `null_count == 0`. Using
+    // this exact signal — rather than estimating the row count — avoids falsely
+    // flagging a merely highest-cardinality column as a key.
     let mut pk_candidates = entries
         .iter()
-        .filter(|e| e.null_count == 0 && row_count > 0 && e.cardinality == row_count)
+        .filter(|e| e.null_count == 0 && e.examples == "<ALL_UNIQUE>")
         .map(|e| e.name.clone());
     let primary_key = match (pk_candidates.next(), pk_candidates.next()) {
         (Some(pk), None) => Some(pk),
@@ -1109,16 +1104,35 @@ mod tests {
 
     #[test]
     fn semanticmd_primary_key_ambiguous_omitted() {
-        // Two fully-unique non-null columns => ambiguous => no primary key.
+        // Two fully-unique non-null columns (both carry the <ALL_UNIQUE> sentinel)
+        // => ambiguous => no primary key.
         let mut a = sample_entry("a", "");
         a.r#type = "Integer".to_string();
         a.cardinality = 100;
         a.null_count = 0;
+        a.examples = "<ALL_UNIQUE>".to_string();
         let mut b = sample_entry("b", "");
         b.r#type = "Integer".to_string();
         b.cardinality = 100;
         b.null_count = 0;
+        b.examples = "<ALL_UNIQUE>".to_string();
         let data = build_semanticmd_data(&[a, b]);
+        assert!(data.primary_key.is_none());
+    }
+
+    #[test]
+    fn semanticmd_primary_key_ignores_high_cardinality_non_unique() {
+        // A merely highest-cardinality non-null column (no <ALL_UNIQUE> sentinel)
+        // must NOT be inferred as a primary key, even when no column is fully unique.
+        let mut hi = sample_entry("hi", "");
+        hi.cardinality = 90;
+        hi.null_count = 0;
+        hi.examples = "x [50]\ny [40]".to_string();
+        let mut lo = sample_entry("lo", "");
+        lo.cardinality = 5;
+        lo.null_count = 0;
+        lo.examples = "a [60]\nb [30]".to_string();
+        let data = build_semanticmd_data(&[hi, lo]);
         assert!(data.primary_key.is_none());
     }
 }

@@ -120,19 +120,19 @@ semantic-md: {{ profile }}
 
 | Resource | Schema | Title |
 | --- | --- | --- |
-| `{{ resource_name }}` | `{{ schema_id }}` | {{ dataset_title | pipe_escape }} |
+| `{{ resource_name | pipe_escape }}` | `{{ schema_id }}` | {{ dataset_title | pipe_escape }} |
 
 # Schema `{{ schema_id }}`
 
 | Column | Type | Label |
 | --- | --- | --- |
 {% for entry in entries -%}
-| `{{ entry.name }}` | {% if entry.required %}required {% endif %}{{ entry.sem_type }} | {{ entry.label | pipe_escape }} |
+| `{{ entry.name | pipe_escape }}` | {% if entry.required %}required {% endif %}{{ entry.sem_type }} | {{ entry.label | pipe_escape }} |
 {% endfor -%}
 {% if primary_key %}
 | Primary key |
 | --- |
-| `{{ primary_key }}` |
+| `{{ primary_key | pipe_escape }}` |
 {% endif %}
 {%- for entry in entries %}
 ## Column `{{ entry.name }}`
@@ -158,7 +158,7 @@ Values >= {{ entry.min }}
 | Column | Min | Max | Cardinality | Null Count |
 | --- | ---: | ---: | ---: | ---: |
 {% for entry in entries -%}
-| `{{ entry.name }}` | {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality }} | {{ entry.null_count }} |
+| `{{ entry.name | pipe_escape }}` | {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality }} | {{ entry.null_count }} |
 {% endfor -%}
 {% for entry in entries %}{% if entry.has_frequency %}
 ### Frequency for `{{ entry.name }}`

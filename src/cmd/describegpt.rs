@@ -4693,9 +4693,33 @@ fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
     use std::fmt::Write as _;
     let mut block = String::from("tags:\n");
     for item in items {
-        let _ = writeln!(block, "  - {item}");
+        let _ = writeln!(block, "  - {}", yaml_scalar(&item));
     }
     block
+}
+
+/// Render a string as a YAML scalar safe for the `tags:` frontmatter list.
+///
+/// A "plain" scalar (alphanumeric start, then only `[A-Za-z0-9_.-]`) is emitted
+/// bare — covering the lowercase_underscore tags describegpt normally produces.
+/// Anything else (colons, spaces, `#`, newlines, leading indicators, quotes, …)
+/// is emitted as a double-quoted scalar with the YAML escapes applied, so it can't
+/// produce invalid or structurally different frontmatter.
+fn yaml_scalar(s: &str) -> String {
+    let is_plain = !s.is_empty()
+        && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if is_plain {
+        return s.to_string();
+    }
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!("\"{escaped}\"")
 }
 
 /// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
@@ -6809,6 +6833,60 @@ p_fewshot_examples = ""
     }
 
     #[test]
+    fn semanticmd_pipe_in_column_name_is_escaped() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/pipes.csv".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        // A valid CSV header containing a pipe must not break the markdown tables.
+        // `<ALL_UNIQUE>` + null_count 0 also makes it the inferred primary key, so the
+        // primary-key cell escaping is exercised too.
+        let entries = vec![dictionary::DictionaryEntry {
+            name:         "cat|raw".to_string(),
+            r#type:       "String".to_string(),
+            label:        "Category".to_string(),
+            description:  "Raw category code.".to_string(),
+            content_type: String::new(),
+            min:          String::new(),
+            max:          String::new(),
+            cardinality:  100,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    IndexMap::new(),
+            examples:     "<ALL_UNIQUE>".to_string(),
+            freq_details: Vec::new(),
+        }];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered = render_semanticmd_body(&args, &entries, model, base_url, &shared).unwrap();
+
+        // Schema table row and Statistics table row escape the pipe in the cell.
+        assert!(
+            rendered.contains("| `cat\\|raw` | required text | Category |"),
+            "schema table cell not pipe-escaped:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("| `cat\\|raw` | "),
+            "statistics table cell not pipe-escaped:\n{rendered}"
+        );
+        // Primary key cell (its own row) escapes the pipe.
+        assert!(
+            rendered.contains("| `cat\\|raw` |\n"),
+            "primary key cell not pipe-escaped:\n{rendered}"
+        );
+        // The `## Column` heading is not a table cell, so the name is left literal.
+        assert!(
+            rendered.contains("## Column `cat|raw`"),
+            "column heading should keep the literal name:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn semanticmd_tags_frontmatter_builder() {
         // JSON-format Tags response object: {"tags": [...], "attribution": "..."}.
         let obj = serde_json::json!({
@@ -6830,6 +6908,12 @@ p_fewshot_examples = ""
         assert_eq!(
             build_semanticmd_tags_frontmatter(&s),
             "tags:\n  - housing\n  - nyc\n  - 311\n"
+        );
+        // Tags needing YAML escaping are double-quoted; plain ones stay bare.
+        let risky = serde_json::json!(["plain_tag", "key: value", "has \"quote\"", "a#b"]);
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&risky),
+            "tags:\n  - plain_tag\n  - \"key: value\"\n  - \"has \\\"quote\\\"\"\n  - \"a#b\"\n"
         );
         // Empty / null collapse to nothing.
         assert_eq!(

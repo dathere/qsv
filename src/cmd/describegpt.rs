@@ -166,9 +166,8 @@ describegpt options:
                            returned for that field.
                            For Date/DateTime fields, the LLM also infers the column's strftime date
                            format (e.g. "date:%m/%d/%Y"); the dictionary's Min/Max AND Examples are
-                           then rendered in that inferred format (via the `datefmt` MiniJinja filter)
-                           so they match how the dates actually appear in the data, instead of qsv's
-                           normalized form.
+                           then rendered in that inferred format so they match how the dates actually
+                           appear in the data, instead of qsv's normalized form.
     --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
                            as JSON context and refines each field's Label, Description and
                            (when --infer-content-type is set) Content Type using cross-field

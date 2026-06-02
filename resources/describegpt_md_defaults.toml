@@ -101,33 +101,66 @@ custom_prompt_md_template = """# {{ kind }}
 # the `{DATASET_DESCRIPTION}` and `{SEMANTICMD_TAGS}` placeholders are substituted afterwards
 # in finalize_structured_output with the --description response and --tags frontmatter block.
 # Besides the wrapper variables, it receives:
-#   {{ profile }}        - the semantic-md schema/profile reference (frontmatter `semantic-md:` value)
-#   {{ dataset_id }}     - dataset identifier (input filename stem)
-#   {{ dataset_title }}  - human-friendly dataset title
-#   {{ schema_id }}      - schema/table slug (lowercased, alphanumerics only)
-#   {{ resource_name }}  - the input filename (or "input" for stdin)
-#   {{ primary_key }}    - inferred single-column primary key, or empty when omitted
-#   {{ entries }}        - list of records, each with: name, sem_type, required, label, description,
-#                          is_numeric, min, max, cardinality, null_count, choices (list),
-#                          frequency (list of {choice, count, percentage, rank}), has_frequency
+#   {{ profile }}            - the semantic-md schema/profile reference (frontmatter `semantic-md:` value)
+#   {{ dataset_id }}         - dataset identifier (input filename stem)
+#   {{ dataset_title }}      - human-friendly dataset title
+#   {{ schema_id }}          - schema/table slug (lowercased, alphanumerics only)
+#   {{ resource_name }}      - the input filename (or "input" for stdin)
+#   {{ primary_key }}        - inferred single-column primary key, or empty when omitted
+#   {{ row_count }}          - inferred dataset row count
+#   {{ grain }}              - one-sentence "one row = one X" grain, or empty
+#   {{ concepts }}           - sorted, de-duplicated list of catalog concept IDs used by the columns
+#   {{ temporal_coverage }}  - optional {column, start, end} for the event-timestamp column
+#   {{ spatial }}            - optional {crs, lat, lon} when WGS84 lat/lon concept columns exist
+#   {{ example_queries }}    - list of {title, sql, pandas} ready-to-run queries
+#   {{ ds_source }}/{{ ds_updated }}/{{ ds_license }} - optional provenance from --ds-* flags
+#   {{ entries }}            - list of records, each with: name, sem_type, required, label, description,
+#                              is_numeric, min, max, cardinality, null_count, concept, role, join_kind,
+#                              cardinality_class, nullable, quality_flags/has_quality, choices,
+#                              stats/has_stats, validation/has_validation,
+#                              frequency (list of {choice, count, percentage, rank})/has_frequency
 semanticmd_md_body_template = """---
 semantic-md: {{ profile }}
+dataset:
+  id: {{ dataset_id }}
+  title: {{ dataset_title }}
+  row_count: {{ row_count }}
+{% if grain %}  grain: "{{ grain }}"
+{% endif -%}
+{% if ds_source %}  source: {{ ds_source }}
+{% endif -%}
+{% if ds_updated %}  updated: {{ ds_updated }}
+{% endif -%}
+{% if ds_license %}  license: {{ ds_license }}
+{% endif -%}
+{% if temporal_coverage %}  temporal_coverage: { column: "{{ temporal_coverage.column }}", start: "{{ temporal_coverage.start }}", end: "{{ temporal_coverage.end }}" }
+{% endif -%}
+{% if spatial %}  spatial: { crs: "{{ spatial.crs }}", lat: "{{ spatial.lat }}", lon: "{{ spatial.lon }}" }
+{% endif -%}
+{% if concepts %}concepts:
+{% for c in concepts %}  - {{ c }}
+{% endfor %}{% endif -%}
 {SEMANTICMD_TAGS}---
 
 # Dataset {{ dataset_id }}
 
 {DATASET_DESCRIPTION}
 
-| Resource | Schema | Title |
-| --- | --- | --- |
-| `{{ resource_name | pipe_escape }}` | `{{ schema_id }}` | {{ dataset_title | pipe_escape }} |
+{% if grain %}## Grain
+
+{{ grain }}
+
+{% endif -%}
+| Resource | Schema | Title | Rows |
+| --- | --- | --- | ---: |
+| `{{ resource_name | pipe_escape }}` | `{{ schema_id }}` | {{ dataset_title | pipe_escape }} | {{ row_count }} |
 
 # Schema `{{ schema_id }}`
 
-| Column | Type | Label |
-| --- | --- | --- |
+| Column | Type | Role | Concept | Join? | Null | Label |
+| --- | --- | --- | --- | :---: | ---: | --- |
 {% for entry in entries -%}
-| `{{ entry.name | pipe_escape }}` | {% if entry.required %}required {% endif %}{{ entry.sem_type }} | {{ entry.label | pipe_escape }} |
+| `{{ entry.name | pipe_escape }}` | {% if entry.required %}required {% endif %}{{ entry.sem_type }} | {{ entry.role }} | {% if entry.concept %}`{{ entry.concept }}`{% endif %} | {{ entry.join_kind }} | {{ entry.null_count }} | {{ entry.label | pipe_escape }} |
 {% endfor -%}
 {% if primary_key %}
 | Primary key |
@@ -138,10 +171,24 @@ semantic-md: {{ profile }}
 ## Column `{{ entry.name }}`
 
 {{ entry.description }}
-{% if entry.is_numeric and entry.min %}
+{% if entry.concept %}
+- **Concept:** `{{ entry.concept }}`
+{% endif -%}
+{% if entry.role %}- **Role:** {{ entry.role }}
+{% endif -%}
+{% if entry.join_kind %}- **Join:** {% if entry.join_kind == "PK" %}primary key{% else %}candidate (concept `{{ entry.concept }}`){% endif %}{% if entry.cardinality_class %}; cardinality {{ entry.cardinality_class }}{% endif %}; {% if entry.nullable %}nullable{% else %}not nullable{% endif %}
+{% endif -%}
+{% if entry.has_quality %}- **Quality:** {{ entry.quality_flags | join(", ") }}
+{% endif -%}
+{% if entry.has_validation %}
 ### Validation
 
-Values >= {{ entry.min }}
+{% if entry.validation.min %}- Values >= {{ entry.validation.min }}
+{% endif -%}
+{% if entry.validation.max %}- Values <= {{ entry.validation.max }}
+{% endif -%}
+{% if entry.validation.min_length and entry.validation.max_length %}- Length {{ entry.validation.min_length }}–{{ entry.validation.max_length }}
+{% endif -%}
 {% endif -%}
 {% if entry.choices %}
 ### Choices
@@ -149,8 +196,35 @@ Values >= {{ entry.min }}
 {% for choice in entry.choices -%}
 - {{ choice }}
 {% endfor -%}
-{% endif %}
-{%- endfor %}
+{% endif -%}
+{% if entry.has_stats %}
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| {{ entry.stats.mean }} | {{ entry.stats.median }} | {{ entry.stats.stddev }} | {{ entry.stats.q1 }} | {{ entry.stats.q3 }} | {{ entry.stats.skewness }} | {{ entry.stats.lower_fence }} | {{ entry.stats.upper_fence }} | {{ entry.stats.sparsity }} |
+{% endif -%}
+{% endfor %}
+{% if example_queries %}# Example Queries
+
+Load the resource once, then run any query below. SQL targets DuckDB (qsv's `sqlp` engine); timestamps may need an explicit cast.
+
+```python
+import pandas as pd
+df = pd.read_csv("{{ resource_name }}")
+```
+{% for q in example_queries %}
+### {{ q.title }}
+
+```sql
+{{ q.sql }}
+```
+
+```python
+{{ q.pandas }}
+```
+{% endfor %}
+{% endif -%}
 # Resource `{{ resource_name }}`
 
 ## Statistics

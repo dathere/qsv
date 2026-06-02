@@ -10,7 +10,7 @@ use indicatif::HumanCount;
 use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dictionary::{DictionaryEntry, FreqDetail};
+use super::dictionary::{DictionaryEntry, FreqDetail, is_linkable_concept};
 
 /// Extract ordered additional column names from entries.
 ///
@@ -534,41 +534,116 @@ pub(super) struct SemanticMdFreqRow {
     pub(super) rank:       String,
 }
 
+/// Per-column rich statistics for the semantic-md `### Statistics` block. Each
+/// field is a display string read verbatim from the entry's `addl_cols` (blank
+/// when the stat wasn't retained — see `SEMANTICMD_DEFAULT_ADDL_COLS`). `median`
+/// reads the `q2_median` stat (produced by `--quartiles`, a describegpt default).
+#[derive(Debug, Default, Serialize)]
+pub(super) struct SemanticMdStats {
+    pub(super) mean:        String,
+    pub(super) median:      String,
+    pub(super) stddev:      String,
+    pub(super) q1:          String,
+    pub(super) q3:          String,
+    pub(super) skewness:    String,
+    pub(super) lower_fence: String,
+    pub(super) upper_fence: String,
+    pub(super) sparsity:    String,
+}
+
+/// Per-column validation constraints for the semantic-md `### Validation` block.
+#[derive(Debug, Default, Serialize)]
+pub(super) struct SemanticMdValidation {
+    pub(super) min:        String,
+    pub(super) max:        String,
+    pub(super) min_length: String,
+    pub(super) max_length: String,
+}
+
 /// Per-column render data for the semantic-md template. Precomputed in Rust so the
 /// Mini-Jinja template stays presentation-only and the derivation is unit-testable.
 #[derive(Debug, Serialize)]
 pub(super) struct SemanticMdEntry {
-    pub(super) name:          String,
-    pub(super) sem_type:      String,
-    pub(super) required:      bool,
-    pub(super) label:         String,
-    pub(super) description:   String,
-    pub(super) is_numeric:    bool,
-    pub(super) min:           String,
-    pub(super) max:           String,
-    pub(super) cardinality:   u64,
-    pub(super) null_count:    u64,
-    pub(super) choices:       Vec<String>,
-    pub(super) frequency:     Vec<SemanticMdFreqRow>,
-    pub(super) has_frequency: bool,
+    pub(super) name:              String,
+    pub(super) sem_type:          String,
+    pub(super) required:          bool,
+    pub(super) label:             String,
+    pub(super) description:       String,
+    pub(super) is_numeric:        bool,
+    pub(super) min:               String,
+    pub(super) max:               String,
+    pub(super) cardinality:       u64,
+    pub(super) null_count:        u64,
+    pub(super) choices:           Vec<String>,
+    pub(super) frequency:         Vec<SemanticMdFreqRow>,
+    pub(super) has_frequency:     bool,
+    /// Cross-dataset semantic identity (e.g. `geo.zip_code`); empty/`unknown`
+    /// when concept inference is off or no concept fits.
+    pub(super) concept:           String,
+    /// Analytical role (`dimension`/`measure`/`identifier`/`timestamp`); empty
+    /// when concept inference is off.
+    pub(super) role:              String,
+    /// Join hint: `PK` (the inferred primary key), `FK?` (a linkable concept), or empty.
+    pub(super) join_kind:         String,
+    /// Cardinality class for joins: `1:1` (unique id) or `N:1` (linkable non-key), else empty.
+    pub(super) cardinality_class: String,
+    pub(super) nullable:          bool,
+    /// Data-quality flags (`placeholder-dates`, `PII`, `PII-location`, `sparse`).
+    pub(super) quality_flags:     Vec<String>,
+    pub(super) has_quality:       bool,
+    pub(super) stats:             SemanticMdStats,
+    pub(super) has_stats:         bool,
+    pub(super) validation:        SemanticMdValidation,
+    pub(super) has_validation:    bool,
+}
+
+/// Inferred temporal coverage of the dataset (from the event-timestamp column).
+#[derive(Debug, Serialize)]
+pub(super) struct SemanticMdTemporal {
+    pub(super) column: String,
+    pub(super) start:  String,
+    pub(super) end:    String,
+}
+
+/// Inferred spatial reference (WGS84 lat/lon pair) of the dataset.
+#[derive(Debug, Serialize)]
+pub(super) struct SemanticMdSpatial {
+    pub(super) crs: String,
+    pub(super) lat: String,
+    pub(super) lon: String,
+}
+
+/// One ready-to-run example query (DuckDB/Polars SQL + pandas) for the dataset.
+#[derive(Debug, Serialize)]
+pub(super) struct ExampleQuery {
+    pub(super) title:  String,
+    pub(super) sql:    String,
+    pub(super) pandas: String,
 }
 
 /// Top-level render data for the semantic-md template.
 #[derive(Debug, Serialize)]
 pub(super) struct SemanticMdData {
-    pub(super) entries:     Vec<SemanticMdEntry>,
+    pub(super) entries:           Vec<SemanticMdEntry>,
     /// Heuristically-inferred single-column primary key, if unambiguous.
-    pub(super) primary_key: Option<String>,
+    pub(super) primary_key:       Option<String>,
+    /// Inferred total row count (from a unique-id column or a frequency sample).
+    pub(super) row_count:         u64,
+    /// One-sentence grain statement from the LLM, if available.
+    pub(super) grain:             Option<String>,
+    /// Sorted, de-duplicated index of concept IDs used by the columns (excludes
+    /// `unknown`) — the cheap surface a catalog scanner reads to find join candidates.
+    pub(super) concepts:          Vec<String>,
+    pub(super) temporal_coverage: Option<SemanticMdTemporal>,
+    pub(super) spatial:           Option<SemanticMdSpatial>,
+    pub(super) example_queries:   Vec<ExampleQuery>,
 }
 
-/// Build the semantic-md render data from dictionary entries.
-///
-/// Choices come from `enumeration` (populated only when `cardinality <=
-/// enum_threshold`); the per-column Frequency table reuses the structured
-/// `freq_details` (value, count, percentage, rank — empty for the `<ALL_UNIQUE>`
-/// sentinel). The primary key is inferred only when exactly one column is fully
-/// unique and non-null; otherwise it is omitted.
-pub(super) fn build_semanticmd_data(entries: &[DictionaryEntry]) -> SemanticMdData {
+pub(super) fn build_semanticmd_data(
+    entries: &[DictionaryEntry],
+    resource_name: &str,
+    grain: Option<String>,
+) -> SemanticMdData {
     // Primary key candidates rely on the structural `is_unique_id` flag set by
     // `generate_code_based_dictionary` (cardinality == rowcount, no nulls). This is
     // the deterministic unique-id detector — NOT the overloaded `examples ==
@@ -584,43 +659,327 @@ pub(super) fn build_semanticmd_data(entries: &[DictionaryEntry]) -> SemanticMdDa
         _ => None,
     };
 
-    let entries = entries
+    let row_count = infer_row_count(entries);
+
+    // Sorted, de-duplicated concept index for the front matter — the cheap
+    // surface a catalog scanner reads to find cross-dataset join candidates.
+    // Excludes the `unknown` fallback (not a stable identity).
+    let mut concepts: Vec<String> = entries
         .iter()
-        .map(|e| {
-            let is_numeric = e.r#type == "Integer" || e.r#type == "Float";
-            let choices: Vec<String> = if e.enumeration.is_empty() {
-                Vec::new()
-            } else {
-                e.enumeration
-                    .lines()
-                    .map(str::trim)
-                    .filter(|l| !l.is_empty())
-                    .map(ToString::to_string)
-                    .collect()
-            };
-            let frequency = build_freq_rows(&e.freq_details);
-            SemanticMdEntry {
-                name: e.name.clone(),
-                sem_type: semanticmd_type(&e.r#type).to_string(),
-                required: e.null_count == 0,
-                label: e.label.clone(),
-                description: e.description.clone(),
-                is_numeric,
-                min: e.min.clone(),
-                max: e.max.clone(),
-                cardinality: e.cardinality,
-                null_count: e.null_count,
-                choices,
-                has_frequency: !frequency.is_empty(),
-                frequency,
-            }
-        })
+        .map(|e| e.concept.clone())
+        .filter(|c| !c.is_empty() && c != "unknown")
+        .collect();
+    concepts.sort();
+    concepts.dedup();
+
+    let temporal_coverage = infer_temporal_coverage(entries);
+    let spatial = infer_spatial(entries);
+    let example_queries = build_example_queries(entries, resource_name);
+
+    let md_entries = entries
+        .iter()
+        .map(|e| build_semanticmd_entry(e, primary_key.as_deref()))
         .collect();
 
     SemanticMdData {
-        entries,
+        entries: md_entries,
         primary_key,
+        row_count,
+        grain,
+        concepts,
+        temporal_coverage,
+        spatial,
+        example_queries,
     }
+}
+
+/// Read an `addl_cols` stat as a display string (blank when not retained).
+fn addl(e: &DictionaryEntry, key: &str) -> String {
+    e.addl_cols.get(key).cloned().unwrap_or_default()
+}
+
+/// Read an `addl_cols` stat parsed as `f64`, when present and numeric.
+fn addl_f64(e: &DictionaryEntry, key: &str) -> Option<f64> {
+    e.addl_cols.get(key).and_then(|s| s.parse::<f64>().ok())
+}
+
+/// Build one `SemanticMdEntry`, deriving the join hint, cardinality class,
+/// data-quality flags, rich statistics, and validation constraints from the
+/// dictionary entry. Factored out of `build_semanticmd_data` for unit-testability.
+fn build_semanticmd_entry(e: &DictionaryEntry, primary_key: Option<&str>) -> SemanticMdEntry {
+    let sem_type = semanticmd_type(&e.r#type);
+    let is_numeric = e.r#type == "Integer" || e.r#type == "Float";
+    let is_text = sem_type == "text";
+
+    let choices: Vec<String> = if e.enumeration.is_empty() {
+        Vec::new()
+    } else {
+        e.enumeration
+            .lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(ToString::to_string)
+            .collect()
+    };
+    let frequency = build_freq_rows(&e.freq_details);
+
+    // Join semantics: the inferred PK is `PK`; any other column carrying a
+    // linkable (cross-dataset) concept is a candidate foreign key (`FK?`).
+    let linkable = is_linkable_concept(&e.concept);
+    let is_pk = primary_key == Some(e.name.as_str());
+    let join_kind = if is_pk {
+        "PK".to_string()
+    } else if linkable {
+        "FK?".to_string()
+    } else {
+        String::new()
+    };
+    // Cardinality class for a join FROM this column: a unique id is 1:1; a
+    // linkable non-key column repeats across rows (fact→dimension), i.e. N:1.
+    let cardinality_class = if e.is_unique_id {
+        "1:1".to_string()
+    } else if linkable {
+        "N:1".to_string()
+    } else {
+        String::new()
+    };
+
+    // Data-quality flags.
+    let mut quality_flags = Vec::new();
+    if matches!(e.r#type.as_str(), "Date" | "DateTime") {
+        // Common sentinel/placeholder dates used as NULL stand-ins.
+        const SENTINELS: &[&str] = &["1900-01-01", "1970-01-01", "2100-01-01", "9999-"];
+        if SENTINELS
+            .iter()
+            .any(|s| e.min.starts_with(s) || e.max.starts_with(s))
+        {
+            quality_flags.push("placeholder-dates".to_string());
+        }
+    }
+    if e.concept.starts_with("pii.") {
+        quality_flags.push("PII".to_string());
+    } else if matches!(
+        e.concept.as_str(),
+        "geo.latitude" | "geo.longitude" | "geo.coordinate_pair" | "geo.street_address"
+    ) {
+        quality_flags.push("PII-location".to_string());
+    }
+    if addl_f64(e, "sparsity").is_some_and(|sp| sp >= 0.5) {
+        quality_flags.push("sparse".to_string());
+    }
+    let has_quality = !quality_flags.is_empty();
+
+    // Rich statistics block (blank fields collapse in the template). `median`
+    // reads `q2_median` (produced by `--quartiles`); plain numeric `min`/`max`
+    // live on the entry already.
+    let stats = SemanticMdStats {
+        mean:        addl(e, "mean"),
+        median:      addl(e, "q2_median"),
+        stddev:      addl(e, "stddev"),
+        q1:          addl(e, "q1"),
+        q3:          addl(e, "q3"),
+        skewness:    addl(e, "skewness"),
+        lower_fence: addl(e, "lower_inner_fence"),
+        upper_fence: addl(e, "upper_inner_fence"),
+        sparsity:    addl(e, "sparsity"),
+    };
+    let has_stats = is_numeric
+        && [
+            &stats.mean,
+            &stats.median,
+            &stats.stddev,
+            &stats.q1,
+            &stats.q3,
+            &stats.skewness,
+            &stats.lower_fence,
+            &stats.upper_fence,
+        ]
+        .iter()
+        .any(|s| !s.is_empty());
+
+    // Validation: numeric range for numbers, length range for text.
+    let validation = SemanticMdValidation {
+        min:        if is_numeric {
+            e.min.clone()
+        } else {
+            String::new()
+        },
+        max:        if is_numeric {
+            e.max.clone()
+        } else {
+            String::new()
+        },
+        min_length: if is_text {
+            addl(e, "min_length")
+        } else {
+            String::new()
+        },
+        max_length: if is_text {
+            addl(e, "max_length")
+        } else {
+            String::new()
+        },
+    };
+    let has_validation = !validation.min.is_empty()
+        || !validation.max.is_empty()
+        || !validation.min_length.is_empty()
+        || !validation.max_length.is_empty();
+
+    SemanticMdEntry {
+        name: e.name.clone(),
+        sem_type: sem_type.to_string(),
+        required: e.null_count == 0,
+        label: e.label.clone(),
+        description: e.description.clone(),
+        is_numeric,
+        min: e.min.clone(),
+        max: e.max.clone(),
+        cardinality: e.cardinality,
+        null_count: e.null_count,
+        choices,
+        has_frequency: !frequency.is_empty(),
+        frequency,
+        concept: e.concept.clone(),
+        role: e.role.clone(),
+        join_kind,
+        cardinality_class,
+        nullable: e.null_count > 0,
+        quality_flags,
+        has_quality,
+        stats,
+        has_stats,
+        validation,
+        has_validation,
+    }
+}
+
+/// Infer the dataset row count. A unique-id column's cardinality equals the row
+/// count exactly; otherwise derive it from any frequency sample
+/// (`count = percentage/100 * rowcount`); as a last resort use the largest
+/// `cardinality + null_count` lower bound.
+fn infer_row_count(entries: &[DictionaryEntry]) -> u64 {
+    if let Some(e) = entries.iter().find(|e| e.is_unique_id) {
+        return e.cardinality;
+    }
+    for e in entries {
+        for d in &e.freq_details {
+            if d.percentage > 0.0 {
+                return (d.count as f64 * 100.0 / d.percentage).round() as u64;
+            }
+        }
+    }
+    entries
+        .iter()
+        .map(|e| e.cardinality + e.null_count)
+        .max()
+        .unwrap_or(0)
+}
+
+/// Infer the dataset's temporal coverage from the event-timestamp column,
+/// preferring the `time.event_timestamp` / `time.created_at` concepts and
+/// falling back to the first column with a `timestamp` role and a min/max.
+fn infer_temporal_coverage(entries: &[DictionaryEntry]) -> Option<SemanticMdTemporal> {
+    let pick = entries
+        .iter()
+        .find(|e| e.concept == "time.event_timestamp")
+        .or_else(|| entries.iter().find(|e| e.concept == "time.created_at"))
+        .or_else(|| {
+            entries
+                .iter()
+                .find(|e| e.role == "timestamp" && !e.min.is_empty() && !e.max.is_empty())
+        })?;
+    if pick.min.is_empty() || pick.max.is_empty() {
+        return None;
+    }
+    Some(SemanticMdTemporal {
+        column: pick.name.clone(),
+        start:  pick.min.clone(),
+        end:    pick.max.clone(),
+    })
+}
+
+/// Infer a WGS84 spatial reference when both a latitude and a longitude concept
+/// column are present. State-plane / projected coordinates are intentionally not
+/// assumed here (their CRS is ambiguous).
+fn infer_spatial(entries: &[DictionaryEntry]) -> Option<SemanticMdSpatial> {
+    let lat = entries.iter().find(|e| e.concept == "geo.latitude")?;
+    let lon = entries.iter().find(|e| e.concept == "geo.longitude")?;
+    Some(SemanticMdSpatial {
+        crs: "EPSG:4326".to_string(),
+        lat: lat.name.clone(),
+        lon: lon.name.clone(),
+    })
+}
+
+/// Build a small set of ready-to-run example queries (DuckDB/Polars SQL + pandas)
+/// seeded from the inferred roles: a `GROUP BY count(*)` per dimension (capped),
+/// a monthly time bucket over the event timestamp, a summary over the first
+/// measure, and a commented cross-dataset join template keyed on a shared
+/// concept. Empty when roles weren't inferred (concept inference off).
+fn build_example_queries(entries: &[DictionaryEntry], resource_name: &str) -> Vec<ExampleQuery> {
+    let table = format!("'{resource_name}'");
+    let mut queries = Vec::new();
+
+    for d in entries
+        .iter()
+        .filter(|e| e.role == "dimension" && e.cardinality > 1 && e.cardinality <= 1000)
+        .take(3)
+    {
+        let col = &d.name;
+        queries.push(ExampleQuery {
+            title:  format!("Count by {col}"),
+            sql:    format!(
+                "SELECT \"{col}\", count(*) AS n FROM {table} GROUP BY 1 ORDER BY n DESC LIMIT 20;"
+            ),
+            pandas: format!("df.groupby(\"{col}\").size().sort_values(ascending=False).head(20)"),
+        });
+    }
+
+    if let Some(ts) = entries.iter().find(|e| e.role == "timestamp") {
+        let col = &ts.name;
+        queries.push(ExampleQuery {
+            title:  format!("Monthly volume by {col}"),
+            sql:    format!(
+                "SELECT date_trunc('month', try_cast(\"{col}\" AS TIMESTAMP)) AS month, count(*) \
+                 AS n FROM {table} GROUP BY 1 ORDER BY 1;"
+            ),
+            pandas: format!(
+                "df.assign(month=pd.to_datetime(df[\"{col}\"], \
+                 errors=\"coerce\").dt.to_period(\"M\")).groupby(\"month\").size()"
+            ),
+        });
+    }
+
+    if let Some(m) = entries.iter().find(|e| e.role == "measure") {
+        let col = &m.name;
+        queries.push(ExampleQuery {
+            title:  format!("Summary of {col}"),
+            sql:    format!(
+                "SELECT min(\"{col}\") AS min, avg(\"{col}\") AS avg, max(\"{col}\") AS max FROM \
+                 {table};"
+            ),
+            pandas: format!("df[\"{col}\"].describe()"),
+        });
+    }
+
+    if let Some(j) = entries.iter().find(|e| is_linkable_concept(&e.concept)) {
+        let col = &j.name;
+        let concept = &j.concept;
+        queries.push(ExampleQuery {
+            title:  format!("Join a catalog dataset sharing concept `{concept}`"),
+            sql:    format!(
+                "-- Any catalog dataset whose column carries concept '{concept}' joins here.\n-- \
+                 SELECT a.*, b.* FROM {table} a JOIN 'other.csv' b ON a.\"{col}\" = b.<col with \
+                 concept {concept}>;"
+            ),
+            pandas: format!(
+                "# merged = a.merge(b, left_on=\"{col}\", right_on=<b col with concept \
+                 '{concept}'>)"
+            ),
+        });
+    }
+
+    queries
 }
 
 /// Map structured `freq_details` into Frequency table rows, formatting the
@@ -737,6 +1096,8 @@ mod tests {
             examples:     "a [1]".to_string(),
             freq_details: Vec::new(),
             is_unique_id: false,
+            concept:      String::new(),
+            role:         String::new(),
         }
     }
 
@@ -960,6 +1321,8 @@ mod tests {
             examples:     "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
             freq_details: Vec::new(),
             is_unique_id: false,
+            concept:      String::new(),
+            role:         String::new(),
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),
@@ -1086,7 +1449,7 @@ mod tests {
             },
         ];
 
-        let data = build_semanticmd_data(&[id, status]);
+        let data = build_semanticmd_data(&[id, status], "data.csv", None);
         assert_eq!(data.primary_key.as_deref(), Some("id"));
 
         let id_e = &data.entries[0];
@@ -1120,7 +1483,7 @@ mod tests {
         b.cardinality = 100;
         b.null_count = 0;
         b.is_unique_id = true;
-        let data = build_semanticmd_data(&[a, b]);
+        let data = build_semanticmd_data(&[a, b], "data.csv", None);
         assert!(data.primary_key.is_none());
     }
 
@@ -1182,7 +1545,7 @@ mod tests {
         // ...but neither is a structural unique id.
         assert!(!entries[0].is_unique_id);
         assert!(!entries[1].is_unique_id);
-        let data = build_semanticmd_data(&entries);
+        let data = build_semanticmd_data(&entries, "data.csv", None);
         assert!(
             data.primary_key.is_none(),
             "high-cardinality / constant columns must not be inferred as a primary key"

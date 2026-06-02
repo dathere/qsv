@@ -1,82 +1,117 @@
 ---
 semantic-md: datadict.yaml
+dataset:
+  id: NYC_311_SR_2010-2020-sample-1M
+  title: NYC 311 SR 2010 2020 sample 1M
+  row_count: 1000000
+  grain: "one row = one NYC 311 complaint record"
+  source: https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9
+  updated: 2020-12-23
+  license: NYC Open Data Terms of Use
+  temporal_coverage: { column: "Created Date", start: "2010-01-01T00:00:00+00:00", end: "2020-12-23T01:25:51+00:00" }
+  spatial: { crs: "EPSG:4326", lat: "Latitude", lon: "Longitude" }
+concepts:
+  - category.channel
+  - category.status
+  - category.type
+  - geo.city
+  - geo.coordinate_pair
+  - geo.crs_stateplane_x
+  - geo.crs_stateplane_y
+  - geo.latitude
+  - geo.longitude
+  - geo.zip_code
+  - id.surrogate_key
+  - nyc.borough
+  - nyc.community_board
+  - nyc.complaint_type
+  - org.agency
+  - time.event_timestamp
 tags:
-  - nyc_311
-  - public_complaints
-  - noise_and_safety
-  - building_and_housing
-  - transportation_and_parking
-  - geospatial_data
-  - boroughs
-  - open_data
-  - agency_response
+  - nyc_311_complaints
+  - noise
+  - heat_and_hot_water
+  - illegal_parking
+  - street_condition
+  - residential_building
+  - parks_and_rec
+  - transportation_incidents
+  - environmental_health
 ---
 
 # Dataset NYC_311_SR_2010-2020-sample-1M
 
 **Description**
 
-This NYC 311 complaint dataset contains one million incident records recorded between January 2010 and December 2020. Each record is identified by a surrogate `Unique Key` that guarantees no duplicate complaints, while the majority of other fields exhibit high cardinality—over 300 000 unique latitude‑longitude pairs, 340 000 distinct street addresses, and more than 500 000 distinct ZIP codes. The temporal distribution shows a concentration of complaints around the middle of the decade (median created date ≈ 2015), with a broad range of roughly 11 years for both creation and closure dates. Most complaints are categorized as “Other” in the `Complaint Type` and `Descriptor` fields, reflecting a large proportion of unstructured or rarely used categories. The dataset also contains substantial missingness: nearly 28 000 closed dates are null, over 647 000 due dates are missing, and many address‑type and landmark fields lack values.
+This dataset contains 1 000 000 NYC 311 complaint records collected between January 2010 and December 2020. Each record is uniquely identified by an integer key, and the timestamps for when complaints were created span a full decade with a concentration of activity in late‑2015. The majority of complaints are filed through phone, and most involve the NYPD or HPD agencies. Complaint categories are highly imbalanced: noise – residential (≈9 %) and heat/hot water (≈6 %) are common, but an “Other” category accounts for more than half of all records. Location information covers all five boroughs; about one‑third of incidents occur in residential buildings and roughly a fifth on streets or sidewalks, while many address components are missing.
 
-**Notable Characteristics**
+---
 
-- **Scale & uniqueness** – 1 M records with a unique surrogate key; no duplicate complaint identifiers.
-- **Temporal spread** – Created dates span 4009 days (≈ 11 years), median ≈ 2015; Closed dates cover a similar period but contain many nulls (≈ 2.8 %).
-- **High cardinality & sparsity** – > 300 k unique latitude/longitude pairs, > 340 k street addresses, > 500 k ZIP codes; 74 % of incident ZIPs fall under an “Other” bucket.
-- **Skewed categorical distributions** – `Complaint Type` and `Descriptor` are dominated by a single “Other” category (≈ 56 % & 67 % respectively); many other fields similarly have large “Other” proportions, indicating unstructured or infrequent values.
-- **Missingness** – Significant nulls in Closed Date, Due Date, Address Type, Landmark, and several coordinate-related fields; these gaps could bias analyses that rely on closure status or precise location.
-- **Outliers & data quality** – Created dates include extreme past/future placeholders (e.g., 2010‑01‑01 and 2020‑12‑23); Closed Date has boundary values from 1900‑01‑01 to 2100‑01‑01 used as defaults. Inconsistent formatting of addresses (e.g., varying capitalization, punctuation) may hinder spatial joins.
-- **PII/PHI considerations** – The dataset contains street addresses and exact latitude/longitude points; while it does not include personal names or identifiers, the precision of location data can pose privacy concerns if combined with other datasets.
+### Notable Characteristics
 
-| Resource | Schema | Title |
-| --- | --- | --- |
-| `NYC_311_SR_2010-2020-sample-1M.csv` | `nyc311sr20102020sample1m` | NYC 311 SR 2010 2020 sample 1M |
+- **Unique Identifier** – The `Unique Key` field is strictly unique (uniqueness ratio = 1) with no duplicate records.  
+- **Temporal Distribution** – Created dates cluster around 2015–2016; the median falls on 12‑Feb‑2016 and skewness is mildly negative (≈ −0.086). Closed dates contain ~28 000 nulls (~2.8 %) and span an extreme range from 1900 to 2100, reflecting placeholder or missing values.  
+- **Agency Distribution** – NYPD and HPD together account for about 52 % of complaints; the distribution is heavily skewed toward these two agencies.  
+- **Complaint Type & Descriptor** – “Other” dominates both fields (>50 % each). Many specific categories have very low frequencies, creating a long‑tailed distribution.  
+- **Location Data Quality** – Latitude and longitude are missing for 25 % of records; city is missing in 6 %, landmark in 91 %. Coordinates cluster around Manhattan and Brooklyn with a slight right‑skewness.  
+- **Outliers & Extremes** – The `Unique Key` range (≈11 M–48 M) contains no duplicates but represents the full spectrum of IDs; date fields occasionally contain extreme placeholder values (1900, 2100).  
+- **Missing Values** – Several fields have high sparsity: Landmark (~91 % null), Address Type (~12.6 %), City (~6 %).  
+- **PII/PHI Considerations** – Street addresses and geographic coordinates can be considered location‑based personal information; the unique key may link to other datasets, potentially revealing additional sensitive details.  
+- **Data Quality & Aggregation** – High cardinality in address fields leads to many unique values, complicating aggregation and analysis; “Other” categories obscure underlying diversity.
+
+## Grain
+
+one row = one NYC 311 complaint record
+
+| Resource | Schema | Title | Rows |
+| --- | --- | --- | ---: |
+| `NYC_311_SR_2010-2020-sample-1M.csv` | `nyc311sr20102020sample1m` | NYC 311 SR 2010 2020 sample 1M | 1000000 |
 
 # Schema `nyc311sr20102020sample1m`
 
-| Column | Type | Label |
-| --- | --- | --- |
-| `Unique Key` | required integer | Unique Key |
-| `Created Date` | required timestamp | Created Date |
-| `Closed Date` | timestamp | Closed Date |
-| `Agency` | required text | Agency Code |
-| `Agency Name` | required text | Agency Name |
-| `Complaint Type` | required text | Complaint Category |
-| `Descriptor` | text | Descriptor |
-| `Location Type` | text | Location Category |
-| `Incident Zip` | text | Incident ZIP Code |
-| `Incident Address` | text | Incident Street Address |
-| `Street Name` | text | Primary Street Name |
-| `Cross Street 1` | text | First Cross Street |
-| `Cross Street 2` | text | Second Cross Street |
-| `Intersection Street 1` | text | First Intersection Street |
-| `Intersection Street 2` | text | Second Intersection Street |
-| `Address Type` | text | Address Type |
-| `City` | text | City / Borough |
-| `Landmark` | text | Nearby Landmark |
-| `Facility Type` | text | Facility Category |
-| `Status` | required text | Complaint Status |
-| `Due Date` | timestamp | Resolution Deadline |
-| `Resolution Description` | text | Resolution Narrative |
-| `Resolution Action Updated Date` | timestamp | Last Resolution Update |
-| `Community Board` | required text | Community Board District |
-| `BBL` | text | Building Block Lot Number |
-| `Borough` | required text | NYC Borough |
-| `X Coordinate (State Plane)` | integer | X Coordinate (State Plane) |
-| `Y Coordinate (State Plane)` | integer | Y Coordinate (State Plane) |
-| `Open Data Channel Type` | required text | Data Entry Channel |
-| `Park Facility Name` | required text | Park Facility |
-| `Park Borough` | required text | Park Borough |
-| `Vehicle Type` | text | Vehicle Category |
-| `Taxi Company Borough` | text | Taxi Company Borough |
-| `Taxi Pick Up Location` | text | Taxi Pickup Point |
-| `Bridge Highway Name` | text | Bridge/Highway Name |
-| `Bridge Highway Direction` | text | Bridge/Highway Direction |
-| `Road Ramp` | text | Ramp Type |
-| `Bridge Highway Segment` | text | Highway Segment / Exit |
-| `Latitude` | number | Latitude |
-| `Longitude` | number | Longitude |
-| `Location` | text | Coordinate Pair |
+| Column | Type | Role | Concept | Join? | Null | Label |
+| --- | --- | --- | --- | :---: | ---: | --- |
+| `Unique Key` | required integer | identifier | `id.surrogate_key` | PK | 0 | Unique Key |
+| `Created Date` | required timestamp | timestamp | `time.event_timestamp` | FK? | 0 | Created Date |
+| `Closed Date` | timestamp | timestamp | `time.event_timestamp` | FK? | 28619 | Closed Date |
+| `Agency` | required text | dimension | `org.agency` | FK? | 0 | Agency Code |
+| `Agency Name` | required text | dimension | `org.agency` | FK? | 0 | Agency Name |
+| `Complaint Type` | required text | dimension | `nyc.complaint_type` | FK? | 0 | Complaint Category |
+| `Descriptor` | text | dimension | `nyc.complaint_type` | FK? | 3001 | Complaint Sub‑Category |
+| `Location Type` | text | dimension | `category.type` |  | 239131 | Location Classification |
+| `Incident Zip` | text | dimension | `geo.zip_code` | FK? | 54978 | Incident ZIP Code |
+| `Incident Address` | text | dimension | `unknown` |  | 174700 | Incident Street Address |
+| `Street Name` | text | dimension | `unknown` |  | 174720 | Primary Street Name |
+| `Cross Street 1` | text | dimension | `unknown` |  | 320401 | First Cross Street |
+| `Cross Street 2` | text | dimension | `unknown` |  | 323644 | Second Cross Street |
+| `Intersection Street 1` | text | dimension | `unknown` |  | 767422 | First Intersection Street |
+| `Intersection Street 2` | text | dimension | `unknown` |  | 767709 | Second Intersection Street |
+| `Address Type` | text | dimension | `category.type` |  | 125802 | Address Component Type |
+| `City` | text | dimension | `geo.city` | FK? | 61963 | City / Borough |
+| `Landmark` | text | dimension | `unknown` |  | 912779 | Nearby Landmark |
+| `Facility Type` | text | dimension | `unknown` |  | 145478 | Facility Category |
+| `Status` | required text | dimension | `category.status` |  | 0 | Complaint Status |
+| `Due Date` | timestamp | timestamp | `time.event_timestamp` | FK? | 647794 | Resolution Due Date |
+| `Resolution Description` | text | dimension | `unknown` |  | 20480 | Resolution Narrative |
+| `Resolution Action Updated Date` | timestamp | timestamp | `time.event_timestamp` | FK? | 15072 | Last Resolution Update |
+| `Community Board` | required text | dimension | `nyc.community_board` | FK? | 0 | Community Board |
+| `BBL` | text | dimension | `unknown` |  | 243046 | Brooklyn Borough Lot ID |
+| `Borough` | required text | dimension | `nyc.borough` | FK? | 0 | NYC Borough |
+| `X Coordinate (State Plane)` | integer | dimension | `geo.crs_stateplane_x` | FK? | 85327 | State Plane X Coordinate |
+| `Y Coordinate (State Plane)` | integer | dimension | `geo.crs_stateplane_y` | FK? | 85327 | State Plane Y Coordinate |
+| `Open Data Channel Type` | required text | dimension | `category.channel` |  | 0 | Submission Channel |
+| `Park Facility Name` | required text | dimension | `unknown` |  | 0 | Park Facility |
+| `Park Borough` | required text | dimension | `nyc.borough` | FK? | 0 | Park Borough |
+| `Vehicle Type` | text | dimension | `unknown` |  | 999652 | Vehicle Category |
+| `Taxi Company Borough` | text | dimension | `nyc.borough` | FK? | 999156 | Taxi Company Borough |
+| `Taxi Pick Up Location` | text | dimension | `unknown` |  | 992129 | Taxi Pickup Point |
+| `Bridge Highway Name` | text | dimension | `unknown` |  | 997711 | Bridge/Highway Name |
+| `Bridge Highway Direction` | text | dimension | `unknown` |  | 997691 | Bridge/Highway Direction |
+| `Road Ramp` | text | dimension | `unknown` |  | 997693 | Ramp Type |
+| `Bridge Highway Segment` | text | dimension | `unknown` |  | 997556 | Bridge/Highway Segment |
+| `Latitude` | number | dimension | `geo.latitude` | FK? | 254695 | Latitude |
+| `Longitude` | number | dimension | `geo.longitude` | FK? | 254695 | Longitude |
+| `Location` | text | dimension | `geo.coordinate_pair` | FK? | 254695 | Latitude/Longitude Pair |
 
 | Primary key |
 | --- |
@@ -84,87 +119,235 @@ This NYC 311 complaint dataset contains one million incident records recorded be
 
 ## Column `Unique Key`
 
-A surrogate numeric identifier that uniquely distinguishes each complaint record.
+A unique integer identifier for the complaint record.
+
+- **Concept:** `id.surrogate_key`
+- **Role:** identifier
+- **Join:** primary key; cardinality 1:1; not nullable
 
 ### Validation
 
-Values >= 11465364
+- Values >= 11465364
+- Values <= 48478173
+
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 32687965.858 | 32853358.5 | 9013895.3358 | 25245773 | 40207433.5 | -0.0169 | 2803282.25 | 62649924.25 | 0 |
 
 ## Column `Created Date`
 
-The date and time when the complaint was entered into the system, indicating the creation moment of the incident report.
+Timestamp indicating when the complaint was created in the system.
+
+- **Concept:** `time.event_timestamp`
+- **Role:** timestamp
+- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; not nullable
 
 ## Column `Closed Date`
 
-The date and time when the complaint was officially closed or resolved in the system, marking the completion of investigation or action.
+Timestamp indicating when the complaint was closed or resolved.
+
+- **Concept:** `time.event_timestamp`
+- **Role:** timestamp
+- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable
+- **Quality:** placeholder-dates
 
 ## Column `Agency`
 
-Short code identifying the agency that handled the complaint (e.g., NYPD, HPD).
+Abbreviated code for the agency responsible for addressing the complaint.
+
+- **Concept:** `org.agency`
+- **Role:** dimension
+- **Join:** candidate (concept `org.agency`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 3–42
 
 ## Column `Agency Name`
 
-Full name of the agency that processed the complaint, providing descriptive context beyond the short code.
+Full name of the agency handling the complaint.
+
+- **Concept:** `org.agency`
+- **Role:** dimension
+- **Join:** candidate (concept `org.agency`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 3–82
 
 ## Column `Complaint Type`
 
-Primary category of the complaint (e.g., Noise, Illegal Parking) grouping incidents into high‑level topics.
+Primary category describing the nature of the complaint (e.g., noise, illegal parking).
+
+- **Concept:** `nyc.complaint_type`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.complaint_type`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 3–41
 
 ## Column `Descriptor`
 
-A more specific descriptor within the complaint type that explains the nature or detail of the issue.
+Specific subcategory or detail within the complaint type.
+
+- **Concept:** `nyc.complaint_type`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.complaint_type`); cardinality N:1; nullable
+
+### Validation
+
+- Length 0–80
 
 ## Column `Location Type`
 
-Classification of where the incident occurred (e.g., RESIDENTIAL BUILDING, STREET).
+General classification of where the incident occurred (e.g., residential building, street).
+
+- **Concept:** `category.type`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–36
 
 ## Column `Incident Zip`
 
-Five‑digit postal code for the location of the incident, used to locate the area within New York City.
+5‑digit ZIP code for the location of the incident.
+
+- **Concept:** `geo.zip_code`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.zip_code`); cardinality N:1; nullable
+
+### Validation
+
+- Length 0–10
 
 ## Column `Incident Address`
 
-Full street address where the complaint was reported, including building number and street name; combine with city, zip code, borough to form a complete mailing address.
+Full street address where the incident took place; includes building number, street name, and directional components. Combine with City, Borough, and ZIP Code to form a complete mailing address.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–55
 
 ## Column `Street Name`
 
-Name of the primary street involved in the incident (e.g., BROADWAY); part of the full incident address.
+Name of the main street involved in the incident; part of the full mailing address.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–55
 
 ## Column `Cross Street 1`
 
-Name of the first cross street intersecting at or near the incident location; component of the geographic context.
+First cross street intersecting at the incident location; used when describing an intersection or blockface.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–32
 
 ## Column `Cross Street 2`
 
-Name of the second cross street, if applicable, intersecting at the incident location; further refines the location context.
+Second cross street intersecting at the incident location, if applicable.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–35
 
 ## Column `Intersection Street 1`
 
-First street name in an intersection related to the complaint; part of the broader intersection description.
+First street in an intersection where the incident occurred; part of the intersection description.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–35
 
 ## Column `Intersection Street 2`
 
-Second street name in an intersection related to the complaint; completes the intersection pair.
+Second street in an intersection where the incident occurred, if applicable.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–33
 
 ## Column `Address Type`
 
-The type of address provided (e.g., ADDRESS, INTERSECTION, BLOCKFACE) indicating how the location is described.
+Classification of how the location is represented (e.g., ADDRESS, INTERSECTION, BLOCKFACE).
+
+- **Concept:** `category.type`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–12
 
 ## Column `City`
 
-Name of the city or borough in which the incident occurred; for NYC this corresponds to one of the five boroughs.
+Name of the city or borough where the incident occurred; used with ZIP code and state to form a complete mailing address.
+
+- **Concept:** `geo.city`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.city`); cardinality N:1; nullable
+
+### Validation
+
+- Length 0–22
 
 ## Column `Landmark`
 
-Notable landmark near the incident location (e.g., EAST 230 STREET) providing additional spatial context.
+Notable landmark or point of interest near the incident location, often used as a reference when locating the site.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–32
 
 ## Column `Facility Type`
 
-Type of facility where the complaint was filed (e.g., DSNY Garage, School District).
+Type of facility involved in the complaint, if any.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–15
 
 ## Column `Status`
 
-Current status of the complaint record (e.g., Closed, Pending, Open), indicating progress in handling the issue.
+Current status of the complaint (e.g., Open, Closed).
+
+- **Concept:** `category.status`
+- **Role:** dimension
+
+### Validation
+
+- Length 4–16
 
 ### Choices
 
@@ -181,27 +364,66 @@ Current status of the complaint record (e.g., Closed, Pending, Open), indicating
 
 ## Column `Due Date`
 
-The deadline by which a response or action is expected for the complaint.
+Date and time by which the complaint was expected to be resolved.
+
+- **Concept:** `time.event_timestamp`
+- **Role:** timestamp
+- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable
+- **Quality:** sparse
 
 ## Column `Resolution Description`
 
-Free‑form narrative describing how the complaint was resolved, including actions taken or reasons for closure.
+Narrative detailing how the complaint was resolved or why it remained open.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–934
 
 ## Column `Resolution Action Updated Date`
 
-Timestamp of the most recent update to the resolution action, tracking when the status was last modified.
+Timestamp of the most recent update to the resolution action.
+
+- **Concept:** `time.event_timestamp`
+- **Role:** timestamp
+- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable
 
 ## Column `Community Board`
 
-The community board district associated with the incident location (e.g., 12 MANHATTAN).
+Council community board number or designation associated with the incident location.
+
+- **Concept:** `nyc.community_board`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.community_board`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 8–25
 
 ## Column `BBL`
 
-Unique identifier for NYC parcels used in municipal land records.
+Brooklyn Borough Lot identifier representing a specific parcel of land.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 0–10
 
 ## Column `Borough`
 
-The borough of New York City where the incident occurred (e.g., BROOKLYN).
+New York City borough where the incident occurred.
+
+- **Concept:** `nyc.borough`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.borough`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 5–13
 
 ### Choices
 
@@ -214,23 +436,52 @@ The borough of New York City where the incident occurred (e.g., BROOKLYN).
 
 ## Column `X Coordinate (State Plane)`
 
-East‑ing coordinate in the state plane projection system for precise mapping within NYC.
+East–west coordinate in the State Plane coordinate system for the incident location.
+
+- **Concept:** `geo.crs_stateplane_x`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.crs_stateplane_x`); cardinality N:1; nullable
 
 ### Validation
 
-Values >= 913281
+- Values >= 913281
+- Values <= 1067220
+
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 1005337.5451 | 1004546 | 22512.4528 | 993572 | 1018209 | 0.1091 | 956616.5 | 1055164.5 | 0.0853 |
 
 ## Column `Y Coordinate (State Plane)`
 
-North‑ing coordinate in the state plane projection system, complementing the X coordinate for location mapping.
+North–south coordinate in the State Plane coordinate system for the incident location.
+
+- **Concept:** `geo.crs_stateplane_y`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.crs_stateplane_y`); cardinality N:1; nullable
 
 ### Validation
 
-Values >= 121152
+- Values >= 121152
+- Values <= 271876
+
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 205646.4978 | 202514 | 31723.1985 | 182411 | 235129 | 0.2373 | 103334 | 314206 | 0.0853 |
 
 ## Column `Open Data Channel Type`
 
-Channel through which the complaint was submitted (e.g., PHONE, ONLINE).
+Medium through which the complaint was submitted (e.g., PHONE, ONLINE).
+
+- **Concept:** `category.channel`
+- **Role:** dimension
+
+### Validation
+
+- Length 5–7
 
 ### Choices
 
@@ -242,11 +493,26 @@ Channel through which the complaint was submitted (e.g., PHONE, ONLINE).
 
 ## Column `Park Facility Name`
 
-Name of a park facility involved in or near the incident (e.g., CENTRAL PARK).
+Name of the park facility involved in the complaint.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+
+### Validation
+
+- Length 3–82
 
 ## Column `Park Borough`
 
-Borough where the park facility is located.
+NYC borough where the park facility is located.
+
+- **Concept:** `nyc.borough`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.borough`); cardinality N:1; not nullable
+
+### Validation
+
+- Length 5–13
 
 ### Choices
 
@@ -259,51 +525,201 @@ Borough where the park facility is located.
 
 ## Column `Vehicle Type`
 
-Type of vehicle associated with the incident (e.g., Car Service, Green Taxi).
+Type of vehicle involved in the incident, if any.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–23
 
 ## Column `Taxi Company Borough`
 
-Borough where the taxi company operates or was registered.
+NYC borough where the taxi company is registered.
+
+- **Concept:** `nyc.borough`
+- **Role:** dimension
+- **Join:** candidate (concept `nyc.borough`); cardinality N:1; nullable
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–13
 
 ## Column `Taxi Pick Up Location`
 
-Descriptive location of a taxi pick‑up point, often including airport names or intersections.
+Location from which a taxi was picked up.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–60
 
 ## Column `Bridge Highway Name`
 
-Name of the bridge or highway involved in the incident (e.g., Belt Pkwy).
+Name of the bridge or highway involved in the incident.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–42
 
 ## Column `Bridge Highway Direction`
 
 Direction of travel on the bridge or highway (e.g., East/Long Island Bound).
 
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–33
+
 ## Column `Road Ramp`
 
-Type of ramp associated with the incident (e.g., Roadway, Ramp).
+Type of ramp involved in the incident, if applicable.
+
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
+
+### Validation
+
+- Length 0–7
 
 ## Column `Bridge Highway Segment`
 
 Specific segment or exit number on a bridge or highway.
 
-## Column `Latitude`
-
-Geographic latitude coordinate of the incident location in decimal degrees.
+- **Concept:** `unknown`
+- **Role:** dimension
+- **Quality:** sparse
 
 ### Validation
 
-Values >= 40.1123853
+- Length 0–100
+
+## Column `Latitude`
+
+Geographic latitude coordinate of the incident location.
+
+- **Concept:** `geo.latitude`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.latitude`); cardinality N:1; nullable
+- **Quality:** PII-location
+
+### Validation
+
+- Values >= 40.1123853
+- Values <= 40.9128688
+
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 40.7288 | 40.7222 | 0.0893 | 40.6677 | 40.8031 | 0.1957 | 40.4646 | 41.0062 | 0.2547 |
 
 ## Column `Longitude`
 
-Geographic longitude coordinate of the incident location in decimal degrees.
+Geographic longitude coordinate of the incident location.
+
+- **Concept:** `geo.longitude`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.longitude`); cardinality N:1; nullable
+- **Quality:** PII-location
 
 ### Validation
 
-Values >= -77.5195844
+- Values >= -77.5195844
+- Values <= -73.7005968
+
+### Statistics
+
+| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| -73.93 | -73.9279 | 0.1635 | -73.9705 | -73.8763 | 0.0964 | -74.1119 | -73.7349 | 0.2547 |
 
 ## Column `Location`
 
-Combined latitude and longitude pair formatted as a string, providing a precise point reference for mapping.
+Textual representation of latitude and longitude as a point pair; derived from Latitude and Longitude fields.
+
+- **Concept:** `geo.coordinate_pair`
+- **Role:** dimension
+- **Join:** candidate (concept `geo.coordinate_pair`); cardinality N:1; nullable
+- **Quality:** PII-location
+
+### Validation
+
+- Length 0–40
+
+# Example Queries
+
+Load the resource once, then run any query below. SQL targets DuckDB (qsv's `sqlp` engine); timestamps may need an explicit cast.
+
+```python
+import pandas as pd
+df = pd.read_csv("NYC_311_SR_2010-2020-sample-1M.csv")
+```
+
+### Count by Agency
+
+```sql
+SELECT "Agency", count(*) AS n FROM 'NYC_311_SR_2010-2020-sample-1M.csv' GROUP BY 1 ORDER BY n DESC LIMIT 20;
+```
+
+```python
+df.groupby("Agency").size().sort_values(ascending=False).head(20)
+```
+
+### Count by Agency Name
+
+```sql
+SELECT "Agency Name", count(*) AS n FROM 'NYC_311_SR_2010-2020-sample-1M.csv' GROUP BY 1 ORDER BY n DESC LIMIT 20;
+```
+
+```python
+df.groupby("Agency Name").size().sort_values(ascending=False).head(20)
+```
+
+### Count by Complaint Type
+
+```sql
+SELECT "Complaint Type", count(*) AS n FROM 'NYC_311_SR_2010-2020-sample-1M.csv' GROUP BY 1 ORDER BY n DESC LIMIT 20;
+```
+
+```python
+df.groupby("Complaint Type").size().sort_values(ascending=False).head(20)
+```
+
+### Monthly volume by Created Date
+
+```sql
+SELECT date_trunc('month', try_cast("Created Date" AS TIMESTAMP)) AS month, count(*) AS n FROM 'NYC_311_SR_2010-2020-sample-1M.csv' GROUP BY 1 ORDER BY 1;
+```
+
+```python
+df.assign(month=pd.to_datetime(df["Created Date"], errors="coerce").dt.to_period("M")).groupby("month").size()
+```
+
+### Join a catalog dataset sharing concept `id.surrogate_key`
+
+```sql
+-- Any catalog dataset whose column carries concept 'id.surrogate_key' joins here.
+-- SELECT a.*, b.* FROM 'NYC_311_SR_2010-2020-sample-1M.csv' a JOIN 'other.csv' b ON a."Unique Key" = b.<col with concept id.surrogate_key>;
+```
+
+```python
+# merged = a.merge(b, left_on="Unique Key", right_on=<b col with concept 'id.surrogate_key'>)
+```
 
 # Resource `NYC_311_SR_2010-2020-sample-1M.csv`
 
@@ -753,12 +1169,12 @@ Combined latitude and longitude pair formatted as a string, providing a precise 
 | (40.89238451539139, -73.8… | 663 | 0.09% | 3 |
 
 *Attribution: Generated by qsv v20.1.0 describegpt
-Command line: target/debug/qsv describegpt --all --two-pass /tmp/NYC_311_SR_2010-2020-sample-1M.csv -o /tmp/nyc311-describegpt-semanticmd.md --fresh --infer-content-type --format semanticmd
+Command line: ./target/debug/qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all --two-pass --fresh --format semanticmd --base-url http://localhost:1234/v1 --model openai/gpt-oss-20b --ds-source https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9 --ds-license NYC Open Data Terms of Use --ds-updated 2020-12-23 --output docs/describegpt/nyc311-describegpt-semanticmd.md
 Prompt file: Default v7.1.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-06-02T11:52:17.433475+00:00
+Timestamp: 2026-06-02T16:27:09.206095+00:00
 
 WARNING: Label and Description generated by an LLM and may contain inaccuracies. Verify before using!
 *

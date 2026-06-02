@@ -118,6 +118,19 @@ For each field, provide:
   it only when the row-count check matches.
   Allowed Content Type tokens: {{ content_type_vocab }} (plus the optional "duration:N" and
   "date:<fmt>" / "datetime:<fmt>" suffix forms described above)
+- Role: classify how this field is USED in analysis by choosing exactly ONE token from:
+  {{ role_vocab }}. Use "identifier" for keys/codes that name an entity, "timestamp" for
+  date/time fields, "measure" for numeric quantities you would aggregate (sum/avg/min/max), and
+  "dimension" for categorical attributes you would GROUP BY or filter on. NOTE: "identifier" (for
+  unique-key columns) and "timestamp" (for Date/DateTime columns) are re-derived deterministically
+  by qsv; your value is used for every other field.
+- Concept: give this field a CATALOG-WIDE semantic identity by choosing exactly ONE token from the
+  fixed concept vocabulary below. Two columns in DIFFERENT datasets that share the same concept
+  denote the same real-world thing and are join-compatible - this is what lets an agent correlate
+  and join datasets across a catalog. Pick the most specific concept that fits; use "unknown" if
+  none do. Do NOT invent tokens. NOTE: "id.surrogate_key" is RESERVED and set deterministically by
+  qsv for unique-key columns - do not use it yourself.
+  Allowed Concept tokens: {{ concept_vocab }}
 {%- endif %}
 
 {%- if infer_content_type %}
@@ -140,20 +153,28 @@ Emit a top-level "relationships" array; each element is an object with:
 Only emit relationships you are confident about from the field names, the Labels and
 Descriptions you produced, and the Summary Statistics. Do NOT place a field in more
 than one relationship. If you find none, emit an empty array.
+
+Also provide a top-level "grain" string: a single sentence stating what ONE ROW represents,
+e.g. "one row = one 311 service request" or "one row = one daily reading per station".
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %} and "content_type"{% endif %} properties{% if infer_content_type %}, plus an optional top-level "relationships" array{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role" and "concept"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
     "description": "Full description of the field"{% endraw %}{% if infer_content_type %},
-    "content_type": "email"{% endif %}{% raw %}
+    "content_type": "datetime:%m/%d/%Y",
+    "role": "timestamp",
+    "concept": "time.event_timestamp"{% endif %}{% raw %}
   },
   "field_name_2": {
     "label": "Another label",
     "description": "Another description"{% endraw %}{% if infer_content_type %},
-    "content_type": "city"{% endif %}{% raw %}
+    "content_type": "city",
+    "role": "dimension",
+    "concept": "geo.city"{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
+  "grain": "one row = one record",
   "relationships": [
 {% raw %}    {"kind": "ordered", "members": ["created_date", "closed_date"], "anchor": "created_date"},
     {"kind": "joint", "members": ["city", "state", "zip"]}{% endraw %}

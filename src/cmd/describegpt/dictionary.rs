@@ -131,6 +131,166 @@ pub(super) fn content_type_vocab_list() -> String {
     CONTENT_TYPE_VOCAB.join(", ")
 }
 
+/// Closed set of analytical column `role` tokens. Unlike `content_type` (which
+/// describes the *kind of value* for synthesis/PII) and `concept` (which gives a
+/// *cross-dataset semantic identity* for joining), `role` describes how an agent
+/// should USE the column in a query: `dimension` (group/filter by it), `measure`
+/// (aggregate it), `identifier` (a key naming an entity), or `timestamp` (a
+/// date/time axis). `identifier` and `timestamp` are stamped deterministically
+/// (from `is_unique_id` and the stats `Date`/`DateTime` type); `dimension` vs
+/// `measure` is the LLM's call, falling back to a type-based default.
+pub(crate) const ROLE_VOCAB: &[&str] = &["dimension", "measure", "identifier", "timestamp"];
+
+/// Catalog-wide, namespaced `concept` vocabulary. A concept is the column's
+/// real-world semantic identity; two columns in *different* datasets that carry
+/// the SAME concept ID denote the same thing and are join-compatible. This is the
+/// mechanism by which an agent correlates datasets across a catalog (decision:
+/// "shared concept vocabulary only" — no explicit cross-dataset foreign keys).
+///
+/// Concept is distinct from `content_type`: `content_type` drives `synthesize`
+/// (fake-rs fakers) and PII handling; `concept` drives catalog join discovery and
+/// is hierarchical/namespaced. Many concepts are SEEDED deterministically from
+/// `content_type` (see `concept_from_content_type`) so a `--infer-content-type`
+/// run gets concepts for free; the LLM fills/refines the rest from this list.
+///
+/// Namespaces:
+///   * `geo.*`   — spatial identity (join keys for places)
+///   * `time.*`  — temporal axes
+///   * `id.*`    — entity keys (`id.surrogate_key` is deterministic, tied to `is_unique_id`)
+///   * `org.*`   — organizations
+///   * `pii.*`   — sensitive personal data (drives the PII quality flag; not a join target)
+///   * `measure.*`, `category.*` — quantities / categoricals (not join targets)
+///   * domain prefixes (e.g. `nyc.*`) — catalog-specific shared keys
+pub(crate) const CONCEPT_VOCAB: &[&str] = &[
+    // spatial
+    "geo.zip_code",
+    "geo.city",
+    "geo.state",
+    "geo.country",
+    "geo.latitude",
+    "geo.longitude",
+    "geo.coordinate_pair",
+    "geo.street_address",
+    "geo.census_tract",
+    "geo.crs_stateplane_x",
+    "geo.crs_stateplane_y",
+    // temporal
+    "time.event_timestamp",
+    "time.created_at",
+    "time.closed_at",
+    "time.updated_at",
+    "time.due_at",
+    "time.date",
+    "time.duration",
+    // identifiers
+    "id.surrogate_key",
+    "id.natural_key",
+    "id.foreign_key",
+    "id.uuid",
+    // organizations
+    "org.agency",
+    "org.company",
+    "org.industry",
+    // sensitive personal data
+    "pii.email",
+    "pii.phone",
+    "pii.full_name",
+    "pii.address",
+    // quantities / categoricals
+    "measure.count",
+    "measure.amount",
+    "measure.ratio",
+    "category.status",
+    "category.type",
+    "category.channel",
+    // NYC-domain extension (illustrative shared catalog keys)
+    "nyc.bbl",
+    "nyc.borough",
+    "nyc.community_board",
+    "nyc.complaint_type",
+    // fallback
+    "unknown",
+];
+
+/// Render `CONCEPT_VOCAB` as a comma-separated string for prompt injection.
+pub(super) fn concept_vocab_list() -> String {
+    CONCEPT_VOCAB.join(", ")
+}
+
+/// Render `ROLE_VOCAB` as a comma-separated string for prompt injection.
+pub(super) fn role_vocab_list() -> String {
+    ROLE_VOCAB.join(", ")
+}
+
+/// Concept namespaces that denote a shared real-world entity an agent can join
+/// ON across datasets. `pii.*`, `measure.*`, `category.*`, and `unknown` are
+/// excluded: they are sensitive, additive, or not stable identities.
+const LINKABLE_CONCEPT_PREFIXES: &[&str] = &["geo.", "time.", "id.", "org.", "nyc."];
+
+/// True when `concept` names a cross-dataset-joinable identity (drives the
+/// schema-table `Join?` hint and the per-column join line).
+pub(super) fn is_linkable_concept(concept: &str) -> bool {
+    !concept.is_empty()
+        && concept != "unknown"
+        && LINKABLE_CONCEPT_PREFIXES
+            .iter()
+            .any(|p| concept.starts_with(p))
+}
+
+/// Deterministic seed mapping from a (base) `content_type` token to a catalog
+/// `concept`, so a `--infer-content-type` run gets concepts without extra LLM
+/// work. Returns `None` for tokens with no obvious 1:1 concept (the LLM fills
+/// those). Caller passes the bare token (no `:<fmt>`/`:N` suffix).
+pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'static str> {
+    Some(match content_type_base {
+        "unique_id" => "id.surrogate_key",
+        "uuid" => "id.uuid",
+        "zip_code" => "geo.zip_code",
+        "city" => "geo.city",
+        "state" | "state_abbr" => "geo.state",
+        "country" | "country_code" => "geo.country",
+        "latitude" => "geo.latitude",
+        "longitude" => "geo.longitude",
+        "street_address" | "street_name" => "geo.street_address",
+        "email" => "pii.email",
+        "phone" => "pii.phone",
+        "first_name" | "last_name" | "full_name" => "pii.full_name",
+        "company_name" => "org.company",
+        "industry" => "org.industry",
+        "date" => "time.date",
+        "datetime" => "time.event_timestamp",
+        _ => return None,
+    })
+}
+
+/// Merge an LLM-supplied `concept` onto the (possibly deterministically seeded)
+/// `current` value. `id.surrogate_key` is deterministic (tied to `is_unique_id`)
+/// and never overridden. Otherwise the LLM fills an empty slot, and on the
+/// refine pass (`allow_override`) may replace a non-authoritative seed.
+fn merge_concept(current: &str, llm: &str, allow_override: bool) -> String {
+    if current == "id.surrogate_key" {
+        return current.to_string();
+    }
+    if !llm.is_empty() && llm != "id.surrogate_key" && (current.is_empty() || allow_override) {
+        return llm.to_string();
+    }
+    current.to_string()
+}
+
+/// Merge an LLM-supplied `role` onto the (possibly deterministically seeded)
+/// `current` value. `identifier` and `timestamp` are stamped deterministically
+/// and never overridden; `dimension`/`measure` come from the LLM (or the
+/// type-based fallback applied in `combine_dictionary_entries`).
+fn merge_role(current: &str, llm: &str, allow_override: bool) -> String {
+    if current == "identifier" || current == "timestamp" {
+        return current.to_string();
+    }
+    if ROLE_VOCAB.contains(&llm) && (current.is_empty() || allow_override) {
+        return llm.to_string();
+    }
+    current.to_string()
+}
+
 /// Normalize the `duration` content type, optionally with an LLM-inferred
 /// per-field upper-bound suffix.
 ///
@@ -303,6 +463,12 @@ pub(super) struct LlmDictField {
     pub(super) label:        String,
     pub(super) description:  String,
     pub(super) content_type: String,
+    /// Catalog concept ID (e.g. `geo.zip_code`); empty unless concept inference
+    /// is on. Validated against `CONCEPT_VOCAB` in `parse_llm_dictionary_response`.
+    pub(super) concept:      String,
+    /// Analytical role (`dimension`/`measure`/`identifier`/`timestamp`); empty
+    /// unless concept inference is on. Validated against `ROLE_VOCAB`.
+    pub(super) role:         String,
 }
 
 pub(crate) struct StatsRecord {
@@ -369,6 +535,17 @@ pub(super) struct DictionaryEntry {
     /// backward-compatibility.
     #[serde(default)]
     pub(super) is_unique_id: bool,
+    /// Catalog-wide semantic identity used for cross-dataset join discovery
+    /// (e.g. `geo.zip_code`). Deterministically seeded from `content_type` and
+    /// refined by the LLM; empty unless content-type/concept inference is on.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) concept:      String,
+    /// Analytical role: `dimension`, `measure`, `identifier`, or `timestamp`.
+    /// `identifier`/`timestamp` are deterministic; the rest are LLM-filled with a
+    /// type-based fallback. `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) role:         String,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -726,6 +903,29 @@ pub(super) fn generate_code_based_dictionary(
             }
         };
 
+        // Deterministically seed `concept` + `role`, gated on the same flag as
+        // `content_type`. `concept` seeds from the content_type token (e.g.
+        // `zip_code` → `geo.zip_code`); `role` from the structural unique-id flag
+        // (`identifier`) and the stats Date/DateTime type (`timestamp`). The LLM
+        // fills/refines empty or non-authoritative values in
+        // `combine_dictionary_entries`.
+        let (concept, role) = if !infer_content_type {
+            (String::new(), String::new())
+        } else {
+            let concept = concept_from_content_type(content_type_base(&content_type))
+                .map(ToString::to_string)
+                .unwrap_or_default();
+            let role = if is_all_unique {
+                "identifier".to_string()
+            } else {
+                match stats_record.r#type.as_str() {
+                    "Date" | "DateTime" => "timestamp".to_string(),
+                    _ => String::new(),
+                }
+            };
+            (concept, role)
+        };
+
         dictionary_entries.push(DictionaryEntry {
             name: stats_record.field.clone(),
             r#type: stats_record.r#type.clone(),
@@ -742,6 +942,8 @@ pub(super) fn generate_code_based_dictionary(
             examples,
             freq_details,
             is_unique_id: is_all_unique,
+            concept,
+            role,
         });
     }
 
@@ -807,12 +1009,43 @@ pub(super) fn combine_dictionary_entries(
             entry.label = llm.label.clone();
             entry.description = llm.description.clone();
             entry.content_type = merge_content_type(&entry.content_type, &llm.content_type, false);
+            entry.concept = merge_concept(&entry.concept, &llm.concept, false);
+            entry.role = merge_role(&entry.role, &llm.role, false);
         }
-        if infer_content_type && entry.content_type.is_empty() {
-            entry.content_type = "unknown".to_string();
+        if infer_content_type {
+            if entry.content_type.is_empty() {
+                entry.content_type = "unknown".to_string();
+            }
+            coerce_role_concept(entry);
         }
     }
     code_entries
+}
+
+/// Final fallback coercion for `role`/`concept` once the LLM merge(s) are done,
+/// mirroring the `content_type` → `"unknown"` coercion. Applied only when
+/// concept inference is on. Empty `concept` becomes `"unknown"` (excluded from
+/// the front-matter concept index and from join detection); empty `role`
+/// defaults to `measure` for numeric columns and `dimension` otherwise.
+fn coerce_role_concept(entry: &mut DictionaryEntry) {
+    // Backfill the deterministic concept mapping from the now-merged `content_type`
+    // before defaulting to "unknown". This recovers the documented mapping when a
+    // model (or an older cached response, or a custom prompt) returns a valid
+    // `content_type` like `zip_code` but supplies no concept — either omitting it
+    // (empty) or emitting the literal `"unknown"` (a valid vocab token). The seed in
+    // `generate_code_based_dictionary` only sees the pre-LLM (deterministic)
+    // content_type, so this is the merge path's chance to apply it.
+    if entry.concept.is_empty() || entry.concept == "unknown" {
+        entry.concept = concept_from_content_type(content_type_base(&entry.content_type))
+            .map_or_else(|| "unknown".to_string(), ToString::to_string);
+    }
+    if entry.role.is_empty() {
+        entry.role = if entry.r#type == "Integer" || entry.r#type == "Float" {
+            "measure".to_string()
+        } else {
+            "dimension".to_string()
+        };
+    }
 }
 
 /// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
@@ -843,6 +1076,8 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             entry.description = baseline.description.clone();
             entry.content_type =
                 merge_content_type(&entry.content_type, &baseline.content_type, false);
+            entry.concept = merge_concept(&entry.concept, &baseline.concept, false);
+            entry.role = merge_role(&entry.role, &baseline.role, false);
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -855,11 +1090,16 @@ pub(super) fn combine_dictionary_entries_with_baseline(
             }
             entry.content_type =
                 merge_content_type(&entry.content_type, &refine.content_type, true);
+            entry.concept = merge_concept(&entry.concept, &refine.concept, true);
+            entry.role = merge_role(&entry.role, &refine.role, true);
         }
-        // Stage 3: same final "unknown" coercion as `combine_dictionary_entries` so the
-        // two-pass output matches single-pass invariants for the Content Type column.
-        if infer_content_type && entry.content_type.is_empty() {
-            entry.content_type = "unknown".to_string();
+        // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
+        // the two-pass output matches single-pass invariants.
+        if infer_content_type {
+            if entry.content_type.is_empty() {
+                entry.content_type = "unknown".to_string();
+            }
+            coerce_role_concept(entry);
         }
     }
     code_entries
@@ -1187,12 +1427,51 @@ pub(super) fn parse_llm_dictionary_response(
                     String::new()
                 };
 
+                // `concept` and `role` ride the same `infer_content_type` gate as
+                // `content_type`. `concept` is validated against `CONCEPT_VOCAB`
+                // (case-folded); `id.surrogate_key` is deterministic and refused
+                // from LLM input, mirroring the `unique_id` content_type rejection.
+                // `role` is validated against `ROLE_VOCAB`. Out-of-vocab / missing
+                // values are left empty; `combine_dictionary_entries` applies the
+                // deterministic seed and the final fallback.
+                let (concept, role) = if infer_content_type {
+                    let concept_raw = field_map
+                        .get("concept")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_ascii_lowercase();
+                    let concept = if concept_raw == "id.surrogate_key"
+                        || !CONCEPT_VOCAB.contains(&concept_raw.as_str())
+                    {
+                        String::new()
+                    } else {
+                        concept_raw
+                    };
+                    let role_raw = field_map
+                        .get("role")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .trim()
+                        .to_ascii_lowercase();
+                    let role = if ROLE_VOCAB.contains(&role_raw.as_str()) {
+                        role_raw
+                    } else {
+                        String::new()
+                    };
+                    (concept, role)
+                } else {
+                    (String::new(), String::new())
+                };
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
                         label,
                         description,
                         content_type,
+                        concept,
+                        role,
                     },
                 );
             }
@@ -1265,6 +1544,18 @@ pub(super) fn parse_llm_relationships(
     result
 }
 
+/// Extract the optional top-level `grain` string from the LLM's dictionary
+/// response — a one-sentence statement of what a single row represents (e.g.
+/// "one row = one 311 service request"). Best-effort and dataset-level (it is
+/// NOT a per-field value, so it rides alongside `parse_llm_relationships` rather
+/// than through `LlmDictField`): malformed JSON or a missing/blank `grain` yields
+/// `None`, never failing the dictionary phase.
+pub(super) fn parse_llm_grain(llm_response: &str) -> Option<String> {
+    let json_value = extract_json_from_output(llm_response).ok()?;
+    let grain = json_value.get("grain")?.as_str()?.trim();
+    (!grain.is_empty()).then(|| grain.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1285,6 +1576,8 @@ mod tests {
             examples:     String::new(),
             freq_details: Vec::new(),
             is_unique_id: false,
+            concept:      String::new(),
+            role:         String::new(),
         }
     }
 
@@ -1448,6 +1741,8 @@ mod tests {
                 label:        "X".to_string(),
                 description:  "y".to_string(),
                 content_type: "unique_id".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -1562,6 +1857,8 @@ mod tests {
                 label:        "A".to_string(),
                 description:  "desc a".to_string(),
                 content_type: "city".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -1590,6 +1887,8 @@ mod tests {
                 label:        "K".to_string(),
                 description:  "d".to_string(),
                 content_type: "city".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         llm.insert(
@@ -1598,6 +1897,8 @@ mod tests {
                 label:        "E".to_string(),
                 description:  "d".to_string(),
                 content_type: String::new(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -1622,6 +1923,8 @@ mod tests {
                 label:        "Primary Key".to_string(),
                 description:  "row identifier".to_string(),
                 content_type: "uuid".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         llm.insert(
@@ -1630,6 +1933,8 @@ mod tests {
                 label:        "Other".to_string(),
                 description:  "city field".to_string(),
                 content_type: "city".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -1898,6 +2203,8 @@ mod tests {
                 label:        "Baseline Label".to_string(),
                 description:  "Baseline description.".to_string(),
                 content_type: "email".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         baseline.insert(
@@ -1906,6 +2213,8 @@ mod tests {
                 label:        "Old Label".to_string(),
                 description:  "Old description.".to_string(),
                 content_type: "free_text".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -1917,6 +2226,8 @@ mod tests {
                 label:        "New Label".to_string(),
                 description:  "New description with cross-field context.".to_string(),
                 content_type: "address_street".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -1958,6 +2269,8 @@ mod tests {
                 description:  "row id".to_string(),
                 // Refine pass tries to overwrite the deterministic stamp with "uuid".
                 content_type: "uuid".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         refine.insert(
@@ -1967,6 +2280,8 @@ mod tests {
                 description:  "not unique".to_string(),
                 // Refine pass tries to smuggle "unique_id" onto a non-ALL_UNIQUE field.
                 content_type: "unique_id".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -1998,6 +2313,8 @@ mod tests {
                 label:        "Street 1".to_string(),
                 description:  "First street line".to_string(),
                 content_type: "free_text".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -2008,6 +2325,8 @@ mod tests {
                 label:        "Street Address".to_string(),
                 description:  "Street component of the mailing address.".to_string(),
                 content_type: "address_street".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -2033,6 +2352,8 @@ mod tests {
                 label:        "City".to_string(),
                 description:  "City name".to_string(),
                 content_type: "city".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
 
@@ -2269,6 +2590,8 @@ mod tests {
                 label:        "Created".to_string(),
                 description:  "d".to_string(),
                 content_type: "datetime:%m/%d/%Y".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2287,6 +2610,8 @@ mod tests {
                 label:        "Born".to_string(),
                 description:  "d".to_string(),
                 content_type: "datetime:%Y-%m-%dT%H:%M:%S".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2305,6 +2630,8 @@ mod tests {
                 label:        "Note".to_string(),
                 description:  "d".to_string(),
                 content_type: "date:%Y-%m-%d".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2323,6 +2650,8 @@ mod tests {
                 label:        "C".to_string(),
                 description:  "d".to_string(),
                 content_type: "datetime:%Y/%m/%d".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let mut refine = HashMap::new();
@@ -2332,6 +2661,8 @@ mod tests {
                 label:        "C".to_string(),
                 description:  "d".to_string(),
                 content_type: "datetime:%m/%d/%Y".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -2723,5 +3054,192 @@ mod tests {
         ];
         downgrade_all_midnight_datetime_columns(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "datetime:%m/%d/%Y %I:%M:%S %p");
+    }
+
+    #[test]
+    fn parse_llm_response_extracts_validated_role_and_concept() {
+        let json = r#"{
+          "zip": {"label":"ZIP","description":"postal code","content_type":"zip_code","role":"dimension","concept":"geo.zip_code"},
+          "bad": {"label":"B","description":"d","role":"sideways","concept":"not.a.concept"},
+          "sk":  {"label":"K","description":"key","concept":"id.surrogate_key","role":"identifier"}
+        }"#;
+        let fields = vec!["zip".to_string(), "bad".to_string(), "sk".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, true).unwrap();
+        assert_eq!(parsed["zip"].role, "dimension");
+        assert_eq!(parsed["zip"].concept, "geo.zip_code");
+        // Invalid role + out-of-vocab concept are dropped to empty (the seed/fallback fills them).
+        assert_eq!(parsed["bad"].role, "");
+        assert_eq!(parsed["bad"].concept, "");
+        // `id.surrogate_key` is reserved/deterministic — rejected from LLM input (like unique_id).
+        assert_eq!(parsed["sk"].concept, "");
+        assert_eq!(parsed["sk"].role, "identifier");
+    }
+
+    #[test]
+    fn parse_llm_response_ignores_role_concept_when_flag_off() {
+        let json = r#"{"zip":{"label":"ZIP","description":"d","role":"dimension","concept":"geo.zip_code"}}"#;
+        let fields = vec!["zip".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, false).unwrap();
+        assert_eq!(parsed["zip"].role, "");
+        assert_eq!(parsed["zip"].concept, "");
+    }
+
+    #[test]
+    fn parse_llm_grain_reads_top_level_string() {
+        assert_eq!(
+            parse_llm_grain(r#"{"grain":"one row = one trip"}"#).as_deref(),
+            Some("one row = one trip")
+        );
+        assert_eq!(parse_llm_grain(r#"{"grain":"   "}"#), None);
+        assert_eq!(parse_llm_grain(r#"{"foo":1}"#), None);
+        assert_eq!(parse_llm_grain("not json at all"), None);
+    }
+
+    #[test]
+    fn concept_from_content_type_maps_known_tokens() {
+        assert_eq!(concept_from_content_type("zip_code"), Some("geo.zip_code"));
+        assert_eq!(
+            concept_from_content_type("unique_id"),
+            Some("id.surrogate_key")
+        );
+        assert_eq!(
+            concept_from_content_type("datetime"),
+            Some("time.event_timestamp")
+        );
+        assert_eq!(concept_from_content_type("free_text"), None);
+    }
+
+    #[test]
+    fn is_linkable_concept_excludes_pii_and_unknown() {
+        assert!(is_linkable_concept("geo.zip_code"));
+        assert!(is_linkable_concept("nyc.bbl"));
+        assert!(is_linkable_concept("id.foreign_key"));
+        assert!(!is_linkable_concept("pii.email"));
+        assert!(!is_linkable_concept("category.status"));
+        assert!(!is_linkable_concept("unknown"));
+        assert!(!is_linkable_concept(""));
+    }
+
+    #[test]
+    fn generate_code_based_dictionary_seeds_concept_and_role() {
+        let stats = vec![
+            StatsRecord {
+                field:       "id".to_string(),
+                r#type:      "Integer".to_string(),
+                cardinality: 3,
+                nullcount:   0,
+                min:         "1".to_string(),
+                max:         "3".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+            StatsRecord {
+                field:       "created".to_string(),
+                r#type:      "Date".to_string(),
+                cardinality: 2,
+                nullcount:   0,
+                min:         "2020-01-01".to_string(),
+                max:         "2020-12-31".to_string(),
+                addl_cols:   IndexMap::new(),
+            },
+        ];
+        let freqs = vec![
+            FrequencyRecord {
+                field:      "id".to_string(),
+                value:      "<ALL_UNIQUE>".to_string(),
+                count:      3,
+                percentage: 100.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "2020-01-01".to_string(),
+                count:      1,
+                percentage: 50.0,
+                rank:       1.0,
+            },
+            FrequencyRecord {
+                field:      "created".to_string(),
+                value:      "2020-12-31".to_string(),
+                count:      1,
+                percentage: 50.0,
+                rank:       2.0,
+            },
+        ];
+        let entries = generate_code_based_dictionary(&stats, &freqs, 50, 5, 0, &[], true);
+
+        let id = entries.iter().find(|e| e.name == "id").unwrap();
+        assert!(id.is_unique_id);
+        assert_eq!(id.concept, "id.surrogate_key");
+        assert_eq!(id.role, "identifier");
+
+        let created = entries.iter().find(|e| e.name == "created").unwrap();
+        assert_eq!(created.concept, "time.date");
+        assert_eq!(created.role, "timestamp");
+
+        // With the flag off, no concept/role is seeded.
+        let off = generate_code_based_dictionary(&stats, &freqs, 50, 5, 0, &[], false);
+        assert_eq!(off.iter().find(|e| e.name == "id").unwrap().concept, "");
+        assert_eq!(off.iter().find(|e| e.name == "id").unwrap().role, "");
+    }
+
+    #[test]
+    fn combine_backfills_concept_from_content_type_when_llm_omits_it() {
+        // A model returns a valid content_type ("zip_code") but omits "concept".
+        // The merge path must backfill the deterministic concept mapping
+        // ("geo.zip_code") rather than coercing straight to "unknown".
+        let code = vec![blank_entry("zip")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "zip".to_string(),
+            LlmDictField {
+                label:        "ZIP".to_string(),
+                description:  "postal code".to_string(),
+                content_type: "zip_code".to_string(),
+                concept:      String::new(),
+                role:         "dimension".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].content_type, "zip_code");
+        assert_eq!(
+            combined[0].concept, "geo.zip_code",
+            "concept must backfill from the merged content_type, not fall back to unknown"
+        );
+
+        // Same backfill when the model emits the literal "unknown" concept (a valid
+        // vocab token) alongside a mappable content_type.
+        let code = vec![blank_entry("zip2")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "zip2".to_string(),
+            LlmDictField {
+                label:        "ZIP".to_string(),
+                description:  "postal code".to_string(),
+                content_type: "zip_code".to_string(),
+                concept:      "unknown".to_string(),
+                role:         "dimension".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(
+            combined[0].concept, "geo.zip_code",
+            "a literal \"unknown\" concept must still backfill from content_type"
+        );
+
+        // No content_type mapping → still "unknown".
+        let code = vec![blank_entry("notes")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "notes".to_string(),
+            LlmDictField {
+                label:        "Notes".to_string(),
+                description:  "free text".to_string(),
+                content_type: "free_text".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].concept, "unknown");
     }
 }

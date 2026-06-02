@@ -1,7 +1,7 @@
 {
   "name": "qsv-describegpt",
   "version": "20.1.0",
-  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
+  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema, Semantic Markdown, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
   "category": "documentation",
   "command": {
     "subcommand": "describegpt",
@@ -52,6 +52,21 @@
         "default": "~/.qsv-cache/describegpt"
       },
       {
+        "flag": "--ds-license",
+        "type": "string",
+        "description": "For the SemanticMd format only: the dataset license recorded in the document frontmatter. Optional. Ignored by other formats."
+      },
+      {
+        "flag": "--ds-source",
+        "type": "string",
+        "description": "For the SemanticMd format only: the dataset source/provenance recorded in the document frontmatter (e.g. a source URL or publisher). Optional; the frontmatter key is omitted when unset. Ignored by other formats."
+      },
+      {
+        "flag": "--ds-updated",
+        "type": "string",
+        "description": "For the SemanticMd format only: the dataset's last-updated date recorded in the document frontmatter. Optional. Ignored by other formats."
+      },
+      {
         "flag": "--enum-threshold",
         "type": "string",
         "description": "The threshold for compiling Enumerations with the frequency command before bucketing other unique values into the \"Other\" category. This is a convenience shortcut for --freq-options --limit <n>. If --freq-options contains --limit, this flag is ignored.",
@@ -70,7 +85,7 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "Output format: Markdown, TSV, JSON, TOON, or JSONSchema. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported.",
+        "description": "Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported. SemanticMd emits the Data Dictionary as a Semantic Markdown document (https://semanticmd.org/) - human-readable markdown with light, agent-parseable conventions that a companion converter turns into JSON. It enriches each column with a catalog-wide Concept ID (for cross-dataset join discovery), an analytical Role (dimension/measure/identifier/timestamp), join keys & cardinality, data-quality flags, and a richer per-column statistics block; it also emits a dataset grain, a temporal/spatial envelope, and ready-to-run example queries (DuckDB SQL + pandas). To populate Concept/Role/grain, SemanticMd implies --infer-content-type. Like JSONSchema, it requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the '# Dataset' description; tags, when also run, are embedded in the document frontmatter. The prompt inference is not supported.",
         "default": "Markdown"
       },
       {
@@ -87,7 +102,7 @@
       {
         "flag": "--infer-content-type",
         "type": "flag",
-        "description": "Also have the LLM classify each field's semantic \"Content Type\", mapped to a curated, documented vocabulary (e.g. email, city, category, name, credit card, etc.) see https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/faker_map.rs. Adds a \"Content Type\" column/field to the Data Dictionary output. Fields where cardinality equals the row count (i.e. every row has a distinct non-null value - primary keys, surrogate keys, sequence numbers) are deterministically classified as \"unique_id\", overriding any token the LLM returned for that field."
+        "description": "Also have the LLM classify each field's semantic \"Content Type\", mapped to a curated, documented vocabulary (e.g. email, city, category, name, credit card, etc.) see https://github.com/dathere/qsv/blob/master/src/cmd/synthesize/faker_map.rs. Adds a \"Content Type\" column/field to the Data Dictionary output. Fields where cardinality equals the row count (i.e. every row has a distinct non-null value - primary keys, surrogate keys, sequence numbers) are deterministically classified as \"unique_id\", overriding any token the LLM returned for that field. For Date/DateTime fields, the LLM also infers the column's strftime date format (e.g. \"date:%m/%d/%Y\"); the Markdown, JSON & JSON Schema dictionaries then render Min/Max AND Examples in that inferred format so they match how the dates actually appear in the data, instead of qsv's normalized form. (TSV output keeps Min/Max & Examples in qsv's raw normalized form.)"
       },
       {
         "flag": "--language",

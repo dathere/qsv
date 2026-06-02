@@ -411,6 +411,12 @@ Common options:
                            SemanticMd emits the Data Dictionary as a Semantic Markdown document
                            (https://semanticmd.org/) - human-readable markdown with light,
                            agent-parseable conventions that a companion converter turns into JSON.
+                           It enriches each column with a catalog-wide Concept ID (for cross-dataset
+                           join discovery), an analytical Role (dimension/measure/identifier/timestamp),
+                           join keys & cardinality, data-quality flags, and a richer per-column
+                           statistics block; it also emits a dataset grain, a temporal/spatial
+                           envelope, and ready-to-run example queries (DuckDB SQL + pandas).
+                           To populate Concept/Role/grain, SemanticMd implies --infer-content-type.
                            Like JSONSchema, it requires the dictionary inference phase (the
                            dictionary or all flag). The description inference, when also run, becomes
                            the '# Dataset' description; tags, when also run, are embedded in the
@@ -426,6 +432,13 @@ Common options:
                            the validate roundtrip would otherwise fail. Set this only when your
                            source columns are guaranteed to be RFC 3339 full-date / date-time.
                            Mirrors the same flag on the schema command.
+    --ds-source <text>     For the SemanticMd format only: the dataset source/provenance recorded in
+                           the document frontmatter (e.g. a source URL or publisher). Optional;
+                           the frontmatter key is omitted when unset. Ignored by other formats.
+    --ds-updated <text>    For the SemanticMd format only: the dataset's last-updated date recorded
+                           in the document frontmatter. Optional. Ignored by other formats.
+    --ds-license <text>    For the SemanticMd format only: the dataset license recorded in the
+                           document frontmatter. Optional. Ignored by other formats.
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -566,6 +579,9 @@ struct Args {
     flag_no_score_sql:       bool,
     flag_score_threshold:    u32,
     flag_score_max_retries:  u32,
+    flag_ds_source:          Option<String>,
+    flag_ds_updated:         Option<String>,
+    flag_ds_license:         Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1386,6 +1402,9 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
         env.set_keep_trailing_newline(true);
 
         env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
+        // Render a string as a YAML scalar safe for the semantic-md frontmatter
+        // (plain when safe, else double-quoted+escaped) — same helper used for `tags:`.
+        env.add_filter("yaml_scalar", |v: String| yaml_scalar(&v));
         env.add_filter("br_replace", |v: String| v.replace('\n', "<br>"));
         env.add_filter("human_count", |v: u64| HumanCount(v).to_string());
         env.add_filter("dict_cell", |v: String, col: String| -> String {
@@ -1520,6 +1539,7 @@ fn semanticmd_ids(arg_input: Option<&str>) -> (String, String, String, String) {
 fn render_semanticmd_body(
     args: &Args,
     entries: &[dictionary::DictionaryEntry],
+    grain: Option<&str>,
     model: &str,
     base_url: &str,
     shared: &SharedRenderCtx,
@@ -1527,9 +1547,10 @@ fn render_semanticmd_body(
     let md_file = get_md_template_file(args)?;
     let env = make_describegpt_md_env();
 
-    let data = formatters::build_semanticmd_data(entries);
     let (resource_name, dataset_id, schema_id, dataset_title) =
         semanticmd_ids(args.arg_input.as_deref());
+    let data =
+        formatters::build_semanticmd_data(entries, &resource_name, grain.map(str::to_string));
 
     let ctx = context! {
         profile => SEMANTICMD_PROFILE,
@@ -1537,7 +1558,17 @@ fn render_semanticmd_body(
         dataset_title => dataset_title,
         schema_id => schema_id,
         resource_name => resource_name,
+        resource_name_py => formatters::py_str_lit(&resource_name),
         primary_key => data.primary_key,
+        row_count => data.row_count,
+        grain => data.grain,
+        concepts => data.concepts,
+        temporal_coverage => data.temporal_coverage,
+        spatial => data.spatial,
+        example_queries => data.example_queries,
+        ds_source => args.flag_ds_source.as_deref().unwrap_or_default(),
+        ds_updated => args.flag_ds_updated.as_deref().unwrap_or_default(),
+        ds_license => args.flag_ds_license.as_deref().unwrap_or_default(),
         entries => data.entries,
         kind => PromptType::Dictionary.to_string(),
         generated_by_signature => &shared.attribution,
@@ -2176,6 +2207,8 @@ fn get_prompt(
         sample_size => args.flag_sample_size.to_string(),
         infer_content_type => args.flag_infer_content_type,
         content_type_vocab => dictionary::content_type_vocab_list(),
+        concept_vocab => dictionary::concept_vocab_list(),
+        role_vocab => dictionary::role_vocab_list(),
         // Empty string unless we're rendering PromptType::DictionaryRefine during a
         // --two-pass run, where run_dictionary_phase seeds FIRST_PASS_DICT_JSON with the
         // first-pass dictionary JSON before calling get_prompt.
@@ -2826,7 +2859,11 @@ fn build_combined_dictionary_entries(
     args: &Args,
     analysis_results: &AnalysisResults,
     completion_response: &CompletionResponse,
-) -> CliResult<(Vec<dictionary::DictionaryEntry>, Vec<serde_json::Value>)> {
+) -> CliResult<(
+    Vec<dictionary::DictionaryEntry>,
+    Vec<serde_json::Value>,
+    Option<String>,
+)> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
     let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
@@ -2866,7 +2903,9 @@ fn build_combined_dictionary_entries(
     // real field names. `synthesize` re-validates them against the data.
     let relationships =
         dictionary::parse_llm_relationships(&completion_response.response, &field_names);
-    Ok((entries, relationships))
+    // Dataset-level grain (one-sentence "one row = one X") from the same response.
+    let grain = dictionary::parse_llm_grain(&completion_response.response);
+    Ok((entries, relationships, grain))
 }
 
 /// Two-pass variant: parse stats/frequency, parse BOTH the baseline (first-pass) and refine
@@ -2882,7 +2921,11 @@ fn build_combined_dictionary_entries_two_pass(
     analysis_results: &AnalysisResults,
     baseline_completion: &CompletionResponse,
     refine_completion: &CompletionResponse,
-) -> CliResult<(Vec<dictionary::DictionaryEntry>, Vec<serde_json::Value>)> {
+) -> CliResult<(
+    Vec<dictionary::DictionaryEntry>,
+    Vec<serde_json::Value>,
+    Option<String>,
+)> {
     let (stats_records, ordered_col_names) = parse_stats_csv(&analysis_results.stats)?;
     let frequency_records = parse_frequency_csv(&analysis_results.frequency)?;
     let avail_cols: IndexSet<String> = ordered_col_names.iter().cloned().collect();
@@ -2930,7 +2973,9 @@ fn build_combined_dictionary_entries_two_pass(
     }
     let relationships =
         dictionary::parse_llm_relationships(&baseline_completion.response, &field_names);
-    Ok((entries, relationships))
+    // Grain, like relationships, is taken from the first-pass (relationship-aware) response.
+    let grain = dictionary::parse_llm_grain(&baseline_completion.response);
+    Ok((entries, relationships, grain))
 }
 
 /// Produce the prettified first-pass dictionary JSON string used as `{{ first_pass_dictionary }}`
@@ -3017,6 +3062,7 @@ fn format_dictionary_phase(
     args: &Args,
     combined_entries: &[dictionary::DictionaryEntry],
     relationships: &[serde_json::Value],
+    grain: Option<&str>,
     completion_response: &CompletionResponse,
     total_json_output: &mut serde_json::Value,
     model: &str,
@@ -3030,7 +3076,7 @@ fn format_dictionary_phase(
         // and `{SEMANTICMD_TAGS}` placeholders the template leaves behind.
         let shared = SharedRenderCtx::new(args, model, base_url, PromptType::Dictionary);
         let mut semanticmd_output =
-            render_semanticmd_body(args, combined_entries, model, base_url, &shared)?;
+            render_semanticmd_body(args, combined_entries, grain, model, base_url, &shared)?;
         // Belt-and-suspenders: also substitute any literal {GENERATED_BY_SIGNATURE} that
         // may have leaked through from a custom template.
         semanticmd_output = replace_attribution_placeholder(
@@ -3466,7 +3512,7 @@ fn process_phase_output(
 ) -> CliResult<()> {
     // Dictionary when --prompt is active: generate dictionary JSON for prompt context, no output.
     if kind == PromptType::Dictionary && args.flag_prompt.is_some() {
-        let (combined_entries, relationships) =
+        let (combined_entries, relationships, _grain) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return emit_dictionary_context_only(
             args,
@@ -3478,13 +3524,14 @@ fn process_phase_output(
     }
 
     if kind == PromptType::Dictionary {
-        let (combined_entries, relationships) =
+        let (combined_entries, relationships, grain) =
             build_combined_dictionary_entries(args, analysis_results, completion_response)?;
         return format_dictionary_phase(
             kind,
             args,
             &combined_entries,
             &relationships,
+            grain.as_deref(),
             completion_response,
             total_json_output,
             model,
@@ -3748,7 +3795,7 @@ fn run_dictionary_phase(
     // --- FIRST_PASS_DICT_JSON, render the refine prompt, and call the LLM again. ---
     // First-pass relationships are discarded here; the final ones are re-parsed
     // from the (relationship-aware) first-pass response by the two-pass builder.
-    let (first_pass_entries, _) =
+    let (first_pass_entries, _, _) =
         build_combined_dictionary_entries(args, analysis_results, &data_dict)?;
     let first_pass_json = build_first_pass_dictionary_json_string(args, &first_pass_entries);
     // Seed the global the refine prompt template reads via `{{ first_pass_dictionary }}`.
@@ -3794,7 +3841,7 @@ fn run_dictionary_phase(
     // don't wipe first-pass Label/Description. Then emit using the SAME format functions
     // the single-pass flow uses — process_phase_output is bypassed here because routing
     // back through it would re-parse only the refine response and lose the baseline.
-    let (merged_entries, relationships) = build_combined_dictionary_entries_two_pass(
+    let (merged_entries, relationships, grain) = build_combined_dictionary_entries_two_pass(
         args,
         analysis_results,
         &data_dict,
@@ -3829,6 +3876,7 @@ fn run_dictionary_phase(
             args,
             &merged_entries,
             &relationships,
+            grain.as_deref(),
             &combined_completion,
             total_json_output,
             model,
@@ -4650,6 +4698,19 @@ fn strip_attribution_block(s: &str) -> String {
     let cut = s.find("Generated by").map_or(s, |idx| &s[..idx]);
     let mut out = cut.replace("{GENERATED_BY_SIGNATURE}", "");
     out = out.trim_end().to_string();
+    // Cutting at "Generated by" leaves the attribution opener that immediately
+    // precedes it dangling — "*Attribution:" for the markdown footer, "Attribution:"
+    // for the toon footer. Drop it so the folded `# Dataset` description doesn't end
+    // with a stray "*Attribution:" line.
+    for opener in ["*Attribution:", "Attribution:"] {
+        if let Some(idx) = out.rfind(opener)
+            && out[idx..].trim_end() == opener
+        {
+            out.truncate(idx);
+            out = out.trim_end().to_string();
+            break;
+        }
+    }
     if out.ends_with("---") {
         out.truncate(out.len() - 3);
         out = out.trim_end().to_string();
@@ -4699,18 +4760,25 @@ fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
     block
 }
 
-/// Render a string as a YAML scalar safe for the `tags:` frontmatter list.
+/// Render a string as a YAML scalar safe for the semantic-md frontmatter
+/// (`tags:`, `dataset:` fields, the concept index, …).
 ///
 /// A "plain" scalar (alphanumeric start, then only `[A-Za-z0-9_.-]`) is emitted
 /// bare — covering the lowercase_underscore tags describegpt normally produces.
 /// Anything else (colons, spaces, `#`, newlines, leading indicators, quotes, …)
 /// is emitted as a double-quoted scalar with the YAML escapes applied, so it can't
 /// produce invalid or structurally different frontmatter.
+///
+/// Values that LOOK plain but that YAML would parse as a non-string implicit type
+/// (`123`, `1.5`, `true`/`false`/`yes`/`no`/`null`/`~`, `.inf`/`.nan`, or a
+/// `YYYY-MM-DD` timestamp) are also quoted, so a string value like `2026-01-01`
+/// or `123` reaches consumers as a string rather than a date / number / bool.
 fn yaml_scalar(s: &str) -> String {
     let is_plain = !s.is_empty()
         && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
         && s.chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        && !is_yaml_implicit_typed(s);
     if is_plain {
         return s.to_string();
     }
@@ -4721,6 +4789,61 @@ fn yaml_scalar(s: &str) -> String {
         .replace('\r', "\\r")
         .replace('\t', "\\t");
     format!("\"{escaped}\"")
+}
+
+/// True when `s` would be parsed by a YAML consumer as a non-string implicit
+/// scalar (bool, null, integer, float, or `YYYY-MM-DD` timestamp), so a string
+/// value must be quoted to preserve its type. Uses the liberal YAML 1.1 bool/null
+/// set; numeric detection covers plain decimals (via Rust's `i64`/`f64` parsers,
+/// which also handle `inf`/`nan`), YAML `_` digit separators (`1_000`,
+/// `1_000.5`), and radix-prefixed integers (`0xFF`, `0o17`, `0b1010`).
+fn is_yaml_implicit_typed(s: &str) -> bool {
+    // YAML 1.1 booleans / nulls (case-insensitive), plus the `~` null indicator.
+    if matches!(
+        s.to_ascii_lowercase().as_str(),
+        "null" | "~" | "true" | "false" | "yes" | "no" | "on" | "off" | "y" | "n"
+    ) {
+        return true;
+    }
+    // Decimal integer or float, including YAML's `_` digit separators (e.g.
+    // `1_000`, `1_000.5`): Rust's parsers reject underscores, so retry on the
+    // underscore-stripped form. Stripping a non-numeric identifier like
+    // `v_1` -> `v1` still fails to parse, so this won't over-quote.
+    if s.parse::<i64>().is_ok() || s.parse::<f64>().is_ok() {
+        return true;
+    }
+    if s.contains('_') {
+        let bare = s.replace('_', "");
+        if bare.parse::<i64>().is_ok() || bare.parse::<f64>().is_ok() {
+            return true;
+        }
+    }
+    // Radix-prefixed integers (YAML/programmer forms), allowing `_` separators.
+    let radix = |prefixes: [&str; 2], valid: fn(char) -> bool| {
+        prefixes.iter().any(|p| {
+            s.strip_prefix(p).is_some_and(|rest| {
+                let digits = rest.replace('_', "");
+                !digits.is_empty() && digits.chars().all(valid)
+            })
+        })
+    };
+    if radix(["0x", "0X"], |c| c.is_ascii_hexdigit())
+        || radix(["0o", "0O"], |c| ('0'..='7').contains(&c))
+        || radix(["0b", "0B"], |c| c == '0' || c == '1')
+    {
+        return true;
+    }
+    // `YYYY-MM-DD` prefix — the canonical YAML !!timestamp / ISO date form.
+    // Single-pass over the first 10 bytes: '-' at positions 4 and 7, digits elsewhere.
+    let b = s.as_bytes();
+    b.len() >= 10
+        && b.iter().take(10).enumerate().all(|(i, &c)| {
+            if matches!(i, 4 | 7) {
+                c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }
+        })
 }
 
 /// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
@@ -5024,7 +5147,9 @@ fn remove_prompt_cache_entries_for_both_flags(
 
 /// Determine which additional columns to include based on args
 /// Returns a vector of column names in the order they should appear
-/// Only adds columns when --addl-cols flag is set
+/// Adds columns when `--addl-cols` is set; also retains a richer default stats
+/// set on the `--format semanticmd` path so the per-column `### Statistics` block
+/// has data without requiring `--addl-cols`.
 /// available_columns: IndexSet of all additional columns (preserves CSV order)
 fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String> {
     // Default list of additional columns
@@ -5039,10 +5164,28 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
         "cv",
     ];
 
-    // Only add additional columns if --addl-cols flag is set
-    if !args.flag_addl_cols {
-        return Vec::new();
-    }
+    // Richer default retained for the semantic-md `### Statistics` block. These
+    // names match qsv stats headers exactly: the always-streaming set
+    // (mean/stddev/variance/sparsity/{min,max}_length) plus the `--quartiles` set
+    // (q1/q2_median/q3/iqr/inner-fences/skewness) — both describegpt defaults.
+    // `uniqueness_ratio` is retained when available (requires --cardinality).
+    const SEMANTICMD_DEFAULT_COLUMNS: &[&str] = &[
+        "mean",
+        "q2_median",
+        "stddev",
+        "variance",
+        "q1",
+        "q3",
+        "iqr",
+        "skewness",
+        "lower_inner_fence",
+        "upper_inner_fence",
+        "mad",
+        "sparsity",
+        "uniqueness_ratio",
+        "min_length",
+        "max_length",
+    ];
 
     // Standard columns that should never be included as additional columns
     let std_cols: HashSet<&str> = ["field", "type", "cardinality", "nullcount", "min", "max"]
@@ -5050,34 +5193,46 @@ fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String
         .copied()
         .collect();
 
-    let cols_to_include = if let Some(list_str) = &args.flag_addl_cols_list {
-        // Parse comma-separated list
-        if list_str.trim().to_lowercase().starts_with("everything")
-            || list_str.trim().to_lowercase().starts_with("moar")
-        {
-            // note that we use starts_with("everything") to match "everything" and "everything!"
-            // the same is true for "moar" and "moar!"
-            // Include all available columns except standard ones, preserving CSV order
-            // IndexSet preserves insertion order, so we can iterate directly
-            avail_cols
-                .iter()
-                .filter(|col| !std_cols.contains(col.as_str()))
-                .cloned()
-                .collect::<Vec<String>>()
-        } else {
+    // An explicit `--addl-cols` (with or without `--addl-cols-list`) always wins.
+    // Otherwise the semantic-md path retains the richer default set so its stats
+    // block isn't empty; every other format with `--addl-cols` off retains nothing.
+    let cols_to_include: Vec<String> = if args.flag_addl_cols {
+        if let Some(list_str) = &args.flag_addl_cols_list {
             // Parse comma-separated list
-            list_str
-                .split(',')
-                .map(|s| s.trim().to_string())
-                .filter(|s| !s.is_empty())
+            if list_str.trim().to_lowercase().starts_with("everything")
+                || list_str.trim().to_lowercase().starts_with("moar")
+            {
+                // note that we use starts_with("everything") to match "everything" and
+                // "everything!" the same is true for "moar" and "moar!"
+                // Include all available columns except standard ones, preserving CSV order
+                // IndexSet preserves insertion order, so we can iterate directly
+                avail_cols
+                    .iter()
+                    .filter(|col| !std_cols.contains(col.as_str()))
+                    .cloned()
+                    .collect::<Vec<String>>()
+            } else {
+                // Parse comma-separated list
+                list_str
+                    .split(',')
+                    .map(|s| s.trim().to_string())
+                    .filter(|s| !s.is_empty())
+                    .collect()
+            }
+        } else {
+            // Use default list when --addl-cols is set but --addl-cols-list is not provided
+            DEFAULT_COLUMNS
+                .iter()
+                .map(std::string::ToString::to_string)
                 .collect()
         }
-    } else {
-        // Use default list when --addl-cols is set but --addl-cols-list is not provided
-        DEFAULT_COLUMNS
+    } else if matches!(get_output_format(args), Ok(OutputFormat::SemanticMd)) {
+        SEMANTICMD_DEFAULT_COLUMNS
             .iter()
             .map(std::string::ToString::to_string)
             .collect()
+    } else {
+        return Vec::new();
     };
 
     // Filter to only include columns that exist in avail_cols and are not std cols,
@@ -5162,6 +5317,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--format semanticmd is not compatible with --prompt."
             );
         }
+        // SemanticMd's per-column Concept ID + Role and the dataset grain are produced by
+        // the content-type LLM pass (concept seeds from content_type). Auto-enable it so a
+        // plain `--dictionary --format semanticmd` yields the full semantic document; this
+        // is the documented gating ("SemanticMd implies --infer-content-type").
+        args.flag_infer_content_type = true;
     } else if args.flag_allow_extra_cols && !args.flag_quiet {
         wwarn!("--allow-extra-cols is only meaningful with --format jsonschema; ignoring.");
     }
@@ -6503,6 +6663,8 @@ p_fewshot_examples = ""
             examples:     String::new(),
             freq_details: Vec::new(),
             is_unique_id: false,
+            concept:      String::new(),
+            role:         String::new(),
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -6599,6 +6761,9 @@ p_fewshot_examples = ""
             flag_no_score_sql:       false,
             flag_score_threshold:    0,
             flag_score_max_retries:  0,
+            flag_ds_source:          None,
+            flag_ds_updated:         None,
+            flag_ds_license:         None,
         }
     }
 
@@ -6693,6 +6858,8 @@ p_fewshot_examples = ""
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "category|raw".to_string(),
@@ -6709,6 +6876,8 @@ p_fewshot_examples = ""
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
         ];
 
@@ -6759,29 +6928,43 @@ p_fewshot_examples = ""
         let model = "openai/gpt-oss-20b";
         let base_url = "http://localhost:11434/v1";
 
+        // Numeric stats for the Unique Key column drive the per-column ### Statistics block.
+        let mut uk_stats = IndexMap::new();
+        uk_stats.insert("mean".to_string(), "500.5".to_string());
+        uk_stats.insert("q2_median".to_string(), "500".to_string());
+        uk_stats.insert("stddev".to_string(), "288.8".to_string());
+        uk_stats.insert("q1".to_string(), "250".to_string());
+        uk_stats.insert("q3".to_string(), "750".to_string());
+        uk_stats.insert("skewness".to_string(), "0.0".to_string());
+        uk_stats.insert("lower_inner_fence".to_string(), "-500".to_string());
+        uk_stats.insert("upper_inner_fence".to_string(), "1500".to_string());
+        uk_stats.insert("sparsity".to_string(), "0.0".to_string());
+
         let entries = vec![
             dictionary::DictionaryEntry {
                 name:         "Unique Key".to_string(),
                 r#type:       "Integer".to_string(),
                 label:        "Record Identifier".to_string(),
                 description:  "A unique numeric identifier for each record.".to_string(),
-                content_type: String::new(),
+                content_type: "unique_id".to_string(),
                 min:          "1".to_string(),
                 max:          "1000".to_string(),
                 cardinality:  1000,
                 enumeration:  String::new(),
                 null_count:   0,
-                addl_cols:    IndexMap::new(),
+                addl_cols:    uk_stats,
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: true,
+                concept:      "id.surrogate_key".to_string(),
+                role:         "identifier".to_string(),
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
                 r#type:       "String".to_string(),
                 label:        "Complaint Status".to_string(),
                 description:  "Current processing status.".to_string(),
-                content_type: String::new(),
+                content_type: "category".to_string(),
                 min:          "Assigned".to_string(),
                 max:          "Open".to_string(),
                 cardinality:  3,
@@ -6804,31 +6987,67 @@ p_fewshot_examples = ""
                     },
                 ],
                 is_unique_id: false,
+                concept:      "category.status".to_string(),
+                role:         "dimension".to_string(),
             },
         ];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
-        let rendered = render_semanticmd_body(&args, &entries, model, base_url, &shared).unwrap();
+        let rendered = render_semanticmd_body(
+            &args,
+            &entries,
+            Some("one row = one 311 service request"),
+            model,
+            base_url,
+            &shared,
+        )
+        .unwrap();
 
-        // Frontmatter + placeholders that finalize substitutes later.
+        // Structured frontmatter + placeholders that finalize substitutes later.
         assert!(rendered.starts_with("---\nsemantic-md: datadict.yaml\n"));
+        assert!(rendered.contains("dataset:\n  id: NYC_311\n"));
+        assert!(rendered.contains("  row_count: 1000\n"));
+        assert!(rendered.contains("  grain: \"one row = one 311 service request\"\n"));
+        // The concept index lists used concepts, sorted, "unknown" excluded.
+        assert!(rendered.contains("concepts:\n  - category.status\n  - id.surrogate_key\n"));
         assert!(rendered.contains("{SEMANTICMD_TAGS}"));
         assert!(rendered.contains("{DATASET_DESCRIPTION}"));
-        // Section anchors (proposed-direction: backticked codes, "Schema").
+        // Dataset, grain, resource (now with a Rows column), schema sections.
         assert!(rendered.contains("# Dataset NYC_311"));
-        assert!(rendered.contains("| Resource | Schema | Title |"));
+        assert!(rendered.contains("## Grain\n\none row = one 311 service request"));
+        assert!(rendered.contains("| Resource | Schema | Title | Rows |"));
         assert!(rendered.contains("# Schema `nyc311`"));
-        assert!(rendered.contains("| `Unique Key` | required integer | Record Identifier |"));
-        // Nullable column drops the `required` prefix.
-        assert!(rendered.contains("| `Status` | text | Complaint Status |"));
-        // Inferred single-column primary key.
+        // Extended schema table with Role / Concept / Join? / Null columns.
+        assert!(rendered.contains("| Column | Type | Role | Concept | Join? | Null | Label |"));
+        assert!(rendered.contains(
+            "| `Unique Key` | required integer | identifier | `id.surrogate_key` | PK | 0 | \
+             Record Identifier |"
+        ));
+        // Nullable categorical: no `required`, blank Join? cell, null count 50.
+        assert!(rendered.contains(
+            "| `Status` | text | dimension | `category.status` |  | 50 | Complaint Status |"
+        ));
         assert!(rendered.contains("| Primary key |"));
+        // Per-column bold-key bullets.
         assert!(rendered.contains("## Column `Unique Key`"));
-        // Validation only for the numeric column with a min.
-        assert!(rendered.contains("### Validation\n\nValues >= 1"));
+        assert!(rendered.contains("- **Concept:** `id.surrogate_key`"));
+        assert!(rendered.contains("- **Role:** identifier"));
+        assert!(rendered.contains("- **Join:** primary key; cardinality 1:1; not nullable"));
+        // Extended validation (min AND max) for the numeric column.
+        assert!(rendered.contains("### Validation\n\n- Values >= 1\n- Values <= 1000"));
+        // Rich per-column statistics block for the numeric column.
+        assert!(rendered.contains(
+            "| Mean | Median | StdDev | Q1 | Q3 | Skew | Lower fence | Upper fence | Sparsity |"
+        ));
+        assert!(rendered.contains("| 500.5 | 500 | 288.8 | 250 | 750 | 0.0 | -500 | 1500 | 0.0 |"));
         // Choices from the low-cardinality enumeration.
         assert!(rendered.contains("### Choices"));
         assert!(rendered.contains("- Assigned"));
+        // Example queries seeded from the dimension + linkable concept.
+        assert!(rendered.contains("# Example Queries"));
+        assert!(rendered.contains("### Count by Status"));
+        assert!(rendered.contains("GROUP BY 1 ORDER BY n DESC"));
+        assert!(rendered.contains("Join a catalog dataset sharing concept `id.surrogate_key`"));
         // Resource + statistics + frequency.
         assert!(rendered.contains("# Resource `NYC_311.csv`"));
         assert!(rendered.contains("| Column | Min | Max | Cardinality | Null Count |"));
@@ -6867,14 +7086,17 @@ p_fewshot_examples = ""
             examples:     "<ALL_UNIQUE>".to_string(),
             freq_details: Vec::new(),
             is_unique_id: true,
+            concept:      String::new(),
+            role:         String::new(),
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
-        let rendered = render_semanticmd_body(&args, &entries, model, base_url, &shared).unwrap();
+        let rendered =
+            render_semanticmd_body(&args, &entries, None, model, base_url, &shared).unwrap();
 
         // Schema table row and Statistics table row escape the pipe in the cell.
         assert!(
-            rendered.contains("| `cat\\|raw` | required text | Category |"),
+            rendered.contains("| `cat\\|raw` | required text |"),
             "schema table cell not pipe-escaped:\n{rendered}"
         );
         assert!(
@@ -6896,25 +7118,26 @@ p_fewshot_examples = ""
     #[test]
     fn semanticmd_tags_frontmatter_builder() {
         // JSON-format Tags response object: {"tags": [...], "attribution": "..."}.
+        // The all-digit "311" is a YAML implicit integer, so it is quoted to stay a string.
         let obj = serde_json::json!({
             "tags": ["housing", "nyc", "311"],
             "attribution": "Generated by qsv ...",
         });
         assert_eq!(
             build_semanticmd_tags_frontmatter(&obj),
-            "tags:\n  - housing\n  - nyc\n  - 311\n"
+            "tags:\n  - housing\n  - nyc\n  - \"311\"\n"
         );
         // JSON array of tags.
         let arr = serde_json::json!(["housing", "nyc", "311"]);
         assert_eq!(
             build_semanticmd_tags_frontmatter(&arr),
-            "tags:\n  - housing\n  - nyc\n  - 311\n"
+            "tags:\n  - housing\n  - nyc\n  - \"311\"\n"
         );
         // Free-form string with list markers / commas.
         let s = serde_json::json!("- housing\n- nyc, 311");
         assert_eq!(
             build_semanticmd_tags_frontmatter(&s),
-            "tags:\n  - housing\n  - nyc\n  - 311\n"
+            "tags:\n  - housing\n  - nyc\n  - \"311\"\n"
         );
         // Tags needing YAML escaping are double-quoted; plain ones stay bare.
         let risky = serde_json::json!(["plain_tag", "key: value", "has \"quote\"", "a#b"]);
@@ -6934,9 +7157,49 @@ p_fewshot_examples = ""
     }
 
     #[test]
+    fn yaml_scalar_quotes_implicit_typed_values() {
+        // Clean identifiers stay plain.
+        assert_eq!(yaml_scalar("nyc_311_complaints"), "nyc_311_complaints");
+        assert_eq!(yaml_scalar("geo.zip_code"), "geo.zip_code");
+        assert_eq!(yaml_scalar("Latitude"), "Latitude");
+        // A dataset id with digits/dashes that isn't a date stays plain.
+        assert_eq!(
+            yaml_scalar("NYC_311_SR_2010-2020-sample-1M"),
+            "NYC_311_SR_2010-2020-sample-1M"
+        );
+        // YAML implicit types must be quoted so they reach consumers as strings.
+        assert_eq!(yaml_scalar("311"), "\"311\"");
+        assert_eq!(yaml_scalar("1.5"), "\"1.5\"");
+        assert_eq!(yaml_scalar("true"), "\"true\"");
+        assert_eq!(yaml_scalar("False"), "\"False\"");
+        assert_eq!(yaml_scalar("null"), "\"null\"");
+        assert_eq!(yaml_scalar("2026-01-01"), "\"2026-01-01\"");
+        // YAML integer forms that pass the plain char-set check but Rust's parser
+        // misses: radix prefixes and `_` digit separators.
+        assert_eq!(yaml_scalar("0xFF"), "\"0xFF\"");
+        assert_eq!(yaml_scalar("0b1010"), "\"0b1010\"");
+        assert_eq!(yaml_scalar("0o17"), "\"0o17\"");
+        assert_eq!(yaml_scalar("1_000"), "\"1_000\"");
+        assert_eq!(yaml_scalar("1_000.5"), "\"1_000.5\"");
+        // Underscore / 0x-looking identifiers that aren't numbers stay plain.
+        assert_eq!(yaml_scalar("v_1"), "v_1");
+        assert_eq!(yaml_scalar("0xZZ_label"), "0xZZ_label");
+        // Special chars are still quoted + escaped.
+        assert_eq!(yaml_scalar("a: b"), "\"a: b\"");
+    }
+
+    #[test]
     fn semanticmd_strip_attribution_block() {
         // Rendered attribution (anchored on "Generated by"), with a `---` separator.
         let s = "Some description.\n\n---\n\nGenerated by qsv v20.1.0 describegpt\nWARNING: ...";
+        assert_eq!(strip_attribution_block(s), "Some description.");
+        // Markdown footer form: "*Attribution: Generated by ...*". The dangling
+        // "*Attribution:" opener must be removed, not just the "Generated by ..." tail.
+        let s = "Some description.\n\n*Attribution: Generated by qsv v20.1.0 \
+                 describegpt\nWARNING: ...*";
+        assert_eq!(strip_attribution_block(s), "Some description.");
+        // TOON footer form: "Attribution: Generated by ...".
+        let s = "Some description.\n\nAttribution: Generated by qsv v20.1.0 describegpt";
         assert_eq!(strip_attribution_block(s), "Some description.");
         // Unsubstituted placeholder form.
         let s = "Some description.\n\n{GENERATED_BY_SIGNATURE}";
@@ -6975,6 +7238,8 @@ p_fewshot_examples = ""
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "category".to_string(),
@@ -6991,6 +7256,8 @@ p_fewshot_examples = ""
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
         ];
 
@@ -7051,6 +7318,8 @@ p_fewshot_examples = ""
                 examples:     "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -7068,6 +7337,8 @@ p_fewshot_examples = ""
                 examples:     String::new(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -7085,6 +7356,8 @@ p_fewshot_examples = ""
                 examples:     String::new(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -7102,6 +7375,8 @@ p_fewshot_examples = ""
                 examples:     String::new(),
                 freq_details: Vec::new(),
                 is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
             },
         ];
 
@@ -7162,6 +7437,8 @@ p_fewshot_examples = ""
                     language => "",
                     infer_content_type => infer,
                     content_type_vocab => dictionary::content_type_vocab_list(),
+                    concept_vocab => dictionary::concept_vocab_list(),
+                    role_vocab => dictionary::role_vocab_list(),
                 },
             )
             .unwrap()
@@ -7175,6 +7452,11 @@ p_fewshot_examples = ""
         assert!(
             !off.contains("content_type"),
             "flag-off prompt must not include the content_type JSON key:\n{off}"
+        );
+        // Concept/Role/grain ride the same flag, so they must be absent when it's off.
+        assert!(
+            !off.contains("Concept:") && !off.contains("\"concept\"") && !off.contains("\"grain\""),
+            "flag-off prompt must not mention Concept/Role/grain:\n{off}"
         );
         assert!(
             off.contains("\"label\" and \"description\" properties"),
@@ -7191,12 +7473,31 @@ p_fewshot_examples = ""
             "flag-on prompt must inject the curated vocabulary:\n{on}"
         );
         assert!(
-            on.contains("\"content_type\": \"email\""),
+            on.contains("\"content_type\": \"city\""),
             "flag-on prompt must include the content_type JSON example key:\n{on}"
         );
         assert!(
-            on.contains("\"label\", \"description\" and \"content_type\" properties"),
-            "flag-on prompt must list content_type in the properties sentence:\n{on}"
+            on.contains(
+                "\"label\", \"description\", \"content_type\", \"role\" and \"concept\" properties"
+            ),
+            "flag-on prompt must list content_type/role/concept in the properties sentence:\n{on}"
+        );
+        // Concept + Role instructions and vocabularies are injected when the flag is on.
+        assert!(
+            on.contains("- Role: classify how this field is USED"),
+            "flag-on prompt must include the Role instruction:\n{on}"
+        );
+        assert!(
+            on.contains("Allowed Concept tokens: geo.zip_code"),
+            "flag-on prompt must inject the concept vocabulary:\n{on}"
+        );
+        assert!(
+            on.contains("top-level \"grain\" string"),
+            "flag-on prompt must request the dataset grain:\n{on}"
+        );
+        assert!(
+            on.contains("\"concept\": \"geo.city\""),
+            "flag-on prompt must include the concept JSON example key:\n{on}"
         );
     }
 

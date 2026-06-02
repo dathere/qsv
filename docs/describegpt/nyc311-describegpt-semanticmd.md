@@ -2,14 +2,14 @@
 semantic-md: datadict.yaml
 dataset:
   id: NYC_311_SR_2010-2020-sample-1M
-  title: NYC 311 SR 2010 2020 sample 1M
+  title: "NYC 311 SR 2010 2020 sample 1M"
   row_count: 1000000
   grain: "one row = one NYC 311 complaint record"
-  source: https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9
-  updated: 2020-12-23
-  license: NYC Open Data Terms of Use
+  source: "https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9"
+  updated: "2020-12-23"
+  license: "NYC Open Data Terms of Use"
   temporal_coverage: { column: "Created Date", start: "2010-01-01T00:00:00+00:00", end: "2020-12-23T01:25:51+00:00" }
-  spatial: { crs: "EPSG:4326", lat: "Latitude", lon: "Longitude" }
+  spatial: { crs: "EPSG:4326", lat: Latitude, lon: Longitude }
 concepts:
   - category.channel
   - category.status

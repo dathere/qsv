@@ -1583,4 +1583,60 @@ mod tests {
             "high-cardinality / constant columns must not be inferred as a primary key"
         );
     }
+
+    #[test]
+    fn semanticmd_has_stats_with_sparsity_only() {
+        use indexmap::IndexMap;
+
+        // A numeric column whose ONLY retained stat is `sparsity` (e.g. via a
+        // custom `--addl-cols-list`) must still render the ### Statistics block,
+        // since Sparsity is a column in that table.
+        let mut e = sample_entry("score", "");
+        e.r#type = "Integer".to_string();
+        let mut addl = IndexMap::new();
+        addl.insert("sparsity".to_string(), "0.42".to_string());
+        e.addl_cols = addl;
+
+        let entry = build_semanticmd_entry(&e, None);
+        assert!(entry.is_numeric);
+        assert!(
+            entry.has_stats,
+            "a numeric column whose only retained stat is sparsity must set has_stats"
+        );
+        assert_eq!(entry.stats.sparsity, "0.42");
+        assert!(entry.stats.mean.is_empty() && entry.stats.median.is_empty());
+
+        // Contrast: a numeric column with no retained stats has no Statistics block.
+        let mut bare = sample_entry("n", "");
+        bare.r#type = "Integer".to_string();
+        assert!(!build_semanticmd_entry(&bare, None).has_stats);
+    }
+
+    #[test]
+    fn semanticmd_validation_single_sided_length() {
+        use indexmap::IndexMap;
+
+        // Text column with ONLY min_length retained => has_validation true, the
+        // template renders `- Length >= …` (no empty ### Validation block).
+        let mut min_only = sample_entry("code", "");
+        let mut a = IndexMap::new();
+        a.insert("min_length".to_string(), "3".to_string());
+        min_only.addl_cols = a;
+        let min_e = build_semanticmd_entry(&min_only, None);
+        assert!(!min_e.is_numeric);
+        assert!(min_e.has_validation);
+        assert_eq!(min_e.validation.min_length, "3");
+        assert!(min_e.validation.max_length.is_empty());
+
+        // Text column with ONLY max_length retained => has_validation true, the
+        // template renders `- Length <= …`.
+        let mut max_only = sample_entry("note", "");
+        let mut b = IndexMap::new();
+        b.insert("max_length".to_string(), "50".to_string());
+        max_only.addl_cols = b;
+        let max_e = build_semanticmd_entry(&max_only, None);
+        assert!(max_e.has_validation);
+        assert_eq!(max_e.validation.max_length, "50");
+        assert!(max_e.validation.min_length.is_empty());
+    }
 }

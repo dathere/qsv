@@ -165,9 +165,10 @@ describegpt options:
                            deterministically classified as "unique_id", overriding any token the LLM
                            returned for that field.
                            For Date/DateTime fields, the LLM also infers the column's strftime date
-                           format (e.g. "date:%m/%d/%Y"); the dictionary's Min/Max are then rendered
-                           in that inferred format (via the `datefmt` MiniJinja filter) so they match
-                           how the dates actually appear in the data, instead of qsv's normalized form.
+                           format (e.g. "date:%m/%d/%Y"); the Markdown, JSON & JSON Schema dictionaries
+                           then render Min/Max AND Examples in that inferred format so they match how
+                           the dates actually appear in the data, instead of qsv's normalized form.
+                           (TSV output keeps Min/Max & Examples in qsv's raw normalized form.)
     --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
                            as JSON context and refines each field's Label, Description and
                            (when --infer-content-type is set) Content Type using cross-field
@@ -1380,30 +1381,44 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
                 v.replace('|', "\\|").replace('\n', "<br>")
             }
         });
-        env.add_filter("humanize_examples", |examples: String| -> String {
-            if examples == "<ALL_UNIQUE>" {
-                return examples;
-            }
-            examples
-                .lines()
-                .map(|line| {
-                    if let Some(pos) = line.rfind(" [") {
-                        let (value_part, count_part) = line.split_at(pos + 2);
-                        if let Some(end_pos) = count_part.find(']')
-                            && let Ok(count) = count_part[..end_pos].parse::<u64>()
-                        {
-                            return format!(
-                                "{} [{}]",
-                                value_part.trim_end_matches(" ["),
-                                HumanCount(count)
-                            );
+        env.add_filter(
+            "humanize_examples",
+            |examples: String, content_type: Option<String>| -> String {
+                if examples == "<ALL_UNIQUE>" {
+                    return examples;
+                }
+                // When a date content_type is supplied, reformat example values to
+                // the inferred date format first, so they read consistently with
+                // the date-formatted Min/Max. Only call format_date_examples when
+                // the content_type actually carries a date format — otherwise keep
+                // the already-owned `examples` to avoid a needless clone.
+                let examples = match content_type {
+                    Some(ct) if dictionary::content_type_date_format(&ct).is_some() => {
+                        dictionary::format_date_examples(&ct, &examples)
+                    },
+                    _ => examples,
+                };
+                examples
+                    .lines()
+                    .map(|line| {
+                        if let Some(pos) = line.rfind(" [") {
+                            let (value_part, count_part) = line.split_at(pos + 2);
+                            if let Some(end_pos) = count_part.find(']')
+                                && let Ok(count) = count_part[..end_pos].parse::<u64>()
+                            {
+                                return format!(
+                                    "{} [{}]",
+                                    value_part.trim_end_matches(" ["),
+                                    HumanCount(count)
+                                );
+                            }
                         }
-                    }
-                    line.to_string()
-                })
-                .collect::<Vec<String>>()
-                .join("<br>")
-        });
+                        line.to_string()
+                    })
+                    .collect::<Vec<String>>()
+                    .join("<br>")
+            },
+        );
 
         env
     });
@@ -6543,7 +6558,9 @@ p_fewshot_examples = ""
                 enumeration:  String::new(),
                 null_count:   0,
                 addl_cols:    IndexMap::new(),
-                examples:     "01/24/2013 [5]".to_string(),
+                // raw frequency values carry a time component; they must be
+                // reformatted to the inferred date-only format like Min/Max.
+                examples:     "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string(),
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -6620,6 +6637,12 @@ p_fewshot_examples = ""
         assert!(
             rendered.contains("| category | 1 | 1000 |"),
             "non-date Min/Max should be unchanged:\n{rendered}"
+        );
+        // date column: Examples reformatted to the inferred date-only format
+        // (time component dropped), consistent with Min/Max, counts preserved.
+        assert!(
+            rendered.contains("| 01/24/2013 [5]<br>01/07/2014 [3] |"),
+            "date Examples not reformatted to inferred format:\n{rendered}"
         );
     }
 

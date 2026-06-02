@@ -26,7 +26,7 @@
           "enumeration": null,
           "null_count": 0,
           "content_type": "date:%m/%d/%Y",
-          "examples": "Other… [997333]\n01/24/2013 12:00:00 AM [347]\n01/07/2014 12:00:00 AM [315]\n01/08/2015 12:00:00 AM [283]\n02/16/2015 12:00:00 AM [269]"
+          "examples": "Other… [997333]\n01/24/2013 [347]\n01/07/2014 [315]\n01/08/2015 [283]\n02/16/2015 [269]"
         },
         {
           "name": "Closed Date",
@@ -39,7 +39,7 @@
           "enumeration": null,
           "null_count": 28619,
           "content_type": "date:%m/%d/%Y",
-          "examples": "Other… [968671]\n(NULL)… [28619]\n11/15/2010 12:00:00 AM [384]\n11/07/2012 12:00:00 AM [329]\n12/09/2010 12:00:00 AM [267]"
+          "examples": "Other… [968671]\n(NULL)… [28619]\n11/15/2010 [384]\n11/07/2012 [329]\n12/09/2010 [267]"
         },
         {
           "name": "Agency",
@@ -299,7 +299,7 @@
           "enumeration": null,
           "null_count": 15072,
           "content_type": "date:%m/%d/%Y",
-          "examples": "Other… [982148]\n(NULL)… [15072]\n11/15/2010 12:00:00 AM [385]\n11/07/2012 12:00:00 AM [336]\n12/09/2010 12:00:00 AM [273]"
+          "examples": "Other… [982148]\n(NULL)… [15072]\n11/15/2010 [385]\n11/07/2012 [336]\n12/09/2010 [273]"
         },
         {
           "name": "Community Board",

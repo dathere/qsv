@@ -234,10 +234,65 @@ pub(super) fn format_date_value<'a>(
     let Some(fmt) = content_type_date_format(content_type) else {
         return Cow::Borrowed(value);
     };
-    match qsv_dateparser::parse_with_preference(value, false) {
+    // Disambiguate the parse using the inferred format's own field order: when
+    // `%d` precedes `%m` the column is day-first, so an ambiguous value like
+    // "01/02/2020" under `date:%d/%m/%Y` parses as 1 Feb (not 2 Jan) and
+    // round-trips unchanged instead of being silently swapped. Min/Max are
+    // RFC3339 (preference-invariant), so this only matters for raw Examples.
+    match qsv_dateparser::parse_with_preference(value, prefer_dmy(fmt)) {
         Ok(dt) => Cow::Owned(dt.format(fmt).to_string()),
         Err(_) => Cow::Borrowed(value),
     }
+}
+
+/// Whether a strftime format is day-first (the day field precedes the month
+/// field), used to set `qsv_dateparser`'s DMY-vs-MDY preference when
+/// reformatting ambiguous values. Parses the format with chrono's
+/// `StrftimeItems` so every day/month padding variant (`%d`, `%e`, `%-d`,
+/// `%0d`, `%_d`, `%m`, `%-m`, `%0m`, `%_m`, …) is recognized. Defaults to
+/// `false` (month-first) when the order can't be determined.
+fn prefer_dmy(fmt: &str) -> bool {
+    use chrono::format::{Item, Numeric, StrftimeItems};
+    let mut day_idx = None;
+    let mut month_idx = None;
+    for (i, item) in StrftimeItems::new(fmt).enumerate() {
+        match item {
+            Item::Numeric(Numeric::Day, _) if day_idx.is_none() => day_idx = Some(i),
+            Item::Numeric(Numeric::Month, _) if month_idx.is_none() => month_idx = Some(i),
+            _ => {},
+        }
+    }
+    matches!((day_idx, month_idx), (Some(d), Some(m)) if d < m)
+}
+
+/// Reformat the value part of each `"value [count]"` example line to the
+/// `content_type`'s inferred date format, so the Examples column reads
+/// consistently with the date-formatted Min/Max. Passthrough when
+/// `content_type` carries no date format and on the `<ALL_UNIQUE>` sentinel.
+/// The trailing ` [count]` suffix is preserved verbatim, and values that
+/// cannot be parsed (frequency aggregation buckets like `Other…`/`(NULL)…`,
+/// truncated `value…` entries) are left unchanged by `format_date_value`.
+pub(super) fn format_date_examples(content_type: &str, examples: &str) -> String {
+    if examples == "<ALL_UNIQUE>" || content_type_date_format(content_type).is_none() {
+        return examples.to_string();
+    }
+    examples
+        .lines()
+        .map(|line| {
+            // Split off a trailing " [count]" suffix (rfind so values that
+            // themselves contain "[" aren't truncated mid-value), reformat the
+            // value, then rejoin value + suffix.
+            if let Some(idx) = line.rfind(" [")
+                && line.ends_with(']')
+            {
+                let (value, suffix) = line.split_at(idx);
+                format!("{}{suffix}", format_date_value(content_type, value))
+            } else {
+                format_date_value(content_type, line).into_owned()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 /// LLM-inferred fields for a single dictionary column, keyed by field name in the
@@ -1191,6 +1246,81 @@ mod tests {
             addl_cols:    IndexMap::new(),
             examples:     String::new(),
         }
+    }
+
+    #[test]
+    fn format_date_examples_reformats_values_keeps_counts() {
+        // DateTime values with a time component, inferred date-only format:
+        // values are reformatted, " [count]" suffixes preserved verbatim.
+        let out = format_date_examples(
+            "date:%m/%d/%Y",
+            "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]",
+        );
+        assert_eq!(out, "01/24/2013 [5]\n01/07/2014 [3]");
+    }
+
+    #[test]
+    fn format_date_examples_idempotent_when_already_formatted() {
+        let out = format_date_examples("date:%m/%d/%Y", "01/24/2013 [5]");
+        assert_eq!(out, "01/24/2013 [5]");
+    }
+
+    #[test]
+    fn format_date_examples_respects_day_first_format() {
+        // Ambiguous "01/02/2020" under a day-first inferred format must parse as
+        // 1 Feb and round-trip unchanged, NOT be swapped to "02/01/2020" by a
+        // hardcoded month-first preference.
+        assert_eq!(
+            format_date_examples("date:%d/%m/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
+        // Month-first format keeps month-first interpretation.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
+        assert!(prefer_dmy("%d/%m/%Y"));
+        assert!(!prefer_dmy("%m/%d/%Y"));
+        assert!(!prefer_dmy("%Y-%m-%d")); // ISO is month-before-day
+        // Padding/variant modifiers must be recognized via StrftimeItems, not
+        // a fixed token list: %0d/%0m, %_d/%_m, %-d/%-m, %e all map to the
+        // Day/Month numeric fields regardless of padding.
+        assert!(prefer_dmy("%0d/%0m/%Y"));
+        assert!(prefer_dmy("%_d/%_m/%Y"));
+        assert!(prefer_dmy("%-d/%-m/%Y"));
+        assert!(prefer_dmy("%e/%m/%Y"));
+        assert!(!prefer_dmy("%0m/%0d/%Y"));
+        assert!(!prefer_dmy("%H:%M:%S")); // no date fields → default month-first
+        // End-to-end through format_date_examples with a padded day-first fmt.
+        assert_eq!(
+            format_date_examples("date:%0d/%0m/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
+    }
+
+    #[test]
+    fn format_date_examples_passthrough_cases() {
+        // No inferred format → unchanged.
+        assert_eq!(
+            format_date_examples("date", "01/24/2013 12:00:00 AM [5]"),
+            "01/24/2013 12:00:00 AM [5]"
+        );
+        // Non-date content type → unchanged.
+        assert_eq!(
+            format_date_examples("category", "alpha [9]\nbeta [3]"),
+            "alpha [9]\nbeta [3]"
+        );
+        // <ALL_UNIQUE> sentinel and empty input → unchanged.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "<ALL_UNIQUE>"),
+            "<ALL_UNIQUE>"
+        );
+        assert_eq!(format_date_examples("date:%m/%d/%Y", ""), "");
+        // Unparseable frequency-bucket values pass through, real dates still format.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "Other… [4091]\n01/24/2013 12:00:00 AM [5]"),
+            "Other… [4091]\n01/24/2013 [5]"
+        );
     }
 
     #[test]

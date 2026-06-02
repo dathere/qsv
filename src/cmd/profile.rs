@@ -925,15 +925,14 @@ fn run_profile_validation(
     // First non-empty line is the headline error. Strip the
     // "Validation error: " prefix qsv validate prepends so the
     // surfaced message reads naturally inside a dcat_warning.
-    let msg = stderr
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .map(|s| {
+    let msg = stderr.lines().find(|l| !l.trim().is_empty()).map_or_else(
+        || "qsv validate failed with no error message".to_string(),
+        |s| {
             s.trim()
                 .trim_start_matches("Validation error: ")
                 .to_string()
-        })
-        .unwrap_or_else(|| "qsv validate failed with no error message".to_string());
+        },
+    );
     vec![projection::ProjectionWarning {
         field:    "qsv:validation".to_string(),
         severity: projection::Severity::Required,

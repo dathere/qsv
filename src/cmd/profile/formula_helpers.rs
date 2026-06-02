@@ -284,9 +284,8 @@ fn calculate_bbox_area(
     };
     let earth_radius = 6371_f64; // km
     let mid_lat = f64::midpoint(coords.min_lat, coords.max_lat);
-    let width = (coords.max_lon - coords.min_lon).abs() * std::f64::consts::PI / 180.0
-        * mid_lat.to_radians().cos();
-    let height = (coords.max_lat - coords.min_lat).abs() * std::f64::consts::PI / 180.0;
+    let width = (coords.max_lon - coords.min_lon).abs().to_radians() * mid_lat.to_radians().cos();
+    let height = (coords.max_lat - coords.min_lat).abs().to_radians();
     Ok(width * height * earth_radius * earth_radius)
 }
 
@@ -593,13 +592,15 @@ fn get_column_stats(
         return Ok(field_stats);
     };
     if let Some(name) = stat_arg.as_str() {
-        return Ok(field_stats.get_attr(name).unwrap_or(Value::from(0)));
+        return Ok(field_stats
+            .get_attr(name)
+            .unwrap_or_else(|_| Value::from(0)));
     }
     // try list-of-stat-names
     if let Some(names) = deserialize_value::<Vec<String>>(stat_arg) {
         let mut out = std::collections::BTreeMap::<String, Value>::new();
         for n in names {
-            let v = field_stats.get_attr(&n).unwrap_or(Value::from(0));
+            let v = field_stats.get_attr(&n).unwrap_or_else(|_| Value::from(0));
             out.insert(n, v);
         }
         return Ok(Value::from_serialize(&out));
@@ -1006,15 +1007,15 @@ fn format_mailto(value: &str) -> minijinja::Value {
 /// `sha256_of` global — streaming SHA-256 of a local file as lowercase
 /// hex. Returns minijinja undefined on read failure (best-effort).
 fn sha256_of(path: &str) -> minijinja::Value {
-    use std::fmt::Write as _;
+    use std::{fmt::Write as _, io::Read};
 
     use sha2::{Digest, Sha256};
     let Ok(mut file) = std::fs::File::open(path) else {
         return minijinja::Value::UNDEFINED;
     };
     let mut hasher = Sha256::new();
+    #[allow(clippy::large_stack_arrays)]
     let mut buf = [0u8; 65536];
-    use std::io::Read;
     loop {
         match file.read(&mut buf) {
             Ok(0) => break,
@@ -1143,6 +1144,7 @@ fn build_csvw_schema(stats: minijinja::Value) -> minijinja::Value {
 /// strings to CSVW datatype IRIs. Kept here so the helper is
 /// self-contained and `dcat.rs` can be deleted in Stage 4 cleanup.
 fn csvw_datatype_legacy(t: Option<&serde_json::Value>) -> &'static str {
+    #[allow(clippy::match_same_arms)]
     match t.and_then(serde_json::Value::as_str) {
         Some("Integer") => "integer",
         Some("Float") => "double",
@@ -1182,6 +1184,7 @@ fn bbox_from_dpps(dpp: minijinja::Value, stats: minijinja::Value) -> minijinja::
         let blob = stats_json.get(field)?;
         let inner = blob.get("stats").unwrap_or(blob);
         let v = inner.get(key)?;
+        #[allow(clippy::cast_precision_loss)]
         v.as_f64()
             .or_else(|| v.as_i64().map(|i| i as f64))
             .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))

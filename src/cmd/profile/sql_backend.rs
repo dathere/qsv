@@ -43,7 +43,7 @@ impl SqlBackend {
 
     /// Override the field separator byte (e.g. `b'\t'` for TSV).
     #[must_use]
-    pub fn with_delimiter(mut self, delimiter: u8) -> Self {
+    pub const fn with_delimiter(mut self, delimiter: u8) -> Self {
         self.delimiter = delimiter;
         self
     }
@@ -52,7 +52,7 @@ impl SqlBackend {
     /// Polars synthesizes `column_1`, `column_2`, … as field names —
     /// SQL queries must reference those generated names.
     #[must_use]
-    pub fn with_has_header(mut self, has_header: bool) -> Self {
+    pub const fn with_has_header(mut self, has_header: bool) -> Self {
         self.has_header = has_header;
         self
     }

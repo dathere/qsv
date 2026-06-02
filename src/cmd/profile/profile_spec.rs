@@ -415,7 +415,7 @@ pub struct FieldDecl {
     pub for_each_column: bool,
 }
 
-fn default_true() -> bool {
+const fn default_true() -> bool {
     true
 }
 
@@ -452,7 +452,7 @@ pub enum ProfileSource {
 
 impl ProfileSource {
     /// True when the profile shipped with the qsv binary.
-    pub fn is_embedded(self) -> bool {
+    pub const fn is_embedded(self) -> bool {
         matches!(self, Self::Embedded)
     }
 }

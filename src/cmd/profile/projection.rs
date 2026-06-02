@@ -424,11 +424,10 @@ fn build_ctx_with_inner(analysis_ctx: &Value, dataset: &Value) -> Value {
 }
 
 fn legacy_catalog_title(dataset: &Value, title_key: &str) -> String {
-    dataset
-        .get(title_key)
-        .and_then(Value::as_str)
-        .map(|t| format!("Catalog of {t}"))
-        .unwrap_or_else(|| "qsv profile catalog".to_string())
+    dataset.get(title_key).and_then(Value::as_str).map_or_else(
+        || "qsv profile catalog".to_string(),
+        |t| format!("Catalog of {t}"),
+    )
 }
 
 // -----------------------------------------------------------------------
@@ -495,8 +494,9 @@ fn register_profile_helpers(env: &mut Environment, profile: &ProfileSpec) {
         mappings
             .iter()
             .find(|m| m.ckan == ckan_ptr)
-            .map(|m| minijinja::Value::from(m.target.clone()))
-            .unwrap_or(minijinja::Value::UNDEFINED)
+            .map_or(minijinja::Value::UNDEFINED, |m| {
+                minijinja::Value::from(m.target.clone())
+            })
     });
 }
 

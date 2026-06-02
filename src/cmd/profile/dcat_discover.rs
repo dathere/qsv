@@ -170,7 +170,7 @@ fn sibling_candidates(url: &str) -> Vec<String> {
     out.push(datapackage.to_string());
 
     // <host>/.well-known/data.json
-    let mut well_known = parsed.clone();
+    let mut well_known = parsed;
     well_known.set_path("/.well-known/data.json");
     well_known.set_query(None);
     well_known.set_fragment(None);

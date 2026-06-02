@@ -4664,6 +4664,8 @@ fn strip_attribution_block(s: &str) -> String {
 /// leading list markers). Returns an empty string when there are no tags, so the
 /// `{SEMANTICMD_TAGS}` placeholder collapses cleanly.
 fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
+    use std::fmt::Write as _;
+
     // The JSON-format Tags response is `{"tags": [...], "attribution": "..."}`; unwrap to
     // the inner array so we list the tags, not the wrapper keys.
     if let Some(inner) = tags.get("tags") {
@@ -4690,7 +4692,6 @@ fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
     if items.is_empty() {
         return String::new();
     }
-    use std::fmt::Write as _;
     let mut block = String::from("tags:\n");
     for item in items {
         let _ = writeln!(block, "  - {}", yaml_scalar(&item));

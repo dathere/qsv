@@ -256,16 +256,17 @@ fn build_validator(entry_json: &str) -> Result<Validator, String> {
 /// at the bundled directory so DCAT-US v3 validation behaves
 /// unchanged.
 pub fn validate(profile: &ProfileSpec, block: &Value) -> Vec<ProjectionWarning> {
-    if !profile.validation.enabled {
-        return Vec::new();
-    }
-
     // The embedded validators hold the vendored GSA DCAT-US v3
     // bundle. A profile whose `schema_dir` matches this directory
     // path gets validated against the embedded validators; anything
     // else short-circuits with a heads-up warning rather than
     // silently misvalidating against the wrong schema.
     const EMBEDDED_SCHEMA_DIR: &str = "resources/dcat-us-v3/";
+
+    if !profile.validation.enabled {
+        return Vec::new();
+    }
+
     if let Some(dir) = &profile.validation.schema_dir
         && !dir.is_empty()
         && dir.trim_end_matches('/') != EMBEDDED_SCHEMA_DIR.trim_end_matches('/')

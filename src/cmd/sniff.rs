@@ -1200,7 +1200,7 @@ async fn sniff_main(mut args: Args) -> CliResult<()> {
         let sniff_error_json = json!({
             "title": "sniff error",
             // safety: we just created this string above, so it's safe to unwrap
-            "detail": &sniff_error.unwrap().to_string(),
+            "detail": &sniff_error.unwrap(),
             "meta": {
                 "detected_mime_type": file_type,
                 "detected_label": file_label,
@@ -1246,6 +1246,10 @@ fn distributed_types(
     // degrades to the contiguous PASS 1 types rather than failing the whole sniff -
     // mirroring util::count_rows_regular, which ignores unusable indexes.
     let attempt = || -> CliResult<Option<(Vec<csv_nose::Type>, usize)>> {
+        // FIXED_ROWS is the max number of fixed positional rows we always include
+        // (first 5 + last 5 + 5 each around Q1/Q2/Q3).
+        const FIXED_ROWS: u64 = 25;
+
         let has_header = dialect_meta.dialect.header.has_header_row;
 
         // Build an index handle whose header setting matches the detected dialect so
@@ -1267,9 +1271,6 @@ fn distributed_types(
         };
 
         let total = idx.count();
-        // FIXED_ROWS is the max number of fixed positional rows we always include
-        // (first 5 + last 5 + 5 each around Q1/Q2/Q3).
-        const FIXED_ROWS: u64 = 25;
         // Fall back to the contiguous sample when distributed sampling buys nothing
         // or would violate the --sample budget:
         //  - total <= budget: the contiguous sample already reads ~everything;

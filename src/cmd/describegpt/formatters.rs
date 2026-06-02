@@ -440,6 +440,7 @@ fn build_x_qsv(
 /// date columns. This mirrors `src/cmd/schema.rs:462,469`, which only emits
 /// these formats when `--strict-dates` is set.
 fn map_qsv_type(qsv_type: &str) -> (&'static str, Option<&'static str>) {
+    #[allow(clippy::match_same_arms)]
     match qsv_type {
         "Integer" => ("integer", None),
         "Float" => ("number", None),

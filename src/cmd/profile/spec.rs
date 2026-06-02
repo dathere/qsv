@@ -35,6 +35,7 @@ pub struct Spec {
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)] // `label` and `extras` are surfaced via the spec output rather than read in Rust
+#[allow(clippy::struct_field_names)] // `field_name` is the natural name for this key, even if it repeats in both Spec and Field
 pub struct Field {
     /// Field identifier (CKAN-side column name). Required for normal fields;
     /// `None` for the synthetic "page-break" entries that only carry a
@@ -68,7 +69,7 @@ impl Field {
     /// a page-break / form-section entry. Only real fields participate in
     /// formula evaluation and JSON output.
     #[inline]
-    pub fn is_real(&self) -> bool {
+    pub const fn is_real(&self) -> bool {
         self.field_name.is_some()
     }
 }

@@ -342,7 +342,7 @@ fn substitute_tokens(arg: &str, file_path: &OsStr, extras: &[(String, OsString)]
                 .map(|(_, p)| p.as_os_str())
         };
         if let Some(p) = resolved {
-            out.push(p)
+            out.push(p);
         } else {
             // Unknown token — pass through as literal so the
             // validator sees exactly what the user wrote.

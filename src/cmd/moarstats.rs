@@ -4783,6 +4783,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             //   - Both-constant (cardinality == 1) — only fires when BOTH
             //   - Cardinality == record_count — fires when EITHER side
             //   - Pair type filter — at least one side must be numeric/date/string
+            #[allow(clippy::items_after_statements)]
             #[derive(Clone)]
             struct ColInfo {
                 field_type:  FieldType,

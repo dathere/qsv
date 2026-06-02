@@ -2991,6 +2991,7 @@ fn opencage_result_json(r: &OpencageResult, no_annotations: bool) -> serde_json:
 /// Unlike format_result(), this is bound to the OpenCage response shape, not Geonames.
 fn format_opencage_result(r: &OpencageResult, formatstr: &str, no_annotations: bool) -> String {
     if formatstr.starts_with('%') {
+        #[allow(clippy::match_same_arms)]
         match formatstr {
             "%+" | "%formatted" => r.formatted.clone(),
             "%lat-long" => format!("{}, {}", r.geometry.lat, r.geometry.lng),

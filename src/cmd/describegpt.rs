@@ -165,9 +165,10 @@ describegpt options:
                            deterministically classified as "unique_id", overriding any token the LLM
                            returned for that field.
                            For Date/DateTime fields, the LLM also infers the column's strftime date
-                           format (e.g. "date:%m/%d/%Y"); the dictionary's Min/Max AND Examples are
-                           then rendered in that inferred format so they match how the dates actually
-                           appear in the data, instead of qsv's normalized form.
+                           format (e.g. "date:%m/%d/%Y"); the Markdown, JSON & JSON Schema dictionaries
+                           then render Min/Max AND Examples in that inferred format so they match how
+                           the dates actually appear in the data, instead of qsv's normalized form.
+                           (TSV output keeps Min/Max & Examples in qsv's raw normalized form.)
     --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
                            as JSON context and refines each field's Label, Description and
                            (when --infer-content-type is set) Content Type using cross-field
@@ -1388,10 +1389,14 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
                 }
                 // When a date content_type is supplied, reformat example values to
                 // the inferred date format first, so they read consistently with
-                // the date-formatted Min/Max (self-gated: no-op for non-date types).
+                // the date-formatted Min/Max. Only call format_date_examples when
+                // the content_type actually carries a date format — otherwise keep
+                // the already-owned `examples` to avoid a needless clone.
                 let examples = match content_type {
-                    Some(ct) => dictionary::format_date_examples(&ct, &examples),
-                    None => examples,
+                    Some(ct) if dictionary::content_type_date_format(&ct).is_some() => {
+                        dictionary::format_date_examples(&ct, &examples)
+                    },
+                    _ => examples,
                 };
                 examples
                     .lines()

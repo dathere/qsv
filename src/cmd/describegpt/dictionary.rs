@@ -236,9 +236,9 @@ pub(super) fn format_date_value<'a>(
     };
     // Disambiguate the parse using the inferred format's own field order: when
     // `%d` precedes `%m` the column is day-first, so an ambiguous value like
-    // "01/02/2020" under `date:%d/%m/%Y` parses as 1 Feb (not 2 Jan) and round
-    // -trips unchanged instead of being silently swapped. Min/Max are RFC3339
-    // (preference-invariant), so this only matters for raw frequency Examples.
+    // "01/02/2020" under `date:%d/%m/%Y` parses as 1 Feb (not 2 Jan) and
+    // round-trips unchanged instead of being silently swapped. Min/Max are
+    // RFC3339 (preference-invariant), so this only matters for raw Examples.
     match qsv_dateparser::parse_with_preference(value, prefer_dmy(fmt)) {
         Ok(dt) => Cow::Owned(dt.format(fmt).to_string()),
         Err(_) => Cow::Borrowed(value),

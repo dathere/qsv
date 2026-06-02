@@ -122,23 +122,23 @@ custom_prompt_md_template = """# {{ kind }}
 semanticmd_md_body_template = """---
 semantic-md: {{ profile }}
 dataset:
-  id: {{ dataset_id }}
-  title: {{ dataset_title }}
+  id: {{ dataset_id | yaml_scalar }}
+  title: {{ dataset_title | yaml_scalar }}
   row_count: {{ row_count }}
-{% if grain %}  grain: "{{ grain }}"
+{% if grain %}  grain: {{ grain | yaml_scalar }}
 {% endif -%}
-{% if ds_source %}  source: {{ ds_source }}
+{% if ds_source %}  source: {{ ds_source | yaml_scalar }}
 {% endif -%}
-{% if ds_updated %}  updated: {{ ds_updated }}
+{% if ds_updated %}  updated: {{ ds_updated | yaml_scalar }}
 {% endif -%}
-{% if ds_license %}  license: {{ ds_license }}
+{% if ds_license %}  license: {{ ds_license | yaml_scalar }}
 {% endif -%}
-{% if temporal_coverage %}  temporal_coverage: { column: "{{ temporal_coverage.column }}", start: "{{ temporal_coverage.start }}", end: "{{ temporal_coverage.end }}" }
+{% if temporal_coverage %}  temporal_coverage: { column: {{ temporal_coverage.column | yaml_scalar }}, start: {{ temporal_coverage.start | yaml_scalar }}, end: {{ temporal_coverage.end | yaml_scalar }} }
 {% endif -%}
-{% if spatial %}  spatial: { crs: "{{ spatial.crs }}", lat: "{{ spatial.lat }}", lon: "{{ spatial.lon }}" }
+{% if spatial %}  spatial: { crs: {{ spatial.crs | yaml_scalar }}, lat: {{ spatial.lat | yaml_scalar }}, lon: {{ spatial.lon | yaml_scalar }} }
 {% endif -%}
 {% if concepts %}concepts:
-{% for c in concepts %}  - {{ c }}
+{% for c in concepts %}  - {{ c | yaml_scalar }}
 {% endfor %}{% endif -%}
 {SEMANTICMD_TAGS}---
 
@@ -211,7 +211,7 @@ Load the resource once, then run any query below. SQL targets DuckDB (qsv's `sql
 
 ```python
 import pandas as pd
-df = pd.read_csv("{{ resource_name }}")
+df = pd.read_csv({{ resource_name_py }})
 ```
 {% for q in example_queries %}
 ### {{ q.title }}

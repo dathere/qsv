@@ -1402,6 +1402,9 @@ fn make_describegpt_md_env() -> &'static Environment<'static> {
         env.set_keep_trailing_newline(true);
 
         env.add_filter("pipe_escape", |v: String| v.replace('|', "\\|"));
+        // Render a string as a YAML scalar safe for the semantic-md frontmatter
+        // (plain when safe, else double-quoted+escaped) — same helper used for `tags:`.
+        env.add_filter("yaml_scalar", |v: String| yaml_scalar(&v));
         env.add_filter("br_replace", |v: String| v.replace('\n', "<br>"));
         env.add_filter("human_count", |v: u64| HumanCount(v).to_string());
         env.add_filter("dict_cell", |v: String, col: String| -> String {
@@ -1555,6 +1558,7 @@ fn render_semanticmd_body(
         dataset_title => dataset_title,
         schema_id => schema_id,
         resource_name => resource_name,
+        resource_name_py => formatters::py_str_lit(&resource_name),
         primary_key => data.primary_key,
         row_count => data.row_count,
         grain => data.grain,

@@ -1029,7 +1029,15 @@ pub(super) fn combine_dictionary_entries(
 /// defaults to `measure` for numeric columns and `dimension` otherwise.
 fn coerce_role_concept(entry: &mut DictionaryEntry) {
     if entry.concept.is_empty() {
-        entry.concept = "unknown".to_string();
+        // Backfill the deterministic concept mapping from the now-merged
+        // `content_type` before defaulting to "unknown". This recovers the
+        // documented mapping when a model (or an older cached response, or a
+        // custom prompt) returns a valid `content_type` like `zip_code` but
+        // omits `concept` — the seed in `generate_code_based_dictionary` only
+        // sees the pre-LLM (deterministic) content_type, so this is the merge
+        // path's chance to apply it.
+        entry.concept = concept_from_content_type(content_type_base(&entry.content_type))
+            .map_or_else(|| "unknown".to_string(), ToString::to_string);
     }
     if entry.role.is_empty() {
         entry.role = if entry.r#type == "Integer" || entry.r#type == "Float" {
@@ -3172,5 +3180,46 @@ mod tests {
         let off = generate_code_based_dictionary(&stats, &freqs, 50, 5, 0, &[], false);
         assert_eq!(off.iter().find(|e| e.name == "id").unwrap().concept, "");
         assert_eq!(off.iter().find(|e| e.name == "id").unwrap().role, "");
+    }
+
+    #[test]
+    fn combine_backfills_concept_from_content_type_when_llm_omits_it() {
+        // A model returns a valid content_type ("zip_code") but omits "concept".
+        // The merge path must backfill the deterministic concept mapping
+        // ("geo.zip_code") rather than coercing straight to "unknown".
+        let code = vec![blank_entry("zip")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "zip".to_string(),
+            LlmDictField {
+                label:        "ZIP".to_string(),
+                description:  "postal code".to_string(),
+                content_type: "zip_code".to_string(),
+                concept:      String::new(),
+                role:         "dimension".to_string(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].content_type, "zip_code");
+        assert_eq!(
+            combined[0].concept, "geo.zip_code",
+            "concept must backfill from the merged content_type, not fall back to unknown"
+        );
+
+        // No content_type mapping → still "unknown".
+        let code = vec![blank_entry("notes")];
+        let mut llm = HashMap::new();
+        llm.insert(
+            "notes".to_string(),
+            LlmDictField {
+                label:        "Notes".to_string(),
+                description:  "free text".to_string(),
+                content_type: "free_text".to_string(),
+                concept:      String::new(),
+                role:         String::new(),
+            },
+        );
+        let combined = combine_dictionary_entries(code, &llm, true);
+        assert_eq!(combined[0].concept, "unknown");
     }
 }

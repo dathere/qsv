@@ -911,13 +911,9 @@ fn infer_spatial(entries: &[DictionaryEntry]) -> Option<SemanticMdSpatial> {
     })
 }
 
-/// Build a small set of ready-to-run example queries (DuckDB/Polars SQL + pandas)
-/// seeded from the inferred roles: a `GROUP BY count(*)` per dimension (capped),
-/// a monthly time bucket over the event timestamp, a summary over the first
-/// measure, and a commented cross-dataset join template keyed on a shared
-/// concept. Empty when roles weren't inferred (concept inference off).
 fn build_example_queries(entries: &[DictionaryEntry], resource_name: &str) -> Vec<ExampleQuery> {
-    let table = format!("'{resource_name}'");
+    // Escape the table path as a SQL string literal so filenames with `'` stay valid.
+    let table = sql_str_lit(resource_name);
     let mut queries = Vec::new();
 
     for d in entries
@@ -925,61 +921,82 @@ fn build_example_queries(entries: &[DictionaryEntry], resource_name: &str) -> Ve
         .filter(|e| e.role == "dimension" && e.cardinality > 1 && e.cardinality <= 1000)
         .take(3)
     {
-        let col = &d.name;
+        let sqlcol = sql_ident(&d.name);
+        let pycol = py_str_lit(&d.name);
         queries.push(ExampleQuery {
-            title:  format!("Count by {col}"),
+            title:  format!("Count by {}", d.name),
             sql:    format!(
-                "SELECT \"{col}\", count(*) AS n FROM {table} GROUP BY 1 ORDER BY n DESC LIMIT 20;"
+                "SELECT {sqlcol}, count(*) AS n FROM {table} GROUP BY 1 ORDER BY n DESC LIMIT 20;"
             ),
-            pandas: format!("df.groupby(\"{col}\").size().sort_values(ascending=False).head(20)"),
+            pandas: format!("df.groupby({pycol}).size().sort_values(ascending=False).head(20)"),
         });
     }
 
     if let Some(ts) = entries.iter().find(|e| e.role == "timestamp") {
-        let col = &ts.name;
+        let sqlcol = sql_ident(&ts.name);
+        let pycol = py_str_lit(&ts.name);
         queries.push(ExampleQuery {
-            title:  format!("Monthly volume by {col}"),
+            title:  format!("Monthly volume by {}", ts.name),
             sql:    format!(
-                "SELECT date_trunc('month', try_cast(\"{col}\" AS TIMESTAMP)) AS month, count(*) \
+                "SELECT date_trunc('month', try_cast({sqlcol} AS TIMESTAMP)) AS month, count(*) \
                  AS n FROM {table} GROUP BY 1 ORDER BY 1;"
             ),
             pandas: format!(
-                "df.assign(month=pd.to_datetime(df[\"{col}\"], \
+                "df.assign(month=pd.to_datetime(df[{pycol}], \
                  errors=\"coerce\").dt.to_period(\"M\")).groupby(\"month\").size()"
             ),
         });
     }
 
     if let Some(m) = entries.iter().find(|e| e.role == "measure") {
-        let col = &m.name;
+        let sqlcol = sql_ident(&m.name);
+        let pycol = py_str_lit(&m.name);
         queries.push(ExampleQuery {
-            title:  format!("Summary of {col}"),
+            title:  format!("Summary of {}", m.name),
             sql:    format!(
-                "SELECT min(\"{col}\") AS min, avg(\"{col}\") AS avg, max(\"{col}\") AS max FROM \
+                "SELECT min({sqlcol}) AS min, avg({sqlcol}) AS avg, max({sqlcol}) AS max FROM \
                  {table};"
             ),
-            pandas: format!("df[\"{col}\"].describe()"),
+            pandas: format!("df[{pycol}].describe()"),
         });
     }
 
     if let Some(j) = entries.iter().find(|e| is_linkable_concept(&e.concept)) {
-        let col = &j.name;
+        let sqlcol = sql_ident(&j.name);
+        let pycol = py_str_lit(&j.name);
         let concept = &j.concept;
         queries.push(ExampleQuery {
             title:  format!("Join a catalog dataset sharing concept `{concept}`"),
             sql:    format!(
                 "-- Any catalog dataset whose column carries concept '{concept}' joins here.\n-- \
-                 SELECT a.*, b.* FROM {table} a JOIN 'other.csv' b ON a.\"{col}\" = b.<col with \
+                 SELECT a.*, b.* FROM {table} a JOIN 'other.csv' b ON a.{sqlcol} = b.<col with \
                  concept {concept}>;"
             ),
             pandas: format!(
-                "# merged = a.merge(b, left_on=\"{col}\", right_on=<b col with concept \
-                 '{concept}'>)"
+                "# merged = a.merge(b, left_on={pycol}, right_on=<b col with concept '{concept}'>)"
             ),
         });
     }
 
     queries
+}
+
+/// Render `s` as a single-quoted SQL string literal (e.g. a file path in
+/// `FROM '...'`), doubling embedded single quotes.
+fn sql_str_lit(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "''"))
+}
+
+/// Render `s` as a double-quoted SQL identifier (e.g. a column name), doubling
+/// embedded double quotes.
+fn sql_ident(s: &str) -> String {
+    format!("\"{}\"", s.replace('"', "\"\""))
+}
+
+/// Render `s` as a double-quoted Python string literal, escaping backslashes and
+/// double quotes (used for the pandas snippets and the `pd.read_csv(...)` path).
+pub(super) fn py_str_lit(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 /// Map structured `freq_details` into Frequency table rows, formatting the
@@ -1384,6 +1401,20 @@ mod tests {
         assert_eq!(semanticmd_type("DateTime"), "timestamp");
         assert_eq!(semanticmd_type("String"), "text");
         assert_eq!(semanticmd_type("NULL"), "text");
+    }
+
+    #[test]
+    fn example_query_escaping_helpers() {
+        // SQL string literal: single quotes doubled.
+        assert_eq!(sql_str_lit("plain.csv"), "'plain.csv'");
+        assert_eq!(sql_str_lit("o'brien.csv"), "'o''brien.csv'");
+        // SQL identifier: double quotes doubled.
+        assert_eq!(sql_ident("Unique Key"), "\"Unique Key\"");
+        assert_eq!(sql_ident("a\"b"), "\"a\"\"b\"");
+        // Python string literal: backslashes and double quotes escaped.
+        assert_eq!(py_str_lit("col"), "\"col\"");
+        assert_eq!(py_str_lit("a\"b"), "\"a\\\"b\"");
+        assert_eq!(py_str_lit("a\\b"), "\"a\\\\b\"");
     }
 
     #[test]

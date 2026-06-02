@@ -234,10 +234,24 @@ pub(super) fn format_date_value<'a>(
     let Some(fmt) = content_type_date_format(content_type) else {
         return Cow::Borrowed(value);
     };
-    match qsv_dateparser::parse_with_preference(value, false) {
+    // Disambiguate the parse using the inferred format's own field order: when
+    // `%d` precedes `%m` the column is day-first, so an ambiguous value like
+    // "01/02/2020" under `date:%d/%m/%Y` parses as 1 Feb (not 2 Jan) and round
+    // -trips unchanged instead of being silently swapped. Min/Max are RFC3339
+    // (preference-invariant), so this only matters for raw frequency Examples.
+    match qsv_dateparser::parse_with_preference(value, prefer_dmy(fmt)) {
         Ok(dt) => Cow::Owned(dt.format(fmt).to_string()),
         Err(_) => Cow::Borrowed(value),
     }
+}
+
+/// Whether a strftime format is day-first (`%d`/`%e` before `%m`), used to set
+/// `qsv_dateparser`'s DMY-vs-MDY preference when reformatting ambiguous values.
+/// Defaults to `false` (month-first) when the order can't be determined.
+fn prefer_dmy(fmt: &str) -> bool {
+    let day = ["%d", "%e", "%-d"].iter().filter_map(|t| fmt.find(t)).min();
+    let month = ["%m", "%-m"].iter().filter_map(|t| fmt.find(t)).min();
+    matches!((day, month), (Some(d), Some(m)) if d < m)
 }
 
 /// Reformat the value part of each `"value [count]"` example line to the
@@ -1238,6 +1252,25 @@ mod tests {
     fn format_date_examples_idempotent_when_already_formatted() {
         let out = format_date_examples("date:%m/%d/%Y", "01/24/2013 [5]");
         assert_eq!(out, "01/24/2013 [5]");
+    }
+
+    #[test]
+    fn format_date_examples_respects_day_first_format() {
+        // Ambiguous "01/02/2020" under a day-first inferred format must parse as
+        // 1 Feb and round-trip unchanged, NOT be swapped to "02/01/2020" by a
+        // hardcoded month-first preference.
+        assert_eq!(
+            format_date_examples("date:%d/%m/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
+        // Month-first format keeps month-first interpretation.
+        assert_eq!(
+            format_date_examples("date:%m/%d/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
+        assert!(prefer_dmy("%d/%m/%Y"));
+        assert!(!prefer_dmy("%m/%d/%Y"));
+        assert!(!prefer_dmy("%Y-%m-%d")); // ISO is month-before-day
     }
 
     #[test]

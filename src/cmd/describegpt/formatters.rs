@@ -399,10 +399,15 @@ fn build_x_qsv(
         }
     }
     if !entry.examples.is_empty() {
-        x_qsv.insert(
-            "example_counts".to_string(),
-            Value::String(entry.examples.clone()),
-        );
+        // Reformat date values to the inferred format (gated on
+        // infer_content_type) so the weighted example_counts stay consistent
+        // with the formatted `examples` array and x-qsv min/max above.
+        let example_counts = if infer_content_type {
+            super::dictionary::format_date_examples(&entry.content_type, &entry.examples)
+        } else {
+            entry.examples.clone()
+        };
+        x_qsv.insert("example_counts".to_string(), Value::String(example_counts));
     }
     if !entry.addl_cols.is_empty() {
         let mut addl = serde_json::Map::with_capacity(entry.addl_cols.len());
@@ -707,19 +712,23 @@ mod tests {
 
     #[test]
     fn jsonschema_x_qsv_carries_formatted_date_min_max() {
-        let date = date_entry(
+        let mut date = date_entry(
             "created",
             "date:%m/%d/%Y",
             "Date",
             "2013-01-24",
             "2013-12-31",
         );
+        date.examples = "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string();
         let bare = date_entry("plain", "date", "Date", "2013-01-24", "2013-12-31");
         let schema =
             format_dictionary_jsonschema(&[date, bare], "test.csv", 10, 5, 25, true, false, false);
         let xq = &schema["properties"]["created"]["x-qsv"];
         assert_eq!(xq["min"], "01/24/2013");
         assert_eq!(xq["max"], "12/31/2013");
+        // weighted example_counts must also be date-formatted, consistent with
+        // the `examples` array and x-qsv min/max.
+        assert_eq!(xq["example_counts"], "01/24/2013 [5]\n01/07/2014 [3]");
         // bare date token: no inferred format, so no x-qsv min/max.
         let xq_bare = &schema["properties"]["plain"]["x-qsv"];
         assert!(

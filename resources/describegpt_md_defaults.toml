@@ -188,6 +188,8 @@ dataset:
 {% if entry.validation.max %}- Values <= {{ entry.validation.max }}
 {% endif -%}
 {% if entry.validation.min_length and entry.validation.max_length %}- Length {{ entry.validation.min_length }}–{{ entry.validation.max_length }}
+{% elif entry.validation.min_length %}- Length >= {{ entry.validation.min_length }}
+{% elif entry.validation.max_length %}- Length <= {{ entry.validation.max_length }}
 {% endif -%}
 {% endif -%}
 {% if entry.choices %}

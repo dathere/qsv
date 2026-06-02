@@ -793,6 +793,7 @@ fn build_semanticmd_entry(e: &DictionaryEntry, primary_key: Option<&str>) -> Sem
             &stats.skewness,
             &stats.lower_fence,
             &stats.upper_fence,
+            &stats.sparsity,
         ]
         .iter()
         .any(|s| !s.is_empty());

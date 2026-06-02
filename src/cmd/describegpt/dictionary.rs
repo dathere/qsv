@@ -245,13 +245,24 @@ pub(super) fn format_date_value<'a>(
     }
 }
 
-/// Whether a strftime format is day-first (`%d`/`%e` before `%m`), used to set
-/// `qsv_dateparser`'s DMY-vs-MDY preference when reformatting ambiguous values.
-/// Defaults to `false` (month-first) when the order can't be determined.
+/// Whether a strftime format is day-first (the day field precedes the month
+/// field), used to set `qsv_dateparser`'s DMY-vs-MDY preference when
+/// reformatting ambiguous values. Parses the format with chrono's
+/// `StrftimeItems` so every day/month padding variant (`%d`, `%e`, `%-d`,
+/// `%0d`, `%_d`, `%m`, `%-m`, `%0m`, `%_m`, …) is recognized. Defaults to
+/// `false` (month-first) when the order can't be determined.
 fn prefer_dmy(fmt: &str) -> bool {
-    let day = ["%d", "%e", "%-d"].iter().filter_map(|t| fmt.find(t)).min();
-    let month = ["%m", "%-m"].iter().filter_map(|t| fmt.find(t)).min();
-    matches!((day, month), (Some(d), Some(m)) if d < m)
+    use chrono::format::{Item, Numeric, StrftimeItems};
+    let mut day_idx = None;
+    let mut month_idx = None;
+    for (i, item) in StrftimeItems::new(fmt).enumerate() {
+        match item {
+            Item::Numeric(Numeric::Day, _) if day_idx.is_none() => day_idx = Some(i),
+            Item::Numeric(Numeric::Month, _) if month_idx.is_none() => month_idx = Some(i),
+            _ => {},
+        }
+    }
+    matches!((day_idx, month_idx), (Some(d), Some(m)) if d < m)
 }
 
 /// Reformat the value part of each `"value [count]"` example line to the
@@ -1271,6 +1282,20 @@ mod tests {
         assert!(prefer_dmy("%d/%m/%Y"));
         assert!(!prefer_dmy("%m/%d/%Y"));
         assert!(!prefer_dmy("%Y-%m-%d")); // ISO is month-before-day
+        // Padding/variant modifiers must be recognized via StrftimeItems, not
+        // a fixed token list: %0d/%0m, %_d/%_m, %-d/%-m, %e all map to the
+        // Day/Month numeric fields regardless of padding.
+        assert!(prefer_dmy("%0d/%0m/%Y"));
+        assert!(prefer_dmy("%_d/%_m/%Y"));
+        assert!(prefer_dmy("%-d/%-m/%Y"));
+        assert!(prefer_dmy("%e/%m/%Y"));
+        assert!(!prefer_dmy("%0m/%0d/%Y"));
+        assert!(!prefer_dmy("%H:%M:%S")); // no date fields → default month-first
+        // End-to-end through format_date_examples with a padded day-first fmt.
+        assert_eq!(
+            format_date_examples("date:%0d/%0m/%Y", "01/02/2020 [5]"),
+            "01/02/2020 [5]"
+        );
     }
 
     #[test]

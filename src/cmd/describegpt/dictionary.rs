@@ -323,6 +323,20 @@ pub(crate) struct FrequencyRecord {
     pub(crate) rank:       f64,
 }
 
+/// One weighted frequency sample for a field, carrying the qsv-computed
+/// `percentage` and `rank` that the flat `examples` string discards. Populated
+/// for the same top-N values shown in `examples`; consumed by the SemanticMd
+/// formatter to render richer Frequency tables. `value` is already display-
+/// formatted (bucket "…" suffix + `truncate_str` truncation) to match `examples`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct FreqDetail {
+    pub(super) value:      String,
+    pub(super) count:      u64,
+    pub(super) percentage: f64,
+    /// Dense rank from `frequency`; `0.0` for aggregation buckets (`Other…`/`(NULL)…`).
+    pub(super) rank:       f64,
+}
+
 /// One row in the generated data dictionary. `label`, `description` and
 /// `content_type` start empty and are filled by the LLM pass (`content_type`
 /// only when `--infer-content-type` is set); all other fields are populated
@@ -342,6 +356,11 @@ pub(super) struct DictionaryEntry {
     pub(super) addl_cols:    IndexMap<String, String>, // Preserves column order
     pub(super) examples:     String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…" or
                                                         * "<ALL_UNIQUE>" */
+    /// Structured counterpart to `examples`, retaining per-value percentage and rank.
+    /// `#[serde(default)]` keeps older cached dictionaries (written before this field
+    /// existed) deserializable.
+    #[serde(default)]
+    pub(super) freq_details: Vec<FreqDetail>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -603,45 +622,49 @@ pub(super) fn generate_code_based_dictionary(
             String::new()
         };
 
-        let examples = if field_frequencies
+        let (examples, freq_details) = if field_frequencies
             .iter()
             .any(|f| (f.percentage - 100.0).abs() < 0.0001)
         {
-            "<ALL_UNIQUE>".to_string()
+            ("<ALL_UNIQUE>".to_string(), Vec::new())
         } else {
             let mut sorted_freqs = field_frequencies.clone();
             sorted_freqs.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
 
-            let top_n: Vec<String> = sorted_freqs
-                .iter()
-                .take(num_examples as usize)
-                .map(|f| {
-                    // For frequency bucket entries (rank == 0.0), strip the redundant
-                    // "(n)" count and append "…" to disambiguate from literal values with
-                    // the same name (e.g. bucket "Other… [4,091]" vs literal "Other [2,006]")
-                    let raw_value = if f.rank == 0.0 {
-                        let base = if let Some(pos) = f.value.rfind(" (") {
-                            &f.value[..pos]
-                        } else {
-                            &f.value
-                        };
-                        format!("{base}…")
+            let mut top_n: Vec<String> = Vec::new();
+            let mut details: Vec<FreqDetail> = Vec::new();
+            for f in sorted_freqs.iter().take(num_examples as usize) {
+                // For frequency bucket entries (rank == 0.0), strip the redundant
+                // "(n)" count and append "…" to disambiguate from literal values with
+                // the same name (e.g. bucket "Other… [4,091]" vs literal "Other [2,006]")
+                let raw_value = if f.rank == 0.0 {
+                    let base = if let Some(pos) = f.value.rfind(" (") {
+                        &f.value[..pos]
                     } else {
-                        f.value.clone()
+                        &f.value
                     };
+                    format!("{base}…")
+                } else {
+                    f.value.clone()
+                };
 
-                    let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
-                        let mut s = raw_value.chars().take(truncate_str).collect::<String>();
-                        s.push('…');
-                        s
-                    } else {
-                        raw_value
-                    };
-                    format!("{} [{}]", v, f.count)
-                })
-                .collect();
+                let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
+                    let mut s = raw_value.chars().take(truncate_str).collect::<String>();
+                    s.push('…');
+                    s
+                } else {
+                    raw_value
+                };
+                top_n.push(format!("{} [{}]", v, f.count));
+                details.push(FreqDetail {
+                    value:      v,
+                    count:      f.count,
+                    percentage: f.percentage,
+                    rank:       f.rank,
+                });
+            }
 
-            top_n.join("\n")
+            (top_n.join("\n"), details)
         };
 
         let mut entry_addl_cols = IndexMap::new();
@@ -704,6 +727,7 @@ pub(super) fn generate_code_based_dictionary(
             null_count: stats_record.nullcount,
             addl_cols: entry_addl_cols,
             examples,
+            freq_details,
         });
     }
 
@@ -1245,6 +1269,7 @@ mod tests {
             null_count:   0,
             addl_cols:    IndexMap::new(),
             examples:     String::new(),
+            freq_details: Vec::new(),
         }
     }
 

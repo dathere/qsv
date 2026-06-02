@@ -95,3 +95,79 @@ custom_prompt_md_template = """# {{ kind }}
 {{ token_usage }}
 ---
 """
+
+### The semanticmd body template (semanticmd_md_body_template) emits a semantic-md data
+# dictionary document (https://semanticmd.org/). It is rendered during the Dictionary phase;
+# the `{DATASET_DESCRIPTION}` and `{SEMANTICMD_TAGS}` placeholders are substituted afterwards
+# in finalize_structured_output with the --description response and --tags frontmatter block.
+# Besides the wrapper variables, it receives:
+#   {{ profile }}        - the semantic-md schema/profile reference (frontmatter `semantic-md:` value)
+#   {{ dataset_id }}     - dataset identifier (input filename stem)
+#   {{ dataset_title }}  - human-friendly dataset title
+#   {{ schema_id }}      - schema/table slug (lowercased, alphanumerics only)
+#   {{ resource_name }}  - the input filename (or "input" for stdin)
+#   {{ primary_key }}    - inferred single-column primary key, or empty when omitted
+#   {{ entries }}        - list of records, each with: name, sem_type, required, label, description,
+#                          is_numeric, min, max, cardinality, null_count, choices (list),
+#                          frequency (list of {choice, count, percentage, rank}), has_frequency
+semanticmd_md_body_template = """---
+semantic-md: {{ profile }}
+{SEMANTICMD_TAGS}---
+
+# Dataset {{ dataset_id }}
+
+{DATASET_DESCRIPTION}
+
+| Resource | Schema | Title |
+| --- | --- | --- |
+| `{{ resource_name }}` | `{{ schema_id }}` | {{ dataset_title | pipe_escape }} |
+
+# Schema `{{ schema_id }}`
+
+| Column | Type | Label |
+| --- | --- | --- |
+{% for entry in entries -%}
+| `{{ entry.name }}` | {% if entry.required %}required {% endif %}{{ entry.sem_type }} | {{ entry.label | pipe_escape }} |
+{% endfor -%}
+{% if primary_key %}
+| Primary key |
+| --- |
+| `{{ primary_key }}` |
+{% endif %}
+{%- for entry in entries %}
+## Column `{{ entry.name }}`
+
+{{ entry.description }}
+{% if entry.is_numeric and entry.min %}
+### Validation
+
+Values >= {{ entry.min }}
+{% endif -%}
+{% if entry.choices %}
+### Choices
+
+{% for choice in entry.choices -%}
+- {{ choice }}
+{% endfor -%}
+{% endif %}
+{%- endfor %}
+# Resource `{{ resource_name }}`
+
+## Statistics
+
+| Column | Min | Max | Cardinality | Null Count |
+| --- | ---: | ---: | ---: | ---: |
+{% for entry in entries -%}
+| `{{ entry.name }}` | {{ entry.min | pipe_escape }} | {{ entry.max | pipe_escape }} | {{ entry.cardinality }} | {{ entry.null_count }} |
+{% endfor -%}
+{% for entry in entries %}{% if entry.has_frequency %}
+### Frequency for `{{ entry.name }}`
+
+| Choice | Frequency | Percentage | Rank |
+| :--- | ---: | ---: | ---: |
+{% for row in entry.frequency -%}
+| {{ row.choice | pipe_escape }} | {{ row.count }} | {{ row.percentage }} | {{ row.rank }} |
+{% endfor -%}
+{% endif %}{% endfor %}
+*Attribution: {{ generated_by_signature }}*
+"""

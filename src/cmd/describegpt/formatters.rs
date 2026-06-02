@@ -7,9 +7,10 @@
 use std::fmt::Write as _;
 
 use indicatif::HumanCount;
+use serde::Serialize;
 use serde_json::{Value, json};
 
-use super::dictionary::DictionaryEntry;
+use super::dictionary::{DictionaryEntry, FreqDetail};
 
 /// Extract ordered additional column names from entries.
 ///
@@ -506,6 +507,144 @@ fn strip_count_suffix(line: &str) -> &str {
     }
 }
 
+/// Map a qsv stats type to the semantic-md data-dictionary type vocabulary.
+///
+/// semantic-md uses a small human-friendly type set (`integer`, `number`,
+/// `boolean`, `timestamp`, `text`) rather than JSON Schema's keywords, so this
+/// differs from `map_qsv_type`: Date/DateTime collapse to `timestamp` and any
+/// non-numeric/boolean type (including String and NULL) becomes `text`.
+pub(super) fn semanticmd_type(qsv_type: &str) -> &'static str {
+    match qsv_type {
+        "Integer" => "integer",
+        "Float" => "number",
+        "Boolean" => "boolean",
+        "Date" | "DateTime" => "timestamp",
+        _ => "text",
+    }
+}
+
+/// One `### Frequency for ...` table row (`Choice | Frequency | Percentage | Rank`).
+#[derive(Debug, Serialize)]
+pub(super) struct SemanticMdFreqRow {
+    pub(super) choice:     String,
+    pub(super) count:      String,
+    pub(super) percentage: String,
+    /// Integer rank, or empty for aggregation buckets (`Other…`/`(NULL)…`, rank 0).
+    pub(super) rank:       String,
+}
+
+/// Per-column render data for the semantic-md template. Precomputed in Rust so the
+/// Mini-Jinja template stays presentation-only and the derivation is unit-testable.
+#[derive(Debug, Serialize)]
+pub(super) struct SemanticMdEntry {
+    pub(super) name:          String,
+    pub(super) sem_type:      String,
+    pub(super) required:      bool,
+    pub(super) label:         String,
+    pub(super) description:   String,
+    pub(super) is_numeric:    bool,
+    pub(super) min:           String,
+    pub(super) max:           String,
+    pub(super) cardinality:   u64,
+    pub(super) null_count:    u64,
+    pub(super) choices:       Vec<String>,
+    pub(super) frequency:     Vec<SemanticMdFreqRow>,
+    pub(super) has_frequency: bool,
+}
+
+/// Top-level render data for the semantic-md template.
+#[derive(Debug, Serialize)]
+pub(super) struct SemanticMdData {
+    pub(super) entries:     Vec<SemanticMdEntry>,
+    /// Heuristically-inferred single-column primary key, if unambiguous.
+    pub(super) primary_key: Option<String>,
+}
+
+/// Build the semantic-md render data from dictionary entries.
+///
+/// Choices come from `enumeration` (populated only when `cardinality <=
+/// enum_threshold`); the per-column Frequency table reuses the structured
+/// `freq_details` (value, count, percentage, rank — empty for the `<ALL_UNIQUE>`
+/// sentinel). The primary key is inferred only when exactly one column is fully
+/// unique and non-null; otherwise it is omitted.
+pub(super) fn build_semanticmd_data(entries: &[DictionaryEntry]) -> SemanticMdData {
+    // Total row count estimated as the max of (distinct + nulls) across columns.
+    // A fully-unique non-null column has distinct == row_count, so it pins this
+    // estimate; columns with duplicates contribute a smaller value.
+    let row_count = entries
+        .iter()
+        .map(|e| e.cardinality + e.null_count)
+        .max()
+        .unwrap_or(0);
+
+    // Primary key candidates: non-null AND fully unique (distinct == row_count).
+    let mut pk_candidates = entries
+        .iter()
+        .filter(|e| e.null_count == 0 && row_count > 0 && e.cardinality == row_count)
+        .map(|e| e.name.clone());
+    let primary_key = match (pk_candidates.next(), pk_candidates.next()) {
+        (Some(pk), None) => Some(pk),
+        _ => None,
+    };
+
+    let entries = entries
+        .iter()
+        .map(|e| {
+            let is_numeric = e.r#type == "Integer" || e.r#type == "Float";
+            let choices: Vec<String> = if e.enumeration.is_empty() {
+                Vec::new()
+            } else {
+                e.enumeration
+                    .lines()
+                    .map(str::trim)
+                    .filter(|l| !l.is_empty())
+                    .map(ToString::to_string)
+                    .collect()
+            };
+            let frequency = build_freq_rows(&e.freq_details);
+            SemanticMdEntry {
+                name: e.name.clone(),
+                sem_type: semanticmd_type(&e.r#type).to_string(),
+                required: e.null_count == 0,
+                label: e.label.clone(),
+                description: e.description.clone(),
+                is_numeric,
+                min: e.min.clone(),
+                max: e.max.clone(),
+                cardinality: e.cardinality,
+                null_count: e.null_count,
+                choices,
+                has_frequency: !frequency.is_empty(),
+                frequency,
+            }
+        })
+        .collect();
+
+    SemanticMdData {
+        entries,
+        primary_key,
+    }
+}
+
+/// Map structured `freq_details` into Frequency table rows, formatting the
+/// percentage to two decimals and rendering the rank as an integer (blank for
+/// aggregation buckets whose rank is 0).
+fn build_freq_rows(details: &[FreqDetail]) -> Vec<SemanticMdFreqRow> {
+    details
+        .iter()
+        .map(|d| SemanticMdFreqRow {
+            choice:     d.value.clone(),
+            count:      d.count.to_string(),
+            percentage: format!("{:.2}%", d.percentage),
+            rank:       if d.rank > 0.0 {
+                (d.rank as u64).to_string()
+            } else {
+                String::new()
+            },
+        })
+        .collect()
+}
+
 /// Format dictionary entries as TSV.
 ///
 /// When `infer_content_type` is true, a `Content Type` column is inserted after
@@ -599,6 +738,7 @@ mod tests {
             null_count:   0,
             addl_cols:    Default::default(),
             examples:     "a [1]".to_string(),
+            freq_details: Vec::new(),
         }
     }
 
@@ -820,6 +960,7 @@ mod tests {
             null_count:   10,
             addl_cols:    Default::default(),
             examples:     "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
+            freq_details: Vec::new(),
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),
@@ -870,5 +1011,114 @@ mod tests {
             "string examples must be preserved: {examples:?}"
         );
         assert!(examples.iter().all(serde_json::Value::is_string));
+    }
+
+    #[test]
+    fn semanticmd_type_mapping() {
+        assert_eq!(semanticmd_type("Integer"), "integer");
+        assert_eq!(semanticmd_type("Float"), "number");
+        assert_eq!(semanticmd_type("Boolean"), "boolean");
+        assert_eq!(semanticmd_type("Date"), "timestamp");
+        assert_eq!(semanticmd_type("DateTime"), "timestamp");
+        assert_eq!(semanticmd_type("String"), "text");
+        assert_eq!(semanticmd_type("NULL"), "text");
+    }
+
+    #[test]
+    fn semanticmd_frequency_rows() {
+        assert!(build_freq_rows(&[]).is_empty());
+
+        let details = vec![
+            // Aggregation bucket: rank 0 => blank rank cell.
+            FreqDetail {
+                value:      "Other…".to_string(),
+                count:      900,
+                percentage: 73.93,
+                rank:       0.0,
+            },
+            FreqDetail {
+                value:      "Closed".to_string(),
+                count:      150,
+                percentage: 12.34,
+                rank:       1.0,
+            },
+        ];
+        let rows = build_freq_rows(&details);
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].choice, "Other…");
+        assert_eq!(rows[0].count, "900");
+        assert_eq!(rows[0].percentage, "73.93%");
+        assert_eq!(rows[0].rank, ""); // bucket => blank rank
+        assert_eq!(rows[1].choice, "Closed");
+        assert_eq!(rows[1].percentage, "12.34%");
+        assert_eq!(rows[1].rank, "1");
+    }
+
+    #[test]
+    fn semanticmd_data_derivation_and_primary_key() {
+        // Unique non-null Integer column => inferred primary key + numeric flag.
+        let mut id = sample_entry("id", "");
+        id.r#type = "Integer".to_string();
+        id.min = "1".to_string();
+        id.cardinality = 1000;
+        id.null_count = 0;
+        id.enumeration = String::new();
+        id.examples = "<ALL_UNIQUE>".to_string();
+
+        // Low-cardinality nullable String column => choices + frequency, not required.
+        let mut status = sample_entry("status", "");
+        status.cardinality = 3;
+        status.null_count = 50;
+        status.enumeration = "Assigned\nClosed\nOpen".to_string();
+        status.examples = "Closed [800]\nOpen [150]".to_string();
+        status.freq_details = vec![
+            FreqDetail {
+                value:      "Closed".to_string(),
+                count:      800,
+                percentage: 84.21,
+                rank:       1.0,
+            },
+            FreqDetail {
+                value:      "Open".to_string(),
+                count:      150,
+                percentage: 15.79,
+                rank:       2.0,
+            },
+        ];
+
+        let data = build_semanticmd_data(&[id, status]);
+        assert_eq!(data.primary_key.as_deref(), Some("id"));
+
+        let id_e = &data.entries[0];
+        assert_eq!(id_e.sem_type, "integer");
+        assert!(id_e.is_numeric);
+        assert!(id_e.required);
+        assert!(id_e.choices.is_empty());
+        assert!(!id_e.has_frequency);
+
+        let status_e = &data.entries[1];
+        assert_eq!(status_e.sem_type, "text");
+        assert!(!status_e.is_numeric);
+        assert!(!status_e.required);
+        assert_eq!(status_e.choices, vec!["Assigned", "Closed", "Open"]);
+        assert!(status_e.has_frequency);
+        assert_eq!(status_e.frequency.len(), 2);
+        assert_eq!(status_e.frequency[0].percentage, "84.21%");
+        assert_eq!(status_e.frequency[0].rank, "1");
+    }
+
+    #[test]
+    fn semanticmd_primary_key_ambiguous_omitted() {
+        // Two fully-unique non-null columns => ambiguous => no primary key.
+        let mut a = sample_entry("a", "");
+        a.r#type = "Integer".to_string();
+        a.cardinality = 100;
+        a.null_count = 0;
+        let mut b = sample_entry("b", "");
+        b.r#type = "Integer".to_string();
+        b.cardinality = 100;
+        b.null_count = 0;
+        let data = build_semanticmd_data(&[a, b]);
+        assert!(data.primary_key.is_none());
     }
 }

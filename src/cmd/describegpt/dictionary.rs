@@ -696,14 +696,19 @@ pub(super) fn generate_code_based_dictionary(
         //   - HIGH_CARDINALITY sentinel rows (also single-row, percentage 100.0, count == rowcount)
         //     are excluded because for them `cardinality < rowcount == count`.
         // Also requires `cardinality > 1` and `nullcount == 0` to enforce
-        // the semantic contract (every row has a distinct non-null value).
+        // the semantic contract (every row has a distinct non-null value), and that the
+        // single row covers the whole column (`percentage == 100.0`). The percentage
+        // guard rejects truncated/custom frequency data (e.g. `--limit 1 --no-other` or a
+        // `file:` frequency CSV) where the lone emitted top row's `count` coincidentally
+        // equals the column cardinality even though the column is not unique.
         // Pre-set value takes precedence over whatever the LLM returns (see
         // `combine_dictionary_entries`). Only populate when `--infer-content-type`
         // is on; otherwise the `content_type` column is suppressed entirely.
         let is_all_unique = stats_record.cardinality > 1
             && stats_record.nullcount == 0
             && field_frequencies.len() == 1
-            && field_frequencies[0].count == stats_record.cardinality;
+            && field_frequencies[0].count == stats_record.cardinality
+            && (field_frequencies[0].percentage - 100.0).abs() < 0.0001;
         // Deterministically stamp the bare `content_type` token. `unique_id`
         // keeps priority over `date`/`datetime` (a unique timestamp key is
         // still a key). `date`/`datetime` are derived from the stats `Type`
@@ -1693,6 +1698,42 @@ mod tests {
         assert!(
             entries[1].content_type.is_empty(),
             "non-ALL_UNIQUE field must leave content_type empty for LLM fill"
+        );
+    }
+
+    #[test]
+    fn generate_does_not_mark_truncated_frequency_as_unique_id() {
+        // Truncated/custom frequency (e.g. `--limit 1 --no-other`) emits a single top
+        // row whose `count` happens to equal the column cardinality, but `percentage`
+        // is below 100 because the column is NOT unique. The structural detector must
+        // require percentage == 100, so neither content_type nor is_unique_id is set.
+        let stats = vec![StatsRecord {
+            field:       "code".to_string(),
+            r#type:      "String".to_string(),
+            cardinality: 3,
+            nullcount:   0,
+            min:         "a".to_string(),
+            max:         "c".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        // Single emitted row: count(3) == cardinality(3) but percentage 30 (< 100),
+        // i.e. the top value covers 3 of ~10 rows; the rest were truncated.
+        let frequencies = vec![FrequencyRecord {
+            field:      "code".to_string(),
+            value:      "a".to_string(),
+            count:      3,
+            percentage: 30.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(entries[0].name, "code");
+        assert!(
+            !entries[0].is_unique_id,
+            "truncated single-row frequency with percentage < 100 must not be a unique id"
+        );
+        assert!(
+            entries[0].content_type.is_empty(),
+            "truncated single-row frequency must not be stamped unique_id"
         );
     }
 

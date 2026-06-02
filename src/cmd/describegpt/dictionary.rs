@@ -361,6 +361,14 @@ pub(super) struct DictionaryEntry {
     /// existed) deserializable.
     #[serde(default)]
     pub(super) freq_details: Vec<FreqDetail>,
+    /// Structural "every row carries a distinct non-null value" flag (`cardinality ==
+    /// rowcount`, no nulls), computed deterministically at generation time. Distinct
+    /// from the overloaded `examples == "<ALL_UNIQUE>"` sentinel (which is also set for
+    /// constant-value and HIGH_CARDINALITY columns at 100% frequency). Consumed by the
+    /// SemanticMd formatter for primary-key inference. `#[serde(default)]` for cache
+    /// backward-compatibility.
+    #[serde(default)]
+    pub(super) is_unique_id: bool,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -728,6 +736,7 @@ pub(super) fn generate_code_based_dictionary(
             addl_cols: entry_addl_cols,
             examples,
             freq_details,
+            is_unique_id: is_all_unique,
         });
     }
 
@@ -1270,6 +1279,7 @@ mod tests {
             addl_cols:    IndexMap::new(),
             examples:     String::new(),
             freq_details: Vec::new(),
+            is_unique_id: false,
         }
     }
 

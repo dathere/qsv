@@ -568,14 +568,15 @@ pub(super) struct SemanticMdData {
 /// sentinel). The primary key is inferred only when exactly one column is fully
 /// unique and non-null; otherwise it is omitted.
 pub(super) fn build_semanticmd_data(entries: &[DictionaryEntry]) -> SemanticMdData {
-    // Primary key candidates rely on the deterministic `<ALL_UNIQUE>` examples
-    // sentinel (qsv `frequency` emits it only when `cardinality == rowcount`, i.e.
-    // every row carries a distinct value) combined with `null_count == 0`. Using
-    // this exact signal — rather than estimating the row count — avoids falsely
-    // flagging a merely highest-cardinality column as a key.
+    // Primary key candidates rely on the structural `is_unique_id` flag set by
+    // `generate_code_based_dictionary` (cardinality == rowcount, no nulls). This is
+    // the deterministic unique-id detector — NOT the overloaded `examples ==
+    // "<ALL_UNIQUE>"` sentinel, which is also set for constant-value and
+    // HIGH_CARDINALITY columns (any frequency row at 100%), and NOT a row-count
+    // estimate. Either of those would falsely flag a non-unique column as a key.
     let mut pk_candidates = entries
         .iter()
-        .filter(|e| e.null_count == 0 && e.examples == "<ALL_UNIQUE>")
+        .filter(|e| e.is_unique_id)
         .map(|e| e.name.clone());
     let primary_key = match (pk_candidates.next(), pk_candidates.next()) {
         (Some(pk), None) => Some(pk),
@@ -734,6 +735,7 @@ mod tests {
             addl_cols:    Default::default(),
             examples:     "a [1]".to_string(),
             freq_details: Vec::new(),
+            is_unique_id: false,
         }
     }
 
@@ -956,6 +958,7 @@ mod tests {
             addl_cols:    Default::default(),
             examples:     "Other… [900]\n(NULL)… [10]\n123 [5]\n456 [3]".to_string(),
             freq_details: Vec::new(),
+            is_unique_id: false,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),
@@ -1059,6 +1062,7 @@ mod tests {
         id.null_count = 0;
         id.enumeration = String::new();
         id.examples = "<ALL_UNIQUE>".to_string();
+        id.is_unique_id = true;
 
         // Low-cardinality nullable String column => choices + frequency, not required.
         let mut status = sample_entry("status", "");
@@ -1104,35 +1108,83 @@ mod tests {
 
     #[test]
     fn semanticmd_primary_key_ambiguous_omitted() {
-        // Two fully-unique non-null columns (both carry the <ALL_UNIQUE> sentinel)
-        // => ambiguous => no primary key.
+        // Two structurally-unique non-null columns => ambiguous => no primary key.
         let mut a = sample_entry("a", "");
         a.r#type = "Integer".to_string();
         a.cardinality = 100;
         a.null_count = 0;
-        a.examples = "<ALL_UNIQUE>".to_string();
+        a.is_unique_id = true;
         let mut b = sample_entry("b", "");
         b.r#type = "Integer".to_string();
         b.cardinality = 100;
         b.null_count = 0;
-        b.examples = "<ALL_UNIQUE>".to_string();
+        b.is_unique_id = true;
         let data = build_semanticmd_data(&[a, b]);
         assert!(data.primary_key.is_none());
     }
 
     #[test]
     fn semanticmd_primary_key_ignores_high_cardinality_non_unique() {
-        // A merely highest-cardinality non-null column (no <ALL_UNIQUE> sentinel)
-        // must NOT be inferred as a primary key, even when no column is fully unique.
-        let mut hi = sample_entry("hi", "");
-        hi.cardinality = 90;
-        hi.null_count = 0;
-        hi.examples = "x [50]\ny [40]".to_string();
-        let mut lo = sample_entry("lo", "");
-        lo.cardinality = 5;
-        lo.null_count = 0;
-        lo.examples = "a [60]\nb [30]".to_string();
-        let data = build_semanticmd_data(&[hi, lo]);
-        assert!(data.primary_key.is_none());
+        // A high-cardinality / constant column whose only frequency row is at 100%
+        // gets the overloaded `<ALL_UNIQUE>` examples sentinel, but is NOT a unique id
+        // (is_unique_id is false). It must not be inferred as a primary key. Built
+        // through generate_code_based_dictionary so the structural detector is exercised.
+        let stats = vec![
+            // HIGH_CARDINALITY: single freq row at 100% but count (rowcount) != cardinality.
+            crate::cmd::describegpt::dictionary::StatsRecord {
+                field:       "hi".to_string(),
+                r#type:      "String".to_string(),
+                cardinality: 900, // distinct < rowcount(1000) => not a unique id
+                nullcount:   0,
+                min:         String::new(),
+                max:         String::new(),
+                addl_cols:   Default::default(),
+            },
+            // Constant column: cardinality 1, single value covers 100%.
+            crate::cmd::describegpt::dictionary::StatsRecord {
+                field:       "konst".to_string(),
+                r#type:      "String".to_string(),
+                cardinality: 1,
+                nullcount:   0,
+                min:         String::new(),
+                max:         String::new(),
+                addl_cols:   Default::default(),
+            },
+        ];
+        let freqs = vec![
+            crate::cmd::describegpt::dictionary::FrequencyRecord {
+                field:      "hi".to_string(),
+                value:      "<ALL_UNIQUE>".to_string(),
+                count:      1000, // rowcount, != cardinality(900)
+                percentage: 100.0,
+                rank:       1.0,
+            },
+            crate::cmd::describegpt::dictionary::FrequencyRecord {
+                field:      "konst".to_string(),
+                value:      "K".to_string(),
+                count:      1000,
+                percentage: 100.0,
+                rank:       1.0,
+            },
+        ];
+        let entries = crate::cmd::describegpt::dictionary::generate_code_based_dictionary(
+            &stats,
+            &freqs,
+            10,
+            5,
+            25,
+            &[],
+            false,
+        );
+        // Both carry the <ALL_UNIQUE> examples sentinel...
+        assert_eq!(entries[0].examples, "<ALL_UNIQUE>");
+        // ...but neither is a structural unique id.
+        assert!(!entries[0].is_unique_id);
+        assert!(!entries[1].is_unique_id);
+        let data = build_semanticmd_data(&entries);
+        assert!(
+            data.primary_key.is_none(),
+            "high-cardinality / constant columns must not be inferred as a primary key"
+        );
     }
 }

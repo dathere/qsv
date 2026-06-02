@@ -6501,6 +6501,7 @@ p_fewshot_examples = ""
             addl_cols:    indexmap::IndexMap::new(),
             examples:     String::new(),
             freq_details: Vec::new(),
+            is_unique_id: false,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -6690,6 +6691,7 @@ p_fewshot_examples = ""
                 addl_cols:    addl1,
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
             dictionary::DictionaryEntry {
                 name:         "category|raw".to_string(),
@@ -6705,6 +6707,7 @@ p_fewshot_examples = ""
                 addl_cols:    addl2,
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 
@@ -6770,6 +6773,7 @@ p_fewshot_examples = ""
                 addl_cols:    IndexMap::new(),
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: true,
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
@@ -6798,6 +6802,7 @@ p_fewshot_examples = ""
                         rank:       2.0,
                     },
                 ],
+                is_unique_id: false,
             },
         ];
 
@@ -6860,6 +6865,7 @@ p_fewshot_examples = ""
             addl_cols:    IndexMap::new(),
             examples:     "<ALL_UNIQUE>".to_string(),
             freq_details: Vec::new(),
+            is_unique_id: true,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -6967,6 +6973,7 @@ p_fewshot_examples = ""
                 addl_cols:    addl.clone(),
                 examples:     "<ALL_UNIQUE>".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
             dictionary::DictionaryEntry {
                 name:         "category".to_string(),
@@ -6982,6 +6989,7 @@ p_fewshot_examples = ""
                 addl_cols:    addl,
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 
@@ -7041,6 +7049,7 @@ p_fewshot_examples = ""
                 // reformatted to the inferred date-only format like Min/Max.
                 examples:     "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -7057,6 +7066,7 @@ p_fewshot_examples = ""
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -7073,6 +7083,7 @@ p_fewshot_examples = ""
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -7089,6 +7100,7 @@ p_fewshot_examples = ""
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
                 freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 

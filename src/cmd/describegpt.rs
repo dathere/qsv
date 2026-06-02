@@ -7058,6 +7058,126 @@ p_fewshot_examples = ""
     }
 
     #[test]
+    fn semanticmd_sparsity_only_stats_and_single_sided_length_render() {
+        use indexmap::IndexMap;
+
+        // Regression coverage for two review-driven edge cases:
+        //   1. a numeric column whose ONLY retained stat is `sparsity` must still render the
+        //      per-column ### Statistics block (has_stats gating), and
+        //   2. a text column with only one of min_length / max_length must render a single-sided
+        //      Length constraint (the template's elif branches), never an empty ### Validation
+        //      block.
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/edge.csv".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let mut sparsity_only = IndexMap::new();
+        sparsity_only.insert("sparsity".to_string(), "0.42".to_string());
+        let mut min_len_only = IndexMap::new();
+        min_len_only.insert("min_length".to_string(), "3".to_string());
+        let mut max_len_only = IndexMap::new();
+        max_len_only.insert("max_length".to_string(), "50".to_string());
+
+        let entries = vec![
+            // Numeric column with only `sparsity` retained (no mean/median/etc.).
+            dictionary::DictionaryEntry {
+                name:         "score".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "Score".to_string(),
+                description:  "A numeric score.".to_string(),
+                content_type: String::new(),
+                min:          String::new(),
+                max:          String::new(),
+                cardinality:  500,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    sparsity_only,
+                examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
+            },
+            // Text column with only `min_length` retained.
+            dictionary::DictionaryEntry {
+                name:         "code".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Code".to_string(),
+                description:  "A short code.".to_string(),
+                content_type: String::new(),
+                min:          String::new(),
+                max:          String::new(),
+                cardinality:  20,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    min_len_only,
+                examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
+            },
+            // Text column with only `max_length` retained.
+            dictionary::DictionaryEntry {
+                name:         "note".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Note".to_string(),
+                description:  "A free-text note.".to_string(),
+                content_type: String::new(),
+                min:          String::new(),
+                max:          String::new(),
+                cardinality:  100,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    max_len_only,
+                examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
+                concept:      String::new(),
+                role:         String::new(),
+            },
+        ];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered =
+            render_semanticmd_body(&args, &entries, None, model, base_url, &shared).unwrap();
+
+        // 1. sparsity-only numeric column still emits the Statistics block, with the other (empty)
+        //    stat cells collapsed and the sparsity value in place.
+        assert!(
+            rendered.contains("## Column `score`"),
+            "score column section missing:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("### Statistics"),
+            "sparsity-only numeric column must still render ### Statistics:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("|  |  |  |  |  |  |  |  | 0.42 |"),
+            "sparsity-only statistics row not rendered as expected:\n{rendered}"
+        );
+
+        // 2a. min_length-only text column renders a single-sided lower bound.
+        assert!(
+            rendered.contains("### Validation\n\n- Length >= 3"),
+            "min_length-only column must render `- Length >= 3`:\n{rendered}"
+        );
+        // 2b. max_length-only text column renders a single-sided upper bound.
+        assert!(
+            rendered.contains("### Validation\n\n- Length <= 50"),
+            "max_length-only column must render `- Length <= 50`:\n{rendered}"
+        );
+        // Neither single-sided column should produce the both-bounds `Length a–b` form.
+        assert!(
+            !rendered.contains("- Length 3–"),
+            "single-sided length must not emit the combined range form:\n{rendered}"
+        );
+    }
+
+    #[test]
     fn semanticmd_pipe_in_column_name_is_escaped() {
         use indexmap::IndexMap;
 

@@ -323,6 +323,20 @@ pub(crate) struct FrequencyRecord {
     pub(crate) rank:       f64,
 }
 
+/// One weighted frequency sample for a field, carrying the qsv-computed
+/// `percentage` and `rank` that the flat `examples` string discards. Populated
+/// for the same top-N values shown in `examples`; consumed by the SemanticMd
+/// formatter to render richer Frequency tables. `value` is already display-
+/// formatted (bucket "…" suffix + `truncate_str` truncation) to match `examples`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(super) struct FreqDetail {
+    pub(super) value:      String,
+    pub(super) count:      u64,
+    pub(super) percentage: f64,
+    /// Dense rank from `frequency`; `0.0` for aggregation buckets (`Other…`/`(NULL)…`).
+    pub(super) rank:       f64,
+}
+
 /// One row in the generated data dictionary. `label`, `description` and
 /// `content_type` start empty and are filled by the LLM pass (`content_type`
 /// only when `--infer-content-type` is set); all other fields are populated
@@ -342,6 +356,19 @@ pub(super) struct DictionaryEntry {
     pub(super) addl_cols:    IndexMap<String, String>, // Preserves column order
     pub(super) examples:     String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…" or
                                                         * "<ALL_UNIQUE>" */
+    /// Structured counterpart to `examples`, retaining per-value percentage and rank.
+    /// `#[serde(default)]` keeps older cached dictionaries (written before this field
+    /// existed) deserializable.
+    #[serde(default)]
+    pub(super) freq_details: Vec<FreqDetail>,
+    /// Structural "every row carries a distinct non-null value" flag (`cardinality ==
+    /// rowcount`, no nulls), computed deterministically at generation time. Distinct
+    /// from the overloaded `examples == "<ALL_UNIQUE>"` sentinel (which is also set for
+    /// constant-value and HIGH_CARDINALITY columns at 100% frequency). Consumed by the
+    /// SemanticMd formatter for primary-key inference. `#[serde(default)]` for cache
+    /// backward-compatibility.
+    #[serde(default)]
+    pub(super) is_unique_id: bool,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -603,45 +630,49 @@ pub(super) fn generate_code_based_dictionary(
             String::new()
         };
 
-        let examples = if field_frequencies
+        let (examples, freq_details) = if field_frequencies
             .iter()
             .any(|f| (f.percentage - 100.0).abs() < 0.0001)
         {
-            "<ALL_UNIQUE>".to_string()
+            ("<ALL_UNIQUE>".to_string(), Vec::new())
         } else {
             let mut sorted_freqs = field_frequencies.clone();
             sorted_freqs.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.value.cmp(&b.value)));
 
-            let top_n: Vec<String> = sorted_freqs
-                .iter()
-                .take(num_examples as usize)
-                .map(|f| {
-                    // For frequency bucket entries (rank == 0.0), strip the redundant
-                    // "(n)" count and append "…" to disambiguate from literal values with
-                    // the same name (e.g. bucket "Other… [4,091]" vs literal "Other [2,006]")
-                    let raw_value = if f.rank == 0.0 {
-                        let base = if let Some(pos) = f.value.rfind(" (") {
-                            &f.value[..pos]
-                        } else {
-                            &f.value
-                        };
-                        format!("{base}…")
+            let mut top_n: Vec<String> = Vec::new();
+            let mut details: Vec<FreqDetail> = Vec::new();
+            for f in sorted_freqs.iter().take(num_examples as usize) {
+                // For frequency bucket entries (rank == 0.0), strip the redundant
+                // "(n)" count and append "…" to disambiguate from literal values with
+                // the same name (e.g. bucket "Other… [4,091]" vs literal "Other [2,006]")
+                let raw_value = if f.rank == 0.0 {
+                    let base = if let Some(pos) = f.value.rfind(" (") {
+                        &f.value[..pos]
                     } else {
-                        f.value.clone()
+                        &f.value
                     };
+                    format!("{base}…")
+                } else {
+                    f.value.clone()
+                };
 
-                    let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
-                        let mut s = raw_value.chars().take(truncate_str).collect::<String>();
-                        s.push('…');
-                        s
-                    } else {
-                        raw_value
-                    };
-                    format!("{} [{}]", v, f.count)
-                })
-                .collect();
+                let v = if truncate_str > 0 && raw_value.chars().count() > truncate_str {
+                    let mut s = raw_value.chars().take(truncate_str).collect::<String>();
+                    s.push('…');
+                    s
+                } else {
+                    raw_value
+                };
+                top_n.push(format!("{} [{}]", v, f.count));
+                details.push(FreqDetail {
+                    value:      v,
+                    count:      f.count,
+                    percentage: f.percentage,
+                    rank:       f.rank,
+                });
+            }
 
-            top_n.join("\n")
+            (top_n.join("\n"), details)
         };
 
         let mut entry_addl_cols = IndexMap::new();
@@ -665,14 +696,19 @@ pub(super) fn generate_code_based_dictionary(
         //   - HIGH_CARDINALITY sentinel rows (also single-row, percentage 100.0, count == rowcount)
         //     are excluded because for them `cardinality < rowcount == count`.
         // Also requires `cardinality > 1` and `nullcount == 0` to enforce
-        // the semantic contract (every row has a distinct non-null value).
+        // the semantic contract (every row has a distinct non-null value), and that the
+        // single row covers the whole column (`percentage == 100.0`). The percentage
+        // guard rejects truncated/custom frequency data (e.g. `--limit 1 --no-other` or a
+        // `file:` frequency CSV) where the lone emitted top row's `count` coincidentally
+        // equals the column cardinality even though the column is not unique.
         // Pre-set value takes precedence over whatever the LLM returns (see
         // `combine_dictionary_entries`). Only populate when `--infer-content-type`
         // is on; otherwise the `content_type` column is suppressed entirely.
         let is_all_unique = stats_record.cardinality > 1
             && stats_record.nullcount == 0
             && field_frequencies.len() == 1
-            && field_frequencies[0].count == stats_record.cardinality;
+            && field_frequencies[0].count == stats_record.cardinality
+            && (field_frequencies[0].percentage - 100.0).abs() < 0.0001;
         // Deterministically stamp the bare `content_type` token. `unique_id`
         // keeps priority over `date`/`datetime` (a unique timestamp key is
         // still a key). `date`/`datetime` are derived from the stats `Type`
@@ -704,6 +740,8 @@ pub(super) fn generate_code_based_dictionary(
             null_count: stats_record.nullcount,
             addl_cols: entry_addl_cols,
             examples,
+            freq_details,
+            is_unique_id: is_all_unique,
         });
     }
 
@@ -1245,6 +1283,8 @@ mod tests {
             null_count:   0,
             addl_cols:    IndexMap::new(),
             examples:     String::new(),
+            freq_details: Vec::new(),
+            is_unique_id: false,
         }
     }
 
@@ -1658,6 +1698,42 @@ mod tests {
         assert!(
             entries[1].content_type.is_empty(),
             "non-ALL_UNIQUE field must leave content_type empty for LLM fill"
+        );
+    }
+
+    #[test]
+    fn generate_does_not_mark_truncated_frequency_as_unique_id() {
+        // Truncated/custom frequency (e.g. `--limit 1 --no-other`) emits a single top
+        // row whose `count` happens to equal the column cardinality, but `percentage`
+        // is below 100 because the column is NOT unique. The structural detector must
+        // require percentage == 100, so neither content_type nor is_unique_id is set.
+        let stats = vec![StatsRecord {
+            field:       "code".to_string(),
+            r#type:      "String".to_string(),
+            cardinality: 3,
+            nullcount:   0,
+            min:         "a".to_string(),
+            max:         "c".to_string(),
+            addl_cols:   IndexMap::new(),
+        }];
+        // Single emitted row: count(3) == cardinality(3) but percentage 30 (< 100),
+        // i.e. the top value covers 3 of ~10 rows; the rest were truncated.
+        let frequencies = vec![FrequencyRecord {
+            field:      "code".to_string(),
+            value:      "a".to_string(),
+            count:      3,
+            percentage: 30.0,
+            rank:       1.0,
+        }];
+        let entries = generate_code_based_dictionary(&stats, &frequencies, 10, 5, 25, &[], true);
+        assert_eq!(entries[0].name, "code");
+        assert!(
+            !entries[0].is_unique_id,
+            "truncated single-row frequency with percentage < 100 must not be a unique id"
+        );
+        assert!(
+            entries[0].content_type.is_empty(),
+            "truncated single-row frequency must not be stamped unique_id"
         );
     }
 

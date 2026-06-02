@@ -394,7 +394,7 @@ describegpt options:
 
 Common options:
     -h, --help             Display this message
-    --format <format>      Output format: Markdown, TSV, JSON, TOON, or JSONSchema.
+    --format <format>      Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd.
                            TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
                            See https://toonformat.dev/ for more info.
                            JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12)
@@ -408,6 +408,13 @@ Common options:
                            (the dictionary or all flag). The description inference, when also run,
                            becomes the schema's top-level description; tags, when also run, are
                            embedded at x-qsv.tags. The prompt inference is not supported.
+                           SemanticMd emits the Data Dictionary as a Semantic Markdown document
+                           (https://semanticmd.org/) - human-readable markdown with light,
+                           agent-parseable conventions that a companion converter turns into JSON.
+                           Like JSONSchema, it requires the dictionary inference phase (the
+                           dictionary or all flag). The description inference, when also run, becomes
+                           the '# Dataset' description; tags, when also run, are embedded in the
+                           document frontmatter. The prompt inference is not supported.
                            [default: Markdown]
     --allow-extra-cols     When the format is JSONSchema, emit additionalProperties as true at the
                            schema root (default is false, strict). Only meaningful with the
@@ -500,6 +507,7 @@ enum OutputFormat {
     Json,
     Toon,
     JsonSchema,
+    SemanticMd,
 }
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -609,6 +617,7 @@ struct MarkdownTemplateFile {
     description_md_template: String,
     tags_md_template: String,
     custom_prompt_md_template: String,
+    semanticmd_md_body_template: String,
 }
 
 /// User-supplied `--markdown-template` overrides. Every field is optional so a user can
@@ -635,6 +644,8 @@ struct MarkdownTemplateOverride {
     tags_md_template: Option<String>,
     #[serde(default)]
     custom_prompt_md_template: Option<String>,
+    #[serde(default)]
+    semanticmd_md_body_template: Option<String>,
 }
 
 impl MarkdownTemplateOverride {
@@ -659,6 +670,9 @@ impl MarkdownTemplateOverride {
             custom_prompt_md_template: self
                 .custom_prompt_md_template
                 .unwrap_or(base.custom_prompt_md_template),
+            semanticmd_md_body_template: self
+                .semanticmd_md_body_template
+                .unwrap_or(base.semanticmd_md_body_template),
         }
     }
 }
@@ -1453,6 +1467,90 @@ fn render_dictionary_md_body(
         .map_err(|e| CliError::Other(format!("Dictionary body template render error: {e}")))
 }
 
+/// The semantic-md schema/profile reference emitted in the frontmatter `semantic-md:` key.
+/// Kept as a single named constant so it is easy to bump when the spec versions it.
+const SEMANTICMD_PROFILE: &str = "datadict.yaml";
+
+/// Derive the (resource_name, dataset_id, schema_id, dataset_title) tuple from the input path.
+/// `arg_input` is `None` for stdin, in which case everything falls back to "input".
+fn semanticmd_ids(arg_input: Option<&str>) -> (String, String, String, String) {
+    let resource_name = arg_input
+        .and_then(|p| {
+            std::path::Path::new(p)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| "input".to_string());
+    let stem = arg_input
+        .and_then(|p| {
+            std::path::Path::new(p)
+                .file_stem()
+                .and_then(|n| n.to_str())
+                .map(ToString::to_string)
+        })
+        .unwrap_or_else(|| "input".to_string());
+    let schema_id: String = stem
+        .to_lowercase()
+        .chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect();
+    let schema_id = if schema_id.is_empty() {
+        "input".to_string()
+    } else {
+        schema_id
+    };
+    let dataset_title: String = stem
+        .replace(['_', '-', '.'], " ")
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let dataset_title = if dataset_title.is_empty() {
+        stem.clone()
+    } else {
+        dataset_title
+    };
+    (resource_name, stem, schema_id, dataset_title)
+}
+
+/// Render the semantic-md data dictionary document from the dictionary entries.
+///
+/// The output carries two placeholders — `{DATASET_DESCRIPTION}` and `{SEMANTICMD_TAGS}` —
+/// that `finalize_structured_output` substitutes once the Description / Tags phases have run.
+fn render_semanticmd_body(
+    args: &Args,
+    entries: &[dictionary::DictionaryEntry],
+    model: &str,
+    base_url: &str,
+    shared: &SharedRenderCtx,
+) -> CliResult<String> {
+    let md_file = get_md_template_file(args)?;
+    let env = make_describegpt_md_env();
+
+    let data = formatters::build_semanticmd_data(entries);
+    let (resource_name, dataset_id, schema_id, dataset_title) =
+        semanticmd_ids(args.arg_input.as_deref());
+
+    let ctx = context! {
+        profile => SEMANTICMD_PROFILE,
+        dataset_id => dataset_id,
+        dataset_title => dataset_title,
+        schema_id => schema_id,
+        resource_name => resource_name,
+        primary_key => data.primary_key,
+        entries => data.entries,
+        kind => PromptType::Dictionary.to_string(),
+        generated_by_signature => &shared.attribution,
+        model => model,
+        base_url => base_url,
+        input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
+        timestamp => &shared.timestamp,
+    };
+
+    env.render_str(&md_file.semanticmd_md_body_template, &ctx)
+        .map_err(|e| CliError::Other(format!("SemanticMd body template render error: {e}")))
+}
+
 fn render_markdown_template(
     kind: PromptType,
     args: &Args,
@@ -2052,7 +2150,9 @@ fn get_prompt(
 
     // Build context with all variables needed for template rendering
     let json_add = match get_output_format(args)? {
-        OutputFormat::Json => {
+        // SemanticMd folds the Tags response into the document frontmatter as a YAML list,
+        // so request JSON (a clean {"tags": [...]} array) rather than free-form Markdown.
+        OutputFormat::Json | OutputFormat::SemanticMd => {
             " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
         },
         OutputFormat::Toon => " (in TOON format)",
@@ -2622,8 +2722,10 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
         "json" => Ok(OutputFormat::Json),
         "toon" => Ok(OutputFormat::Toon),
         "jsonschema" | "json-schema" | "json_schema" => Ok(OutputFormat::JsonSchema),
+        "semanticmd" | "semantic-md" | "semantic_md" => Ok(OutputFormat::SemanticMd),
         _ => fail_incorrectusage_clierror!(
-            "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON, JSONSchema"
+            "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON, \
+             JSONSchema, SemanticMd"
         ),
     }
 }
@@ -2921,7 +3023,45 @@ fn format_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    if output_format == OutputFormat::JsonSchema {
+    if output_format == OutputFormat::SemanticMd {
+        // Render the semantic-md data dictionary document. The dataset description
+        // (from --description) and tags frontmatter (from --tags) are folded in by
+        // `finalize_structured_output`, which substitutes the `{DATASET_DESCRIPTION}`
+        // and `{SEMANTICMD_TAGS}` placeholders the template leaves behind.
+        let shared = SharedRenderCtx::new(args, model, base_url, PromptType::Dictionary);
+        let mut semanticmd_output =
+            render_semanticmd_body(args, combined_entries, model, base_url, &shared)?;
+        // Belt-and-suspenders: also substitute any literal {GENERATED_BY_SIGNATURE} that
+        // may have leaked through from a custom template.
+        semanticmd_output = replace_attribution_placeholder(
+            &semanticmd_output,
+            args,
+            model,
+            base_url,
+            AttributionFormat::Markdown,
+            PromptType::Dictionary,
+        );
+        // Downstream Description/Tags prompts read `DATA_DICTIONARY_JSON` as the
+        // `{{ dictionary }}` Mini-Jinja variable, whose contract is the dictionary-entries
+        // shape from `format_dictionary_json` — cache it regardless of output format so
+        // `--description`/`--tags --format semanticmd` feed the LLM the same context.
+        let dictionary_json = formatters::format_dictionary_json(
+            combined_entries,
+            args.flag_enum_threshold,
+            args.flag_num_examples,
+            args.flag_truncate_str,
+            args.flag_infer_content_type,
+            relationships,
+        );
+        DATA_DICTIONARY_JSON
+            .get_or_init(|| serde_json::to_string_pretty(&dictionary_json).unwrap());
+        // Stash the rendered doc for `finalize_structured_output` to post-process and emit.
+        total_json_output[kind.to_string()] = json!({
+            "response": semanticmd_output,
+            "reasoning": completion_response.reasoning,
+            "token_usage": completion_response.token_usage,
+        });
+    } else if output_format == OutputFormat::JsonSchema {
         // Build the draft 2020-12 JSON Schema base. The final emission (with any
         // --description / --tags integration) happens in `finalize_structured_output`,
         // which reads back what we stash under `total_json_output[kind]["response"]`.
@@ -3363,10 +3503,11 @@ fn process_phase_output(
     // is_sql_response) so adding a new OutputFormat variant is a compile error here,
     // forcing an explicit routing decision.
     match (output_format, is_sql_response) {
-        (OutputFormat::Json | OutputFormat::JsonSchema, false) => {
-            // JsonSchema mode reuses the JSON accumulator for Description/Tags so
-            // `finalize_structured_output` can fold their LLM responses into the
-            // schema's top-level `description` / `x-qsv.tags`.
+        (OutputFormat::Json | OutputFormat::JsonSchema | OutputFormat::SemanticMd, false) => {
+            // JsonSchema and SemanticMd reuse the JSON accumulator for Description/Tags so
+            // `finalize_structured_output` can fold their LLM responses into the schema's
+            // top-level `description` / `x-qsv.tags` (JsonSchema) or the document's
+            // `# Dataset` description / frontmatter tags (SemanticMd).
             format_phase_json(kind, args, completion_response, total_json_output);
             Ok(())
         },
@@ -3384,7 +3525,11 @@ fn process_phase_output(
         },
         (OutputFormat::Markdown, _)
         | (
-            OutputFormat::Json | OutputFormat::Tsv | OutputFormat::Toon | OutputFormat::JsonSchema,
+            OutputFormat::Json
+            | OutputFormat::Tsv
+            | OutputFormat::Toon
+            | OutputFormat::JsonSchema
+            | OutputFormat::SemanticMd,
             true,
         ) => format_phase_markdown(
             kind,
@@ -4450,11 +4595,131 @@ fn finalize_structured_output(
                 println!("{schema_output}");
             }
         },
+        OutputFormat::SemanticMd => {
+            // Pull the semantic-md document rendered by `format_dictionary_phase`. Required —
+            // run() rejects --format semanticmd without --dictionary/--all, so this entry
+            // must exist by the time we get here.
+            let mut doc = total_json_output
+                .get(PromptType::Dictionary.to_string())
+                .and_then(|v| v.get("response"))
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string)
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "--format semanticmd: dictionary document missing from phase output. This \
+                         is a bug — please report it."
+                            .to_string(),
+                    )
+                })?;
+
+            // Substitute the `# Dataset` description from the Description phase (if it ran).
+            // The LLM response carries the rendered attribution footer (the description prompt
+            // always appends it); strip it so the doc's single attribution stays at the bottom.
+            let description = total_json_output
+                .get(PromptType::Description.to_string())
+                .and_then(|v| v.get("response"))
+                .and_then(|v| v.as_str())
+                .map(strip_attribution_block)
+                .unwrap_or_default();
+            doc = doc.replace("{DATASET_DESCRIPTION}", &description);
+
+            // Substitute the frontmatter tags block from the Tags phase (if it ran).
+            let tags_block = total_json_output
+                .get(PromptType::Tags.to_string())
+                .and_then(|v| v.get("response"))
+                .map_or_else(String::new, build_semanticmd_tags_frontmatter);
+            doc = doc.replace("{SEMANTICMD_TAGS}", &tags_block);
+
+            if let Some(output_file_path) = &args.flag_output {
+                fs::write(output_file_path, doc)?;
+            } else {
+                println!("{doc}");
+            }
+        },
         OutputFormat::Markdown | OutputFormat::Tsv => {
             // Already written inline by per-phase helpers.
         },
     }
     Ok(())
+}
+
+/// Strip the rendered attribution footer (and any preceding `---` separator) from an
+/// LLM phase response. Mirrors the `"Generated by"` anchor used by `format_phase_toon`;
+/// also handles the unsubstituted `{GENERATED_BY_SIGNATURE}` placeholder.
+fn strip_attribution_block(s: &str) -> String {
+    let cut = s.find("Generated by").map_or(s, |idx| &s[..idx]);
+    let mut out = cut.replace("{GENERATED_BY_SIGNATURE}", "");
+    out = out.trim_end().to_string();
+    if out.ends_with("---") {
+        out.truncate(out.len() - 3);
+        out = out.trim_end().to_string();
+    }
+    out
+}
+
+/// Build the frontmatter `tags:` YAML block from the Tags phase response.
+///
+/// Accepts a JSON object with a `tags` array (the JSON-format Tags response), a bare
+/// JSON array, or a free-form string (comma- and/or newline-separated, tolerant of
+/// leading list markers). Returns an empty string when there are no tags, so the
+/// `{SEMANTICMD_TAGS}` placeholder collapses cleanly.
+fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
+    // The JSON-format Tags response is `{"tags": [...], "attribution": "..."}`; unwrap to
+    // the inner array so we list the tags, not the wrapper keys.
+    if let Some(inner) = tags.get("tags") {
+        return build_semanticmd_tags_frontmatter(inner);
+    }
+    let items: Vec<String> = match tags {
+        serde_json::Value::Array(arr) => arr
+            .iter()
+            .filter_map(|v| match v {
+                serde_json::Value::String(s) => Some(s.trim().to_string()),
+                serde_json::Value::Null => None,
+                other => Some(other.to_string()),
+            })
+            .filter(|s| !s.is_empty())
+            .collect(),
+        serde_json::Value::String(s) => s
+            .split(['\n', ','])
+            .map(|t| t.trim().trim_start_matches(['-', '*', ' ']).trim())
+            .filter(|t| !t.is_empty())
+            .map(ToString::to_string)
+            .collect(),
+        _ => Vec::new(),
+    };
+    if items.is_empty() {
+        return String::new();
+    }
+    use std::fmt::Write as _;
+    let mut block = String::from("tags:\n");
+    for item in items {
+        let _ = writeln!(block, "  - {}", yaml_scalar(&item));
+    }
+    block
+}
+
+/// Render a string as a YAML scalar safe for the `tags:` frontmatter list.
+///
+/// A "plain" scalar (alphanumeric start, then only `[A-Za-z0-9_.-]`) is emitted
+/// bare — covering the lowercase_underscore tags describegpt normally produces.
+/// Anything else (colons, spaces, `#`, newlines, leading indicators, quotes, …)
+/// is emitted as a double-quoted scalar with the YAML escapes applied, so it can't
+/// produce invalid or structurally different frontmatter.
+fn yaml_scalar(s: &str) -> String {
+    let is_plain = !s.is_empty()
+        && s.chars().next().is_some_and(|c| c.is_ascii_alphanumeric())
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+    if is_plain {
+        return s.to_string();
+    }
+    let escaped = s
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+    format!("\"{escaped}\"")
 }
 
 /// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
@@ -4870,7 +5135,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // a dictionary phase. --description/--tags piggyback on the dictionary schema (their
     // outputs become top-level `description` and `x-qsv.tags`); --prompt produces a
     // natural-language/SQL answer which is conceptually separate from a schema.
-    if get_output_format(&args)? == OutputFormat::JsonSchema {
+    // SemanticMd is likewise dictionary-centric: it emits a semantic-md data-dictionary
+    // markdown document. --description becomes the `# Dataset` description and --tags are
+    // embedded in the frontmatter; --prompt is conceptually separate and unsupported.
+    let output_format_check = get_output_format(&args)?;
+    if output_format_check == OutputFormat::JsonSchema {
         if !(args.flag_dictionary || args.flag_all) {
             return fail_incorrectusage_clierror!(
                 "--format jsonschema requires --dictionary (or --all)."
@@ -4879,6 +5148,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         if args.flag_prompt.is_some() {
             return fail_incorrectusage_clierror!(
                 "--format jsonschema is not compatible with --prompt."
+            );
+        }
+    } else if output_format_check == OutputFormat::SemanticMd {
+        if !(args.flag_dictionary || args.flag_all) {
+            return fail_incorrectusage_clierror!(
+                "--format semanticmd requires --dictionary (or --all)."
+            );
+        }
+        if args.flag_prompt.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--format semanticmd is not compatible with --prompt."
             );
         }
     } else if args.flag_allow_extra_cols && !args.flag_quiet {
@@ -6220,6 +6500,8 @@ p_fewshot_examples = ""
             null_count:   0,
             addl_cols:    indexmap::IndexMap::new(),
             examples:     String::new(),
+            freq_details: Vec::new(),
+            is_unique_id: false,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -6408,6 +6690,8 @@ p_fewshot_examples = ""
                 null_count:   0,
                 addl_cols:    addl1,
                 examples:     "<ALL_UNIQUE>".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
             dictionary::DictionaryEntry {
                 name:         "category|raw".to_string(),
@@ -6422,6 +6706,8 @@ p_fewshot_examples = ""
                 null_count:   12_345,
                 addl_cols:    addl2,
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 
@@ -6462,6 +6748,203 @@ p_fewshot_examples = ""
     }
 
     #[test]
+    fn semanticmd_body_default_template() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/NYC_311.csv".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let entries = vec![
+            dictionary::DictionaryEntry {
+                name:         "Unique Key".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "Record Identifier".to_string(),
+                description:  "A unique numeric identifier for each record.".to_string(),
+                content_type: String::new(),
+                min:          "1".to_string(),
+                max:          "1000".to_string(),
+                cardinality:  1000,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     "<ALL_UNIQUE>".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: true,
+            },
+            dictionary::DictionaryEntry {
+                name:         "Status".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Complaint Status".to_string(),
+                description:  "Current processing status.".to_string(),
+                content_type: String::new(),
+                min:          "Assigned".to_string(),
+                max:          "Open".to_string(),
+                cardinality:  3,
+                enumeration:  "Assigned\nClosed\nOpen".to_string(),
+                null_count:   50,
+                addl_cols:    IndexMap::new(),
+                examples:     "Closed [800]\nOpen [150]".to_string(),
+                freq_details: vec![
+                    dictionary::FreqDetail {
+                        value:      "Closed".to_string(),
+                        count:      800,
+                        percentage: 84.21,
+                        rank:       1.0,
+                    },
+                    dictionary::FreqDetail {
+                        value:      "Open".to_string(),
+                        count:      150,
+                        percentage: 15.79,
+                        rank:       2.0,
+                    },
+                ],
+                is_unique_id: false,
+            },
+        ];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered = render_semanticmd_body(&args, &entries, model, base_url, &shared).unwrap();
+
+        // Frontmatter + placeholders that finalize substitutes later.
+        assert!(rendered.starts_with("---\nsemantic-md: datadict.yaml\n"));
+        assert!(rendered.contains("{SEMANTICMD_TAGS}"));
+        assert!(rendered.contains("{DATASET_DESCRIPTION}"));
+        // Section anchors (proposed-direction: backticked codes, "Schema").
+        assert!(rendered.contains("# Dataset NYC_311"));
+        assert!(rendered.contains("| Resource | Schema | Title |"));
+        assert!(rendered.contains("# Schema `nyc311`"));
+        assert!(rendered.contains("| `Unique Key` | required integer | Record Identifier |"));
+        // Nullable column drops the `required` prefix.
+        assert!(rendered.contains("| `Status` | text | Complaint Status |"));
+        // Inferred single-column primary key.
+        assert!(rendered.contains("| Primary key |"));
+        assert!(rendered.contains("## Column `Unique Key`"));
+        // Validation only for the numeric column with a min.
+        assert!(rendered.contains("### Validation\n\nValues >= 1"));
+        // Choices from the low-cardinality enumeration.
+        assert!(rendered.contains("### Choices"));
+        assert!(rendered.contains("- Assigned"));
+        // Resource + statistics + frequency.
+        assert!(rendered.contains("# Resource `NYC_311.csv`"));
+        assert!(rendered.contains("| Column | Min | Max | Cardinality | Null Count |"));
+        assert!(rendered.contains("### Frequency for `Status`"));
+        assert!(rendered.contains("| Choice | Frequency | Percentage | Rank |"));
+        assert!(rendered.contains("| Closed | 800 | 84.21% | 1 |"));
+        assert!(rendered.contains("| Open | 150 | 15.79% | 2 |"));
+    }
+
+    #[test]
+    fn semanticmd_pipe_in_column_name_is_escaped() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/pipes.csv".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        // A valid CSV header containing a pipe must not break the markdown tables.
+        // `<ALL_UNIQUE>` + null_count 0 also makes it the inferred primary key, so the
+        // primary-key cell escaping is exercised too.
+        let entries = vec![dictionary::DictionaryEntry {
+            name:         "cat|raw".to_string(),
+            r#type:       "String".to_string(),
+            label:        "Category".to_string(),
+            description:  "Raw category code.".to_string(),
+            content_type: String::new(),
+            min:          String::new(),
+            max:          String::new(),
+            cardinality:  100,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    IndexMap::new(),
+            examples:     "<ALL_UNIQUE>".to_string(),
+            freq_details: Vec::new(),
+            is_unique_id: true,
+        }];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered = render_semanticmd_body(&args, &entries, model, base_url, &shared).unwrap();
+
+        // Schema table row and Statistics table row escape the pipe in the cell.
+        assert!(
+            rendered.contains("| `cat\\|raw` | required text | Category |"),
+            "schema table cell not pipe-escaped:\n{rendered}"
+        );
+        assert!(
+            rendered.contains("| `cat\\|raw` | "),
+            "statistics table cell not pipe-escaped:\n{rendered}"
+        );
+        // Primary key cell (its own row) escapes the pipe.
+        assert!(
+            rendered.contains("| `cat\\|raw` |\n"),
+            "primary key cell not pipe-escaped:\n{rendered}"
+        );
+        // The `## Column` heading is not a table cell, so the name is left literal.
+        assert!(
+            rendered.contains("## Column `cat|raw`"),
+            "column heading should keep the literal name:\n{rendered}"
+        );
+    }
+
+    #[test]
+    fn semanticmd_tags_frontmatter_builder() {
+        // JSON-format Tags response object: {"tags": [...], "attribution": "..."}.
+        let obj = serde_json::json!({
+            "tags": ["housing", "nyc", "311"],
+            "attribution": "Generated by qsv ...",
+        });
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&obj),
+            "tags:\n  - housing\n  - nyc\n  - 311\n"
+        );
+        // JSON array of tags.
+        let arr = serde_json::json!(["housing", "nyc", "311"]);
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&arr),
+            "tags:\n  - housing\n  - nyc\n  - 311\n"
+        );
+        // Free-form string with list markers / commas.
+        let s = serde_json::json!("- housing\n- nyc, 311");
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&s),
+            "tags:\n  - housing\n  - nyc\n  - 311\n"
+        );
+        // Tags needing YAML escaping are double-quoted; plain ones stay bare.
+        let risky = serde_json::json!(["plain_tag", "key: value", "has \"quote\"", "a#b"]);
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&risky),
+            "tags:\n  - plain_tag\n  - \"key: value\"\n  - \"has \\\"quote\\\"\"\n  - \"a#b\"\n"
+        );
+        // Empty / null collapse to nothing.
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&serde_json::Value::Null),
+            ""
+        );
+        assert_eq!(
+            build_semanticmd_tags_frontmatter(&serde_json::json!([])),
+            ""
+        );
+    }
+
+    #[test]
+    fn semanticmd_strip_attribution_block() {
+        // Rendered attribution (anchored on "Generated by"), with a `---` separator.
+        let s = "Some description.\n\n---\n\nGenerated by qsv v20.1.0 describegpt\nWARNING: ...";
+        assert_eq!(strip_attribution_block(s), "Some description.");
+        // Unsubstituted placeholder form.
+        let s = "Some description.\n\n{GENERATED_BY_SIGNATURE}";
+        assert_eq!(strip_attribution_block(s), "Some description.");
+        // No attribution at all is left untouched (aside from trailing trim).
+        assert_eq!(strip_attribution_block("Just text.\n"), "Just text.");
+    }
+
+    #[test]
     fn dictionary_body_template_with_content_type() {
         use indexmap::IndexMap;
 
@@ -6489,6 +6972,8 @@ p_fewshot_examples = ""
                 null_count:   0,
                 addl_cols:    addl.clone(),
                 examples:     "<ALL_UNIQUE>".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
             dictionary::DictionaryEntry {
                 name:         "category".to_string(),
@@ -6503,6 +6988,8 @@ p_fewshot_examples = ""
                 null_count:   12_345,
                 addl_cols:    addl,
                 examples:     "alpha [9000]\nbeta [1234]".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 
@@ -6561,6 +7048,8 @@ p_fewshot_examples = ""
                 // raw frequency values carry a time component; they must be
                 // reformatted to the inferred date-only format like Min/Max.
                 examples:     "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -6576,6 +7065,8 @@ p_fewshot_examples = ""
                 null_count:   0,
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -6591,6 +7082,8 @@ p_fewshot_examples = ""
                 null_count:   0,
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -6606,6 +7099,8 @@ p_fewshot_examples = ""
                 null_count:   0,
                 addl_cols:    IndexMap::new(),
                 examples:     String::new(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
             },
         ];
 

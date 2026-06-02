@@ -2689,6 +2689,145 @@ fn describegpt_jsonschema_requires_dictionary() {
     );
 }
 
+// --format semanticmd CLI validation: rejects when neither --dictionary nor --all is set.
+// Non-LLM test (validation runs before any LLM call).
+#[test]
+fn describegpt_semanticmd_requires_dictionary() {
+    let wrk = Workdir::new("describegpt_semanticmd_requires_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--format", "semanticmd"])
+        .arg("--description")
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        !got.status.success(),
+        "Expected --format semanticmd without --dictionary to fail"
+    );
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        stderr.contains("--format semanticmd requires --dictionary"),
+        "stderr did not mention the dictionary requirement: {stderr}"
+    );
+}
+
+// --format semanticmd is incompatible with --prompt. Non-LLM test.
+#[test]
+fn describegpt_semanticmd_prompt_incompatible() {
+    let wrk = Workdir::new("describegpt_semanticmd_prompt_incompatible");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    // --dictionary satisfies the dictionary-required check so the prompt-incompatibility
+    // check is the one that fires.
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--format", "semanticmd"])
+        .arg("--dictionary")
+        .args(["--prompt", "What is this?"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        !got.status.success(),
+        "Expected --format semanticmd with --prompt to fail"
+    );
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        stderr.contains("--format semanticmd is not compatible with --prompt"),
+        "stderr did not mention the prompt incompatibility: {stderr}"
+    );
+}
+
+// --format semanticmd with --dictionary emits a semantic-md data dictionary document.
+#[test]
+#[serial]
+fn describegpt_semanticmd_dictionary() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_semanticmd_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "semanticmd"])
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+
+    // Frontmatter + structural section anchors. Placeholders must be resolved
+    // (no --description/--tags here => description blank, no tags block).
+    assert!(
+        got.starts_with("---\nsemantic-md: datadict.yaml\n"),
+        "missing/incorrect frontmatter:\n{got}"
+    );
+    assert!(
+        !got.contains("{DATASET_DESCRIPTION}"),
+        "unsubstituted description placeholder:\n{got}"
+    );
+    assert!(
+        !got.contains("{SEMANTICMD_TAGS}"),
+        "unsubstituted tags placeholder:\n{got}"
+    );
+    assert!(
+        got.contains("# Dataset in"),
+        "missing # Dataset section:\n{got}"
+    );
+    assert!(
+        got.contains("| Resource | Schema | Title |"),
+        "missing dataset table:\n{got}"
+    );
+    assert!(
+        got.contains("# Schema `in`"),
+        "missing # Schema section:\n{got}"
+    );
+    assert!(
+        got.contains("| Column | Type | Label |"),
+        "missing column table:\n{got}"
+    );
+    assert!(
+        got.contains("# Resource `in.csv`"),
+        "missing # Resource section:\n{got}"
+    );
+    assert!(
+        got.contains("## Statistics"),
+        "missing ## Statistics section:\n{got}"
+    );
+    assert!(
+        got.contains("## Column `letter`") && got.contains("## Column `number`"),
+        "missing per-column subsections:\n{got}"
+    );
+}
+
 // --format jsonschema with --dictionary emits a valid draft 2020-12 schema.
 #[test]
 #[serial]

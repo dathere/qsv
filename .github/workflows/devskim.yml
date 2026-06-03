@@ -32,9 +32,14 @@ jobs:
           # .claude/** : plugin / agent scratch space (not shipped)
           # tests/resources/** : test fixture data (also includes vendored
           #   YAML / CSV samples); scanning these is noise
+          # docs/describegpt/** : describegpt example outputs; the recorded
+          #   attribution block embeds the local LLM endpoint (e.g.
+          #   http://localhost:1234/v1) used to generate the samples, which
+          #   DevSkim flags as localhost access — fixture noise, not runtime code
           ignore-globs: |
             .claude/**
             tests/resources/**
+            docs/describegpt/**
         
       - name: Upload DevSkim scan results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v4

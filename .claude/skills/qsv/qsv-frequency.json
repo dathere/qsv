@@ -194,7 +194,7 @@
       {
         "flag": "--vis-whitespace",
         "type": "flag",
-        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers for the list of whitespace markers."
+        "description": "Visualize whitespace characters in the output. See https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#whitespace-markers for the list of whitespace markers."
       },
       {
         "flag": "--weight",

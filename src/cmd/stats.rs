@@ -181,9 +181,8 @@ stats options:
                               numbers with at least one having a leading zero (e.g. US zip codes,
                               barcodes, zero-padded IDs/classification codes). qsv keeps such
                               columns as text to avoid data loss; this flag surfaces them so they
-                              are not mistakenly loaded as integer/float (e.g. in SQL, SPSS, SAS
-                              or Stata). The cell is empty when the column is not zero-padded
-                              numeric. Automatically enabled with --everything.
+                              are not mistakenly loaded as integer/float. The cell is empty when the
+                              column is not zero-padded numeric. Automatically enabled with --everything.
 
                               NUMERIC & DATE/DATETIME STATS THAT REQUIRE IN-MEMORY SORTING:
                               The following statistics are only computed for numeric & date/datetime
@@ -357,7 +356,7 @@ stats options:
                                   the index file and the cache files are kept.
                               [default: 5000]
     --vis-whitespace          Visualize whitespace characters in the output.
-                              See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers
+                              See https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#whitespace-markers
                               for the list of whitespace markers.
 
 Common options:

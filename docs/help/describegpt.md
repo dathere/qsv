@@ -11,16 +11,17 @@
 
 ## Description [↩](#nav)
 
-Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags about a Dataset
+Create a "neuro-symbolic" Data Dictionary and/or infer Description & Tags about a Dataset
 using an OpenAI API-compatible Large Language Model (LLM).
 
 It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
 and then prompting the LLM with detailed, configurable, Mini Jinja-templated prompts with
 these extended statistical context.
 
-The Data Dictionary is "neuro-procedural" as it uses a hybrid approach. It's primarily populated
-deterministically using Summary Statistics & Frequency Distribution data, and only the human-friendly
-Label & Description are populated by the "neural network" LLM using the same statistical context.
+The Data Dictionary is "neuro-symbolic" as it uses a hybrid approach. It's primarily populated
+deterministically using Summary Statistics & Frequency Distribution, and only the human-friendly
+Label and Description (plus Content Type when --infer-content-type is set) are populated by the
+"neural network" LLM using the same statistical context.
 
 CHAT MODE:  
 You can also use the --prompt option to ask a natural language question about the Dataset.
@@ -212,7 +213,7 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context. |  |
+| &nbsp;`‑‑dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-symbolic" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description (and Content Type when --infer-content-type is set) are populated by the LLM using the same statistical context. |  |
 | &nbsp;`‑‑description`&nbsp; | flag | Infer a general Description of the dataset based on detailed statistical context. An Attribution signature is embedded in the Description. |  |
 | &nbsp;`‑‑tags`&nbsp; | flag | Infer Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering. |  |
 | &nbsp;`‑A,`<br>`‑‑all`&nbsp; | flag | Shortcut for --dictionary --description --tags. |  |
@@ -315,7 +316,7 @@ qsv describegpt --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
-| &nbsp;`‑‑format`&nbsp; | string | Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported. SemanticMd emits the Data Dictionary as a Semantic Markdown document (<https://semanticmd.org/>) - human-readable markdown with light, agent-parseable conventions that a companion converter turns into JSON. It enriches each column with a catalog-wide Concept ID (for cross-dataset join discovery), an analytical Role (dimension/measure/identifier/timestamp), join keys & cardinality, data-quality flags, and a richer per-column statistics block; it also emits a dataset grain, a temporal/spatial envelope, and ready-to-run example queries (DuckDB SQL + pandas). To populate Concept/Role/grain, SemanticMd implies --infer-content-type. Like JSONSchema, it requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the '# Dataset' description; tags, when also run, are embedded in the document frontmatter. The prompt inference is not supported. | `Markdown` |
+| &nbsp;`‑‑format`&nbsp; | string | Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See <https://toonformat.dev/> for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported. SemanticMd emits the Data Dictionary as a Semantic Markdown document (<https://semanticmd.org/>) - human-readable markdown with light, agent-parseable conventions that a companion converter turns into JSON. It enriches each column with a catalog-wide Concept ID (for cross-dataset join discovery), an analytical Role (dimension/measure/identifier/timestamp), join keys & cardinality, data-quality flags, and a richer per-column statistics block; it also emits a dataset grain and a temporal/spatial envelope. To populate Concept/Role/grain, SemanticMd implies --infer-content-type. Like JSONSchema, it requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the '# Dataset' description; tags, when also run, are embedded in the document frontmatter. The prompt inference is not supported. | `Markdown` |
 | &nbsp;`‑‑allow‑extra‑cols`&nbsp; | flag | When the format is JSONSchema, emit additionalProperties as true at the schema root (default is false, strict). Only meaningful with the JSONSchema format; ignored otherwise. |  |
 | &nbsp;`‑‑strict‑dates`&nbsp; | flag | When the format is JSONSchema, emit format date or date-time for columns that stats infers as Date or DateTime. Off by default because qsv's --infer-dates is permissive (accepts strings like "June 27, 1968") and JSON Schema's date formats require RFC 3339, so the validate roundtrip would otherwise fail. Set this only when your source columns are guaranteed to be RFC 3339 full-date / date-time. Mirrors the same flag on the schema command. |  |
 | &nbsp;`‑‑ds‑source`&nbsp; | string | For the SemanticMd format only: the dataset source/provenance recorded in the document frontmatter (e.g. a source URL or publisher). Optional; the frontmatter key is omitted when unset. Ignored by other formats. |  |

@@ -1,14 +1,15 @@
 static USAGE: &str = r#"
-Create a "neuro-procedural" Data Dictionary and/or infer Description & Tags about a Dataset
+Create a "neuro-symbolic" Data Dictionary and/or infer Description & Tags about a Dataset
 using an OpenAI API-compatible Large Language Model (LLM).
 
 It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
 and then prompting the LLM with detailed, configurable, Mini Jinja-templated prompts with
 these extended statistical context.
 
-The Data Dictionary is "neuro-procedural" as it uses a hybrid approach. It's primarily populated
-deterministically using Summary Statistics & Frequency Distribution data, and only the human-friendly
-Label & Description are populated by the "neural network" LLM using the same statistical context.
+The Data Dictionary is "neuro-symbolic" as it uses a hybrid approach. It's primarily populated
+deterministically using Summary Statistics & Frequency Distribution, and only the human-friendly
+Label and Description (plus Content Type when --infer-content-type is set) are populated by the
+"neural network" LLM using the same statistical context.
 
 CHAT MODE:
 You can also use the --prompt option to ask a natural language question about the Dataset.
@@ -139,10 +140,11 @@ Usage:
 
 describegpt options:
                            DATA ANALYSIS/INFERENCING OPTIONS:
-    --dictionary           Create a Data Dictionary using a hybrid "neuro-procedural" pipeline - i.e.
+    --dictionary           Create a Data Dictionary using a hybrid "neuro-symbolic" pipeline - i.e.
                            the Dictionary is populated deterministically using Summary Statistics and
                            Frequency Distribution data, and only the human-friendly Label and Description
-                           are populated by the LLM using the same statistical context.
+                           (and Content Type when --infer-content-type is set) are populated by the LLM
+                           using the same statistical context.
     --description          Infer a general Description of the dataset based on detailed statistical context.
                            An Attribution signature is embedded in the Description.
     --tags                 Infer Tags that categorize the dataset based on detailed statistical context.
@@ -414,8 +416,8 @@ Common options:
                            It enriches each column with a catalog-wide Concept ID (for cross-dataset
                            join discovery), an analytical Role (dimension/measure/identifier/timestamp),
                            join keys & cardinality, data-quality flags, and a richer per-column
-                           statistics block; it also emits a dataset grain, a temporal/spatial
-                           envelope, and ready-to-run example queries (DuckDB SQL + pandas).
+                           statistics block; it also emits a dataset grain and a temporal/spatial
+                           envelope.
                            To populate Concept/Role/grain, SemanticMd implies --infer-content-type.
                            Like JSONSchema, it requires the dictionary inference phase (the
                            dictionary or all flag). The description inference, when also run, becomes
@@ -1549,8 +1551,7 @@ fn render_semanticmd_body(
 
     let (resource_name, dataset_id, schema_id, dataset_title) =
         semanticmd_ids(args.arg_input.as_deref());
-    let data =
-        formatters::build_semanticmd_data(entries, &resource_name, grain.map(str::to_string));
+    let data = formatters::build_semanticmd_data(entries, grain.map(str::to_string));
 
     let ctx = context! {
         profile => SEMANTICMD_PROFILE,
@@ -1558,14 +1559,12 @@ fn render_semanticmd_body(
         dataset_title => dataset_title,
         schema_id => schema_id,
         resource_name => resource_name,
-        resource_name_py => formatters::py_str_lit(&resource_name),
         primary_key => data.primary_key,
         row_count => data.row_count,
         grain => data.grain,
         concepts => data.concepts,
         temporal_coverage => data.temporal_coverage,
         spatial => data.spatial,
-        example_queries => data.example_queries,
         ds_source => args.flag_ds_source.as_deref().unwrap_or_default(),
         ds_updated => args.flag_ds_updated.as_deref().unwrap_or_default(),
         ds_license => args.flag_ds_license.as_deref().unwrap_or_default(),
@@ -1778,10 +1777,16 @@ fn replace_attribution_placeholder(
         // DictionaryRefine reuses the Dictionary warning — the refine pass produces the same
         // shape of output (Label / Description / Content Type), just informed by cross-field
         // context. This arm is defensive: run_dictionary_phase emits with PromptType::Dictionary
-        // even after a successful refine.
+        // even after a successful refine. Content Type is only LLM-inferred when
+        // --infer-content-type is set, so only flag it as LLM-generated in that case.
         PromptType::Dictionary | PromptType::DictionaryRefine => {
-            "WARNING: Label and Description generated by an LLM and may contain inaccuracies. \
-             Verify before using!"
+            if args.flag_infer_content_type {
+                "WARNING: Label, Description and Content Type generated by an LLM and may contain \
+                 inaccuracies. Verify before using!"
+            } else {
+                "WARNING: Label and Description generated by an LLM and may contain inaccuracies. \
+                 Verify before using!"
+            }
         },
         PromptType::Description => {
             "WARNING: Description generated by an LLM and may contain inaccuracies. Verify before \
@@ -7043,11 +7048,8 @@ p_fewshot_examples = ""
         // Choices from the low-cardinality enumeration.
         assert!(rendered.contains("### Choices"));
         assert!(rendered.contains("- Assigned"));
-        // Example queries seeded from the dimension + linkable concept.
-        assert!(rendered.contains("# Example Queries"));
-        assert!(rendered.contains("### Count by Status"));
-        assert!(rendered.contains("GROUP BY 1 ORDER BY n DESC"));
-        assert!(rendered.contains("Join a catalog dataset sharing concept `id.surrogate_key`"));
+        // Example Queries section has been removed from semantic markdown.
+        assert!(!rendered.contains("# Example Queries"));
         // Resource + statistics + frequency.
         assert!(rendered.contains("# Resource `NYC_311.csv`"));
         assert!(rendered.contains("| Column | Min | Max | Cardinality | Null Count |"));

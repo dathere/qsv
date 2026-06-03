@@ -613,14 +613,6 @@ pub(super) struct SemanticMdSpatial {
     pub(super) lon: String,
 }
 
-/// One ready-to-run example query (DuckDB/Polars SQL + pandas) for the dataset.
-#[derive(Debug, Serialize)]
-pub(super) struct ExampleQuery {
-    pub(super) title:  String,
-    pub(super) sql:    String,
-    pub(super) pandas: String,
-}
-
 /// Top-level render data for the semantic-md template.
 #[derive(Debug, Serialize)]
 pub(super) struct SemanticMdData {
@@ -636,12 +628,10 @@ pub(super) struct SemanticMdData {
     pub(super) concepts:          Vec<String>,
     pub(super) temporal_coverage: Option<SemanticMdTemporal>,
     pub(super) spatial:           Option<SemanticMdSpatial>,
-    pub(super) example_queries:   Vec<ExampleQuery>,
 }
 
 pub(super) fn build_semanticmd_data(
     entries: &[DictionaryEntry],
-    resource_name: &str,
     grain: Option<String>,
 ) -> SemanticMdData {
     // Primary key candidates rely on the structural `is_unique_id` flag set by
@@ -674,7 +664,6 @@ pub(super) fn build_semanticmd_data(
 
     let temporal_coverage = infer_temporal_coverage(entries);
     let spatial = infer_spatial(entries);
-    let example_queries = build_example_queries(entries, resource_name);
 
     let md_entries = entries
         .iter()
@@ -689,7 +678,6 @@ pub(super) fn build_semanticmd_data(
         concepts,
         temporal_coverage,
         spatial,
-        example_queries,
     }
 }
 
@@ -910,94 +898,6 @@ fn infer_spatial(entries: &[DictionaryEntry]) -> Option<SemanticMdSpatial> {
         lat: lat.name.clone(),
         lon: lon.name.clone(),
     })
-}
-
-fn build_example_queries(entries: &[DictionaryEntry], resource_name: &str) -> Vec<ExampleQuery> {
-    // Escape the table path as a SQL string literal so filenames with `'` stay valid.
-    let table = sql_str_lit(resource_name);
-    let mut queries = Vec::new();
-
-    for d in entries
-        .iter()
-        .filter(|e| e.role == "dimension" && e.cardinality > 1 && e.cardinality <= 1000)
-        .take(3)
-    {
-        let sqlcol = sql_ident(&d.name);
-        let pycol = py_str_lit(&d.name);
-        queries.push(ExampleQuery {
-            title:  format!("Count by {}", d.name),
-            sql:    format!(
-                "SELECT {sqlcol}, count(*) AS n FROM {table} GROUP BY 1 ORDER BY n DESC LIMIT 20;"
-            ),
-            pandas: format!("df.groupby({pycol}).size().sort_values(ascending=False).head(20)"),
-        });
-    }
-
-    if let Some(ts) = entries.iter().find(|e| e.role == "timestamp") {
-        let sqlcol = sql_ident(&ts.name);
-        let pycol = py_str_lit(&ts.name);
-        queries.push(ExampleQuery {
-            title:  format!("Monthly volume by {}", ts.name),
-            sql:    format!(
-                "SELECT date_trunc('month', try_cast({sqlcol} AS TIMESTAMP)) AS month, count(*) \
-                 AS n FROM {table} GROUP BY 1 ORDER BY 1;"
-            ),
-            pandas: format!(
-                "df.assign(month=pd.to_datetime(df[{pycol}], \
-                 errors=\"coerce\").dt.to_period(\"M\")).groupby(\"month\").size()"
-            ),
-        });
-    }
-
-    if let Some(m) = entries.iter().find(|e| e.role == "measure") {
-        let sqlcol = sql_ident(&m.name);
-        let pycol = py_str_lit(&m.name);
-        queries.push(ExampleQuery {
-            title:  format!("Summary of {}", m.name),
-            sql:    format!(
-                "SELECT min({sqlcol}) AS min, avg({sqlcol}) AS avg, max({sqlcol}) AS max FROM \
-                 {table};"
-            ),
-            pandas: format!("df[{pycol}].describe()"),
-        });
-    }
-
-    if let Some(j) = entries.iter().find(|e| is_linkable_concept(&e.concept)) {
-        let sqlcol = sql_ident(&j.name);
-        let pycol = py_str_lit(&j.name);
-        let concept = &j.concept;
-        queries.push(ExampleQuery {
-            title:  format!("Join a catalog dataset sharing concept `{concept}`"),
-            sql:    format!(
-                "-- Any catalog dataset whose column carries concept '{concept}' joins here.\n-- \
-                 SELECT a.*, b.* FROM {table} a JOIN 'other.csv' b ON a.{sqlcol} = b.<col with \
-                 concept {concept}>;"
-            ),
-            pandas: format!(
-                "# merged = a.merge(b, left_on={pycol}, right_on=<b col with concept '{concept}'>)"
-            ),
-        });
-    }
-
-    queries
-}
-
-/// Render `s` as a single-quoted SQL string literal (e.g. a file path in
-/// `FROM '...'`), doubling embedded single quotes.
-fn sql_str_lit(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
-}
-
-/// Render `s` as a double-quoted SQL identifier (e.g. a column name), doubling
-/// embedded double quotes.
-fn sql_ident(s: &str) -> String {
-    format!("\"{}\"", s.replace('"', "\"\""))
-}
-
-/// Render `s` as a double-quoted Python string literal, escaping backslashes and
-/// double quotes (used for the pandas snippets and the `pd.read_csv(...)` path).
-pub(super) fn py_str_lit(s: &str) -> String {
-    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 /// Map structured `freq_details` into Frequency table rows, formatting the
@@ -1405,20 +1305,6 @@ mod tests {
     }
 
     #[test]
-    fn example_query_escaping_helpers() {
-        // SQL string literal: single quotes doubled.
-        assert_eq!(sql_str_lit("plain.csv"), "'plain.csv'");
-        assert_eq!(sql_str_lit("o'brien.csv"), "'o''brien.csv'");
-        // SQL identifier: double quotes doubled.
-        assert_eq!(sql_ident("Unique Key"), "\"Unique Key\"");
-        assert_eq!(sql_ident("a\"b"), "\"a\"\"b\"");
-        // Python string literal: backslashes and double quotes escaped.
-        assert_eq!(py_str_lit("col"), "\"col\"");
-        assert_eq!(py_str_lit("a\"b"), "\"a\\\"b\"");
-        assert_eq!(py_str_lit("a\\b"), "\"a\\\\b\"");
-    }
-
-    #[test]
     fn semanticmd_frequency_rows() {
         assert!(build_freq_rows(&[]).is_empty());
 
@@ -1481,7 +1367,7 @@ mod tests {
             },
         ];
 
-        let data = build_semanticmd_data(&[id, status], "data.csv", None);
+        let data = build_semanticmd_data(&[id, status], None);
         assert_eq!(data.primary_key.as_deref(), Some("id"));
 
         let id_e = &data.entries[0];
@@ -1515,7 +1401,7 @@ mod tests {
         b.cardinality = 100;
         b.null_count = 0;
         b.is_unique_id = true;
-        let data = build_semanticmd_data(&[a, b], "data.csv", None);
+        let data = build_semanticmd_data(&[a, b], None);
         assert!(data.primary_key.is_none());
     }
 
@@ -1577,7 +1463,7 @@ mod tests {
         // ...but neither is a structural unique id.
         assert!(!entries[0].is_unique_id);
         assert!(!entries[1].is_unique_id);
-        let data = build_semanticmd_data(&entries, "data.csv", None);
+        let data = build_semanticmd_data(&entries, None);
         assert!(
             data.primary_key.is_none(),
             "high-cardinality / constant columns must not be inferred as a primary key"

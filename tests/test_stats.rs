@@ -184,6 +184,9 @@ fn get_field_value(
     if field == "cardinality" {
         cmd.arg("--cardinality");
     }
+    if field == "zero_padded_numeric" {
+        cmd.arg("--zero-padded-numeric");
+    }
     if field == "mode" || field == "antimode" {
         cmd.arg("--mode");
     }
@@ -551,6 +554,18 @@ stats_tests!(
 );
 
 stats_tests!(stats_cardinality, "cardinality", &["a", "b", "a"], "2");
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_zip,
+    "zero_padded_numeric",
+    &["10001", "07306", "90210"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_all_padded,
+    "zero_padded_numeric",
+    &["01", "02", "03"],
+    "true"
+);
 stats_tests!(stats_mode, "mode", &["a", "b", "a"], "a,1,2");
 stats_tests!(stats_mode_null, "mode", &["", "a", "b", "a"], "a,1,2");
 stats_tests!(stats_antimode, "antimode", &["a", "b", "a"], "b,1,1");
@@ -696,6 +711,67 @@ fn stats_prefer_mdy() {
     let expected2 = wrk.load_test_resource("boston311-100-stats.csv");
 
     assert_eq!(dos2unix(&got2), dos2unix(&expected2).trim_end());
+}
+
+#[test]
+fn stats_zero_padded_numeric_columns() {
+    let wrk = Workdir::new("stats_zero_padded_numeric_columns");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["zip", "plain_int", "mixed", "price"],
+            svec!["10001", "1", "07306", "01.5"],
+            svec!["07306", "2", "Main St", "2.5"],
+            svec!["90210", "3", "12345", "3.5"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--zero-padded-numeric").arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    let header = &got[0];
+    let field_idx = header.iter().position(|h| h == "field").unwrap();
+    let zpn_idx = header
+        .iter()
+        .position(|h| h == "zero_padded_numeric")
+        .expect("zero_padded_numeric column should be present");
+
+    let mut zpn: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for row in &got[1..] {
+        zpn.insert(row[field_idx].clone(), row[zpn_idx].clone());
+    }
+
+    // zip: String with leading zeros, every value all-digit -> flagged
+    assert_eq!(zpn["zip"], "true");
+    // plain_int: inferred Integer (no leading zero) -> not flagged
+    assert_eq!(zpn["plain_int"], "");
+    // mixed: String but "Main St" is not all-digit -> not flagged
+    assert_eq!(zpn["mixed"], "");
+    // price: inferred Float -> not flagged
+    assert_eq!(zpn["price"], "");
+}
+
+#[test]
+fn stats_zero_padded_numeric_gating() {
+    let wrk = Workdir::new("stats_zero_padded_numeric_gating");
+    wrk.create("in.csv", vec![svec!["zip"], svec!["07306"], svec!["10001"]]);
+
+    // absent from default stats output
+    let mut cmd = wrk.command("stats");
+    cmd.arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(!got[0].iter().any(|h| h == "zero_padded_numeric"));
+
+    // present (and true) with --everything
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--everything").arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let zpn_idx = got[0]
+        .iter()
+        .position(|h| h == "zero_padded_numeric")
+        .expect("zero_padded_numeric present with --everything");
+    assert_eq!(got[1][zpn_idx], "true");
 }
 
 #[test]
@@ -1991,10 +2067,10 @@ fn stats_vis_whitespace() {
     // Create expected output with visualized whitespace using the exact markers
     #[rustfmt::skip]
     let expected = vec![
-        svec!["field", "type", "is_ascii", "sum", "min", "max", "range", "sort_order", "sortiness", "min_length", "max_length", "sum_length", "avg_length", "stddev_length", "variance_length", "cv_length", "mean", "sem", "geometric_mean", "harmonic_mean", "stddev", "variance", "cv", "nullcount", "n_negative", "n_zero", "n_positive", "max_precision", "sparsity", "mad", "lower_outer_fence", "lower_inner_fence", "q1", "q2_median", "q3", "iqr", "upper_inner_fence", "upper_outer_fence", "skewness", "cardinality", "uniqueness_ratio", "mode", "mode_count", "mode_occurrences", "antimode", "antimode_count", "antimode_occurrences", "percentiles"],
-        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", ""],
-        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "", "", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", ""],
-        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", ""]];
+        svec!["field", "type", "is_ascii", "sum", "min", "max", "range", "sort_order", "sortiness", "min_length", "max_length", "sum_length", "avg_length", "stddev_length", "variance_length", "cv_length", "mean", "sem", "geometric_mean", "harmonic_mean", "stddev", "variance", "cv", "nullcount", "n_negative", "n_zero", "n_positive", "max_precision", "sparsity", "mad", "lower_outer_fence", "lower_inner_fence", "q1", "q2_median", "q3", "iqr", "upper_inner_fence", "upper_outer_fence", "skewness", "cardinality", "uniqueness_ratio", "mode", "mode_count", "mode_occurrences", "antimode", "antimode_count", "antimode_occurrences", "percentiles", "zero_padded_numeric"],
+        svec!["col1", "String", "false", "", "no_whitespace", "z obscure whitespace 《⋮》 《␌》 《→》 《␤》 《␎》 《␏》 《␊》 《␍》 are also visible", "", "Unsorted", "0.3333", "6", "62", "152", "21.7143", "22.883", "523.6327", "1.0538", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "value《¶》", "1", "2", "no_whitespace|the spaces in this field are visible as normal spaces|value《→》|value《⏎》|z obscure whitespa...", "5", "1", "", ""],
+        svec!["col2", "String", "true", "", "《→》value", "also_none", "", "Unsorted", "0.2", "0", "9", "37", "5.2857", "2.5475", "6.4898", "0.482", "", "", "", "", "", "", "", "1", "", "", "", "", "0.1429", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value", "1", "2", "NULL|《→》value|《⏎》value|    |also_none", "5", "1", "", ""],
+        svec!["col3", "String", "true", "", "《→》value《→》", "the trailing spaces are left alone   ", "", "Unsorted", "0.3333", "5", "37", "80", "11.4286", "10.5269", "110.8163", "0.9211", "", "", "", "", "", "", "", "0", "", "", "", "", "0", "", "", "", "", "", "", "", "", "", "", "6", "0.8571", "《¶》value《¶》", "1", "2", "《→》value《→》|《⏎》value《⏎》|          |clean|the trailing spaces are left alone   ", "5", "1", "", ""]];
     //
     assert_eq!(got, expected);
 }

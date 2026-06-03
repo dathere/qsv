@@ -7,7 +7,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Computes statistics** from streaming (mean, sum, stddev) to non-streaming (median, quartiles, modes)
 - **Processes files** either sequentially or in parallel (with index)
 - **Caches results** to avoid recomputation
-- **Supports up to 47 output columns** with detailed statistics
+- **Supports up to 48 output columns** with detailed statistics
 
 ## File Location
 `src/cmd/stats.rs` (~5,638 lines)
@@ -125,6 +125,7 @@ Reuses cache if:
 - string length statistics
 - sort order detection
 - skewness, kurtosis
+- zero_padded_numeric (opt-in via `--zero-padded-numeric`/`--everything`)
 
 ### Non-Streaming (requires loading all values):
 - exact median (requires sorting)

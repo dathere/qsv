@@ -790,7 +790,7 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 49;
+const MAX_STAT_COLUMNS: usize = 48;
 
 // HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
 // gives ~1.5% relative standard error and ~5KB per column at the dense Hll8

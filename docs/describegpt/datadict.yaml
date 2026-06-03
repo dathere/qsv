@@ -1,0 +1,186 @@
+# datadict.yaml
+# semantic-md schema for qsv `describegpt --format semanticmd` data-dictionary output.
+# Converts the generated markdown into machine-readable JSON.
+#
+# Referenced from the document front matter as:
+#   ---
+#   semantic-md: datadict.yaml
+#   ...
+#   ---
+sections:
+
+# ============================ Dataset ============================
+- heading_match: |
+    # Dataset {dataset_name}
+  patch_path: dataset
+  patch_add:
+    name: $dataset_name
+  children:
+  - match: |
+      {overview|md}
+    patch_add:
+      overview: $overview
+  # The Resource/Schema/Title/Rows table is emitted whether or not a `## Grain`
+  # section is present — the semanticmd template only gates the `## Grain` heading,
+  # not this table. When grain is absent the table sits directly under the dataset
+  # (matched here); when present it falls inside the `## Grain` frame below. The
+  # same anchored rule handles both, so values always land at dataset.resources[].
+  - &resource_table
+    table_match: [Resource, Schema, Title, Rows]
+    row_patch_path: resources/-
+    row_patch_add:
+      title: $3
+      rows: $4
+    # Resource & Schema cells are inline-code; re-extract the inner text so the
+    # values are stored without literal backticks.
+    row_submatch:
+      $1:
+      - match: "`{resource}`"
+        patch_add:
+          resource: $resource
+      $2:
+      - match: "`{schema}`"
+        patch_add:
+          schema: $schema
+  sections:
+  - heading_match: |
+      ## Grain
+    children:
+    - match: |
+        {grain_text|md}
+      patch_add:
+        grain: $grain_text
+    - *resource_table
+
+# ============================ Schema ============================
+- heading_match: |
+    # Schema `{schema_name}`
+  patch_path: schema
+  patch_add:
+    name: $schema_name
+  children:
+  - table_match: [Column, Type, Role, Concept, "Join?", "Null", Label]
+    row_patch_path: fields/-
+    row_patch_add:
+      type: $2
+      role: $3
+      join: $5
+      "null": $6
+      label: $7
+    # Column & Concept cells are inline-code; re-extract inner text (no backticks).
+    row_submatch:
+      $1:
+      - match: "`{column}`"
+        patch_add:
+          column: $column
+      $4:
+      - match: "`{concept}`"
+        patch_add:
+          concept: $concept
+  - table_match: ["Primary key"]
+    row_patch_path: primary_key/-
+    row_submatch:
+      $1:
+      - match: "`{key}`"
+        patch_add:
+          key: $key
+  sections:
+  - heading_match: |
+      ## Column `{column}`
+    patch_path: columns/-
+    patch_add:
+      name: $column
+    children:
+    - match: |
+        {info|md}
+      patch_add:
+        info: $info
+    sections:
+    - heading_match: |
+        ### Validation
+      children:
+      - match: |
+          {validation|md}
+        patch_add:
+          validation: $validation
+    - heading_match: |
+        ### Statistics
+      children:
+      - table_match: [Mean, Median, StdDev, Q1, Q3, Skew, "Lower fence", "Upper fence", Sparsity]
+        row_patch_path: statistics
+        row_patch_add:
+          mean: $1
+          median: $2
+          stddev: $3
+          q1: $4
+          q3: $5
+          skew: $6
+          lower_fence: $7
+          upper_fence: $8
+          sparsity: $9
+    - heading_match: |
+        ### Choices
+      children:
+      - match: |
+          - {choices|list}
+        patch_add:
+          choices: $choices
+
+# ============================ Resource ============================
+- heading_match: |
+    # Resource `{resource_name}`
+  patch_path: resource
+  patch_add:
+    name: $resource_name
+  children:
+  - heading_match: |
+      ## Statistics
+    children:
+    - table_match: [Column, Min, Max, Cardinality, "Null Count"]
+      row_patch_path: statistics/-
+      row_patch_add:
+        min: $2
+        max: $3
+        cardinality: $4
+        null_count: $5
+      # Column cell is inline-code; re-extract inner text (no backticks).
+      row_submatch:
+        $1:
+        - match: "`{column}`"
+          patch_add:
+            column: $column
+    sections:
+    - heading_match: |
+        ### Frequency for `{freq_column}`
+      patch_path: frequencies/-
+      patch_add:
+        column: $freq_column
+      children:
+      - table_match: [Choice, Frequency, Percentage, Rank]
+        row_patch_path: values/-
+        row_patch_add:
+          choice: $1
+          frequency: $2
+          percentage: $3
+          rank: $4
+      sections:
+      # qsv appends an italic attribution block (two paragraphs split by a blank
+      # line) at EOF. semantic-md's {var|md} filter under-counts by one token when
+      # a run reaches end-of-document, so it captures both paragraphs into `trailer`
+      # but only advances past the first; the second rule consumes the leftover
+      # WARNING paragraph (RawText / soft-break / RawText) structurally.
+      - &trailer_rule
+        match: |
+          {trailer|md}
+        patch_add:
+          trailer: $trailer
+      - &warning_rule
+        match: |
+          {warning_line}
+          {warning_star}
+    # When NO column has a frequency table, the attribution block follows the
+    # resource statistics table directly inside `## Statistics` (there is no
+    # `### Frequency` frame to host it), so the same trailer/warning rules must be
+    # reachable here as well.
+    - *trailer_rule
+    - *warning_rule

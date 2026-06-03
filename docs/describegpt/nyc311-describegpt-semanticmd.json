@@ -1,0 +1,2376 @@
+{
+  "dataset": {
+    "name": "NYC_311_SR_2010-2020-sample-1M",
+    "overview": "**Description**\n\nThe dataset contains one million NYC 311 complaint records logged between January 1 2010 and December 23 2020. Each record is identified by a unique surrogate integer key and includes timestamps for when the complaint was created, closed, and last updated, as well as a due‑date field that is often missing (≈65 % null). The majority of complaints (≈95 %) have been closed, with the remaining cases in various interim states such as “Pending,” “Open,” or “In Progress.” Complaint types are highly skewed: noise and heating issues dominate, while many other categories are lumped into an “Other” bucket that contains over 56 % of all complaints. The data include rich location details—street address, cross streets, city, borough, ZIP code, and optional latitude/longitude coordinates—but about a quarter of the records lack geospatial information. Agency attribution is provided both as an abbreviation and full name, with NYPD, HPD, and DOT being the most frequent handlers. Several string fields (e.g., Descriptor, Incident Address) contain a large number of unique or unstructured values, reflected in low uniqueness ratios for those columns.\n\n**Notable Characteristics**\n\n- **Central tendency & spread** – The median creation date is February 12 2016, with a mean of November 10 2015; the closed‑date distribution lags by roughly 3–4 months. Latitude and longitude are centered around (40.73 N, −73.93 W) with modest standard deviations (~0.09° latitude, ~0.16° longitude).\n- **Distribution shape** – Many categorical fields exhibit extreme right‑skew: “Complaint Type” and “Descriptor” have long tails of rare categories; the “Other” bucket often captures >50 % of observations. Date fields show slight left‑skew (more recent dates).\n- **Missing values & sparsity** – Due Date is missing for ≈65 % of records and Latitude/Longitude for ≈25 %, while address components (Incident Address, Street Name) miss ≈17 %; Closed Date and Resolution Description, by contrast, are largely populated (≈2–3 % null). The dataset’s overall sparsity is moderate (~0.3 when considering all fields).\n- **Duplicate handling** – The surrogate “Unique Key” has a uniqueness ratio of 1 with zero duplicates, ensuring record integrity across joins.\n- **High cardinality & low uniqueness ratios** – Fields such as Incident Zip (535 distinct values), City (382 distinct values), and Agency Name (553 distinct names) have high cardinalities but relatively low uniqueness ratios (<0.01 for most), indicating many repeated entries. Conversely, fields like Descriptor (1392 distinct values) and Incident Address (341 996 distinct values) exhibit high uniqueness with substantial “Other” categories.\n- **Anomalies & outliers** – The date ranges for Closed Date and Resolution Action Updated Date extend from 1900 to 2100, suggesting placeholder or erroneous entries that should be filtered if precise closure timing is required.\n- **PII/PHI considerations** – While the dataset contains street addresses and latitude/longitude pairs that could be used to pinpoint exact locations (potentially sensitive), it does not include personal identifiers such as names, phone numbers, or financial data; however users should still exercise caution when sharing geocoded points.\n- **Data quality issues** – The prevalence of “Other” categories in many fields indicates incomplete standardization and potential challenges for categorical analyses. Missing coordinate information limits spatial analysis for ~25 % of complaints.\n",
+    "grain": "one row = one NYC 311 complaint record\n",
+    "resources": [
+      {
+        "title": "NYC 311 SR 2010 2020 sample 1M",
+        "rows": "1000000",
+        "resource": "NYC_311_SR_2010-2020-sample-1M.csv",
+        "schema": "nyc311sr20102020sample1m"
+      }
+    ]
+  },
+  "schema": {
+    "name": "nyc311sr20102020sample1m",
+    "fields": [
+      {
+        "type": "required integer",
+        "role": "identifier",
+        "join": "PK",
+        "null": "0",
+        "label": "Unique Key",
+        "column": "Unique Key",
+        "concept": "id.surrogate_key"
+      },
+      {
+        "type": "required timestamp",
+        "role": "timestamp",
+        "join": "FK?",
+        "null": "0",
+        "label": "Created Date",
+        "column": "Created Date",
+        "concept": "time.event_timestamp"
+      },
+      {
+        "type": "timestamp",
+        "role": "timestamp",
+        "join": "FK?",
+        "null": "28619",
+        "label": "Closed Date",
+        "column": "Closed Date",
+        "concept": "time.event_timestamp"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Agency (Abbreviation)",
+        "column": "Agency",
+        "concept": "org.agency"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Agency Name",
+        "column": "Agency Name",
+        "concept": "org.agency"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Complaint Type",
+        "column": "Complaint Type",
+        "concept": "nyc.complaint_type"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "3001",
+        "label": "Descriptor",
+        "column": "Descriptor",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "239131",
+        "label": "Location Type",
+        "column": "Location Type",
+        "concept": "category.type"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "54978",
+        "label": "Incident ZIP Code",
+        "column": "Incident Zip",
+        "concept": "geo.zip_code"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "174700",
+        "label": "Incident Street Address",
+        "column": "Incident Address",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "174720",
+        "label": "Primary Street Name",
+        "column": "Street Name",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "320401",
+        "label": "First Cross Street",
+        "column": "Cross Street 1",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "323644",
+        "label": "Second Cross Street",
+        "column": "Cross Street 2",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "767422",
+        "label": "First Intersection Street",
+        "column": "Intersection Street 1",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "767709",
+        "label": "Second Intersection Street",
+        "column": "Intersection Street 2",
+        "concept": "geo.street_address"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "125802",
+        "label": "Address Type",
+        "column": "Address Type",
+        "concept": "category.type"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "61963",
+        "label": "Incident City",
+        "column": "City",
+        "concept": "geo.city"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "912779",
+        "label": "Nearby Landmark",
+        "column": "Landmark",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "145478",
+        "label": "Facility Type",
+        "column": "Facility Type",
+        "concept": "category.type"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "",
+        "null": "0",
+        "label": "Complaint Status",
+        "column": "Status",
+        "concept": "category.status"
+      },
+      {
+        "type": "timestamp",
+        "role": "timestamp",
+        "join": "FK?",
+        "null": "647794",
+        "label": "Due Date",
+        "column": "Due Date",
+        "concept": "time.event_timestamp"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "20480",
+        "label": "Resolution Narrative",
+        "column": "Resolution Description",
+        "concept": "unknown"
+      },
+      {
+        "type": "timestamp",
+        "role": "timestamp",
+        "join": "FK?",
+        "null": "15072",
+        "label": "Last Resolution Update Date",
+        "column": "Resolution Action Updated Date",
+        "concept": "time.event_timestamp"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Community Board",
+        "column": "Community Board",
+        "concept": "nyc.community_board"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "243046",
+        "label": "BBL (Borough‑Block‑Lot)",
+        "column": "BBL",
+        "concept": "nyc.bbl"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Incident Borough",
+        "column": "Borough",
+        "concept": "nyc.borough"
+      },
+      {
+        "type": "integer",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "85327",
+        "label": "X Coordinate (State Plane)",
+        "column": "X Coordinate (State Plane)",
+        "concept": "geo.crs_stateplane_x"
+      },
+      {
+        "type": "integer",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "85327",
+        "label": "Y Coordinate (State Plane)",
+        "column": "Y Coordinate (State Plane)",
+        "concept": "geo.crs_stateplane_y"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "",
+        "null": "0",
+        "label": "Submission Channel",
+        "column": "Open Data Channel Type",
+        "concept": "category.channel"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "",
+        "null": "0",
+        "label": "Park Facility Name",
+        "column": "Park Facility Name",
+        "concept": "unknown"
+      },
+      {
+        "type": "required text",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "0",
+        "label": "Park Borough",
+        "column": "Park Borough",
+        "concept": "nyc.borough"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "999652",
+        "label": "Vehicle Type",
+        "column": "Vehicle Type",
+        "concept": "category.type"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "999156",
+        "label": "Taxi Company Borough",
+        "column": "Taxi Company Borough",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "992129",
+        "label": "Taxi Pick‑Up Location",
+        "column": "Taxi Pick Up Location",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "997711",
+        "label": "Bridge/Highway Name",
+        "column": "Bridge Highway Name",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "997691",
+        "label": "Bridge/Highway Direction",
+        "column": "Bridge Highway Direction",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "997693",
+        "label": "Road Ramp Type",
+        "column": "Road Ramp",
+        "concept": "unknown"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "997556",
+        "label": "Bridge/Highway Segment",
+        "column": "Bridge Highway Segment",
+        "concept": "unknown"
+      },
+      {
+        "type": "number",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "254695",
+        "label": "Latitude",
+        "column": "Latitude",
+        "concept": "geo.latitude"
+      },
+      {
+        "type": "number",
+        "role": "dimension",
+        "join": "FK?",
+        "null": "254695",
+        "label": "Longitude",
+        "column": "Longitude",
+        "concept": "geo.longitude"
+      },
+      {
+        "type": "text",
+        "role": "dimension",
+        "join": "",
+        "null": "254695",
+        "label": "Coordinate Pair (String)",
+        "column": "Location",
+        "concept": "unknown"
+      }
+    ],
+    "primary_key": [
+      {
+        "key": "Unique Key"
+      }
+    ],
+    "columns": [
+      {
+        "name": "Unique Key",
+        "info": "A surrogate integer key that uniquely identifies each complaint record.\n\n- **Concept:** `id.surrogate_key`\n- **Role:** identifier\n- **Join:** primary key; cardinality 1:1; not nullable\n",
+        "validation": "- Values >= 11465364\n- Values <= 48478173\n",
+        "statistics": {
+          "mean": "32687965.858",
+          "median": "32853358.5",
+          "stddev": "9013895.3358",
+          "q1": "25245773",
+          "q3": "40207433.5",
+          "skew": "-0.0169",
+          "lower_fence": "2803282.25",
+          "upper_fence": "62649924.25",
+          "sparsity": "0"
+        }
+      },
+      {
+        "name": "Created Date",
+        "info": "The timestamp when the complaint was first logged in the system.\n\n- **Concept:** `time.event_timestamp`\n- **Role:** timestamp\n- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; not nullable\n"
+      },
+      {
+        "name": "Closed Date",
+        "info": "The timestamp when the complaint record was closed or marked as final.\n\n- **Concept:** `time.event_timestamp`\n- **Role:** timestamp\n- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable\n- **Quality:** placeholder-dates\n"
+      },
+      {
+        "name": "Agency",
+        "info": "Abbreviation of the city agency responsible for handling the complaint (e.g., NYPD, DOT).\n\n- **Concept:** `org.agency`\n- **Role:** dimension\n- **Join:** candidate (concept `org.agency`); cardinality N:1; not nullable\n",
+        "validation": "- Length 3–42\n"
+      },
+      {
+        "name": "Agency Name",
+        "info": "Full name of the city agency that processed the complaint.\n\n- **Concept:** `org.agency`\n- **Role:** dimension\n- **Join:** candidate (concept `org.agency`); cardinality N:1; not nullable\n",
+        "validation": "- Length 3–82\n"
+      },
+      {
+        "name": "Complaint Type",
+        "info": "Broad category of the reported issue, such as Noise or Illegal Parking.\n\n- **Concept:** `nyc.complaint_type`\n- **Role:** dimension\n- **Join:** candidate (concept `nyc.complaint_type`); cardinality N:1; not nullable\n",
+        "validation": "- Length 3–41\n"
+      },
+      {
+        "name": "Descriptor",
+        "info": "More specific description within a complaint type (e.g., Loud Music/Party, Pothole).\n\n- **Concept:** `unknown`\n- **Role:** dimension\n",
+        "validation": "- Length 0–80\n"
+      },
+      {
+        "name": "Location Type",
+        "info": "General classification of where the incident occurred (e.g., Residential Building, Street/Sidewalk).\n\n- **Concept:** `category.type`\n- **Role:** dimension\n",
+        "validation": "- Length 0–36\n"
+      },
+      {
+        "name": "Incident Zip",
+        "info": "Five‑digit ZIP code for the location of the complaint.\n\n- **Concept:** `geo.zip_code`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.zip_code`); cardinality N:1; nullable\n",
+        "validation": "- Length 0–10\n"
+      },
+      {
+        "name": "Incident Address",
+        "info": "Full street address where the incident took place, including building number and street name. Combines with Street Name, Cross Streets, Intersection Streets, City, and ZIP Code to form a complete mailing address.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Length 0–55\n"
+      },
+      {
+        "name": "Street Name",
+        "info": "Name of the primary street in the incident location. Component of the Incident Address.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Length 0–55\n"
+      },
+      {
+        "name": "Cross Street 1",
+        "info": "First cross street intersecting at or near the incident site. Component of the Incident Address when applicable.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Length 0–32\n"
+      },
+      {
+        "name": "Cross Street 2",
+        "info": "Second cross street intersecting at or near the incident site. Component of the Incident Address when applicable.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Length 0–35\n"
+      },
+      {
+        "name": "Intersection Street 1",
+        "info": "First street in an intersection location of the incident. Used when the address type is INTERSECTION.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location, sparse\n",
+        "validation": "- Length 0–35\n"
+      },
+      {
+        "name": "Intersection Street 2",
+        "info": "Second street in an intersection location of the incident. Used when the address type is INTERSECTION.\n\n- **Concept:** `geo.street_address`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.street_address`); cardinality N:1; nullable\n- **Quality:** PII-location, sparse\n",
+        "validation": "- Length 0–33\n"
+      },
+      {
+        "name": "Address Type",
+        "info": "Specifies the type of address supplied (e.g., ADDRESS, INTERSECTION). Determines how Street Name and Cross/Intersection Streets are interpreted within the Incident Address.\n\n- **Concept:** `category.type`\n- **Role:** dimension\n",
+        "validation": "- Length 0–12\n"
+      },
+      {
+        "name": "City",
+        "info": "The city or borough in which the incident occurred. Component of the mailing address.\n\n- **Concept:** `geo.city`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.city`); cardinality N:1; nullable\n",
+        "validation": "- Length 0–22\n"
+      },
+      {
+        "name": "Landmark",
+        "info": "Notable landmark near the incident location, if provided.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–32\n"
+      },
+      {
+        "name": "Facility Type",
+        "info": "Type of facility involved or affected (e.g., DSNY Garage, School District).\n\n- **Concept:** `category.type`\n- **Role:** dimension\n",
+        "validation": "- Length 0–15\n"
+      },
+      {
+        "name": "Status",
+        "info": "Current status of the complaint record (e.g., Closed, Pending, Open).\n\n- **Concept:** `category.status`\n- **Role:** dimension\n",
+        "validation": "- Length 4–16\n",
+        "choices": [
+          "Assigned",
+          "Closed",
+          "Closed - Testing",
+          "Email Sent",
+          "In Progress",
+          "Open",
+          "Pending",
+          "Started",
+          "Unassigned",
+          "Unspecified"
+        ]
+      },
+      {
+        "name": "Due Date",
+        "info": "Deadline by which a response or action was expected for the complaint.\n\n- **Concept:** `time.event_timestamp`\n- **Role:** timestamp\n- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable\n- **Quality:** sparse\n"
+      },
+      {
+        "name": "Resolution Description",
+        "info": "Narrative summary of how the complaint was resolved, including actions taken.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n",
+        "validation": "- Length 0–934\n"
+      },
+      {
+        "name": "Resolution Action Updated Date",
+        "info": "Timestamp when the resolution information was last updated in the system.\n\n- **Concept:** `time.event_timestamp`\n- **Role:** timestamp\n- **Join:** candidate (concept `time.event_timestamp`); cardinality N:1; nullable\n"
+      },
+      {
+        "name": "Community Board",
+        "info": "Number of the community board that has jurisdiction over the incident area.\n\n- **Concept:** `nyc.community_board`\n- **Role:** dimension\n- **Join:** candidate (concept `nyc.community_board`); cardinality N:1; not nullable\n",
+        "validation": "- Length 8–25\n"
+      },
+      {
+        "name": "BBL",
+        "info": "Borough‑Block‑Lot identifier for the parcel associated with the complaint. Often used in GIS analyses.\n\n- **Concept:** `nyc.bbl`\n- **Role:** dimension\n- **Join:** candidate (concept `nyc.bbl`); cardinality N:1; nullable\n",
+        "validation": "- Length 0–10\n"
+      },
+      {
+        "name": "Borough",
+        "info": "NYC borough where the incident occurred.\n\n- **Concept:** `nyc.borough`\n- **Role:** dimension\n- **Join:** candidate (concept `nyc.borough`); cardinality N:1; not nullable\n",
+        "validation": "- Length 5–13\n",
+        "choices": [
+          "BRONX",
+          "BROOKLYN",
+          "MANHATTAN",
+          "QUEENS",
+          "STATEN ISLAND",
+          "Unspecified"
+        ]
+      },
+      {
+        "name": "X Coordinate (State Plane)",
+        "info": "East‑west coordinate of the incident location in the New York State Plane coordinate system. Corresponds to the same point as Latitude/Longitude.\n\n- **Concept:** `geo.crs_stateplane_x`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.crs_stateplane_x`); cardinality N:1; nullable\n",
+        "validation": "- Values >= 913281\n- Values <= 1067220\n",
+        "statistics": {
+          "mean": "1005337.5451",
+          "median": "1004546",
+          "stddev": "22512.4528",
+          "q1": "993572",
+          "q3": "1018209",
+          "skew": "0.1091",
+          "lower_fence": "956616.5",
+          "upper_fence": "1055164.5",
+          "sparsity": "0.0853"
+        }
+      },
+      {
+        "name": "Y Coordinate (State Plane)",
+        "info": "North‑south coordinate of the incident location in the New York State Plane coordinate system. Corresponds to the same point as Latitude/Longitude.\n\n- **Concept:** `geo.crs_stateplane_y`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.crs_stateplane_y`); cardinality N:1; nullable\n",
+        "validation": "- Values >= 121152\n- Values <= 271876\n",
+        "statistics": {
+          "mean": "205646.4978",
+          "median": "202514",
+          "stddev": "31723.1985",
+          "q1": "182411",
+          "q3": "235129",
+          "skew": "0.2373",
+          "lower_fence": "103334",
+          "upper_fence": "314206",
+          "sparsity": "0.0853"
+        }
+      },
+      {
+        "name": "Open Data Channel Type",
+        "info": "Mode through which the complaint was submitted (e.g., PHONE, ONLINE).\n\n- **Concept:** `category.channel`\n- **Role:** dimension\n",
+        "validation": "- Length 5–7\n",
+        "choices": [
+          "MOBILE",
+          "ONLINE",
+          "OTHER",
+          "PHONE",
+          "UNKNOWN"
+        ]
+      },
+      {
+        "name": "Park Facility Name",
+        "info": "Name of a park facility associated with the incident, if applicable.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n",
+        "validation": "- Length 3–82\n"
+      },
+      {
+        "name": "Park Borough",
+        "info": "NYC borough where the referenced park facility is located.\n\n- **Concept:** `nyc.borough`\n- **Role:** dimension\n- **Join:** candidate (concept `nyc.borough`); cardinality N:1; not nullable\n",
+        "validation": "- Length 5–13\n",
+        "choices": [
+          "BRONX",
+          "BROOKLYN",
+          "MANHATTAN",
+          "QUEENS",
+          "STATEN ISLAND",
+          "Unspecified"
+        ]
+      },
+      {
+        "name": "Vehicle Type",
+        "info": "Type of vehicle involved in the incident (e.g., Car Service, Green Taxi).\n\n- **Concept:** `category.type`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–23\n"
+      },
+      {
+        "name": "Taxi Company Borough",
+        "info": "Borough where the taxi company operates.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–13\n"
+      },
+      {
+        "name": "Taxi Pick Up Location",
+        "info": "Typical pick‑up location for a taxi involved in the incident. Often an intersection or landmark.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–60\n"
+      },
+      {
+        "name": "Bridge Highway Name",
+        "info": "Name of the bridge or highway where the incident occurred.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–42\n"
+      },
+      {
+        "name": "Bridge Highway Direction",
+        "info": "Travel direction on the bridge or highway at the incident site.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–33\n"
+      },
+      {
+        "name": "Road Ramp",
+        "info": "Type of ramp (e.g., Roadway, N/A) associated with the incident.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–7\n"
+      },
+      {
+        "name": "Bridge Highway Segment",
+        "info": "Specific segment or exit number on the bridge/highway where the incident occurred.\n\n- **Concept:** `unknown`\n- **Role:** dimension\n- **Quality:** sparse\n",
+        "validation": "- Length 0–100\n"
+      },
+      {
+        "name": "Latitude",
+        "info": "Geographic latitude of the incident location in decimal degrees. Part of the Location coordinate pair.\n\n- **Concept:** `geo.latitude`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.latitude`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Values >= 40.1123853\n- Values <= 40.9128688\n",
+        "statistics": {
+          "mean": "40.7288",
+          "median": "40.7222",
+          "stddev": "0.0893",
+          "q1": "40.6677",
+          "q3": "40.8031",
+          "skew": "0.1957",
+          "lower_fence": "40.4646",
+          "upper_fence": "41.0062",
+          "sparsity": "0.2547"
+        }
+      },
+      {
+        "name": "Longitude",
+        "info": "Geographic longitude of the incident location in decimal degrees. Part of the Location coordinate pair.\n\n- **Concept:** `geo.longitude`\n- **Role:** dimension\n- **Join:** candidate (concept `geo.longitude`); cardinality N:1; nullable\n- **Quality:** PII-location\n",
+        "validation": "- Values >= -77.5195844\n- Values <= -73.7005968\n",
+        "statistics": {
+          "mean": "-73.93",
+          "median": "-73.9279",
+          "stddev": "0.1635",
+          "q1": "-73.9705",
+          "q3": "-73.8763",
+          "skew": "0.0964",
+          "lower_fence": "-74.1119",
+          "upper_fence": "-73.7349",
+          "sparsity": "0.2547"
+        }
+      },
+      {
+        "name": "Location",
+        "info": "String representation of the latitude and longitude pair for the incident, formatted as \"(lat, lon)\".\n\n- **Concept:** `unknown`\n- **Role:** dimension\n",
+        "validation": "- Length 0–40\n"
+      }
+    ]
+  },
+  "resource": {
+    "name": "NYC_311_SR_2010-2020-sample-1M.csv",
+    "statistics": [
+      {
+        "min": "11465364",
+        "max": "48478173",
+        "cardinality": "1000000",
+        "null_count": "0",
+        "column": "Unique Key"
+      },
+      {
+        "min": "2010-01-01T00:00:00+00:00",
+        "max": "2020-12-23T01:25:51+00:00",
+        "cardinality": "841014",
+        "null_count": "0",
+        "column": "Created Date"
+      },
+      {
+        "min": "1900-01-01T00:00:00+00:00",
+        "max": "2100-01-01T00:00:00+00:00",
+        "cardinality": "688837",
+        "null_count": "28619",
+        "column": "Closed Date"
+      },
+      {
+        "min": "3-1-1",
+        "max": "TLC",
+        "cardinality": "28",
+        "null_count": "0",
+        "column": "Agency"
+      },
+      {
+        "min": "3-1-1",
+        "max": "Valuation Policy",
+        "cardinality": "553",
+        "null_count": "0",
+        "column": "Agency Name"
+      },
+      {
+        "min": "../../WEB-INF/web.xml;x=",
+        "max": "ZTESTINT",
+        "cardinality": "287",
+        "null_count": "0",
+        "column": "Complaint Type"
+      },
+      {
+        "min": "1 Missed Collection",
+        "max": "unknown odor/taste in drinking water (QA6)",
+        "cardinality": "1392",
+        "null_count": "3001",
+        "column": "Descriptor"
+      },
+      {
+        "min": "1-, 2- and 3- Family Home",
+        "max": "Wooded Area",
+        "cardinality": "162",
+        "null_count": "239131",
+        "column": "Location Type"
+      },
+      {
+        "min": "*",
+        "max": "XXXXX",
+        "cardinality": "535",
+        "null_count": "54978",
+        "column": "Incident Zip"
+      },
+      {
+        "min": "* *",
+        "max": "west 155 street and edgecombe avenue",
+        "cardinality": "341996",
+        "null_count": "174700",
+        "column": "Incident Address"
+      },
+      {
+        "min": "*",
+        "max": "wyckoff avenue",
+        "cardinality": "14837",
+        "null_count": "174720",
+        "column": "Street Name"
+      },
+      {
+        "min": "1 AVE",
+        "max": "mermaid",
+        "cardinality": "16238",
+        "null_count": "320401",
+        "column": "Cross Street 1"
+      },
+      {
+        "min": "1 AVE",
+        "max": "surf",
+        "cardinality": "16486",
+        "null_count": "323644",
+        "column": "Cross Street 2"
+      },
+      {
+        "min": "1 AVE",
+        "max": "flatlands AVE",
+        "cardinality": "11237",
+        "null_count": "767422",
+        "column": "Intersection Street 1"
+      },
+      {
+        "min": "1 AVE",
+        "max": "glenwood RD",
+        "cardinality": "11674",
+        "null_count": "767709",
+        "column": "Intersection Street 2"
+      },
+      {
+        "min": "ADDRESS",
+        "max": "PLACENAME",
+        "cardinality": "6",
+        "null_count": "125802",
+        "column": "Address Type"
+      },
+      {
+        "min": "*",
+        "max": "YORKTOWN HEIGHTS",
+        "cardinality": "382",
+        "null_count": "61963",
+        "column": "City"
+      },
+      {
+        "min": "1 AVENUE",
+        "max": "ZULETTE AVENUE",
+        "cardinality": "5915",
+        "null_count": "912779",
+        "column": "Landmark"
+      },
+      {
+        "min": "DSNY Garage",
+        "max": "School District",
+        "cardinality": "6",
+        "null_count": "145478",
+        "column": "Facility Type"
+      },
+      {
+        "min": "Assigned",
+        "max": "Unspecified",
+        "cardinality": "10",
+        "null_count": "0",
+        "column": "Status"
+      },
+      {
+        "min": "1900-01-02T00:00:00+00:00",
+        "max": "2021-06-17T16:34:13+00:00",
+        "cardinality": "345077",
+        "null_count": "647794",
+        "column": "Due Date"
+      },
+      {
+        "min": "A DOB violation was issued for failing to comply with an existing Stop Work Order.",
+        "max": "Your request was submitted to the Department of Homeless Services. The City?s outreach team will assess the homeless individual and offer appropriate assistance within 2 hours. If you asked to know the outcome of your request, you will get a call within 2 hours. No further status will be available through the NYC 311 App, 311, or 311 Online.",
+        "cardinality": "1216",
+        "null_count": "20480",
+        "column": "Resolution Description"
+      },
+      {
+        "min": "2009-12-31T01:35:00+00:00",
+        "max": "2020-12-23T06:56:14+00:00",
+        "cardinality": "690314",
+        "null_count": "15072",
+        "column": "Resolution Action Updated Date"
+      },
+      {
+        "min": "0 Unspecified",
+        "max": "Unspecified STATEN ISLAND",
+        "cardinality": "77",
+        "null_count": "0",
+        "column": "Community Board"
+      },
+      {
+        "min": "0000000000",
+        "max": "5080470043",
+        "cardinality": "268383",
+        "null_count": "243046",
+        "column": "BBL"
+      },
+      {
+        "min": "BRONX",
+        "max": "Unspecified",
+        "cardinality": "6",
+        "null_count": "0",
+        "column": "Borough"
+      },
+      {
+        "min": "913281",
+        "max": "1067220",
+        "cardinality": "102556",
+        "null_count": "85327",
+        "column": "X Coordinate (State Plane)"
+      },
+      {
+        "min": "121152",
+        "max": "271876",
+        "cardinality": "116092",
+        "null_count": "85327",
+        "column": "Y Coordinate (State Plane)"
+      },
+      {
+        "min": "MOBILE",
+        "max": "UNKNOWN",
+        "cardinality": "5",
+        "null_count": "0",
+        "column": "Open Data Channel Type"
+      },
+      {
+        "min": "\"Uncle\" Vito F. Maranzano Glendale Playground",
+        "max": "Zimmerman Playground",
+        "cardinality": "1889",
+        "null_count": "0",
+        "column": "Park Facility Name"
+      },
+      {
+        "min": "BRONX",
+        "max": "Unspecified",
+        "cardinality": "6",
+        "null_count": "0",
+        "column": "Park Borough"
+      },
+      {
+        "min": "Ambulette / Paratransit",
+        "max": "Green Taxi",
+        "cardinality": "5",
+        "null_count": "999652",
+        "column": "Vehicle Type"
+      },
+      {
+        "min": "BRONX",
+        "max": "Staten Island",
+        "cardinality": "11",
+        "null_count": "999156",
+        "column": "Taxi Company Borough"
+      },
+      {
+        "min": "1 5 AVENUE MANHATTAN",
+        "max": "YORK AVENUE AND EAST 70 STREET",
+        "cardinality": "1903",
+        "null_count": "992129",
+        "column": "Taxi Pick Up Location"
+      },
+      {
+        "min": "145th St. Br - Lenox Ave",
+        "max": "Willis Ave Br - 125th St/1st Ave",
+        "cardinality": "68",
+        "null_count": "997711",
+        "column": "Bridge Highway Name"
+      },
+      {
+        "min": "Bronx Bound",
+        "max": "Westbound/To Goethals Br",
+        "cardinality": "50",
+        "null_count": "997691",
+        "column": "Bridge Highway Direction"
+      },
+      {
+        "min": "N/A",
+        "max": "Roadway",
+        "cardinality": "4",
+        "null_count": "997693",
+        "column": "Road Ramp"
+      },
+      {
+        "min": "1-1-1265963747",
+        "max": "Wythe Ave/Kent Ave (Exit 31)",
+        "cardinality": "937",
+        "null_count": "997556",
+        "column": "Bridge Highway Segment"
+      },
+      {
+        "min": "40.1123853",
+        "max": "40.9128688",
+        "cardinality": "353694",
+        "null_count": "254695",
+        "column": "Latitude"
+      },
+      {
+        "min": "-77.5195844",
+        "max": "-73.7005968",
+        "cardinality": "353996",
+        "null_count": "254695",
+        "column": "Longitude"
+      },
+      {
+        "min": "(40.1123853, -77.5195844)",
+        "max": "(40.9128688, -73.9024731)",
+        "cardinality": "375772",
+        "null_count": "254695",
+        "column": "Location"
+      }
+    ],
+    "frequencies": [
+      {
+        "column": "Created Date",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "997333",
+            "percentage": "99.73%",
+            "rank": ""
+          },
+          {
+            "choice": "01/24/2013 12:00:00 AM",
+            "frequency": "347",
+            "percentage": "0.03%",
+            "rank": "1"
+          },
+          {
+            "choice": "01/07/2014 12:00:00 AM",
+            "frequency": "315",
+            "percentage": "0.03%",
+            "rank": "2"
+          },
+          {
+            "choice": "01/08/2015 12:00:00 AM",
+            "frequency": "283",
+            "percentage": "0.03%",
+            "rank": "3"
+          },
+          {
+            "choice": "02/16/2015 12:00:00 AM",
+            "frequency": "269",
+            "percentage": "0.03%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Closed Date",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "968671",
+            "percentage": "99.72%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "28619",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "11/15/2010 12:00:00 AM",
+            "frequency": "384",
+            "percentage": "0.04%",
+            "rank": "1"
+          },
+          {
+            "choice": "11/07/2012 12:00:00 AM",
+            "frequency": "329",
+            "percentage": "0.03%",
+            "rank": "2"
+          },
+          {
+            "choice": "12/09/2010 12:00:00 AM",
+            "frequency": "267",
+            "percentage": "0.03%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Agency",
+        "values": [
+          {
+            "choice": "NYPD",
+            "frequency": "265116",
+            "percentage": "26.51%",
+            "rank": "1"
+          },
+          {
+            "choice": "HPD",
+            "frequency": "258033",
+            "percentage": "25.80%",
+            "rank": "2"
+          },
+          {
+            "choice": "DOT",
+            "frequency": "132462",
+            "percentage": "13.25%",
+            "rank": "3"
+          },
+          {
+            "choice": "DSNY",
+            "frequency": "81606",
+            "percentage": "8.16%",
+            "rank": "4"
+          },
+          {
+            "choice": "DEP",
+            "frequency": "75895",
+            "percentage": "7.59%",
+            "rank": "5"
+          }
+        ]
+      },
+      {
+        "column": "Agency Name",
+        "values": [
+          {
+            "choice": "New York City Police Depa…",
+            "frequency": "265038",
+            "percentage": "26.50%",
+            "rank": "1"
+          },
+          {
+            "choice": "Department of Housing Pre…",
+            "frequency": "258019",
+            "percentage": "25.80%",
+            "rank": "2"
+          },
+          {
+            "choice": "Department of Transportat…",
+            "frequency": "132462",
+            "percentage": "13.25%",
+            "rank": "3"
+          },
+          {
+            "choice": "Other…",
+            "frequency": "103974",
+            "percentage": "10.40%",
+            "rank": ""
+          },
+          {
+            "choice": "Department of Environment…",
+            "frequency": "75895",
+            "percentage": "7.59%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Complaint Type",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "563561",
+            "percentage": "56.36%",
+            "rank": ""
+          },
+          {
+            "choice": "Noise - Residential",
+            "frequency": "89439",
+            "percentage": "8.94%",
+            "rank": "1"
+          },
+          {
+            "choice": "HEAT/HOT WATER",
+            "frequency": "56639",
+            "percentage": "5.66%",
+            "rank": "2"
+          },
+          {
+            "choice": "Illegal Parking",
+            "frequency": "45032",
+            "percentage": "4.50%",
+            "rank": "3"
+          },
+          {
+            "choice": "Blocked Driveway",
+            "frequency": "42356",
+            "percentage": "4.24%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Descriptor",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "671870",
+            "percentage": "67.39%",
+            "rank": ""
+          },
+          {
+            "choice": "Loud Music/Party",
+            "frequency": "93646",
+            "percentage": "9.39%",
+            "rank": "1"
+          },
+          {
+            "choice": "ENTIRE BUILDING",
+            "frequency": "36885",
+            "percentage": "3.70%",
+            "rank": "2"
+          },
+          {
+            "choice": "HEAT",
+            "frequency": "35088",
+            "percentage": "3.52%",
+            "rank": "3"
+          },
+          {
+            "choice": "No Access",
+            "frequency": "31631",
+            "percentage": "3.17%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Location Type",
+        "values": [
+          {
+            "choice": "RESIDENTIAL BUILDING",
+            "frequency": "255562",
+            "percentage": "33.59%",
+            "rank": "1"
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "239131",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Street/Sidewalk",
+            "frequency": "145653",
+            "percentage": "19.14%",
+            "rank": "2"
+          },
+          {
+            "choice": "Residential Building/Hous…",
+            "frequency": "92765",
+            "percentage": "12.19%",
+            "rank": "3"
+          },
+          {
+            "choice": "Street",
+            "frequency": "92190",
+            "percentage": "12.12%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Incident Zip",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "815988",
+            "percentage": "86.35%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "54978",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "11226",
+            "frequency": "17114",
+            "percentage": "1.81%",
+            "rank": "1"
+          },
+          {
+            "choice": "10467",
+            "frequency": "14495",
+            "percentage": "1.53%",
+            "rank": "2"
+          },
+          {
+            "choice": "11207",
+            "frequency": "12872",
+            "percentage": "1.36%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Incident Address",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "819046",
+            "percentage": "99.24%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "174700",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "655 EAST  230 STREET",
+            "frequency": "1538",
+            "percentage": "0.19%",
+            "rank": "1"
+          },
+          {
+            "choice": "78-15 PARSONS BOULEVARD",
+            "frequency": "694",
+            "percentage": "0.08%",
+            "rank": "2"
+          },
+          {
+            "choice": "672 EAST  231 STREET",
+            "frequency": "663",
+            "percentage": "0.08%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Street Name",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "784684",
+            "percentage": "95.08%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "174720",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "9702",
+            "percentage": "1.18%",
+            "rank": "1"
+          },
+          {
+            "choice": "GRAND CONCOURSE",
+            "frequency": "5851",
+            "percentage": "0.71%",
+            "rank": "2"
+          },
+          {
+            "choice": "OCEAN AVENUE",
+            "frequency": "3946",
+            "percentage": "0.48%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Cross Street 1",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "619743",
+            "percentage": "91.19%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "320401",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "BEND",
+            "frequency": "12562",
+            "percentage": "1.85%",
+            "rank": "1"
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "8548",
+            "percentage": "1.26%",
+            "rank": "2"
+          },
+          {
+            "choice": "3 AVENUE",
+            "frequency": "6154",
+            "percentage": "0.91%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Cross Street 2",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "623363",
+            "percentage": "92.16%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "323644",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "BEND",
+            "frequency": "12390",
+            "percentage": "1.83%",
+            "rank": "1"
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "8833",
+            "percentage": "1.31%",
+            "rank": "2"
+          },
+          {
+            "choice": "DEAD END",
+            "frequency": "5626",
+            "percentage": "0.83%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Intersection Street 1",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "767422",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "214544",
+            "percentage": "92.25%",
+            "rank": ""
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "3761",
+            "percentage": "1.62%",
+            "rank": "1"
+          },
+          {
+            "choice": "CARPENTER AVENUE",
+            "frequency": "2918",
+            "percentage": "1.25%",
+            "rank": "2"
+          },
+          {
+            "choice": "BEND",
+            "frequency": "2009",
+            "percentage": "0.86%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Intersection Street 2",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "767709",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "215667",
+            "percentage": "92.84%",
+            "rank": ""
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "3462",
+            "percentage": "1.49%",
+            "rank": "1"
+          },
+          {
+            "choice": "BEND",
+            "frequency": "1942",
+            "percentage": "0.84%",
+            "rank": "2"
+          },
+          {
+            "choice": "2 AVENUE",
+            "frequency": "1690",
+            "percentage": "0.73%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Address Type",
+        "values": [
+          {
+            "choice": "ADDRESS",
+            "frequency": "710380",
+            "percentage": "81.26%",
+            "rank": "1"
+          },
+          {
+            "choice": "INTERSECTION",
+            "frequency": "133361",
+            "percentage": "15.26%",
+            "rank": "2"
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "125802",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "BLOCKFACE",
+            "frequency": "22620",
+            "percentage": "2.59%",
+            "rank": "3"
+          },
+          {
+            "choice": "LATLONG",
+            "frequency": "7421",
+            "percentage": "0.85%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "City",
+        "values": [
+          {
+            "choice": "BROOKLYN",
+            "frequency": "296254",
+            "percentage": "31.58%",
+            "rank": "1"
+          },
+          {
+            "choice": "NEW YORK",
+            "frequency": "189069",
+            "percentage": "20.16%",
+            "rank": "2"
+          },
+          {
+            "choice": "BRONX",
+            "frequency": "181168",
+            "percentage": "19.31%",
+            "rank": "3"
+          },
+          {
+            "choice": "Other…",
+            "frequency": "163936",
+            "percentage": "17.48%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "61963",
+            "percentage": "0.00%",
+            "rank": ""
+          }
+        ]
+      },
+      {
+        "column": "Landmark",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "912779",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "80165",
+            "percentage": "91.91%",
+            "rank": ""
+          },
+          {
+            "choice": "EAST  230 STREET",
+            "frequency": "1545",
+            "percentage": "1.77%",
+            "rank": "1"
+          },
+          {
+            "choice": "EAST  231 STREET",
+            "frequency": "1291",
+            "percentage": "1.48%",
+            "rank": "2"
+          },
+          {
+            "choice": "BROADWAY",
+            "frequency": "1148",
+            "percentage": "1.32%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Facility Type",
+        "values": [
+          {
+            "choice": "N/A",
+            "frequency": "628279",
+            "percentage": "73.52%",
+            "rank": "1"
+          },
+          {
+            "choice": "Precinct",
+            "frequency": "193259",
+            "percentage": "22.62%",
+            "rank": "2"
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "145478",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "DSNY Garage",
+            "frequency": "32310",
+            "percentage": "3.78%",
+            "rank": "3"
+          },
+          {
+            "choice": "School",
+            "frequency": "617",
+            "percentage": "0.07%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Status",
+        "values": [
+          {
+            "choice": "Closed",
+            "frequency": "952522",
+            "percentage": "95.25%",
+            "rank": "1"
+          },
+          {
+            "choice": "Pending",
+            "frequency": "20119",
+            "percentage": "2.01%",
+            "rank": "2"
+          },
+          {
+            "choice": "Open",
+            "frequency": "12340",
+            "percentage": "1.23%",
+            "rank": "3"
+          },
+          {
+            "choice": "In Progress",
+            "frequency": "7841",
+            "percentage": "0.78%",
+            "rank": "4"
+          },
+          {
+            "choice": "Assigned",
+            "frequency": "6651",
+            "percentage": "0.67%",
+            "rank": "5"
+          }
+        ]
+      },
+      {
+        "column": "Due Date",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "647794",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "350746",
+            "percentage": "99.59%",
+            "rank": ""
+          },
+          {
+            "choice": "04/08/2015 10:00:58 AM",
+            "frequency": "214",
+            "percentage": "0.06%",
+            "rank": "1"
+          },
+          {
+            "choice": "05/02/2014 03:32:17 PM",
+            "frequency": "183",
+            "percentage": "0.05%",
+            "rank": "2"
+          },
+          {
+            "choice": "03/30/2018 10:10:39 AM",
+            "frequency": "172",
+            "percentage": "0.05%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Resolution Description",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "511739",
+            "percentage": "52.24%",
+            "rank": ""
+          },
+          {
+            "choice": "The Police Department res…",
+            "frequency": "91408",
+            "percentage": "9.33%",
+            "rank": "1"
+          },
+          {
+            "choice": "The Department of Housing…",
+            "frequency": "72962",
+            "percentage": "7.45%",
+            "rank": "2"
+          },
+          {
+            "choice": "The Police Department res…",
+            "frequency": "63868",
+            "percentage": "6.52%",
+            "rank": "3"
+          },
+          {
+            "choice": "Service Request status fo…",
+            "frequency": "52155",
+            "percentage": "5.32%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Resolution Action Updated Date",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "982148",
+            "percentage": "99.72%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "15072",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "11/15/2010 12:00:00 AM",
+            "frequency": "385",
+            "percentage": "0.04%",
+            "rank": "1"
+          },
+          {
+            "choice": "11/07/2012 12:00:00 AM",
+            "frequency": "336",
+            "percentage": "0.03%",
+            "rank": "2"
+          },
+          {
+            "choice": "12/09/2010 12:00:00 AM",
+            "frequency": "273",
+            "percentage": "0.03%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Community Board",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "751635",
+            "percentage": "75.16%",
+            "rank": ""
+          },
+          {
+            "choice": "0 Unspecified",
+            "frequency": "49878",
+            "percentage": "4.99%",
+            "rank": "1"
+          },
+          {
+            "choice": "12 MANHATTAN",
+            "frequency": "29845",
+            "percentage": "2.98%",
+            "rank": "2"
+          },
+          {
+            "choice": "12 QUEENS",
+            "frequency": "23570",
+            "percentage": "2.36%",
+            "rank": "3"
+          },
+          {
+            "choice": "01 BROOKLYN",
+            "frequency": "21714",
+            "percentage": "2.17%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "BBL",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "750668",
+            "percentage": "99.17%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "243046",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "2048330028",
+            "frequency": "1566",
+            "percentage": "0.21%",
+            "rank": "1"
+          },
+          {
+            "choice": "4068290001",
+            "frequency": "696",
+            "percentage": "0.09%",
+            "rank": "2"
+          },
+          {
+            "choice": "4015110001",
+            "frequency": "664",
+            "percentage": "0.09%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Borough",
+        "values": [
+          {
+            "choice": "BROOKLYN",
+            "frequency": "296081",
+            "percentage": "29.61%",
+            "rank": "1"
+          },
+          {
+            "choice": "QUEENS",
+            "frequency": "228818",
+            "percentage": "22.88%",
+            "rank": "2"
+          },
+          {
+            "choice": "MANHATTAN",
+            "frequency": "195488",
+            "percentage": "19.55%",
+            "rank": "3"
+          },
+          {
+            "choice": "BRONX",
+            "frequency": "180142",
+            "percentage": "18.01%",
+            "rank": "4"
+          },
+          {
+            "choice": "Unspecified",
+            "frequency": "49878",
+            "percentage": "4.99%",
+            "rank": "5"
+          }
+        ]
+      },
+      {
+        "column": "X Coordinate (State Plane)",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "908535",
+            "percentage": "99.33%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "85327",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "1022911",
+            "frequency": "1568",
+            "percentage": "0.17%",
+            "rank": "1"
+          },
+          {
+            "choice": "1037000",
+            "frequency": "701",
+            "percentage": "0.08%",
+            "rank": "2"
+          },
+          {
+            "choice": "1023174",
+            "frequency": "675",
+            "percentage": "0.07%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Y Coordinate (State Plane)",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "908538",
+            "percentage": "99.33%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "85327",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "264242",
+            "frequency": "1566",
+            "percentage": "0.17%",
+            "rank": "1"
+          },
+          {
+            "choice": "202363",
+            "frequency": "706",
+            "percentage": "0.08%",
+            "rank": "2"
+          },
+          {
+            "choice": "211606",
+            "frequency": "665",
+            "percentage": "0.07%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Open Data Channel Type",
+        "values": [
+          {
+            "choice": "PHONE",
+            "frequency": "497606",
+            "percentage": "49.76%",
+            "rank": "1"
+          },
+          {
+            "choice": "UNKNOWN",
+            "frequency": "230402",
+            "percentage": "23.04%",
+            "rank": "2"
+          },
+          {
+            "choice": "ONLINE",
+            "frequency": "177334",
+            "percentage": "17.73%",
+            "rank": "3"
+          },
+          {
+            "choice": "MOBILE",
+            "frequency": "79892",
+            "percentage": "7.99%",
+            "rank": "4"
+          },
+          {
+            "choice": "OTHER",
+            "frequency": "14766",
+            "percentage": "1.48%",
+            "rank": "5"
+          }
+        ]
+      },
+      {
+        "column": "Park Facility Name",
+        "values": [
+          {
+            "choice": "Unspecified",
+            "frequency": "993141",
+            "percentage": "99.31%",
+            "rank": "1"
+          },
+          {
+            "choice": "Other…",
+            "frequency": "5964",
+            "percentage": "0.60%",
+            "rank": ""
+          },
+          {
+            "choice": "Central Park",
+            "frequency": "261",
+            "percentage": "0.03%",
+            "rank": "2"
+          },
+          {
+            "choice": "Riverside Park",
+            "frequency": "136",
+            "percentage": "0.01%",
+            "rank": "3"
+          },
+          {
+            "choice": "Prospect Park",
+            "frequency": "129",
+            "percentage": "0.01%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Park Borough",
+        "values": [
+          {
+            "choice": "BROOKLYN",
+            "frequency": "296081",
+            "percentage": "29.61%",
+            "rank": "1"
+          },
+          {
+            "choice": "QUEENS",
+            "frequency": "228818",
+            "percentage": "22.88%",
+            "rank": "2"
+          },
+          {
+            "choice": "MANHATTAN",
+            "frequency": "195488",
+            "percentage": "19.55%",
+            "rank": "3"
+          },
+          {
+            "choice": "BRONX",
+            "frequency": "180142",
+            "percentage": "18.01%",
+            "rank": "4"
+          },
+          {
+            "choice": "Unspecified",
+            "frequency": "49878",
+            "percentage": "4.99%",
+            "rank": "5"
+          }
+        ]
+      },
+      {
+        "column": "Vehicle Type",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "999652",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Car Service",
+            "frequency": "317",
+            "percentage": "91.09%",
+            "rank": "1"
+          },
+          {
+            "choice": "Ambulette / Paratransit",
+            "frequency": "19",
+            "percentage": "5.46%",
+            "rank": "2"
+          },
+          {
+            "choice": "Commuter Van",
+            "frequency": "11",
+            "percentage": "3.16%",
+            "rank": "3"
+          },
+          {
+            "choice": "Green Taxi",
+            "frequency": "1",
+            "percentage": "0.29%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Taxi Company Borough",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "999156",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "BROOKLYN",
+            "frequency": "207",
+            "percentage": "24.53%",
+            "rank": "1"
+          },
+          {
+            "choice": "QUEENS",
+            "frequency": "194",
+            "percentage": "22.99%",
+            "rank": "2"
+          },
+          {
+            "choice": "MANHATTAN",
+            "frequency": "171",
+            "percentage": "20.26%",
+            "rank": "3"
+          },
+          {
+            "choice": "BRONX",
+            "frequency": "127",
+            "percentage": "15.05%",
+            "rank": "4"
+          }
+        ]
+      },
+      {
+        "column": "Taxi Pick Up Location",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "992129",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other",
+            "frequency": "4091",
+            "percentage": "51.98%",
+            "rank": "1"
+          },
+          {
+            "choice": "Other…",
+            "frequency": "2006",
+            "percentage": "25.49%",
+            "rank": ""
+          },
+          {
+            "choice": "JFK Airport",
+            "frequency": "562",
+            "percentage": "7.14%",
+            "rank": "2"
+          },
+          {
+            "choice": "Intersection",
+            "frequency": "486",
+            "percentage": "6.17%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Bridge Highway Name",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "997711",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "779",
+            "percentage": "34.03%",
+            "rank": ""
+          },
+          {
+            "choice": "Belt Pkwy",
+            "frequency": "276",
+            "percentage": "12.06%",
+            "rank": "1"
+          },
+          {
+            "choice": "BQE/Gowanus Expwy",
+            "frequency": "254",
+            "percentage": "11.10%",
+            "rank": "2"
+          },
+          {
+            "choice": "Grand Central Pkwy",
+            "frequency": "186",
+            "percentage": "8.13%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Bridge Highway Direction",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "997691",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "987",
+            "percentage": "42.75%",
+            "rank": ""
+          },
+          {
+            "choice": "East/Long Island Bound",
+            "frequency": "210",
+            "percentage": "9.09%",
+            "rank": "1"
+          },
+          {
+            "choice": "North/Bronx Bound",
+            "frequency": "208",
+            "percentage": "9.01%",
+            "rank": "2"
+          },
+          {
+            "choice": "East/Queens Bound",
+            "frequency": "197",
+            "percentage": "8.53%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Road Ramp",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "997693",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Roadway",
+            "frequency": "1731",
+            "percentage": "75.03%",
+            "rank": "1"
+          },
+          {
+            "choice": "Ramp",
+            "frequency": "555",
+            "percentage": "24.06%",
+            "rank": "2"
+          },
+          {
+            "choice": "N/A",
+            "frequency": "21",
+            "percentage": "0.91%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Bridge Highway Segment",
+        "values": [
+          {
+            "choice": "(NULL)…",
+            "frequency": "997556",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "Other…",
+            "frequency": "2144",
+            "percentage": "87.73%",
+            "rank": ""
+          },
+          {
+            "choice": "Ramp",
+            "frequency": "92",
+            "percentage": "3.76%",
+            "rank": "1"
+          },
+          {
+            "choice": "Roadway",
+            "frequency": "54",
+            "percentage": "2.21%",
+            "rank": "2"
+          },
+          {
+            "choice": "Clove Rd/Richmond Rd (Exi…",
+            "frequency": "23",
+            "percentage": "0.94%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Latitude",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "739329",
+            "percentage": "99.20%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "254695",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "40.89187241649303",
+            "frequency": "1538",
+            "percentage": "0.21%",
+            "rank": "1"
+          },
+          {
+            "choice": "40.1123853",
+            "frequency": "1153",
+            "percentage": "0.15%",
+            "rank": "2"
+          },
+          {
+            "choice": "40.89238451539139",
+            "frequency": "663",
+            "percentage": "0.09%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Longitude",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "739329",
+            "percentage": "99.20%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "254695",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "-73.86016845296459",
+            "frequency": "1538",
+            "percentage": "0.21%",
+            "rank": "1"
+          },
+          {
+            "choice": "-77.5195844",
+            "frequency": "1153",
+            "percentage": "0.15%",
+            "rank": "2"
+          },
+          {
+            "choice": "-73.8592161325675",
+            "frequency": "663",
+            "percentage": "0.09%",
+            "rank": "3"
+          }
+        ]
+      },
+      {
+        "column": "Location",
+        "values": [
+          {
+            "choice": "Other…",
+            "frequency": "739329",
+            "percentage": "99.20%",
+            "rank": ""
+          },
+          {
+            "choice": "(NULL)…",
+            "frequency": "254695",
+            "percentage": "0.00%",
+            "rank": ""
+          },
+          {
+            "choice": "(40.89187241649303, -73.8…",
+            "frequency": "1538",
+            "percentage": "0.21%",
+            "rank": "1"
+          },
+          {
+            "choice": "(40.1123853, -77.5195844)",
+            "frequency": "1153",
+            "percentage": "0.15%",
+            "rank": "2"
+          },
+          {
+            "choice": "(40.89238451539139, -73.8…",
+            "frequency": "663",
+            "percentage": "0.09%",
+            "rank": "3"
+          }
+        ],
+        "trailer": "*Attribution: Generated by qsv v20.1.0 describegpt\nCommand line: ./target/debug/qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all --two-pass --fresh --format semanticmd --base-url http://localhost:1234/v1 --model openai/gpt-oss-20b --ds-source https://data.cityofnewyork.us/Social-Services/311-Service-Requests-from-2010-to-Present/erm2-nwe9 --ds-license NYC Open Data Terms of Use --ds-updated 2020-12-23 --output docs/describegpt/nyc311-describegpt-semanticmd.md\nPrompt file: Default v7.1.0\nModel: openai/gpt-oss-20b\nLLM API URL: http://localhost:1234/v1\nLanguage: \nTimestamp: 2026-06-03T10:28:41.084063+00:00\n\nWARNING: Label, Description and Content Type generated by an LLM and may contain inaccuracies. Verify before using!\n*\n"
+      }
+    ]
+  }
+}

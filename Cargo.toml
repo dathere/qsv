@@ -132,7 +132,7 @@ csv-nose = { version = "1.0", default-features = false, features = [
 csvlens = { version = "0.15", optional = true, default-features = false, features = [
     "clipboard",
 ] }
-csvs_convert = { version = "0.12", default-features = false, features = [
+csvs_convert = { version = "0.13", default-features = false, features = [
     "converters",
 ], optional = true }
 dns-lookup = { version = "3", optional = true }
@@ -387,7 +387,7 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_tui-input_crossterm_n_lock_file" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
-csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "bump-deps-202602", optional = true }
+csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats_with_qsv-stats", optional = true }
 
 # use our patched fork of json-objects-to-csv to bump deps and to preserve order until our PR is merged
 json-objects-to-csv = { git = "https://github.com/jqnatividad/json-objects-to-csv", branch = "preserve_order_issue_10" }

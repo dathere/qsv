@@ -7,7 +7,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Computes statistics** from streaming (mean, sum, stddev) to non-streaming (median, quartiles, modes)
 - **Processes files** either sequentially or in parallel (with index)
 - **Caches results** to avoid recomputation
-- **Supports up to 48 output columns** with detailed statistics
+- **Computes up to 48 summary statistics** per column (beyond the `field`/`type` identifiers)
 
 ## File Location
 `src/cmd/stats.rs` (~5,638 lines)

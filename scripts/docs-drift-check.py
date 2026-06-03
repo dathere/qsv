@@ -370,11 +370,11 @@ STAT_COLUMN_CHECKS: list[tuple[str, re.Pattern[str]]] = [
     ),
     (
         "docs/contributor/STATS_QUICK_REFERENCE.md",
-        re.compile(r"Supports (?:up to )?(?P<n>\d+)\+?\s+output columns"),
+        re.compile(r"up to (?P<n>\d+)\+?\s+summary statistics"),
     ),
     (
         "docs/PERFORMANCE.md",
-        re.compile(r"up to (?P<n>\d+) total\*?\*?\s+columns?"),
+        re.compile(r"up to (?P<n>\d+)\s+summary statistics"),
     ),
 ]
 

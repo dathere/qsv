@@ -356,7 +356,7 @@ stats options:
                                   the index file and the cache files are kept.
                               [default: 5000]
     --vis-whitespace          Visualize whitespace characters in the output.
-                              See https://github.com/dathere/qsv/wiki/Supplemental#whitespace-markers
+                              See https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#whitespace-markers
                               for the list of whitespace markers.
 
 Common options:

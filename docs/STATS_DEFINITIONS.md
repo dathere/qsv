@@ -106,7 +106,9 @@ The command supports various caching options to improve performance on subsequen
 | 26 | `max_precision` | Quality |
 | 27 | `sparsity` | Quality |
 
-**Non-Streaming Statistics** (require loading data into memory, opt-in via flag or `--everything`) — **20 stats**:
+**Non-Streaming Statistics** (opt-in via flag or `--everything`; all but `zero_padded_numeric` load/retain per-column data in memory) — **21 stats**:
+
+> `zero_padded_numeric` is the exception in this group: it is computed during the normal streaming scan in constant memory (two bookkeeping flags per column) and is listed here only because it is opt-in, not because it requires in-memory processing.
 
 | #  | Identifier | Flag |
 |---:|:---|:---|
@@ -130,8 +132,9 @@ The command supports various caching options to improve performance on subsequen
 | 45 | `antimode_count` | `--mode` |
 | 46 | `antimode_occurrences` | `--mode` |
 | 47 | `percentiles` | `--percentiles` (single column containing the comma-separated values listed in `--percentile-list`) |
+| 48 | `zero_padded_numeric` | `--zero-padded-numeric` (`true` when the column's inferred `type` is `String` AND every non-null value is an all-digit number with at least one having a leading zero — e.g. zip codes, barcodes, zero-padded IDs; empty otherwise) |
 
-**Total: 47 statistics** (27 streaming + 20 non-streaming, beyond the `field`/`type` identifiers). 47 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 47 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "47 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
+**Total: 48 statistics** (27 streaming + 21 non-streaming, beyond the `field`/`type` identifiers). 48 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 48 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). The non-streaming statistics that retain per-column samples (every stat in this group except `zero_padded_numeric`, which is streaming/constant-memory) use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "48 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
 
 ### Weighted Statistics
 
@@ -176,6 +179,13 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 | `field` | Variable | The name of the column/header (or its index if `--no-headers` is used). | Extracted from the CSV header row. |
 | `type` | Variable | Inferred data type of the column. | Inferred by checking values against: NULL, Integer, Float, Date, DateTime, Boolean (optional), and fallback to String. Data type inferences are **GUARANTEED** as `stats` scans the entire file. |
 | `is_ascii` | Variable | Indicates if all characters in the string column are ASCII. | Checked during UTF-8 validation; true if bytes are valid ASCII. |
+| `zero_padded_numeric` | Variable | `true` when the column is type `String` only because its values are zero-padded numbers (zip codes, barcodes, zero-padded IDs); empty otherwise. Opt-in via `--zero-padded-numeric` or `--everything`. | While scanning, the column is "qualified" only if every non-null value is all-ASCII-digits; the first non-digit value disqualifies it. At output, `true` is emitted only if the column qualified, saw at least one value, AND its final inferred `type` is `String` (which implies at least one value had a leading zero — an all-digit column with no leading zero infers as `Integer`). |
+
+**Zero-Padded Numeric Detection:**
+- qsv deliberately keeps numbers with leading zeros (e.g. `07306`) as `String` rather than `Integer`/`Float`, to avoid silently dropping the leading zeros.
+- `zero_padded_numeric` surfaces that decision so such columns are not mistakenly re-typed as numeric when loaded into SQL, SPSS, SAS, Stata, or other tools.
+- Detection is strict: a column with any non-numeric value (e.g. `"N/A"`, `"Main St"`) is **not** flagged, matching the "only if all values are numeric" intent.
+- Floats are not flagged: values like `007.5` parse as `Float` (not zero-padded integers). Very long all-digit values that overflow `i64` parse as `Float` and are likewise not flagged.
 
 **Date and DateTime Type Inference:**
 - See the **Date/DateTime Statistics** section for full details on how date columns are selected, the default `--dates-whitelist`, example column names that do and do not trigger inference, and the list of supported date formats.

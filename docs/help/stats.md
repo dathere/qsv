@@ -1,6 +1,6 @@
 # stats
 
-> Compute up to 47 [summary statistics](../STATS_DEFINITIONS.md) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV ([Example](https://github.com/dathere/qsv/blob/master/scripts/NYC_311_SR_2010-2020-sample-1M.stats.csv)). Uses multithreading to go faster if an index is present. With an index, can compile "streaming" stats on a 1M row sample of NYC's 311 data in [less than 0.25 seconds vs 2.24 seconds without one](https://qsv.dathere.com/benchmarks).
+> Compute up to 48 [summary statistics](../STATS_DEFINITIONS.md) & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV ([Example](https://github.com/dathere/qsv/blob/master/scripts/NYC_311_SR_2010-2020-sample-1M.stats.csv)). Uses multithreading to go faster if an index is present. With an index, can compile "streaming" stats on a 1M row sample of NYC's 311 data in [less than 0.25 seconds vs 2.24 seconds without one](https://qsv.dathere.com/benchmarks).
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/stats.rs](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🤯](TableOfContents.md#legend "loads entire CSV into memory, though `dedup`, `stats` & `transpose` have \"streaming\" modes as well.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")
 
@@ -235,12 +235,13 @@ qsv stats --help
 
 ## Boolean Inferencing Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑infer‑boolean`&nbsp; | flag | Infer boolean data type. This automatically enables the --cardinality option. When a column's cardinality is 2, and the 2 values' are in the true/false patterns specified by --boolean-patterns, the data type is inferred as boolean. |  |
 | &nbsp;`‑‑boolean‑patterns`&nbsp; | string | Comma-separated list of boolean pattern pairs in the format "true_pattern:false_pattern". Each pattern can be a string of any length. The patterns are case-insensitive. If a pattern ends with a "*", it is treated as a prefix. For example, "t*:f*,y*:n*" will match "true", "truthy", "Truth" as boolean true values so long as the corresponding false pattern (e.g. False, f, etc.) is also matched & cardinality is 2. Ignored if --infer-boolean is false. | `1:0,t*:f*,y*:n*` |
 | &nbsp;`‑‑mode`&nbsp; | flag | Compute the mode/s & antimode/s. Multimodal-aware. If there are multiple modes/antimodes, they are separated by the QSV_STATS_SEPARATOR environment variable. If not set, the default separator is "\|". Uses memory proportional to the cardinality of each column. |  |
 | &nbsp;`‑‑cardinality`&nbsp; | flag | Compute the cardinality and the uniqueness ratio. This is automatically enabled if --infer-boolean is enabled. <https://en.wikipedia.org/wiki/Cardinality_(SQL_statements)> Uses memory proportional to the number of unique values in each column. |  |
+| &nbsp;`‑‑zero‑padded‑numeric`&nbsp; | flag | Add a "zero_padded_numeric" column that is "true" when a column's inferred type is String AND all its non-null values are all-digit numbers with at least one having a leading zero (e.g. US zip codes, barcodes, zero-padded IDs/classification codes). qsv keeps such columns as text to avoid data loss; this flag surfaces them so they are not mistakenly loaded as integer/float (e.g. in SQL, SPSS, SAS or Stata). The cell is empty when the column is not zero-padded numeric. Automatically enabled with --everything. |  |
 
 <a name="numeric-&-date/datetime-stats-that-require-in-memory-sorting-options"></a>
 

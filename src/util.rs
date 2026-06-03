@@ -2932,6 +2932,7 @@ pub fn get_stats_records(
             flag_boolean_patterns:     String::new(),
             flag_mode:                 false,
             flag_cardinality:          true,
+            flag_zero_padded_numeric:  false,
             flag_median:               false,
             flag_quartiles:            false,
             flag_mad:                  false,

@@ -1,7 +1,7 @@
 {
   "name": "qsv-stats",
   "version": "20.1.0",
-  "description": "Compute up to 47 summary statistics & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example). Uses multithreading to go faster if an index is present. With an index, can compile \"streaming\" stats on a 1M row sample of NYC's 311 data in less than 0.25 seconds vs 2.24 seconds without one.",
+  "description": "Compute up to 48 summary statistics & make GUARANTEED data type inferences (Null, String, Float, Integer, Date, DateTime, Boolean) for each column in a CSV (Example). Uses multithreading to go faster if an index is present. With an index, can compile \"streaming\" stats on a 1M row sample of NYC's 311 data in less than 0.25 seconds vs 2.24 seconds without one.",
   "category": "aggregation",
   "command": {
     "subcommand": "stats",
@@ -166,6 +166,11 @@
         "flag": "--weight",
         "type": "string",
         "description": "Compute weighted statistics using the specified column as weights. The weight column must be numeric. When specified, all statistics (mean, stddev, variance, median, quartiles, mode, etc.) will be computed using weighted algorithms. The weight column is automatically excluded from statistics computation. Missing or non-numeric weights default to 1.0. Zero and negative weights are ignored and do not contribute to the statistics. The output filename will be <FILESTEM>.stats.weighted.csv to distinguish from unweighted statistics."
+      },
+      {
+        "flag": "--zero-padded-numeric",
+        "type": "flag",
+        "description": "Add a \"zero_padded_numeric\" column that is \"true\" when a column's inferred type is String AND all its non-null values are all-digit numbers with at least one having a leading zero (e.g. US zip codes, barcodes, zero-padded IDs/classification codes). qsv keeps such columns as text to avoid data loss; this flag surfaces them so they are not mistakenly loaded as integer/float (e.g. in SQL, SPSS, SAS or Stata). The cell is empty when the column is not zero-padded numeric. Automatically enabled with --everything."
       }
     ]
   },

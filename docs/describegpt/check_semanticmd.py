@@ -199,8 +199,8 @@ def main() -> int:
     print(
         f"[check_semanticmd] OK — {md.name} converts cleanly and "
         f"{out_json.name} is up to date "
-        f"({len(doc['schema']['fields'])} fields, "
-        f"{len(doc['resource']['frequencies'])} frequency tables)."
+        f"({len(doc['schema'].get('fields', []))} fields, "
+        f"{len(doc['resource'].get('frequencies', []))} frequency tables)."
     )
     return 0
 

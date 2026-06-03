@@ -82,7 +82,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-luau-nightly --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+        args: --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau-nightly' || 'release-nightly' }} --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite-nightly
       env:
         RUSTFLAGS: --emit=asm
@@ -105,7 +105,7 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-publish-testing
-        # qsv uses the release-luau-nightly profile (panic=unwind, qsv #3937); the other bins use release-nightly
+        # qsv uses release-luau-nightly (panic=unwind, qsv #3937) when built with luau, else release-nightly; the other bins use release-nightly
         for d in release-luau-nightly release-nightly; do
           rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
           cp target/${{ matrix.job.target }}/$d/qsv* qsv-publish-testing 2>/dev/null || true

@@ -112,7 +112,6 @@ custom_prompt_md_template = """# {{ kind }}
 #   {{ concepts }}           - sorted, de-duplicated list of catalog concept IDs used by the columns
 #   {{ temporal_coverage }}  - optional {column, start, end} for the event-timestamp column
 #   {{ spatial }}            - optional {crs, lat, lon} when WGS84 lat/lon concept columns exist
-#   {{ example_queries }}    - list of {title, sql, pandas} ready-to-run queries
 #   {{ ds_source }}/{{ ds_updated }}/{{ ds_license }} - optional provenance from --ds-* flags
 #   {{ entries }}            - list of records, each with: name, sem_type, required, label, description,
 #                              is_numeric, min, max, cardinality, null_count, concept, role, join_kind,
@@ -207,26 +206,6 @@ dataset:
 | {{ entry.stats.mean }} | {{ entry.stats.median }} | {{ entry.stats.stddev }} | {{ entry.stats.q1 }} | {{ entry.stats.q3 }} | {{ entry.stats.skewness }} | {{ entry.stats.lower_fence }} | {{ entry.stats.upper_fence }} | {{ entry.stats.sparsity }} |
 {% endif -%}
 {% endfor %}
-{% if example_queries %}# Example Queries
-
-Load the resource once, then run any query below. SQL targets DuckDB (qsv's `sqlp` engine); timestamps may need an explicit cast.
-
-```python
-import pandas as pd
-df = pd.read_csv({{ resource_name_py }})
-```
-{% for q in example_queries %}
-### {{ q.title }}
-
-```sql
-{{ q.sql }}
-```
-
-```python
-{{ q.pandas }}
-```
-{% endfor %}
-{% endif -%}
 # Resource `{{ resource_name }}`
 
 ## Statistics

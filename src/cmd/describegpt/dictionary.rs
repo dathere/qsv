@@ -1,6 +1,6 @@
-//! Neuro-procedural data dictionary: parsing `stats` / `frequency` CSVs into
+//! Neuro-symbolic data dictionary: parsing `stats` / `frequency` CSVs into
 //! records, deterministically generating dictionary entries, and merging them
-//! with the LLM-produced Label + Description pairs.
+//! with the LLM-produced Label + Description + Content Type.
 //!
 //! Fields on these structs are `pub(super)` so sibling submodules (e.g.
 //! `formatters`) can read them; all types themselves remain crate-private.

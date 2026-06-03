@@ -170,7 +170,7 @@
       {
         "flag": "--zero-padded-numeric",
         "type": "flag",
-        "description": "Add a \"zero_padded_numeric\" column that is \"true\" when a column's inferred type is String AND all its non-null values are all-digit numbers with at least one having a leading zero (e.g. US zip codes, barcodes, zero-padded IDs/classification codes). qsv keeps such columns as text to avoid data loss; this flag surfaces them so they are not mistakenly loaded as integer/float (e.g. in SQL, SPSS, SAS or Stata). The cell is empty when the column is not zero-padded numeric. Automatically enabled with --everything."
+        "description": "Add a \"zero_padded_numeric\" column that is \"true\" when a column's inferred type is String AND all its non-null values are all-digit numbers with at least one having a leading zero (e.g. US zip codes, barcodes, zero-padded IDs/classification codes). qsv keeps such columns as text to avoid data loss; this flag surfaces them so they are not mistakenly loaded as integer/float. The cell is empty when the column is not zero-padded numeric. Automatically enabled with --everything."
       }
     ]
   },

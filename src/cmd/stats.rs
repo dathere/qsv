@@ -1534,6 +1534,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // file), use the same args or if the --everything flag was set, and
                 // all the other non-stats args are equal. If so, we don't need to recompute the
                 // stats
+                //
+                // NOTE: changes to the SHAPE of the --everything output (e.g. adding the
+                // `zero_padded_numeric` column) are NOT detected per-column here — the
+                // `--everything` reuse path below has no per-stat guards (cardinality/mode/
+                // quartiles/percentiles aren't checked either). Such output-shape changes are
+                // invalidated solely by the `qsv_version` comparison below. Consequently, a
+                // pre-existing same-version `--everything` cache built before the column was
+                // added can still be served without it. The package version MUST therefore be
+                // bumped on any release that changes the --everything column set, so old caches
+                // are recomputed.
                 let input_file_modified = fs::metadata(&path)?.modified()?;
                 let stats_file_modified = fs::metadata(&stats_file)
                     .and_then(|m| m.modified())

@@ -152,7 +152,8 @@ const WHITESPACE_MARKERS: &[(char, &str)] = &[
     // more obscure whitespace markers
     ('\u{000B}', "《⋮》"), // vertical tab
     ('\u{000C}', "《␌》"), // form feed
-    ('\u{0009}', "《↹》"), // horizontal tab
+    // note: the horizontal tab (U+0009) is the same code point as '\t' above,
+    // so it is intentionally not repeated here (the '\t' entry already covers it).
     ('\u{0085}', "《␤》"), // next line
     ('\u{200E}', "《␎》"), // left-to-right mark
     ('\u{200F}', "《␏》"), // right-to-left mark

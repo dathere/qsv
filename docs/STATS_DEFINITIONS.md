@@ -106,7 +106,9 @@ The command supports various caching options to improve performance on subsequen
 | 26 | `max_precision` | Quality |
 | 27 | `sparsity` | Quality |
 
-**Non-Streaming Statistics** (require loading data into memory, opt-in via flag or `--everything`) — **21 stats**:
+**Non-Streaming Statistics** (opt-in via flag or `--everything`; all but `zero_padded_numeric` load/retain per-column data in memory) — **21 stats**:
+
+> `zero_padded_numeric` is the exception in this group: it is computed during the normal streaming scan in constant memory (two bookkeeping flags per column) and is listed here only because it is opt-in, not because it requires in-memory processing.
 
 | #  | Identifier | Flag |
 |---:|:---|:---|
@@ -132,7 +134,7 @@ The command supports various caching options to improve performance on subsequen
 | 47 | `percentiles` | `--percentiles` (single column containing the comma-separated values listed in `--percentile-list`) |
 | 48 | `zero_padded_numeric` | `--zero-padded-numeric` (`true` when the column's inferred `type` is `String` AND every non-null value is an all-digit number with at least one having a leading zero — e.g. zip codes, barcodes, zero-padded IDs; empty otherwise) |
 
-**Total: 48 statistics** (27 streaming + 21 non-streaming, beyond the `field`/`type` identifiers). 48 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 48 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). Non-streaming statistics use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "48 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
+**Total: 48 statistics** (27 streaming + 21 non-streaming, beyond the `field`/`type` identifiers). 48 is the *maximum* — it's the size of the union across all flag combinations. The actual emitted column count for any particular run depends on which flags are set: any single run emits at most 48 stats columns because `median` (#28) and `q2_median` (#33) are mutually exclusive — `median` is only emitted under `--median` alone, while `q2_median` replaces it whenever `--quartiles` or `--everything` is set. Runs without `--everything` emit fewer columns (only the streaming 27 plus whichever opt-in groups are enabled). The non-streaming statistics that retain per-column samples (every stat in this group except `zero_padded_numeric`, which is streaming/constant-memory) use memory-aware chunking for large files, dynamically calculating chunk size based on available memory and record sampling. The enumeration above is the source-of-truth for the "48 summary statistics" count quoted in `README.md` and `docs/help/stats.md`; it is sourced from the `Stats::stat_headers` builder in [`src/cmd/stats.rs`](https://github.com/dathere/qsv/blob/master/src/cmd/stats.rs).
 
 ### Weighted Statistics
 

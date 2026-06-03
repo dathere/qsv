@@ -728,7 +728,7 @@ fn stats_zero_padded_numeric_columns() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("--zero-padded-numeric").arg("in.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
 
     let header = &got[0];
     let field_idx = header.iter().position(|h| h == "field").unwrap();
@@ -760,13 +760,13 @@ fn stats_zero_padded_numeric_gating() {
     // absent from default stats output
     let mut cmd = wrk.command("stats");
     cmd.arg("in.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(!got[0].iter().any(|h| h == "zero_padded_numeric"));
 
     // present (and true) with --everything
     let mut cmd = wrk.command("stats");
     cmd.arg("--everything").arg("in.csv");
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let zpn_idx = got[0]
         .iter()
         .position(|h| h == "zero_padded_numeric")

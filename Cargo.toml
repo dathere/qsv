@@ -98,20 +98,11 @@ strip         = true
 inherits = "release"
 panic    = "unwind"
 
-# Nightly counterpart of release-luau for the nightly `qsv` builds that use
-# -Z build-std. Same rationale as release-luau (luau needs panic = "unwind").
-[profile.release-luau-nightly]
-inherits = "release-nightly"
-panic    = "unwind"
-
 [profile.release-samply]
 inherits = "release"
 debug    = true
 panic    = "unwind"
 strip    = false
-
-[profile.release-nightly]
-inherits = "release"
 
 [dependencies]
 anstream = { version = "1.0", optional = true }

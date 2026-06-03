@@ -86,6 +86,24 @@ opt-level     = 3
 panic         = "abort"
 strip         = true
 
+# luau (mlua) requires the unwind panic strategy: when a Luau callback raises an
+# error (e.g. qsv_cumsum overflow, an invalid qsv_shellcmd), mlua propagates it
+# across the Lua/C boundary via a Rust unwind. With panic = "abort" that unwind
+# hits a non-unwinding context and aborts the process instead of surfacing the
+# error (see https://github.com/dathere/qsv/issues/3937). luau is only enabled
+# in the main `qsv` binary (all_features / distrib_features), so that binary
+# MUST be built with this profile. The other binaries (qsvlite, qsvdp, qsvmcp)
+# do NOT enable luau and keep panic = "abort" via [profile.release].
+[profile.release-luau]
+inherits = "release"
+panic    = "unwind"
+
+# Nightly counterpart of release-luau for the nightly `qsv` builds that use
+# -Z build-std. Same rationale as release-luau (luau needs panic = "unwind").
+[profile.release-luau-nightly]
+inherits = "release-nightly"
+panic    = "unwind"
+
 [profile.release-samply]
 inherits = "release"
 debug    = true
@@ -454,7 +472,7 @@ distrib_features = [
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "luau", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
+qsvmcp = ["feature_capable", "geocode", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
 apply = [
     "base62",
     "base64-simd",
@@ -548,5 +566,5 @@ features = ["lite"]
 assets   = [["target/release/qsvlite", "/usr/local/bin/", "755"]]
 
 [package.metadata.deb.variants.datapusher_plus]
-features = ["datapusher_plus", "luau"]
+features = ["datapusher_plus"]
 assets   = [["target/release/qsvdp", "/usr/local/bin/", "755"]]

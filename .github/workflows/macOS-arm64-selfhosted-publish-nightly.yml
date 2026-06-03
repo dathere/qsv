@@ -61,7 +61,7 @@ jobs:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --locked --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
+        args: --profile release-luau-nightly --locked --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}

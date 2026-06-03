@@ -34,7 +34,7 @@ qsv is a high-performance CSV data-wrangling toolkit in Rust (version 19.1.0, MS
 | Binary | Source | Required Features | Use Case |
 |--------|--------|-------------------|----------|
 | `qsv` | `src/main.rs` | `feature_capable` | Full-featured CLI |
-| `qsvmcp` | `src/main.rs` | `qsvmcp` (subset) | MCP server for Claude (62 commands) |
+| `qsvmcp` | `src/main.rs` | `qsvmcp` (subset) | MCP server for Claude (63 commands) |
 | `qsvlite` | `src/mainlite.rs` | `lite` (minimal) | Lightweight version (50 commands) |
 | `qsvdp` | `src/maindp.rs` | `datapusher_plus` | Data pusher variant with geocode |
 
@@ -116,7 +116,7 @@ Key performance tuning in forked `csv` crate (`dathere/rust-csv` fork):
 ```
 
 **Tool Generation**:
-- 55 auto-generated skill JSON files in `qsv/` directory
+- 54 auto-generated skill JSON files in `qsv/` directory
 - Generated from qsv USAGE text via Rust generator (`src/mcp_skills_gen.rs`)
 - MCP tools added via guidance hints (whenToUse, commonPattern, etc.)
 
@@ -549,7 +549,7 @@ clipboard, color, lens, prompt
 | **Testing** | Strong | 71 test modules (feature-gated), integration tests, property-based testing |
 | **I/O Abstraction** | Clean | Config-driven CSV handling, format detection, compression |
 | **Documentation** | Excellent | Auto-generated help markdown, MCP guidance hints |
-| **MCP Integration** | Production-Ready | 55 auto-generated skills, 30 .ts source files (incl. 2 .d.ts), streaming executor, resource limits |
+| **MCP Integration** | Production-Ready | 54 auto-generated skills, 30 .ts source files (incl. 2 .d.ts), streaming executor, resource limits |
 
 ---
 

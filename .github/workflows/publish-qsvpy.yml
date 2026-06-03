@@ -103,7 +103,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+        args: --profile release-luau --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
@@ -131,7 +131,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+        args: --profile release-luau --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
@@ -159,7 +159,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+        args: --profile release-luau --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

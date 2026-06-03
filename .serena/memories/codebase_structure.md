@@ -45,7 +45,7 @@ tests/             — test_<command>.rs files
     wink-bm25-text-search.d.ts — Type definitions
     wink-nlp-utils.d.ts     — Type definitions
   tests/                    — <module>.test.ts files
-  qsv/                     — 55 auto-generated skill JSON files
+  qsv/                     — 54 auto-generated skill JSON files
   scripts/                 — Build/deployment scripts
   agents/                  — 3 subagents (data-analyst, data-wrangler, policy-analyst)
   skills/                  — 15 domain knowledge skills

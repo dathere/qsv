@@ -1,12 +1,12 @@
 # QSV MCP Server
 
-Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 55 skill-based commands optimized for AI agent workflows.
+Model Context Protocol (MCP) server that exposes qsv's tabular data-wrangling commands to Claude Desktop. The server works with **qsvmcp** (preferred) or the full **qsv** binary, exposing 54 skill-based commands optimized for AI agent workflows.
 
 ## Overview
 
 The QSV MCP Server enables Claude Desktop to interact with qsv through natural language, providing:
 
-- **Deferred Tool Loading**: 10 core utility tools plus 13 commonly-used command tools (sniff, sqlp, joinp, frequency, search, etc.) — 23 tools at startup (~58% reduction vs full 55-tool exposure). `qsv_browse_directory` adds a 24th when MCP Apps are enabled. Remaining tools are discovered via search and added dynamically.
+- **Deferred Tool Loading**: 10 core utility tools plus 13 commonly-used command tools (sniff, sqlp, joinp, frequency, search, etc.) — 23 tools at startup (~58% reduction vs full 54-tool exposure). `qsv_browse_directory` adds a 24th when MCP Apps are enabled. Remaining tools are discovered via search and added dynamically.
 - **BM25 Search**: Intelligent tool discovery using probabilistic relevance ranking
 - **Local File Access**: Works directly with your local tabular data files
 - **Natural Language Interface**: No need to remember command syntax
@@ -14,7 +14,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 64 commands needed by the MCP server (vs 73 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 63 commands needed by the MCP server (vs 73 in the full qsv binary), resulting in a smaller, faster binary.
 
 **Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
@@ -22,7 +22,7 @@ The **qsvmcp** binary variant is purpose-built for MCP server use. It includes o
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 64 | Preferred | Optimized for MCP, smaller binary |
+| **qsvmcp** | 63 | Preferred | Optimized for MCP, smaller binary |
 | **qsv** | 73 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |
@@ -174,7 +174,7 @@ This script will:
 | `QSV_MCP_MAX_OUTPUT_SIZE` | `52428800` | Maximum output size in bytes (50MB) |
 | `QSV_MCP_MAX_EXAMPLES` | `5` | Maximum examples in tool descriptions (0-20) |
 | `QSV_MCP_PLUGIN_MODE` | unset | Force plugin mode (for Gemini CLI etc.) |
-| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 55 tools immediately (no deferred loading). `false`: use only 10 core utility tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): deferred loading — 23 tools at startup (10 core + 13 commonly-used commands), +1 app-only when Apps enabled, plus tools discovered via search |
+| `QSV_MCP_EXPOSE_ALL_TOOLS` | unset | Controls tool exposure mode. `true`: expose all 54 tools immediately (no deferred loading). `false`: use only 10 core utility tools (+1 app-only tool when Apps enabled; no deferred additions). Unset (default): deferred loading — 23 tools at startup (10 core + 13 commonly-used commands), +1 app-only when Apps enabled, plus tools discovered via search |
 | `QSV_MCP_SANITIZE_ERRORS` | `true` | Strip absolute paths from qsv error messages (and the command line echoed alongside them) before they reach the MCP client. Protects usernames and directory layout in hosted/shared deployments. Set to `false` to keep full paths for local debugging. |
 
 **Resource Limits**: The server enforces limits to prevent resource exhaustion and DoS attacks. These limits are configurable via environment variables but have reasonable defaults for most use cases.
@@ -232,7 +232,7 @@ Tools for frequently used commands. Under default deferred loading these are reg
 
 ### Generic Command Tool
 
-`qsv_command` - Execute any qsv command with a skill definition (55 commands):
+`qsv_command` - Execute any qsv command with a skill definition (54 commands):
 - `to`, `tojsonl`, `partition`, `pseudo`, `reverse`, `sniff`, `sort`, `dedup`, `join`, `rename`, `validate`, `sample`, `template`, `diff`, `schema`, etc.
 - Full list: https://github.com/dathere/qsv#commands
 
@@ -242,7 +242,7 @@ The MCP server implements Anthropic's Tool Search Tool pattern for optimal token
 
 ### Deferred Loading (Default)
 
-23 tools are loaded at startup — 10 core utility tools plus 13 commonly-used command tools — reducing token usage by ~58% vs exposing all 55 tools (`QSV_MCP_EXPOSE_ALL_TOOLS=true`):
+23 tools are loaded at startup — 10 core utility tools plus 13 commonly-used command tools — reducing token usage by ~58% vs exposing all 54 tools (`QSV_MCP_EXPOSE_ALL_TOOLS=true`):
 
 | Core Utility Tool | Purpose |
 |-------------------|---------|
@@ -272,7 +272,7 @@ The `qsv_search_tools` tool uses probabilistic BM25 relevance ranking:
 
 ### Manual Override
 Use `QSV_MCP_EXPOSE_ALL_TOOLS` environment variable to override deferred loading:
-- `true`: Always expose all 55 tools immediately (no deferred loading)
+- `true`: Always expose all 54 tools immediately (no deferred loading)
 - `false`: Always use 10 core utility tools only (+1 app-only tool when MCP Apps available; disables both deferred loading and the 13 pre-registered common command tools)
 - Unset: Default behavior — 23 tools at startup (10 core + 13 commonly-used commands; +1 app-only tool when MCP Apps available) with deferred loading for the remaining 32 (recommended)
 
@@ -403,7 +403,7 @@ Result: Parquet file created with optimized data types (data.parquet)
 ┌──────────────────▼──────────────────────────┐
 │          QSV MCP Server                     │
 │  • 10 Core Tools (always loaded)            │
-│  • 55 tools via deferred loading            │
+│  • 54 tools via deferred loading            │
 │  • BM25-powered tool search                │
 │  • Enhanced descriptions & guidance        │
 │  • Local file access & validation          │
@@ -500,7 +500,7 @@ npm run mcp:start
 The server should start and log:
 ```
 Loading QSV skills...
-Loaded 55 skills
+Loaded 54 skills
 QSV MCP Server initialized successfully
 QSV MCP Server running on stdio
 ```
@@ -574,7 +574,7 @@ npm test
 
 ## Performance
 
-- **Server Startup**: < 100ms (55 skills loaded)
+- **Server Startup**: < 100ms (54 skills loaded)
 - **Tool Execution**: < 10ms overhead + qsv processing time
 - **File Processing**: Depends on qsv performance (generally very fast)
 - **Streaming**: Large files processed efficiently by qsv
@@ -619,6 +619,6 @@ For issues or questions:
 
 **Updated**: 2026-05-18
 **Version**: 20.1.0
-**Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 55 discoverable via `qsv_search_tools`
-**Skills**: 55 qsv commands
+**Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 54 discoverable via `qsv_search_tools`
+**Skills**: 54 qsv commands
 **Status**: Production Ready

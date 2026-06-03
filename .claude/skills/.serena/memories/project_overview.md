@@ -5,7 +5,7 @@
 **Purpose**: MCP (Model Context Protocol) server and Claude Cowork plugin for the qsv tabular data-wrangling CLI toolkit. Exposes qsv commands as MCP tools to Claude Desktop, Claude Code/Cowork, and other MCP clients.
 
 ## What It Does
-- Wraps qsv CLI commands as MCP tools with type-safe parameter schemas (55 skill JSONs in `qsv/`)
+- Wraps qsv CLI commands as MCP tools with type-safe parameter schemas (54 skill JSONs in `qsv/`)
 - Auto-generates skill JSON files from qsv's USAGE text (`qsv --update-mcp-skills` from repo root)
 - Provides BM25-based tool search, slot-based concurrency, DuckDB integration, spreadsheet conversion (Excel/ODS → CSV), and working directory management
 - Ships as both an MCP server (`.mcpb` bundles) and a Claude Cowork plugin (`.plugin` bundles)

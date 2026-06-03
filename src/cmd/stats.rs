@@ -176,6 +176,14 @@ stats options:
                               This is automatically enabled if --infer-boolean is enabled.
                               https://en.wikipedia.org/wiki/Cardinality_(SQL_statements)
                               Uses memory proportional to the number of unique values in each column.
+    --zero-padded-numeric     Add a "zero_padded_numeric" column that is "true" when a column's
+                              inferred type is String AND all its non-null values are all-digit
+                              numbers with at least one having a leading zero (e.g. US zip codes,
+                              barcodes, zero-padded IDs/classification codes). qsv keeps such
+                              columns as text to avoid data loss; this flag surfaces them so they
+                              are not mistakenly loaded as integer/float (e.g. in SQL, SPSS, SAS
+                              or Stata). The cell is empty when the column is not zero-padded
+                              numeric. Automatically enabled with --everything.
 
                               NUMERIC & DATE/DATETIME STATS THAT REQUIRE IN-MEMORY SORTING:
                               The following statistics are only computed for numeric & date/datetime
@@ -448,6 +456,7 @@ pub struct Args {
     pub flag_boolean_patterns:     String,
     pub flag_mode:                 bool,
     pub flag_cardinality:          bool,
+    pub flag_zero_padded_numeric:  bool,
     pub flag_median:               bool,
     pub flag_mad:                  bool,
     pub flag_quartiles:            bool,
@@ -485,6 +494,8 @@ struct StatsArgs {
     flag_infer_boolean: bool,
     flag_mode: bool,
     flag_cardinality: bool,
+    #[serde(default)]
+    flag_zero_padded_numeric: bool,
     flag_median: bool,
     flag_mad: bool,
     flag_quartiles: bool,
@@ -581,6 +592,7 @@ impl StatsArgs {
             flag_infer_boolean: get_bool("flag_infer_boolean"),
             flag_mode: get_bool("flag_mode"),
             flag_cardinality: get_bool("flag_cardinality"),
+            flag_zero_padded_numeric: get_bool("flag_zero_padded_numeric"),
             flag_median: get_bool("flag_median"),
             flag_mad: get_bool("flag_mad"),
             flag_quartiles: get_bool("flag_quartiles"),
@@ -745,6 +757,7 @@ pub static STATSDATA_TYPES_MAP: phf::Map<&'static str, JsonTypes> = phf_map! {
     "antimode" => JsonTypes::String,
     "antimode_count" => JsonTypes::Int,
     "antimode_occurrences" => JsonTypes::Int,
+    "zero_padded_numeric" => JsonTypes::Bool,
     // moarstats fields
     "kurtosis" => JsonTypes::Float,
     "bimodality_coefficient" => JsonTypes::Float,
@@ -777,7 +790,7 @@ const MS_IN_DAY_INT: i64 = 86_400_000;
 const DAY_DECIMAL_PLACES: u32 = 5;
 
 // maximum number of output columns
-const MAX_STAT_COLUMNS: usize = 47;
+const MAX_STAT_COLUMNS: usize = 49;
 
 // HyperLogLog precision parameter for `--cardinality-method approx`. lg_k=12
 // gives ~1.5% relative standard error and ~5KB per column at the dense Hll8
@@ -1256,6 +1269,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         flag_infer_boolean: args.flag_infer_boolean,
         flag_mode: args.flag_mode,
         flag_cardinality: args.flag_cardinality,
+        flag_zero_padded_numeric: args.flag_zero_padded_numeric,
         flag_median: args.flag_median,
         flag_mad: args.flag_mad,
         flag_quartiles: args.flag_quartiles,
@@ -2465,6 +2479,7 @@ impl Args {
             range: !self.flag_typesonly || self.flag_infer_boolean,
             dist: !self.flag_typesonly,
             cardinality: self.flag_everything || self.flag_cardinality,
+            zero_padded_numeric: self.flag_everything || self.flag_zero_padded_numeric,
             median: !self.flag_everything && self.flag_median && !self.flag_quartiles,
             mad: !approx_quantiles && (self.flag_everything || self.flag_mad),
             quartiles: self.flag_everything || self.flag_quartiles,
@@ -2596,6 +2611,9 @@ impl Args {
         }
         if self.flag_percentiles || everything {
             fields.push("percentiles");
+        }
+        if self.flag_zero_padded_numeric || everything {
+            fields.push("zero_padded_numeric");
         }
 
         csv::StringRecord::from(fields)
@@ -2998,6 +3016,7 @@ struct WhichStats {
     range:                bool,
     dist:                 bool,
     cardinality:          bool,
+    zero_padded_numeric:  bool,
     median:               bool,
     mad:                  bool,
     quartiles:            bool,
@@ -3207,12 +3226,19 @@ impl PartialEq for HllSlot {
 struct Stats {
     // CACHE LINE 1: Most frequently accessed fields (hot data)
     // Group small, frequently accessed fields together
-    typ:           FieldType, // 1 byte - accessed in every add() call
-    is_ascii:      bool,      // 1 byte - accessed for strings
+    typ:              FieldType, // 1 byte - accessed in every add() call
+    is_ascii:         bool,      // 1 byte - accessed for strings
     /// Set when --mode-cardinality-cap fires and this column's `modes`/`weighted_modes`
     /// tracker is dropped mid-pass. Output uses `*HIGH_CARDINALITY` / `>=<cap>` sentinels.
-    modes_dropped: bool, // 1 byte
-    max_precision: u16,       // 2 bytes - accessed for floats
+    modes_dropped:    bool, // 1 byte
+    /// --zero-padded-numeric accumulators (only updated when `which.zero_padded_numeric`).
+    /// `zpn_disqualified` is sticky: set the first time a non-null value is not all-ASCII-digits,
+    /// after which the per-cell check is skipped. `zpn_has_value` records whether at least one
+    /// non-null all-digit value was seen. Combined with a final `typ == TString` at output time,
+    /// they identify columns kept as text due to leading zeros (zip codes, barcodes, padded IDs).
+    zpn_disqualified: bool, // 1 byte
+    zpn_has_value:    bool,      // 1 byte
+    max_precision:    u16,       // 2 bytes - accessed for floats
 
     // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
 
@@ -3837,6 +3863,8 @@ impl Stats {
             typ: FieldType::default(),
             is_ascii: true,
             modes_dropped: false,
+            zpn_disqualified: false,
+            zpn_has_value: false,
             max_precision: 0,
             nullcount: 0,
             sum_stotlen: 0,
@@ -3987,6 +4015,19 @@ impl Stats {
                 self.nullcount += 1;
             }
             return;
+        }
+
+        // --zero-padded-numeric tracking (gated by the flag; zero cost otherwise).
+        // Runs for every non-typesonly, non-null sample BEFORE the t == TString early-return
+        // below, so it observes values even after the column has widened to String. The sticky
+        // `zpn_disqualified` bit means non-numeric columns pay only a single bool check after
+        // their first value; only genuinely all-digit columns get scanned for the whole pass.
+        if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
+            if sample.iter().all(u8::is_ascii_digit) {
+                self.zpn_has_value = true;
+            } else {
+                self.zpn_disqualified = true;
+            }
         }
 
         // Update total weight for weighted statistics
@@ -5112,6 +5153,17 @@ impl Stats {
             }
         }
 
+        // zero_padded_numeric (last optional column, matching stats_headers ordering).
+        // "true" only when the column was kept as text because every non-null value is an
+        // all-digit number and at least one had a leading zero; empty otherwise.
+        if self.which.zero_padded_numeric {
+            if typ == TString && self.zpn_has_value && !self.zpn_disqualified {
+                record.push_field("true");
+            } else {
+                record.push_field(EMPTY_STR);
+            }
+        }
+
         record
     }
 }
@@ -5127,6 +5179,10 @@ impl Commute for Stats {
         // below so we don't have to special-case the merge plumbing — the post-merge
         // block at the bottom of this function nukes both fields when modes_dropped fires.
         self.modes_dropped |= other.modes_dropped;
+        // zero_padded_numeric accumulators: disqualification is sticky across chunks, and a
+        // qualifying value seen in any chunk counts.
+        self.zpn_disqualified |= other.zpn_disqualified;
+        self.zpn_has_value |= other.zpn_has_value;
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;

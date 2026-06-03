@@ -19,8 +19,9 @@ and then prompting the LLM with detailed, configurable, Mini Jinja-templated pro
 these extended statistical context.
 
 The Data Dictionary is "neuro-symbolic" as it uses a hybrid approach. It's primarily populated
-deterministically using Summary Statistics & Frequency Distribution, and only the Label, Description &
-Content Type are populated by the "neural network" LLM using the same statistical context.
+deterministically using Summary Statistics & Frequency Distribution, and only the human-friendly
+Label and Description (plus Content Type when --infer-content-type is set) are populated by the
+"neural network" LLM using the same statistical context.
 
 CHAT MODE:  
 You can also use the --prompt option to ask a natural language question about the Dataset.
@@ -212,7 +213,7 @@ qsv describegpt --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-symbolic" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description are populated by the LLM using the same statistical context. |  |
+| &nbsp;`‑‑dictionary`&nbsp; | flag | Create a Data Dictionary using a hybrid "neuro-symbolic" pipeline - i.e. the Dictionary is populated deterministically using Summary Statistics and Frequency Distribution data, and only the human-friendly Label and Description (and Content Type when --infer-content-type is set) are populated by the LLM using the same statistical context. |  |
 | &nbsp;`‑‑description`&nbsp; | flag | Infer a general Description of the dataset based on detailed statistical context. An Attribution signature is embedded in the Description. |  |
 | &nbsp;`‑‑tags`&nbsp; | flag | Infer Tags that categorize the dataset based on detailed statistical context. Useful for grouping datasets and filtering. |  |
 | &nbsp;`‑A,`<br>`‑‑all`&nbsp; | flag | Shortcut for --dictionary --description --tags. |  |

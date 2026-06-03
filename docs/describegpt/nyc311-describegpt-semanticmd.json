@@ -2,17 +2,15 @@
   "dataset": {
     "name": "NYC_311_SR_2010-2020-sample-1M",
     "overview": "**Description**\n\nThe dataset contains one million NYC 311 complaint records logged between January 1 2010 and December 23 2020. Each record is identified by a unique surrogate integer key and includes timestamps for when the complaint was created, closed, and last updated, as well as a due‑date field that is often missing (≈65 % null). The majority of complaints (≈95 %) have been closed, with the remaining cases in various interim states such as “Pending,” “Open,” or “In Progress.” Complaint types are highly skewed: noise and heating issues dominate, while many other categories are lumped into an “Other” bucket that contains over 56 % of all complaints. The data include rich location details—street address, cross streets, city, borough, ZIP code, and optional latitude/longitude coordinates—but about a quarter of the records lack geospatial information. Agency attribution is provided both as an abbreviation and full name, with NYPD, HPD, and DOT being the most frequent handlers. Several string fields (e.g., Descriptor, Incident Address) contain a large number of unique or unstructured values, reflected in low uniqueness ratios for those columns.\n\n**Notable Characteristics**\n\n- **Central tendency & spread** – The median creation date is February 12 2016, with a mean of November 10 2015; the closed‑date distribution lags by roughly 3–4 months. Latitude and longitude are centered around (40.73 N, −73.93 W) with modest standard deviations (~0.09° latitude, ~0.16° longitude).\n- **Distribution shape** – Many categorical fields exhibit extreme right‑skew: “Complaint Type” and “Descriptor” have long tails of rare categories; the “Other” bucket often captures >50 % of observations. Date fields show slight left‑skew (more recent dates).\n- **Missing values & sparsity** – Due Date is missing for ≈65 % of records and Latitude/Longitude for ≈25 %, while address components (Incident Address, Street Name) miss ≈17 %; Closed Date and Resolution Description, by contrast, are largely populated (≈2–3 % null). The dataset’s overall sparsity is moderate (~0.3 when considering all fields).\n- **Duplicate handling** – The surrogate “Unique Key” has a uniqueness ratio of 1 with zero duplicates, ensuring record integrity across joins.\n- **High cardinality & low uniqueness ratios** – Fields such as Incident Zip (535 distinct values), City (382 distinct values), and Agency Name (553 distinct names) have high cardinalities but relatively low uniqueness ratios (<0.01 for most), indicating many repeated entries. Conversely, fields like Descriptor (1392 distinct values) and Incident Address (341 996 distinct values) exhibit high uniqueness with substantial “Other” categories.\n- **Anomalies & outliers** – The date ranges for Closed Date and Resolution Action Updated Date extend from 1900 to 2100, suggesting placeholder or erroneous entries that should be filtered if precise closure timing is required.\n- **PII/PHI considerations** – While the dataset contains street addresses and latitude/longitude pairs that could be used to pinpoint exact locations (potentially sensitive), it does not include personal identifiers such as names, phone numbers, or financial data; however users should still exercise caution when sharing geocoded points.\n- **Data quality issues** – The prevalence of “Other” categories in many fields indicates incomplete standardization and potential challenges for categorical analyses. Missing coordinate information limits spatial analysis for ~25 % of complaints.\n",
-    "grain": {
-      "text": "one row = one NYC 311 complaint record\n",
-      "resources": [
-        {
-          "title": "NYC 311 SR 2010 2020 sample 1M",
-          "rows": "1000000",
-          "resource": "NYC_311_SR_2010-2020-sample-1M.csv",
-          "schema": "nyc311sr20102020sample1m"
-        }
-      ]
-    }
+    "grain": "one row = one NYC 311 complaint record\n",
+    "resources": [
+      {
+        "title": "NYC 311 SR 2010 2020 sample 1M",
+        "rows": "1000000",
+        "resource": "NYC_311_SR_2010-2020-sample-1M.csv",
+        "schema": "nyc311sr20102020sample1m"
+      }
+    ]
   },
   "schema": {
     "name": "nyc311sr20102020sample1m",

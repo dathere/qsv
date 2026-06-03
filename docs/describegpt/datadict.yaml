@@ -20,31 +20,37 @@ sections:
       {overview|md}
     patch_add:
       overview: $overview
+  # The Resource/Schema/Title/Rows table is emitted whether or not a `## Grain`
+  # section is present — the semanticmd template only gates the `## Grain` heading,
+  # not this table. When grain is absent the table sits directly under the dataset
+  # (matched here); when present it falls inside the `## Grain` frame below. The
+  # same anchored rule handles both, so values always land at dataset.resources[].
+  - &resource_table
+    table_match: [Resource, Schema, Title, Rows]
+    row_patch_path: resources/-
+    row_patch_add:
+      title: $3
+      rows: $4
+    # Resource & Schema cells are inline-code; re-extract the inner text so the
+    # values are stored without literal backticks.
+    row_submatch:
+      $1:
+      - match: "`{resource}`"
+        patch_add:
+          resource: $resource
+      $2:
+      - match: "`{schema}`"
+        patch_add:
+          schema: $schema
   sections:
   - heading_match: |
       ## Grain
-    patch_path: grain
     children:
     - match: |
         {grain_text|md}
       patch_add:
-        text: $grain_text
-    - table_match: [Resource, Schema, Title, Rows]
-      row_patch_path: resources/-
-      row_patch_add:
-        title: $3
-        rows: $4
-      # Resource & Schema cells are inline-code; re-extract the inner text so the
-      # values are stored without literal backticks.
-      row_submatch:
-        $1:
-        - match: "`{resource}`"
-          patch_add:
-            resource: $resource
-        $2:
-        - match: "`{schema}`"
-          patch_add:
-            schema: $schema
+        grain: $grain_text
+    - *resource_table
 
 # ============================ Schema ============================
 - heading_match: |
@@ -163,10 +169,18 @@ sections:
       # a run reaches end-of-document, so it captures both paragraphs into `trailer`
       # but only advances past the first; the second rule consumes the leftover
       # WARNING paragraph (RawText / soft-break / RawText) structurally.
-      - match: |
+      - &trailer_rule
+        match: |
           {trailer|md}
         patch_add:
           trailer: $trailer
-      - match: |
+      - &warning_rule
+        match: |
           {warning_line}
           {warning_star}
+    # When NO column has a frequency table, the attribution block follows the
+    # resource statistics table directly inside `## Statistics` (there is no
+    # `### Frequency` frame to host it), so the same trailer/warning rules must be
+    # reachable here as well.
+    - *trailer_rule
+    - *warning_rule

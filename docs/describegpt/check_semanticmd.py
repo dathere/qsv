@@ -21,7 +21,7 @@ Usage:
 The conversion runs in-process against the installed `semantic-md` package
 (no subprocess, no shell). Install the pinned toolchain once with:
 
-    pip install semantic-md==0.0.2 mistletoe jsonpatch pyyaml
+    pip install semantic-md==0.0.2 mistletoe==1.5.1 jsonpatch==1.33 pyyaml==6.0.3
 """
 
 from __future__ import annotations
@@ -33,9 +33,12 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-# Pinned for reference; `semantic-md` is pre-1.0 and its parsing behavior can
-# shift between releases.
-REQUIREMENTS = "semantic-md==0.0.2 mistletoe jsonpatch pyyaml"
+# Fully pinned for reproducibility: `semantic-md` is pre-1.0 and its parsing
+# behavior (and that of its parser deps) can shift between releases, which would
+# silently change the generated JSON. If you bump these, regenerate with --update.
+# The check itself is the backstop — it diffs against the committed artifact, so a
+# behavior change in any dependency fails loudly rather than drifting unnoticed.
+REQUIREMENTS = "semantic-md==0.0.2 mistletoe==1.5.1 jsonpatch==1.33 pyyaml==6.0.3"
 
 DEFAULT_MD = HERE / "nyc311-describegpt-semanticmd.md"
 DEFAULT_SCHEMA = HERE / "datadict.yaml"
@@ -99,11 +102,18 @@ def assert_invariants(doc: dict) -> list[str]:
         f"row-count mismatch: schema.fields={len(fields)}, "
         f"schema.columns={len(columns)}, resource.statistics={len(stats)}",
     )
-    need(len(freqs) > 0, "resource.frequencies is empty")
+    # Frequency tables are per-column and optional (a column only gets one when it
+    # has a frequency distribution), so a valid document may legitimately have none.
+    # When present, each entry must carry its source column name.
+    need(isinstance(freqs, list), "resource.frequencies is not a list")
+    need(
+        all(isinstance(f, dict) and f.get("column") for f in freqs),
+        "a resource.frequencies entry is missing its `column`",
+    )
 
     # No value should leak literal markdown backticks (the inline-code wrapper qsv
     # uses for identifiers). Markdown blob fields are exempt.
-    blob_keys = {"info", "overview", "validation", "trailer", "text"}
+    blob_keys = {"info", "overview", "validation", "trailer", "grain"}
 
     def scan(node, path="$"):
         if isinstance(node, dict):

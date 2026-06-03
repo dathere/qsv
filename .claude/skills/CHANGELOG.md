@@ -5,6 +5,16 @@ All notable changes to the qsv Agent Skills (MCP Server) project will be documen
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Removed
+- **`luau` skill dropped from qsvmcp** — the `qsvmcp` binary no longer enables the `luau` feature, so `qsv-luau.json` is no longer part of the generated skill set. Luau requires `panic = "unwind"`, which is incompatible with qsvmcp's `panic = "abort"` release build (a Luau callback error would abort the process instead of surfacing — see qsv [#3937](https://github.com/dathere/qsv/issues/3937)). The `luau` command remains available in the full `qsv` binary.
+
+### Changed
+- **Skill count: 55 → 54** — reflected in `manifest.json`, `.claude-plugin/plugin.json`, root `.claude-plugin/marketplace.json`, `README-MCP.md`, `README.md`, `README-MCPB.md`, `GEMINI.md`, `cowork-CLAUDE.md`, and `skills/csv-wrangling/SKILL.md`.
+- **qsvmcp binary command count: 64 → 63** — `luau` removed from the `qsvmcp` feature set; updated in `README-MCP.md` and `README-MCPB.md`. The full `qsv` binary remains **73** (it retains Luau).
+- **Skill JSONs regenerated from qsv USAGE text** — beyond dropping `luau`, the regeneration synced two drifted skills: `qsv-describegpt.json` (neuro-symbolic rename) and `qsv-sniff.json` (`--sample` distributed-sampling note when a CSV index is present).
+
 ## [20.1.0] - 2026-05-18
 
 Companion release to qsv 20.1.0 ("Synthetic Data"). MCP server tracks the qsv binary version per the policy adopted in 20.0.0.

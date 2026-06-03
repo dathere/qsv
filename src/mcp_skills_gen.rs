@@ -1222,6 +1222,7 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - foreach: not available in qsvmcp
     // - geoconvert: experimental command (not yet stable)
     // - lens: interactive TUI viewer (requires terminal)
+    // - luau: not available in qsvmcp (requires panic=unwind; see qsv issue #3937)
     // - pro: contains interactive/terminal-dependent subcommands (lens, workflow)
     // - profile: requires Python interpreter + jinja2 on host, produces a large .metadata.json
     //   artifact better consumed as a file than chat output; reconsider after MCP gains
@@ -1258,7 +1259,6 @@ pub fn generate_mcp_skills() -> CliResult<()> {
         "joinp",
         "json",
         "jsonl",
-        "luau",
         "moarstats",
         "partition",
         "pivotp",

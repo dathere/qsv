@@ -146,7 +146,7 @@ jobs:
         command: build
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+        args: --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm
@@ -169,8 +169,11 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-publish-testing
-        rm target/${{ matrix.job.target }}/release/*.d 
-        cp -v target/${{ matrix.job.target }}/release/qsv* qsv-publish-testing
+        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
+        for d in release-luau release; do
+          rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+          cp -v target/${{ matrix.job.target }}/$d/qsv* qsv-publish-testing 2>/dev/null || true
+        done
     - name: Create README
       shell: bash
       run: |

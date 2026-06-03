@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 63 commands (vs 72 in the full qsv binary), plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 63 commands (vs 73 in the full qsv binary), plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 63 commands (qsvmcp) / 72 (qsv)  │
+│  • 63 commands (qsvmcp) / 73 (qsv)  │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘

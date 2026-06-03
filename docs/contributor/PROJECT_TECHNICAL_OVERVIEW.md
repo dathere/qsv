@@ -54,7 +54,7 @@ qsv uses Cargo features to conditionally include commands and dependencies. Some
 
 Binaries:
 - `qsv` (full-featured): requires `feature_capable` and additional features as needed
-- `qsvmcp` (MCP server optimized): built with `qsvmcp` feature (geocode, luau, mcp, polars, profile, self_update, synthesize, to); shares `main.rs` with `qsv`
+- `qsvmcp` (MCP server optimized): built with `qsvmcp` feature (geocode, mcp, polars, profile, self_update, synthesize, to); shares `main.rs` with `qsv`
 - `qsvlite`: built with `lite` feature
 - `qsvdp`: built with `datapusher_plus`
 

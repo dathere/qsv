@@ -83,7 +83,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
+        args: --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --bin qsv -Z build-std=std --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable,nightly ${{ matrix.job.default-features }}
     - name: Build qsvlite-nightly
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
@@ -92,7 +92,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvlite -Z build-std=std --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --release --bin qsvlite -Z build-std=std --features=lite,self_update,nightly,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvmcp-nightly
       if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' }}
       env:
@@ -102,7 +102,7 @@ jobs:
         command: build
         use-cross: false
         toolchain: ${{ matrix.rust }}
-        args: --profile release-nightly --bin qsvmcp -Z build-std=std ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,nightly,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp,nightly' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+        args: --release --bin qsvmcp -Z build-std=std ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,nightly,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp,nightly' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # TODO: Add qsvdp-nightly build back in after v5.0.3, be sure to copy qsvdp binaries below
     # - name: Build qsvdp-nightly
     #   env:
@@ -112,13 +112,16 @@ jobs:
     #     command: build
     #     use-cross: false
     #     toolchain: ${{ matrix.rust }}
-    #     args: --profile release-nightly --bin qsvdp -Z build-std=std -Z unstable-options --features=datapusher_plus,nightly,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    #     args: --release --bin qsvdp -Z build-std=std -Z unstable-options --features=datapusher_plus,nightly,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
         mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
-        rm target/${{ matrix.job.target }}/release-nightly/*.d 
-        cp target/${{ matrix.job.target }}/release-nightly/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+        # qsv uses release-luau (panic=unwind, qsv #3937) when built with luau, else release; the other bins use release
+        for d in release-luau release; do
+          rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+          cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+        done
         cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
         if [ "$RUNNER_OS" == "Windows"]; then
              mv qsv.exe qsv_nightly.exe

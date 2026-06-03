@@ -255,7 +255,7 @@
   "_meta": {
     "com.dathere.qsv": {
       "features": [
-        "73 CLI commands (55 available as skills)",
+        "73 CLI commands (54 available as skills)",
         "Process local files (CSV, Parquet, Excel, JSONL) without uploading",
         "Smart caching with stats/frequency files",
         "Automatic Excel, Parquet and JSONL conversion"

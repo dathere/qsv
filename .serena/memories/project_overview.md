@@ -11,7 +11,7 @@ It's a fork of xsv with extensive additional functionality.
 - Root directory: `/`
 - Commands in `src/cmd/`
 - Binary variants and command counts:
-  - `qsv` (full): 71 commands
+  - `qsv` (full): 73 commands
   - `qsvmcp` (MCP server): 63 commands (includes `to`)
   - `qsvlite` (minimal): 50 commands
   - `qsvdp` (datapusher_plus): 40 commands

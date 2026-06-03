@@ -117,8 +117,11 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
-        rm target/${{ matrix.job.target }}/release-nightly/*.d 
-        cp target/${{ matrix.job.target }}/release-nightly/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+        # qsv uses the release-luau-nightly profile (panic=unwind, qsv #3937); the other bins use release-nightly
+        for d in release-luau-nightly release-nightly; do
+          rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+          cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+        done
         cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
         if [ "$RUNNER_OS" == "Windows"]; then
              mv qsv.exe qsv_nightly.exe

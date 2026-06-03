@@ -67,8 +67,11 @@ jobs:
       shell: bash
       run: |
             mkdir qsv-${{ needs.analyze-tags.outputs.previous-tag }}
-            rm target/${{ matrix.job.target }}/release/*.d
-            cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+            # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+            for d in release-luau release; do
+              rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+              cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+            done
             cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
             mv qsv qsvpy311
             cd ..
@@ -88,8 +91,11 @@ jobs:
     - name: Copy binaries to working dir
       shell: bash
       run: |
-                rm target/${{ matrix.job.target }}/release/*.d 
-                cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+                # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+                for d in release-luau release; do
+                  rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+                  cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+                done
                 cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
                 mv qsv qsvpy312
                 cd ..
@@ -109,8 +115,11 @@ jobs:
     - name: Copy binaries to working dir
       shell: bash
       run: |
-                rm target/${{ matrix.job.target }}/release/*.d 
-                cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+                # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+                for d in release-luau release; do
+                  rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+                  cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+                done
                 cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
                 mv qsv qsvpy313
                 cd ..

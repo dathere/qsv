@@ -169,8 +169,11 @@ jobs:
       shell: bash
       run: |
         mkdir qsv-publish-testing
-        rm target/${{ matrix.job.target }}/release/*.d 
-        cp -v target/${{ matrix.job.target }}/release/qsv* qsv-publish-testing
+        # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+        for d in release-luau release; do
+          rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+          cp -v target/${{ matrix.job.target }}/$d/qsv* qsv-publish-testing 2>/dev/null || true
+        done
     - name: Create README
       shell: bash
       run: |

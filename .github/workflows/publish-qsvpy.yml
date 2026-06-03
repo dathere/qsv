@@ -108,8 +108,11 @@ jobs:
       shell: bash
       run: |
           mkdir -p qsv-${{ needs.analyze-tags.outputs.previous-tag }}
-          rm target/${{ matrix.job.target }}/release/*.d 
-          cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+          # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+          for d in release-luau release; do
+            rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+            cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+          done
           cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
           if [ "$RUNNER_OS" == "Windows"]; then
                mv qsv.exe qsvpy311.exe
@@ -135,8 +138,11 @@ jobs:
     - name: Copy binaries to working dir
       shell: bash
       run: |
-          rm target/${{ matrix.job.target }}/release/*.d 
-          cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+          # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+          for d in release-luau release; do
+            rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+            cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+          done
           cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
           if [ "$RUNNER_OS" == "Windows"]; then
                   mv qsv.exe qsvpy312.exe
@@ -163,8 +169,11 @@ jobs:
     - name: Copy binaries to working dir
       shell: bash
       run: |
-          rm target/${{ matrix.job.target }}/release/*.d 
-          cp target/${{ matrix.job.target }}/release/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }}
+          # qsv uses the release-luau profile (panic=unwind, qsv #3937); the other bins use release
+          for d in release-luau release; do
+            rm -f target/${{ matrix.job.target }}/$d/*.d 2>/dev/null || true
+            cp target/${{ matrix.job.target }}/$d/qsv* qsv-${{ needs.analyze-tags.outputs.previous-tag }} 2>/dev/null || true
+          done
           cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
           if [ "$RUNNER_OS" == "Windows"]; then
                   mv qsv.exe qsvpy313.exe

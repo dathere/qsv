@@ -18,80 +18,53 @@ Usage:
     # check a different document
     python3 check_semanticmd.py --md path/to/doc.md --schema path/to/datadict.yaml
 
-The `semantic-md` toolchain is bootstrapped into a local virtualenv
-(`.semanticmd-venv/` next to this script) on first run so the check is hermetic
-and does not touch the system Python.
+The conversion runs in-process against the installed `semantic-md` package
+(no subprocess, no shell). Install the pinned toolchain once with:
+
+    pip install semantic-md==0.0.2 mistletoe jsonpatch pyyaml
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import os
-import subprocess
 import sys
-import venv
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-VENV_DIR = HERE / ".semanticmd-venv"
 
-# Pinned so the check is reproducible. `semantic-md` is pre-1.0 and its parsing
-# behavior can shift between releases.
-REQUIREMENTS = [
-    "semantic-md==0.0.2",
-    "click",
-    "pyyaml",
-    "mistletoe",
-    "jsonpatch",
-]
+# Pinned for reference; `semantic-md` is pre-1.0 and its parsing behavior can
+# shift between releases.
+REQUIREMENTS = "semantic-md==0.0.2 mistletoe jsonpatch pyyaml"
 
 DEFAULT_MD = HERE / "nyc311-describegpt-semanticmd.md"
 DEFAULT_SCHEMA = HERE / "datadict.yaml"
 
 
-def venv_python() -> Path:
-    bindir = "Scripts" if os.name == "nt" else "bin"
-    return VENV_DIR / bindir / ("python.exe" if os.name == "nt" else "python")
+def convert(md: Path, schema: Path) -> dict:
+    """Convert `md` to a JSON object using `schema`, in-process.
 
-
-def ensure_venv() -> Path:
-    """Create the venv and install pinned deps on first run; reuse afterwards."""
-    py = venv_python()
-    marker = VENV_DIR / ".requirements.ok"
-    if py.exists() and marker.exists():
-        return py
-    print(f"[check_semanticmd] bootstrapping venv at {VENV_DIR} ...", file=sys.stderr)
-    venv.create(VENV_DIR, with_pip=True)
-    subprocess.run(
-        [str(py), "-m", "pip", "install", "--quiet", "--upgrade", "pip"], check=True
-    )
-    subprocess.run(
-        [str(py), "-m", "pip", "install", "--quiet", *REQUIREMENTS], check=True
-    )
-    marker.write_text("\n".join(REQUIREMENTS) + "\n")
-    return py
-
-
-def convert(py: Path, md: Path, schema: Path) -> dict:
-    """Run the real semantic-md converter and return the parsed JSON."""
-    cmd = [
-        str(py),
-        "-c",
-        "from semantic_md.cli import cli; cli()",
-        "json",
-        str(md),
-        "-",  # write JSON to stdout
-        "-s",
-        str(schema),
-    ]
-    proc = subprocess.run(cmd, capture_output=True, text=True)
-    if proc.returncode != 0:
-        sys.stderr.write(proc.stderr)
+    Mirrors the steps semantic-md's own CLI performs, but without shelling out.
+    """
+    try:
+        from semantic_md import convert as smd
+    except ImportError as exc:  # pragma: no cover - environment guard
         raise SystemExit(
-            f"[check_semanticmd] semantic-md conversion FAILED for {md.name}"
+            f"[check_semanticmd] cannot import `semantic_md` ({exc}).\n"
+            f"  install the toolchain with: pip install {REQUIREMENTS}"
         )
-    return json.loads(proc.stdout)
+
+    front, body = smd.md_parse_front_matter(md.read_text(encoding="utf-8"))
+
+    # Honor the schema named in the document front matter when --schema is left
+    # at its default, resolving it relative to the document's directory.
+    declared = front.get("semantic-md")
+    if schema == DEFAULT_SCHEMA.resolve() and declared:
+        schema = (md.parent / declared).resolve()
+
+    s = smd.Schema.read(schema.read_text(encoding="utf-8"))
+    parsed = smd.md_parse_body(body, s)
+    return smd.to_json(parsed, s)
 
 
 def assert_invariants(doc: dict) -> list[str]:
@@ -180,8 +153,7 @@ def main() -> int:
     if not schema.exists():
         raise SystemExit(f"[check_semanticmd] schema not found: {schema}")
 
-    py = ensure_venv()
-    doc = convert(py, md, schema)
+    doc = convert(md, schema)
 
     errs = assert_invariants(doc)
     if errs:

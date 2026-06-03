@@ -69,6 +69,3 @@ scripts/benchmark_data.*
 # Tracked initially in PR #3908; dropped from git after #3910 merged
 # so the running status doc stays local to each contributor's tree.
 profile*-handoff.md
-
-# Bootstrap virtualenv created by docs/describegpt/check_semanticmd.py
-docs/describegpt/.semanticmd-venv/

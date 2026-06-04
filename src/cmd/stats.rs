@@ -178,12 +178,13 @@ stats options:
                               Uses memory proportional to the number of unique values in each column.
     --zero-padded-numeric     Add a "zero_padded_numeric" column that is "true" when a column's
                               leading/padding zeros would be lost if it were cast to a number.
-                              Two cases qualify: (1) the inferred type is String AND all non-null
-                              values are all-digit numbers with at least one leading zero (e.g. US
-                              zip codes, barcodes, zero-padded IDs) — qsv already keeps these as
-                              text; and (2) the inferred type is Float AND all non-null values are
-                              numeric with at least one zero-padded decimal code (e.g. 007.1, 05.10
-                              as in ICD-9, Dewey Decimal & Harmonized System classification codes).
+                              Two cases qualify: (1) the inferred type is String AND every non-null
+                              value is numeric (an all-digit integer or a zero-padded decimal code),
+                              with at least one carrying a leading zero (e.g. US zip codes, barcodes,
+                              zero-padded IDs) — qsv already keeps these as text; and (2) the inferred
+                              type is Float AND every non-null value is numeric with at least one a
+                              zero-padded decimal code (e.g. 007.1, 05.10 as in ICD-9, Dewey Decimal
+                              & Harmonized System classification codes).
                               This flag surfaces both so they are not mistakenly loaded/cast as
                               integer/float. Note that ordinary fractions (0.5) and pure
                               trailing-zero codes (7.10) are not flagged. The cell is empty when the
@@ -3268,7 +3269,9 @@ struct Stats {
     zpn_float_padded: bool,      // 1 byte
     max_precision:    u16,       // 2 bytes - accessed for floats
 
-    // 3 bytes padding (automatic with repr(C) for 8-byte alignment)
+    // trailing padding inserted automatically by repr(C) to align the following u64 fields
+    // (the exact number of bytes depends on the compiler-chosen size of FieldType, which is not
+    // #[repr(u8)], so it is intentionally not asserted here)
 
     // Hot counters - all 8-byte aligned, accessed frequently
     nullcount:    u64, // 8 bytes - frequently updated counter
@@ -4098,9 +4101,13 @@ impl Stats {
             } else if Self::is_zero_padded_float(sample) {
                 self.zpn_has_value = true;
                 self.zpn_float_padded = true;
-            } else if fast_float2::parse::<f64, &[u8]>(sample).is_ok() {
+            } else if sample_type == TFloat {
                 // plain, unpadded float (e.g. 7.1, 0.5): numeric-shaped, so it does not
                 // disqualify the column, but it is not evidence of zero-padding either.
+                // Reuse the parse already done by from_sample() rather than re-parsing — note
+                // sample_type is TFloat only when the value was freshly parsed as a float (a value
+                // arriving after the column widened to String short-circuits to TString and so
+                // disqualifies here, which matches the all-digit intent of the String path).
                 self.zpn_has_value = true;
             } else {
                 self.zpn_disqualified = true;

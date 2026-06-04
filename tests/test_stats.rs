@@ -566,6 +566,44 @@ stats_no_infer_dates_tests!(
     &["01", "02", "03"],
     "true"
 );
+// Real-world zero-padded *decimal code* systems cited by @kulnor in PR #3938.
+// All parse as Float, yet every value has a leading-zero integer part, so they are flagged.
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_icd9,
+    "zero_padded_numeric",
+    &["007.1", "008.45", "038.11"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_dewey,
+    "zero_padded_numeric",
+    &["004.67", "005.13", "025.04"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_nibrs,
+    "zero_padded_numeric",
+    &["01.10", "09.10", "01.01"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_cepa,
+    "zero_padded_numeric",
+    &["01.12", "05.10", "06.01"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_transport_linear_ref,
+    "zero_padded_numeric",
+    &["03.40", "02.30", "02.03"],
+    "true"
+);
+stats_no_infer_dates_tests!(
+    stats_zero_padded_numeric_hs_tariff,
+    "zero_padded_numeric",
+    &["01.01", "07.10", "06.10"],
+    "true"
+);
 stats_tests!(stats_mode, "mode", &["a", "b", "a"], "a,1,2");
 stats_tests!(stats_mode_null, "mode", &["", "a", "b", "a"], "a,1,2");
 stats_tests!(stats_antimode, "antimode", &["a", "b", "a"], "b,1,1");
@@ -719,10 +757,23 @@ fn stats_zero_padded_numeric_columns() {
     wrk.create(
         "in.csv",
         vec![
-            svec!["zip", "plain_int", "mixed", "price"],
-            svec!["10001", "1", "07306", "01.5"],
-            svec!["07306", "2", "Main St", "2.5"],
-            svec!["90210", "3", "12345", "3.5"],
+            svec![
+                "zip",
+                "plain_int",
+                "mixed",
+                "price",
+                "icd9",
+                "frac",
+                "trailing",
+                "mixed_float"
+            ],
+            svec!["10001", "1", "07306", "1.5", "007.1", "0.5", "7.10", "7.1"],
+            svec![
+                "07306", "2", "Main St", "2.5", "008.45", "0.25", "8.20", "007.1"
+            ],
+            svec![
+                "90210", "3", "12345", "3.5", "038.11", "0.75", "9.30", "3.5"
+            ],
         ],
     );
 
@@ -748,8 +799,16 @@ fn stats_zero_padded_numeric_columns() {
     assert_eq!(zpn["plain_int"], "");
     // mixed: String but "Main St" is not all-digit -> not flagged
     assert_eq!(zpn["mixed"], "");
-    // price: inferred Float -> not flagged
+    // price: Float, all plain (no leading-zero padding) -> not flagged
     assert_eq!(zpn["price"], "");
+    // icd9: Float, every value a zero-padded decimal code -> flagged
+    assert_eq!(zpn["icd9"], "true");
+    // frac: Float, ordinary fractions (single 0 before the dot) -> not flagged
+    assert_eq!(zpn["frac"], "");
+    // trailing: Float, pure trailing-zero codes (7.10) are out of scope -> not flagged
+    assert_eq!(zpn["trailing"], "");
+    // mixed_float: Float, at least one zero-padded value (007.1) among plain floats -> flagged
+    assert_eq!(zpn["mixed_float"], "true");
 }
 
 #[test]
@@ -772,6 +831,73 @@ fn stats_zero_padded_numeric_gating() {
         .position(|h| h == "zero_padded_numeric")
         .expect("zero_padded_numeric present with --everything");
     assert_eq!(got[1][zpn_idx], "true");
+}
+
+// Documents the known limitations of the leading-zero heuristic for the real-world codes
+// @kulnor cited in PR #3938. These are intentionally NOT flagged.
+#[test]
+fn stats_zero_padded_numeric_real_world_limitations() {
+    let wrk = Workdir::new("stats_zero_padded_numeric_real_world_limitations");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec![
+                "hs_multidot",
+                "alphanumeric",
+                "trailing_only",
+                "ordinary_frac"
+            ],
+            // 0601.10.00: multi-dot HS code -> not a Float, stays String, but not all-digit
+            // (has dots) -> fails the integer/String all-digit path too.
+            svec!["0601.10.00", "09.0A", "7.10", "0.5"],
+            svec!["0102.21.00", "01.1B", "8.20", "0.25"],
+            svec!["0710.00.00", "02.0C", "9.30", "0.75"],
+        ],
+    );
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--zero-padded-numeric").arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    let header = &got[0];
+    let field_idx = header.iter().position(|h| h == "field").unwrap();
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    let zpn_idx = header
+        .iter()
+        .position(|h| h == "zero_padded_numeric")
+        .expect("zero_padded_numeric column should be present");
+
+    // map field -> (inferred type, zero_padded_numeric)
+    let mut got_map: std::collections::HashMap<String, (String, String)> =
+        std::collections::HashMap::new();
+    for row in &got[1..] {
+        got_map.insert(
+            row[field_idx].clone(),
+            (row[type_idx].clone(), row[zpn_idx].clone()),
+        );
+    }
+
+    // multi-dot HS codes don't parse as Float -> inferred String, but not all-digit (dots) so the
+    // integer/String path doesn't flag them either.
+    assert_eq!(
+        got_map["hs_multidot"],
+        ("String".to_string(), String::new())
+    );
+    // alphanumeric codes (09.0A) aren't numeric at all -> inferred String, not flagged
+    assert_eq!(
+        got_map["alphanumeric"],
+        ("String".to_string(), String::new())
+    );
+    // pure trailing-zero codes parse as Float but have no leading-zero padding -> not flagged
+    assert_eq!(
+        got_map["trailing_only"],
+        ("Float".to_string(), String::new())
+    );
+    // ordinary fractions (single 0 before the dot) parse as Float -> not flagged
+    assert_eq!(
+        got_map["ordinary_frac"],
+        ("Float".to_string(), String::new())
+    );
 }
 
 #[test]

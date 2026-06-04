@@ -1,0 +1,172 @@
+name: Bench qsv-stats 0.50 vs 0.51 (alloc tuning)
+
+# Manual A/B benchmark to validate the qsv-stats 0.51 (hashbrown) swap on Linux,
+# where jemalloc Lever A (background_thread) is ACTIVE — the mechanism that could
+# not be exercised on macOS (where only Lever B / decay_ms=-1 is live).
+#
+# Builds two release binaries differing only by the qsv-stats pin (0.50 vs 0.51),
+# then runs the 2x2 matrix {0.50,0.51} x {alloc tuning ON, OFF} on `frequency`
+# and `stats -E` over the canonical NYC311 1M-row sample.
+#
+# Context: dathere/qsv-stats#28  |  qsv alloc tuning: PR #3948  |  0.51 bump: PR #3946
+#
+# NOTE: GitHub-hosted runners are shared/noisy (no thermal pinning, noisy
+# neighbours). The signal under test (~3-5%) can be near the runner noise floor —
+# read the +/- sigma and the C-vs-A summary, not single means.
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: "hyperfine runs per cell"
+        required: false
+        default: "10"
+      warmup:
+        description: "hyperfine warmup runs"
+        required: false
+        default: "3"
+
+permissions:
+  contents: read
+
+jobs:
+  bench:
+    name: 2x2 A/B on ubuntu-latest
+    runs-on: ubuntu-latest
+    env:
+      DATA_URL: https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z
+      DATA: NYC_311_SR_2010-2020-sample-1M.csv
+      HYPERFINE_VERSION: "1.18.0"
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install build & bench deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwayland-dev p7zip-full
+          # hyperfine is not reliably in apt; pull the official .deb
+          curl -fsSL -o /tmp/hyperfine.deb \
+            "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine_${HYPERFINE_VERSION}_amd64.deb"
+          sudo dpkg -i /tmp/hyperfine.deb
+          hyperfine --version
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: stable
+          targets: x86_64-unknown-linux-gnu
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          key: qsv-stats-alloc-bench
+
+      - name: Download & extract NYC311 1M sample
+        run: |
+          curl -fsSL -o data.7z "$DATA_URL"
+          7z x -y data.7z
+          ls -lh "$DATA"
+          echo "rows: $(wc -l < "$DATA")  cols: $(head -1 "$DATA" | tr ',' '\n' | wc -l)"
+
+      - name: Build 0.50 baseline binary
+        run: |
+          sed -i -E 's/^qsv-stats = "0\.5[01]"/qsv-stats = "0.50"/' Cargo.toml
+          grep -n '^qsv-stats' Cargo.toml
+          cargo build --release --bin qsv -F feature_capable
+          cp target/release/qsv /tmp/qsv-050
+
+      - name: Build 0.51 binary
+        run: |
+          sed -i -E 's/^qsv-stats = "0\.5[01]"/qsv-stats = "0.51"/' Cargo.toml
+          grep -n '^qsv-stats' Cargo.toml
+          cargo build --release --bin qsv -F feature_capable
+          cp target/release/qsv /tmp/qsv-051
+          # restore pin so the tree is pristine
+          git checkout -- Cargo.toml Cargo.lock
+
+      - name: Sanity — versions, allocator, binaries differ
+        run: |
+          echo "### Binary sanity" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "0.50: $(/tmp/qsv-050 --version)" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "0.51: $(/tmp/qsv-051 --version)" | tee -a "$GITHUB_STEP_SUMMARY"
+          if cmp -s /tmp/qsv-050 /tmp/qsv-051; then
+            echo "IDENTICAL — build failed to differ!" | tee -a "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"; exit 1
+          else
+            echo "binaries differ: ok" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          # Lever A should be active on Linux -> expect "jemalloc+bgthread"
+          if /tmp/qsv-051 --version | grep -q 'jemalloc+bgthread'; then
+            echo "Lever A (background_thread) ACTIVE ✓" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "WARNING: jemalloc+bgthread NOT detected — Lever A may be inert" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Index dataset (matches macOS parallel-path run)
+        run: /tmp/qsv-051 index "$DATA"
+
+      - name: Parity check — frequency must be byte-identical
+        run: |
+          /tmp/qsv-050 frequency "$DATA" > f050.csv
+          /tmp/qsv-051 frequency "$DATA" > f051.csv
+          if cmp f050.csv f051.csv; then
+            echo "frequency byte-identical ✓" | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            echo "::error::frequency output DIFFERS between 0.50 and 0.51 — correctness bug, not a perf question"
+            exit 1
+          fi
+
+      - name: Benchmark — frequency (2x2)
+        run: |
+          mkdir -p bench-results
+          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+            --export-markdown bench-results/frequency.md \
+            --export-json bench-results/frequency.json \
+            -n "050 tuned"  "/tmp/qsv-050 frequency $DATA" \
+            -n "050 notune" "env QSV_NO_ALLOC_TUNING=1 /tmp/qsv-050 frequency $DATA" \
+            -n "051 tuned"  "/tmp/qsv-051 frequency $DATA" \
+            -n "051 notune" "env QSV_NO_ALLOC_TUNING=1 /tmp/qsv-051 frequency $DATA"
+
+      - name: Benchmark — stats -E (2x2)
+        run: |
+          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+            --export-markdown bench-results/stats-E.md \
+            --export-json bench-results/stats-E.json \
+            -n "050 tuned"  "/tmp/qsv-050 stats -E -c 0 $DATA" \
+            -n "050 notune" "env QSV_NO_ALLOC_TUNING=1 /tmp/qsv-050 stats -E -c 0 $DATA" \
+            -n "051 tuned"  "/tmp/qsv-051 stats -E -c 0 $DATA" \
+            -n "051 notune" "env QSV_NO_ALLOC_TUNING=1 /tmp/qsv-051 stats -E -c 0 $DATA"
+
+      - name: CPU/sys time tell (decay/madvise mechanism)
+        run: |
+          echo "### CPU time (user+sys) — 051 tuned vs notune" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "-- 051 tuned --"  | tee -a "$GITHUB_STEP_SUMMARY"
+          /usr/bin/time -v /tmp/qsv-051 stats -E -c 0 "$DATA" >/dev/null 2> >(grep -E 'User|System' | tee -a "$GITHUB_STEP_SUMMARY")
+          echo "-- 051 notune --" | tee -a "$GITHUB_STEP_SUMMARY"
+          env QSV_NO_ALLOC_TUNING=1 /usr/bin/time -v /tmp/qsv-051 stats -E -c 0 "$DATA" >/dev/null 2> >(grep -E 'User|System' | tee -a "$GITHUB_STEP_SUMMARY")
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Render results to job summary
+        if: always()
+        run: |
+          {
+            echo "## frequency (indexed, parallel path)"
+            cat bench-results/frequency.md
+            echo ""
+            echo "## stats -E (-c 0)"
+            cat bench-results/stats-E.md
+            echo ""
+            echo "**Primary comparison:** C (\`051 tuned\`) vs A (\`050 tuned\`)."
+            echo "0.51-tuned faster-or-tied within noise → 0.51 bump validated on Linux."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload raw results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bench-results-${{ github.run_id }}
+          path: bench-results/

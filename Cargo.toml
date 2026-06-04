@@ -375,6 +375,7 @@ terminal-colorsaurus = { version = "1.0", optional = true }
 textwrap = { version = "0.16", features = ["terminal_size"] }
 thousands = { version = "0.2", optional = true }
 threadpool = "1.8"
+tikv-jemalloc-ctl = { version = "0.7", optional = true }
 tikv-jemallocator = { version = "0.7", optional = true }
 time = { version = "0.3", optional = true }
 titlecase = { version = "3", optional = true }
@@ -557,7 +558,7 @@ lens = ["csvlens"]
 lite = []
 datapusher_plus = ["geocode", "polars", "profile", "self_update"]
 ui = ["clipboard", "color", "prompt", "lens"]
-jemallocator = ["tikv-jemallocator"]
+jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
 feature_capable = []
 nightly = [
     "crc32fast/nightly",

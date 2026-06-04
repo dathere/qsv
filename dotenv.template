@@ -195,6 +195,14 @@ QSV_FREEMEMORY_HEADROOM_PCT = 20
 # Out-of-Memory errors. See Memory Management for more info.
 QSV_MEMORY_CHECK = False
 
+# if set, disables qsv's automatic jemalloc tuning (jemalloc builds only).
+# By default qsv enables jemalloc background_thread purging where supported (Linux)
+# at no extra memory cost, and otherwise (e.g. macOS) retains freed pages during
+# parallel, hashmap-heavy commands (stats, frequency, schema, moarstats) to cut
+# madvise syscall overhead, trading higher peak RSS (~+16%) for speed (~3-9%).
+# Set to opt out (RSS-constrained environments or diagnostics).
+# QSV_NO_ALLOC_TUNING = False
+
 # desired level (default - off; `error`, `warn`, `info`, `trace`, `debug`).
 # QSV_LOG_LEVEL = debug
 

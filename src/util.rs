@@ -73,6 +73,17 @@ static JOBS_TO_USE: OnceLock<usize> = OnceLock::new();
 
 pub static QUIET_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
+// Set once at startup by `init_allocator_runtime()` when jemalloc's
+// `background_thread` is successfully enabled (Linux; rejected on macOS). When
+// true, jemalloc purges freed pages on background threads at no RSS cost, so the
+// per-command page-retention lever (`retain_alloc_pages_for_aggregation`) is
+// skipped to avoid paying its higher RSS for no additional benefit.
+// Only read under the jemalloc-gated retain path / version string; harmless
+// elsewhere.
+#[allow(dead_code)]
+pub static BACKGROUND_THREADS_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
 pub static FILE_PATH_PREFIX: &str = "file:";
 
 pub type ByteString = Vec<u8>;
@@ -319,6 +330,91 @@ pub fn njobs(flag_jobs: Option<usize>) -> usize {
     });
     *njobs_result
 }
+
+/// One-time, process-wide allocator setup. Called from `main()` right after the
+/// signal handlers are installed, before any command runs.
+///
+/// Lever A: enable jemalloc `background_thread`, which offloads page purging
+/// (`madvise`) to background threads, removing it from the foreground hot path at
+/// NO RSS cost. Supported on Linux; rejected on macOS (the write errors — handled
+/// best-effort, leaving `BACKGROUND_THREADS_ACTIVE` false so the per-command
+/// retention lever engages there instead). Disabled entirely by
+/// `QSV_NO_ALLOC_TUNING`. No `cfg(target_os)` gate: the write+read-back is
+/// self-correcting across platforms.
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+pub fn init_allocator_runtime() {
+    use std::sync::atomic::Ordering;
+
+    use tikv_jemalloc_ctl::background_thread;
+
+    if get_envvar_flag("QSV_NO_ALLOC_TUNING") {
+        log::info!("alloc tuning disabled via QSV_NO_ALLOC_TUNING");
+        return;
+    }
+    // Best-effort: ignore the write error (e.g. macOS, where it's unsupported)
+    // and trust the read-back for the authoritative state.
+    let _ = background_thread::write(true);
+    if let Ok(active) = background_thread::read() {
+        BACKGROUND_THREADS_ACTIVE.store(active, Ordering::Relaxed);
+        log::info!("jemalloc background_thread active: {active}");
+    }
+}
+
+#[cfg(not(all(feature = "jemallocator", not(feature = "mimalloc"))))]
+pub fn init_allocator_runtime() {}
+
+/// PROTOTYPE (jemalloc per-command tuning): aggregation-heavy commands
+/// (`stats -E`, `frequency`, ...) build many `Frequencies` hashmaps that grow and
+/// merge across rayon workers, producing heavy `madvise` page-return churn under
+/// jemalloc's default decay. Retaining freed pages (dirty/muzzy decay = -1) for
+/// the duration keeps them mapped for reuse, trading higher peak RSS (~+16% on a
+/// 514 MB input) for fewer syscalls (~6-9% faster `stats -E`). Scoped per-command
+/// — qsv is short-lived, so the process exits before retained pages matter; no
+/// restore is performed.
+///
+/// NOTE: the MALLCTL_ARENAS_ALL (4096) pseudo-index segfaults here for decay
+/// writes via BOTH the string-name (`arena.4096.*`) and numeric-MIB interfaces
+/// (tikv-jemalloc-sys 0.7 / macOS), so all arenas can't be set in one call.
+/// Instead set the `arenas.*` template (inherited by arenas created later, e.g.
+/// lazily-bound rayon workers) and loop over the currently-initialized arenas by
+/// index. This is timing-dependent — arenas not yet created when this runs are
+/// covered only by the template — but benchmarks show it captures essentially all
+/// of what `opt.dirty_decay_ms` (the env-var path) delivers, within noise.
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+pub fn retain_alloc_pages_for_aggregation() {
+    use std::sync::atomic::Ordering;
+
+    use tikv_jemalloc_ctl::raw;
+
+    // Skip when tuning is disabled, or when Lever A (background_thread) is active —
+    // background purging already removes the madvise churn without the RSS cost of
+    // retaining pages, so applying retention on top would be pure RSS loss.
+    if get_envvar_flag("QSV_NO_ALLOC_TUNING") || BACKGROUND_THREADS_ACTIVE.load(Ordering::Relaxed) {
+        return;
+    }
+    // safety: tikv_jemalloc_ctl::raw {read,write} call jemalloc's mallctl by name.
+    // Invariants upheld here:
+    //   - every key is a NUL-terminated byte string (the trailing `\0`), as the name-based mallctl
+    //     API requires;
+    //   - value widths match the mallctl types: `*_decay_ms` is `ssize_t` (isize, -1 = "never
+    //     decay/retain pages"); `arenas.narenas` is `unsigned` (u32);
+    //   - every result is discarded best-effort (`let _ =`), so a jemalloc build or platform
+    //     lacking a given knob returns an error rather than aborting the command. No pointers are
+    //     passed; mallctl copies the value in/out.
+    unsafe {
+        let _ = raw::write(b"arenas.dirty_decay_ms\0", -1_isize);
+        let _ = raw::write(b"arenas.muzzy_decay_ms\0", -1_isize);
+        if let Ok(narenas) = raw::read::<u32>(b"arenas.narenas\0") {
+            for i in 0..narenas {
+                let _ = raw::write(format!("arena.{i}.dirty_decay_ms\0").as_bytes(), -1_isize);
+                let _ = raw::write(format!("arena.{i}.muzzy_decay_ms\0").as_bytes(), -1_isize);
+            }
+        }
+    }
+}
+
+#[cfg(not(all(feature = "jemallocator", not(feature = "mimalloc"))))]
+pub fn retain_alloc_pages_for_aggregation() {}
 
 pub fn timeout_secs(timeout: u16) -> Result<u64, String> {
     let timeout = match env::var("QSV_TIMEOUT") {
@@ -623,7 +719,11 @@ pub fn version() -> String {
         format!("mimalloc {mimalloc_version}")
     };
     #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
-    let malloc_kind = "jemalloc";
+    let malloc_kind = if BACKGROUND_THREADS_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+        "jemalloc+bgthread"
+    } else {
+        "jemalloc"
+    };
     #[cfg(not(any(feature = "mimalloc", feature = "jemallocator")))]
     let malloc_kind = "standard";
     let (qsvtype, maj, min, pat, pre, rustversion) = (

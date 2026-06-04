@@ -2739,6 +2739,16 @@ impl Args {
 
         let njobs = util::njobs(self.flag_jobs);
 
+        // Retain freed jemalloc pages for the duration of this parallel,
+        // hashmap-heavy ftables build to avoid madvise page-return churn (no-op
+        // when background_thread is active or QSV_NO_ALLOC_TUNING is set). Gated on
+        // the genuine parallel path — sequential frequency counting does not
+        // benefit and would only pay the extra RSS. Reached by both `frequency`
+        // and `schema` (which calls this directly).
+        if njobs > 1 {
+            util::retain_alloc_pages_for_aggregation();
+        }
+
         // Read memory limit from environment variable.
         // If QSV_FREQ_CHUNK_MEMORY_MB is set & valid, set max chunk memory
         // If QSV_FREQ_CHUNK_MEMORY_MB is not set, use 0 (dynamic sizing)

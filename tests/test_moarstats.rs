@@ -293,18 +293,18 @@ fn moarstats_custom_rounding() {
     if let Some(pearson_idx) = get_column_index(&headers, "pearson_skewness") {
         for result in rdr.records() {
             let record = result.unwrap();
-            if let Some(val_str) = get_field_value(&record, pearson_idx) {
-                if !val_str.is_empty() {
-                    // Check decimal places (allowing for scientific notation edge cases)
-                    if let Some(dot_pos) = val_str.find('.') {
-                        let after_dot = &val_str[dot_pos + 1..];
-                        // Should have at most 2 decimal places (or be in scientific notation)
-                        assert!(
-                            after_dot.len() <= 2 || val_str.contains('e') || val_str.contains('E'),
-                            "Value '{}' should be rounded to 2 decimal places",
-                            val_str
-                        );
-                    }
+            if let Some(val_str) = get_field_value(&record, pearson_idx)
+                && !val_str.is_empty()
+            {
+                // Check decimal places (allowing for scientific notation edge cases)
+                if let Some(dot_pos) = val_str.find('.') {
+                    let after_dot = &val_str[dot_pos + 1..];
+                    // Should have at most 2 decimal places (or be in scientific notation)
+                    assert!(
+                        after_dot.len() <= 2 || val_str.contains('e') || val_str.contains('E'),
+                        "Value '{}' should be rounded to 2 decimal places",
+                        val_str
+                    );
                 }
             }
         }
@@ -430,20 +430,18 @@ fn moarstats_verify_computed_values() {
             && mode_idx.is_some()
             && mean_idx.is_some()
             && stddev_idx.is_some()
-        {
-            if let (Some(mode_idx), Some(mean_idx), Some(stddev_idx), Some(mode_zscore_idx)) =
+            && let (Some(mode_idx), Some(mean_idx), Some(stddev_idx), Some(mode_zscore_idx)) =
                 (mode_idx, mean_idx, stddev_idx, mode_zscore_idx)
-            {
-                let mode_val = get_field_value(&record, mode_idx);
-                let mean_val = get_field_value(&record, mean_idx);
-                let stddev_val = get_field_value(&record, stddev_idx);
-                let mode_zscore_val = get_field_value(&record, mode_zscore_idx);
+        {
+            let mode_val = get_field_value(&record, mode_idx);
+            let mean_val = get_field_value(&record, mean_idx);
+            let stddev_val = get_field_value(&record, stddev_idx);
+            let mode_zscore_val = get_field_value(&record, mode_zscore_idx);
 
-                // Mode might be a string, so we check if it can be parsed
-                if mode_val.is_some() && mean_val.is_some() && stddev_val.is_some() {
-                    // mode_zscore might be empty if mode is not numeric, which is fine
-                    assert!(mode_zscore_val.is_some(), "mode_zscore column should exist");
-                }
+            // Mode might be a string, so we check if it can be parsed
+            if mode_val.is_some() && mean_val.is_some() && stddev_val.is_some() {
+                // mode_zscore might be empty if mode is not numeric, which is fine
+                assert!(mode_zscore_val.is_some(), "mode_zscore column should exist");
             }
         }
     }
@@ -738,48 +736,48 @@ fn moarstats_outlier_statistics_values() {
             // Verify outlier counts
             if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total") {
                 let outliers_total_val = get_field_value(&record, outliers_total_idx);
-                if let Some(val_str) = outliers_total_val {
-                    if !val_str.is_empty() {
-                        let count: u64 = val_str.parse().unwrap();
-                        assert!(count > 0, "Should have some outliers");
-                    }
+                if let Some(val_str) = outliers_total_val
+                    && !val_str.is_empty()
+                {
+                    let count: u64 = val_str.parse().unwrap();
+                    assert!(count > 0, "Should have some outliers");
                 }
             }
 
             // Verify outlier mean exists when outliers are present
             if let Some(outliers_mean_idx) = get_column_index(&headers, "outliers_mean") {
                 let outliers_mean_val = get_field_value(&record, outliers_mean_idx);
-                if let Some(val_str) = outliers_mean_val {
-                    if !val_str.is_empty() {
-                        let mean: f64 = val_str.parse().unwrap();
-                        // Outlier mean should be higher than normal values (10-50)
-                        assert!(
-                            mean > 50.0,
-                            "Outlier mean should be higher than normal values"
-                        );
-                    }
+                if let Some(val_str) = outliers_mean_val
+                    && !val_str.is_empty()
+                {
+                    let mean: f64 = val_str.parse().unwrap();
+                    // Outlier mean should be higher than normal values (10-50)
+                    assert!(
+                        mean > 50.0,
+                        "Outlier mean should be higher than normal values"
+                    );
                 }
             }
 
             // Verify outliers_range
             if let Some(outliers_range_idx) = get_column_index(&headers, "outliers_range") {
                 let outliers_range_val = get_field_value(&record, outliers_range_idx);
-                if let Some(val_str) = outliers_range_val {
-                    if !val_str.is_empty() {
-                        let range: f64 = val_str.parse().unwrap();
-                        assert!(range > 0.0, "Outlier range should be positive");
-                    }
+                if let Some(val_str) = outliers_range_val
+                    && !val_str.is_empty()
+                {
+                    let range: f64 = val_str.parse().unwrap();
+                    assert!(range > 0.0, "Outlier range should be positive");
                 }
             }
 
             // Verify outliers_total_cnt (updated column name)
             if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total_cnt") {
                 let outliers_total_val = get_field_value(&record, outliers_total_idx);
-                if let Some(val_str) = outliers_total_val {
-                    if !val_str.is_empty() {
-                        let count: u64 = val_str.parse().unwrap();
-                        assert!(count > 0, "Should have some outliers");
-                    }
+                if let Some(val_str) = outliers_total_val
+                    && !val_str.is_empty()
+                {
+                    let count: u64 = val_str.parse().unwrap();
+                    assert!(count > 0, "Should have some outliers");
                 }
             }
 
@@ -839,12 +837,12 @@ fn moarstats_no_outliers() {
             // If no outliers, outliers_total_cnt should be 0
             if let Some(outliers_total_idx) = get_column_index(&headers, "outliers_total_cnt") {
                 let outliers_total_val = get_field_value(&record, outliers_total_idx);
-                if let Some(val_str) = outliers_total_val {
-                    if !val_str.is_empty() {
-                        let _count: u64 = val_str.parse().unwrap();
-                        // With tightly clustered values, might have 0 outliers
-                        // Count is u64, so it's always non-negative
-                    }
+                if let Some(val_str) = outliers_total_val
+                    && !val_str.is_empty()
+                {
+                    let _count: u64 = val_str.parse().unwrap();
+                    // With tightly clustered values, might have 0 outliers
+                    // Count is u64, so it's always non-negative
                 }
             }
 
@@ -887,12 +885,12 @@ fn moarstats_multiple_numeric_fields() {
         let record = result.unwrap();
         let field_type = get_field_value(&record, type_idx).unwrap();
 
-        if field_type == "Float" || field_type == "Integer" {
-            if let Some(pearson_idx) = pearson_idx {
-                let pearson_val = get_field_value(&record, pearson_idx);
-                if pearson_val.is_some() && !pearson_val.as_ref().unwrap().is_empty() {
-                    numeric_fields_with_stats += 1;
-                }
+        if (field_type == "Float" || field_type == "Integer")
+            && let Some(pearson_idx) = pearson_idx
+        {
+            let pearson_val = get_field_value(&record, pearson_idx);
+            if pearson_val.is_some() && !pearson_val.as_ref().unwrap().is_empty() {
+                numeric_fields_with_stats += 1;
             }
         }
     }
@@ -985,7 +983,7 @@ fn moarstats_winsorized_trimmed_means_q1_q3() {
 
                 // Trimmed mean should generally be between Q1 and Q3 (approximately 3-7)
                 assert!(
-                    trimmed >= 2.0 && trimmed <= 8.0,
+                    (2.0..=8.0).contains(&trimmed),
                     "Trimmed mean should be within reasonable range"
                 );
             }
@@ -1215,15 +1213,15 @@ fn moarstats_date_datetime_fields() {
             // Check winsorized mean is formatted as date string
             if let Some(winsorized_idx) = get_column_index(&headers, "winsorized_mean_25pct") {
                 let winsorized_val = get_field_value(&record, winsorized_idx);
-                if let Some(val_str) = winsorized_val {
-                    if !val_str.is_empty() {
-                        // Should be RFC3339 format (contains 'T' or is YYYY-MM-DD)
-                        assert!(
-                            val_str.contains('-') && val_str.len() >= 10,
-                            "Date winsorized mean should be formatted as date string, got: {}",
-                            val_str
-                        );
-                    }
+                if let Some(val_str) = winsorized_val
+                    && !val_str.is_empty()
+                {
+                    // Should be RFC3339 format (contains 'T' or is YYYY-MM-DD)
+                    assert!(
+                        val_str.contains('-') && val_str.len() >= 10,
+                        "Date winsorized mean should be formatted as date string, got: {}",
+                        val_str
+                    );
                 }
             }
 
@@ -1469,12 +1467,12 @@ fn moarstats_relative_standard_error() {
         {
             if let Some(rse_idx) = get_column_index(&headers, "relative_standard_error") {
                 let rse_val = get_field_value(&record, rse_idx);
-                if let Some(val_str) = rse_val {
-                    if !val_str.is_empty() {
-                        found_rse_value = true;
-                        let rse: f64 = val_str.parse().unwrap();
-                        assert!(rse >= 0.0, "Relative standard error should be non-negative");
-                    }
+                if let Some(val_str) = rse_val
+                    && !val_str.is_empty()
+                {
+                    found_rse_value = true;
+                    let rse: f64 = val_str.parse().unwrap();
+                    assert!(rse >= 0.0, "Relative standard error should be non-negative");
                 }
             }
             break;
@@ -1533,24 +1531,24 @@ fn moarstats_zscore_min_max() {
         if (field_type == "Float" || field_type == "Integer") && field_name == "latitude" {
             if let Some(min_zscore_idx) = get_column_index(&headers, "min_zscore") {
                 let min_zscore_val = get_field_value(&record, min_zscore_idx);
-                if let Some(val_str) = min_zscore_val {
-                    if !val_str.is_empty() {
-                        let zscore: f64 = val_str.parse().unwrap();
-                        // Min zscore should typically be negative (min is usually below mean)
-                        // But we just check it's a valid number
-                        assert!(zscore.is_finite(), "min_zscore should be a finite number");
-                    }
+                if let Some(val_str) = min_zscore_val
+                    && !val_str.is_empty()
+                {
+                    let zscore: f64 = val_str.parse().unwrap();
+                    // Min zscore should typically be negative (min is usually below mean)
+                    // But we just check it's a valid number
+                    assert!(zscore.is_finite(), "min_zscore should be a finite number");
                 }
             }
 
             if let Some(max_zscore_idx) = get_column_index(&headers, "max_zscore") {
                 let max_zscore_val = get_field_value(&record, max_zscore_idx);
-                if let Some(val_str) = max_zscore_val {
-                    if !val_str.is_empty() {
-                        let zscore: f64 = val_str.parse().unwrap();
-                        // Max zscore should typically be positive (max is usually above mean)
-                        assert!(zscore.is_finite(), "max_zscore should be a finite number");
-                    }
+                if let Some(val_str) = max_zscore_val
+                    && !val_str.is_empty()
+                {
+                    let zscore: f64 = val_str.parse().unwrap();
+                    // Max zscore should typically be positive (max is usually above mean)
+                    assert!(zscore.is_finite(), "max_zscore should be a finite number");
                 }
             }
 
@@ -1608,15 +1606,15 @@ fn moarstats_median_mean_ratio() {
         if field_name == "test" {
             if let Some(ratio_idx) = get_column_index(&headers, "median_mean_ratio") {
                 let ratio_val = get_field_value(&record, ratio_idx);
-                if let Some(val_str) = ratio_val {
-                    if !val_str.is_empty() {
-                        let ratio: f64 = val_str.parse().unwrap();
-                        // With an outlier, median should be less than mean, so ratio < 1
-                        assert!(
-                            ratio > 0.0 && ratio.is_finite(),
-                            "median_mean_ratio should be positive and finite"
-                        );
-                    }
+                if let Some(val_str) = ratio_val
+                    && !val_str.is_empty()
+                {
+                    let ratio: f64 = val_str.parse().unwrap();
+                    // With an outlier, median should be less than mean, so ratio < 1
+                    assert!(
+                        ratio > 0.0 && ratio.is_finite(),
+                        "median_mean_ratio should be positive and finite"
+                    );
                 }
             }
             break;
@@ -1921,17 +1919,16 @@ fn moarstats_kurtosis_gini_constant_values() {
             // With constant values, Gini should be 0 (perfect equality)
             if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
                 let gini_val = get_field_value(&record, gini_idx);
-                if let Some(val_str) = gini_val {
-                    if !val_str.is_empty() {
-                        let gini: f64 = val_str.parse().unwrap();
-                        // Gini should be 0 for constant values (perfect equality)
-                        assert!(
-                            gini.abs() < 0.001,
-                            "gini_coefficient should be approximately 0 for constant values, got: \
-                             {}",
-                            gini
-                        );
-                    }
+                if let Some(val_str) = gini_val
+                    && !val_str.is_empty()
+                {
+                    let gini: f64 = val_str.parse().unwrap();
+                    // Gini should be 0 for constant values (perfect equality)
+                    assert!(
+                        gini.abs() < 0.001,
+                        "gini_coefficient should be approximately 0 for constant values, got: {}",
+                        gini
+                    );
                 }
             }
 
@@ -1990,33 +1987,33 @@ fn moarstats_kurtosis_gini_unequal_distribution() {
             // With unequal distribution, Gini should be > 0
             if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
                 let gini_val = get_field_value(&record, gini_idx);
-                if let Some(val_str) = gini_val {
-                    if !val_str.is_empty() {
-                        let gini: f64 = val_str.parse().unwrap();
-                        // With one large value, Gini should be significantly > 0
-                        assert!(
-                            gini > 0.1,
-                            "gini_coefficient should be > 0.1 for unequal distribution, got: {}",
-                            gini
-                        );
-                        assert!(
-                            gini <= 1.0,
-                            "gini_coefficient should be <= 1.0, got: {}",
-                            gini
-                        );
-                    }
+                if let Some(val_str) = gini_val
+                    && !val_str.is_empty()
+                {
+                    let gini: f64 = val_str.parse().unwrap();
+                    // With one large value, Gini should be significantly > 0
+                    assert!(
+                        gini > 0.1,
+                        "gini_coefficient should be > 0.1 for unequal distribution, got: {}",
+                        gini
+                    );
+                    assert!(
+                        gini <= 1.0,
+                        "gini_coefficient should be <= 1.0, got: {}",
+                        gini
+                    );
                 }
             }
 
             // Kurtosis should be computed
             if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
                 let kurtosis_val = get_field_value(&record, kurtosis_idx);
-                if let Some(val_str) = kurtosis_val {
-                    if !val_str.is_empty() {
-                        let kurtosis: f64 = val_str.parse().unwrap();
-                        // With an outlier, kurtosis might be positive (heavy tails)
-                        assert!(kurtosis.is_finite(), "kurtosis should be finite");
-                    }
+                if let Some(val_str) = kurtosis_val
+                    && !val_str.is_empty()
+                {
+                    let kurtosis: f64 = val_str.parse().unwrap();
+                    // With an outlier, kurtosis might be positive (heavy tails)
+                    assert!(kurtosis.is_finite(), "kurtosis should be finite");
                 }
             }
 
@@ -2248,28 +2245,28 @@ fn moarstats_with_advanced_flag() {
             // Check kurtosis
             if let Some(kurtosis_idx) = get_column_index(&headers, "kurtosis") {
                 let kurtosis_val = get_field_value(&record, kurtosis_idx);
-                if let Some(val_str) = kurtosis_val {
-                    if !val_str.is_empty() {
-                        found_kurtosis_value = true;
-                        let kurtosis: f64 = val_str.parse().unwrap();
-                        assert!(kurtosis.is_finite(), "kurtosis should be a finite number");
-                    }
+                if let Some(val_str) = kurtosis_val
+                    && !val_str.is_empty()
+                {
+                    found_kurtosis_value = true;
+                    let kurtosis: f64 = val_str.parse().unwrap();
+                    assert!(kurtosis.is_finite(), "kurtosis should be a finite number");
                 }
             }
 
             // Check Gini coefficient
             if let Some(gini_idx) = get_column_index(&headers, "gini_coefficient") {
                 let gini_val = get_field_value(&record, gini_idx);
-                if let Some(val_str) = gini_val {
-                    if !val_str.is_empty() {
-                        found_gini_value = true;
-                        let gini: f64 = val_str.parse().unwrap();
-                        assert!(
-                            gini >= 0.0 && gini <= 1.0,
-                            "gini_coefficient should be between 0 and 1, got: {}",
-                            gini
-                        );
-                    }
+                if let Some(val_str) = gini_val
+                    && !val_str.is_empty()
+                {
+                    found_gini_value = true;
+                    let gini: f64 = val_str.parse().unwrap();
+                    assert!(
+                        (0.0..=1.0).contains(&gini),
+                        "gini_coefficient should be between 0 and 1, got: {}",
+                        gini
+                    );
                 }
             }
 
@@ -2407,52 +2404,52 @@ fn moarstats_outlier_variance_stddev() {
             // Verify outliers_stddev and outliers_variance
             if let Some(stddev_idx) = get_column_index(&headers, "outliers_stddev") {
                 let stddev_val = get_field_value(&record, stddev_idx);
-                if let Some(val_str) = stddev_val {
-                    if !val_str.is_empty() {
-                        let stddev: f64 = val_str.parse().unwrap();
-                        assert!(stddev >= 0.0, "outliers_stddev should be non-negative");
-                        assert!(stddev.is_finite(), "outliers_stddev should be finite");
-                    }
+                if let Some(val_str) = stddev_val
+                    && !val_str.is_empty()
+                {
+                    let stddev: f64 = val_str.parse().unwrap();
+                    assert!(stddev >= 0.0, "outliers_stddev should be non-negative");
+                    assert!(stddev.is_finite(), "outliers_stddev should be finite");
                 }
             }
 
             if let Some(variance_idx) = get_column_index(&headers, "outliers_variance") {
                 let variance_val = get_field_value(&record, variance_idx);
-                if let Some(val_str) = variance_val {
-                    if !val_str.is_empty() {
-                        let variance: f64 = val_str.parse().unwrap();
-                        assert!(variance >= 0.0, "outliers_variance should be non-negative");
-                        assert!(variance.is_finite(), "outliers_variance should be finite");
-                    }
+                if let Some(val_str) = variance_val
+                    && !val_str.is_empty()
+                {
+                    let variance: f64 = val_str.parse().unwrap();
+                    assert!(variance >= 0.0, "outliers_variance should be non-negative");
+                    assert!(variance.is_finite(), "outliers_variance should be finite");
                 }
             }
 
             // Verify non_outliers_stddev and non_outliers_variance
             if let Some(stddev_idx) = get_column_index(&headers, "non_outliers_stddev") {
                 let stddev_val = get_field_value(&record, stddev_idx);
-                if let Some(val_str) = stddev_val {
-                    if !val_str.is_empty() {
-                        let stddev: f64 = val_str.parse().unwrap();
-                        assert!(stddev >= 0.0, "non_outliers_stddev should be non-negative");
-                        assert!(stddev.is_finite(), "non_outliers_stddev should be finite");
-                    }
+                if let Some(val_str) = stddev_val
+                    && !val_str.is_empty()
+                {
+                    let stddev: f64 = val_str.parse().unwrap();
+                    assert!(stddev >= 0.0, "non_outliers_stddev should be non-negative");
+                    assert!(stddev.is_finite(), "non_outliers_stddev should be finite");
                 }
             }
 
             if let Some(variance_idx) = get_column_index(&headers, "non_outliers_variance") {
                 let variance_val = get_field_value(&record, variance_idx);
-                if let Some(val_str) = variance_val {
-                    if !val_str.is_empty() {
-                        let variance: f64 = val_str.parse().unwrap();
-                        assert!(
-                            variance >= 0.0,
-                            "non_outliers_variance should be non-negative"
-                        );
-                        assert!(
-                            variance.is_finite(),
-                            "non_outliers_variance should be finite"
-                        );
-                    }
+                if let Some(val_str) = variance_val
+                    && !val_str.is_empty()
+                {
+                    let variance: f64 = val_str.parse().unwrap();
+                    assert!(
+                        variance >= 0.0,
+                        "non_outliers_variance should be non-negative"
+                    );
+                    assert!(
+                        variance.is_finite(),
+                        "non_outliers_variance should be finite"
+                    );
                 }
             }
 
@@ -2510,23 +2507,23 @@ fn moarstats_outlier_coefficient_of_variation() {
         if field_name == "test" {
             if let Some(cv_idx) = get_column_index(&headers, "outliers_cv") {
                 let cv_val = get_field_value(&record, cv_idx);
-                if let Some(val_str) = cv_val {
-                    if !val_str.is_empty() {
-                        let cv: f64 = val_str.parse().unwrap();
-                        assert!(cv >= 0.0, "outliers_cv should be non-negative");
-                        assert!(cv.is_finite(), "outliers_cv should be finite");
-                    }
+                if let Some(val_str) = cv_val
+                    && !val_str.is_empty()
+                {
+                    let cv: f64 = val_str.parse().unwrap();
+                    assert!(cv >= 0.0, "outliers_cv should be non-negative");
+                    assert!(cv.is_finite(), "outliers_cv should be finite");
                 }
             }
 
             if let Some(cv_idx) = get_column_index(&headers, "non_outliers_cv") {
                 let cv_val = get_field_value(&record, cv_idx);
-                if let Some(val_str) = cv_val {
-                    if !val_str.is_empty() {
-                        let cv: f64 = val_str.parse().unwrap();
-                        assert!(cv >= 0.0, "non_outliers_cv should be non-negative");
-                        assert!(cv.is_finite(), "non_outliers_cv should be finite");
-                    }
+                if let Some(val_str) = cv_val
+                    && !val_str.is_empty()
+                {
+                    let cv: f64 = val_str.parse().unwrap();
+                    assert!(cv >= 0.0, "non_outliers_cv should be non-negative");
+                    assert!(cv.is_finite(), "non_outliers_cv should be finite");
                 }
             }
 
@@ -2580,15 +2577,15 @@ fn moarstats_outlier_percentage() {
         if field_name == "test" {
             if let Some(pct_idx) = get_column_index(&headers, "outliers_percentage") {
                 let pct_val = get_field_value(&record, pct_idx);
-                if let Some(val_str) = pct_val {
-                    if !val_str.is_empty() {
-                        let pct: f64 = val_str.parse().unwrap();
-                        assert!(
-                            pct >= 0.0 && pct <= 100.0,
-                            "outliers_percentage should be between 0 and 100"
-                        );
-                        assert!(pct.is_finite(), "outliers_percentage should be finite");
-                    }
+                if let Some(val_str) = pct_val
+                    && !val_str.is_empty()
+                {
+                    let pct: f64 = val_str.parse().unwrap();
+                    assert!(
+                        (0.0..=100.0).contains(&pct),
+                        "outliers_percentage should be between 0 and 100"
+                    );
+                    assert!(pct.is_finite(), "outliers_percentage should be finite");
                 }
             }
 
@@ -2646,21 +2643,21 @@ fn moarstats_outlier_impact() {
         if field_name == "test" {
             if let Some(impact_idx) = get_column_index(&headers, "outlier_impact") {
                 let impact_val = get_field_value(&record, impact_idx);
-                if let Some(val_str) = impact_val {
-                    if !val_str.is_empty() {
-                        let impact: f64 = val_str.parse().unwrap();
-                        assert!(impact.is_finite(), "outlier_impact should be finite");
-                    }
+                if let Some(val_str) = impact_val
+                    && !val_str.is_empty()
+                {
+                    let impact: f64 = val_str.parse().unwrap();
+                    assert!(impact.is_finite(), "outlier_impact should be finite");
                 }
             }
 
             if let Some(ratio_idx) = get_column_index(&headers, "outlier_impact_ratio") {
                 let ratio_val = get_field_value(&record, ratio_idx);
-                if let Some(val_str) = ratio_val {
-                    if !val_str.is_empty() {
-                        let ratio: f64 = val_str.parse().unwrap();
-                        assert!(ratio.is_finite(), "outlier_impact_ratio should be finite");
-                    }
+                if let Some(val_str) = ratio_val
+                    && !val_str.is_empty()
+                {
+                    let ratio: f64 = val_str.parse().unwrap();
+                    assert!(ratio.is_finite(), "outlier_impact_ratio should be finite");
                 }
             }
 
@@ -2715,18 +2712,18 @@ fn moarstats_outlier_spread_ratio() {
         if field_name == "test" {
             if let Some(ratio_idx) = get_column_index(&headers, "outliers_normal_stddev_ratio") {
                 let ratio_val = get_field_value(&record, ratio_idx);
-                if let Some(val_str) = ratio_val {
-                    if !val_str.is_empty() {
-                        let ratio: f64 = val_str.parse().unwrap();
-                        assert!(
-                            ratio >= 0.0,
-                            "outliers_normal_stddev_ratio should be non-negative"
-                        );
-                        assert!(
-                            ratio.is_finite(),
-                            "outliers_normal_stddev_ratio should be finite"
-                        );
-                    }
+                if let Some(val_str) = ratio_val
+                    && !val_str.is_empty()
+                {
+                    let ratio: f64 = val_str.parse().unwrap();
+                    assert!(
+                        ratio >= 0.0,
+                        "outliers_normal_stddev_ratio should be non-negative"
+                    );
+                    assert!(
+                        ratio.is_finite(),
+                        "outliers_normal_stddev_ratio should be finite"
+                    );
                 }
             }
 
@@ -2783,27 +2780,27 @@ fn moarstats_outlier_fence_zscores() {
         if field_name == "test" {
             if let Some(zscore_idx) = get_column_index(&headers, "lower_outer_fence_zscore") {
                 let zscore_val = get_field_value(&record, zscore_idx);
-                if let Some(val_str) = zscore_val {
-                    if !val_str.is_empty() {
-                        let zscore: f64 = val_str.parse().unwrap();
-                        assert!(
-                            zscore.is_finite(),
-                            "lower_outer_fence_zscore should be finite"
-                        );
-                    }
+                if let Some(val_str) = zscore_val
+                    && !val_str.is_empty()
+                {
+                    let zscore: f64 = val_str.parse().unwrap();
+                    assert!(
+                        zscore.is_finite(),
+                        "lower_outer_fence_zscore should be finite"
+                    );
                 }
             }
 
             if let Some(zscore_idx) = get_column_index(&headers, "upper_outer_fence_zscore") {
                 let zscore_val = get_field_value(&record, zscore_idx);
-                if let Some(val_str) = zscore_val {
-                    if !val_str.is_empty() {
-                        let zscore: f64 = val_str.parse().unwrap();
-                        assert!(
-                            zscore.is_finite(),
-                            "upper_outer_fence_zscore should be finite"
-                        );
-                    }
+                if let Some(val_str) = zscore_val
+                    && !val_str.is_empty()
+                {
+                    let zscore: f64 = val_str.parse().unwrap();
+                    assert!(
+                        zscore.is_finite(),
+                        "upper_outer_fence_zscore should be finite"
+                    );
                 }
             }
 
@@ -2873,64 +2870,64 @@ fn moarstats_trimmed_winsorized_variance_stddev() {
             // Verify trimmed stddev/variance
             if let Some(stddev_idx) = get_column_index(&headers, "trimmed_stddev_25pct") {
                 let stddev_val = get_field_value(&record, stddev_idx);
-                if let Some(val_str) = stddev_val {
-                    if !val_str.is_empty() {
-                        let stddev: f64 = val_str.parse().unwrap();
-                        assert!(stddev >= 0.0, "trimmed_stddev_25pct should be non-negative");
-                        assert!(stddev.is_finite(), "trimmed_stddev_25pct should be finite");
-                    }
+                if let Some(val_str) = stddev_val
+                    && !val_str.is_empty()
+                {
+                    let stddev: f64 = val_str.parse().unwrap();
+                    assert!(stddev >= 0.0, "trimmed_stddev_25pct should be non-negative");
+                    assert!(stddev.is_finite(), "trimmed_stddev_25pct should be finite");
                 }
             }
 
             if let Some(variance_idx) = get_column_index(&headers, "trimmed_variance_25pct") {
                 let variance_val = get_field_value(&record, variance_idx);
-                if let Some(val_str) = variance_val {
-                    if !val_str.is_empty() {
-                        let variance: f64 = val_str.parse().unwrap();
-                        assert!(
-                            variance >= 0.0,
-                            "trimmed_variance_25pct should be non-negative"
-                        );
-                        assert!(
-                            variance.is_finite(),
-                            "trimmed_variance_25pct should be finite"
-                        );
-                    }
+                if let Some(val_str) = variance_val
+                    && !val_str.is_empty()
+                {
+                    let variance: f64 = val_str.parse().unwrap();
+                    assert!(
+                        variance >= 0.0,
+                        "trimmed_variance_25pct should be non-negative"
+                    );
+                    assert!(
+                        variance.is_finite(),
+                        "trimmed_variance_25pct should be finite"
+                    );
                 }
             }
 
             // Verify winsorized stddev/variance
             if let Some(stddev_idx) = get_column_index(&headers, "winsorized_stddev_25pct") {
                 let stddev_val = get_field_value(&record, stddev_idx);
-                if let Some(val_str) = stddev_val {
-                    if !val_str.is_empty() {
-                        let stddev: f64 = val_str.parse().unwrap();
-                        assert!(
-                            stddev >= 0.0,
-                            "winsorized_stddev_25pct should be non-negative"
-                        );
-                        assert!(
-                            stddev.is_finite(),
-                            "winsorized_stddev_25pct should be finite"
-                        );
-                    }
+                if let Some(val_str) = stddev_val
+                    && !val_str.is_empty()
+                {
+                    let stddev: f64 = val_str.parse().unwrap();
+                    assert!(
+                        stddev >= 0.0,
+                        "winsorized_stddev_25pct should be non-negative"
+                    );
+                    assert!(
+                        stddev.is_finite(),
+                        "winsorized_stddev_25pct should be finite"
+                    );
                 }
             }
 
             if let Some(variance_idx) = get_column_index(&headers, "winsorized_variance_25pct") {
                 let variance_val = get_field_value(&record, variance_idx);
-                if let Some(val_str) = variance_val {
-                    if !val_str.is_empty() {
-                        let variance: f64 = val_str.parse().unwrap();
-                        assert!(
-                            variance >= 0.0,
-                            "winsorized_variance_25pct should be non-negative"
-                        );
-                        assert!(
-                            variance.is_finite(),
-                            "winsorized_variance_25pct should be finite"
-                        );
-                    }
+                if let Some(val_str) = variance_val
+                    && !val_str.is_empty()
+                {
+                    let variance: f64 = val_str.parse().unwrap();
+                    assert!(
+                        variance >= 0.0,
+                        "winsorized_variance_25pct should be non-negative"
+                    );
+                    assert!(
+                        variance.is_finite(),
+                        "winsorized_variance_25pct should be finite"
+                    );
                 }
             }
 
@@ -2987,23 +2984,23 @@ fn moarstats_trimmed_winsorized_cv() {
         if field_name == "test" {
             if let Some(cv_idx) = get_column_index(&headers, "trimmed_cv_25pct") {
                 let cv_val = get_field_value(&record, cv_idx);
-                if let Some(val_str) = cv_val {
-                    if !val_str.is_empty() {
-                        let cv: f64 = val_str.parse().unwrap();
-                        assert!(cv >= 0.0, "trimmed_cv_25pct should be non-negative");
-                        assert!(cv.is_finite(), "trimmed_cv_25pct should be finite");
-                    }
+                if let Some(val_str) = cv_val
+                    && !val_str.is_empty()
+                {
+                    let cv: f64 = val_str.parse().unwrap();
+                    assert!(cv >= 0.0, "trimmed_cv_25pct should be non-negative");
+                    assert!(cv.is_finite(), "trimmed_cv_25pct should be finite");
                 }
             }
 
             if let Some(cv_idx) = get_column_index(&headers, "winsorized_cv_25pct") {
                 let cv_val = get_field_value(&record, cv_idx);
-                if let Some(val_str) = cv_val {
-                    if !val_str.is_empty() {
-                        let cv: f64 = val_str.parse().unwrap();
-                        assert!(cv >= 0.0, "winsorized_cv_25pct should be non-negative");
-                        assert!(cv.is_finite(), "winsorized_cv_25pct should be finite");
-                    }
+                if let Some(val_str) = cv_val
+                    && !val_str.is_empty()
+                {
+                    let cv: f64 = val_str.parse().unwrap();
+                    assert!(cv >= 0.0, "winsorized_cv_25pct should be non-negative");
+                    assert!(cv.is_finite(), "winsorized_cv_25pct should be finite");
                 }
             }
 
@@ -3070,12 +3067,12 @@ fn moarstats_trimmed_winsorized_stddev_ratio() {
             for (idx, header) in headers.iter().enumerate() {
                 if header.contains("trimmed") && header.contains("stddev_ratio") {
                     let ratio_val = get_field_value(&record, idx);
-                    if let Some(val_str) = ratio_val {
-                        if !val_str.is_empty() {
-                            let ratio: f64 = val_str.parse().unwrap();
-                            assert!(ratio >= 0.0, "trimmed stddev_ratio should be non-negative");
-                            assert!(ratio.is_finite(), "trimmed stddev_ratio should be finite");
-                        }
+                    if let Some(val_str) = ratio_val
+                        && !val_str.is_empty()
+                    {
+                        let ratio: f64 = val_str.parse().unwrap();
+                        assert!(ratio >= 0.0, "trimmed stddev_ratio should be non-negative");
+                        assert!(ratio.is_finite(), "trimmed stddev_ratio should be finite");
                     }
                 }
             }
@@ -3084,18 +3081,18 @@ fn moarstats_trimmed_winsorized_stddev_ratio() {
             for (idx, header) in headers.iter().enumerate() {
                 if header.contains("winsorized") && header.contains("stddev_ratio") {
                     let ratio_val = get_field_value(&record, idx);
-                    if let Some(val_str) = ratio_val {
-                        if !val_str.is_empty() {
-                            let ratio: f64 = val_str.parse().unwrap();
-                            assert!(
-                                ratio >= 0.0,
-                                "winsorized stddev_ratio should be non-negative"
-                            );
-                            assert!(
-                                ratio.is_finite(),
-                                "winsorized stddev_ratio should be finite"
-                            );
-                        }
+                    if let Some(val_str) = ratio_val
+                        && !val_str.is_empty()
+                    {
+                        let ratio: f64 = val_str.parse().unwrap();
+                        assert!(
+                            ratio >= 0.0,
+                            "winsorized stddev_ratio should be non-negative"
+                        );
+                        assert!(
+                            ratio.is_finite(),
+                            "winsorized stddev_ratio should be finite"
+                        );
                     }
                 }
             }
@@ -3157,26 +3154,26 @@ fn moarstats_trimmed_winsorized_range() {
         if field_name == "test" {
             if let Some(range_idx) = get_column_index(&headers, "trimmed_range_25pct") {
                 let range_val = get_field_value(&record, range_idx);
-                if let Some(val_str) = range_val {
-                    if !val_str.is_empty() {
-                        let range: f64 = val_str.parse().unwrap();
-                        assert!(range >= 0.0, "trimmed_range_25pct should be non-negative");
-                        assert!(range.is_finite(), "trimmed_range_25pct should be finite");
-                    }
+                if let Some(val_str) = range_val
+                    && !val_str.is_empty()
+                {
+                    let range: f64 = val_str.parse().unwrap();
+                    assert!(range >= 0.0, "trimmed_range_25pct should be non-negative");
+                    assert!(range.is_finite(), "trimmed_range_25pct should be finite");
                 }
             }
 
             if let Some(range_idx) = get_column_index(&headers, "winsorized_range_25pct") {
                 let range_val = get_field_value(&record, range_idx);
-                if let Some(val_str) = range_val {
-                    if !val_str.is_empty() {
-                        let range: f64 = val_str.parse().unwrap();
-                        assert!(
-                            range >= 0.0,
-                            "winsorized_range_25pct should be non-negative"
-                        );
-                        assert!(range.is_finite(), "winsorized_range_25pct should be finite");
-                    }
+                if let Some(val_str) = range_val
+                    && !val_str.is_empty()
+                {
+                    let range: f64 = val_str.parse().unwrap();
+                    assert!(
+                        range >= 0.0,
+                        "winsorized_range_25pct should be non-negative"
+                    );
+                    assert!(range.is_finite(), "winsorized_range_25pct should be finite");
                 }
             }
 
@@ -3225,22 +3222,22 @@ fn moarstats_shannon_entropy_basic() {
         // Shannon entropy works for all field types
         if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
             let entropy_val = get_field_value(&record, entropy_idx);
-            if let Some(val_str) = entropy_val {
-                if !val_str.is_empty() {
-                    found_entropy_value = true;
-                    let entropy: f64 = val_str.parse().unwrap();
-                    // Entropy should be non-negative
-                    assert!(
-                        entropy >= 0.0,
-                        "shannon_entropy should be non-negative, got: {}",
-                        entropy
-                    );
-                    assert!(
-                        entropy.is_finite(),
-                        "shannon_entropy should be finite, got: {}",
-                        entropy
-                    );
-                }
+            if let Some(val_str) = entropy_val
+                && !val_str.is_empty()
+            {
+                found_entropy_value = true;
+                let entropy: f64 = val_str.parse().unwrap();
+                // Entropy should be non-negative
+                assert!(
+                    entropy >= 0.0,
+                    "shannon_entropy should be non-negative, got: {}",
+                    entropy
+                );
+                assert!(
+                    entropy.is_finite(),
+                    "shannon_entropy should be finite, got: {}",
+                    entropy
+                );
             }
         }
 
@@ -3299,17 +3296,16 @@ fn moarstats_shannon_entropy_constant_values() {
             // With constant values, entropy should be 0 (all values identical)
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        // Entropy should be approximately 0 for constant values
-                        assert!(
-                            entropy.abs() < 0.001,
-                            "shannon_entropy should be approximately 0 for constant values, got: \
-                             {}",
-                            entropy
-                        );
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // Entropy should be approximately 0 for constant values
+                    assert!(
+                        entropy.abs() < 0.001,
+                        "shannon_entropy should be approximately 0 for constant values, got: {}",
+                        entropy
+                    );
                 }
             }
 
@@ -3364,25 +3360,25 @@ fn moarstats_shannon_entropy_all_unique() {
         if field_name == "test" {
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        let max_entropy = 8.0_f64.log2(); // log2(8) = 3.0
-                        // Entropy should be close to maximum (all unique values)
-                        assert!(
-                            entropy >= max_entropy * 0.99,
-                            "shannon_entropy should be close to maximum for all unique values, \
-                             expected ~{}, got: {}",
-                            max_entropy,
-                            entropy
-                        );
-                        assert!(
-                            entropy <= max_entropy,
-                            "shannon_entropy cannot exceed log2(n), expected <= {}, got: {}",
-                            max_entropy,
-                            entropy
-                        );
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    let max_entropy = 8.0_f64.log2(); // log2(8) = 3.0
+                    // Entropy should be close to maximum (all unique values)
+                    assert!(
+                        entropy >= max_entropy * 0.99,
+                        "shannon_entropy should be close to maximum for all unique values, \
+                         expected ~{}, got: {}",
+                        max_entropy,
+                        entropy
+                    );
+                    assert!(
+                        entropy <= max_entropy,
+                        "shannon_entropy cannot exceed log2(n), expected <= {}, got: {}",
+                        max_entropy,
+                        entropy
+                    );
                 }
             }
 
@@ -3436,18 +3432,18 @@ fn moarstats_shannon_entropy_string_fields() {
             // String fields should have entropy computed
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        // With 3 unique values out of 5 total, entropy should be between 0 and
-                        // log2(3)
-                        assert!(
-                            entropy >= 0.0 && entropy <= 3.0_f64.log2(),
-                            "shannon_entropy for string fields should be in valid range, got: {}",
-                            entropy
-                        );
-                        assert!(entropy.is_finite(), "shannon_entropy should be finite");
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // With 3 unique values out of 5 total, entropy should be between 0 and
+                    // log2(3)
+                    assert!(
+                        entropy >= 0.0 && entropy <= 3.0_f64.log2(),
+                        "shannon_entropy for string fields should be in valid range, got: {}",
+                        entropy
+                    );
+                    assert!(entropy.is_finite(), "shannon_entropy should be finite");
                 }
             }
 
@@ -3500,27 +3496,27 @@ fn moarstats_shannon_entropy_mixed_distribution() {
         if field_name == "test" {
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        // With 3 unique values (A appears 3 times, B appears 2 times, C appears 1
-                        // time) Entropy should be between 0 and log2(3) ≈
-                        // 1.585 But since distribution is not uniform, it
-                        // should be less than maximum
-                        let max_entropy = 3.0_f64.log2();
-                        assert!(
-                            entropy >= 0.0 && entropy <= max_entropy,
-                            "shannon_entropy should be in valid range [0, log2(3)], got: {}",
-                            entropy
-                        );
-                        // With non-uniform distribution, entropy should be less than maximum
-                        assert!(
-                            entropy < max_entropy,
-                            "shannon_entropy should be less than maximum for non-uniform \
-                             distribution, got: {}",
-                            entropy
-                        );
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // With 3 unique values (A appears 3 times, B appears 2 times, C appears 1
+                    // time) Entropy should be between 0 and log2(3) ≈
+                    // 1.585 But since distribution is not uniform, it
+                    // should be less than maximum
+                    let max_entropy = 3.0_f64.log2();
+                    assert!(
+                        entropy >= 0.0 && entropy <= max_entropy,
+                        "shannon_entropy should be in valid range [0, log2(3)], got: {}",
+                        entropy
+                    );
+                    // With non-uniform distribution, entropy should be less than maximum
+                    assert!(
+                        entropy < max_entropy,
+                        "shannon_entropy should be less than maximum for non-uniform \
+                         distribution, got: {}",
+                        entropy
+                    );
                 }
             }
 
@@ -3618,16 +3614,16 @@ fn moarstats_shannon_entropy_insufficient_data() {
             // With only one value, entropy should be 0 (all values identical)
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        // Single value means entropy = 0
-                        assert!(
-                            entropy.abs() < 0.001,
-                            "shannon_entropy should be 0 for single value, got: {}",
-                            entropy
-                        );
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // Single value means entropy = 0
+                    assert!(
+                        entropy.abs() < 0.001,
+                        "shannon_entropy should be 0 for single value, got: {}",
+                        entropy
+                    );
                 }
             }
 
@@ -3684,18 +3680,18 @@ fn moarstats_shannon_entropy_boolean_fields() {
             // Boolean fields should have entropy computed
             if let Some(entropy_idx) = get_column_index(&headers, "shannon_entropy") {
                 let entropy_val = get_field_value(&record, entropy_idx);
-                if let Some(val_str) = entropy_val {
-                    if !val_str.is_empty() {
-                        let entropy: f64 = val_str.parse().unwrap();
-                        // With 2 unique values (true/false), max entropy is log2(2) = 1.0
-                        // With 3 true and 2 false, entropy should be less than 1.0
-                        assert!(
-                            entropy >= 0.0 && entropy <= 1.0,
-                            "shannon_entropy for boolean fields should be in [0, 1], got: {}",
-                            entropy
-                        );
-                        assert!(entropy.is_finite(), "shannon_entropy should be finite");
-                    }
+                if let Some(val_str) = entropy_val
+                    && !val_str.is_empty()
+                {
+                    let entropy: f64 = val_str.parse().unwrap();
+                    // With 2 unique values (true/false), max entropy is log2(2) = 1.0
+                    // With 3 true and 2 false, entropy should be less than 1.0
+                    assert!(
+                        (0.0..=1.0).contains(&entropy),
+                        "shannon_entropy for boolean fields should be in [0, 1], got: {}",
+                        entropy
+                    );
+                    assert!(entropy.is_finite(), "shannon_entropy should be finite");
                 }
             }
 
@@ -3794,16 +3790,16 @@ fn moarstats_bivariate_basic() {
 
             // Verify Pearson correlation (should be 1.0 for perfect positive correlation)
             let pearson_val = get_field_value(&record, pearson_idx);
-            if let Some(val_str) = pearson_val {
-                if !val_str.is_empty() {
-                    let pearson: f64 = val_str.parse().unwrap();
-                    assert!(
-                        pearson >= 0.99 && pearson <= 1.0,
-                        "Pearson correlation should be close to 1.0 for perfect positive \
-                         correlation, got: {}",
-                        pearson
-                    );
-                }
+            if let Some(val_str) = pearson_val
+                && !val_str.is_empty()
+            {
+                let pearson: f64 = val_str.parse().unwrap();
+                assert!(
+                    (0.99..=1.0).contains(&pearson),
+                    "Pearson correlation should be close to 1.0 for perfect positive correlation, \
+                     got: {}",
+                    pearson
+                );
             }
 
             break;
@@ -3857,16 +3853,16 @@ fn moarstats_bivariate_negative_correlation() {
 
         if (field1 == "x" && field2 == "y") || (field1 == "y" && field2 == "x") {
             let pearson_val = get_field_value(&record, pearson_idx);
-            if let Some(val_str) = pearson_val {
-                if !val_str.is_empty() {
-                    let pearson: f64 = val_str.parse().unwrap();
-                    assert!(
-                        pearson <= -0.99 && pearson >= -1.0,
-                        "Pearson correlation should be close to -1.0 for perfect negative \
-                         correlation, got: {}",
-                        pearson
-                    );
-                }
+            if let Some(val_str) = pearson_val
+                && !val_str.is_empty()
+            {
+                let pearson: f64 = val_str.parse().unwrap();
+                assert!(
+                    (-1.0..=-0.99).contains(&pearson),
+                    "Pearson correlation should be close to -1.0 for perfect negative \
+                     correlation, got: {}",
+                    pearson
+                );
             }
             break;
         }
@@ -3930,16 +3926,16 @@ fn moarstats_bivariate_string_fields() {
 
             // Verify mutual information exists and is non-negative
             let mi_val = get_field_value(&record, mi_idx);
-            if let Some(val_str) = mi_val {
-                if !val_str.is_empty() {
-                    let mi: f64 = val_str.parse().unwrap();
-                    assert!(
-                        mi >= 0.0,
-                        "Mutual information should be non-negative, got: {}",
-                        mi
-                    );
-                    assert!(mi.is_finite(), "Mutual information should be finite");
-                }
+            if let Some(val_str) = mi_val
+                && !val_str.is_empty()
+            {
+                let mi: f64 = val_str.parse().unwrap();
+                assert!(
+                    mi >= 0.0,
+                    "Mutual information should be non-negative, got: {}",
+                    mi
+                );
+                assert!(mi.is_finite(), "Mutual information should be finite");
             }
 
             break;
@@ -4023,33 +4019,33 @@ fn moarstats_bivariate_normalized_mutual_information() {
                 "Normalized mutual information should be computed"
             );
 
-            if let Some(val_str) = nmi_val {
-                if !val_str.is_empty() {
-                    let nmi: f64 = val_str.parse().unwrap();
-                    // NMI should be between 0 and 1 (normalized)
-                    assert!(
-                        nmi >= 0.0 && nmi <= 1.0,
-                        "Normalized mutual information should be in [0, 1], got: {}",
-                        nmi
-                    );
-                    assert!(
-                        nmi.is_finite(),
-                        "Normalized mutual information should be finite, got: {}",
-                        nmi
-                    );
-                    assert!(
-                        !nmi.is_nan(),
-                        "Normalized mutual information should not be NaN"
-                    );
+            if let Some(val_str) = nmi_val
+                && !val_str.is_empty()
+            {
+                let nmi: f64 = val_str.parse().unwrap();
+                // NMI should be between 0 and 1 (normalized)
+                assert!(
+                    (0.0..=1.0).contains(&nmi),
+                    "Normalized mutual information should be in [0, 1], got: {}",
+                    nmi
+                );
+                assert!(
+                    nmi.is_finite(),
+                    "Normalized mutual information should be finite, got: {}",
+                    nmi
+                );
+                assert!(
+                    !nmi.is_nan(),
+                    "Normalized mutual information should not be NaN"
+                );
 
-                    // Verify NMI is non-negative
-                    //(should always be true given the range check above)
-                    assert!(
-                        nmi >= 0.0,
-                        "Normalized mutual information should be non-negative, got: {}",
-                        nmi
-                    );
-                }
+                // Verify NMI is non-negative
+                //(should always be true given the range check above)
+                assert!(
+                    nmi >= 0.0,
+                    "Normalized mutual information should be non-negative, got: {}",
+                    nmi
+                );
             }
 
             break;
@@ -4218,7 +4214,7 @@ fn moarstats_bivariate_all_statistics() {
             if let Some(val_str) = pearson_val {
                 let pearson: f64 = val_str.parse().unwrap();
                 assert!(
-                    pearson >= -1.0 && pearson <= 1.0,
+                    (-1.0..=1.0).contains(&pearson),
                     "Pearson correlation should be in [-1, 1], got: {}",
                     pearson
                 );
@@ -4227,7 +4223,7 @@ fn moarstats_bivariate_all_statistics() {
             if let Some(val_str) = spearman_val {
                 let spearman: f64 = val_str.parse().unwrap();
                 assert!(
-                    spearman >= -1.0 && spearman <= 1.0,
+                    (-1.0..=1.0).contains(&spearman),
                     "Spearman correlation should be in [-1, 1], got: {}",
                     spearman
                 );
@@ -4236,7 +4232,7 @@ fn moarstats_bivariate_all_statistics() {
             if let Some(val_str) = kendall_val {
                 let kendall: f64 = val_str.parse().unwrap();
                 assert!(
-                    kendall >= -1.0 && kendall <= 1.0,
+                    (-1.0..=1.0).contains(&kendall),
                     "Kendall tau should be in [-1, 1], got: {}",
                     kendall
                 );
@@ -5338,7 +5334,7 @@ fn moarstats_xsd_gdate_scan_quick_mode() {
 
         if field.starts_with("g") {
             assert!(
-                xsd_type.as_deref().map_or(false, |t| t.ends_with("??")),
+                xsd_type.as_deref().is_some_and(|t| t.ends_with("??")),
                 "Quick mode should use double ?? suffix (less confident), got: {:?}",
                 xsd_type
             );
@@ -5510,9 +5506,7 @@ fn moarstats_xsd_gdate_scan_default_quick() {
             // Default should be quick mode with ?? suffix
             // So we just check that it's detected as gYear with some suffix
             assert!(
-                xsd_type
-                    .as_deref()
-                    .map_or(false, |t| t.starts_with("gYear")),
+                xsd_type.as_deref().is_some_and(|t| t.starts_with("gYear")),
                 "Year should be detected as gYear variant, got: {:?}",
                 xsd_type
             );
@@ -5559,9 +5553,7 @@ fn moarstats_xsd_gdate_scan_fallback_quick() {
             // Should fallback to quick mode (?? suffix) when percentiles unavailable
             // But if the field is Integer and min/max are in range, it should still detect gYear??
             assert!(
-                xsd_type
-                    .as_deref()
-                    .map_or(false, |t| t.starts_with("gYear")),
+                xsd_type.as_deref().is_some_and(|t| t.starts_with("gYear")),
                 "Year should be detected even when percentiles missing, got: {:?}",
                 xsd_type
             );

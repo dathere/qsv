@@ -92,7 +92,7 @@ fn diff_diff_left_and_original_right_sort_diff_result_by_lines_by_default() {
     let mut cmd = wrk.command("diff");
     cmd.arg(test_file).arg(test_file2);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 

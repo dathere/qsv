@@ -396,7 +396,7 @@ pub fn is_same_file(file1: &Path, file2: &Path) -> Result<bool, std::io::Error> 
         }
     }
 
-    return Ok(true);
+    Ok(true)
 }
 
 /// Build a multi-GB CSV (10M rows × 5 columns of padded strings) for tests

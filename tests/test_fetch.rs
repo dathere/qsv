@@ -320,8 +320,8 @@ fn fetch_simple_diskcache() {
         .arg("data.csv")
         .arg("--store-error")
         .arg("--disk-cache")
-        .args(&["--disk-cache-dir", dc_dir])
-        .args(&["--rate-limit", "2"]);
+        .args(["--disk-cache-dir", dc_dir])
+        .args(["--rate-limit", "2"]);
 
     let got = wrk.stdout::<String>(&mut cmd);
 
@@ -343,8 +343,8 @@ fn fetch_simple_diskcache() {
         .arg("data.csv")
         .arg("--store-error")
         .arg("--disk-cache")
-        .args(&["--disk-cache-dir", dc_dir])
-        .args(&["--report", "short"]);
+        .args(["--disk-cache-dir", dc_dir])
+        .args(["--report", "short"]);
 
     let got = wrk.stdout::<String>(&mut cmd_2);
     assert_eq!(got, expected);
@@ -1160,8 +1160,8 @@ fn fetchpost_simple_diskcache() {
         .arg("--new-column")
         .arg("response")
         .arg("--disk-cache")
-        .args(&["--disk-cache-dir", dc_dir])
-        .args(&["--rate-limit", "2"])
+        .args(["--disk-cache-dir", dc_dir])
+        .args(["--rate-limit", "2"])
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1771,12 +1771,11 @@ fn fetchpost_disk_cache() {
     );
 
     let mut cmd = wrk.command("fetchpost");
-    (&mut *cmd
-        .arg("URL")
+    cmd.arg("URL")
         .arg("col1")
         .arg("--disk-cache")
         .arg("--disk-cache-dir")
-        .arg(dc_dir))
+        .arg(dc_dir)
         .arg("--jaq")
         .arg(r#"."form""#)
         .arg("data.csv");

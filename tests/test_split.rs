@@ -34,7 +34,7 @@ fn split_zero() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "0"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "0"]).arg(wrk.path(".")).arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
 
@@ -44,7 +44,7 @@ fn split() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "2"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "2"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -83,9 +83,7 @@ fn split_chunks() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--chunks", "3"])
-        .arg(&wrk.path("."))
-        .arg("in.csv");
+    cmd.args(["--chunks", "3"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -125,7 +123,7 @@ fn split_a_lot() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--size", "1000"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -152,7 +150,7 @@ fn split_a_lot_indexed() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--size", "1000"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -181,7 +179,7 @@ fn split_padding() {
     cmd.args(["--size", "2"])
         .arg("--pad")
         .arg("4")
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -224,7 +222,7 @@ fn split_chunks_padding() {
     cmd.args(["--chunks", "3"])
         .arg("--pad")
         .arg("4")
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -264,7 +262,7 @@ fn split_idx() {
     wrk.create_indexed("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "2"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "2"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -303,9 +301,7 @@ fn split_chunks_idx() {
     wrk.create_indexed("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--chunks", "3"])
-        .arg(&wrk.path("."))
-        .arg("in.csv");
+    cmd.args(["--chunks", "3"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -345,7 +341,7 @@ fn split_no_headers() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--no-headers", "--size", "2"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -382,7 +378,7 @@ fn split_chunks_no_headers() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--no-headers", "--chunks", "3"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -419,7 +415,7 @@ fn split_no_headers_idx() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--no-headers", "--size", "2"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -456,7 +452,7 @@ fn split_chunks_no_headers_idx() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--no-headers", "--chunks", "3"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -492,7 +488,7 @@ fn split_one() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "1"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "1"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -551,7 +547,7 @@ fn split_one_idx() {
     wrk.create_indexed("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "1"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "1"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -610,7 +606,7 @@ fn split_uneven() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "4"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "4"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -642,7 +638,7 @@ fn split_chunks_a_lot() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--chunks", "10"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -703,7 +699,7 @@ fn split_uneven_idx() {
     wrk.create_indexed("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--size", "4"]).arg(&wrk.path(".")).arg("in.csv");
+    cmd.args(["--size", "4"]).arg(wrk.path(".")).arg("in.csv");
     wrk.run(&mut cmd);
 
     split_eq!(
@@ -736,7 +732,7 @@ fn split_custom_filename() {
     let mut cmd = wrk.command("split");
     cmd.args(["--size", "2"])
         .args(["--filename", "prefix-{}.csv"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -755,7 +751,7 @@ fn split_custom_filename_padded() {
         .arg("--pad")
         .arg("3")
         .args(["--filename", "prefix-{}.csv"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -786,7 +782,7 @@ fn split_kbsize_boston_5k() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "5"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg(test_file);
     wrk.run(&mut cmd);
 
@@ -812,7 +808,7 @@ fn split_kbsize_boston_5k_padded() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "5"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .args(["--filename", "testme-{}.csv"])
         .args(["--pad", "3"])
         .arg(test_file);
@@ -838,7 +834,7 @@ fn split_kbsize_boston_5k_no_headers() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "5"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("--no-headers")
         .arg(test_file);
     wrk.run(&mut cmd);
@@ -865,13 +861,13 @@ fn split_filter_basic() {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -930,7 +926,7 @@ fn split_filter_with_padding() {
             .arg("3")
             .arg("--filter")
             .arg("copy /Y %FILE% chunk_{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
@@ -938,7 +934,7 @@ fn split_filter_with_padding() {
             .arg("3")
             .arg("--filter")
             .arg("cp $FILE chunk_{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -995,14 +991,14 @@ fn split_filter_with_custom_filename() {
             .args(["--filename", "prefix-{}.csv"])
             .arg("--filter")
             .arg("copy /Y %FILE% prefix-{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .args(["--filename", "prefix-{}.csv"])
             .arg("--filter")
             .arg("cp $FILE prefix-{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1057,13 +1053,13 @@ fn split_filter_with_chunks() {
         cmd.args(["--chunks", "3"])
             .arg("--filter")
             .arg("copy /Y %FILE% chunk_{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--chunks", "3"])
             .arg("--filter")
             .arg("cp $FILE chunk_{}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1119,13 +1115,13 @@ fn split_filter_with_kb_size() {
         cmd.args(["--kb-size", "5"])
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg(test_file);
     } else {
         cmd.args(["--kb-size", "5"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg(test_file);
     }
     wrk.run(&mut cmd);
@@ -1154,13 +1150,13 @@ fn split_filter_with_no_headers() {
         cmd.args(["--no-headers", "--size", "2"])
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--no-headers", "--size", "2"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1214,14 +1210,14 @@ fn split_filter_with_cleanup() {
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
             .arg("--filter-cleanup")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
             .arg("--filter-cleanup")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1279,13 +1275,13 @@ fn split_filter_without_cleanup() {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1343,14 +1339,14 @@ fn split_filter_with_cleanup_failed_command() {
             .arg("--filter")
             .arg("nonexistent_command %FILE% \"{}.bak\"")
             .arg("--filter-cleanup")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("nonexistent_command $FILE {}.bak")
             .arg("--filter-cleanup")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.run(&mut cmd);
@@ -1381,14 +1377,14 @@ fn split_filter_with_ignore_errors() {
             .arg("--filter")
             .arg("nonexistent_command %FILE% \"{}.bak\"")
             .arg("--filter-ignore-errors")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("nonexistent_command $FILE {}.bak")
             .arg("--filter-ignore-errors")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     // The command should run successfully despite the filter command failing
@@ -1416,13 +1412,13 @@ fn split_filter_without_ignore_errors() {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("nonexistent_command %FILE% \"{}.bak\"")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "2"])
             .arg("--filter")
             .arg("nonexistent_command $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     // The command should fail when the filter command fails
@@ -1573,7 +1569,7 @@ fn split_stdin_100_rows() {
     // Run the split command with stdin input
     let mut cmd = wrk.command("split");
     cmd.args(["--size", "20"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("--quiet")
         .arg("-"); // Use "-" to indicate stdin
 
@@ -1679,16 +1675,14 @@ fn split_chunks_zero_rejected() {
     wrk.create("in.csv", data(true));
 
     let mut cmd = wrk.command("split");
-    cmd.args(["--chunks", "0"])
-        .arg(&wrk.path("."))
-        .arg("in.csv");
+    cmd.args(["--chunks", "0"]).arg(wrk.path(".")).arg("in.csv");
     wrk.assert_err(&mut cmd);
 
     // also exercise the indexed path
     wrk.create_indexed("in_idx.csv", data(true));
     let mut cmd = wrk.command("split");
     cmd.args(["--chunks", "0"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in_idx.csv");
     wrk.assert_err(&mut cmd);
 }
@@ -1700,7 +1694,7 @@ fn split_kb_size_zero_rejected() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "0"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
@@ -1714,7 +1708,7 @@ fn split_filter_cleanup_without_filter_rejected() {
     let mut cmd = wrk.command("split");
     cmd.args(["--size", "2"])
         .arg("--filter-cleanup")
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_err(&mut cmd);
 
@@ -1722,7 +1716,7 @@ fn split_filter_cleanup_without_filter_rejected() {
     cmd_2
         .args(["--size", "2"])
         .arg("--filter-ignore-errors")
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_err(&mut cmd_2);
 }
@@ -1741,7 +1735,7 @@ fn split_kb_size_header_too_large_rejected() {
     // 1KB budget vs. ~3KB+ header should produce a clean error.
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "1"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_err(&mut cmd);
 }
@@ -1767,7 +1761,7 @@ fn split_kb_size_variable_rows_under_budget() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "2"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.run(&mut cmd);
 
@@ -1810,13 +1804,13 @@ fn split_empty_input_sequential() {
         cmd.args(["--size", "10"])
             .arg("--filter")
             .arg("copy /Y %FILE% {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     } else {
         cmd.args(["--size", "10"])
             .arg("--filter")
             .arg("cp $FILE {}.bak")
-            .arg(&wrk.path("."))
+            .arg(wrk.path("."))
             .arg("in.csv");
     }
     wrk.assert_success(&mut cmd);
@@ -1829,7 +1823,7 @@ fn split_empty_input_kb_size() {
 
     let mut cmd = wrk.command("split");
     cmd.args(["--kb-size", "5"])
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_success(&mut cmd);
     // Empty input must produce zero chunks (no phantom header-only file).
@@ -1848,7 +1842,7 @@ fn split_filter_multiword_command() {
     cmd.args(["--size", "2"])
         .arg("--filter")
         .arg("sh -c 'cp \"$FILE\" \"$FILE.bak\"'")
-        .arg(&wrk.path("."))
+        .arg(wrk.path("."))
         .arg("in.csv");
     wrk.assert_success(&mut cmd);
     assert!(wrk.path("0.csv.bak").exists());

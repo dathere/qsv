@@ -2405,7 +2405,7 @@ fn validate_multiple_files_quiet_mode() {
     // In quiet mode, there should be no output to stderr
     let got: String = wrk.output_stderr(&mut cmd);
     // The output might be "No error" if there's no stderr output
-    assert!(got == "" || got == "No error");
+    assert!(got.is_empty() || got == "No error");
 }
 
 #[test]

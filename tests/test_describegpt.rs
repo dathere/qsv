@@ -40,32 +40,27 @@ fn is_local_llm_available() -> bool {
                         }
 
                         // Parse the JSON response to check for required models
-                        if let Ok(response_str) = String::from_utf8(output.stdout) {
-                            if let Ok(json_value) =
+                        if let Ok(response_str) = String::from_utf8(output.stdout)
+                            && let Ok(json_value) =
                                 serde_json::from_str::<serde_json::Value>(&response_str)
-                            {
-                                if let Some(data) = json_value.get("data") {
-                                    if let Some(models) = data.as_array() {
-                                        let mut has_deepseek = false;
-                                        let mut has_openai = false;
+                            && let Some(data) = json_value.get("data")
+                            && let Some(models) = data.as_array()
+                        {
+                            let mut has_deepseek = false;
+                            let mut has_openai = false;
 
-                                        for model in models {
-                                            if let Some(id) =
-                                                model.get("id").and_then(|v| v.as_str())
-                                            {
-                                                if id.contains("deepseek/deepseek-r1") {
-                                                    has_deepseek = true;
-                                                }
-                                                if id.contains("openai/gpt-oss") {
-                                                    has_openai = true;
-                                                }
-                                            }
-                                        }
-
-                                        return has_deepseek && has_openai;
+                            for model in models {
+                                if let Some(id) = model.get("id").and_then(|v| v.as_str()) {
+                                    if id.contains("deepseek/deepseek-r1") {
+                                        has_deepseek = true;
+                                    }
+                                    if id.contains("openai/gpt-oss") {
+                                        has_openai = true;
                                     }
                                 }
                             }
+
+                            return has_deepseek && has_openai;
                         }
                         false
                     },
@@ -798,7 +793,7 @@ fn describegpt_prompt_file() {
         polars_sql_guidance = "Use the following Polars SQL syntax to generate a SQL query: {polars_sql_guidance}"
         dd_fewshot_examples = "Use the following DuckDB few-shot examples: {dd_fewshot_examples}"
         p_fewshot_examples = "Use the following Polars SQL few-shot examples: {p_fewshot_examples}""#;
-    wrk.create_from_string("prompt.toml", &prompt_file_content);
+    wrk.create_from_string("prompt.toml", prompt_file_content);
 
     // Run the command with prompt file
     let mut cmd = wrk.command("describegpt");

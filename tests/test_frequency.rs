@@ -1090,7 +1090,7 @@ fn frequency_json() {
     assert_eq!(field["field"], "h2");
     assert_eq!(field["cardinality"], 4);
     let freqs = field["frequencies"].as_array().unwrap();
-    let expected = vec![
+    let expected = [
         ("z", 3, 42.85714, 1.0),
         ("y", 2, 28.57143, 2.0),
         ("Y", 1, 14.28571, 3.0),
@@ -1124,7 +1124,7 @@ fn frequency_json_no_headers() {
     assert_eq!(field["cardinality"], 5);
     let freqs = field["frequencies"].as_array().unwrap();
     // NULL entries are now at the end by default (--null-sorted flag changes this behavior)
-    let expected = vec![
+    let expected = [
         ("a", 4, 50.0, 1.0),
         ("b", 1, 12.5, 2.0),
         ("h1", 1, 12.5, 2.0),
@@ -1157,7 +1157,7 @@ fn frequency_json_ignore_case() {
     assert_eq!(field["field"], "h2");
     assert_eq!(field["cardinality"], 3);
     let freqs = field["frequencies"].as_array().unwrap();
-    let expected = vec![("y", 3, 42.85714), ("z", 3, 42.85714), ("x", 1, 14.28571)];
+    let expected = [("y", 3, 42.85714), ("z", 3, 42.85714), ("x", 1, 14.28571)];
     for (i, (val, count, pct)) in expected.iter().enumerate() {
         assert_eq!(freqs[i]["value"], *val);
         assert_eq!(freqs[i]["count"], *count);
@@ -1186,14 +1186,14 @@ fn frequency_json_limit() {
     assert_eq!(h1["cardinality"], 4);
     assert_eq!(h2["cardinality"], 4);
     let freqs_h1 = h1["frequencies"].as_array().unwrap();
-    let expected_h1 = vec![("a", 4, 57.14286), ("Other (3)", 3, 42.85714)];
+    let expected_h1 = [("a", 4, 57.14286), ("Other (3)", 3, 42.85714)];
     for (i, (val, count, pct)) in expected_h1.iter().enumerate() {
         assert_eq!(freqs_h1[i]["value"], *val);
         assert_eq!(freqs_h1[i]["count"], *count);
         assert!((freqs_h1[i]["percentage"].as_f64().unwrap() - *pct).abs() < 1e-5);
     }
     let freqs_h2 = h2["frequencies"].as_array().unwrap();
-    let expected_h2 = vec![("z", 3, 42.85714), ("Other (3)", 4, 57.14286)];
+    let expected_h2 = [("z", 3, 42.85714), ("Other (3)", 4, 57.14286)];
     for (i, (val, count, pct)) in expected_h2.iter().enumerate() {
         assert_eq!(freqs_h2[i]["value"], *val);
         assert_eq!(freqs_h2[i]["count"], *count);
@@ -1262,7 +1262,7 @@ fn frequency_json_vis_whitespace() {
     assert_eq!(field["cardinality"], 3);
     let freqs = field["frequencies"].as_array().unwrap();
     // NULL is now at the end by default (--null-sorted flag changes this behavior)
-    let expected = vec![
+    let expected = [
         ("value", 4, 66.66667),
         ("no_whitespace", 1, 16.66667),
         ("(NULL)", 1, 16.66667),
@@ -1518,12 +1518,14 @@ fn frequency_toon_vis_whitespace() {
     let field = &fields[0];
     assert_eq!(field["field"], "header");
     assert_eq!(field["cardinality"], 3);
-    let freqs = field["frequencies"].as_array().expect(&format!(
-        "frequencies should be an array. Field keys: {:?}",
-        field.as_object().map(|o| o.keys().collect::<Vec<_>>())
-    ));
+    let freqs = field["frequencies"].as_array().unwrap_or_else(|| {
+        panic!(
+            "frequencies should be an array. Field keys: {:?}",
+            field.as_object().map(|o| o.keys().collect::<Vec<_>>())
+        )
+    });
     // NULL is now at the end by default (--null-sorted flag changes this behavior)
-    let expected = vec![
+    let expected = [
         ("value", 4, 66.66667),
         ("no_whitespace", 1, 16.66667),
         ("(NULL)", 1, 16.66667),
@@ -1994,13 +1996,13 @@ fn frequency_weight_excludes_weight_column() {
     // Should only have "value" column, not "weight" column
     let value_rows: Vec<_> = got
         .iter()
-        .filter(|r| r.len() > 0 && r[0] == "value")
+        .filter(|r| !r.is_empty() && r[0] == "value")
         .collect();
     assert_eq!(value_rows.len(), 2); // 2 value rows (a and b), header is filtered out
     // Should not have any "weight" column frequencies
     let weight_rows: Vec<_> = got
         .iter()
-        .filter(|r| r.len() > 0 && r[0] == "weight")
+        .filter(|r| !r.is_empty() && r[0] == "weight")
         .collect();
     assert_eq!(weight_rows.len(), 0);
 }
@@ -2514,9 +2516,8 @@ fn frequency_weight_parallel_merge() {
     assert_eq!(freq_rows.len(), 7, "Should have 7 unique values");
 
     // Verify weights are correctly aggregated by checking specific values
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
+    let find_freq =
+        |value: &str| -> Option<&Vec<String>> { freq_rows.iter().find(|r| r[1] == value).copied() };
 
     // Check that "a" has aggregated weight of 450 (rounded)
     let a_freq = find_freq("a").expect("Should find 'a'");
@@ -2854,9 +2855,8 @@ fn frequency_weight_nan_values() {
         .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value") // Skip header
         .collect();
 
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
+    let find_freq =
+        |value: &str| -> Option<&Vec<String>> { freq_rows.iter().find(|r| r[1] == value).copied() };
 
     // The main goal is to verify that NaN weight values are handled gracefully without panicking.
     // The exact behavior depends on how fast_float2 parses "NaN":
@@ -2970,9 +2970,8 @@ fn frequency_weight_extremely_large_values() {
     // All values should appear (a, b, c, d)
     assert_eq!(freq_rows.len(), 4, "Should have 4 values");
 
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
+    let find_freq =
+        |value: &str| -> Option<&Vec<String>> { freq_rows.iter().find(|r| r[1] == value).copied() };
 
     // Verify that extremely large values are clamped to u64::MAX
     let c_freq = find_freq("c").expect("Should find 'c'");
@@ -3040,9 +3039,8 @@ fn frequency_weight_mixed_invalid_values() {
         .filter(|r| r.len() > 1 && r[0] == "value" && r[1] != "value") // Skip header
         .collect();
 
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
+    let find_freq =
+        |value: &str| -> Option<&Vec<String>> { freq_rows.iter().find(|r| r[1] == value).copied() };
 
     // The main goal is to verify that invalid weight values are handled gracefully
     // without panicking. The exact behavior may vary based on how fast_float2 parses values.
@@ -3054,7 +3052,7 @@ fn frequency_weight_mixed_invalid_values() {
 
     // At minimum, we should have some frequency values (at least "huge" should appear)
     assert!(
-        freq_rows.len() > 0,
+        !freq_rows.is_empty(),
         "Should have at least some frequency values"
     );
 
@@ -3167,9 +3165,8 @@ fn frequency_weight_no_other_zero() {
     );
 
     // Verify all expected values are present
-    let find_freq = |value: &str| -> Option<&Vec<String>> {
-        freq_rows.iter().find(|r| r[1] == value).map(|r| *r)
-    };
+    let find_freq =
+        |value: &str| -> Option<&Vec<String>> { freq_rows.iter().find(|r| r[1] == value).copied() };
 
     assert!(find_freq("a").is_some(), "Should find 'a'");
     assert!(find_freq("b").is_some(), "Should find 'b'");
@@ -3575,7 +3572,7 @@ fn frequency_weight_json_no_stats() {
     // (Empty arrays are removed from JSON output, so stats key should not exist)
     let stats = field.get("stats");
     assert!(
-        stats.is_none() || stats.unwrap().as_array().map_or(true, |a| a.is_empty()),
+        stats.is_none() || stats.unwrap().as_array().is_none_or(|a| a.is_empty()),
         "Stats should be omitted or empty when using --weight --json"
     );
 
@@ -3933,15 +3930,12 @@ fn frequency_null_sorted_other_sorted() {
     // But since Other has rank 0 and --other-sorted is set, it sorts with others
     let values: Vec<&str> = got.iter().skip(1).map(|r| r[1].as_str()).collect();
     // All values should be present in some order determined by count
-    assert!(values.iter().any(|v| *v == "a"), "Expected 'a' in output");
+    assert!(values.contains(&"a"), "Expected 'a' in output");
     assert!(
         values.iter().any(|v| v.starts_with("Other")),
         "Expected 'Other' in output"
     );
-    assert!(
-        values.iter().any(|v| *v == "(NULL)"),
-        "Expected '(NULL)' in output"
-    );
+    assert!(values.contains(&"(NULL)"), "Expected '(NULL)' in output");
 }
 
 #[test]
@@ -5881,7 +5875,7 @@ fn frequency_jsonl_cache_null_roundtrip() {
     let has_empty_value = fields.iter().any(|entry| {
         entry["frequencies"]
             .as_array()
-            .map_or(false, |freqs| freqs.iter().any(|f| f["value"] == ""))
+            .is_some_and(|freqs| freqs.iter().any(|f| f["value"] == ""))
     });
     assert!(
         has_empty_value,

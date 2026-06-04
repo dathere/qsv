@@ -541,7 +541,7 @@ fn template_render_error() {
         .arg("Hello {{name}, invalid syntax!")
         .arg("data.csv");
 
-    wrk.assert_err(&mut *&mut cmd);
+    wrk.assert_err(&mut cmd);
     let got: String = wrk.output_stderr(&mut cmd);
     let expected = "syntax error: unexpected `}`, expected end of variable block (in template:1)\n";
     assert_eq!(got, expected);

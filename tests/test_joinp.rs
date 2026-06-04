@@ -175,7 +175,7 @@ fn make_rows(left_only: bool, rows: Vec<Vec<String>>) -> Vec<Vec<String>> {
     } else {
         all_rows.push(svec!["city", "state", "place"]);
     }
-    all_rows.extend(rows.into_iter());
+    all_rows.extend(rows);
     all_rows
 }
 
@@ -1275,7 +1275,7 @@ fn joinp_ignore_case() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["city", "cities_mixed.csv", "city", "places_mixed.csv"])
+    cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1318,7 +1318,7 @@ fn joinp_ignore_case_maintain_order_right() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["city", "cities_mixed.csv", "city", "places_mixed.csv"])
+    cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case")
         .args(["--maintain-order", "right"]);
 
@@ -1364,7 +1364,7 @@ fn joinp_ignore_case_maintain_order_left() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["city", "cities_mixed.csv", "city", "places_mixed.csv"])
+    cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case")
         .args(["--maintain-order", "left"]);
 
@@ -1410,7 +1410,7 @@ fn joinp_ignore_case_maintain_order_left_right() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["city", "cities_mixed.csv", "city", "places_mixed.csv"])
+    cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case")
         .args(["--maintain-order", "left_right"]);
 
@@ -1456,7 +1456,7 @@ fn joinp_ignore_case_maintain_order_right_left() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["city", "cities_mixed.csv", "city", "places_mixed.csv"])
+    cmd.args(["city", "cities_mixed.csv", "city", "places_mixed.csv"])
         .arg("--ignore-case")
         .args(["--maintain-order", "right_left"]);
 
@@ -1502,14 +1502,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 1: Right starts-with left
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "prefixes.csv", "id", "values.csv"])
+    cmd.args(["code", "prefixes.csv", "id", "values.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where STARTS_WITH(id, code)",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1523,14 +1523,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 2: Right contains left
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "prefixes.csv", "id", "values.csv"])
+    cmd.args(["code", "prefixes.csv", "id", "values.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where STRPOS(id, code) > 0",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1547,14 +1547,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 3: Right ends-with left
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "prefixes.csv", "id", "values.csv"])
+    cmd.args(["code", "prefixes.csv", "id", "values.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where ENDS_WITH(id, code)",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1588,14 +1588,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 4: Left starts-with right
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "full_codes.csv", "pattern", "patterns.csv"])
+    cmd.args(["code", "full_codes.csv", "pattern", "patterns.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where STARTS_WITH(code, pattern)",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1608,14 +1608,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 5: Left contains right
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "full_codes.csv", "pattern", "patterns.csv"])
+    cmd.args(["code", "full_codes.csv", "pattern", "patterns.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where STRPOS(code, pattern) > 0",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1629,14 +1629,14 @@ fn joinp_filter_pattern_matching() {
 
     // Test 6: Left ends-with right
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "full_codes.csv", "pattern", "patterns.csv"])
+    cmd.args(["code", "full_codes.csv", "pattern", "patterns.csv"])
         .arg("--cross")
         .args([
             "--sql-filter",
             "select * from join_result where ENDS_WITH(code, pattern)",
         ]);
 
-    wrk.assert_success(&mut *&mut cmd);
+    wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -1675,7 +1675,7 @@ fn test_joinp_cache_schema() {
 
     // Test 1: No schema caching (default)
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["has_text", "left.csv", "has_text", "right.csv"]);
+    cmd.args(["has_text", "left.csv", "has_text", "right.csv"]);
     wrk.assert_success(&mut cmd);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1693,7 +1693,7 @@ fn test_joinp_cache_schema() {
 
     // Test 2: Cache inferred schema
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["has_text", "left.csv", "has_text", "right.csv"])
+    cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("1");
 
@@ -1707,7 +1707,7 @@ fn test_joinp_cache_schema() {
 
     // Test 3: Use string schema for all columns
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["has_text", "left.csv", "has_text", "right.csv"])
+    cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-1");
     wrk.assert_success(&mut cmd);
@@ -1717,7 +1717,7 @@ fn test_joinp_cache_schema() {
 
     // Test 4: Use and cache string schema
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["has_text", "left.csv", "has_text", "right.csv"])
+    cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("-2");
     wrk.assert_success(&mut cmd);
@@ -1727,7 +1727,7 @@ fn test_joinp_cache_schema() {
 
     // Test 5: Invalid cache-schema value
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["has_text", "left.csv", "has_text", "right.csv"])
+    cmd.args(["has_text", "left.csv", "has_text", "right.csv"])
         .arg("--cache-schema")
         .arg("2");
     wrk.assert_err(&mut cmd);
@@ -1833,7 +1833,7 @@ fn joinp_ignore_leading_zero() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id", "left.csv", "id", "right.csv"]).arg("-z");
+    cmd.args(["id", "left.csv", "id", "right.csv"]).arg("-z");
 
     wrk.assert_success(&mut cmd);
 
@@ -1875,7 +1875,7 @@ fn joinp_ignore_leading_zero_string_schema() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id", "left.csv", "id", "right.csv"])
+    cmd.args(["id", "left.csv", "id", "right.csv"])
         .arg("-z")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
@@ -1919,7 +1919,7 @@ fn joinp_ignore_leading_zero_with_non_numeric() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["code", "left.csv", "code", "right.csv"])
+    cmd.args(["code", "left.csv", "code", "right.csv"])
         .arg("--ignore-leading-zeros");
 
     wrk.assert_success(&mut cmd);
@@ -1959,7 +1959,7 @@ fn joinp_ignore_leading_zero_multiple_columns() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id,code", "left.csv", "id,code", "right.csv"])
+    cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .args(["--cache-schema", "-2"]); // force schema to all String types
 
@@ -2000,7 +2000,7 @@ fn joinp_ignore_case_and_leading_zeros() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id,code", "left.csv", "id,code", "right.csv"])
+    cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
         .args(["--cache-schema", "-2"]); // force schema to all String types
@@ -2041,7 +2041,7 @@ fn joinp_ignore_case_and_leading_zeros_coalesce() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id,code", "left.csv", "id,code", "right.csv"])
+    cmd.args(["id,code", "left.csv", "id,code", "right.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
         .arg("--coalesce")
@@ -2083,7 +2083,7 @@ fn joinp_non_equi_greater_than() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("budget_right > price_left")
-        .args(&["prices.csv", "budgets.csv"])
+        .args(["prices.csv", "budgets.csv"])
         .args(["--float-precision", "2"]);
 
     wrk.assert_success(&mut cmd);
@@ -2124,7 +2124,7 @@ fn joinp_non_equi_less_than() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("date_left < deadline_right")
-        .args(&["events.csv", "deadlines.csv"]);
+        .args(["events.csv", "deadlines.csv"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -2163,7 +2163,7 @@ fn joinp_non_equi_less_than_date_arithmetic() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("date_left  + interval '4 months' < deadline_right")
-        .args(&["events.csv", "deadlines.csv"])
+        .args(["events.csv", "deadlines.csv"])
         .arg("--try-parsedates");
 
     wrk.assert_success(&mut cmd);
@@ -2203,7 +2203,7 @@ fn joinp_non_equi_not_equal() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("team_left != team_right")
-        .args(&["teams.csv", "matches.csv"]);
+        .args(["teams.csv", "matches.csv"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -2227,7 +2227,7 @@ fn joinp_non_equi_invalid_operator() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("col1 INVALID col2")
-        .args(&["cities.csv", "places.csv"]);
+        .args(["cities.csv", "places.csv"]);
 
     wrk.assert_err(&mut cmd);
 }
@@ -2239,7 +2239,7 @@ fn joinp_non_equi_invalid_format() {
     let mut cmd = wrk.command("joinp");
     cmd.arg("--non-equi")
         .arg("invalid expression format")
-        .args(&["cities.csv", "places.csv"]);
+        .args(["cities.csv", "places.csv"]);
 
     wrk.assert_err(&mut cmd);
 }
@@ -2272,8 +2272,8 @@ fn joinp_non_equi_compound() {
             "salary_left >= min_salary_right AND salary_left <= max_salary_right AND \
              experience_left >= min_exp_right",
         )
-        .args(&["employees.csv", "jobs.csv"])
-        .args(&[
+        .args(["employees.csv", "jobs.csv"])
+        .args([
             "--sql-filter",
             "select * from join_result order by name_left, salary_left, experience_left, \
              position_right",
@@ -2331,7 +2331,7 @@ fn joinp_ignore_leading_zeros_issue_2424() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&[
+    cmd.args([
         "-i",
         "-z",
         "--left-semi",
@@ -2382,7 +2382,7 @@ fn joinp_unicode_normalization() {
 
     // Test NFC normalization
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["name", "left.csv", "name", "right.csv"])
+    cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfc"]);
 
     wrk.assert_success(&mut cmd);
@@ -2421,7 +2421,7 @@ fn joinp_unicode_normalization_with_other_options() {
     );
 
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["id,name", "left.csv", "id,name", "right.csv"])
+    cmd.args(["id,name", "left.csv", "id,name", "right.csv"])
         .args(["--norm-unicode", "nfkc"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case")
@@ -2467,7 +2467,7 @@ fn joinp_unicode_normalization_ligatures() {
 
     // Test NFKC normalization (should decompose ligatures)
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["name", "left.csv", "name", "right.csv"])
+    cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkc"])
         .args(["--maintain-order", "left"]);
 
@@ -2486,7 +2486,7 @@ fn joinp_unicode_normalization_ligatures() {
 
     // Test NFKD normalization (should also decompose ligatures)
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["name", "left.csv", "name", "right.csv"])
+    cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfkd"]);
 
     wrk.assert_success(&mut cmd);
@@ -2496,7 +2496,7 @@ fn joinp_unicode_normalization_ligatures() {
 
     // Test NFC normalization (should NOT decompose ligatures)
     let mut cmd = wrk.command("joinp");
-    cmd.args(&["name", "left.csv", "name", "right.csv"])
+    cmd.args(["name", "left.csv", "name", "right.csv"])
         .args(["--norm-unicode", "nfc"])
         .args(["--maintain-order", "left"]);
 

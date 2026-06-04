@@ -119,7 +119,7 @@ fn to_xlsx_dir() {
     wrk.assert_success(&mut cmd);
 
     let mut cmd = wrk.command("excel");
-    cmd.arg(xlsx_file.clone()).args(&["--sheet", "cities"]);
+    cmd.arg(xlsx_file.clone()).args(["--sheet", "cities"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, cities);
@@ -127,7 +127,7 @@ fn to_xlsx_dir() {
     wrk.assert_success(&mut cmd);
 
     let mut cmd = wrk.command("excel");
-    cmd.arg(xlsx_file).args(&["--sheet", "places"]);
+    cmd.arg(xlsx_file).args(["--sheet", "places"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, places);
@@ -513,7 +513,7 @@ fn to_ods_dir() {
 
     // Verify the content of the first sheet
     let mut cmd = wrk.command("excel");
-    cmd.arg(ods_file.clone()).args(&["--sheet", "file1"]);
+    cmd.arg(ods_file.clone()).args(["--sheet", "file1"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, file1_data);
@@ -522,7 +522,7 @@ fn to_ods_dir() {
 
     // Verify the content of the second sheet
     let mut cmd = wrk.command("excel");
-    cmd.arg(ods_file).args(&["--sheet", "file2"]);
+    cmd.arg(ods_file).args(["--sheet", "file2"]);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     assert_eq!(got, file2_data);

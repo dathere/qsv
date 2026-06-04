@@ -780,8 +780,8 @@ fn stats_rounding() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything"])
-        .args(&["--round", "8"])
+    cmd.args(["--everything"])
+        .args(["--round", "8"])
         .arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -827,7 +827,7 @@ fn stats_no_date_inference() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything"]).arg(test_file);
+    cmd.args(["--everything"]).arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
 
@@ -878,7 +878,7 @@ fn stats_with_date_inference_default_whitelist() {
     let test_file = wrk.load_test_file("boston311-100.csv");
 
     let mut cmd = wrk.command("stats");
-    cmd.args(&["--everything"])
+    cmd.args(["--everything"])
         .arg(test_file)
         .arg("--infer-dates");
 
@@ -1092,7 +1092,7 @@ fn stats_typesonly_cache_threshold_zero() {
     cmd.args(["--typesonly"])
         .arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
-        .args(&["--cache-threshold", "0"])
+        .args(["--cache-threshold", "0"])
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1135,7 +1135,7 @@ fn stats_cache() {
     cmd.arg("--infer-dates")
         .args(["--dates-whitelist", "all"])
         // set cache threshold to 1 to force cache creation
-        .args(&["--cache-threshold", "1"])
+        .args(["--cache-threshold", "1"])
         .arg(test_file);
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1208,7 +1208,7 @@ fn stats_cache_negative_threshold_unmet() {
         .args(["--dates-whitelist", "all"])
         // set cache threshold to -51200 to set autoindex_size to 50 kb
         // and to force cache creation
-        .args(&["--cache-threshold", "-51200"])
+        .args(["--cache-threshold", "-51200"])
         .arg(test_file.clone());
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -1281,7 +1281,7 @@ fn stats_antimodes_len_500() {
 
     let mut cmd = wrk.command("stats");
     cmd.env("QSV_ANTIMODES_LEN", "500")
-        .args(&["--everything"])
+        .args(["--everything"])
         .arg(test_file);
 
     let got: String = wrk.stdout(&mut cmd);
@@ -1669,7 +1669,7 @@ fn stats_output_tab_delimited() {
     let out_file = wrk.path("output.tab").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv").args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1701,8 +1701,8 @@ fn stats_cache_always_csv_when_output_is_tsv() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .args(&["--cache-threshold", "1"]);
+        .args(["--output", &out_file])
+        .args(["--cache-threshold", "1"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1761,8 +1761,8 @@ fn stats_cache_always_csv_when_output_is_ssv() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .args(&["--cache-threshold", "1"]);
+        .args(["--output", &out_file])
+        .args(["--cache-threshold", "1"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1811,8 +1811,8 @@ fn stats_cache_always_csv_when_output_is_snappy() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .args(&["--cache-threshold", "1"]);
+        .args(["--output", &out_file])
+        .args(["--cache-threshold", "1"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1885,8 +1885,8 @@ fn stats_cache_always_csv_when_output_is_tsv_sz() {
 
     let mut cmd = wrk.command("stats");
     cmd.arg("data.csv")
-        .args(&["--output", &out_file])
-        .args(&["--cache-threshold", "1"]);
+        .args(["--output", &out_file])
+        .args(["--cache-threshold", "1"]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1944,7 +1944,7 @@ fn stats_output_ssv_delimited() {
     let out_file = wrk.path("output.ssv").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv").args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -1976,7 +1976,7 @@ fn stats_output_csvsz_delimited() {
     let out_file = wrk.path("output.csv.sz").to_string_lossy().to_string();
 
     let mut cmd = wrk.command("stats");
-    cmd.arg("data.csv").args(&["--output", &out_file]);
+    cmd.arg("data.csv").args(["--output", &out_file]);
 
     wrk.assert_success(&mut cmd);
 
@@ -2102,7 +2102,7 @@ fn stats_percentiles() {
         .arg("10,25,50,75,90");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2206,7 +2206,7 @@ fn stats_percentiles_floats() {
         .arg("10.5,25.25,50.75,75.6,90.1");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2302,7 +2302,7 @@ fn stats_percentiles_with_dates() {
         .arg("--infer-dates");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2396,7 +2396,7 @@ fn stats_percentiles_with_nulls() {
         .arg("25,50,75");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2490,7 +2490,7 @@ fn stats_percentiles_mixed_types() {
         .arg("25,50,75");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2557,7 +2557,7 @@ fn stats_percentiles_edge_cases() {
         .arg("10,25,50,75,90");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2656,7 +2656,7 @@ fn stats_percentiles_custom_list() {
         .arg("1,5,33.3,66.6,95,99");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2740,7 +2740,7 @@ fn stats_percentiles_single_value() {
         .arg("25,50,75");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let expected = vec![
         svec![
@@ -2839,7 +2839,7 @@ fn stats_percentiles_deciles_lowercase() {
         .arg("deciles");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     // Find the percentiles column value
     let headers = &got[0];
@@ -2891,7 +2891,7 @@ fn stats_percentiles_deciles_uppercase() {
         .arg("DECILES");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -2935,7 +2935,7 @@ fn stats_percentiles_deciles_mixed_case() {
         .arg("DeCiLeS");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -2979,7 +2979,7 @@ fn stats_percentiles_quintiles_lowercase() {
         .arg("quintiles");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3029,7 +3029,7 @@ fn stats_percentiles_quintiles_uppercase() {
         .arg("QUINTILES");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3073,7 +3073,7 @@ fn stats_percentiles_quintiles_mixed_case() {
         .arg("QuInTiLeS");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3127,7 +3127,7 @@ fn stats_percentiles_deciles_with_more_values() {
         .arg("deciles");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3193,7 +3193,7 @@ fn stats_percentiles_quintiles_with_more_values() {
         .arg("quintiles");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3244,7 +3244,7 @@ fn stats_percentiles_regular_list_still_works() {
         .arg("25,50,75");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
-    assert!(got.len() > 0);
+    assert!(!got.is_empty());
 
     let headers = &got[0];
     let percentiles_idx = headers
@@ -3645,7 +3645,7 @@ fn stats_cache_invalidates_on_select_change() {
         "expected 2 rows for select c,d, got {fields:?}"
     );
     assert!(
-        fields.iter().any(|f| *f == "c") && fields.iter().any(|f| *f == "d"),
+        fields.contains(&"c") && fields.contains(&"d"),
         "expected stats for columns c,d but got {fields:?}"
     );
 }
@@ -4134,7 +4134,7 @@ fn stats_string_max_length() {
 
     // Find the row for col1
     for row in &got {
-        if row.len() > 0 && row[0] == "col1" {
+        if !row.is_empty() && row[0] == "col1" {
             // The min and max values are in columns 4 and 5 (0-indexed)
             if row.len() > 5 {
                 min_value = row[4].clone();
@@ -4160,7 +4160,7 @@ fn stats_string_max_length() {
 
     // Find the row for col1
     for row in &got {
-        if row.len() > 0 && row[0] == "col1" {
+        if !row.is_empty() && row[0] == "col1" {
             // The min and max values are in columns 4 and 5 (0-indexed)
             if row.len() > 5 {
                 min_value = row[4].clone();
@@ -4186,7 +4186,7 @@ fn stats_string_max_length() {
 
     // Find the row for col1
     for row in &got {
-        if row.len() > 0 && row[0] == "col1" {
+        if !row.is_empty() && row[0] == "col1" {
             // The min and max values are in columns 4 and 5 (0-indexed)
             if row.len() > 5 {
                 min_value = row[4].clone();
@@ -4323,7 +4323,7 @@ fn stats_auto_index_creation_on_oom() {
     let index_path = format!("{}.idx", test_file.display());
     let index_file = Path::new(&index_path);
     if index_file.exists() {
-        std::fs::remove_file(&index_file).unwrap();
+        std::fs::remove_file(index_file).unwrap();
     }
     assert!(!index_file.exists(), "Index should not exist initially");
 
@@ -5932,7 +5932,7 @@ fn stats_weighted_infinity_weights() {
     if !mean_str.is_empty() {
         let mean_val: f64 = mean_str.parse().unwrap();
         assert!(
-            mean_val >= 1.0 && mean_val <= 2.0,
+            (1.0..=2.0).contains(&mean_val),
             "Mean should be between 1.0 and 2.0 with very large weights, got {}",
             mean_val
         );
@@ -6438,7 +6438,7 @@ fn stats_quantile_method_approx_disables_mad() {
         .split(',')
         .collect();
     assert!(
-        !headers.iter().any(|h| *h == "mad"),
+        !headers.contains(&"mad"),
         "mad column should be omitted when approx disables MAD, got headers: {headers:?}"
     );
 }

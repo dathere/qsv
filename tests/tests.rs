@@ -198,13 +198,13 @@ impl CsvRecord {
 impl ops::Deref for CsvRecord {
     type Target = [String];
 
-    fn deref<'a>(&'a self) -> &'a [String] {
+    fn deref(&self) -> &[String] {
         &self.0
     }
 }
 
 impl ops::DerefMut for CsvRecord {
-    fn deref_mut<'a>(&'a mut self) -> &'a mut [String] {
+    fn deref_mut(&mut self) -> &mut [String] {
         &mut self.0
     }
 }
@@ -265,7 +265,7 @@ impl CsvData {
 impl ops::Deref for CsvData {
     type Target = [CsvRecord];
 
-    fn deref<'a>(&'a self) -> &'a [CsvRecord] {
+    fn deref(&self) -> &[CsvRecord] {
         &self.data
     }
 }
@@ -283,10 +283,11 @@ impl Arbitrary for CsvData {
         };
         // If the CSV data starts with a BOM, strip it, because it wreaks havoc
         // with tests that weren't designed to handle it.
-        if !d.data.is_empty() && !d.data[0].is_empty() {
-            if let Some(stripped) = d.data[0][0].strip_prefix('\u{FEFF}') {
-                d.data[0][0] = stripped.to_string();
-            }
+        if !d.data.is_empty()
+            && !d.data[0].is_empty()
+            && let Some(stripped) = d.data[0][0].strip_prefix('\u{FEFF}')
+        {
+            d.data[0][0] = stripped.to_string();
         }
         d
     }

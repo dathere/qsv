@@ -41,7 +41,7 @@ fn enumerate_counter() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--start", "10"]).arg("data.csv");
+    cmd.args(["--start", "10"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -68,8 +68,8 @@ fn enumerate_counter_inc() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--start", "10"])
-        .args(&["--increment", "3"])
+    cmd.args(["--start", "10"])
+        .args(["--increment", "3"])
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -98,7 +98,7 @@ fn enumerate_hash() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "1-"]).arg("data.csv");
+    cmd.args(["--hash", "1-"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -128,7 +128,7 @@ fn enumerate_hash_intl() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "1-"]).arg("data.csv");
+    cmd.args(["--hash", "1-"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -158,7 +158,7 @@ fn enumerate_hash_replace_old_hash() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "!/hash/"]).arg("data.csv");
+    cmd.args(["--hash", "!/hash/"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -187,7 +187,7 @@ fn enumerate_hash_replace_old_hash2() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "1-"]).arg("data.csv");
+    cmd.args(["--hash", "1-"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -216,7 +216,7 @@ fn enumerate_hash_regex() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "/letter|number|random_text/"])
+    cmd.args(["--hash", "/letter|number|random_text/"])
         .arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
@@ -246,7 +246,7 @@ fn enumerate_hash_subset() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "3,4"]).arg("data.csv");
+    cmd.args(["--hash", "3,4"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -275,7 +275,7 @@ fn enumerate_hash_reverse() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "_-1"]).arg("data.csv");
+    cmd.args(["--hash", "_-1"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![
@@ -304,7 +304,7 @@ fn enumerate_hash_regex_not() {
         ],
     );
     let mut cmd = wrk.command("enum");
-    cmd.args(&["--hash", "!/hash/"]).arg("data.csv");
+    cmd.args(["--hash", "!/hash/"]).arg("data.csv");
 
     let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
     let expected = vec![

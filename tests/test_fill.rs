@@ -76,7 +76,7 @@ fn fill_forward_groupby() {
     wrk.create("in.csv", example());
 
     let mut cmd = wrk.command("fill");
-    cmd.args(&vec!["-g", "2"]).arg("--").arg("1").arg("in.csv");
+    cmd.args(vec!["-g", "2"]).arg("--").arg("1").arg("in.csv");
 
     let got: Vec<CsvRecord> = wrk.read_stdout(&mut cmd);
     let expected = svec![
@@ -91,7 +91,7 @@ fn fill_first_groupby() {
     wrk.create("in.csv", example());
 
     let mut cmd = wrk.command("fill");
-    cmd.args(&vec!["-g", "2"])
+    cmd.args(vec!["-g", "2"])
         .arg("--first")
         .arg("--")
         .arg("1")

@@ -64,7 +64,7 @@ fn make_rows(headers: bool, rows: Vec<Vec<String>>) -> Vec<Vec<String>> {
     if headers {
         all_rows.push(svec!["city", "state"]);
     }
-    all_rows.extend(rows.into_iter());
+    all_rows.extend(rows);
     all_rows
 }
 
@@ -215,7 +215,7 @@ fn exclude_delimiter_tab() {
     );
 
     let mut cmd = wrk.command("exclude");
-    cmd.args(&["-d", "\\t"])
+    cmd.args(["-d", "\\t"])
         .arg("id")
         .arg("data.tsv")
         .arg("id")

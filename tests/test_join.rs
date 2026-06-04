@@ -120,7 +120,7 @@ fn make_rows(headers: bool, left_only: bool, rows: Vec<Vec<String>>) -> Vec<Vec<
             all_rows.push(svec!["city", "state", "city", "place"]);
         }
     }
-    all_rows.extend(rows.into_iter());
+    all_rows.extend(rows);
     all_rows
 }
 
@@ -137,7 +137,7 @@ fn make_rows_with_zeros(
             all_rows.push(svec!["id", "value", "id", "info"]);
         }
     }
-    all_rows.extend(rows.into_iter());
+    all_rows.extend(rows);
     all_rows
 }
 
@@ -716,7 +716,7 @@ fn join_inner_zeros_casei() {
     wrk.create("cities2.csv", cities2);
 
     let mut cmd = wrk.command("join");
-    cmd.args(&["id", "cities1.csv", "id", "cities2.csv"])
+    cmd.args(["id", "cities1.csv", "id", "cities2.csv"])
         .arg("--ignore-leading-zeros")
         .arg("--ignore-case");
 

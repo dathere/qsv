@@ -7,7 +7,7 @@ extern crate quickcheck;
 extern crate rand;
 extern crate stats;
 
-use std::{env, fmt, mem::transmute, ops};
+use std::{env, fmt, ops};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
 use rand::RngExt;
@@ -235,11 +235,11 @@ impl Arbitrary for CsvRecord {
 
 impl Csv for Vec<CsvRecord> {
     fn to_vecs(self) -> CsvVecs {
-        unsafe { transmute(self) }
+        self.into_iter().map(CsvRecord::unwrap).collect()
     }
 
     fn from_vecs(vecs: CsvVecs) -> Vec<CsvRecord> {
-        unsafe { transmute(vecs) }
+        vecs.into_iter().map(CsvRecord).collect()
     }
 }
 
@@ -317,12 +317,12 @@ impl Arbitrary for CsvData {
 
 impl Csv for CsvData {
     fn to_vecs(self) -> CsvVecs {
-        unsafe { transmute::<Vec<CsvRecord>, CsvVecs>(self.data) }
+        self.data.into_iter().map(CsvRecord::unwrap).collect()
     }
 
     fn from_vecs(vecs: CsvVecs) -> CsvData {
         CsvData {
-            data: unsafe { transmute::<CsvVecs, Vec<CsvRecord>>(vecs) },
+            data: vecs.into_iter().map(CsvRecord).collect(),
         }
     }
 }

@@ -1048,7 +1048,7 @@ echo "col1,col2
 
 Per the project's `Cargo.toml` (the source of truth for the MSRV) and `.github/copilot-instructions.md` (general "use latest stable Rust" guidance):
 
-1. **Use latest Rust features** (edition 2024; current MSRV per `Cargo.toml` is Rust 1.95+)
+1. **Use latest Rust features** (edition 2024; current MSRV per `Cargo.toml` is Rust 1.96+)
 2. **Always include safety comments**:
    ```rust
    unsafe {

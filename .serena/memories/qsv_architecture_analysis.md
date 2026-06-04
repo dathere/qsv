@@ -1,7 +1,7 @@
 # QSV Codebase Architecture and Testing Quality Analysis
 
 ## Executive Summary
-qsv is a high-performance CSV data-wrangling toolkit in Rust (version 19.1.0, MSRV 1.95, Edition 2024). It features:
+qsv is a high-performance CSV data-wrangling toolkit in Rust (version 19.1.0, MSRV 1.96, Edition 2024). It features:
 - 71 commands with conditional compilation via feature flags
 - 4 binary variants (qsv, qsvmcp, qsvlite, qsvdp) with different feature sets
 - Broad automated test coverage across 71 test modules (many feature-gated); test modules do not map one-to-one with commands

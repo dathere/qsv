@@ -3,7 +3,7 @@
 **qsv** is a blazingly-fast command-line CSV data-wrangling toolkit written in Rust.
 It's a fork of xsv with extensive additional functionality.
 
-**Current Version**: 19.1.0 | **MSRV**: Rust 1.95 | **Edition**: 2024
+**Current Version**: 19.1.0 | **MSRV**: Rust 1.96 | **Edition**: 2024
 
 ## Two Sub-Projects
 

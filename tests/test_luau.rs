@@ -3037,7 +3037,7 @@ BEGIN {
         boolean_true = true,
         boolean_false = false,
         number_integer = 42,
-        number_float = 3.14,
+        number_float = 1.23,
         empty_string = "",
         empty_table = {},
         nested_empty = {empty = {}}
@@ -3060,7 +3060,7 @@ return "ok"
     assert_eq!(json["boolean_true"], json!(true));
     assert_eq!(json["boolean_false"], json!(false));
     assert_eq!(json["number_integer"], json!(42));
-    assert_eq!(json["number_float"], json!(3.14));
+    assert_eq!(json["number_float"], json!(1.23));
     assert_eq!(json["empty_string"], json!(""));
     assert_eq!(json["empty_table"], json!({}));
     assert_eq!(json["nested_empty"]["empty"], json!({}));

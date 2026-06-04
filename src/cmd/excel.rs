@@ -1286,7 +1286,7 @@ mod tests {
 
     #[test]
     fn float_to_i64_safe_non_integer() {
-        assert_eq!(float_to_i64_safe(3.14), None);
+        assert_eq!(float_to_i64_safe(3.5), None);
         assert_eq!(float_to_i64_safe(0.5), None);
         assert_eq!(float_to_i64_safe(-0.001), None);
     }

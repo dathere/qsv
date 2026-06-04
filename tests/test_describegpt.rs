@@ -202,7 +202,7 @@ fn describegpt_valid_json() {
     let got = wrk.stdout::<String>(&mut cmd);
     match serde_json::from_str::<serde_json::Value>(&got) {
         Ok(_) => (),
-        Err(e) => assert!(false, "Error parsing JSON: {e}"),
+        Err(e) => panic!("Error parsing JSON: {e}"),
     }
 
     // Check that the command ran successfully
@@ -716,7 +716,7 @@ fn describegpt_output_to_file_json() {
     let output_content = std::fs::read_to_string(wrk.path("output.json")).unwrap();
     match serde_json::from_str::<serde_json::Value>(&output_content) {
         Ok(_) => (),
-        Err(e) => assert!(false, "Error parsing JSON from output file: {e}"),
+        Err(e) => panic!("Error parsing JSON from output file: {e}"),
     }
 }
 
@@ -972,7 +972,7 @@ fn describegpt_larger_dataset() {
     let got = wrk.stdout::<String>(&mut cmd);
     match serde_json::from_str::<serde_json::Value>(&got) {
         Ok(_) => (),
-        Err(e) => assert!(false, "Error parsing JSON: {e}"),
+        Err(e) => panic!("Error parsing JSON: {e}"),
     }
 
     // Check that the command ran successfully
@@ -1246,13 +1246,12 @@ fn test_base_url_flag_is_respected_issue_2976() {
     // The error should mention the Together AI URL, not OpenAI's URL
     // This confirms that the base URL flag is being respected
     if stderr.contains("together") || stderr.contains("HTTP") {
-        // The base URL is being used correctly
-        assert!(true, "Base URL flag is being respected");
+        // The base URL is being used correctly (respected)
     } else if stderr.contains("openai") {
         panic!("Base URL flag is not being respected - still using OpenAI URL");
     } else {
-        // Some other error occurred, which is fine for this test
-        assert!(true, "Base URL flag appears to be working");
+        // Some other error occurred, which is fine for this test (base URL flag appears to be
+        // working)
     }
 }
 

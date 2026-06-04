@@ -286,11 +286,10 @@ fn pragmastat_non_numeric_columns() {
     // case_status is text ("Open"/"Closed") => n=0, all estimators empty
     assert_eq!(got[1][0], "case_status");
     assert_eq!(got[1][1], "0");
-    for i in 2..8 {
+    for (header, cell) in got[0][2..8].iter().zip(&got[1][2..8]) {
         assert!(
-            got[1][i].is_empty(),
-            "column {} should be empty for non-numeric data",
-            got[0][i]
+            cell.is_empty(),
+            "column {header} should be empty for non-numeric data"
         );
     }
 }

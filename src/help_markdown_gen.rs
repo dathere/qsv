@@ -2831,8 +2831,8 @@ Usage:
         assert_eq!(m.get("--dates-whitelist").copied(), Some("string"));
         assert_eq!(m.get("--delimiter").copied(), Some("string"));
         // Positional `arg_*` and subcommand `cmd_*` fields must be skipped.
-        assert!(m.get("--input").is_none());
-        assert!(m.get("--view").is_none());
+        assert!(!m.contains_key("--input"));
+        assert!(!m.contains_key("--view"));
     }
 
     #[test]

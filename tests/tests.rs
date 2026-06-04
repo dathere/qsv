@@ -43,7 +43,7 @@ mod test_blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_cat;
 #[cfg(all(
-    any(feature = "feature_capable"),
+    feature = "feature_capable",
     any(target_os = "windows", target_os = "macos"),
     feature = "clipboard",
 ))]
@@ -79,7 +79,7 @@ mod test_fixlengths;
 mod test_flatten;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_fmt;
-#[cfg(all(feature = "foreach"))]
+#[cfg(feature = "foreach")]
 mod test_foreach;
 mod test_frequency;
 #[cfg(feature = "geocode")]
@@ -317,12 +317,12 @@ impl Arbitrary for CsvData {
 
 impl Csv for CsvData {
     fn to_vecs(self) -> CsvVecs {
-        unsafe { transmute(self.data) }
+        unsafe { transmute::<Vec<CsvRecord>, CsvVecs>(self.data) }
     }
 
     fn from_vecs(vecs: CsvVecs) -> CsvData {
         CsvData {
-            data: unsafe { transmute(vecs) },
+            data: unsafe { transmute::<CsvVecs, Vec<CsvRecord>>(vecs) },
         }
     }
 }

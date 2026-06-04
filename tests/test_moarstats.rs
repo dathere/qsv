@@ -198,6 +198,9 @@ fn moarstats_auto_generate_stats() {
 
     // Run moarstats with stats options - should auto-generate stats
     let mut cmd = wrk.command("moarstats");
+    // `--stats-options` takes a single space-separated string that qsv splits
+    // internally, so the space here is intentional (not two CLI args).
+    #[allow(clippy::suspicious_command_arg_space)]
     cmd.arg(&test_file)
         .arg("--stats-options")
         .arg("--everything --infer-dates");

@@ -157,7 +157,7 @@ cached = { version = "1.1", features = [
 ] }
 calamine = { version = "0.35", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
-chrono = { version = "0.4.44", default-features = false }
+chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
 console = { version = "0.16", optional = true }
 const_format = "0.2"
@@ -261,7 +261,7 @@ odht = "0.3"
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
 pragmastat = "12.1"
-polars = { version = "0.53", features = [
+polars = { version = "0.54", features = [
     "asof_join",
     "avro",
     # "avx512" is x86_64-only — enabled via the
@@ -462,8 +462,8 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=py-1.41.2
-polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
+# QSV_POLARS_REV=
+# polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
 # polars = { git = "https://github.com/pola-rs/polars", rev = "ba304b8", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
@@ -478,7 +478,7 @@ datasketches = { version = "0.3", features = ["frequencies", "hll", "tdigest"] }
 # aarch64 (and other arches) don't carry it. Polars dispatches the AVX-512
 # kernels at runtime, so enabling it for all x86_64 builds is safe.
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-polars = { version = "0.53", features = ["avx512"], optional = true }
+polars = { version = "0.54", features = ["avx512"], optional = true }
 
 [features]
 default = ["jemallocator"]

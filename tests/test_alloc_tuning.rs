@@ -24,7 +24,15 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
     // the process env so logging is on regardless of the .env contents, and the log
     // is written to the cwd (the workdir) by default.
     let mut cmd = wrk.command("--list");
-    cmd.env("QSV_LOG_LEVEL", "info");
+    // Sanitize the inherited environment so the test is hermetic: the opt-out must
+    // come ONLY from the workdir .env (an inherited QSV_NO_ALLOC_TUNING would mask
+    // the regression), load_dotenv must read the workdir .env (not an inherited
+    // QSV_DOTENV_PATH), and the log must land in the workdir cwd (not an inherited
+    // QSV_LOG_DIR).
+    cmd.env_remove("QSV_NO_ALLOC_TUNING")
+        .env_remove("QSV_DOTENV_PATH")
+        .env_remove("QSV_LOG_DIR")
+        .env("QSV_LOG_LEVEL", "info");
     wrk.run(&mut cmd);
 
     let log = wrk.read_to_string("qsv_rCURRENT.log").unwrap_or_default();

@@ -174,7 +174,6 @@ fn build_command_list() -> String {
 fn main() -> QsvExitCode {
     util::qsv_custom_panic();
     util::reset_sigpipe();
-    util::init_allocator_runtime();
 
     let now = Instant::now();
     #[allow(unused_variables)]
@@ -186,6 +185,15 @@ fn main() -> QsvExitCode {
         },
     };
 
+    // Load .env before parsing args, so a `.env`-configured QSV_NO_ALLOC_TUNING
+    // opt-out is honored by init_allocator_runtime() below and util::version()
+    // reflects the active allocator lever. Kept after init_logger() so logging
+    // behavior is unchanged.
+    if util::load_dotenv().is_err() {
+        return QsvExitCode::Bad;
+    }
+    util::init_allocator_runtime();
+
     let args: Args = Docopt::new(format!("{USAGE}\n\n{SPONSOR_MESSAGE}"))
         .and_then(|d| {
             d.options_first(true)
@@ -193,10 +201,6 @@ fn main() -> QsvExitCode {
                 .deserialize()
         })
         .unwrap_or_else(|e| e.exit());
-
-    if util::load_dotenv().is_err() {
-        return QsvExitCode::Bad;
-    }
 
     if args.flag_list {
         wout!(

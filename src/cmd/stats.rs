@@ -177,11 +177,16 @@ stats options:
                               https://en.wikipedia.org/wiki/Cardinality_(SQL_statements)
                               Uses memory proportional to the number of unique values in each column.
     --zero-padded-numeric     Add a "zero_padded_numeric" column that is "true" when a column's
-                              inferred type is String AND all its non-null values are all-digit
-                              numbers with at least one having a leading zero (e.g. US zip codes,
-                              barcodes, zero-padded IDs/classification codes). qsv keeps such
-                              columns as text to avoid data loss; this flag surfaces them so they
-                              are not mistakenly loaded as integer/float. The cell is empty when the
+                              leading/padding zeros would be lost if it were cast to a number.
+                              Two cases qualify: (1) the inferred type is String AND all non-null
+                              values are all-digit numbers with at least one leading zero (e.g. US
+                              zip codes, barcodes, zero-padded IDs) — qsv already keeps these as
+                              text; and (2) the inferred type is Float AND all non-null values are
+                              numeric with at least one zero-padded decimal code (e.g. 007.1, 05.10
+                              as in ICD-9, Dewey Decimal & Harmonized System classification codes).
+                              This flag surfaces both so they are not mistakenly loaded/cast as
+                              integer/float. Note that ordinary fractions (0.5) and pure
+                              trailing-zero codes (7.10) are not flagged. The cell is empty when the
                               column is not zero-padded numeric. Automatically enabled with --everything.
 
                               NUMERIC & DATE/DATETIME STATS THAT REQUIRE IN-MEMORY SORTING:
@@ -3249,15 +3254,21 @@ struct Stats {
     /// tracker is dropped mid-pass. Output uses `*HIGH_CARDINALITY` / `>=<cap>` sentinels.
     modes_dropped:    bool, // 1 byte
     /// --zero-padded-numeric accumulators (only updated when `which.zero_padded_numeric`).
-    /// `zpn_disqualified` is sticky: set the first time a non-null value is not all-ASCII-digits,
-    /// after which the per-cell check is skipped. `zpn_has_value` records whether at least one
-    /// non-null all-digit value was seen. Combined with a final `typ == TString` at output time,
-    /// they identify columns kept as text due to leading zeros (zip codes, barcodes, padded IDs).
+    /// `zpn_disqualified` is sticky: set the first time a non-null value is neither an
+    /// all-ASCII-digit integer nor a parseable float, after which the per-cell check is
+    /// skipped. `zpn_has_value` records whether at least one non-null numeric-shaped value was
+    /// seen. `zpn_float_padded` is sticky too: set when a float-shaped value has leading-zero
+    /// padding in its integer part (e.g. `007.1`, `05.10`) — used to flag `TFloat` code
+    /// columns, since (unlike the all-digit `TString` case) a `TFloat` type alone doesn't
+    /// prove padding. Combined with the final type at output time, they identify columns whose
+    /// leading/padding zeros would be lost if cast to a number (zip codes, barcodes, padded
+    /// IDs, ICD-9/Dewey/HS-style decimal classification codes).
     zpn_disqualified: bool, // 1 byte
     zpn_has_value:    bool,      // 1 byte
+    zpn_float_padded: bool,      // 1 byte
     max_precision:    u16,       // 2 bytes - accessed for floats
 
-    // 4 bytes padding (automatic with repr(C) for 8-byte alignment)
+    // 3 bytes padding (automatic with repr(C) for 8-byte alignment)
 
     // Hot counters - all 8-byte aligned, accessed frequently
     nullcount:    u64, // 8 bytes - frequently updated counter
@@ -3882,6 +3893,7 @@ impl Stats {
             modes_dropped: false,
             zpn_disqualified: false,
             zpn_has_value: false,
+            zpn_float_padded: false,
             max_precision: 0,
             nullcount: 0,
             sum_stotlen: 0,
@@ -3985,6 +3997,44 @@ impl Stats {
         }
     }
 
+    /// Returns true when `sample` is a decimal float whose integer part is zero-padded, i.e. a
+    /// leading `0` immediately followed by another digit (`007.1`, `05.10`, `02.03`, `0601.10`).
+    /// This mirrors the leading-zero rule the integer path uses to keep zip codes as text, but for
+    /// floats — where a `TFloat` type alone can't reveal the padding because the value already
+    /// parsed as a number. A single `0` before the dot is intentionally NOT padding, so ordinary
+    /// fractions like `0.5`/`0.25` are excluded. Requires exactly one `.` with digits on both
+    /// sides and nothing else, so exponents (`0e5`) and multi-dot codes (`0601.10.00`, which aren't
+    /// floats anyway) are rejected. An optional leading sign is tolerated, though codes are
+    /// typically unsigned. Pure trailing-zero codes (`7.10`) are out of scope by design — they're
+    /// indistinguishable from rounded measurements without the original string.
+    #[inline]
+    fn is_zero_padded_float(sample: &[u8]) -> bool {
+        let b = match sample.first() {
+            Some(b'+' | b'-') => &sample[1..],
+            _ => sample,
+        };
+        // integer part must be '0' followed by another digit
+        match b {
+            [b'0', d, ..] if d.is_ascii_digit() => {},
+            _ => return false,
+        }
+        let mut seen_dot = false;
+        let mut frac_len = 0_usize;
+        for &c in b {
+            match c {
+                b'.' if !seen_dot => seen_dot = true,
+                b'.' => return false, // a second dot: not a float
+                _ if c.is_ascii_digit() => {
+                    if seen_dot {
+                        frac_len += 1;
+                    }
+                },
+                _ => return false, // any other byte disqualifies
+            }
+        }
+        seen_dot && frac_len > 0
+    }
+
     /// * Assumes valid UTF-8 input for string operations
     /// * Bounds checking is avoided where safe
     #[allow(clippy::inline_always)]
@@ -4038,9 +4088,19 @@ impl Stats {
         // Runs for every non-typesonly, non-null sample BEFORE the t == TString early-return
         // below, so it observes values even after the column has widened to String. The sticky
         // `zpn_disqualified` bit means non-numeric columns pay only a single bool check after
-        // their first value; only genuinely all-digit columns get scanned for the whole pass.
+        // their first value; only genuinely numeric-shaped columns get scanned for the whole pass.
+        // A value qualifies as numeric-shaped if it is an all-digit integer OR a parseable float;
+        // a float with leading-zero padding (`007.1`, `05.10`) additionally sets `zpn_float_padded`
+        // so a `TFloat` code column can be flagged (a plain `7.1`/`0.5` float leaves it unset).
         if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
             if sample.iter().all(u8::is_ascii_digit) {
+                self.zpn_has_value = true;
+            } else if Self::is_zero_padded_float(sample) {
+                self.zpn_has_value = true;
+                self.zpn_float_padded = true;
+            } else if fast_float2::parse::<f64, &[u8]>(sample).is_ok() {
+                // plain, unpadded float (e.g. 7.1, 0.5): numeric-shaped, so it does not
+                // disqualify the column, but it is not evidence of zero-padding either.
                 self.zpn_has_value = true;
             } else {
                 self.zpn_disqualified = true;
@@ -5171,14 +5231,17 @@ impl Stats {
         }
 
         // zero_padded_numeric (last optional column, matching stats_headers ordering).
-        // "true" only when the column was kept as text because every non-null value is an
-        // all-digit number and at least one had a leading zero; empty otherwise.
+        // "true" when leading/padding zeros would be lost if the column were cast to a number;
+        // empty otherwise. Two qualifying shapes:
+        //   - TString: every non-null value is an all-digit number — qsv only keeps such a column
+        //     as text when at least one value has a leading zero (zip codes, padded IDs).
+        //   - TFloat:  every non-null value is numeric-shaped AND at least one is a zero-padded
+        //     float (`zpn_float_padded`: `007.1`, `05.10`), so the type alone can't reveal it.
         if self.which.zero_padded_numeric {
-            if typ == TString && self.zpn_has_value && !self.zpn_disqualified {
-                record.push_field("true");
-            } else {
-                record.push_field(EMPTY_STR);
-            }
+            let is_zpn = self.zpn_has_value
+                && !self.zpn_disqualified
+                && (typ == TString || (typ == TFloat && self.zpn_float_padded));
+            record.push_field(if is_zpn { "true" } else { EMPTY_STR });
         }
 
         record
@@ -5200,6 +5263,7 @@ impl Commute for Stats {
         // qualifying value seen in any chunk counts.
         self.zpn_disqualified |= other.zpn_disqualified;
         self.zpn_has_value |= other.zpn_has_value;
+        self.zpn_float_padded |= other.zpn_float_padded;
         self.max_precision = self.max_precision.max(other.max_precision);
         self.which.merge(other.which);
         self.nullcount += other.nullcount;

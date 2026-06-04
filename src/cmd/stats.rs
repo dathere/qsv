@@ -2091,6 +2091,14 @@ impl Args {
             return self.sequential_stats(whitelist);
         }
 
+        // Retain freed jemalloc pages for the duration of this parallel run when it
+        // builds many Frequencies hashmaps (cardinality / mode / antimode). No-op
+        // when background_thread is active or QSV_NO_ALLOC_TUNING is set. Guarded on
+        // the extended-stats flags so plain streaming stats don't pay the extra RSS.
+        if self.flag_everything || self.flag_cardinality || self.flag_mode {
+            util::retain_alloc_pages_for_aggregation();
+        }
+
         let mut rdr = self.rconfig().reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 

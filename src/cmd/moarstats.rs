@@ -2270,6 +2270,10 @@ fn count_all_outliers(
 
         log::info!("Parallelizing outlier counting: {nchunks} chunks, {njobs} jobs");
 
+        // Retain freed jemalloc pages for this parallel, hashmap-heavy outlier pass
+        // (no-op when background_thread is active or QSV_NO_ALLOC_TUNING is set).
+        util::retain_alloc_pages_for_aggregation();
+
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);
 
@@ -2770,6 +2774,10 @@ fn compute_all_bivariatestats(
             pb.set_length(nchunks as u64);
             log::info!("Progress started... {nchunks} chunks");
         }
+
+        // Retain freed jemalloc pages for this parallel, hashmap-heavy bivariate
+        // pass (no-op when background_thread is active or QSV_NO_ALLOC_TUNING is set).
+        util::retain_alloc_pages_for_aggregation();
 
         let pool = ThreadPool::new(njobs);
         let (send, recv) = crossbeam_channel::bounded(nchunks);

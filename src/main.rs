@@ -1,39 +1,3 @@
-#![cfg_attr(
-    clippy,
-    allow(
-        clippy::cast_possible_truncation,
-        clippy::cast_possible_wrap,
-        clippy::cast_sign_loss,
-        // things are often more readable this way
-        clippy::needless_raw_string_hashes,
-        clippy::cast_lossless,
-        clippy::module_name_repetitions,
-        clippy::type_complexity,
-        clippy::zero_prefixed_literal,
-        // correctly used
-        clippy::enum_glob_use,
-        clippy::result_unit_err,
-        // not practical
-        clippy::similar_names,
-        clippy::too_many_lines,
-        clippy::struct_excessive_bools,
-        // preference
-        clippy::doc_markdown,
-        clippy::unnecessary_wraps,
-        // false positive
-        clippy::needless_doctest_main,
-        // noisy
-        clippy::missing_errors_doc,
-        clippy::use_self,
-        clippy::cognitive_complexity,
-        clippy::option_if_let_else,
-        clippy::implicit_clone,
-    ),
-    warn(
-        clippy::missing_asserts_for_indexing,
-    )
-)]
-
 use std::{env, io, time::Instant};
 
 extern crate qsv_docopt as docopt;

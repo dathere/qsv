@@ -78,6 +78,39 @@ required-features = ["datapusher_plus"]
 name = "tests"
 path = "tests/tests.rs"
 
+[lints.clippy]
+cast_possible_truncation = "allow"
+cast_possible_wrap       = "allow"
+cast_sign_loss           = "allow"
+# things are often more readable this way
+needless_raw_string_hashes = "allow"
+cast_lossless              = "allow"
+module_name_repetitions    = "allow"
+type_complexity            = "allow"
+zero_prefixed_literal      = "allow"
+# correctly used
+enum_glob_use   = "allow"
+result_unit_err = "allow"
+# not practical
+similar_names         = "allow"
+too_many_lines        = "allow"
+struct_excessive_bools = "allow"
+# preference
+doc_markdown       = "allow"
+unnecessary_wraps  = "allow"
+# false positive
+needless_doctest_main = "allow"
+# noisy
+missing_errors_doc   = "allow"
+use_self             = "allow"
+cognitive_complexity = "allow"
+option_if_let_else   = "allow"
+implicit_clone       = "allow"
+# pub(crate) documents crate-internal intent; equivalent to pub only because the module is private
+redundant_pub_crate = "allow"
+# warned
+missing_asserts_for_indexing = "warn"
+
 [profile.release]
 codegen-units = 1
 debug         = false

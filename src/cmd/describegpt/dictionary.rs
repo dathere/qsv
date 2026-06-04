@@ -909,9 +909,7 @@ pub(super) fn generate_code_based_dictionary(
         // (`identifier`) and the stats Date/DateTime type (`timestamp`). The LLM
         // fills/refines empty or non-authoritative values in
         // `combine_dictionary_entries`.
-        let (concept, role) = if !infer_content_type {
-            (String::new(), String::new())
-        } else {
+        let (concept, role) = if infer_content_type {
             let concept = concept_from_content_type(content_type_base(&content_type))
                 .map(ToString::to_string)
                 .unwrap_or_default();
@@ -924,6 +922,8 @@ pub(super) fn generate_code_based_dictionary(
                 }
             };
             (concept, role)
+        } else {
+            (String::new(), String::new())
         };
 
         dictionary_entries.push(DictionaryEntry {

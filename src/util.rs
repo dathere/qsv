@@ -392,8 +392,15 @@ pub fn retain_alloc_pages_for_aggregation() {
     if get_envvar_flag("QSV_NO_ALLOC_TUNING") || BACKGROUND_THREADS_ACTIVE.load(Ordering::Relaxed) {
         return;
     }
-    // Best-effort: ignore errors so a jemalloc build without these knobs can't
-    // break the command.
+    // safety: tikv_jemalloc_ctl::raw {read,write} call jemalloc's mallctl by name.
+    // Invariants upheld here:
+    //   - every key is a NUL-terminated byte string (the trailing `\0`), as the name-based mallctl
+    //     API requires;
+    //   - value widths match the mallctl types: `*_decay_ms` is `ssize_t` (isize, -1 = "never
+    //     decay/retain pages"); `arenas.narenas` is `unsigned` (u32);
+    //   - every result is discarded best-effort (`let _ =`), so a jemalloc build or platform
+    //     lacking a given knob returns an error rather than aborting the command. No pointers are
+    //     passed; mallctl copies the value in/out.
     unsafe {
         let _ = raw::write(b"arenas.dirty_decay_ms\0", -1_isize);
         let _ = raw::write(b"arenas.muzzy_decay_ms\0", -1_isize);

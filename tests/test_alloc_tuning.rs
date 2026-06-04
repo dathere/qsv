@@ -33,7 +33,10 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
         .env_remove("QSV_DOTENV_PATH")
         .env_remove("QSV_LOG_DIR")
         .env("QSV_LOG_LEVEL", "info");
-    wrk.run(&mut cmd);
+    // assert_success runs the command and verifies it exited 0 before we inspect
+    // the log, so a `--list` failure surfaces as a clear failure rather than an
+    // empty/partial log silently failing the later assertion.
+    wrk.assert_success(&mut cmd);
 
     let log = wrk.read_to_string("qsv_rCURRENT.log").unwrap_or_default();
     assert!(

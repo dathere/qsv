@@ -57,7 +57,7 @@ fn geoconvert_geojson_to_csv() {
     wrk.assert_success(&mut cmd);
 
     let mut cmd = wrk.command("select");
-    cmd.args(&["name,Shape_Length,Shape_Area"])
+    cmd.args(["name,Shape_Length,Shape_Area"])
         .arg(&txcities_csv_first5);
 
     let got: String = wrk.stdout(&mut cmd);

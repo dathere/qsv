@@ -7,7 +7,7 @@ extern crate quickcheck;
 extern crate rand;
 extern crate stats;
 
-use std::{env, fmt, mem::transmute, ops};
+use std::{env, fmt, ops};
 
 use quickcheck::{Arbitrary, Gen, QuickCheck, Testable};
 use rand::RngExt;
@@ -43,7 +43,7 @@ mod test_blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_cat;
 #[cfg(all(
-    any(feature = "feature_capable"),
+    feature = "feature_capable",
     any(target_os = "windows", target_os = "macos"),
     feature = "clipboard",
 ))]
@@ -79,7 +79,7 @@ mod test_fixlengths;
 mod test_flatten;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_fmt;
-#[cfg(all(feature = "foreach"))]
+#[cfg(feature = "foreach")]
 mod test_foreach;
 mod test_frequency;
 #[cfg(feature = "geocode")]
@@ -198,13 +198,13 @@ impl CsvRecord {
 impl ops::Deref for CsvRecord {
     type Target = [String];
 
-    fn deref<'a>(&'a self) -> &'a [String] {
+    fn deref(&self) -> &[String] {
         &self.0
     }
 }
 
 impl ops::DerefMut for CsvRecord {
-    fn deref_mut<'a>(&'a mut self) -> &'a mut [String] {
+    fn deref_mut(&mut self) -> &mut [String] {
         &mut self.0
     }
 }
@@ -235,11 +235,11 @@ impl Arbitrary for CsvRecord {
 
 impl Csv for Vec<CsvRecord> {
     fn to_vecs(self) -> CsvVecs {
-        unsafe { transmute(self) }
+        self.into_iter().map(CsvRecord::unwrap).collect()
     }
 
     fn from_vecs(vecs: CsvVecs) -> Vec<CsvRecord> {
-        unsafe { transmute(vecs) }
+        vecs.into_iter().map(CsvRecord).collect()
     }
 }
 
@@ -265,7 +265,7 @@ impl CsvData {
 impl ops::Deref for CsvData {
     type Target = [CsvRecord];
 
-    fn deref<'a>(&'a self) -> &'a [CsvRecord] {
+    fn deref(&self) -> &[CsvRecord] {
         &self.data
     }
 }
@@ -283,10 +283,11 @@ impl Arbitrary for CsvData {
         };
         // If the CSV data starts with a BOM, strip it, because it wreaks havoc
         // with tests that weren't designed to handle it.
-        if !d.data.is_empty() && !d.data[0].is_empty() {
-            if let Some(stripped) = d.data[0][0].strip_prefix('\u{FEFF}') {
-                d.data[0][0] = stripped.to_string();
-            }
+        if !d.data.is_empty()
+            && !d.data[0].is_empty()
+            && let Some(stripped) = d.data[0][0].strip_prefix('\u{FEFF}')
+        {
+            d.data[0][0] = stripped.to_string();
         }
         d
     }
@@ -316,12 +317,12 @@ impl Arbitrary for CsvData {
 
 impl Csv for CsvData {
     fn to_vecs(self) -> CsvVecs {
-        unsafe { transmute(self.data) }
+        self.data.into_iter().map(CsvRecord::unwrap).collect()
     }
 
     fn from_vecs(vecs: CsvVecs) -> CsvData {
         CsvData {
-            data: unsafe { transmute(vecs) },
+            data: vecs.into_iter().map(CsvRecord).collect(),
         }
     }
 }

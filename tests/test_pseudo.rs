@@ -178,7 +178,7 @@ fn pseudo_overflow() {
             svec!["Bob", "teal"],
         ],
     );
-    let close_to_max = std::u64::MAX - 10;
+    let close_to_max = u64::MAX - 10;
     let mut cmd = wrk.command("pseudo");
     cmd.arg("name")
         .args(["--formatstr", "ID-{}"])

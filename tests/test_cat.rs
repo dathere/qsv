@@ -617,7 +617,7 @@ fn cat_rowskey_grouping_customname() {
     let mut cmd = wrk.command("cat");
     cmd.arg("rowskey")
         .args(["--group", "fstem"])
-        .args(&["--group-name", "file group label"])
+        .args(["--group-name", "file group label"])
         .arg("in1.csv")
         .arg("in2.csv")
         .arg("in3.csv");

@@ -130,19 +130,19 @@ fn test_slice(
 ) {
     let (wrk, mut cmd) = setup(name, headers, use_index);
     if let Some(start) = start {
-        cmd.arg("--start").arg(&start.to_string());
+        cmd.arg("--start").arg(start.to_string());
     }
     if let Some(end) = end {
         if as_len {
             let start = start.unwrap_or(0);
             if start < 0 {
-                cmd.arg("--len").arg(&end.to_string());
+                cmd.arg("--len").arg(end.to_string());
             } else {
                 cmd.arg("--len")
-                    .arg(&(end - start.unsigned_abs()).to_string());
+                    .arg((end - start.unsigned_abs()).to_string());
             }
         } else {
-            cmd.arg("--end").arg(&end.to_string());
+            cmd.arg("--end").arg(end.to_string());
         }
     }
     if !headers {
@@ -151,7 +151,7 @@ fn test_slice(
     if json_output {
         let output_file = wrk.path("output.json").to_string_lossy().to_string();
 
-        cmd.arg("--json").args(&["--output", &output_file]);
+        cmd.arg("--json").args(["--output", &output_file]);
 
         wrk.assert_success(&mut cmd);
 
@@ -187,7 +187,7 @@ fn test_slice(
 
 fn test_index(name: &str, idx: isize, expected: &str, headers: bool, use_index: bool) {
     let (wrk, mut cmd) = setup(name, headers, use_index);
-    cmd.arg("--index").arg(&idx.to_string());
+    cmd.arg("--index").arg(idx.to_string());
     if !headers {
         cmd.arg("--no-headers");
     }
@@ -321,19 +321,19 @@ fn test_slice_invert(
 ) {
     let (wrk, mut cmd) = setup(name, headers, use_index);
     if let Some(start) = start {
-        cmd.arg("--start").arg(&start.to_string());
+        cmd.arg("--start").arg(start.to_string());
     }
     if let Some(end) = end {
         if as_len {
             let start = start.unwrap_or(0);
             if start < 0 {
-                cmd.arg("--len").arg(&end.to_string());
+                cmd.arg("--len").arg(end.to_string());
             } else {
                 cmd.arg("--len")
-                    .arg(&(end - start.unsigned_abs()).to_string());
+                    .arg((end - start.unsigned_abs()).to_string());
             }
         } else {
-            cmd.arg("--end").arg(&end.to_string());
+            cmd.arg("--end").arg(end.to_string());
         }
     }
     if !headers {
@@ -344,7 +344,7 @@ fn test_slice_invert(
     if json_output {
         let output_file = wrk.path("output.json").to_string_lossy().to_string();
 
-        cmd.arg("--json").args(&["--output", &output_file]);
+        cmd.arg("--json").args(["--output", &output_file]);
 
         wrk.assert_success(&mut cmd);
 

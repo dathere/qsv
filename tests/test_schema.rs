@@ -280,7 +280,7 @@ fn generate_schema_with_const_and_enum_constraints() {
 9,r9,const,charlie
 ";
 
-    wrk.create_from_string("enum_const_test.csv", &csv);
+    wrk.create_from_string("enum_const_test.csv", csv);
 
     // run schema command with value constraints option
     let mut cmd = wrk.command("schema");
@@ -395,7 +395,7 @@ fn generate_schema_tsv_delimiter_detection_issue_2997() {
 2025-01-01\tSTART\tN/A\t3023.46\t-\t-\tBalance from 2024\tN/A
 2025-01-28\tDEBIT\tTRADE\t-3023\tDeployer 0xb1\tVelodrome\tSell for USDC\thttps://optimistic.etherscan.io/tx/0x79e857395945f03a57454efcccdc5ca00430f5886018d71a9a137808a60fe7fc";
 
-    wrk.create_from_string("test_data.tsv", &tsv_data);
+    wrk.create_from_string("test_data.tsv", tsv_data);
 
     // run schema command (without explicit delimiter - should auto-detect)
     let mut cmd = wrk.command("schema");
@@ -481,7 +481,7 @@ user2@test.org
 admin@company.co.uk
 support@domain.net";
 
-    wrk.create_from_string("emails.csv", &csv);
+    wrk.create_from_string("emails.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("emails.csv");
@@ -514,7 +514,7 @@ test.org
 subdomain.example.com
 host-name.co.uk";
 
-    wrk.create_from_string("hostnames.csv", &csv);
+    wrk.create_from_string("hostnames.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("hostnames.csv");
@@ -547,7 +547,7 @@ fn generate_schema_with_strict_formats_ipv4() {
 172.16.0.1
 8.8.8.8";
 
-    wrk.create_from_string("ipv4s.csv", &csv);
+    wrk.create_from_string("ipv4s.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("ipv4s.csv");
@@ -580,7 +580,7 @@ fn generate_schema_with_strict_formats_ipv6() {
 ::1
 2001:db8::1";
 
-    wrk.create_from_string("ipv6s.csv", &csv);
+    wrk.create_from_string("ipv6s.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("ipv6s.csv");
@@ -614,7 +614,7 @@ user2@test.org
 not-an-email
 admin@company.co.uk";
 
-    wrk.create_from_string("mixed.csv", &csv);
+    wrk.create_from_string("mixed.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("mixed.csv");
@@ -648,7 +648,7 @@ fn generate_schema_with_strict_formats_ipv4_precedence_over_hostname() {
 10.0.0.1
 172.16.0.1";
 
-    wrk.create_from_string("ipv4_precedence.csv", &csv);
+    wrk.create_from_string("ipv4_precedence.csv", csv);
 
     let mut cmd = wrk.command("schema");
     cmd.arg("ipv4_precedence.csv");

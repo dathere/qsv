@@ -355,5 +355,5 @@ data1,data2,d3";
     let got = wrk_stdout(INPUT, "50");
 
     // Headers should be truncated to fit
-    assert!(got.contains("…") || got.len() > 0);
+    assert!(got.contains("…") || !got.is_empty());
 }

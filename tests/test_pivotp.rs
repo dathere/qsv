@@ -78,7 +78,7 @@ fn setup_maintain_order(name: &str) -> Workdir {
 
 // Test basic pivot with single index
 pivotp_test!(pivotp_basic, |wrk: Workdir, mut cmd: process::Command| {
-    cmd.args(&[
+    cmd.args([
         "product",
         "--index",
         "date",
@@ -104,7 +104,7 @@ pivotp_test!(pivotp_basic, |wrk: Workdir, mut cmd: process::Command| {
 pivotp_test!(
     pivotp_multi_index,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date,region",
@@ -131,7 +131,7 @@ pivotp_test!(
 
 // Test pivot with sum aggregation
 pivotp_test!(pivotp_sum_agg, |wrk: Workdir, mut cmd: process::Command| {
-    cmd.args(&[
+    cmd.args([
         "product",
         "--index",
         "region",
@@ -157,7 +157,7 @@ pivotp_test!(pivotp_sum_agg, |wrk: Workdir, mut cmd: process::Command| {
 pivotp_test!(
     pivotp_mean_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -182,7 +182,7 @@ pivotp_test!(
 
 // Test pivot with min aggregation
 pivotp_test!(pivotp_min_agg, |wrk: Workdir, mut cmd: process::Command| {
-    cmd.args(&[
+    cmd.args([
         "product",
         "--index",
         "region",
@@ -206,7 +206,7 @@ pivotp_test!(pivotp_min_agg, |wrk: Workdir, mut cmd: process::Command| {
 
 // Test pivot with max aggregation
 pivotp_test!(pivotp_max_agg, |wrk: Workdir, mut cmd: process::Command| {
-    cmd.args(&[
+    cmd.args([
         "product",
         "--index",
         "region",
@@ -232,7 +232,7 @@ pivotp_test!(pivotp_max_agg, |wrk: Workdir, mut cmd: process::Command| {
 pivotp_test!(
     pivotp_median_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -262,7 +262,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_quantile_p95_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -290,7 +290,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_q_alias_p50_equals_median,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -319,7 +319,7 @@ pivotp_test!(
     pivotp_quantile_invalid_p_rejected,
     |wrk: Workdir, mut cmd: process::Command| {
         // Out-of-range high
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -338,7 +338,7 @@ pivotp_test!(
 
         // Out-of-range low (negative)
         let mut cmd_2 = wrk.command("pivotp");
-        cmd_2.args(&[
+        cmd_2.args([
             "product",
             "--index",
             "region",
@@ -357,7 +357,7 @@ pivotp_test!(
 
         // Non-numeric suffix
         let mut cmd3 = wrk.command("pivotp");
-        cmd3.args(&[
+        cmd3.args([
             "product",
             "--index",
             "region",
@@ -382,7 +382,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_quantile_groupby_mode,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "region",
             "--values",
@@ -406,7 +406,7 @@ pivotp_test!(
 
 // Test pivot with len aggregation
 pivotp_test!(pivotp_len_agg, |wrk: Workdir, mut cmd: process::Command| {
-    cmd.args(&[
+    cmd.args([
         "product",
         "--index",
         "region",
@@ -432,7 +432,7 @@ pivotp_test!(pivotp_len_agg, |wrk: Workdir, mut cmd: process::Command| {
 pivotp_test!(
     pivotp_last_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -459,7 +459,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_item_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -482,7 +482,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_sort_columns,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -510,7 +510,7 @@ pivotp_test!(
 pivotp_maintain_order_test!(
     pivotp_maintain_order,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -538,7 +538,7 @@ pivotp_maintain_order_test!(
 pivotp_maintain_order_test!(
     pivotp_maintain_order_and_sort_columns,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -567,7 +567,7 @@ pivotp_maintain_order_test!(
 pivotp_test!(
     pivotp_col_separator,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -604,7 +604,7 @@ pivotp_test!(
         ];
         wrk.create("sales_semicolon.csv", sales);
 
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -627,7 +627,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_no_index,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["product", "--values", "sales", "--agg", "sum", "sales.csv"]);
+        cmd.args(["product", "--values", "sales", "--agg", "sum", "sales.csv"]);
 
         wrk.assert_success(&mut cmd);
 
@@ -647,7 +647,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_multi_on_cols,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product,region", // Multiple on-cols
             "--index",
             "date",
@@ -692,7 +692,7 @@ pivotp_test!(
         ];
         wrk.create("sales_multi.csv", sales_multi);
 
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -729,7 +729,7 @@ pivotp_test!(
         ];
         wrk.create("sales_multi.csv", sales_multi);
 
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -764,7 +764,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_try_parsedates,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -800,7 +800,7 @@ pivotp_test!(
         ];
         wrk.create_with_delim("sales_decimal.csv", sales_decimal, b';');
 
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -826,7 +826,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_validate,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -1317,7 +1317,7 @@ fn pivotp_smart_multimodal() {
 fn pivotp_smart_date_sparse() {
     let wrk = Workdir::new("pivotp_smart_date_sparse");
     // Date column with >50% NULL values
-    let csv_content = vec![
+    let csv_content = [
         "category,group,date_val",
         "A,X,2024-01-01",
         "A,Y,",
@@ -1369,7 +1369,7 @@ fn pivotp_smart_date_sparse() {
 fn pivotp_smart_date_ascending() {
     let wrk = Workdir::new("pivotp_smart_date_ascending");
     // Ascending date values — Last gives the most recent entry
-    let csv_content = vec![
+    let csv_content = [
         "category,group,date_val",
         "A,X,2024-01-01",
         "A,Y,2024-01-15",
@@ -1419,7 +1419,7 @@ fn pivotp_smart_date_ascending() {
 pivotp_test!(
     pivotp_infer_len,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date",
@@ -1446,7 +1446,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1475,7 +1475,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_subtotal,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date,region",
@@ -1507,7 +1507,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total_and_subtotal,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "date,region",
@@ -1541,7 +1541,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_subtotal_single_index_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1561,7 +1561,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total_custom_label,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1587,7 +1587,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total_with_mean_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1627,7 +1627,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total_sort_columns,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1659,7 +1659,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_grand_total_non_numeric_value,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "product",
             "--index",
             "region",
@@ -1695,7 +1695,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_subtotal_non_numeric_value,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "sales",
             "--index",
             "product,region",
@@ -1770,7 +1770,7 @@ fn setup_groupby(name: &str) -> Workdir {
 pivotp_groupby_test!(
     pivotp_groupby_basic_count,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "--agg", "len", "test.csv"]);
+        cmd.args(["--index", "GROUP", "--agg", "len", "test.csv"]);
 
         wrk.assert_success(&mut cmd);
 
@@ -1791,7 +1791,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_no_values_default_agg,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "test.csv"]);
+        cmd.args(["--index", "GROUP", "test.csv"]);
 
         wrk.assert_success(&mut cmd);
 
@@ -1806,7 +1806,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_grand_total,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "GROUP",
             "--agg",
@@ -1835,7 +1835,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_with_values,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index", "GROUP", "--values", "NAME", "--agg", "len", "test.csv",
         ]);
 
@@ -1858,7 +1858,7 @@ pivotp_groupby_test!(
 pivotp_test!(
     pivotp_groupby_sum,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "region",
             "--values",
@@ -1884,7 +1884,7 @@ pivotp_test!(
 pivotp_test!(
     pivotp_groupby_multi_index,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "date,region",
             "--values",
@@ -1921,7 +1921,7 @@ pivotp_test!(
         ];
         wrk.create("multi.csv", data);
 
-        cmd.args(&[
+        cmd.args([
             "--index",
             "region",
             "--values",
@@ -1947,7 +1947,7 @@ pivotp_test!(
 pivotp_groupby_test!(
     pivotp_groupby_maintain_order,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "GROUP",
             "--agg",
@@ -1971,7 +1971,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_custom_total_label,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "GROUP",
             "--agg",
@@ -1995,7 +1995,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_no_index_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--agg", "len", "test.csv"]);
+        cmd.args(["--agg", "len", "test.csv"]);
 
         wrk.assert_err(&mut cmd);
         let stderr = wrk.output_stderr(&mut cmd);
@@ -2010,7 +2010,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_subtotal_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "--agg", "len", "--subtotal", "test.csv"]);
+        cmd.args(["--index", "GROUP", "--agg", "len", "--subtotal", "test.csv"]);
 
         wrk.assert_err(&mut cmd);
         let stderr = wrk.output_stderr(&mut cmd);
@@ -2025,7 +2025,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_validate_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "--agg", "len", "--validate", "test.csv"]);
+        cmd.args(["--index", "GROUP", "--agg", "len", "--validate", "test.csv"]);
 
         wrk.assert_err(&mut cmd);
         let stderr = wrk.output_stderr(&mut cmd);
@@ -2040,7 +2040,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_sort_columns_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&[
+        cmd.args([
             "--index",
             "GROUP",
             "--agg",
@@ -2062,7 +2062,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_agg_none_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "--agg", "none", "test.csv"]);
+        cmd.args(["--index", "GROUP", "--agg", "none", "test.csv"]);
 
         wrk.assert_err(&mut cmd);
         let stderr = wrk.output_stderr(&mut cmd);
@@ -2077,7 +2077,7 @@ pivotp_groupby_test!(
 pivotp_groupby_test!(
     pivotp_groupby_agg_item_error,
     |wrk: Workdir, mut cmd: process::Command| {
-        cmd.args(&["--index", "GROUP", "--agg", "item", "test.csv"]);
+        cmd.args(["--index", "GROUP", "--agg", "item", "test.csv"]);
 
         wrk.assert_err(&mut cmd);
         let stderr = wrk.output_stderr(&mut cmd);

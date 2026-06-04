@@ -6024,12 +6024,14 @@ mod tests {
     #[test]
     fn outlier_count_indices_are_in_range() {
         // Guard against a refactor changing these without updating COUNTS_LEN.
-        assert!(OUTLIER_EXTREME_LOWER < OUTLIER_COUNTS_LEN);
-        assert!(OUTLIER_MILD_LOWER < OUTLIER_COUNTS_LEN);
-        assert!(OUTLIER_NORMAL < OUTLIER_COUNTS_LEN);
-        assert!(OUTLIER_MILD_UPPER < OUTLIER_COUNTS_LEN);
-        assert!(OUTLIER_EXTREME_UPPER < OUTLIER_COUNTS_LEN);
-        assert!(OUTLIER_TOTAL < OUTLIER_COUNTS_LEN);
+        const {
+            assert!(OUTLIER_EXTREME_LOWER < OUTLIER_COUNTS_LEN);
+            assert!(OUTLIER_MILD_LOWER < OUTLIER_COUNTS_LEN);
+            assert!(OUTLIER_NORMAL < OUTLIER_COUNTS_LEN);
+            assert!(OUTLIER_MILD_UPPER < OUTLIER_COUNTS_LEN);
+            assert!(OUTLIER_EXTREME_UPPER < OUTLIER_COUNTS_LEN);
+            assert!(OUTLIER_TOTAL < OUTLIER_COUNTS_LEN);
+        }
     }
 
     // ---------------------------------------------------------------------

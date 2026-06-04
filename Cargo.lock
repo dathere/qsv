@@ -1848,7 +1848,7 @@ dependencies = [
  "pdatastructs",
  "petgraph",
  "postgres",
- "qsv-stats",
+ "qsv-stats 0.50.0",
  "rand 0.10.1",
  "regex",
  "rusqlite",
@@ -3161,6 +3161,11 @@ name = "hashbrown"
 version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+dependencies = [
+ "allocator-api2",
+ "equivalent",
+ "foldhash 0.2.0",
+]
 
 [[package]]
 name = "hashlink"
@@ -6145,7 +6150,7 @@ dependencies = [
  "pragmastat",
  "pyo3",
  "qsv-dateparser",
- "qsv-stats",
+ "qsv-stats 0.51.0",
  "qsv-tabwriter",
  "qsv_currency",
  "qsv_docopt",
@@ -6218,6 +6223,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "aa2ddfaedb9826a5e42a52a481ebcfb7fbba9d3826ed64b96a9b50006932504a"
 dependencies = [
  "foldhash 0.2.0",
+ "num-traits",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "qsv-stats"
+version = "0.51.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b604eae56bc5f1247936d66d69c566f56e4f03b923e6915d65f298d5c391ab22"
+dependencies = [
+ "hashbrown 0.17.1",
  "num-traits",
  "rayon",
  "serde",

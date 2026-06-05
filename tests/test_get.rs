@@ -549,6 +549,33 @@ fn get_alias_names_do_not_collide() {
 }
 
 #[test]
+fn get_long_logical_name() {
+    // Regression: a long logical name must still cache. A hex-encoded alias
+    // filename (2x length) would exceed the 255-byte filename limit; the hashed
+    // alias filename keeps it bounded.
+    let wrk = Workdir::new("get_long_logical_name");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+    let long_name = format!("{}.csv", "n".repeat(200));
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", &long_name])
+        .arg("src.csv");
+    wrk.assert_success(&mut g);
+
+    let mut count = wrk.command("count");
+    count
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .arg(format!("dc:{long_name}"));
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(
+        got, "4",
+        "a long logical name should cache and resolve via dc:"
+    );
+}
+
+#[test]
 fn get_cache_clear() {
     let wrk = Workdir::new("get_cache_clear");
     wrk.create_from_string("src.csv", STATES_CSV);

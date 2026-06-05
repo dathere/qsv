@@ -513,8 +513,58 @@ mod rich {
         root.join("entries").join(format!("{keyhash}.json"))
     }
 
+    /// The canonical alias filename for a logical name: BLAKE3 of the name (a
+    /// fixed 64-char, filesystem-safe key). Hashing keeps the filename bounded
+    /// regardless of name length (a long name's hex would otherwise exceed the
+    /// 255-byte filename limit) while staying injective in practice. The
+    /// original name is preserved inside the file content (see `write_alias`).
     fn alias_path(root: &Path, name: &str) -> PathBuf {
-        root.join("aliases").join(encode_name(name))
+        root.join("aliases")
+            .join(blake3::hash(name.as_bytes()).to_hex().to_string())
+    }
+
+    /// Write an alias file: content is `"{keyhash}\n{name}"` so the original
+    /// logical name is recoverable for `cache-list` display.
+    fn write_alias(root: &Path, name: &str, keyhash: &str) -> CliResult<()> {
+        atomic_write(
+            &alias_path(root, name),
+            format!("{keyhash}\n{name}").as_bytes(),
+        )?;
+        Ok(())
+    }
+
+    /// Parse an alias file's content into `(keyhash, original_name?)`. Legacy
+    /// alias files (from earlier commits) hold only the key hash, so `name` is
+    /// None for those.
+    fn parse_alias(content: &str) -> (String, Option<String>) {
+        let mut lines = content.lines();
+        let kh = lines.next().unwrap_or_default().trim().to_string();
+        let name = lines.next().map(ToString::to_string);
+        (kh, name)
+    }
+
+    /// Resolve a logical name to its entry key hash. Falls back to alias files
+    /// written by earlier (unreleased) filename schemes on this branch and
+    /// migrates them to the canonical hashed alias on the way.
+    fn alias_keyhash(root: &Path, name: &str) -> CliResult<Option<String>> {
+        let canonical = alias_path(root, name);
+        if let Ok(content) = fs::read_to_string(&canonical) {
+            return Ok(Some(parse_alias(&content).0));
+        }
+        for legacy in [
+            root.join("aliases").join(encode_name(name)),
+            root.join("aliases").join(safe_name(name)),
+        ] {
+            if legacy != canonical
+                && let Ok(content) = fs::read_to_string(&legacy)
+            {
+                let kh = parse_alias(&content).0;
+                write_alias(root, name, &kh)?;
+                let _ = fs::remove_file(&legacy);
+                return Ok(Some(kh));
+            }
+        }
+        Ok(None)
     }
 
     /// A process- and call-unique token for temp filenames, so concurrent
@@ -599,9 +649,8 @@ mod rich {
 
         // (A) Repoint the primary name. If it previously pointed at a *different*
         // entry that now has no remaining names, remove that orphaned entry.
-        let ap = alias_path(root, &entry.meta.logical_name);
-        let prev_alias_kh = fs::read_to_string(&ap).ok().map(|s| s.trim().to_string());
-        atomic_write(&ap, kh.as_bytes())?;
+        let prev_alias_kh = alias_keyhash(root, &entry.meta.logical_name)?;
+        write_alias(root, &entry.meta.logical_name, &kh)?;
         if let Some(old_kh) = prev_alias_kh
             && old_kh != kh
             && aliases_pointing_to(root, &old_kh).is_empty()
@@ -631,8 +680,7 @@ mod rich {
     /// entry. Used when a fresh cache hit is requested under a new name: the
     /// middleware serves it from its read path so `put`/`write_entry` never runs.
     fn bind_alias(root: &Path, name: &str, keyhash: &str) -> CliResult<()> {
-        atomic_write(&alias_path(root, name), keyhash.as_bytes())?;
-        Ok(())
+        write_alias(root, name, keyhash)
     }
 
     fn load_entry_at(path: &Path) -> CliResult<StoredEntry> {
@@ -643,11 +691,9 @@ mod rich {
     }
 
     fn load_entry_by_name(root: &Path, name: &str) -> CliResult<Option<StoredEntry>> {
-        let ap = alias_path(root, name);
-        if !ap.exists() {
+        let Some(kh) = alias_keyhash(root, name)? else {
             return Ok(None);
-        }
-        let kh = fs::read_to_string(&ap)?.trim().to_string();
+        };
         let ep = entry_path(root, &kh);
         if !ep.exists() {
             return Ok(None);
@@ -663,7 +709,7 @@ mod rich {
         };
         for de in rd.flatten() {
             if fs::read_to_string(de.path())
-                .map(|s| s.trim() == keyhash)
+                .map(|s| parse_alias(&s).0 == keyhash)
                 .unwrap_or(false)
             {
                 out.push(de.path());
@@ -1065,9 +1111,7 @@ mod rich {
                     "get: no cache entry for '{name}' after fetching {final_url}"
                 ))
             })?;
-        let prev_target = fs::read_to_string(alias_path(&root, &name))
-            .ok()
-            .map(|s| s.trim().to_string());
+        let prev_target = alias_keyhash(&root, &name)?;
         bind_alias(&root, &name, &kh)?;
         if let Some(old) = prev_target
             && old != kh
@@ -1183,12 +1227,15 @@ mod rich {
             return Ok(out);
         };
         for de in rd.flatten() {
+            let Ok(content) = fs::read_to_string(de.path()) else {
+                continue;
+            };
+            let (kh, name_opt) = parse_alias(&content);
+            // Prefer the original name stored in the alias file; for legacy
+            // alias files (key hash only) fall back to decoding the filename.
             let file = de.file_name().to_string_lossy().into_owned();
-            // Decode the original name from the reversible alias filename.
-            let name = decode_name(&file).unwrap_or(file);
-            if let Ok(kh) = fs::read_to_string(de.path())
-                && let Ok(e) = load_entry_at(&entry_path(&root, kh.trim()))
-            {
+            let name = name_opt.or_else(|| decode_name(&file)).unwrap_or(file);
+            if let Ok(e) = load_entry_at(&entry_path(&root, &kh)) {
                 let mut meta = e.meta;
                 meta.logical_name = name;
                 out.push(meta);

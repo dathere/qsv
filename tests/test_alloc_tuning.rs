@@ -38,10 +38,20 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
     // empty/partial log silently failing the later assertion.
     wrk.assert_success(&mut cmd);
 
-    let log = wrk.read_to_string("qsv_rCURRENT.log").unwrap_or_default();
+    // flexi_logger's `FileSpec::default()` names the log after the running binary, so the
+    // file is `<bin>_rCURRENT.log` — `qsv_rCURRENT.log` for the main binary but
+    // `qsvlite_rCURRENT.log` / `qsvdp_rCURRENT.log` under the `lite` / `datapusher_plus`
+    // feature builds. Derive the name from the binary under test instead of hardcoding `qsv`,
+    // otherwise the read silently returns "" in those builds and the assert fails on an empty
+    // log. `file_stem()` also drops the `.exe` suffix on Windows.
+    let log_name = format!(
+        "{}_rCURRENT.log",
+        wrk.qsv_bin().file_stem().unwrap().to_string_lossy()
+    );
+    let log = wrk.read_to_string(&log_name).unwrap_or_default();
     assert!(
         log.contains("alloc tuning disabled via QSV_NO_ALLOC_TUNING"),
         "expected the .env-configured QSV_NO_ALLOC_TUNING opt-out to be honored at startup \
-         (load_dotenv must precede init_allocator_runtime); log was:\n{log}"
+         (load_dotenv must precede init_allocator_runtime); log ({log_name}) was:\n{log}"
     );
 }

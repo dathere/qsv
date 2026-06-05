@@ -272,6 +272,57 @@ fn get_http_same_url_different_name() {
         let got: String = wrk.stdout(&mut c);
         assert_eq!(got, "4", "dc:{name} should resolve to the cached data");
     }
+
+    // cache-list shows BOTH names (each alias is its own row), sharing one blob
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("a.csv") && stdout.contains("b.csv"),
+        "cache-list should show both names:\n{stdout}"
+    );
+    assert_eq!(
+        count_content_blobs(&cache_dir),
+        1,
+        "both names should share a single content blob"
+    );
+}
+
+#[test]
+fn get_refetch_changed_content_reclaims_blob() {
+    // Regression: re-fetching the same source (same cache key) after its content
+    // changed must reclaim the previous blob rather than orphan it.
+    let wrk = Workdir::new("get_refetch_changed_content_reclaims_blob");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g1 = wrk.command("get");
+    g1.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut g1);
+
+    // change the source content, then re-fetch under the same name
+    wrk.create_from_string("src.csv", "name,abbr\nFoo,FO\n");
+    let mut g2 = wrk.command("get");
+    g2.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut g2);
+
+    // the previous blob must be reclaimed -> exactly one content blob remains
+    assert_eq!(
+        count_content_blobs(&cache_dir),
+        1,
+        "re-fetch with changed content should reclaim the old blob"
+    );
+
+    // dc:x.csv reflects the new content (1 data row)
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:x.csv");
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(got, "1");
 }
 
 #[test]

@@ -191,12 +191,23 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool) -> CliResult<()> {
     }
 
     if info {
-        let total = entries.len();
-        let comp: u64 = entries.iter().map(|e| e.size_compressed).sum();
-        let uncomp: u64 = entries.iter().map(|e| e.size_uncompressed).sum();
-        let records: u64 = entries.iter().filter_map(|e| e.record_count).sum();
+        // `entries` has one row per name; de-duplicate by content hash so shared
+        // blobs (multiple names / URLs for identical content) are counted once
+        // for on-disk totals.
+        let names = entries.len();
+        let mut seen = std::collections::HashSet::new();
+        let (mut comp, mut uncomp, mut records, mut blobs) = (0u64, 0u64, 0u64, 0u64);
+        for e in &entries {
+            if seen.insert(e.blake3.clone()) {
+                comp += e.size_compressed;
+                uncomp += e.size_uncompressed;
+                records += e.record_count.unwrap_or(0);
+                blobs += 1;
+            }
+        }
         println!("cache directory   : {cache_dir}/get");
-        println!("entries           : {total}");
+        println!("names             : {names}");
+        println!("unique blobs      : {blobs}");
         println!("total records     : {records}");
         println!("on disk (comp)    : {comp} bytes");
         println!("original (uncomp) : {uncomp} bytes");

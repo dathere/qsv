@@ -498,30 +498,61 @@ mod rich {
         }
     }
 
+    // The cache uses a two-level model: an *entry* (`entries/{keyhash}.json`) is
+    // keyed by its cache key (the URL for HTTP, `FILE:<abs>` for local) and owns
+    // the blob + metadata; a *name* (`aliases/<name>`) is a user-facing handle
+    // that points at an entry's key hash. Many names may point at one entry, and
+    // (via content-addressed dedup) many entries may share one blob.
+
+    /// Write/replace the entry for its cache key and point the entry's primary
+    /// name at it. Reclaims blobs/entries orphaned by the write.
     fn write_entry(root: &Path, entry: &StoredEntry) -> CliResult<()> {
         let kh = keyhash(&entry.meta.cache_key);
         let json = serde_json::to_vec(entry)
             .map_err(|e| CliError::Other(format!("get: failed to serialize cache entry: {e}")))?;
-        // Write the new entry JSON first so it counts toward the blob refcount
-        // during the orphan cleanup below (content-addressed dedup means the new
-        // and old entries may share a blob).
+
+        // The entry currently stored under this same cache key (if any), so we
+        // can reclaim its blob when the content or compression changed.
+        let prev_same_key = load_entry_at(&entry_path(root, &kh)).ok();
+
+        // Write the new entry JSON first so it counts toward refcounts below.
         atomic_write(&entry_path(root, &kh), &json)?;
 
-        // If this logical name previously pointed to a *different* entry, that
-        // old entry is now orphaned (reachable only via cache-list/prune/clear)
-        // and would duplicate the name with stale metadata. Remove it so logical
-        // names stay unique.
+        // (A) Repoint the primary name. If it previously pointed at a *different*
+        // entry that now has no remaining names, remove that orphaned entry.
         let ap = alias_path(root, &entry.meta.logical_name);
-        if let Ok(old_kh) = fs::read_to_string(&ap) {
-            let old_kh = old_kh.trim();
-            if old_kh != kh
-                && let Ok(old) = load_entry_at(&entry_path(root, old_kh))
+        let prev_alias_kh = fs::read_to_string(&ap).ok().map(|s| s.trim().to_string());
+        atomic_write(&ap, kh.as_bytes())?;
+        if let Some(old_kh) = prev_alias_kh
+            && old_kh != kh
+            && aliases_pointing_to(root, &old_kh).is_empty()
+        {
+            delete_entry_by_keyhash(root, &old_kh);
+        }
+
+        // (B) Same cache key, but the blob (content or compression) changed:
+        // reclaim the previous blob/index when nothing else references it.
+        if let Some(prev) = prev_same_key {
+            let prev_blob = blob_path(root, &prev.meta.blake3, prev.meta.compression);
+            let new_blob = blob_path(root, &entry.meta.blake3, entry.meta.compression);
+            if prev_blob != new_blob && !blob_path_referenced(root, &prev_blob, &kh) {
+                let _ = fs::remove_file(&prev_blob);
+            }
+            if prev.meta.blake3 != entry.meta.blake3
+                && !entry_references_blob(root, &prev.meta.blake3, &kh)
             {
-                delete_entry_files(root, &old.meta);
+                let _ = fs::remove_file(idx_blob_path(root, &prev.meta.blake3));
             }
         }
 
-        atomic_write(&ap, kh.as_bytes())?;
+        Ok(())
+    }
+
+    /// Bind a name to an existing entry (by key hash) without modifying the
+    /// entry. Used when a fresh cache hit is requested under a new name: the
+    /// middleware serves it from its read path so `put`/`write_entry` never runs.
+    fn bind_alias(root: &Path, name: &str, keyhash: &str) -> CliResult<()> {
+        atomic_write(&alias_path(root, name), keyhash.as_bytes())?;
         Ok(())
     }
 
@@ -545,27 +576,40 @@ mod rich {
         Ok(Some(load_entry_at(&ep)?))
     }
 
-    fn delete_entry_files(root: &Path, entry: &CacheEntry) {
-        let _ = fs::remove_file(entry_path(root, &keyhash(&entry.cache_key)));
-        let _ = fs::remove_file(alias_path(root, &entry.logical_name));
-        // Only remove the blob/idx if no other entry references the same content.
-        if !blob_referenced(root, &entry.blake3, &entry.cache_key) {
-            let _ = fs::remove_file(blob_path(root, &entry.blake3, entry.compression));
-            let _ = fs::remove_file(idx_blob_path(root, &entry.blake3));
+    /// Alias files that currently point at the given entry key hash.
+    fn aliases_pointing_to(root: &Path, keyhash: &str) -> Vec<PathBuf> {
+        let mut out = Vec::new();
+        let Ok(rd) = fs::read_dir(root.join("aliases")) else {
+            return out;
+        };
+        for de in rd.flatten() {
+            if fs::read_to_string(de.path())
+                .map(|s| s.trim() == keyhash)
+                .unwrap_or(false)
+            {
+                out.push(de.path());
+            }
         }
+        out
     }
 
-    /// True if any *other* entry references the given blob (content-addressed
-    /// dedup means a blob may be shared by multiple logical names).
-    fn blob_referenced(root: &Path, b3: &str, except_cache_key: &str) -> bool {
-        let entries_dir = root.join("entries");
-        let Ok(rd) = fs::read_dir(&entries_dir) else {
+    /// True if any entry other than `except_keyhash` references the given blob
+    /// (by content hash). Content-addressed dedup means a blob may be shared.
+    fn entry_references_blob(root: &Path, b3: &str, except_keyhash: &str) -> bool {
+        let Ok(rd) = fs::read_dir(root.join("entries")) else {
             return false;
         };
         for de in rd.flatten() {
+            if de
+                .path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                == Some(except_keyhash.to_string())
+            {
+                continue;
+            }
             if let Ok(e) = load_entry_at(&de.path())
                 && e.meta.blake3 == b3
-                && e.meta.cache_key != except_cache_key
             {
                 return true;
             }
@@ -573,13 +617,59 @@ mod rich {
         false
     }
 
-    fn delete_entry_by_name(root: &Path, name: &str) -> CliResult<bool> {
-        if let Some(entry) = load_entry_by_name(root, name)? {
-            delete_entry_files(root, &entry.meta);
-            Ok(true)
-        } else {
-            Ok(false)
+    /// True if any entry other than `except_keyhash` maps to the exact blob file
+    /// path (same content hash *and* compression).
+    fn blob_path_referenced(root: &Path, blob: &Path, except_keyhash: &str) -> bool {
+        let Ok(rd) = fs::read_dir(root.join("entries")) else {
+            return false;
+        };
+        for de in rd.flatten() {
+            if de
+                .path()
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned())
+                == Some(except_keyhash.to_string())
+            {
+                continue;
+            }
+            if let Ok(e) = load_entry_at(&de.path())
+                && blob_path(root, &e.meta.blake3, e.meta.compression) == blob
+            {
+                return true;
+            }
         }
+        false
+    }
+
+    /// Fully remove the entry at `keyhash`: every name pointing at it, its JSON,
+    /// and its blob/index when no other entry references the same content.
+    fn delete_entry_by_keyhash(root: &Path, keyhash: &str) {
+        let entry = load_entry_at(&entry_path(root, keyhash)).ok();
+        for ap in aliases_pointing_to(root, keyhash) {
+            let _ = fs::remove_file(ap);
+        }
+        let _ = fs::remove_file(entry_path(root, keyhash));
+        if let Some(e) = entry
+            && !entry_references_blob(root, &e.meta.blake3, keyhash)
+        {
+            let _ = fs::remove_file(blob_path(root, &e.meta.blake3, e.meta.compression));
+            let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
+        }
+    }
+
+    /// Remove one name. If it was the entry's last name, the entry and its
+    /// (now-unreferenced) blob/index are removed too.
+    fn delete_entry_by_name(root: &Path, name: &str) -> CliResult<bool> {
+        let ap = alias_path(root, name);
+        let Ok(kh) = fs::read_to_string(&ap) else {
+            return Ok(false);
+        };
+        let kh = kh.trim().to_string();
+        let _ = fs::remove_file(&ap);
+        if aliases_pointing_to(root, &kh).is_empty() {
+            delete_entry_by_keyhash(root, &kh);
+        }
+        Ok(true)
     }
 
     fn header_str(
@@ -734,10 +824,7 @@ mod rich {
         }
 
         async fn delete(&self, cache_key: &str) -> http_cache::Result<()> {
-            let ep = entry_path(&self.root, &keyhash(cache_key));
-            if let Ok(entry) = load_entry_at(&ep) {
-                delete_entry_files(&self.root, &entry.meta);
-            }
+            delete_entry_by_keyhash(&self.root, &keyhash(cache_key));
             Ok(())
         }
     }
@@ -886,26 +973,31 @@ mod rich {
                 // Fresh cache hit: the response was served from `get`'s read path
                 // without calling `put`, so no alias was created for the
                 // requested name. Recover the entry via the cache key the
-                // middleware just operated on and bind the requested name to it.
-                let observed = observed_key.lock().ok().and_then(|g| g.clone());
-                let mut e = observed
+                // middleware just operated on and bind the name to it — WITHOUT
+                // mutating the shared entry's own metadata (other names may
+                // already point at it).
+                let kh = observed_key
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone())
                     .as_deref()
-                    .map(|k| entry_path(&root, &keyhash(k)))
-                    .filter(|p| p.exists())
-                    .map(|p| load_entry_at(&p))
-                    .transpose()?
+                    .map(keyhash)
+                    .filter(|k| entry_path(&root, k).exists())
                     .ok_or_else(|| {
                         CliError::Other(format!(
                             "get: no cache entry for '{name}' after fetching {final_url}"
                         ))
                     })?;
-                e.meta.logical_name = name.clone();
-                write_entry(&root, &e)?;
-                e
+                bind_alias(&root, &name, &kh)?;
+                load_entry_at(&entry_path(&root, &kh))?
             },
         };
         ensure_indexed(&root, &mut entry)?;
-        Ok(entry.meta)
+        // Report the metadata under the requested name (the stored entry keeps
+        // its own primary name; cache-list enumerates all names via aliases).
+        let mut meta = entry.meta;
+        meta.logical_name = name;
+        Ok(meta)
     }
 
     /// Resolve a `dc:<name>` input path to a usable (decompressed) CSV file path,
@@ -996,24 +1088,31 @@ mod rich {
     }
 
     /// List all cache entries (for `cache-list` / `cache-info`).
+    /// List one row per cached **name** (alias), each carrying its entry's
+    /// metadata with `logical_name` set to that name. Names that share an entry
+    /// (e.g. two `--name`s for one URL) appear as distinct rows.
     pub fn list_entries(cache_dir: &str) -> CliResult<Vec<CacheEntry>> {
-        let entries_dir = get_root(cache_dir).join("entries");
+        let root = get_root(cache_dir);
         let mut out = Vec::new();
-        let Ok(rd) = fs::read_dir(&entries_dir) else {
+        let Ok(rd) = fs::read_dir(root.join("aliases")) else {
             return Ok(out);
         };
         for de in rd.flatten() {
-            if de.path().extension().is_some_and(|e| e == "json")
-                && let Ok(e) = load_entry_at(&de.path())
+            let name = de.file_name().to_string_lossy().into_owned();
+            if let Ok(kh) = fs::read_to_string(de.path())
+                && let Ok(e) = load_entry_at(&entry_path(&root, kh.trim()))
             {
-                out.push(e.meta);
+                let mut meta = e.meta;
+                meta.logical_name = name;
+                out.push(meta);
             }
         }
         out.sort_by(|a, b| a.logical_name.cmp(&b.logical_name));
         Ok(out)
     }
 
-    /// Remove all cache entries and blobs. Returns the number of entries removed.
+    /// Remove all cache names, entries and blobs. Returns the number of names
+    /// removed.
     pub fn clear(cache_dir: &str) -> CliResult<usize> {
         let root = get_root(cache_dir);
         let count = list_entries(cache_dir)?.len();
@@ -1026,19 +1125,29 @@ mod rich {
         Ok(count)
     }
 
-    /// Remove entries last fetched more than `older_than_secs` ago. Returns the
-    /// number of entries removed.
+    /// Remove entries last fetched more than `older_than_secs` ago (and all the
+    /// names pointing at them). Returns the number of entries removed.
     pub fn prune(cache_dir: &str, older_than_secs: i64) -> CliResult<usize> {
         let root = get_root(cache_dir);
         let now = unix_now();
-        let mut removed = 0;
-        for meta in list_entries(cache_dir)? {
-            // Inclusive: `--older-than 0` prunes everything (age >= 0).
-            if now.saturating_sub(meta.downloaded_at) >= older_than_secs {
-                delete_entry_files(&root, &meta);
-                removed += 1;
+        let Ok(rd) = fs::read_dir(root.join("entries")) else {
+            return Ok(0);
+        };
+        // Collect first, then delete, so we don't mutate the dir mid-iteration.
+        let mut stale_keys = Vec::new();
+        for de in rd.flatten() {
+            if de.path().extension().is_some_and(|e| e == "json")
+                && let Ok(e) = load_entry_at(&de.path())
+                // Inclusive: `--older-than 0` prunes everything (age >= 0).
+                && now.saturating_sub(e.meta.downloaded_at) >= older_than_secs
+                && let Some(kh) = de.path().file_stem().map(|s| s.to_string_lossy().into_owned())
+            {
+                stale_keys.push(kh);
             }
         }
-        Ok(removed)
+        for kh in &stale_keys {
+            delete_entry_by_keyhash(&root, kh);
+        }
+        Ok(stale_keys.len())
     }
 }

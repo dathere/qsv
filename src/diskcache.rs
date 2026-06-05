@@ -551,19 +551,36 @@ mod rich {
         if let Ok(content) = fs::read_to_string(&canonical) {
             return Ok(Some(parse_alias(&content).0));
         }
-        for legacy in [
-            root.join("aliases").join(encode_name(name)),
-            root.join("aliases").join(safe_name(name)),
-        ] {
-            if legacy != canonical
-                && let Ok(content) = fs::read_to_string(&legacy)
-            {
-                let kh = parse_alias(&content).0;
+
+        // Legacy `encode_name` (hex) aliases are injective — the file uniquely
+        // belongs to this name — so migrate directly.
+        let hex = root.join("aliases").join(encode_name(name));
+        if hex != canonical
+            && let Ok(content) = fs::read_to_string(&hex)
+        {
+            let kh = parse_alias(&content).0;
+            write_alias(root, name, &kh)?;
+            let _ = fs::remove_file(&hex);
+            return Ok(Some(kh));
+        }
+
+        // Legacy `safe_name` aliases are lossy: a *different* name can sanitize
+        // to the same filename. Only adopt one when the pointed entry's primary
+        // name actually matches the requested name, so we never steal or remove
+        // a different name's alias.
+        let sanitized = root.join("aliases").join(safe_name(name));
+        if sanitized != canonical
+            && sanitized != hex
+            && let Ok(content) = fs::read_to_string(&sanitized)
+        {
+            let kh = parse_alias(&content).0;
+            if load_entry_at(&entry_path(root, &kh)).is_ok_and(|e| e.meta.logical_name == name) {
                 write_alias(root, name, &kh)?;
-                let _ = fs::remove_file(&legacy);
+                let _ = fs::remove_file(&sanitized);
                 return Ok(Some(kh));
             }
         }
+
         Ok(None)
     }
 

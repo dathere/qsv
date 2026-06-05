@@ -37,6 +37,19 @@ async fn serve_states(counter: web::Data<Arc<AtomicUsize>>, req: HttpRequest) ->
         .body(STATES_CSV)
 }
 
+// Like `serve_states` but explicitly fresh (Cache-Control: max-age), so a
+// second request within the window is served from cache WITHOUT revalidation
+// (no `put` on the manager) — the path that previously failed when a cache hit
+// was requested under a different logical name.
+async fn serve_states_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpResponse {
+    counter.fetch_add(1, Ordering::SeqCst);
+    HttpResponse::Ok()
+        .insert_header(("etag", ETAG))
+        .insert_header(("cache-control", "max-age=3600"))
+        .content_type("text/csv")
+        .body(STATES_CSV)
+}
+
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     counter: Arc<AtomicUsize>,
@@ -45,6 +58,7 @@ async fn run_webserver(
         App::new()
             .app_data(web::Data::new(counter.clone()))
             .service(web::resource("/states.csv").to(serve_states))
+            .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
     });
 
     let bound = match server_builder.bind((BIND_HOST, 0)) {
@@ -220,6 +234,91 @@ fn get_http_etag_revalidation() {
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
     let got: String = wrk.stdout(&mut count);
     assert_eq!(got, "4");
+}
+
+#[test]
+#[serial]
+fn get_http_same_url_different_name() {
+    // Regression: a fresh cache hit requested under a NEW logical name used to
+    // fail because no alias was created for that name (the manager's `put` is
+    // never called on a fresh hit).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_http_same_url_different_name");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("states_fresh.csv");
+
+    let mut a = wrk.command("get");
+    a.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "a.csv"])
+        .arg(&url);
+    wrk.assert_success(&mut a);
+
+    // same URL, different logical name -> must succeed, served from cache
+    let mut b = wrk.command("get");
+    b.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "b.csv"])
+        .arg(&url);
+    wrk.assert_success(&mut b);
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "second name should reuse the cached body, not re-download"
+    );
+
+    // both dc: handles resolve to the cached data
+    for name in ["a.csv", "b.csv"] {
+        let mut c = wrk.command("count");
+        c.env("QSV_CACHE_DIR", &cache_dir).arg(format!("dc:{name}"));
+        let got: String = wrk.stdout(&mut c);
+        assert_eq!(got, "4", "dc:{name} should resolve to the cached data");
+    }
+}
+
+#[test]
+fn get_name_reuse_replaces_entry() {
+    // Regression: reusing a logical name for a different source must not leave
+    // the old entry/blob orphaned (duplicate names, inflated metadata).
+    let wrk = Workdir::new("get_name_reuse_replaces_entry");
+    wrk.create_from_string("first.csv", STATES_CSV);
+    wrk.create_from_string("second.csv", "name,abbr\nFoo,FO\n");
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g1 = wrk.command("get");
+    g1.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("first.csv");
+    wrk.assert_success(&mut g1);
+
+    // reuse the same name for a different source/content
+    let mut g2 = wrk.command("get");
+    g2.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("second.csv");
+    wrk.assert_success(&mut g2);
+
+    // the old (now-orphaned) blob must be gone -> exactly one content blob
+    assert_eq!(
+        count_content_blobs(&cache_dir),
+        1,
+        "name reuse should remove the orphaned old blob"
+    );
+
+    // dc:x.csv now reflects the new source (1 data row, not 4)
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:x.csv");
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(got, "1");
+
+    // and the name appears exactly once in cache-list
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        stdout.matches("x.csv").count(),
+        1,
+        "x.csv should appear once in cache-list:\n{stdout}"
+    );
 }
 
 #[test]

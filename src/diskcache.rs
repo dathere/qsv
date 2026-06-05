@@ -252,6 +252,7 @@ mod rich {
         fs,
         io::Read,
         path::{Path, PathBuf},
+        sync::{Arc, Mutex},
         time::SystemTime,
     };
 
@@ -501,8 +502,26 @@ mod rich {
         let kh = keyhash(&entry.meta.cache_key);
         let json = serde_json::to_vec(entry)
             .map_err(|e| CliError::Other(format!("get: failed to serialize cache entry: {e}")))?;
+        // Write the new entry JSON first so it counts toward the blob refcount
+        // during the orphan cleanup below (content-addressed dedup means the new
+        // and old entries may share a blob).
         atomic_write(&entry_path(root, &kh), &json)?;
-        atomic_write(&alias_path(root, &entry.meta.logical_name), kh.as_bytes())?;
+
+        // If this logical name previously pointed to a *different* entry, that
+        // old entry is now orphaned (reachable only via cache-list/prune/clear)
+        // and would duplicate the name with stale metadata. Remove it so logical
+        // names stay unique.
+        let ap = alias_path(root, &entry.meta.logical_name);
+        if let Ok(old_kh) = fs::read_to_string(&ap) {
+            let old_kh = old_kh.trim();
+            if old_kh != kh
+                && let Ok(old) = load_entry_at(&entry_path(root, old_kh))
+            {
+                delete_entry_files(root, &old.meta);
+            }
+        }
+
+        atomic_write(&ap, kh.as_bytes())?;
         Ok(())
     }
 
@@ -636,6 +655,11 @@ mod rich {
         refresh_policy:     RefreshPolicy,
         compression:        Compression,
         ckan_resource_hash: Option<String>,
+        // The cache key the middleware last operated on (in get OR put), shared
+        // with `get_resource` so it can recover the entry on a fresh cache hit
+        // (where `put` is never called and no alias for the requested name is
+        // created).
+        observed_key:       Arc<Mutex<Option<String>>>,
     }
 
     impl CacheManager for QsvCacheManager {
@@ -643,6 +667,9 @@ mod rich {
             &self,
             cache_key: &str,
         ) -> http_cache::Result<Option<(HttpResponse, CachePolicy)>> {
+            if let Ok(mut g) = self.observed_key.lock() {
+                *g = Some(cache_key.to_string());
+            }
             let ep = entry_path(&self.root, &keyhash(cache_key));
             if !ep.exists() {
                 return Ok(None);
@@ -664,6 +691,9 @@ mod rich {
             res: HttpResponse,
             policy: CachePolicy,
         ) -> http_cache::Result<HttpResponse> {
+            if let Ok(mut g) = self.observed_key.lock() {
+                *g = Some(cache_key.clone());
+            }
             let (b3, size_compressed, size_uncompressed) =
                 store_blob(&self.root, &res.body, self.compression).map_err(box_err)?;
 
@@ -730,7 +760,11 @@ mod rich {
         let meta = CacheEntry {
             logical_name: name,
             cache_key: format!("FILE:{}", abs.display()),
-            source_uri: opts.source.clone(),
+            // Store the canonicalized absolute path as the source so a later
+            // stale `dc:` refresh re-reads the right file regardless of the
+            // working directory it runs from (the originally-given path may be
+            // relative).
+            source_uri: abs.to_string_lossy().to_string(),
             resolved_uri: abs.to_string_lossy().to_string(),
             blake3: b3,
             etag: None,
@@ -805,6 +839,7 @@ mod rich {
             let _ = delete_entry_by_name(&root, &name);
         }
 
+        let observed_key = Arc::new(Mutex::new(None));
         let manager = QsvCacheManager {
             root:               root.clone(),
             source_uri:         opts.source.clone(),
@@ -813,6 +848,7 @@ mod rich {
             refresh_policy:     opts.refresh_policy,
             compression:        opts.compression,
             ckan_resource_hash: ckan_hash,
+            observed_key:       observed_key.clone(),
         };
         let mode = match opts.refresh_policy {
             RefreshPolicy::Never => CacheMode::ForceCache,
@@ -844,11 +880,30 @@ mod rich {
             Ok::<(), CliError>(())
         })?;
 
-        let mut entry = load_entry_by_name(&root, &name)?.ok_or_else(|| {
-            CliError::Other(format!(
-                "get: no cache entry for '{name}' after fetching {final_url}"
-            ))
-        })?;
+        let mut entry = match load_entry_by_name(&root, &name)? {
+            Some(e) => e,
+            None => {
+                // Fresh cache hit: the response was served from `get`'s read path
+                // without calling `put`, so no alias was created for the
+                // requested name. Recover the entry via the cache key the
+                // middleware just operated on and bind the requested name to it.
+                let observed = observed_key.lock().ok().and_then(|g| g.clone());
+                let mut e = observed
+                    .as_deref()
+                    .map(|k| entry_path(&root, &keyhash(k)))
+                    .filter(|p| p.exists())
+                    .map(|p| load_entry_at(&p))
+                    .transpose()?
+                    .ok_or_else(|| {
+                        CliError::Other(format!(
+                            "get: no cache entry for '{name}' after fetching {final_url}"
+                        ))
+                    })?;
+                e.meta.logical_name = name.clone();
+                write_entry(&root, &e)?;
+                e
+            },
+        };
         ensure_indexed(&root, &mut entry)?;
         Ok(entry.meta)
     }

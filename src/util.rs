@@ -728,14 +728,17 @@ pub fn version() -> String {
             String::from("jemalloc")
         };
         // Reflect the baked `metadata_thp:auto` default (see the `_rjem_malloc_conf` symbol in
-        // the bin roots). Only meaningful on Linux, where Transparent Huge Pages exist; we read
+        // the bin roots). Only surfaced on Linux, where Transparent Huge Pages exist; we read
         // the live `opt.metadata_thp` so an `_RJEM_MALLOC_CONF=metadata_thp:disabled` override is
-        // reflected. Mode enum: 0 = disabled, 1 = auto, 2 = always.
+        // reflected. NOTE: `opt.metadata_thp` is a `const char *` mallctl ("disabled"/"auto"/
+        // "always"), so it must be read as a pointer (matching the output's 8-byte size) — reading
+        // it as an integer fails the mallctl size check. Any non-"disabled" mode counts as active.
         #[cfg(target_os = "linux")]
-        if matches!(
-            unsafe { tikv_jemalloc_ctl::raw::read::<u32>(b"opt.metadata_thp\0") },
-            Ok(1..)
-        ) {
+        if let Ok(ptr) = unsafe {
+            tikv_jemalloc_ctl::raw::read::<*const core::ffi::c_char>(b"opt.metadata_thp\0")
+        } && !ptr.is_null()
+            && unsafe { core::ffi::CStr::from_ptr(ptr) }.to_bytes() != b"disabled"
+        {
             kind.push_str("+thp");
         }
         kind

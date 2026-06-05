@@ -147,15 +147,20 @@ jobs:
       - name: Index dataset (parallel path)
         run: /tmp/qsv index "$DATA"
 
-      - name: Parity check — stats output must be byte-identical across cells
+      - name: Parity check — frequency must be byte-identical across cells
         run: |
-          env _RJEM_MALLOC_CONF="$THP_OFF" /tmp/qsv stats -E -c 0 "$DATA" > s_base.csv
-          /tmp/qsv stats -E -c 0 "$DATA" > s_thp.csv
-          env _RJEM_MALLOC_CONF="$PERCPU" /tmp/qsv stats -E -c 0 "$DATA" > s_pcpu.csv
-          if cmp s_base.csv s_thp.csv && cmp s_base.csv s_pcpu.csv; then
-            echo "stats -E byte-identical across cells ✓" | tee -a "$GITHUB_STEP_SUMMARY"
+          # Use `frequency` (deterministic integer counts), NOT `stats -E`: extended stats
+          # include float aggregates whose parallel reduction order is non-deterministic
+          # run-to-run INDEPENDENT of the allocator, so a byte-exact `cmp` would false-fail.
+          # The allocator can never change computed values — frequency parity is the correct
+          # invariant to assert here.
+          env _RJEM_MALLOC_CONF="$THP_OFF" /tmp/qsv frequency "$DATA" > f_base.csv
+          /tmp/qsv frequency "$DATA" > f_thp.csv
+          env _RJEM_MALLOC_CONF="$PERCPU" /tmp/qsv frequency "$DATA" > f_pcpu.csv
+          if cmp f_base.csv f_thp.csv && cmp f_base.csv f_pcpu.csv; then
+            echo "frequency byte-identical across cells ✓" | tee -a "$GITHUB_STEP_SUMMARY"
           else
-            echo "::error::stats -E output DIFFERS across allocator cells — correctness bug, not a perf question"
+            echo "::error::frequency output DIFFERS across allocator cells — correctness bug, not a perf question"
             exit 1
           fi
 

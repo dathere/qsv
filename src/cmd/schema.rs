@@ -720,7 +720,7 @@ fn construct_map_of_unique_values(
     for (i, header_byte_slice) in freq_csv_fields.iter().enumerate() {
         unique_values.clear();
 
-        for (val_byte_vec, _count) in frequency_tables[i].most_frequent().0 {
+        for val_byte_vec in frequency_tables[i].unique_values() {
             let val_string = convert_to_string(val_byte_vec.as_slice())?;
             unique_values.push(val_string);
         }

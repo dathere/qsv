@@ -381,6 +381,123 @@ fn frequency_limit_threshold_notmet() {
     ];
     assert_eq!(got, expected);
 }
+
+// Locks the top_n/bottom_n tie-break used by the --limit fast path: on a count
+// tie at the cutoff, the lexicographically SMALLEST values are kept (matching
+// par_frequent). Guards against a regression in qsv-stats top_n's tie-break.
+#[test]
+fn frequency_limit_tiebreak() {
+    let wrk = Workdir::new("frequency_limit_tiebreak");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["h"],
+            svec!["zz"],
+            svec!["zz"],
+            svec!["zz"],
+            svec!["zz"],
+            svec!["zz"],
+            svec!["aa"],
+            svec!["aa"],
+            svec!["bb"],
+            svec!["bb"],
+            svec!["cc"],
+            svec!["cc"],
+            svec!["dd"],
+            svec!["dd"],
+            svec!["ee"],
+            svec!["ee"],
+        ],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "3"]).arg("--pct-nulls");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h", "Other (3)", "6", "40", "0"],
+        svec!["h", "aa", "2", "13.33333", "2"],
+        svec!["h", "bb", "2", "13.33333", "2"],
+        svec!["h", "zz", "5", "33.33333", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// Default --pct-nulls (false): a rare NULL whose count falls outside the fetched
+// top-N must still be reported (its count is fetched directly), and the limit
+// applies only to non-NULL values. Exercises the fast-path NULL handling.
+#[test]
+fn frequency_limit_rare_null_default() {
+    let wrk = Workdir::new("frequency_limit_rare_null_default");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["h"],
+            svec!["a"],
+            svec!["a"],
+            svec!["a"],
+            svec!["a"],
+            svec!["a"],
+            svec!["a"],
+            svec!["b"],
+            svec!["b"],
+            svec!["b"],
+            svec!["c"],
+            svec![""],
+            svec![""],
+        ],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--limit", "1"]);
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Derived from fast-path semantics; verified against actual output.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h", "(NULL)", "2", "", ""],
+        svec!["h", "Other (2)", "4", "40", "0"],
+        svec!["h", "a", "6", "60", "1"],
+    ];
+    assert_eq!(got, expected);
+}
+
+// --asc positive limit exercises bottom_n on the fast path.
+#[test]
+fn frequency_asc_limit_bottom_n() {
+    let wrk = Workdir::new("frequency_asc_limit_bottom_n");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["h"],
+            svec!["a"],
+            svec!["a"],
+            svec!["a"],
+            svec!["b"],
+            svec!["b"],
+            svec!["c"],
+            svec!["d"],
+            svec!["e"],
+        ],
+    );
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv")
+        .arg("--asc")
+        .args(["--limit", "2"])
+        .arg("--pct-nulls");
+
+    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    got.sort_unstable();
+    // Derived from fast-path semantics; verified against actual output.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["h", "Other (3)", "6", "75", "0"],
+        svec!["h", "c", "1", "12.5", "1"],
+        svec!["h", "d", "1", "12.5", "1"],
+    ];
+    assert_eq!(got, expected);
+}
 #[test]
 fn frequency_asc() {
     let (wrk, mut cmd) = setup("frequency_asc");

@@ -201,11 +201,6 @@ QSV_MEMORY_CHECK = False
 # parallel, hashmap-heavy commands (stats, frequency, schema, moarstats) to cut
 # madvise syscall overhead, trading higher peak RSS (~+16%) for speed (~3-9%).
 # Set to opt out (RSS-constrained environments or diagnostics).
-# This governs only the run-time levers above. jemalloc builds also bake
-# metadata_thp:auto into the default malloc_conf (cuts TLB misses for the
-# hashmap-heavy commands; effective on Linux THP, a no-op on macOS/Windows).
-# QSV_NO_ALLOC_TUNING does NOT disable that startup-only option; to turn it off,
-# set _RJEM_MALLOC_CONF=metadata_thp:disabled.
 # QSV_NO_ALLOC_TUNING = False
 
 # desired level (default - off; `error`, `warn`, `info`, `trace`, `debug`).

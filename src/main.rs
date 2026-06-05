@@ -21,18 +21,6 @@ static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 
-// metadata_thp:auto — reduce TLB misses for qsv's hashmap-heavy commands (stats, frequency,
-// schema, moarstats). Linux Transparent Huge Pages only; a no-op on macOS/Windows.
-// `opt.metadata_thp` is read-only at startup (unlike the dirty/muzzy decay levers we set via
-// mallctl), so we bake it as jemalloc's default `malloc_conf` here. A shared reference is used
-// (not a raw pointer) so the static is `Sync`; its single-pointer layout matches jemalloc's
-// `const char *malloc_conf` symbol. Override at runtime via `_RJEM_MALLOC_CONF` / `MALLOC_CONF`
-// (e.g. `metadata_thp:disabled`); env sources take precedence over this baked default.
-#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
-#[unsafe(no_mangle)]
-#[allow(non_upper_case_globals)]
-pub static _rjem_malloc_conf: &[u8; 18] = b"metadata_thp:auto\0";
-
 mod clitypes;
 mod cmd;
 mod config;

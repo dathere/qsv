@@ -166,7 +166,7 @@ jobs:
 
       - name: Upload raw results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bench-results-${{ github.run_id }}
           path: bench-results/

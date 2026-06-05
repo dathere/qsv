@@ -412,7 +412,7 @@ fn frequency_limit_tiebreak() {
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv").args(["--limit", "3"]).arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_unstable();
     let expected = vec![
         svec!["field", "value", "count", "percentage", "rank"],
@@ -451,7 +451,7 @@ fn frequency_limit_rare_null_default() {
     let mut cmd = wrk.command("frequency");
     cmd.arg("in.csv").args(["--limit", "1"]);
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_unstable();
     // Derived from fast-path semantics; verified against actual output.
     let expected = vec![
@@ -487,7 +487,7 @@ fn frequency_asc_limit_bottom_n() {
         .args(["--limit", "2"])
         .arg("--pct-nulls");
 
-    let mut got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let mut got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     got.sort_unstable();
     // Derived from fast-path semantics; verified against actual output.
     let expected = vec![

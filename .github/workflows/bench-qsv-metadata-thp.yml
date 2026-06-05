@@ -5,10 +5,19 @@ name: Bench jemalloc metadata_thp (alloc tuning)
 # cannot be measured there). Also runs the opt-in `percpu_arena:percpu` EXPERIMENT
 # that stacks on top of metadata_thp — bake it only if this shows a clear, RSS-safe win.
 #
+# metadata_thp puts jemalloc's INTERNAL metadata (rtree / extent structures) on huge
+# pages to cut TLB misses. That metadata grows with the number of live allocations, so
+# the realistic NYC311 1M sample (neutral, ~modest heap) does not stress it. This bench
+# therefore generates a SYNTHETIC HIGH-CARDINALITY dataset (two ~N-distinct columns) that
+# deliberately drives qsv's cardinality/frequency hashmaps into the millions of entries —
+# i.e. the exact metadata-pressure regime metadata_thp is meant to help. It is a stress
+# test, not a realistic workload: a null result here is strong evidence the lever is inert
+# for qsv; a win argues for keeping it on large/high-cardinality jobs.
+#
 # A single release binary is built; the variable under test is toggled purely via the
-# `_RJEM_MALLOC_CONF` env override (which takes precedence over, and merges key-by-key
-# with, the baked malloc_conf default). The jemalloc run-time levers (background_thread
-# + dirty/muzzy decay) stay ON in every cell, so only metadata_thp / percpu_arena varies.
+# `_RJEM_MALLOC_CONF` env override (which takes precedence over, and merges key-by-key,
+# with the baked malloc_conf default). The jemalloc run-time levers (background_thread +
+# dirty/muzzy decay) stay ON in every cell, so only metadata_thp / percpu_arena varies.
 #
 #   cells (per command):
 #     baseline  — _RJEM_MALLOC_CONF=metadata_thp:disabled   (pre-PR behaviour)
@@ -24,14 +33,18 @@ name: Bench jemalloc metadata_thp (alloc tuning)
 on:
   workflow_dispatch:
     inputs:
+      rows:
+        description: "synthetic high-cardinality rows (heap/metadata pressure)"
+        required: false
+        default: "8000000"
       runs:
         description: "hyperfine runs per cell"
         required: false
-        default: "10"
+        default: "7"
       warmup:
         description: "hyperfine warmup runs"
         required: false
-        default: "3"
+        default: "2"
 
 permissions:
   contents: read
@@ -41,11 +54,15 @@ jobs:
     name: metadata_thp A/B/C on ubuntu-latest
     runs-on: ubuntu-latest
     env:
-      DATA_URL: https://raw.githubusercontent.com/wiki/dathere/qsv/files/NYC_311_SR_2010-2020-sample-1M.7z
-      DATA: NYC_311_SR_2010-2020-sample-1M.csv
+      DATA: synth_highcard.csv
       HYPERFINE_VERSION: "1.18.0"
       THP_OFF: "metadata_thp:disabled"
       PERCPU: "percpu_arena:percpu"
+      # Inputs are passed through env (not interpolated into `run:` shell) to avoid
+      # ${{ github.* }} script injection — see the synchronous-RSS / hardening notes.
+      ROWS: ${{ github.event.inputs.rows }}
+      RUNS: ${{ github.event.inputs.runs }}
+      WARMUP: ${{ github.event.inputs.warmup }}
 
     steps:
       - uses: actions/checkout@v6
@@ -53,7 +70,7 @@ jobs:
       - name: Install build & bench deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwayland-dev p7zip-full
+          sudo apt-get install -y libwayland-dev
           # hyperfine is not reliably in apt; pull the official .deb
           curl -fsSL -o /tmp/hyperfine.deb \
             "https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine_${HYPERFINE_VERSION}_amd64.deb"
@@ -71,20 +88,32 @@ jobs:
         with:
           key: qsv-metadata-thp-bench
 
-      - name: Show THP state on the runner
+      - name: Show THP state + runner memory
         run: |
           echo "### Runner Transparent Huge Pages state" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           echo "enabled: $(cat /sys/kernel/mm/transparent_hugepage/enabled 2>/dev/null || echo unavailable)" | tee -a "$GITHUB_STEP_SUMMARY"
           echo "defrag:  $(cat /sys/kernel/mm/transparent_hugepage/defrag 2>/dev/null || echo unavailable)"   | tee -a "$GITHUB_STEP_SUMMARY"
+          free -h | tee -a "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Download & extract NYC311 1M sample
+      - name: Generate synthetic high-cardinality dataset
         run: |
-          curl -fsSL -o data.7z "$DATA_URL"
-          7z x -y data.7z
+          # gawk srand(seed) is reproducible across runs. Columns: id (fully unique,
+          # cardinality == ROWS), hi (~ROWS distinct), mid (~100k), lo (~100), plus two
+          # numeric columns to exercise quartile/median value vectors. id+hi drive the
+          # cardinality/frequency hashmaps into the millions of entries.
+          gawk -v rows="$ROWS" 'BEGIN{
+            srand(42);
+            print "id,hi,mid,lo,num1,num2";
+            for (i = 0; i < rows; i++) {
+              printf "%d,%d,%d,%d,%d,%.4f\n", \
+                i, int(rand()*2000000000), int(rand()*100000), int(rand()*100), \
+                int(rand()*1000000), rand()*1000;
+            }
+          }' > "$DATA"
           ls -lh "$DATA"
-          echo "rows: $(wc -l < "$DATA")  cols: $(head -1 "$DATA" | tr ',' '\n' | wc -l)"
+          echo "rows: $(($(wc -l < "$DATA") - 1))  cols: $(head -1 "$DATA" | tr ',' '\n' | wc -l)"
 
       - name: Build release binary
         run: |
@@ -112,11 +141,23 @@ jobs:
           fi
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Confirm cardinality (metadata-pressure regime)
+        run: |
+          echo "### Column cardinality (drives metadata pressure)" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          /tmp/qsv stats --cardinality "$DATA" | /tmp/qsv select field,cardinality - | tee -a "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
       - name: Index dataset (parallel path)
         run: /tmp/qsv index "$DATA"
 
-      - name: Parity check — output must be byte-identical across cells
+      - name: Parity check — frequency must be byte-identical across cells
         run: |
+          # Use `frequency` (deterministic integer counts), NOT `stats -E`: extended stats
+          # include float aggregates whose parallel reduction order is non-deterministic
+          # run-to-run INDEPENDENT of the allocator, so a byte-exact `cmp` would false-fail.
+          # The allocator can never change computed values — frequency parity is the correct
+          # invariant to assert here.
           env _RJEM_MALLOC_CONF="$THP_OFF" /tmp/qsv frequency "$DATA" > f_base.csv
           /tmp/qsv frequency "$DATA" > f_thp.csv
           env _RJEM_MALLOC_CONF="$PERCPU" /tmp/qsv frequency "$DATA" > f_pcpu.csv
@@ -130,7 +171,7 @@ jobs:
       - name: Benchmark — frequency (A/B/C)
         run: |
           mkdir -p bench-results
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$WARMUP" --runs "$RUNS" -N \
             --export-markdown bench-results/frequency.md \
             --export-json bench-results/frequency.json \
             -n "baseline" "env _RJEM_MALLOC_CONF=$THP_OFF /tmp/qsv frequency $DATA" \
@@ -139,33 +180,29 @@ jobs:
 
       - name: Benchmark — stats -E (A/B/C)
         run: |
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$WARMUP" --runs "$RUNS" -N \
             --export-markdown bench-results/stats-E.md \
             --export-json bench-results/stats-E.json \
             -n "baseline" "env _RJEM_MALLOC_CONF=$THP_OFF /tmp/qsv stats -E -c 0 $DATA" \
             -n "thp"      "/tmp/qsv stats -E -c 0 $DATA" \
             -n "thp+pcpu" "env _RJEM_MALLOC_CONF=$PERCPU /tmp/qsv stats -E -c 0 $DATA"
 
-      - name: Benchmark — schema (A/B/C)
-        run: |
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
-            --export-markdown bench-results/schema.md \
-            --export-json bench-results/schema.json \
-            -n "baseline" "env _RJEM_MALLOC_CONF=$THP_OFF /tmp/qsv schema $DATA" \
-            -n "thp"      "/tmp/qsv schema $DATA" \
-            -n "thp+pcpu" "env _RJEM_MALLOC_CONF=$PERCPU /tmp/qsv schema $DATA"
-
       - name: Peak RSS & CPU time (metadata_thp tradeoff)
         run: |
-          # metadata_thp trades a small metadata-memory increase for fewer TLB misses;
-          # capture peak RSS + user/sys time so a regression in either is visible.
+          # metadata_thp trades a small metadata-memory increase for fewer TLB misses.
+          # Capture peak RSS + user/sys time SYNCHRONOUSLY (write to a file, then parse) —
+          # the previous process-substitution approach raced and lost its output.
           measure () {
             local label="$1"; shift
-            echo "-- $label --" | tee -a "$GITHUB_STEP_SUMMARY"
-            /usr/bin/time -v "$@" >/dev/null \
-              2> >(grep -E 'Maximum resident set size|User time|System time' | tee -a "$GITHUB_STEP_SUMMARY")
+            /usr/bin/time -v "$@" >/dev/null 2>/tmp/time.txt || true
+            local rss user sys
+            rss=$(awk -F': ' '/Maximum resident set size/{print $2}' /tmp/time.txt)
+            user=$(awk -F': ' '/User time/{print $2}' /tmp/time.txt)
+            sys=$(awk -F': ' '/System time/{print $2}' /tmp/time.txt)
+            printf '%-10s peakRSS=%8s KB   user=%6ss   sys=%6ss\n' "$label" "$rss" "$user" "$sys" \
+              | tee -a "$GITHUB_STEP_SUMMARY"
           }
-          echo "### stats -E — peak RSS & CPU time" >> "$GITHUB_STEP_SUMMARY"
+          echo "### stats -E -c 0 — peak RSS & CPU time (single shot each)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           measure "baseline" env _RJEM_MALLOC_CONF="$THP_OFF" /tmp/qsv stats -E -c 0 "$DATA"
           measure "thp"      /tmp/qsv stats -E -c 0 "$DATA"
@@ -182,11 +219,10 @@ jobs:
             echo "## stats -E (-c 0)"
             cat bench-results/stats-E.md
             echo ""
-            echo "## schema"
-            cat bench-results/schema.md
-            echo ""
-            echo "**Primary comparison:** \`thp\` vs \`baseline\` — faster (or tied within noise) with"
-            echo "acceptable peak-RSS delta validates the baked metadata_thp:auto default on Linux."
+            echo "**Primary comparison:** \`thp\` vs \`baseline\` on a deliberately high-cardinality"
+            echo "workload. Faster (or tied within noise) with acceptable peak-RSS delta validates"
+            echo "the baked metadata_thp:auto default; a null result here (where metadata pressure is"
+            echo "maximal) is strong evidence the lever is inert for qsv."
             echo "**Experiment:** \`thp+pcpu\` vs \`thp\` — only bake percpu_arena (behind an"
             echo "off-by-default feature) if it shows a clear, repeatable, RSS-safe win."
           } >> "$GITHUB_STEP_SUMMARY"

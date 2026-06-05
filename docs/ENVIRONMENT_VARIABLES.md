@@ -67,7 +67,13 @@ Several dependencies also have environment variables that influence qsv's perfor
   * [mimalloc](https://github.com/microsoft/mimalloc#environment-options)
 
   * [jemalloc](https://jemalloc.net/jemalloc.3.html#environment)
-    
+
+    qsv's automatic jemalloc tuning (see `QSV_NO_ALLOC_TUNING` above) covers the two levers from jemalloc's [TUNING.md](https://github.com/jemalloc/jemalloc/blob/dev/TUNING.md) that consistently help qsv's batch workloads: `background_thread` purging and per-command dirty/muzzy page retention. Two other TUNING.md levers were **evaluated and deliberately left off by default** — on a high-cardinality stress workload (8M rows, multi-million-cardinality columns, Linux THP `always`) neither was a clear win:
+      * `metadata_thp:auto` — put jemalloc's internal metadata on Transparent Huge Pages. Mixed: `frequency` ~4% faster but `stats` ~3% slower, at ~+5% peak RSS. Since it's a process-global, startup-only option it can't be scoped to just the command it helps, so qsv does not bake it in.
+      * `percpu_arena:percpu` — no measurable, RSS-safe win (rayon worker threads migrate, so the locality premise doesn't hold).
+
+    Power users can still opt into either directly via `_RJEM_MALLOC_CONF` / `MALLOC_CONF` (e.g. `_RJEM_MALLOC_CONF=metadata_thp:auto,percpu_arena:percpu`). The manual `Bench jemalloc metadata_thp` GitHub Actions workflow reproduces the A/B/C comparison on a Linux runner if you want to re-measure for your own data shapes.
+
 * Network Access ([reqwest](https://docs.rs/reqwest/latest/reqwest/))   
   qsv uses reqwest and will honor [proxy settings](https://docs.rs/reqwest/latest/reqwest/index.html#proxies) set through the `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY` & `NO_PROXY` environment variables.
 

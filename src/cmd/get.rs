@@ -191,18 +191,22 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool) -> CliResult<()> {
     }
 
     if info {
-        // `entries` has one row per name; de-duplicate by content hash so shared
-        // blobs (multiple names / URLs for identical content) are counted once
-        // for on-disk totals.
+        // `entries` has one row per name. On-disk totals must de-dupe by the
+        // actual file — (blake3, compression) — since the same content stored in
+        // different compression variants (.zst vs .raw) occupies distinct files.
+        // Content-level totals (uncompressed bytes, records) de-dupe by hash.
         let names = entries.len();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen_blobs = std::collections::HashSet::new();
+        let mut seen_content = std::collections::HashSet::new();
         let (mut comp, mut uncomp, mut records, mut blobs) = (0u64, 0u64, 0u64, 0u64);
         for e in &entries {
-            if seen.insert(e.blake3.clone()) {
+            if seen_blobs.insert((e.blake3.clone(), e.compression)) {
                 comp += e.size_compressed;
+                blobs += 1;
+            }
+            if seen_content.insert(e.blake3.clone()) {
                 uncomp += e.size_uncompressed;
                 records += e.record_count.unwrap_or(0);
-                blobs += 1;
             }
         }
         println!("cache directory   : {cache_dir}/get");

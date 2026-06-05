@@ -16,7 +16,8 @@ use crate::workdir::Workdir;
 
 const STATES_CSV: &str = "name,abbr\nAlabama,AL\nAlaska,AK\nArizona,AZ\nArkansas,AR\n";
 const ETAG: &str = "\"states-v1\"";
-const BIND_HOST: &str = "127.0.0.1";
+// Local mock-server bind address for these tests (not production code).
+const BIND_HOST: &str = "127.0.0.1"; // DevSkim: ignore DS162092
 
 // A request handler that serves STATES_CSV with an ETag and honors
 // conditional GETs: a matching `If-None-Match` yields 304 (and does NOT
@@ -117,7 +118,8 @@ impl GetWebServer {
 
     fn url(&self, path: &str) -> String {
         let path = path.strip_prefix('/').unwrap_or(path);
-        format!("http://{}/{path}", self.addr)
+        // Plain HTTP to the in-process test mock server (not production code).
+        format!("http://{}/{path}", self.addr) // DevSkim: ignore DS137138
     }
 
     fn body_sends(&self) -> usize {
@@ -502,6 +504,47 @@ fn get_name_reuse_replaces_entry() {
         stdout.matches("x.csv").count(),
         1,
         "x.csv should appear once in cache-list:\n{stdout}"
+    );
+}
+
+#[test]
+fn get_alias_names_do_not_collide() {
+    // Regression: logical names that a lossy sanitizer would map to the same
+    // on-disk filename (e.g. "a b.csv" vs "a_b.csv") must not collide.
+    let wrk = Workdir::new("get_alias_names_do_not_collide");
+    wrk.create_from_string("src1.csv", STATES_CSV); // 4 rows
+    wrk.create_from_string("src2.csv", "name,abbr\nFoo,FO\n"); // 1 row
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g1 = wrk.command("get");
+    g1.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "a b.csv"])
+        .arg("src1.csv");
+    wrk.assert_success(&mut g1);
+    let mut g2 = wrk.command("get");
+    g2.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "a_b.csv"])
+        .arg("src2.csv");
+    wrk.assert_success(&mut g2);
+
+    // each dc: handle resolves to its OWN content (no collision)
+    let mut c1 = wrk.command("count");
+    c1.env("QSV_CACHE_DIR", &cache_dir).arg("dc:a b.csv");
+    let got1: String = wrk.stdout(&mut c1);
+    assert_eq!(got1, "4");
+    let mut c2 = wrk.command("count");
+    c2.env("QSV_CACHE_DIR", &cache_dir).arg("dc:a_b.csv");
+    let got2: String = wrk.stdout(&mut c2);
+    assert_eq!(got2, "1");
+
+    // cache-list shows both ORIGINAL names (decoded from the reversible alias)
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("a b.csv") && stdout.contains("a_b.csv"),
+        "cache-list should show both original names:\n{stdout}"
     );
 }
 

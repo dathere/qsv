@@ -30,19 +30,26 @@ pub const DEFAULT_CKAN_API: &str = "https://data.dathere.com/api/3/action";
 /// Honors the `QSV_CACHE_DIR` environment variable (which overrides
 /// `cache_dir`), expands a leading `~`, and creates the directory if absent.
 pub fn set_qsv_cache_dir(cache_dir: &str) -> Result<String, CliError> {
+    // `expand_tilde` returns None if the home directory can't be determined;
+    // propagate a CliError rather than panicking.
+    let expand = |dir: &str| -> Result<String, CliError> {
+        expand_tilde(dir)
+            .map(|p| p.to_string_lossy().to_string())
+            .ok_or_else(|| {
+                CliError::Other(format!(
+                    "could not expand '~' in cache directory '{dir}' (home directory not found)"
+                ))
+            })
+    };
     let qsv_cache_dir = if let Ok(cache_path) = std::env::var("QSV_CACHE_DIR") {
-        // if QSV_CACHE_DIR env var is set, check if it exists. If it doesn't, create it.
+        // QSV_CACHE_DIR overrides cache_dir; create it below if it doesn't exist.
         if cache_path.starts_with('~') {
-            // expand the tilde
-            let expanded_dir = expand_tilde(&cache_path).unwrap();
-            expanded_dir.to_string_lossy().to_string()
+            expand(&cache_path)?
         } else {
             cache_path
         }
     } else if cache_dir.starts_with('~') {
-        // expand the tilde
-        let expanded_dir = expand_tilde(cache_dir).unwrap();
-        expanded_dir.to_string_lossy().to_string()
+        expand(cache_dir)?
     } else {
         cache_dir.to_string()
     };
@@ -87,8 +94,12 @@ pub fn resolve_uri_prefix(uri: &str, ckan_api_url: Option<&str>) -> ResolvedUri 
         let rest = rest.trim();
         let api = ckan_api_url.unwrap_or(DEFAULT_CKAN_API);
         if let Some(name) = rest.strip_suffix('?') {
+            // URL-encode the user-supplied name so spaces / `&` / `#` etc. don't
+            // produce an invalid or ambiguous query string. The `name:` field
+            // prefix is CKAN query syntax and is kept literal.
+            let encoded: String = url::form_urlencoded::byte_serialize(name.as_bytes()).collect();
             return ResolvedUri {
-                url:                  format!("{api}/resource_search?query=name:{name}"),
+                url:                  format!("{api}/resource_search?query=name:{encoded}"),
                 is_ckan:              true,
                 ckan_resource_search: true,
             };
@@ -187,8 +198,10 @@ pub fn resolve_ckan_resource(
         .map(ToString::to_string);
 
     // Same-origin check: only keep the auth token if the data URL is on the
-    // same origin as the CKAN API.
-    let ckan_url_parsed = ckan_api_url.and_then(|u| reqwest::Url::parse(u).ok());
+    // same origin as the CKAN API. Use the *effective* API base (the default
+    // when none was given) so the token isn't needlessly stripped for resources
+    // hosted on the default CKAN origin.
+    let ckan_url_parsed = reqwest::Url::parse(ckan_api_url.unwrap_or(DEFAULT_CKAN_API)).ok();
     let resource_url_parsed = reqwest::Url::parse(&data_url).ok();
     let send_auth = match (ckan_url_parsed.as_ref(), resource_url_parsed.as_ref()) {
         (Some(a), Some(b)) => {
@@ -298,7 +311,7 @@ mod rich {
     }
 
     /// Transparent on-disk compression for cached blobs.
-    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
+    #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Hash, Debug, Default)]
     #[serde(rename_all = "lowercase")]
     pub enum Compression {
         /// No compression.
@@ -414,6 +427,8 @@ mod rich {
 
     /// Sanitize a logical name into a safe single-path-segment filename while
     /// preserving its extension (so `dc:` temp files keep delimiter detection).
+    /// Lossy (used only for cosmetic temp filenames under a content-addressed
+    /// directory); alias filenames use the reversible `encode_name` instead.
     fn safe_name(name: &str) -> String {
         name.chars()
             .map(|c| {
@@ -424,6 +439,58 @@ mod rich {
                 }
             })
             .collect()
+    }
+
+    /// Reversible, injective, filesystem-safe encoding of a logical name (lower
+    /// hex of its UTF-8 bytes). Used for alias filenames so distinct names never
+    /// collide and the original is recoverable for display (see `decode_name`).
+    fn encode_name(name: &str) -> String {
+        let mut out = String::with_capacity(name.len() * 2);
+        for b in name.as_bytes() {
+            out.push_str(&format!("{b:02x}"));
+        }
+        out
+    }
+
+    /// Inverse of `encode_name`. Returns None for filenames not produced by it.
+    fn decode_name(file: &str) -> Option<String> {
+        if file.is_empty() || !file.len().is_multiple_of(2) {
+            return None;
+        }
+        let bytes: Option<Vec<u8>> = (0..file.len())
+            .step_by(2)
+            .map(|i| u8::from_str_radix(&file[i..i + 2], 16).ok())
+            .collect();
+        bytes.and_then(|b| String::from_utf8(b).ok())
+    }
+
+    /// A temp filename for a `dc:` handle that is guaranteed to carry a known
+    /// tabular extension, so `Config`'s format check accepts it. Prefers the
+    /// handle's own extension, then the cached source's, falling back to `.csv`.
+    fn tabular_temp_name(name: &str, resolved_uri: &str) -> String {
+        const KNOWN: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
+        let is_known = |p: &str| {
+            Path::new(p)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .is_some_and(|e| KNOWN.contains(&e.as_str()))
+        };
+        let base = safe_name(name);
+        if is_known(&base) {
+            return base;
+        }
+        let source = resolved_uri
+            .split(['?', '#'])
+            .next()
+            .unwrap_or(resolved_uri);
+        let ext = Path::new(source)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .filter(|e| KNOWN.contains(&e.as_str()))
+            .unwrap_or_else(|| "csv".to_string());
+        format!("{base}.{ext}")
     }
 
     fn get_root(cache_dir: &str) -> PathBuf {
@@ -447,20 +514,32 @@ mod rich {
     }
 
     fn alias_path(root: &Path, name: &str) -> PathBuf {
-        root.join("aliases").join(safe_name(name))
+        root.join("aliases").join(encode_name(name))
     }
 
-    /// Atomically write `bytes` to `path` (write to a temp sibling, then rename).
+    /// A process- and call-unique token for temp filenames, so concurrent
+    /// writers never collide on the same temp path.
+    fn unique_token() -> String {
+        static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        format!("{}-{n}", std::process::id())
+    }
+
+    /// Atomically write `bytes` to `path` (write to a unique temp sibling, then
+    /// rename). The temp name is process+call-unique so concurrent writers to
+    /// the same target don't clobber each other's temp file. `fs::rename`
+    /// replaces an existing destination on both Unix and Windows.
     fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
-        let tmp = path.with_extension(format!(
-            "tmp-{}",
-            &blake3::hash(path.to_string_lossy().as_bytes()).to_hex()[..8]
-        ));
+        let tmp = path.with_extension(format!("tmp-{}", unique_token()));
         fs::write(&tmp, bytes)?;
-        fs::rename(&tmp, path)?;
+        if let Err(e) = fs::rename(&tmp, path) {
+            // Best-effort cleanup so a failed rename doesn't leave temp litter.
+            let _ = fs::remove_file(&tmp);
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -693,7 +772,13 @@ mod rich {
 
         let tmp_dir = std::env::temp_dir().join("qsv-getidx");
         fs::create_dir_all(&tmp_dir)?;
-        let tmp_csv = tmp_dir.join(format!("{}.csv", &entry.meta.blake3[..16]));
+        // Unique temp name per call so concurrent `get`s of the same content
+        // don't race on the same temp CSV (and its sibling .idx).
+        let tmp_csv = tmp_dir.join(format!(
+            "{}-{}.csv",
+            &entry.meta.blake3[..16],
+            unique_token()
+        ));
         fs::write(&tmp_csv, &body)?;
 
         let tmp_csv_str = tmp_csv.to_string_lossy().to_string();
@@ -1043,7 +1128,7 @@ mod rich {
         let body = read_blob(&root, &entry.meta.blake3, entry.meta.compression)?;
         let dir = std::env::temp_dir().join("qsv-dc").join(&entry.meta.blake3);
         fs::create_dir_all(&dir)?;
-        let csv_path = dir.join(safe_name(name));
+        let csv_path = dir.join(tabular_temp_name(name, &entry.meta.resolved_uri));
 
         let need_write = !csv_path.exists()
             || fs::metadata(&csv_path).map(|m| m.len()).unwrap_or(0)
@@ -1098,7 +1183,9 @@ mod rich {
             return Ok(out);
         };
         for de in rd.flatten() {
-            let name = de.file_name().to_string_lossy().into_owned();
+            let file = de.file_name().to_string_lossy().into_owned();
+            // Decode the original name from the reversible alias filename.
+            let name = decode_name(&file).unwrap_or(file);
             if let Ok(kh) = fs::read_to_string(de.path())
                 && let Ok(e) = load_entry_at(&entry_path(&root, kh.trim()))
             {

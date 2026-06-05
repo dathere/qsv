@@ -2563,56 +2563,104 @@ impl Args {
 
     #[inline]
     fn counts(&self, ftab: &FTable) -> Vec<(ByteString, u64, f64, f64)> {
-        let (counts_ref, total_count) = if self.flag_asc {
-            // parallel sort in ascending order - least frequent values first
-            ftab.par_frequent(true)
+        // Total count and cardinality straight from the table (cheap, no sort).
+        // Both include the NULL/empty-key bucket, matching par_frequent's totals.
+        let total_count = ftab.total_count();
+        let unique_counts_len = ftab.len();
+
+        // Fast path: for a positive --limit N below the cardinality, a heap-based
+        // top_n/bottom_n selects the N kept values in O(k log N) instead of fully
+        // sorting all k unique values (O(k log k)) then truncating. We only take it
+        // when a plain top-N truncation is exactly what apply_limits_unweighted
+        // would do, so we stay on par_frequent for: limit <= 0 and below-threshold
+        // columns.
+        let abs_limit = self.flag_limit.unsigned_abs();
+
+        // A column is all-unique (every count == 1) iff its total count equals its
+        // cardinality. Only then does --unq-limit change the effective truncation:
+        // apply_limits_unweighted then keeps min(unq_limit, abs_limit) values.
+        let all_unique = total_count == unique_counts_len as u64;
+        let unq_active = all_unique && self.flag_unq_limit != abs_limit && self.flag_unq_limit > 0;
+        let effective_limit = if unq_active {
+            self.flag_unq_limit.min(abs_limit)
         } else {
-            // parallel sort in descending order - most frequent values first
-            ftab.par_frequent(false)
+            abs_limit
         };
 
-        // Convert references to owned values
-        let mut counts: Vec<(Vec<u8>, u64)> = counts_ref
-            .into_iter()
-            .map(|(k, v)| (k.clone(), v))
-            .collect();
+        let threshold_fires =
+            self.flag_lmt_threshold == 0 || self.flag_lmt_threshold >= unique_counts_len;
+        let use_topn =
+            self.flag_limit > 0 && threshold_fires && effective_limit < unique_counts_len;
 
-        // check if we need to apply limits
-        let unique_counts_len = counts.len();
-        let all_unique = if unique_counts_len > 0 {
-            counts[if self.flag_asc {
-                unique_counts_len - 1
+        let (counts, null_entry): (Vec<(Vec<u8>, u64)>, Option<(Vec<u8>, u64)>) = if use_topn {
+            // When --pct-nulls is false, NULL is reported separately and does not
+            // consume a limit slot. Since at most one NULL bucket exists, fetching
+            // effective_limit + 1 and dropping a selected NULL yields exactly the
+            // non-NULL top-effective_limit (matching "sort all -> remove NULL ->
+            // truncate").
+            let want_null = !self.flag_pct_nulls;
+            let fetch_n = effective_limit + usize::from(want_null);
+            let selected = if self.flag_asc {
+                ftab.bottom_n(fetch_n)
             } else {
-                0
-            }]
-            .1 == 1
-        } else {
-            false
-        };
+                ftab.top_n(fetch_n)
+            };
+            let mut counts: Vec<(Vec<u8>, u64)> =
+                selected.into_iter().map(|(k, v)| (k.clone(), v)).collect();
 
-        // When --pct-nulls is false, extract NULL entries before ranking
-        // so that non-NULL values get correct ranks (excluding NULLs from ranking)
-        let null_entry = if self.flag_pct_nulls {
-            None
+            let null_entry = if want_null {
+                if let Some(pos) = counts.iter().position(|(k, _)| k.is_empty()) {
+                    counts.remove(pos);
+                }
+                // Fetch the NULL count directly so a rare NULL outside the
+                // fetched top-N is still reported.
+                let nc = ftab.count(&Vec::new());
+                (nc > 0).then(|| (Vec::new(), nc))
+            } else {
+                None
+            };
+            counts.truncate(effective_limit);
+            (counts, null_entry)
         } else {
-            // Find and remove NULL entry from counts
-            counts
-                .iter()
-                .position(|(k, _)| k.is_empty())
-                .map(|pos| counts.remove(pos))
+            // Full-sort path: preserves behavior for limit <= 0, negative limits,
+            // and below-threshold columns.
+            let counts_ref = if self.flag_asc {
+                // ascending order - least frequent values first
+                ftab.par_frequent(true).0
+            } else {
+                // descending order - most frequent values first
+                ftab.par_frequent(false).0
+            };
+            let mut counts: Vec<(Vec<u8>, u64)> = counts_ref
+                .into_iter()
+                .map(|(k, v)| (k.clone(), v))
+                .collect();
+
+            // When --pct-nulls is false, extract NULL entries before ranking
+            // so that non-NULL values get correct ranks (excluding NULLs from ranking)
+            let null_entry = if self.flag_pct_nulls {
+                None
+            } else {
+                // Find and remove NULL entry from counts
+                counts
+                    .iter()
+                    .position(|(k, _)| k.is_empty())
+                    .map(|pos| counts.remove(pos))
+            };
+
+            // Apply limits (including unique limit logic for all-unique columns)
+            apply_limits_unweighted(
+                &mut counts,
+                self.flag_limit,
+                self.flag_unq_limit,
+                self.flag_lmt_threshold,
+                all_unique,
+            );
+            (counts, null_entry)
         };
 
         // Calculate NULL count for adjusted percentage
         let null_count = null_entry.as_ref().map_or(0, |(_, c)| *c);
-
-        // Apply limits (including unique limit logic for all-unique columns)
-        apply_limits_unweighted(
-            &mut counts,
-            self.flag_limit,
-            self.flag_unq_limit,
-            self.flag_lmt_threshold,
-            all_unique,
-        );
 
         // Calculate pct_factor: when --pct-nulls is false, exclude NULLs from denominator
         let adjusted_total = total_count.saturating_sub(null_count);

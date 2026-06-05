@@ -576,47 +576,6 @@ fn get_long_logical_name() {
 }
 
 #[test]
-fn get_legacy_safe_name_alias_not_stolen() {
-    // Regression: resolving a name that sanitizes to the same legacy safe_name
-    // filename as a DIFFERENT cached name must not steal/remove that alias.
-    let wrk = Workdir::new("get_legacy_safe_name_alias_not_stolen");
-    wrk.create_from_string("src.csv", STATES_CSV);
-    let cache_dir = wrk.path("qsvcache");
-
-    let mut g = wrk.command("get");
-    g.env("QSV_CACHE_DIR", &cache_dir)
-        .args(["--name", "a_b.csv"])
-        .arg("src.csv");
-    wrk.assert_success(&mut g);
-
-    // Simulate a pre-existing legacy safe_name alias (filename = sanitized name,
-    // content = key hash only) and drop the canonical hashed alias.
-    let aliases = cache_dir.join("get").join("aliases");
-    let mut keyhash = String::new();
-    for de in std::fs::read_dir(&aliases).unwrap().flatten() {
-        let content = std::fs::read_to_string(de.path()).unwrap();
-        keyhash = content.lines().next().unwrap().trim().to_string();
-        std::fs::remove_file(de.path()).unwrap();
-    }
-    std::fs::write(aliases.join("a_b.csv"), &keyhash).unwrap();
-
-    // resolving "a b.csv" (sanitizes to "a_b.csv") must NOT adopt/remove it
-    let mut bad = wrk.command("count");
-    bad.env("QSV_CACHE_DIR", &cache_dir).arg("dc:a b.csv");
-    wrk.assert_err(&mut bad);
-    assert!(
-        aliases.join("a_b.csv").exists(),
-        "the legacy a_b.csv alias must be preserved, not stolen"
-    );
-
-    // the legitimate name still resolves (migrating the legacy alias)
-    let mut good = wrk.command("count");
-    good.env("QSV_CACHE_DIR", &cache_dir).arg("dc:a_b.csv");
-    let got: String = wrk.stdout(&mut good);
-    assert_eq!(got, "4");
-}
-
-#[test]
 fn get_cache_clear() {
     let wrk = Workdir::new("get_cache_clear");
     wrk.create_from_string("src.csv", STATES_CSV);

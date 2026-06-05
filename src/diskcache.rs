@@ -441,29 +441,6 @@ mod rich {
             .collect()
     }
 
-    /// Reversible, injective, filesystem-safe encoding of a logical name (lower
-    /// hex of its UTF-8 bytes). Used for alias filenames so distinct names never
-    /// collide and the original is recoverable for display (see `decode_name`).
-    fn encode_name(name: &str) -> String {
-        let mut out = String::with_capacity(name.len() * 2);
-        for b in name.as_bytes() {
-            out.push_str(&format!("{b:02x}"));
-        }
-        out
-    }
-
-    /// Inverse of `encode_name`. Returns None for filenames not produced by it.
-    fn decode_name(file: &str) -> Option<String> {
-        if file.is_empty() || !file.len().is_multiple_of(2) {
-            return None;
-        }
-        let bytes: Option<Vec<u8>> = (0..file.len())
-            .step_by(2)
-            .map(|i| u8::from_str_radix(&file[i..i + 2], 16).ok())
-            .collect();
-        bytes.and_then(|b| String::from_utf8(b).ok())
-    }
-
     /// A temp filename for a `dc:` handle that is guaranteed to carry a known
     /// tabular extension, so `Config`'s format check accepts it. Prefers the
     /// handle's own extension, then the cached source's, falling back to `.csv`.
@@ -543,45 +520,12 @@ mod rich {
         (kh, name)
     }
 
-    /// Resolve a logical name to its entry key hash. Falls back to alias files
-    /// written by earlier (unreleased) filename schemes on this branch and
-    /// migrates them to the canonical hashed alias on the way.
+    /// Resolve a logical name to its entry key hash via its canonical alias.
     fn alias_keyhash(root: &Path, name: &str) -> CliResult<Option<String>> {
-        let canonical = alias_path(root, name);
-        if let Ok(content) = fs::read_to_string(&canonical) {
-            return Ok(Some(parse_alias(&content).0));
+        match fs::read_to_string(alias_path(root, name)) {
+            Ok(content) => Ok(Some(parse_alias(&content).0)),
+            Err(_) => Ok(None),
         }
-
-        // Legacy `encode_name` (hex) aliases are injective — the file uniquely
-        // belongs to this name — so migrate directly.
-        let hex = root.join("aliases").join(encode_name(name));
-        if hex != canonical
-            && let Ok(content) = fs::read_to_string(&hex)
-        {
-            let kh = parse_alias(&content).0;
-            write_alias(root, name, &kh)?;
-            let _ = fs::remove_file(&hex);
-            return Ok(Some(kh));
-        }
-
-        // Legacy `safe_name` aliases are lossy: a *different* name can sanitize
-        // to the same filename. Only adopt one when the pointed entry's primary
-        // name actually matches the requested name, so we never steal or remove
-        // a different name's alias.
-        let sanitized = root.join("aliases").join(safe_name(name));
-        if sanitized != canonical
-            && sanitized != hex
-            && let Ok(content) = fs::read_to_string(&sanitized)
-        {
-            let kh = parse_alias(&content).0;
-            if load_entry_at(&entry_path(root, &kh)).is_ok_and(|e| e.meta.logical_name == name) {
-                write_alias(root, name, &kh)?;
-                let _ = fs::remove_file(&sanitized);
-                return Ok(Some(kh));
-            }
-        }
-
-        Ok(None)
     }
 
     /// A process- and call-unique token for temp filenames, so concurrent
@@ -1248,10 +1192,8 @@ mod rich {
                 continue;
             };
             let (kh, name_opt) = parse_alias(&content);
-            // Prefer the original name stored in the alias file; for legacy
-            // alias files (key hash only) fall back to decoding the filename.
-            let file = de.file_name().to_string_lossy().into_owned();
-            let name = name_opt.or_else(|| decode_name(&file)).unwrap_or(file);
+            // The original name is stored in the alias file content.
+            let Some(name) = name_opt else { continue };
             if let Ok(e) = load_entry_at(&entry_path(&root, &kh)) {
                 let mut meta = e.meta;
                 meta.logical_name = name;

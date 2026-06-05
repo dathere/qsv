@@ -50,6 +50,17 @@ async fn serve_states_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpRespons
         .body(STATES_CSV)
 }
 
+// A second fresh endpoint with DIFFERENT (1-row) content, for testing that a
+// fresh cache hit repoints a name that previously pointed at another entry.
+async fn serve_one_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpResponse {
+    counter.fetch_add(1, Ordering::SeqCst);
+    HttpResponse::Ok()
+        .insert_header(("etag", "\"one-v1\""))
+        .insert_header(("cache-control", "max-age=3600"))
+        .content_type("text/csv")
+        .body("name,abbr\nFoo,FO\n")
+}
+
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     counter: Arc<AtomicUsize>,
@@ -59,6 +70,7 @@ async fn run_webserver(
             .app_data(web::Data::new(counter.clone()))
             .service(web::resource("/states.csv").to(serve_states))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
+            .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
     });
 
     let bound = match server_builder.bind((BIND_HOST, 0)) {
@@ -137,7 +149,11 @@ fn count_content_blobs(cache_dir: &Path) -> usize {
                 };
                 for f in files.flatten() {
                     let name = f.file_name().to_string_lossy().to_string();
-                    if name.ends_with(".zst") && !name.ends_with(".idx.zst") {
+                    // content blobs are `{b3}.zst` (zstd) or `{b3}.raw` (none);
+                    // exclude the `{b3}.idx.zst` index blobs.
+                    let is_content = (name.ends_with(".zst") && !name.ends_with(".idx.zst"))
+                        || name.ends_with(".raw");
+                    if is_content {
                         n += 1;
                     }
                 }
@@ -286,6 +302,123 @@ fn get_http_same_url_different_name() {
         count_content_blobs(&cache_dir),
         1,
         "both names should share a single content blob"
+    );
+}
+
+#[test]
+#[serial]
+fn get_force_refetches_shared_entry() {
+    // Regression: --force must re-fetch from the origin even when the URL-keyed
+    // entry is still referenced by another name (removing only the requested
+    // alias would leave the entry to be served as a fresh hit).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_force_refetches_shared_entry");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("states_fresh.csv");
+
+    for name in ["a.csv", "b.csv"] {
+        let mut c = wrk.command("get");
+        c.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", name])
+            .arg(&url);
+        wrk.assert_success(&mut c);
+    }
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "two names share one downloaded body"
+    );
+
+    // --force on a name whose entry is shared by b.csv must still hit the origin
+    let mut f = wrk.command("get");
+    f.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "a.csv", "--force"])
+        .arg(&url);
+    wrk.assert_success(&mut f);
+    assert_eq!(
+        server.body_sends(),
+        2,
+        "--force should re-download even when the entry is shared by another name"
+    );
+}
+
+#[test]
+#[serial]
+fn get_fresh_hit_repoints_stale_name() {
+    // Regression: requesting a URL under a name that already points at a
+    // DIFFERENT entry, where the URL is a fresh cache hit, must repoint the name
+    // to the fetched entry instead of keeping the old (stale) data.
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_fresh_hit_repoints_stale_name");
+    let cache_dir = wrk.path("qsvcache");
+    let url_a = server.url("states_fresh.csv"); // 4 rows
+    let url_b = server.url("one_fresh.csv"); // 1 row
+
+    // x.csv -> url_a (4 rows)
+    let mut g1 = wrk.command("get");
+    g1.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg(&url_a);
+    wrk.assert_success(&mut g1);
+
+    // cache url_b under a different name so the next fetch of it is a fresh hit
+    let mut g2 = wrk.command("get");
+    g2.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "y.csv"])
+        .arg(&url_b);
+    wrk.assert_success(&mut g2);
+
+    // now point x.csv at url_b: served fresh (no put), x.csv must repoint
+    let mut g3 = wrk.command("get");
+    g3.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg(&url_b);
+    wrk.assert_success(&mut g3);
+
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:x.csv");
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(
+        got, "1",
+        "x.csv should now resolve to url_b's data, not the stale entry"
+    );
+}
+
+#[test]
+fn get_compression_variant_blob_reclaimed() {
+    // Regression: deleting an entry must free the exact blob file (content hash
+    // AND compression), not assume any entry with the same hash shares it.
+    let wrk = Workdir::new("get_compression_variant_blob_reclaimed");
+    wrk.create_from_string("a.csv", STATES_CSV);
+    wrk.create_from_string("b.csv", STATES_CSV); // identical content to a.csv
+    wrk.create_from_string("c.csv", "name,abbr\nFoo,FO\n"); // different content
+    let cache_dir = wrk.path("qsvcache");
+
+    // same content under two cache keys, two compression variants (.zst, .raw)
+    let mut g1 = wrk.command("get");
+    g1.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv", "--compress", "zstd"])
+        .arg("a.csv");
+    wrk.assert_success(&mut g1);
+    let mut g2 = wrk.command("get");
+    g2.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "y.csv", "--compress", "none"])
+        .arg("b.csv");
+    wrk.assert_success(&mut g2);
+
+    // reuse x.csv for different content -> orphans the .zst variant of the
+    // shared hash; the .raw variant (y.csv) must survive.
+    let mut g3 = wrk.command("get");
+    g3.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("c.csv");
+    wrk.assert_success(&mut g3);
+
+    // remaining: b.csv's .raw + c.csv's blob == 2 (the orphaned .zst is gone)
+    assert_eq!(
+        count_content_blobs(&cache_dir),
+        2,
+        "the orphaned compression variant should be reclaimed by exact path"
     );
 }
 

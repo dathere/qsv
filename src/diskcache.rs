@@ -642,34 +642,25 @@ mod rich {
     }
 
     /// Fully remove the entry at `keyhash`: every name pointing at it, its JSON,
-    /// and its blob/index when no other entry references the same content.
+    /// and its blob/index when nothing else references them. The data blob is
+    /// freed on an exact path match (content hash *and* compression differ in
+    /// the filename), while the index — `{blake3}.idx.zst`, compression-agnostic
+    /// — is freed on a content-hash match.
     fn delete_entry_by_keyhash(root: &Path, keyhash: &str) {
         let entry = load_entry_at(&entry_path(root, keyhash)).ok();
         for ap in aliases_pointing_to(root, keyhash) {
             let _ = fs::remove_file(ap);
         }
         let _ = fs::remove_file(entry_path(root, keyhash));
-        if let Some(e) = entry
-            && !entry_references_blob(root, &e.meta.blake3, keyhash)
-        {
-            let _ = fs::remove_file(blob_path(root, &e.meta.blake3, e.meta.compression));
-            let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
+        if let Some(e) = entry {
+            let blob = blob_path(root, &e.meta.blake3, e.meta.compression);
+            if !blob_path_referenced(root, &blob, keyhash) {
+                let _ = fs::remove_file(&blob);
+            }
+            if !entry_references_blob(root, &e.meta.blake3, keyhash) {
+                let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
+            }
         }
-    }
-
-    /// Remove one name. If it was the entry's last name, the entry and its
-    /// (now-unreferenced) blob/index are removed too.
-    fn delete_entry_by_name(root: &Path, name: &str) -> CliResult<bool> {
-        let ap = alias_path(root, name);
-        let Ok(kh) = fs::read_to_string(&ap) else {
-            return Ok(false);
-        };
-        let kh = kh.trim().to_string();
-        let _ = fs::remove_file(&ap);
-        if aliases_pointing_to(root, &kh).is_empty() {
-            delete_entry_by_keyhash(root, &kh);
-        }
-        Ok(true)
     }
 
     fn header_str(
@@ -921,11 +912,6 @@ mod rich {
 
         let name = opts.name.clone().unwrap_or_else(|| derive_name(&final_url));
 
-        // `--force` / `--refresh always` drop any existing entry so we re-fetch.
-        if opts.force || opts.refresh_policy == RefreshPolicy::Always {
-            let _ = delete_entry_by_name(&root, &name);
-        }
-
         let observed_key = Arc::new(Mutex::new(None));
         let manager = QsvCacheManager {
             root:               root.clone(),
@@ -937,9 +923,17 @@ mod rich {
             ckan_resource_hash: ckan_hash,
             observed_key:       observed_key.clone(),
         };
-        let mode = match opts.refresh_policy {
-            RefreshPolicy::Never => CacheMode::ForceCache,
-            _ => CacheMode::Default,
+        // `--force` / `--refresh always` -> Reload: always hit the origin (even
+        // when the entry is shared by other names) and update the cache. This
+        // is more correct than deleting the requested alias, which would leave a
+        // multi-aliased entry behind that could still be served as a fresh hit.
+        // `--refresh never` -> ForceCache (serve cached regardless of freshness).
+        let mode = if opts.force || opts.refresh_policy == RefreshPolicy::Always {
+            CacheMode::Reload
+        } else if opts.refresh_policy == RefreshPolicy::Never {
+            CacheMode::ForceCache
+        } else {
+            CacheMode::Default
         };
 
         let async_client =
@@ -967,31 +961,37 @@ mod rich {
             Ok::<(), CliError>(())
         })?;
 
-        let mut entry = match load_entry_by_name(&root, &name)? {
-            Some(e) => e,
-            None => {
-                // Fresh cache hit: the response was served from `get`'s read path
-                // without calling `put`, so no alias was created for the
-                // requested name. Recover the entry via the cache key the
-                // middleware just operated on and bind the name to it — WITHOUT
-                // mutating the shared entry's own metadata (other names may
-                // already point at it).
-                let kh = observed_key
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.clone())
-                    .as_deref()
-                    .map(keyhash)
-                    .filter(|k| entry_path(&root, k).exists())
-                    .ok_or_else(|| {
-                        CliError::Other(format!(
-                            "get: no cache entry for '{name}' after fetching {final_url}"
-                        ))
-                    })?;
-                bind_alias(&root, &name, &kh)?;
-                load_entry_at(&entry_path(&root, &kh))?
-            },
-        };
+        // The entry the middleware actually operated on for this request is the
+        // authoritative one for the requested name — whether `put` ran (miss) or
+        // the response was served fresh from the read path (hit). Bind the name
+        // to it unconditionally: this handles a missing name, AND the case where
+        // the name still points at a *different* (stale) entry, which would
+        // otherwise keep resolving old data. Clean up the previous target if
+        // binding leaves it with no names.
+        let kh = observed_key
+            .lock()
+            .ok()
+            .and_then(|g| g.clone())
+            .as_deref()
+            .map(keyhash)
+            .filter(|k| entry_path(&root, k).exists())
+            .ok_or_else(|| {
+                CliError::Other(format!(
+                    "get: no cache entry for '{name}' after fetching {final_url}"
+                ))
+            })?;
+        let prev_target = fs::read_to_string(alias_path(&root, &name))
+            .ok()
+            .map(|s| s.trim().to_string());
+        bind_alias(&root, &name, &kh)?;
+        if let Some(old) = prev_target
+            && old != kh
+            && aliases_pointing_to(&root, &old).is_empty()
+        {
+            delete_entry_by_keyhash(&root, &old);
+        }
+
+        let mut entry = load_entry_at(&entry_path(&root, &kh))?;
         ensure_indexed(&root, &mut entry)?;
         // Report the metadata under the requested name (the stored entry keeps
         // its own primary name; cache-list enumerates all names via aliases).

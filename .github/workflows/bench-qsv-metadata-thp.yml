@@ -58,7 +58,11 @@ jobs:
       HYPERFINE_VERSION: "1.18.0"
       THP_OFF: "metadata_thp:disabled"
       PERCPU: "percpu_arena:percpu"
+      # Inputs are passed through env (not interpolated into `run:` shell) to avoid
+      # ${{ github.* }} script injection — see the synchronous-RSS / hardening notes.
       ROWS: ${{ github.event.inputs.rows }}
+      RUNS: ${{ github.event.inputs.runs }}
+      WARMUP: ${{ github.event.inputs.warmup }}
 
     steps:
       - uses: actions/checkout@v6
@@ -167,7 +171,7 @@ jobs:
       - name: Benchmark — frequency (A/B/C)
         run: |
           mkdir -p bench-results
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$WARMUP" --runs "$RUNS" -N \
             --export-markdown bench-results/frequency.md \
             --export-json bench-results/frequency.json \
             -n "baseline" "env _RJEM_MALLOC_CONF=$THP_OFF /tmp/qsv frequency $DATA" \
@@ -176,7 +180,7 @@ jobs:
 
       - name: Benchmark — stats -E (A/B/C)
         run: |
-          hyperfine --warmup "${{ github.event.inputs.warmup }}" --runs "${{ github.event.inputs.runs }}" -N \
+          hyperfine --warmup "$WARMUP" --runs "$RUNS" -N \
             --export-markdown bench-results/stats-E.md \
             --export-json bench-results/stats-E.json \
             -n "baseline" "env _RJEM_MALLOC_CONF=$THP_OFF /tmp/qsv stats -E -c 0 $DATA" \

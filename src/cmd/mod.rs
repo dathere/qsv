@@ -47,6 +47,8 @@ pub mod frequency;
 pub mod geocode;
 #[cfg(feature = "geocode")]
 pub mod geoconvert;
+#[cfg(feature = "get")]
+pub mod get;
 pub mod headers;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod implode;

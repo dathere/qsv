@@ -24,6 +24,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod clitypes;
 mod cmd;
 mod config;
+mod diskcache;
 mod generators_common;
 mod help_markdown_gen;
 mod index;
@@ -128,6 +129,10 @@ fn main() -> QsvExitCode {
     enabled_commands.push_str("    foreach     Loop over a CSV file to execute bash commands\n");
 
     enabled_commands.push_str("    frequency   Show frequency tables\n");
+
+    #[cfg(all(feature = "get", feature = "feature_capable"))]
+    enabled_commands
+        .push_str("    get         Get tabular data from various sources into a disk cache\n");
 
     #[cfg(all(feature = "geocode", not(feature = "lite")))]
     enabled_commands.push_str(
@@ -440,6 +445,8 @@ enum Command {
     #[cfg(all(feature = "foreach", not(feature = "lite")))]
     ForEach,
     Frequency,
+    #[cfg(all(feature = "get", feature = "feature_capable"))]
+    Get,
     #[cfg(all(feature = "geocode", feature = "feature_capable"))]
     Geocode,
     #[cfg(all(feature = "geocode", feature = "feature_capable"))]
@@ -556,6 +563,8 @@ impl Command {
             Command::Flatten => cmd::flatten::run(argv),
             Command::Fmt => cmd::fmt::run(argv),
             Command::Frequency => cmd::frequency::run(argv),
+            #[cfg(all(feature = "get", feature = "feature_capable"))]
+            Command::Get => cmd::get::run(argv),
             #[cfg(all(feature = "geocode", feature = "feature_capable"))]
             Command::Geocode => cmd::geocode::run(argv),
             #[cfg(all(feature = "geocode", feature = "feature_capable"))]

@@ -176,6 +176,29 @@ impl Config {
     /// - `QSV_WTR_BUFFER_CAPACITY`: Sets write buffer capacity.
     /// - `QSV_SKIP_FORMAT_CHECK`: Set to skip file extension checking.
     pub fn new(path: Option<&String>) -> Config {
+        // Resolve a `dc:<name>` cache reference (the `get` command's disk cache)
+        // to a concrete file path up front, so the rest of Config::new treats it
+        // like an ordinary local file (delimiter detection, indexing, etc.).
+        // Config::new is infallible, so a resolution failure is surfaced later
+        // via `format_error` rather than panicking.
+        #[cfg(feature = "get")]
+        let mut dc_format_error: Option<String> = None;
+        #[cfg(feature = "get")]
+        let dc_resolved: Option<String> = match path {
+            Some(s) if s.starts_with("dc:") => {
+                match crate::diskcache::resolve_dc_path(&s["dc:".len()..]) {
+                    Ok(p) => Some(p.to_string_lossy().to_string()),
+                    Err(e) => {
+                        dc_format_error = Some(e.to_string());
+                        None
+                    },
+                }
+            },
+            _ => None,
+        };
+        #[cfg(feature = "get")]
+        let path: Option<&String> = dc_resolved.as_ref().or(path);
+
         let default_delim = match env::var("QSV_DEFAULT_DELIMITER") {
             Ok(delim) => match Delimiter::decode_delimiter(&delim) {
                 Ok(d) => d.as_byte(),
@@ -302,6 +325,11 @@ impl Config {
                 );
             }
         }
+
+        // A failed `dc:` resolution takes precedence so its (more actionable)
+        // error is what surfaces at reader-construction time.
+        #[cfg(feature = "get")]
+        let format_error = dc_format_error.or(format_error);
 
         Config {
             path,

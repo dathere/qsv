@@ -88,6 +88,8 @@ mod test_frequency;
 mod test_geocode;
 #[cfg(feature = "geocode")]
 mod test_geoconvert;
+#[cfg(feature = "get")]
+mod test_get;
 mod test_headers;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_implode;

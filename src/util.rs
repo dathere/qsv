@@ -719,10 +719,26 @@ pub fn version() -> String {
         format!("mimalloc {mimalloc_version}")
     };
     #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
-    let malloc_kind = if BACKGROUND_THREADS_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
-        "jemalloc+bgthread"
-    } else {
-        "jemalloc"
+    let malloc_kind = {
+        // `mut` is only used by the Linux-gated `+thp` push below.
+        #[allow(unused_mut)]
+        let mut kind = if BACKGROUND_THREADS_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+            String::from("jemalloc+bgthread")
+        } else {
+            String::from("jemalloc")
+        };
+        // Reflect the baked `metadata_thp:auto` default (see the `_rjem_malloc_conf` symbol in
+        // the bin roots). Only meaningful on Linux, where Transparent Huge Pages exist; we read
+        // the live `opt.metadata_thp` so an `_RJEM_MALLOC_CONF=metadata_thp:disabled` override is
+        // reflected. Mode enum: 0 = disabled, 1 = auto, 2 = always.
+        #[cfg(target_os = "linux")]
+        if matches!(
+            unsafe { tikv_jemalloc_ctl::raw::read::<u32>(b"opt.metadata_thp\0") },
+            Ok(1..)
+        ) {
+            kind.push_str("+thp");
+        }
+        kind
     };
     #[cfg(not(any(feature = "mimalloc", feature = "jemallocator")))]
     let malloc_kind = "standard";

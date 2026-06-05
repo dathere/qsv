@@ -45,3 +45,41 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
          (load_dotenv must precede init_allocator_runtime); log was:\n{log}"
     );
 }
+
+/// Verifies the baked `metadata_thp:auto` default (the `_rjem_malloc_conf` symbol in the bin
+/// roots) is actually picked up by jemalloc. On Linux this surfaces as a `+thp` marker in
+/// `qsv --version` (read live from `opt.metadata_thp`), which doubles as a canary that the
+/// `_rjem_` symbol prefix is correct — a wrong prefix would be silently ignored by jemalloc,
+/// leaving the option at its `disabled` default and dropping the marker. The option is accepted
+/// but inert on macOS/Windows (no Transparent Huge Pages), so the marker is asserted on Linux only.
+#[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
+#[test]
+fn alloc_tuning_metadata_thp_baked_default() {
+    use crate::workdir::Workdir;
+
+    let wrk = Workdir::new("alloc_tuning_metadata_thp");
+
+    let mut cmd = wrk.command("--version");
+    // Ensure no inherited override masks the baked default.
+    cmd.env_remove("QSV_NO_ALLOC_TUNING")
+        .env_remove("_RJEM_MALLOC_CONF")
+        .env_remove("MALLOC_CONF");
+    let out = cmd.output().expect("run qsv --version");
+    let version = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout),
+        String::from_utf8_lossy(&out.stderr)
+    );
+
+    assert!(
+        version.contains("jemalloc"),
+        "expected a jemalloc build in --version output: {version}"
+    );
+
+    #[cfg(target_os = "linux")]
+    assert!(
+        version.contains("+thp"),
+        "expected the baked metadata_thp:auto default to surface as `+thp` on Linux (a missing \
+         marker means jemalloc ignored the `_rjem_malloc_conf` symbol); --version was:\n{version}"
+    );
+}

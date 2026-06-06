@@ -553,7 +553,7 @@ use std::{
 };
 
 use cached::{
-    ConcurrentCached, DiskCache, DiskCacheBuilder, LruCache,
+    ConcurrentCached, DiskCache, DiskCacheBuilder,
     macros::{cached, concurrent_cached},
 };
 use dynfmt2::Format;
@@ -793,11 +793,6 @@ static US_STATES_FIPS_CODES: phf::Map<&'static str, &'static str> = phf_map! {
     // "UM" => "74",
     // "VI" => "78",
 };
-
-// max number of entries in LRU cache
-static CACHE_SIZE: usize = 2_000_000;
-// max number of entries in fallback LRU cache if we can't allocate CACHE_SIZE
-static FALLBACK_CACHE_SIZE: usize = CACHE_SIZE / 4;
 
 static INVALID_DYNFMT: &str = "Invalid dynfmt template.";
 static INVALID_COUNTRY_CODE: &str = "Invalid country code.";
@@ -2353,10 +2348,10 @@ async fn load_engine_data(
 /// hit, but spreads it across many independent shards. With `shards` omitted, the store
 /// derives the shard count from `std::thread::available_parallelism()` (`4 x cores`,
 /// rounded to a power of two and clamped to [8, 1024]), so it auto-scales to the host.
-/// `max_size` must be an integer literal (the macro parses it as a literal, so the
-/// `CACHE_SIZE` const can't be referenced); 2_000_000 mirrors `CACHE_SIZE`. The old
-/// `FALLBACK_CACHE_SIZE` graceful fallback isn't needed here — the 2M cap is split
-/// across shards (each map allocates lazily), so the build can't fail on capacity.
+/// `max_size` must be an integer literal (the macro parses it as a literal), so the
+/// 2_000_000 cap (~2M entries) is inlined here. The cap is split across shards (each
+/// shard's map allocates lazily), so the build can't fail on capacity — no
+/// graceful-fallback path is needed.
 #[concurrent_cached(
     max_size = 2_000_000,
     key = "String",
@@ -2621,9 +2616,16 @@ fn search_index_no_cache(
     None
 }
 
-#[cached(
-    ty = "LruCache<String, IpAddr>",
-    create = r#"{ LruCache::builder().max_size(CACHE_SIZE).build().unwrap_or_else(|_| LruCache::builder().max_size(FALLBACK_CACHE_SIZE).build().expect("error building fallback LRU cache")) }"#,
+/// Resolve a hostname to an IP address, cached so repeated hosts (common when an
+/// IP-lookup column has many rows pointing at the same host) skip the blocking DNS
+/// query. Like `search_index`, this uses a *sharded* concurrent LRU
+/// (`#[concurrent_cached]` / `ShardedLruCache`) so the per-hit recency-bump write lock
+/// doesn't serialize geocode's rayon-parallel pipeline; the shard count is auto-derived
+/// from `available_parallelism()`. An `Option<IpAddr>` return skips caching `None`, so a
+/// failed lookup is retried per-record rather than cached for the run (correct for
+/// transient DNS failures). `max_size` must be an integer literal (~2M entries).
+#[concurrent_cached(
+    max_size = 2_000_000,
     key = "String",
     convert = r#"{ host.to_owned() }"#
 )]

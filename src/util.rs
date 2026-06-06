@@ -2555,7 +2555,21 @@ pub fn process_input(
             }
             processed_input.push(stdin_path.clone());
             continue;
-        } else if !path.exists() {
+        }
+
+        // Resolve a `dc:<name>` disk-cache reference (the `get` command's cache)
+        // to its materialized CSV path BEFORE the existence check below. Without
+        // this, the literal "dc:…" string fails `path.exists()`, so every command
+        // that routes inputs through `process_input` (cat, slice, join, …) wrongly
+        // rejected a valid `dc:` handle even though `Config::new` resolves it. The
+        // resolved temp CSV ships a sibling .idx, so indexed commands work too.
+        #[cfg(feature = "get")]
+        if let Some(dc_name) = path.to_str().and_then(|s| s.strip_prefix("dc:")) {
+            processed_input.push(crate::diskcache::resolve_dc_path(dc_name)?);
+            continue;
+        }
+
+        if !path.exists() {
             return fail_clierror!("Input file '{}' does not exist", path.display());
         }
 

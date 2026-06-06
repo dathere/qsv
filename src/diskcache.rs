@@ -264,7 +264,7 @@ pub use rich::*;
 mod rich {
     use std::{
         fs,
-        io::Read,
+        io::{BufWriter, Read, Write},
         path::{Path, PathBuf},
         sync::{Arc, Mutex},
         time::SystemTime,
@@ -515,7 +515,9 @@ mod rich {
     /// original name is preserved inside the file content (see `write_alias`).
     fn alias_path(root: &Path, name: &str) -> PathBuf {
         root.join("aliases")
-            .join(blake3::hash(name.as_bytes()).to_hex())
+            // `.as_str()`: blake3's `to_hex()` is an `ArrayString` (impls
+            // `AsRef<str>`, not `AsRef<Path>`), so feed `Path::join` a `&str`.
+            .join(blake3::hash(name.as_bytes()).to_hex().as_str())
     }
 
     /// Write an alias file: content is `"{keyhash}\n{name}"` so the original
@@ -592,6 +594,102 @@ mod rich {
         let size_compressed = bytes.len() as u64;
         atomic_write(&path, &bytes)?;
         Ok((b3, size_compressed, body.len() as u64))
+    }
+
+    /// The compressed-output sink behind a `BlobSink` (zstd-encoding or raw),
+    /// kept as an enum (rather than `Box<dyn Write>`) so `finish` can propagate a
+    /// zstd flush error instead of swallowing it on drop.
+    #[cfg(feature = "get_cloud")]
+    enum BlobSinkWriter {
+        Zstd(zstd::stream::write::Encoder<'static, BufWriter<fs::File>>),
+        Raw(BufWriter<fs::File>),
+    }
+
+    /// Streaming, content-addressed blob writer. Feed it the uncompressed byte
+    /// chunks **in order** (`write`); it incrementally BLAKE3-hashes the stream
+    /// and writes the (optionally zstd-compressed) bytes to a temp file. `finish`
+    /// renames that temp to the content-addressed blob path `{blake3}.{ext}` and
+    /// returns `(blake3, compressed_size, uncompressed_size)`.
+    ///
+    /// Unlike `store_blob` (which takes the whole `&[u8]`), this never holds the
+    /// full object in memory — the prerequisite for ingesting large objects in
+    /// bounded memory (e.g. the cloud multipart path). Only `get_cloud` uses it
+    /// today; drop the `cfg` gate when the HTTP path is taught to stream too.
+    #[cfg(feature = "get_cloud")]
+    struct BlobSink {
+        hasher:       blake3::Hasher,
+        writer:       BlobSinkWriter,
+        tmp:          PathBuf,
+        compression:  Compression,
+        uncompressed: u64,
+    }
+
+    #[cfg(feature = "get_cloud")]
+    impl BlobSink {
+        fn new(root: &Path, compression: Compression) -> CliResult<Self> {
+            let blobs = root.join("blobs");
+            fs::create_dir_all(&blobs)?;
+            let tmp = blobs.join(format!("ingest-{}.tmp", unique_token()));
+            let buf = BufWriter::new(fs::File::create(&tmp)?);
+            let writer = match compression {
+                Compression::Zstd => {
+                    BlobSinkWriter::Zstd(zstd::stream::write::Encoder::new(buf, ZSTD_LEVEL)?)
+                },
+                Compression::None => BlobSinkWriter::Raw(buf),
+            };
+            Ok(Self {
+                hasher: blake3::Hasher::new(),
+                writer,
+                tmp,
+                compression,
+                uncompressed: 0,
+            })
+        }
+
+        fn write(&mut self, chunk: &[u8]) -> std::io::Result<()> {
+            self.hasher.update(chunk);
+            self.uncompressed += chunk.len() as u64;
+            match &mut self.writer {
+                BlobSinkWriter::Zstd(e) => e.write_all(chunk),
+                BlobSinkWriter::Raw(w) => w.write_all(chunk),
+            }
+        }
+
+        /// Finalize the stream and atomically move it into place. On any error
+        /// the temp file is cleaned up so a failed ingest leaves no litter.
+        fn finish(self, root: &Path) -> CliResult<(String, u64, u64)> {
+            let Self {
+                hasher,
+                writer,
+                tmp,
+                compression,
+                uncompressed,
+            } = self;
+            let result = (|| -> std::io::Result<(String, u64, u64)> {
+                // Flush the (zstd or plain) writer fully down to the file.
+                let buf = match writer {
+                    BlobSinkWriter::Zstd(e) => e.finish()?,
+                    BlobSinkWriter::Raw(w) => w,
+                };
+                let file = buf
+                    .into_inner()
+                    .map_err(std::io::IntoInnerError::into_error)?;
+                file.sync_all()?;
+                drop(file);
+                let b3 = hasher.finalize().to_hex().to_string();
+                let size_compressed = fs::metadata(&tmp)?.len();
+                let dest = blob_path(root, &b3, compression);
+                if let Some(parent) = dest.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::rename(&tmp, &dest)?;
+                Ok((b3, size_compressed, uncompressed))
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&tmp);
+            }
+            Ok(result?)
+        }
     }
 
     fn read_blob(root: &Path, b3: &str, compression: Compression) -> std::io::Result<Vec<u8>> {
@@ -1074,13 +1172,43 @@ mod rich {
         format!("CLOUD:{source}#{joined}")
     }
 
+    /// Default per-part size for cloud range downloads: objects larger than this
+    /// are fetched as parallel byte-ranges of this size (8 MiB). Override with
+    /// `QSV_GET_PART_SIZE` (bytes).
+    #[cfg(feature = "get_cloud")]
+    const DEFAULT_PART_SIZE: u64 = 8 * 1024 * 1024;
+    /// Default max number of concurrent range GETs for one cloud download (4).
+    /// Override with `QSV_GET_CONCURRENCY`. Peak extra memory is roughly
+    /// `concurrency * part_size`, independent of total object size.
+    #[cfg(feature = "get_cloud")]
+    const DEFAULT_DL_CONCURRENCY: u64 = 4;
+
+    /// Read a `u64` tuning value from environment variable `name`, falling back
+    /// to `default` when it is unset or does not parse.
+    #[cfg(feature = "get_cloud")]
+    fn env_u64(name: &str, default: u64) -> u64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(default)
+    }
+
     /// Fetch a cloud object-store source (`s3://`, `gs://`, `az://`, …) into the
     /// cache, with ETag-based conditional revalidation (parity with the HTTP
-    /// path's "don't re-download unchanged" guarantee). Mirrors `ingest_local`
-    /// plus the alias/orphan-cleanup tail of `get_resource`.
+    /// path's "don't re-download unchanged" guarantee) and **streaming, parallel
+    /// ranged downloads** for large objects. Mirrors `ingest_local` plus the
+    /// alias/orphan-cleanup tail of `get_resource`.
+    ///
+    /// A single ranged GET of the first part doubles as the conditional
+    /// revalidation request AND the size probe (a 206 carries the total object
+    /// size via `Content-Range`), so there is no extra HEAD round-trip. Objects
+    /// larger than one part are fetched as concurrent byte-ranges and streamed
+    /// straight into a `BlobSink`, so peak memory is bounded (≈ `concurrency *
+    /// part_size`) rather than the whole object.
     #[cfg(feature = "get_cloud")]
     fn ingest_cloud(opts: &GetOptions, root: &Path, source: &str) -> CliResult<CacheEntry> {
-        use object_store::{GetOptions as OsGetOptions, ObjectStore, parse_url_opts};
+        use futures_util::stream::StreamExt;
+        use object_store::{GetOptions as OsGetOptions, GetRange, ObjectStore, parse_url_opts};
         use url::Url;
 
         let url = Url::parse(source)
@@ -1094,6 +1222,8 @@ mod rich {
         let (store, path) = parse_url_opts(&url, all_opts).map_err(|e| {
             CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
         })?;
+        // Shared across the concurrent range fetches below.
+        let store = Arc::new(store);
 
         let cache_key = cloud_cache_key(source, &identity);
         let kh = keyhash(&cache_key);
@@ -1102,9 +1232,6 @@ mod rich {
         let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
 
         // --refresh never: serve the cached copy without touching the origin.
-        // `take()` consumes `existing` only on the Never+cached path (which then
-        // returns); the not-Never and Never-with-empty-cache paths leave it
-        // intact to drive conditional revalidation / the not-modified arm below.
         if opts.refresh_policy == RefreshPolicy::Never
             && let Some(mut entry) = existing.take()
         {
@@ -1116,33 +1243,104 @@ mod rich {
         }
 
         // --force / --refresh always -> unconditional GET; otherwise send a
-        // conditional If-None-Match when we already hold an ETag.
+        // conditional If-None-Match (on the probe) when we already hold an ETag.
         let unconditional = opts.force || opts.refresh_policy == RefreshPolicy::Always;
-        let mut gopts = OsGetOptions::default();
-        if !unconditional
-            && let Some(entry) = &existing
-            && let Some(tag) = &entry.meta.etag
-        {
-            gopts.if_none_match = Some(tag.clone());
-        }
+        let conditional_etag = if unconditional {
+            None
+        } else {
+            existing.as_ref().and_then(|e| e.meta.etag.clone())
+        };
+
+        // Tuning knobs are environment-only so they never collide with the
+        // object_store config keys that `--cloud-opt` feeds to parse_url_opts.
+        let part_size = env_u64("QSV_GET_PART_SIZE", DEFAULT_PART_SIZE).max(1);
+        let concurrency =
+            env_u64("QSV_GET_CONCURRENCY", DEFAULT_DL_CONCURRENCY).clamp(1, 64) as usize;
 
         let rt = tokio::runtime::Runtime::new()?;
-        let fetched = rt.block_on(async {
-            match store.get_opts(&path, gopts).await {
-                Err(object_store::Error::NotModified { .. }) => Ok(None),
-                Ok(result) => {
-                    let etag = result.meta.e_tag.clone();
-                    let last_modified = result.meta.last_modified.to_rfc2822();
-                    let bytes = result.bytes().await.map_err(|e| {
-                        CliError::Other(format!("get: reading {source} failed: {e}"))
-                    })?;
-                    Ok(Some((etag, last_modified, bytes)))
-                },
-                Err(e) => Err(CliError::Other(format!(
-                    "get: fetching {source} failed: {e}"
-                ))),
-            }
-        })?;
+        // None => origin reported Not-Modified; Some => the freshly stored blob's
+        // (blake3, compressed_size, uncompressed_size, etag, last_modified).
+        let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
+            rt.block_on(async {
+                // Probe the first part. A ranged GET returns the TOTAL object size
+                // via Content-Range (object_store sets meta.size), so this single
+                // request serves as both the conditional revalidation and the size
+                // probe. If the origin ignores Range it replies with the full body
+                // and we store it as one part.
+                let probe = OsGetOptions {
+                    range: Some(GetRange::Bounded(0..part_size)),
+                    if_none_match: conditional_etag.clone(),
+                    ..OsGetOptions::default()
+                };
+
+                let first = match store.get_opts(&path, probe).await {
+                    Err(object_store::Error::NotModified { .. }) => return Ok(None),
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Err(CliError::Other(format!(
+                            "get: fetching {source} failed: {e}"
+                        )));
+                    },
+                };
+                let total = first.meta.size;
+                let etag = first.meta.e_tag.clone();
+                let last_modified = first.meta.last_modified.to_rfc2822();
+                // Guard the remaining range fetches against the object changing
+                // mid-download (the store returns a precondition error).
+                let if_match = etag.clone();
+                let first_bytes = first
+                    .bytes()
+                    .await
+                    .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
+
+                let mut sink = BlobSink::new(root, opts.compression)?;
+                let have = first_bytes.len() as u64;
+                sink.write(&first_bytes)?;
+                drop(first_bytes);
+
+                // Fetch any outstanding ranges concurrently, but consume them IN
+                // ORDER (buffered) so the blob reassembles correctly while memory
+                // stays bounded to ≈ concurrency * part_size.
+                if have < total {
+                    let mut ranges = Vec::new();
+                    let mut start = have;
+                    while start < total {
+                        let end = (start + part_size).min(total);
+                        ranges.push(start..end);
+                        start = end;
+                    }
+                    let mut parts = futures_util::stream::iter(ranges.into_iter().map(|r| {
+                        let store = Arc::clone(&store);
+                        let path = path.clone();
+                        let if_match = if_match.clone();
+                        async move {
+                            let o = OsGetOptions {
+                                range: Some(GetRange::Bounded(r)),
+                                if_match,
+                                ..OsGetOptions::default()
+                            };
+                            store.get_opts(&path, o).await?.bytes().await
+                        }
+                    }))
+                    .buffered(concurrency);
+
+                    while let Some(chunk) = parts.next().await {
+                        let chunk = chunk.map_err(|e| {
+                            CliError::Other(format!("get: reading {source} failed: {e}"))
+                        })?;
+                        sink.write(&chunk)?;
+                    }
+                }
+
+                let (b3, size_compressed, size_uncompressed) = sink.finish(root)?;
+                Ok(Some((
+                    b3,
+                    size_compressed,
+                    size_uncompressed,
+                    etag,
+                    Some(last_modified),
+                )))
+            })?;
 
         match fetched {
             // Not-Modified: just refresh the freshness clock on the existing entry.
@@ -1158,10 +1356,9 @@ mod rich {
                 })?;
                 atomic_write(&entry_path(root, &kh), &json)?;
             },
-            // Fresh bytes: store the content-addressed blob + entry metadata.
-            Some((etag, last_modified, bytes)) => {
-                let (b3, size_compressed, size_uncompressed) =
-                    store_blob(root, &bytes, opts.compression)?;
+            // Fresh bytes: the streaming sink already stored the content-addressed
+            // blob; record the entry metadata pointing at it.
+            Some((b3, size_compressed, size_uncompressed, etag, last_modified)) => {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
@@ -1170,7 +1367,7 @@ mod rich {
                         resolved_uri: source.to_string(),
                         blake3: b3,
                         etag,
-                        last_modified: Some(last_modified),
+                        last_modified,
                         ckan_resource_hash: None,
                         size_compressed,
                         size_uncompressed,

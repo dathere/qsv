@@ -4054,14 +4054,17 @@ impl Stats {
         // — which from_sample() yields only when at least one value carried a leading zero (a zip
         // code/padded id, or a zero-padded float like 007.1).
         if self.which.zero_padded_numeric && !self.zpn_disqualified && b"" != sample {
-            if sample.iter().all(u8::is_ascii_digit)
+            if sample_type == TFloat
+                || sample.iter().all(u8::is_ascii_digit)
                 || is_zero_padded_float(sample)
                 || fast_float2::parse::<f64, &[u8]>(sample).is_ok()
             {
-                // numeric-shaped: all-digit int / zero-padded code / plain float. We re-parse the
-                // plain-float case locally instead of reusing `sample_type` because a value
-                // arriving after the column widened to String short-circuits from_sample() to
-                // TString, which would otherwise wrongly disqualify e.g. a 3.5 following a 007.1.
+                // numeric-shaped: a freshly-parsed plain float (sample_type == TFloat — the common
+                // case, no extra work), an all-digit int, a zero-padded decimal code, or a plain
+                // float arriving after the column already widened to String. That last case
+                // short-circuits sample_type to TString, so we re-parse with fast_float2 to avoid
+                // wrongly disqualifying e.g. a 3.5 following a 007.1. The TFloat fast-path keeps
+                // ordinary float columns from being re-parsed here when the flag is on.
                 self.zpn_has_value = true;
             } else {
                 self.zpn_disqualified = true;

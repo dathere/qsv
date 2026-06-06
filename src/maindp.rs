@@ -57,6 +57,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 mod clitypes;
 mod cmd;
 mod config;
+mod diskcache;
 mod index;
 mod lookup;
 mod minijinja_filters;
@@ -105,6 +106,7 @@ fn build_command_list() -> String {
     exclude     Excludes the records in one CSV from another
     extdedup    Remove duplicates rows from an arbitrarily large text file
     frequency   Show frequency tables
+    get         Get tabular data from various sources into a disk cache
     geocode     Geocodes a location against the Geonames cities database
     geoconvert  Convert between spatial formats & CSV, including GeoJSON, SHP & more
     headers     Show header names
@@ -312,6 +314,7 @@ enum Command {
     Exclude,
     ExtDedup,
     Frequency,
+    Get,
     Geocode,
     Geoconvert,
     Headers,
@@ -379,6 +382,7 @@ impl Command {
             Command::Exclude => cmd::exclude::run(argv),
             Command::ExtDedup => cmd::extdedup::run(argv),
             Command::Frequency => cmd::frequency::run(argv),
+            Command::Get => cmd::get::run(argv),
             Command::Geocode => cmd::geocode::run(argv),
             Command::Geoconvert => cmd::geoconvert::run(argv),
             Command::Headers => cmd::headers::run(argv),

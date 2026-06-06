@@ -1,16 +1,16 @@
 use std::{
-    fs,
     io::Write,
     path::Path,
     time::{Instant, SystemTime},
 };
 
 use log::{debug, info};
-use reqwest::blocking::Client;
-use serde_json::Value;
-use util::expand_tilde;
 
-use crate::{CliError, util};
+// Cache-dir resolution lives in the shared `diskcache` core; re-export so
+// existing callers (`luau`, `validate`, `template`, `describegpt`) keep using
+// `lookup::set_qsv_cache_dir`.
+pub use crate::diskcache::set_qsv_cache_dir;
+use crate::{diskcache, util};
 
 pub struct LookupTableOptions {
     pub name:           String,
@@ -27,29 +27,6 @@ pub struct LookupTableResult {
     pub filepath: String,
     pub headers:  csv::StringRecord,
     pub rowcount: usize,
-}
-
-pub fn set_qsv_cache_dir(cache_dir: &str) -> Result<String, CliError> {
-    let qsv_cache_dir = if let Ok(cache_path) = std::env::var("QSV_CACHE_DIR") {
-        // if QSV_CACHE_DIR env var is set, check if it exists. If it doesn't, create it.
-        if cache_path.starts_with('~') {
-            // expand the tilde
-            let expanded_dir = expand_tilde(&cache_path).unwrap();
-            expanded_dir.to_string_lossy().to_string()
-        } else {
-            cache_path
-        }
-    } else if cache_dir.starts_with('~') {
-        // expand the tilde
-        let expanded_dir = expand_tilde(cache_dir).unwrap();
-        expanded_dir.to_string_lossy().to_string()
-    } else {
-        cache_dir.to_string()
-    };
-    if !Path::new(&qsv_cache_dir).exists() {
-        fs::create_dir_all(&qsv_cache_dir)?;
-    }
-    Ok(qsv_cache_dir)
 }
 
 /// Loads a lookup table from a local file, cache, or remote source.
@@ -149,35 +126,12 @@ pub fn load_lookup_table(
         lookup_table_uri = cached_csv_path.display().to_string();
         info!("Using cached lookup table {lookup_table_uri}");
     } else if !lookup_table_is_file {
-        // Handle remote files
-        if let Some(lookup_url) = lookup_table_uri.strip_prefix("dathere://") {
-            lookup_table_uri = format!(
-                "https://raw.githubusercontent.com/dathere/qsv-lookup-tables/main/lookup-tables/{lookup_url}"
-            );
-        }
-
-        let (lookup_ckan, resource_search) =
-            if let Some(lookup_url) = lookup_table_uri.strip_prefix("ckan://") {
-                let lookup_url = lookup_url.trim();
-                if lookup_url.ends_with('?') {
-                    lookup_table_uri = format!(
-                        "{}/resource_search?query=name:{}",
-                        opts.ckan_api_url.as_deref().unwrap_or_default(),
-                        lookup_url
-                    );
-                    lookup_table_uri.pop();
-                    (true, true)
-                } else {
-                    lookup_table_uri = format!(
-                        "{}/resource_show?id={}",
-                        opts.ckan_api_url.as_deref().unwrap_or_default(),
-                        lookup_url
-                    );
-                    (true, false)
-                }
-            } else {
-                (false, false)
-            };
+        // Handle remote files: expand dathere:// / ckan:// prefixes via the
+        // shared resolver so there is a single, audited resolution code path
+        // (used by both this lookup module and the `get` command).
+        let resolved =
+            diskcache::resolve_uri_prefix(&lookup_table_uri, opts.ckan_api_url.as_deref());
+        lookup_table_uri = resolved.url;
 
         let lookup_on_url = lookup_table_uri.to_lowercase().starts_with("http");
 
@@ -185,8 +139,8 @@ pub fn load_lookup_table(
             download_lookup_table(
                 &lookup_table_uri,
                 &cached_csv_path,
-                lookup_ckan,
-                resource_search,
+                resolved.is_ckan,
+                resolved.ckan_resource_search,
                 cache_csv_last_modified,
                 opts,
             )?;
@@ -246,9 +200,23 @@ fn download_lookup_table(
     let downloaded_at_rfc2822 = downloaded_at_dt.to_rfc2822();
 
     let lookup_csv_response = if lookup_ckan {
-        get_ckan_response(&client, lookup_table_uri, resource_search, opts)?
+        // Resolve the CKAN resource to its actual data URL (and whether the
+        // bearer token may be sent), then fetch it.
+        let ckan = diskcache::resolve_ckan_resource(
+            &client,
+            lookup_table_uri,
+            resource_search,
+            opts.ckan_api_url.as_deref(),
+            opts.ckan_token.as_deref(),
+        )?;
+        let auth = if ckan.send_auth {
+            opts.ckan_token.as_deref()
+        } else {
+            None
+        };
+        diskcache::http_get_conditional(&client, &ckan.data_url, None, auth)?
     } else {
-        get_http_response(&client, lookup_table_uri, cache_csv_last_modified)?
+        diskcache::http_get_conditional(&client, lookup_table_uri, cache_csv_last_modified, None)?
     };
 
     let status = lookup_csv_response.status();
@@ -301,119 +269,6 @@ fn download_lookup_table(
     )?;
 
     Ok(())
-}
-
-fn get_ckan_response(
-    client: &Client,
-    uri: &str,
-    resource_search: bool,
-    opts: &LookupTableOptions,
-) -> Result<reqwest::blocking::Response, Box<dyn std::error::Error>> {
-    let mut headers = reqwest::header::HeaderMap::new();
-
-    if let Some(token) = &opts.ckan_token {
-        headers.insert(
-            reqwest::header::AUTHORIZATION,
-            reqwest::header::HeaderValue::from_str(token)?,
-        );
-    }
-
-    // For `ckan://<name>?` (resource_search=true) the caller passes a
-    // `resource_search?query=name:<name>` URI; resolve it to a resource_id
-    // and build the corresponding `resource_show` URI. For `ckan://<id>`
-    // (resource_search=false) the caller already passes a `resource_show`
-    // URI directly.
-    let resource_show_uri: String = if resource_search {
-        let resource_search_result = client
-            .get(uri)
-            .headers(headers.clone())
-            .send()?
-            .error_for_status()?
-            .text()?;
-        let resource_search_json: Value = serde_json::from_str(&resource_search_result)?;
-
-        let resource_id = resource_search_json["result"]["results"][0]["id"]
-            .as_str()
-            .ok_or("Cannot find resource name")?;
-
-        format!(
-            "{}/resource_show?id={}",
-            opts.ckan_api_url.as_deref().unwrap_or_default(),
-            resource_id
-        )
-    } else {
-        uri.to_string()
-    };
-
-    // resource_show returns JSON with the actual data URL inside `result.url`.
-    // Both ckan:// forms must follow that redirect to fetch the CSV; without
-    // this, the JSON envelope itself was being cached as if it were CSV.
-    let resource_show_result = client
-        .get(&resource_show_uri)
-        .headers(headers.clone())
-        .send()?
-        .error_for_status()?
-        .text()?;
-    let resource_show_json: Value = serde_json::from_str(&resource_show_result)?;
-
-    let url = resource_show_json["result"]["url"]
-        .as_str()
-        .ok_or("Cannot get resource URL from resource_show JSON response")?;
-
-    // Strip the AUTHORIZATION header before fetching the resource if it
-    // lives on a different origin than the CKAN API — CKAN admins can
-    // register external resource URLs, and the bearer token must not
-    // leak to third-party hosts. Fail-secure: any parse failure or
-    // missing host is treated as cross-origin. Origin comparison
-    // covers scheme + host + port (RFC 6454).
-    let ckan_url_parsed = opts
-        .ckan_api_url
-        .as_deref()
-        .and_then(|u| reqwest::Url::parse(u).ok());
-    let resource_url_parsed = reqwest::Url::parse(url).ok();
-    let same_origin = match (ckan_url_parsed.as_ref(), resource_url_parsed.as_ref()) {
-        (Some(a), Some(b)) => {
-            a.host_str().is_some()
-                && a.host_str() == b.host_str()
-                && a.scheme() == b.scheme()
-                && a.port_or_known_default() == b.port_or_known_default()
-        },
-        _ => false,
-    };
-    let mut resource_headers = headers;
-    if !same_origin {
-        resource_headers.remove(reqwest::header::AUTHORIZATION);
-    }
-
-    client
-        .get(url)
-        .headers(resource_headers)
-        .send()
-        .map_err(Into::into)
-}
-
-fn get_http_response(
-    client: &Client,
-    uri: &str,
-    cache_csv_last_modified: Option<SystemTime>,
-) -> Result<reqwest::blocking::Response, Box<dyn std::error::Error>> {
-    let mut headers = reqwest::header::HeaderMap::new();
-
-    if let Some(modified) = cache_csv_last_modified {
-        let last_modified: chrono::DateTime<chrono::Utc> = modified.into();
-        // RFC 7231 §7.1.1.1 IMF-fixdate format: "Sun, 06 Nov 1994 08:49:37 GMT".
-        // chrono's to_rfc2822() emits "+0000" instead of "GMT", which strict
-        // origins/CDNs may reject and re-serve the full body.
-        let if_modified_since = last_modified
-            .format("%a, %d %b %Y %H:%M:%S GMT")
-            .to_string();
-        headers.insert(
-            reqwest::header::IF_MODIFIED_SINCE,
-            reqwest::header::HeaderValue::from_str(&if_modified_since)?,
-        );
-    }
-
-    client.get(uri).headers(headers).send().map_err(Into::into)
 }
 
 fn write_cache_file(

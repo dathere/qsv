@@ -462,6 +462,16 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
+# Polars (rev 1c11555 / rs-0.54.4) patches object_store to a fork that adds the
+# public `ClientOptions::with_dns_resolver` method (used in polars-io's
+# get_client_options). Cargo ignores [patch] sections from dependencies, so we
+# must mirror polars' patch here in the root manifest, otherwise polars-io fails
+# to build against stock object_store 0.13.2 from crates.io with:
+#   error[E0599]: no method named `with_dns_resolver` found for struct `ClientOptions`
+# This also applies to qsv's own direct `object_store` dep (get_cloud feature).
+# Remove this patch once polars/object_store ship the method in a crates.io release.
+object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
+
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
 # It's qsv's policy to use the latest upstream of polars/py-polars
@@ -480,9 +490,9 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=
+# QSV_POLARS_REV=rs-0.54.4:1c11555
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
-# polars = { git = "https://github.com/pola-rs/polars", rev = "ba304b8", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "1c11555", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

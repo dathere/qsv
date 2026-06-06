@@ -389,8 +389,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     DEFAULT_REDIS_CONN_STRING.set(fp_redis_conn_str).unwrap();
 
     // set memcache size
+    // clamp to >=1: the LruCache builder rejects max_size == 0 (e.g. user passed
+    // --mem-cache-size 0), which would otherwise panic when the cache is built.
     // safety: OnceLock set exactly once at startup
-    MEM_CACHE_SIZE.set(args.flag_mem_cache_size).unwrap();
+    MEM_CACHE_SIZE.set(args.flag_mem_cache_size.max(1)).unwrap();
 
     // safety: OnceLock set exactly once at startup
     TIMEOUT_FP_SECS

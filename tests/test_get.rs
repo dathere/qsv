@@ -920,3 +920,49 @@ fn get_s3_identity_scopes_cache_key() {
         "different store identities must not share a cache entry (no cross-store revalidation)"
     );
 }
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_env_cloud_opt_override_refresh_stable() {
+    // Regression (roborev #2757): when the same key comes from both the
+    // environment and --cloud-opt, the persisted identity must collapse to the
+    // effective (last-wins) value, matching the store object_store builds. A
+    // stale dc: refresh — even under a CHANGED ambient env var — must then
+    // resolve to the SAME cache entry (revalidate, not re-download).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_env_cloud_opt_override_refresh_stable");
+    let cache_dir = wrk.path("qsvcache");
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    // env says us-east-1, --cloud-opt overrides to eu-west-1 (the effective
+    // store). --ttl 0 makes the entry immediately stale so the dc: read refreshes.
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .env("AWS_REGION", "us-east-1")
+        .args(["--name", "r.csv", "--ttl", "0"])
+        .args(["--cloud-opt", &format!("aws_endpoint={endpoint}")])
+        .args(["--cloud-opt", "aws_region=eu-west-1"])
+        .args(["--cloud-opt", "aws_allow_http=true"])
+        .args(["--cloud-opt", "aws_skip_signature=true"])
+        .arg("s3://test-bucket/states.csv");
+    wrk.assert_success(&mut g);
+    assert_eq!(server.body_sends(), 1, "initial fetch downloads once");
+
+    // stale dc: read with a DIFFERENT ambient region; the persisted identity
+    // (replayed as high-precedence --cloud-opt) must win, keeping the same key.
+    let mut count = wrk.command("count");
+    count
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .env("AWS_REGION", "ap-south-1")
+        .arg("dc:r.csv");
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(got, "4", "dc:r.csv should resolve to the cached data");
+
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "stale refresh must revalidate the SAME entry (304), not re-download under a changed env \
+         var"
+    );
+}

@@ -1022,21 +1022,29 @@ mod rich {
     }
 
     /// The non-secret, identity-determining subset of cloud config options,
-    /// lower-cased (object_store treats keys case-insensitively), sorted and
-    /// de-duplicated. Two fetches of the same URL against different
-    /// endpoints/regions/accounts yield different identities (hence different
-    /// cache entries); credentials are excluded so they never reach the on-disk
-    /// cache key or the persisted entry.
+    /// lower-cased (object_store treats keys case-insensitively) and reduced to a
+    /// single value per key using the **same last-wins precedence object_store
+    /// applies when building the store** (`cloud_opts_for` lists env first, then
+    /// `--cloud-opt`, and `parse_url_opts` folds options so the later value
+    /// overrides). The result is sorted by key (BTreeMap iteration order).
+    ///
+    /// Collapsing per key — rather than de-duping whole `(key, value)` pairs — is
+    /// what keeps the cache key aligned with the *effective* store and stable
+    /// across `dc:` auto-refresh: replaying the persisted identity as
+    /// high-precedence `--cloud-opt` makes it win over any (even changed) ambient
+    /// env var, so the recomputed key matches the original. Credentials are
+    /// excluded so they never reach the on-disk cache key or the persisted entry.
     #[cfg(feature = "get_cloud")]
     fn cloud_identity_opts(opts: &[(String, String)]) -> Vec<(String, String)> {
-        let mut id: Vec<(String, String)> = opts
-            .iter()
-            .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
-            .filter(|(k, _)| !is_secret_opt_key(k))
-            .collect();
-        id.sort();
-        id.dedup();
-        id
+        let mut id: std::collections::BTreeMap<String, String> = std::collections::BTreeMap::new();
+        for (k, v) in opts {
+            let lk = k.to_ascii_lowercase();
+            if !is_secret_opt_key(&lk) {
+                // Later occurrence wins, mirroring the store builder's fold.
+                id.insert(lk, v.clone());
+            }
+        }
+        id.into_iter().collect()
     }
 
     /// Build a cloud cache key that scopes `source` by its resolved store

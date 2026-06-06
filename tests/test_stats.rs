@@ -567,7 +567,8 @@ stats_no_infer_dates_tests!(
     "true"
 );
 // Real-world zero-padded *decimal code* systems cited by @kulnor in PR #3938.
-// All parse as Float, yet every value has a leading-zero integer part, so they are flagged.
+// Every value has a leading-zero integer part, so qsv now infers these as String (to preserve the
+// padding, like zip codes) and the column is flagged. See stats_zero_padded_numeric_infers_string.
 stats_no_infer_dates_tests!(
     stats_zero_padded_numeric_icd9,
     "zero_padded_numeric",
@@ -801,13 +802,14 @@ fn stats_zero_padded_numeric_columns() {
     assert_eq!(zpn["mixed"], "");
     // price: Float, all plain (no leading-zero padding) -> not flagged
     assert_eq!(zpn["price"], "");
-    // icd9: Float, every value a zero-padded decimal code -> flagged
+    // icd9: every value a zero-padded decimal code -> inferred String to preserve padding ->
+    // flagged
     assert_eq!(zpn["icd9"], "true");
     // frac: Float, ordinary fractions (single 0 before the dot) -> not flagged
     assert_eq!(zpn["frac"], "");
     // trailing: Float, pure trailing-zero codes (7.10) are out of scope -> not flagged
     assert_eq!(zpn["trailing"], "");
-    // mixed_float: Float, at least one zero-padded value (007.1) among plain floats -> flagged
+    // mixed_float: a zero-padded value (007.1) widens the column to String -> flagged
     assert_eq!(zpn["mixed_float"], "true");
 }
 
@@ -898,6 +900,41 @@ fn stats_zero_padded_numeric_real_world_limitations() {
         got_map["ordinary_frac"],
         ("Float".to_string(), String::new())
     );
+}
+
+// Zero-padded floats (ICD-9 / Dewey / HS decimal codes) are inferred as String to preserve their
+// leading zeros, mirroring how zero-padded integers (zip codes) are already kept as text. This is
+// the data-integrity default and is NOT gated behind --zero-padded-numeric.
+#[test]
+fn stats_zero_padded_numeric_infers_string() {
+    let wrk = Workdir::new("stats_zero_padded_numeric_infers_string");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["icd9", "plain_float"],
+            svec!["007.1", "1.5"],
+            svec!["008.45", "2.5"],
+            svec!["038.11", "3.5"],
+        ],
+    );
+
+    // type inference flips to String even without --zero-padded-numeric
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--typesonly").arg("in.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+
+    let header = &got[0];
+    let field_idx = header.iter().position(|h| h == "field").unwrap();
+    let type_idx = header.iter().position(|h| h == "type").unwrap();
+    let mut types: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    for row in &got[1..] {
+        types.insert(row[field_idx].clone(), row[type_idx].clone());
+    }
+
+    // zero-padded decimal codes -> String (padding preserved)
+    assert_eq!(types["icd9"], "String");
+    // plain floats are unaffected -> still Float
+    assert_eq!(types["plain_float"], "Float");
 }
 
 #[test]

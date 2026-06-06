@@ -406,6 +406,10 @@ mod rich {
         pub ckan_api_url:   Option<String>,
         pub ckan_token:     Option<String>,
         pub timeout_secs:   u16,
+        /// Extra `key=value` config pairs for cloud (`get_cloud`) sources,
+        /// overlaid on the `AWS_*`/`AZURE_*`/`GOOGLE_*` environment. Ignored for
+        /// non-cloud sources. Empty for `dc:` auto-refresh (env-only).
+        pub cloud_opts:     Vec<String>,
     }
 
     type BoxError = http_cache::BoxError;
@@ -955,6 +959,167 @@ mod rich {
         Ok(entry.meta)
     }
 
+    /// True if `source` uses a cloud object-store URL scheme handled by
+    /// `object_store` (`s3://`, `gs://`, `az://` and friends). Detection is
+    /// compiled in even without `get_cloud` so `get_resource` can emit a precise
+    /// "rebuild with --features get_cloud" hint rather than a generic
+    /// "unsupported source" error.
+    fn is_cloud_scheme(source: &str) -> bool {
+        let lower = source.to_ascii_lowercase();
+        const SCHEMES: [&str; 8] = [
+            "s3://", "s3a://", "gs://", "az://", "adl://", "azure://", "abfs://", "abfss://",
+        ];
+        SCHEMES.iter().any(|s| lower.starts_with(s))
+    }
+
+    /// Build the object_store config option list for a cloud fetch: the
+    /// `AWS_*`/`AZURE_*`/`GOOGLE_*` environment (object_store's `parse_url_opts`
+    /// does NOT read the environment itself), overlaid with any user
+    /// `--cloud-opt key=value` pairs, which take precedence. The environment is
+    /// filtered to provider prefixes so unrelated vars (e.g. a generic `ENDPOINT`
+    /// or `REGION`) can't be silently picked up as store config.
+    #[cfg(feature = "get_cloud")]
+    fn cloud_opts_for(extra: &[String]) -> Vec<(String, String)> {
+        let mut opts: Vec<(String, String)> = std::env::vars()
+            .filter(|(k, _)| {
+                let u = k.to_ascii_uppercase();
+                u.starts_with("AWS_") || u.starts_with("AZURE_") || u.starts_with("GOOGLE_")
+            })
+            .collect();
+        for kv in extra {
+            if let Some((k, v)) = kv.split_once('=') {
+                opts.push((k.trim().to_string(), v.to_string()));
+            }
+        }
+        opts
+    }
+
+    /// Fetch a cloud object-store source (`s3://`, `gs://`, `az://`, …) into the
+    /// cache, with ETag-based conditional revalidation (parity with the HTTP
+    /// path's "don't re-download unchanged" guarantee). Mirrors `ingest_local`
+    /// plus the alias/orphan-cleanup tail of `get_resource`.
+    #[cfg(feature = "get_cloud")]
+    fn ingest_cloud(opts: &GetOptions, root: &Path, source: &str) -> CliResult<CacheEntry> {
+        use object_store::{GetOptions as OsGetOptions, ObjectStore, parse_url_opts};
+        use url::Url;
+
+        let url = Url::parse(source)
+            .map_err(|e| CliError::Other(format!("get: invalid cloud URL '{source}': {e}")))?;
+        let (store, path) =
+            parse_url_opts(&url, cloud_opts_for(&opts.cloud_opts)).map_err(|e| {
+                CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
+            })?;
+
+        let cache_key = format!("CLOUD:{source}");
+        let kh = keyhash(&cache_key);
+        let name = opts.name.clone().unwrap_or_else(|| derive_name(source));
+
+        let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
+
+        // --refresh never: serve the cached copy without touching the origin.
+        // `take()` consumes `existing` only on the Never+cached path (which then
+        // returns); the not-Never and Never-with-empty-cache paths leave it
+        // intact to drive conditional revalidation / the not-modified arm below.
+        if opts.refresh_policy == RefreshPolicy::Never
+            && let Some(mut entry) = existing.take()
+        {
+            bind_alias(root, &name, &kh)?;
+            ensure_indexed(root, &mut entry)?;
+            let mut meta = entry.meta;
+            meta.logical_name = name;
+            return Ok(meta);
+        }
+
+        // --force / --refresh always -> unconditional GET; otherwise send a
+        // conditional If-None-Match when we already hold an ETag.
+        let unconditional = opts.force || opts.refresh_policy == RefreshPolicy::Always;
+        let mut gopts = OsGetOptions::default();
+        if !unconditional
+            && let Some(entry) = &existing
+            && let Some(tag) = &entry.meta.etag
+        {
+            gopts.if_none_match = Some(tag.clone());
+        }
+
+        let rt = tokio::runtime::Runtime::new()?;
+        let fetched = rt.block_on(async {
+            match store.get_opts(&path, gopts).await {
+                Err(object_store::Error::NotModified { .. }) => Ok(None),
+                Ok(result) => {
+                    let etag = result.meta.e_tag.clone();
+                    let last_modified = result.meta.last_modified.to_rfc2822();
+                    let bytes = result.bytes().await.map_err(|e| {
+                        CliError::Other(format!("get: reading {source} failed: {e}"))
+                    })?;
+                    Ok(Some((etag, last_modified, bytes)))
+                },
+                Err(e) => Err(CliError::Other(format!(
+                    "get: fetching {source} failed: {e}"
+                ))),
+            }
+        })?;
+
+        match fetched {
+            // Not-Modified: just refresh the freshness clock on the existing entry.
+            None => {
+                let mut entry = existing.ok_or_else(|| {
+                    CliError::Other(format!(
+                        "get: {source} returned not-modified but no cached entry exists"
+                    ))
+                })?;
+                entry.meta.downloaded_at = unix_now();
+                let json = serde_json::to_vec(&entry).map_err(|e| {
+                    CliError::Other(format!("get: failed to serialize cache entry: {e}"))
+                })?;
+                atomic_write(&entry_path(root, &kh), &json)?;
+            },
+            // Fresh bytes: store the content-addressed blob + entry metadata.
+            Some((etag, last_modified, bytes)) => {
+                let (b3, size_compressed, size_uncompressed) =
+                    store_blob(root, &bytes, opts.compression)?;
+                let entry = StoredEntry {
+                    meta: CacheEntry {
+                        logical_name: name.clone(),
+                        cache_key: cache_key.clone(),
+                        source_uri: source.to_string(),
+                        resolved_uri: source.to_string(),
+                        blake3: b3,
+                        etag,
+                        last_modified: Some(last_modified),
+                        ckan_resource_hash: None,
+                        size_compressed,
+                        size_uncompressed,
+                        record_count: None,
+                        indexed: false,
+                        downloaded_at: unix_now(),
+                        ttl_secs: opts.ttl_secs,
+                        refresh_policy: opts.refresh_policy,
+                        compression: opts.compression,
+                    },
+                    http: None,
+                };
+                write_entry(root, &entry)?;
+            },
+        }
+
+        // Bind the requested name to this entry and reclaim an orphaned previous
+        // target (the same two-level alias bookkeeping as `get_resource`).
+        let prev_target = alias_keyhash(root, &name)?;
+        bind_alias(root, &name, &kh)?;
+        if let Some(old) = prev_target
+            && old != kh
+            && aliases_pointing_to(root, &old).is_empty()
+        {
+            delete_entry_by_keyhash(root, &old);
+        }
+
+        let mut entry = load_entry_at(&entry_path(root, &kh))?;
+        ensure_indexed(root, &mut entry)?;
+        let mut meta = entry.meta;
+        meta.logical_name = name;
+        Ok(meta)
+    }
+
     /// Fetch (or revalidate) `opts.source` into the cache, returning its metadata.
     pub fn get_resource(opts: &GetOptions) -> CliResult<CacheEntry> {
         let root = get_root(&opts.cache_dir);
@@ -966,13 +1131,29 @@ mod rich {
         let is_http = resolved.url.to_ascii_lowercase().starts_with("http");
 
         if !is_http {
+            if is_cloud_scheme(&opts.source) {
+                #[cfg(feature = "get_cloud")]
+                {
+                    return ingest_cloud(opts, &root, &opts.source);
+                }
+                #[cfg(not(feature = "get_cloud"))]
+                {
+                    return Err(CliError::Other(format!(
+                        "get: cloud source '{}' requires cloud support. Rebuild qsv with \
+                         `--features get_cloud` (already included in the distrib, qsvmcp and \
+                         datapusher_plus builds).",
+                        opts.source
+                    )));
+                }
+            }
             let local_path = Path::new(&opts.source);
             if local_path.exists() {
                 return ingest_local(opts, &root, local_path);
             }
             return Err(CliError::Other(format!(
                 "get: unsupported source '{}'. Supported: local file, http(s)://, dathere://, \
-                 ckan://. (s3/az/gs cloud storage and sftp are planned for a later release.)",
+                 ckan://, and (with the get_cloud feature) s3://, gs:// and az://. (sftp is \
+                 planned for a later release.)",
                 opts.source
             )));
         }
@@ -1120,6 +1301,9 @@ mod rich {
                         .or_else(|| Some(DEFAULT_CKAN_API.to_string())),
                     ckan_token:     std::env::var("QSV_CKAN_TOKEN").ok(),
                     timeout_secs:   30,
+                    // Auto-refresh of a cloud `dc:` entry relies on ambient
+                    // cloud credentials from the environment (no `--cloud-opt`).
+                    cloud_opts:     Vec::new(),
                 };
                 // Best-effort: on refresh failure, fall back to the stale copy.
                 if get_resource(&refresh_opts).is_ok()
@@ -1242,5 +1426,56 @@ mod rich {
             delete_entry_by_keyhash(&root, kh);
         }
         Ok(stale_keys.len())
+    }
+
+    /// Load the entry for `name`, apply `mutate`, and persist it back in place.
+    /// Errors if `name` is not a cached alias.
+    fn update_entry(
+        cache_dir: &str,
+        name: &str,
+        mutate: impl FnOnce(&mut StoredEntry),
+    ) -> CliResult<()> {
+        let root = get_root(cache_dir);
+        let kh = alias_keyhash(&root, name)?.ok_or_else(|| {
+            CliError::Other(format!(
+                "get: cache entry '{name}' not found. List cached names with `qsv get cache-list`."
+            ))
+        })?;
+        let mut entry = load_entry_at(&entry_path(&root, &kh))?;
+        mutate(&mut entry);
+        let json = serde_json::to_vec(&entry)
+            .map_err(|e| CliError::Other(format!("get: failed to serialize cache entry: {e}")))?;
+        atomic_write(&entry_path(&root, &kh), &json)?;
+        Ok(())
+    }
+
+    /// Set a cache entry's TTL (seconds; -1 = never expire) by name. TTL is an
+    /// entry-level property, so this affects every alias pointing at the entry.
+    pub fn set_ttl(cache_dir: &str, name: &str, ttl_secs: i64) -> CliResult<()> {
+        update_entry(cache_dir, name, |e| e.meta.ttl_secs = ttl_secs)
+    }
+
+    /// Set a cache entry's refresh policy by name. Like TTL, this is entry-level
+    /// and affects every alias pointing at the entry.
+    pub fn set_policy(cache_dir: &str, name: &str, policy: RefreshPolicy) -> CliResult<()> {
+        update_entry(cache_dir, name, |e| e.meta.refresh_policy = policy)
+    }
+
+    /// Verify cached blob integrity: recompute the BLAKE3 of each alias's stored
+    /// (decompressed) blob and compare it to the recorded hash. Returns one
+    /// `(name, ok)` pair per alias — `ok == false` means the blob is missing,
+    /// unreadable, or its content no longer matches its recorded hash.
+    pub fn verify(cache_dir: &str) -> CliResult<Vec<(String, bool)>> {
+        let root = get_root(cache_dir);
+        let entries = list_entries(cache_dir)?;
+        let mut out = Vec::with_capacity(entries.len());
+        for e in entries {
+            let ok = match read_blob(&root, &e.blake3, e.compression) {
+                Ok(body) => blake3::hash(&body).to_hex().to_string() == e.blake3,
+                Err(_) => false,
+            };
+            out.push((e.logical_name, ok));
+        }
+        Ok(out)
     }
 }

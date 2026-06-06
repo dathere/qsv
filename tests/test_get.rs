@@ -72,6 +72,10 @@ async fn run_webserver(
             .service(web::resource("/states.csv").to(serve_states))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
+            // Path-style S3 object: object_store issues `GET /{bucket}/{key}`
+            // against the endpoint override. Reuses the ETag/304 handler so the
+            // cloud path can assert revalidation just like the HTTP path.
+            .service(web::resource("/test-bucket/states.csv").to(serve_states))
     });
 
     let bound = match server_builder.bind((BIND_HOST, 0)) {
@@ -625,4 +629,257 @@ fn get_cache_prune_all() {
         0,
         "prune should have removed the blob"
     );
+}
+
+// Overwrite the first content blob found with `bytes`, simulating on-disk
+// corruption. Returns true if a content blob was found and overwritten.
+fn corrupt_first_content_blob(cache_dir: &Path, bytes: &[u8]) -> bool {
+    let blobs = cache_dir.join("get").join("blobs");
+    if let Ok(walk) = std::fs::read_dir(&blobs) {
+        for shard1 in walk.flatten() {
+            let Ok(s2) = std::fs::read_dir(shard1.path()) else {
+                continue;
+            };
+            for shard2 in s2.flatten() {
+                let Ok(files) = std::fs::read_dir(shard2.path()) else {
+                    continue;
+                };
+                for f in files.flatten() {
+                    let name = f.file_name().to_string_lossy().to_string();
+                    let is_content = (name.ends_with(".zst") && !name.ends_with(".idx.zst"))
+                        || name.ends_with(".raw");
+                    if is_content {
+                        std::fs::write(f.path(), bytes).unwrap();
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+#[test]
+fn get_cache_set_ttl() {
+    let wrk = Workdir::new("get_cache_set_ttl");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    // two logical names for the same local file share one entry
+    for name in ["a.csv", "b.csv"] {
+        let mut g = wrk.command("get");
+        g.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", name])
+            .arg("src.csv");
+        wrk.assert_success(&mut g);
+    }
+
+    let mut set = wrk.command("get");
+    set.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-set-ttl", "a.csv", "--ttl", "12345"]);
+    wrk.assert_success(&mut set);
+
+    // TTL is an entry-level property -> both shared aliases reflect the change
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(
+        stdout.matches("\"ttl_secs\": 12345").count(),
+        2,
+        "both aliases of the shared entry should show the new TTL:\n{stdout}"
+    );
+}
+
+#[test]
+fn get_cache_set_policy() {
+    let wrk = Workdir::new("get_cache_set_policy");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut g);
+
+    let mut set = wrk.command("get");
+    set.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-set-policy", "x.csv", "--refresh", "never"]);
+    wrk.assert_success(&mut set);
+
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let out = wrk.output(&mut list);
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"refresh_policy\": \"never\""),
+        "refresh policy should be updated to never:\n{stdout}"
+    );
+
+    // an unknown name is an error
+    let mut bad = wrk.command("get");
+    bad.env("QSV_CACHE_DIR", &cache_dir).args([
+        "cache-set-policy",
+        "nope.csv",
+        "--refresh",
+        "always",
+    ]);
+    wrk.assert_err(&mut bad);
+}
+
+#[test]
+fn get_cache_verify_ok() {
+    let wrk = Workdir::new("get_cache_verify_ok");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut g);
+
+    let mut v = wrk.command("get");
+    v.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--verify"]);
+    let out = wrk.output(&mut v);
+    assert!(
+        out.status.success(),
+        "verify of a healthy cache should succeed"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("OK") && !stdout.contains("FAIL"),
+        "verify should report OK:\n{stdout}"
+    );
+}
+
+#[test]
+fn get_cache_verify_detects_corruption() {
+    let wrk = Workdir::new("get_cache_verify_detects_corruption");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut g);
+
+    assert!(
+        corrupt_first_content_blob(&cache_dir, b"not a valid zstd blob"),
+        "expected a content blob to corrupt"
+    );
+
+    let mut v = wrk.command("get");
+    v.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--verify"]);
+    let out = wrk.output(&mut v);
+    assert!(
+        !out.status.success(),
+        "verify must exit non-zero when a blob fails its integrity check"
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("FAIL"),
+        "verify should report FAIL for the corrupted blob:\n{stdout}"
+    );
+}
+
+// Build a `get` command that targets the mock S3 endpoint via path-style,
+// anonymous (skip_signature) access over plain HTTP.
+#[cfg(feature = "get_cloud")]
+fn s3_get_cmd(
+    wrk: &Workdir,
+    cache_dir: &Path,
+    endpoint: &str,
+    name: &str,
+) -> std::process::Command {
+    let mut c = wrk.command("get");
+    c.env("QSV_CACHE_DIR", cache_dir)
+        .args(["--name", name])
+        .args(["--cloud-opt", &format!("aws_endpoint={endpoint}")])
+        .args(["--cloud-opt", "aws_region=us-east-1"])
+        .args(["--cloud-opt", "aws_allow_http=true"])
+        .args(["--cloud-opt", "aws_skip_signature=true"])
+        .arg("s3://test-bucket/states.csv");
+    c
+}
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_fetch_and_dc_read() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_fetch_and_dc_read");
+    let cache_dir = wrk.path("qsvcache");
+    // Plain HTTP to the in-process mock acting as an S3 endpoint (not prod).
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    let mut g = s3_get_cmd(&wrk, &cache_dir, &endpoint, "states.csv");
+    wrk.assert_success(&mut g);
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "first s3 get should download the body"
+    );
+
+    // read the cached object back via the dc: prefix (offline)
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
+    let got: String = wrk.stdout(&mut count);
+    assert_eq!(got, "4");
+}
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_etag_revalidation() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_etag_revalidation");
+    let cache_dir = wrk.path("qsvcache");
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    let mut first = s3_get_cmd(&wrk, &cache_dir, &endpoint, "states.csv");
+    wrk.assert_success(&mut first);
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "first s3 get should download the body"
+    );
+
+    // second fetch must revalidate via If-None-Match -> 304, no re-download
+    let mut second = s3_get_cmd(&wrk, &cache_dir, &endpoint, "states.csv");
+    wrk.assert_success(&mut second);
+    assert_eq!(
+        server.body_sends(),
+        1,
+        "second s3 get should revalidate (304), not re-download the body"
+    );
+}
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_missing_object_errors_cleanly() {
+    // A cloud object that doesn't exist (404 from the store) must fail with a
+    // clean CliError (non-zero exit), not a panic. Hitting the live mock with an
+    // unregistered key yields a deterministic, fast 404 (no retry storm).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_missing_object_errors_cleanly");
+    let cache_dir = wrk.path("qsvcache");
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .args(["--cloud-opt", &format!("aws_endpoint={endpoint}")])
+        .args(["--cloud-opt", "aws_region=us-east-1"])
+        .args(["--cloud-opt", "aws_allow_http=true"])
+        .args(["--cloud-opt", "aws_skip_signature=true"])
+        .arg("s3://test-bucket/does-not-exist.csv");
+    wrk.assert_err(&mut g);
 }

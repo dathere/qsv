@@ -16,8 +16,12 @@ Supported sources:
     dathere://<path>          datHere qsv-lookup-tables repo
     ckan://<id>               a CKAN resource by id
     ckan://<name>?            a CKAN resource by name (resource_search)
-(AWS S3, Azure Blob & Google Cloud Storage, and sftp:// are planned for a
-later release.)
+    s3://<bucket>/<key>       AWS S3 / S3-compatible       (get_cloud feature)
+    gs://<bucket>/<key>       Google Cloud Storage         (get_cloud feature)
+    az://<container>/<key>    Azure Blob Storage           (get_cloud feature)
+Cloud credentials are read from the standard AWS_*/AZURE_*/GOOGLE_* environment
+variables (and IAM roles); use --cloud-opt for one-off overrides such as region
+or endpoint. (sftp:// is planned for a later release.)
 
 Examples:
     Fetch a CSV into the cache and read it back with another command:
@@ -27,34 +31,51 @@ Examples:
     Seed a CKAN reference table:
         $ qsv get "ckan://covid-vaccinations?" --name vax.csv
 
+    Fetch from cloud object storage (requires the get_cloud feature):
+        $ qsv get s3://my-bucket/data.csv --name data.csv
+        $ qsv get gs://my-bucket/data.csv --cloud-opt skip_signature=true
+
     Show what's in the cache, then prune old entries:
         $ qsv get cache-list
         $ qsv get cache-prune --older-than=30d
 
+    Verify cached blob integrity, then retune an entry's TTL & policy:
+        $ qsv get cache-list --verify
+        $ qsv get cache-set-ttl data.csv --ttl=86400
+        $ qsv get cache-set-policy data.csv --refresh=never
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_get.rs.
 
 Usage:
-    qsv get cache-list [options]
+    qsv get cache-list [--verify] [options]
     qsv get cache-info [options]
     qsv get cache-clear [options]
     qsv get cache-prune --older-than=<val> [options]
-    qsv get [options] <source>...
+    qsv get cache-set-ttl <name> --ttl=<secs> [options]
+    qsv get cache-set-policy <name> --refresh=<policy> [options]
+    qsv get [--cloud-opt <kv>...] [options] <source>...
     qsv get --help
 
 get arguments:
     <source>...            One or more sources to fetch into the cache.
+    <name>                 For cache-set-ttl / cache-set-policy: the cached
+                           logical name (`dc:` handle) to modify.
 
 get options:
     --name <name>          Logical cache name (the `dc:` handle) for the fetched
                            entry. Defaults to the source's terminal path segment.
                            Ignored when multiple sources are given.
     --ttl <secs>           Per-entry time-to-live in seconds. -1 = never expire.
-                           [default: 2419200]
+                           Also the value applied by cache-set-ttl. [default: 2419200]
     --refresh <policy>     Staleness policy for `dc:` use: on-stale, always or never.
-                           [default: on-stale]
+                           Also the value applied by cache-set-policy. [default: on-stale]
     --compress <algo>      Transparent blob compression: zstd or none.
                            [default: zstd]
     --force                Re-fetch even if a fresh cached copy exists.
+    --cloud-opt <kv>       Extra cloud object-store config as a `key=value` pair
+                           (repeatable), e.g. region=us-east-1 or
+                           skip_signature=true. Overrides the
+                           AWS_*/AZURE_*/GOOGLE_* environment. (get_cloud only)
     --ckan-api <url>       CKAN Action API base URL. Overrides the QSV_CKAN_API
                            env var. [default: https://data.dathere.com/api/3/action]
     --ckan-token <token>   CKAN API token. Overrides the QSV_CKAN_TOKEN env var.
@@ -63,6 +84,8 @@ get options:
                            Accepts seconds, or a value with an s/m/h/d/w suffix
                            (e.g. 3600, 90m, 30d, 2w).
     --json                 For cache-list/cache-info: output JSON instead of a table.
+    --verify               For cache-list: recompute each cached blob's BLAKE3 and
+                           report OK/FAIL per name (exits non-zero on any failure).
 
 Common options:
     -h, --help             Display this message
@@ -83,24 +106,29 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_source:      Vec<String>,
-    flag_name:       Option<String>,
-    flag_cache_dir:  String,
-    flag_ttl:        i64,
-    flag_refresh:    String,
-    flag_compress:   String,
-    flag_force:      bool,
-    flag_ckan_api:   Option<String>,
-    flag_ckan_token: Option<String>,
-    flag_timeout:    u16,
-    flag_older_than: Option<String>,
-    flag_json:       bool,
-    flag_output:     Option<String>,
-    flag_quiet:      bool,
-    cmd_cache_list:  bool,
-    cmd_cache_info:  bool,
-    cmd_cache_clear: bool,
-    cmd_cache_prune: bool,
+    arg_source:           Vec<String>,
+    arg_name:             Option<String>,
+    flag_name:            Option<String>,
+    flag_cache_dir:       String,
+    flag_ttl:             i64,
+    flag_refresh:         String,
+    flag_compress:        String,
+    flag_force:           bool,
+    flag_cloud_opt:       Vec<String>,
+    flag_ckan_api:        Option<String>,
+    flag_ckan_token:      Option<String>,
+    flag_timeout:         u16,
+    flag_older_than:      Option<String>,
+    flag_json:            bool,
+    flag_verify:          bool,
+    flag_output:          Option<String>,
+    flag_quiet:           bool,
+    cmd_cache_list:       bool,
+    cmd_cache_info:       bool,
+    cmd_cache_clear:      bool,
+    cmd_cache_prune:      bool,
+    cmd_cache_set_ttl:    bool,
+    cmd_cache_set_policy: bool,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -109,7 +137,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // ---- cache-management subcommands ----
     if args.cmd_cache_list || args.cmd_cache_info {
-        return run_cache_list(&cache_dir, args.flag_json, args.cmd_cache_info);
+        return run_cache_list(
+            &cache_dir,
+            args.flag_json,
+            args.cmd_cache_info,
+            args.flag_verify,
+        );
     }
     if args.cmd_cache_clear {
         let removed = diskcache::clear(&cache_dir)?;
@@ -123,6 +156,23 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         let removed = diskcache::prune(&cache_dir, older_than)?;
         if !args.flag_quiet {
             eprintln!("Pruned {removed} cache entr{}.", plural(removed));
+        }
+        return Ok(());
+    }
+    if args.cmd_cache_set_ttl {
+        let name = args.arg_name.as_deref().unwrap_or_default();
+        diskcache::set_ttl(&cache_dir, name, args.flag_ttl)?;
+        if !args.flag_quiet {
+            eprintln!("Set TTL of '{name}' to {} seconds.", args.flag_ttl);
+        }
+        return Ok(());
+    }
+    if args.cmd_cache_set_policy {
+        let policy = diskcache::RefreshPolicy::parse(&args.flag_refresh)?;
+        let name = args.arg_name.as_deref().unwrap_or_default();
+        diskcache::set_policy(&cache_dir, name, policy)?;
+        if !args.flag_quiet {
+            eprintln!("Set refresh policy of '{name}' to {}.", args.flag_refresh);
         }
         return Ok(());
     }
@@ -159,6 +209,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             ckan_api_url: ckan_api_url.clone(),
             ckan_token: ckan_token.clone(),
             timeout_secs: args.flag_timeout,
+            cloud_opts: args.flag_cloud_opt.clone(),
         };
         let meta = diskcache::get_resource(&opts)?;
 
@@ -180,7 +231,40 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(())
 }
 
-fn run_cache_list(cache_dir: &str, json: bool, info: bool) -> CliResult<()> {
+fn run_cache_list(cache_dir: &str, json: bool, info: bool, verify: bool) -> CliResult<()> {
+    if verify {
+        let results = diskcache::verify(cache_dir)?;
+        let failed = results.iter().filter(|(_, ok)| !*ok).count();
+        if json {
+            let arr: Vec<_> = results
+                .iter()
+                .map(|(name, ok)| serde_json::json!({ "name": name, "ok": ok }))
+                .collect();
+            let s = serde_json::to_string_pretty(&arr).map_err(|e| {
+                CliError::Other(format!("get: failed to serialize verify results: {e}"))
+            })?;
+            println!("{s}");
+        } else if results.is_empty() {
+            println!("(cache is empty)");
+        } else {
+            println!("{:<32} STATUS", "NAME");
+            for (name, ok) in &results {
+                println!(
+                    "{:<32} {}",
+                    truncate(name, 32),
+                    if *ok { "OK" } else { "FAIL" }
+                );
+            }
+        }
+        if failed > 0 {
+            return Err(CliError::Other(format!(
+                "get: {failed} cached blob{} failed integrity verification.",
+                if failed == 1 { "" } else { "s" }
+            )));
+        }
+        return Ok(());
+    }
+
     let entries = diskcache::list_entries(cache_dir)?;
 
     if json {

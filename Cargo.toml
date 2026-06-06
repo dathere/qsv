@@ -263,6 +263,15 @@ mlua = { version = "0.12.0-rc.1", features = [
     "serialize",
 ], optional = true }
 num_cpus = "1"
+# object_store backs the `get_cloud` sub-feature (s3://, gs://, az:// sources for
+# `qsv get`). default-features=false; only the cloud providers are enabled. Already
+# compiled transitively via polars in distrib/qsvmcp/datapusher_plus builds, so the
+# marginal cost there is ~zero. See `qsv get --help`.
+object_store = { version = "0.13", default-features = false, features = [
+    "aws",
+    "azure",
+    "gcp",
+], optional = true }
 odht = "0.3"
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
@@ -499,6 +508,7 @@ distrib_features = [
     "geocode",
     "geoconnex",
     "get",
+    "get_cloud",
     "luau",
     "mcp",
     "polars",
@@ -507,7 +517,7 @@ distrib_features = [
     "to",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "get", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
+qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
 apply = [
     "base62",
     "base64-simd",
@@ -543,6 +553,11 @@ get = [
     "http-cache-reqwest",
     "http-cache-semantics",
 ]
+# get_cloud: adds cloud object-storage sources (s3://, gs://, az://) to `get`,
+# via the object_store crate. Opt-in so a bare `-F get` build stays lean;
+# included in distrib_features/qsvmcp/datapusher_plus (where polars already
+# pulls object_store). See `qsv get --help`.
+get_cloud = ["get", "dep:object_store"]
 geocode = [
     "bytemuck",
     "dns-lookup",
@@ -577,7 +592,7 @@ synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
 lens = ["csvlens"]
 lite = []
-datapusher_plus = ["geocode", "get", "polars", "profile", "self_update"]
+datapusher_plus = ["geocode", "get", "get_cloud", "polars", "profile", "self_update"]
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
 feature_capable = []

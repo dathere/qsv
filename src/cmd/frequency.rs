@@ -590,7 +590,7 @@ const fn estimate_chunk_memory_for_frequency(
 ///
 /// This function determines an appropriate chunk size based on:
 /// - Available memory per chunk (if configured)
-/// - Dynamic estimation via sampling (if max_chunk_memory_mb is Some(0))
+/// - Dynamic estimation via sampling (if `max_chunk_memory_mb` is Some(0))
 /// - CPU-based chunking (fallback)
 ///
 /// # Arguments
@@ -687,7 +687,7 @@ fn calculate_memory_aware_chunk_size_for_frequency(
 /// Returns `false` if any conflicting flag is set, if the user explicitly set
 /// the method (regardless of value), or if --sketch-map-size is invalid.
 ///
-/// On big-endian targets the Apache DataSketches port is unavailable, so this
+/// On big-endian targets the Apache `DataSketches` port is unavailable, so this
 /// function compiles to a stub that always returns `false`. The OOM auto-enable
 /// path then leaves `flag_sketch_method` alone and the error propagates.
 #[cfg(not(target_endian = "big"))]
@@ -1621,8 +1621,8 @@ impl Args {
     /// Write the complete frequency distribution as a JSON cache file
     /// (`.freq.csv.data.json`). The cache combines metadata (args,
     /// thresholds) and per-column data in a single JSON object.
-    /// ALL_UNIQUE columns get a single `<ALL_UNIQUE>` sentinel entry.
-    /// HIGH_CARDINALITY columns get a single `<HIGH_CARDINALITY>` sentinel entry.
+    /// `ALL_UNIQUE` columns get a single `<ALL_UNIQUE>` sentinel entry.
+    /// `HIGH_CARDINALITY` columns get a single `<HIGH_CARDINALITY>` sentinel entry.
     /// Normal columns get complete frequency data (all values, counts, percentages).
     #[allow(clippy::cast_precision_loss)]
     fn write_frequency_jsonl(
@@ -1904,15 +1904,15 @@ impl Args {
     /// Returns Ok(true) if output was produced from cache, Ok(false) if cache
     /// was not usable and normal computation should proceed.
     ///
-    /// When all selected columns have cached data, FTables are reconstructed via
+    /// When all selected columns have cached data, `FTables` are reconstructed via
     /// `increment_by` and output is produced directly (full cache hit).
     ///
-    /// When some columns have HIGH_CARDINALITY sentinels (no cached data), sets up a
-    /// partial cache: pre-builds FTables for cached columns into FREQ_CACHE_FTABLES
-    /// and marks them in FREQ_CACHE_SKIP. Returns Ok(false) so the normal parallel
+    /// When some columns have `HIGH_CARDINALITY` sentinels (no cached data), sets up a
+    /// partial cache: pre-builds `FTables` for cached columns into `FREQ_CACHE_FTABLES`
+    /// and marks them in `FREQ_CACHE_SKIP`. Returns Ok(false) so the normal parallel
     /// computation runs, but `ftables_unweighted` skips the cached columns (same
-    /// pattern as ALL_UNIQUE skip). After computation, `run()` merges the cached
-    /// FTables back into the result.
+    /// pattern as `ALL_UNIQUE` skip). After computation, `run()` merges the cached
+    /// `FTables` back into the result.
     #[allow(clippy::cast_precision_loss)]
     fn try_output_from_cache(&self, rconfig: &Config, is_json: bool) -> CliResult<bool> {
         // Read and validate the cache
@@ -2389,7 +2389,7 @@ impl Args {
         }
     }
 
-    /// Process weighted frequencies from HashMap and return same format as counts()
+    /// Process weighted frequencies from `HashMap` and return same format as `counts()`
     #[allow(clippy::cast_precision_loss)]
     fn counts_weighted(
         &self,
@@ -3739,7 +3739,7 @@ impl Args {
     ///
     /// # Arguments
     ///
-    /// * `full_headers` - The full CSV headers as a ByteRecord
+    /// * `full_headers` - The full CSV headers as a `ByteRecord`
     ///
     /// # Returns
     ///
@@ -4134,7 +4134,7 @@ impl Args {
     }
 }
 
-/// Helper function to add a field to field_stats if it exists
+/// Helper function to add a field to `field_stats` if it exists
 /// Automatically converts any type to appropriate JSON value.
 /// NaN and infinity are emitted as JSON null (rather than silently coerced
 /// to 0) since JSON cannot represent them and downstream consumers should

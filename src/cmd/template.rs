@@ -770,7 +770,7 @@ fn normalize_lookup_key(s: &str) -> std::borrow::Cow<'_, str> {
 
 /// Returns a substring of the input string from start index to end index (exclusive).
 /// If end is not provided, returns substring from start to end of string.
-/// Returns --customfilter-error (default: <FILTER_ERROR>) if indices are invalid.
+/// Returns --customfilter-error (default: <`FILTER_ERROR`>) if indices are invalid.
 ///
 /// NOTE: indices are byte offsets, not character offsets. For ASCII input this is
 /// equivalent. For non-ASCII (UTF-8) input, an index that lands inside a multi-byte
@@ -785,7 +785,7 @@ fn substr(value: &str, start: u32, end: Option<u32>) -> String {
 }
 
 /// Formats a float number string with the specified decimal precision.
-/// Returns --customfilter-error (default: <FILTER_ERROR>) if input cannot be parsed as float.
+/// Returns --customfilter-error (default: <`FILTER_ERROR`>) if input cannot be parsed as float.
 fn format_float(value: &Value, precision: u32) -> String {
     // Prevent excessive precision
     let precision = precision.min(16) as usize;
@@ -809,7 +809,7 @@ fn format_float(value: &Value, precision: u32) -> String {
 }
 
 /// Formats an integer with thousands separators (e.g. "1,234,567").
-/// Returns --customfilter-error (default: <FILTER_ERROR>) if input cannot be parsed as integer.
+/// Returns --customfilter-error (default: <`FILTER_ERROR`>) if input cannot be parsed as integer.
 fn human_count(value: &Value) -> String {
     if value.kind() == ValueKind::String {
         let s = value.as_str().unwrap().as_bytes();
@@ -832,7 +832,7 @@ fn human_count(value: &Value) -> String {
 }
 
 /// Formats a float number with thousands separators (e.g. "1,234,567.89").
-/// Returns --customfilter-error (default: <FILTER_ERROR>) if input cannot be parsed as float.
+/// Returns --customfilter-error (default: <`FILTER_ERROR`>) if input cannot be parsed as float.
 fn human_float_count(value: &Value) -> String {
     if value.kind() == ValueKind::String {
         let s = value.as_str().unwrap();
@@ -857,8 +857,8 @@ fn human_float_count(value: &Value) -> String {
 /// Rounds a float number to specified number of decimal places.
 /// Round using Midpoint Nearest Even Rounding Strategy AKA "Bankers Rounding."
 /// automatically trims trailing zeros
-/// https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html#variant.MidpointNearestEven
-/// Returns --customfilter-error (default: <FILTER_ERROR>) if input cannot be parsed as float.
+/// <https://docs.rs/rust_decimal/latest/rust_decimal/enum.RoundingStrategy.html#variant.MidpointNearestEven>
+/// Returns --customfilter-error (default: <`FILTER_ERROR`>) if input cannot be parsed as float.
 fn round_banker(value: &Value, places: u32) -> String {
     if value.kind() == ValueKind::String {
         let s = value.as_str().unwrap();
@@ -909,7 +909,7 @@ fn to_bool(value: &Value) -> bool {
 /// Registers a lookup table for use with the lookup filter.
 ///
 /// This function loads a CSV file as a lookup table and registers it in memory for use with
-/// the lookup filter in templates. The lookup table is stored as a set of LookupEntry objects
+/// the lookup filter in templates. The lookup table is stored as a set of `LookupEntry` objects
 /// containing key-value pairs from the CSV.
 ///
 /// # Arguments

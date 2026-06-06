@@ -9,7 +9,7 @@
 //!    — in one place means there is a single, audited code path rather than two.
 //!
 //! 2. A **`get`-feature-gated** rich cache (see the bottom of this file): a content-addressed,
-//!    zstd-compressed blob store with a per-entry metadata index (BLAKE3, ETag, sizes, record
+//!    zstd-compressed blob store with a per-entry metadata index (BLAKE3, `ETag`, sizes, record
 //!    count, TTL), HTTP cache semantics via `http-cache-reqwest`, auto-indexing, and `dc:` prefix
 //!    resolution. This tier pulls heavier dependencies (`http-cache-reqwest`, `zstd`) so it is only
 //!    compiled when the `get` feature is enabled (keeping `qsvlite` lean).
@@ -65,20 +65,20 @@ pub struct ResolvedUri {
     /// The http(s) URL to fetch (after `dathere://` / `ckan://` expansion), or
     /// the original URI for local files / already-http(s) inputs.
     pub url:                  String,
-    /// True if this is a CKAN resource that still needs resource_show /
-    /// resource_search resolution to obtain the actual data URL.
+    /// True if this is a CKAN resource that still needs `resource_show` /
+    /// `resource_search` resolution to obtain the actual data URL.
     pub is_ckan:              bool,
-    /// True if the CKAN form was `ckan://<name>?` (resource_search) rather than
-    /// `ckan://<id>` (resource_show).
+    /// True if the CKAN form was `ckan://<name>?` (`resource_search`) rather than
+    /// `ckan://<id>` (`resource_show`).
     pub ckan_resource_search: bool,
 }
 
 /// Expand a source URI's scheme prefix into an http(s) URL plus CKAN flags.
 ///
 /// - `dathere://<path>` → datHere's `qsv-lookup-tables` GitHub raw URL.
-/// - `ckan://<id>`      → `<ckan_api>/resource_show?id=<id>`   (is_ckan=true).
-/// - `ckan://<name>?`   → `<ckan_api>/resource_search?query=name:<name>` (is_ckan=true,
-///   ckan_resource_search=true).
+/// - `ckan://<id>`      → `<ckan_api>/resource_show?id=<id>`   (`is_ckan=true`).
+/// - `ckan://<name>?`   → `<ckan_api>/resource_search?query=name:<name>` (`is_ckan=true`,
+///   `ckan_resource_search=true`).
 /// - anything else (local path, http(s)://) is returned unchanged.
 pub fn resolve_uri_prefix(uri: &str, ckan_api_url: Option<&str>) -> ResolvedUri {
     if let Some(rest) = uri.strip_prefix("dathere://") {
@@ -355,7 +355,7 @@ mod rich {
         pub resolved_uri:       String,
         /// BLAKE3 hex of the uncompressed bytes (== blob filename stem).
         pub blake3:             String,
-        /// HTTP ETag, if the origin provided one.
+        /// HTTP `ETag`, if the origin provided one.
         pub etag:               Option<String>,
         /// HTTP Last-Modified, if the origin provided one.
         pub last_modified:      Option<String>,
@@ -577,7 +577,7 @@ mod rich {
     }
 
     /// Store `body` as a content-addressed (possibly compressed) blob.
-    /// Returns (blake3, compressed_size, uncompressed_size).
+    /// Returns (blake3, `compressed_size`, `uncompressed_size`).
     fn store_blob(
         root: &Path,
         body: &[u8],
@@ -983,7 +983,7 @@ mod rich {
     /// True if `source` uses a cloud object-store URL scheme handled by
     /// `object_store` (`s3://`, `gs://`, `az://` and friends). Detection is
     /// compiled in even without `get_cloud` so `get_resource` can emit a precise
-    /// "rebuild with --features get_cloud" hint rather than a generic
+    /// "rebuild with --features `get_cloud`" hint rather than a generic
     /// "unsupported source" error.
     fn is_cloud_scheme(source: &str) -> bool {
         let lower = source.to_ascii_lowercase();
@@ -993,8 +993,8 @@ mod rich {
         SCHEMES.iter().any(|s| lower.starts_with(s))
     }
 
-    /// Build the object_store config option list for a cloud fetch: the
-    /// `AWS_*`/`AZURE_*`/`GOOGLE_*` environment (object_store's `parse_url_opts`
+    /// Build the `object_store` config option list for a cloud fetch: the
+    /// `AWS_*`/`AZURE_*`/`GOOGLE_*` environment (`object_store`'s `parse_url_opts`
     /// does NOT read the environment itself), overlaid with any user
     /// `--cloud-opt key=value` pairs, which take precedence. The environment is
     /// filtered to provider prefixes so unrelated vars (e.g. a generic `ENDPOINT`
@@ -1034,11 +1034,11 @@ mod rich {
     }
 
     /// The non-secret, identity-determining subset of cloud config options,
-    /// lower-cased (object_store treats keys case-insensitively) and reduced to a
-    /// single value per key using the **same last-wins precedence object_store
+    /// lower-cased (`object_store` treats keys case-insensitively) and reduced to a
+    /// single value per key using the **same last-wins precedence `object_store`
     /// applies when building the store** (`cloud_opts_for` lists env first, then
     /// `--cloud-opt`, and `parse_url_opts` folds options so the later value
-    /// overrides). The result is sorted by key (BTreeMap iteration order).
+    /// overrides). The result is sorted by key (`BTreeMap` iteration order).
     ///
     /// Collapsing per key — rather than de-duping whole `(key, value)` pairs — is
     /// what keeps the cache key aligned with the *effective* store and stable

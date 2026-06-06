@@ -21,7 +21,7 @@ use super::{
 
 /// One turn of the chat-mode conversation. `timestamp` is written back to the
 /// session file but is advisory — it's re-stamped to `now` on load, so it's
-/// primarily useful within a single run. Marked dead_code because only `role`
+/// primarily useful within a single run. Marked `dead_code` because only `role`
 /// and `content` are functionally meaningful.
 #[derive(Debug, Clone)]
 pub(super) struct SessionMessage {

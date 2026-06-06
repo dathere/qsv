@@ -1028,7 +1028,7 @@ fn url_title_default(url: &str) -> Option<String> {
 ///     `5202679a-d243-402e-b82a-63189995a942`);
 ///   * compact form: 32 contiguous hex characters (e.g. `5202679ad243402eb82a63189995a942`).
 ///
-/// Case-insensitive. Other ID-like patterns (MongoDB ObjectId at 24
+/// Case-insensitive. Other ID-like patterns (`MongoDB` `ObjectId` at 24
 /// hex, ULIDs, slugified IDs) are intentionally NOT matched — UUIDs
 /// dominate CKAN/data.gov URLs, and over-eager matching would walk
 /// past legitimate titles like "2024-Q3".

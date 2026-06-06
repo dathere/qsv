@@ -289,7 +289,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 /// 2020-12) by looking at CSV value stats Supported JSON Schema validation vocabularies:
 ///  * type
 ///    - "null", "boolean", "number", "integer", or "string", with built-in support for date/datetime
-///      as "string" with "format" constraint (https://json-schema.org/draft/2020-12/json-schema-validation#section-7.3.1)
+///      as "string" with "format" constraint (<https://json-schema.org/draft/2020-12/json-schema-validation#section-7.3.1>)
 ///  * enum
 ///  * const
 ///  * minLength
@@ -589,7 +589,7 @@ fn build_low_cardinality_column_selector_arg(
     column_select_arg
 }
 
-/// Process-wide lock that serializes EnvVarGuard's `set_var` / `remove_var`
+/// Process-wide lock that serializes `EnvVarGuard`'s `set_var` / `remove_var`
 /// calls against each other. It does NOT protect against env reads/writes
 /// from code paths that don't go through this guard — see safety notes below.
 static ENV_VAR_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

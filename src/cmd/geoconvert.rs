@@ -69,7 +69,7 @@ use tempfile::NamedTempFile;
 
 use crate::{CliError, CliResult, util};
 
-/// Truncate a string at the nearest char boundary <= max_len bytes,
+/// Truncate a string at the nearest char boundary <= `max_len` bytes,
 /// then append an ellipsis. Avoids panicking on multi-byte UTF-8.
 ///
 /// Precondition: `max_len > 0`. Callers in this module only invoke this when
@@ -84,7 +84,7 @@ fn truncate_with_ellipsis(value: &str, max_len: usize) -> String {
     format!("{}...", &value[..boundary])
 }
 
-/// Helper function to handle CSV output with max_length truncation.
+/// Helper function to handle CSV output with `max_length` truncation.
 /// Buffers geozero's CSV output to a tempfile, then re-emits truncated rows.
 /// The tempfile is cleaned up automatically on both success and error paths.
 fn process_csv_with_max_length<F>(

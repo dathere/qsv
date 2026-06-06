@@ -3,7 +3,7 @@
 //!
 //! `synthesize` only needs the `content_type` of each field from the data
 //! dictionary — every other dictionary column (type, min/max, cardinality,
-//! enumeration, null_count) is recomputed directly from the source CSV via
+//! enumeration, `null_count`) is recomputed directly from the source CSV via
 //! `stats` + `frequency`, which is richer and always in sync with the input.
 
 use std::{collections::HashMap, fs};

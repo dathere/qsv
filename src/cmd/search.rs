@@ -321,7 +321,7 @@ impl Args {
     }
 
     /// Setup flag column in headers if --flag option is used
-    /// Returns (flag_flag: bool, matches_only: bool)
+    /// Returns (`flag_flag`: bool, `matches_only`: bool)
     fn setup_flag_column(&self, headers: &mut csv::ByteRecord) -> (bool, bool) {
         let mut matches_only = false;
         let flag_flag = self.flag_flag.as_ref().is_some_and(|column_name| {

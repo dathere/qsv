@@ -155,7 +155,7 @@ pub struct ProfileSpec {
     #[serde(default)]
     pub discovery_merge: DiscoveryMerge,
 
-    /// Optional Croissant-specific block: one entry per RecordSet to
+    /// Optional Croissant-specific block: one entry per `RecordSet` to
     /// emit. Each entry expands via `for_each_column` into one `cr:Field`
     /// per stats column.
     #[serde(default)]
@@ -268,7 +268,7 @@ pub struct ExternalValidator {
     /// Optional install hint appended to the missing-binary
     /// warning. Free-form text — typically a short install
     /// command and/or a URL pointing at the validator's homepage.
-    /// E.g. "pip install mlcroissant (https://github.com/mlcommons/croissant)".
+    /// E.g. "pip install mlcroissant (<https://github.com/mlcommons/croissant>)".
     #[serde(default)]
     pub install_hint:     Option<String>,
     /// Additional input files materialized as tempfiles before
@@ -553,13 +553,13 @@ pub struct DistributionMerge {
     pub append_unmatched: bool,
 }
 
-/// Croissant-specific RecordSet declaration. The engine emits one
+/// Croissant-specific `RecordSet` declaration. The engine emits one
 /// `cr:RecordSet` per entry; if `for_each_column` is set, each field in
-/// the RecordSet expands to one `cr:Field` per CSV column.
+/// the `RecordSet` expands to one `cr:Field` per CSV column.
 #[derive(Debug, Clone, Deserialize)]
 #[allow(dead_code)]
 pub struct RecordSetSpec {
-    /// JSON-LD path under the dataset where this RecordSet is emitted.
+    /// JSON-LD path under the dataset where this `RecordSet` is emitted.
     pub path:            String,
     /// If true, generate one entry per stats column. Each entry runs
     /// `template` with `column.*` in scope.

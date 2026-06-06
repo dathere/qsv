@@ -956,10 +956,10 @@ fn detect_language_from_prompt(prompt: &str, threshold: f64) -> Option<String> {
 }
 
 /// Parse the --language option: if it's autodetect, a threshold, or an explicit language
-/// Returns (is_autodetect, threshold, explicit_language)
-/// - is_autodetect: true if language should be auto-detected
+/// Returns (`is_autodetect`, threshold, `explicit_language`)
+/// - `is_autodetect`: true if language should be auto-detected
 /// - threshold: confidence threshold for autodetect (0.0-1.0)
-/// - explicit_language: Some(language) if an explicit language was specified, None otherwise
+/// - `explicit_language`: Some(language) if an explicit language was specified, None otherwise
 fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String>) {
     if let Some(lang) = language {
         // Try to parse as a number (threshold)
@@ -1077,7 +1077,7 @@ fn send_request(
 ///
 /// # Errors
 ///
-/// Returns a CliError if:
+/// Returns a `CliError` if:
 /// * The API request fails
 /// * The response cannot be parsed as JSON
 /// * No matching model is found (includes list of valid models in error)
@@ -1147,7 +1147,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     fail_clierror!("Invalid model: {given_model}\n  Valid models: {models_list}")
 }
 
-/// Built-in fallback for the `dictionary_refine_prompt` PromptFile field. Used when a user
+/// Built-in fallback for the `dictionary_refine_prompt` `PromptFile` field. Used when a user
 /// supplies a `--prompt-file` TOML that pre-dates `--two-pass` and therefore lacks the field.
 /// Kept byte-identical to the `dictionary_refine_prompt` block in
 /// `resources/describegpt_defaults.toml` (the active default for new users); the two MUST be
@@ -1236,27 +1236,27 @@ const fn get_default_prompt_file_content() -> &'static str {
 ///
 /// # Returns
 ///
-/// Returns a reference to the global PromptFile configuration
+/// Returns a reference to the global `PromptFile` configuration
 ///
 /// # Details
 ///
 /// This function:
-/// 1. Checks if a prompt file is already loaded in the global PROMPT_FILE
+/// 1. Checks if a prompt file is already loaded in the global `PROMPT_FILE`
 /// 2. If not, loads either a custom prompt file or the default one
 /// 3. Applies any overrides from environment variables or command line flags
 /// 4. Updates the configuration with max tokens, model, and system prompt settings
-/// 5. Stores the result in the global PROMPT_FILE
+/// 5. Stores the result in the global `PROMPT_FILE`
 ///
 /// Environment variables that affect behavior:
-/// * QSV_LLM_BASE_URL - Override the base URL for API calls
-/// * QSV_LLM_MODEL - Override the model to use
+/// * `QSV_LLM_BASE_URL` - Override the base URL for API calls
+/// * `QSV_LLM_MODEL` - Override the model to use
 ///
 /// # Errors
 ///
-/// Returns a CliError if:
+/// Returns a `CliError` if:
 /// * The prompt file cannot be read
 /// * The TOML parsing fails
-/// * The global PROMPT_FILE cannot be set
+/// * The global `PROMPT_FILE` cannot be set
 fn get_prompt_file(args: &Args) -> CliResult<&PromptFile> {
     if let Some(prompt_file) = PROMPT_FILE.get() {
         Ok(prompt_file)
@@ -1492,8 +1492,8 @@ fn render_dictionary_md_body(
 /// Kept as a single named constant so it is easy to bump when the spec versions it.
 const SEMANTICMD_PROFILE: &str = "datadict.yaml";
 
-/// Derive the (resource_name, dataset_id, schema_id, dataset_title) tuple from the input path.
-/// `arg_input` is `None` for stdin, in which case everything falls back to "input".
+/// Derive the (`resource_name`, `dataset_id`, `schema_id`, `dataset_title`) tuple from the input
+/// path. `arg_input` is `None` for stdin, in which case everything falls back to "input".
 fn semanticmd_ids(arg_input: Option<&str>) -> (String, String, String, String) {
     let resource_name = arg_input
         .and_then(|p| {
@@ -1710,7 +1710,7 @@ fn extract_json_from_output(output: &str) -> CliResult<serde_json::Value> {
     )
 }
 
-/// Replace {GENERATED_BY_SIGNATURE} placeholder with actual attribution
+/// Replace {`GENERATED_BY_SIGNATURE`} placeholder with actual attribution
 fn replace_attribution_placeholder(
     text: &str,
     args: &Args,
@@ -1859,7 +1859,7 @@ fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> Str
     )
 }
 
-/// Format tags as TSV (single row with columns: tag, reasoning, token_usage fields)
+/// Format tags as TSV (single row with columns: tag, reasoning, `token_usage` fields)
 #[rustfmt::skip]
 fn format_tags_tsv(
     tags_json: &serde_json::Value,
@@ -1901,7 +1901,7 @@ fn format_tags_tsv(
     )
 }
 
-/// Format description as TSV (single row with columns: response, reasoning, token_usage fields)
+/// Format description as TSV (single row with columns: response, reasoning, `token_usage` fields)
 #[rustfmt::skip]
 fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     // Escape tabs and newlines
@@ -1919,7 +1919,7 @@ fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUs
     )
 }
 
-/// Format prompt as TSV - delegates to format_description_tsv (same format)
+/// Format prompt as TSV - delegates to `format_description_tsv` (same format)
 fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) -> String {
     format_description_tsv(response, reasoning, token_usage)
 }
@@ -1943,15 +1943,15 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
 /// * Whether the SOURCE template referenced `{{ dictionary }}` (any whitespace variation). The
 ///   Description / Tags / Prompt phase callers use this to avoid the redundant chat-message-side
 ///   dictionary injection in `build_inference_messages` when the template already inlines
-///   DATA_DICTIONARY_JSON. Custom `--prompt-file` users whose templates DON'T reference `{{
+///   `DATA_DICTIONARY_JSON`. Custom `--prompt-file` users whose templates DON'T reference `{{
 ///   dictionary }}` continue to receive the dictionary via the chat-message path unchanged.
 ///
 /// # Errors
 ///
-/// Returns a CliError if:
+/// Returns a `CliError` if:
 /// * Analysis results are missing when required
 /// * SQL guidelines markers cannot be found in the prompt template
-/// * DuckDB query execution fails when getting extension info
+/// * `DuckDB` query execution fails when getting extension info
 /// * Mini Jinja template rendering fails
 fn get_prompt(
     prompt_type: PromptType,
@@ -2290,7 +2290,7 @@ fn get_prompt(
 ///
 /// # Errors
 ///
-/// Returns a CliError if:
+/// Returns a `CliError` if:
 /// * The API request fails
 /// * The response cannot be parsed
 /// * Required fields are missing from response
@@ -2421,7 +2421,7 @@ fn get_cache_key(args: &Args, kind: PromptType, actual_model: &str) -> String {
 
 /// Per-process memo of `path_fingerprint` results, keyed by `"<path>:<mtime_nanos>:<size>"`.
 /// `get_cache_key_with_flag` runs once per phase lookup (and again on invalidation paths), so
-/// without memoization a ~100MB DuckDB binary would be re-hashed several times per run.
+/// without memoization a ~100MB `DuckDB` binary would be re-hashed several times per run.
 /// Keying on stat metadata as well as path means in-place edits (which bump mtime and/or size)
 /// still produce a cache miss and fresh hash; we only short-circuit when the file is
 /// demonstrably unchanged on disk. `stat` is ~microseconds while `hash_blake3_file` on a big
@@ -2432,10 +2432,10 @@ static PATH_FINGERPRINT_CACHE: std::sync::OnceLock<std::sync::Mutex<HashMap<Stri
 /// Content fingerprint of a local file as a short BLAKE3 hex prefix, or empty string if
 /// `path` is empty, a remote URL (`http://`, `https://`, `ckan://`, `dathere://` —
 /// case-insensitive), or unreadable. Used to catch in-place edits of files inlined into the
-/// rendered prompt (the tag-vocabulary CSV, the DuckDB binary). Content hashing is preferred
+/// rendered prompt (the tag-vocabulary CSV, the `DuckDB` binary). Content hashing is preferred
 /// over `stat(mtime, size)` alone because same-second same-size rewrites (possible on
 /// HFS+ / FAT / NFS mtime granularity) would otherwise collide; `hash_blake3_file` uses
-/// mmap + rayon so even a ~100MB DuckDB binary hashes in tens of milliseconds. Results are
+/// mmap + rayon so even a ~100MB `DuckDB` binary hashes in tens of milliseconds. Results are
 /// memoized per `(path, mtime, size)` tuple via `PATH_FINGERPRINT_CACHE`, so cache-key
 /// rebuilds in the same process are free when the file is unchanged.
 fn path_fingerprint(path: &str) -> String {
@@ -3496,7 +3496,7 @@ fn format_phase_markdown(
 }
 
 /// Process the output of a single inference phase.
-/// Extracted from run_inference_options::process_output for reuse by --process-response.
+/// Extracted from `run_inference_options::process_output` for reuse by --process-response.
 ///
 /// Dictionary kinds build `combined_entries` from the single `completion_response` here
 /// (the single-pass and `--process-response` flows). The two-pass flow does NOT route the
@@ -3712,7 +3712,7 @@ fn build_inference_messages(
 /// In `--two-pass` mode, a second LLM call refines the first-pass dictionary with full
 /// cross-field context (the LLM sees the entire first-pass dictionary JSON via
 /// `{{ first_pass_dictionary }}` and can recognize that, for example, fields like
-/// street_no, street_name, city, state and zip together describe a single mailing
+/// `street_no`, `street_name`, city, state and zip together describe a single mailing
 /// address). The returned `CompletionResponse` then carries the REFINED response text
 /// (so downstream phases see the better dictionary as `{{ dictionary }}` context), the
 /// concatenated reasoning trace from both passes, and the SUMMED token usage. The
@@ -4163,7 +4163,7 @@ fn run_prompt_phase(
 /// 1. Validate the SQL-results file is writable.
 /// 2. Extract the ```sql ... ``` fence from the LLM response.
 /// 3. Optionally score the SQL via `scoresql` and refine via the LLM up to N times.
-/// 4. Run the final query through DuckDB (when `QSV_DUCKDB_PATH` is set) or Polars (`sqlp`).
+/// 4. Run the final query through `DuckDB` (when `QSV_DUCKDB_PATH` is set) or Polars (`sqlp`).
 /// 5. Track the outcome (success / error rows) in the session state for future refinements.
 #[allow(clippy::too_many_arguments)]
 fn execute_sql_query_phase(
@@ -4769,7 +4769,7 @@ fn build_semanticmd_tags_frontmatter(tags: &serde_json::Value) -> String {
 /// (`tags:`, `dataset:` fields, the concept index, …).
 ///
 /// A "plain" scalar (alphanumeric start, then only `[A-Za-z0-9_.-]`) is emitted
-/// bare — covering the lowercase_underscore tags describegpt normally produces.
+/// bare — covering the `lowercase_underscore` tags describegpt normally produces.
 /// Anything else (colons, spaces, `#`, newlines, leading indicators, quotes, …)
 /// is emitted as a double-quoted scalar with the YAML escapes applied, so it can't
 /// produce invalid or structurally different frontmatter.
@@ -5155,7 +5155,7 @@ fn remove_prompt_cache_entries_for_both_flags(
 /// Adds columns when `--addl-cols` is set; also retains a richer default stats
 /// set on the `--format semanticmd` path so the per-column `### Statistics` block
 /// has data without requiring `--addl-cols`.
-/// available_columns: IndexSet of all additional columns (preserves CSV order)
+/// `available_columns`: `IndexSet` of all additional columns (preserves CSV order)
 fn determine_addl_cols(args: &Args, avail_cols: &IndexSet<String>) -> Vec<String> {
     // Default list of additional columns
     const DEFAULT_COLUMNS: &[&str] = &[

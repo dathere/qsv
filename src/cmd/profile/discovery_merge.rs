@@ -8,7 +8,7 @@
 //! * `never_overwrite: [...]` → those top-level keys are never touched regardless of strategy
 //!   (typical: `@context`, `@type`, `dcat:distribution`).
 //! * `default_strategy: fill-if-absent | overlay-array | never` → applied to keys not on the
-//!   never_overwrite list AND not on the `forced_paths` list (which always wins regardless of
+//!   `never_overwrite` list AND not on the `forced_paths` list (which always wins regardless of
 //!   strategy).
 //!
 //! The `forced_paths` argument is the set of leaf paths the user

@@ -345,7 +345,7 @@ static CKAN_API: OnceLock<String> = OnceLock::new();
 static CKAN_TOKEN: OnceLock<Option<String>> = OnceLock::new();
 static DELIMITER: OnceLock<Option<Delimiter>> = OnceLock::new();
 
-/// write to stderr and log::error, using ValidationError
+/// write to stderr and `log::error`, using `ValidationError`
 macro_rules! fail_validation_error {
     ($($t:tt)*) => {{
         use log::error;
@@ -595,8 +595,8 @@ fn unique_combined_with_validator_factory<'a>(
     )))
 }
 
-/// Parse the dynamicEnum URI string to extract cache_name, final_uri, cache_age and column
-/// Format: "[cache_name;cache_age]|URL[|column]" where cache_name, cache_age and column are
+/// Parse the dynamicEnum URI string to extract `cache_name`, `final_uri`, `cache_age` and column
+/// Format: "[`cache_name;cache_age`]|URL[|column]" where `cache_name`, `cache_age` and column are
 /// optional
 ///
 /// # Arguments
@@ -604,27 +604,27 @@ fn unique_combined_with_validator_factory<'a>(
 ///
 /// # uri parsing examples:
 /// lookup.csv
-///    - cache_name: lookup, final_uri: lookup.csv, cache_age: 3600, column: None
+///    - `cache_name`: lookup, `final_uri`: lookup.csv, `cache_age`: 3600, column: None
 ///
 /// lookup.csv|name
-///    - cache_name: lookup, final_uri: lookup.csv, cache_age: 3600, column: Some(name)
+///    - `cache_name`: lookup, `final_uri`: lookup.csv, `cache_age`: 3600, column: Some(name)
 ///
-/// lookup_name;600|lookup.csv
-///    - cache_name: lookup_name, final_uri: lookup.csv, cache_age: 600, column: None
+/// `lookup_name;600|lookup.csv`
+///    - `cache_name`: `lookup_name`, `final_uri`: lookup.csv, `cache_age`: 600, column: None
 ///
-/// remote_lookup|https://example.com/remote.csv|col1
-///    - cache_name: remote_lookup, final_uri: https://example.com/remote.csv, cache_age: 3600,
-///      column: Some(col1)
+/// `remote_lookup|https://example.com/remote.csv|col1`
+///    - `cache_name`: `remote_lookup`, `final_uri`: <https://example.com/remote.csv>, `cache_age`:
+///      3600, column: Some(col1)
 ///
-/// https://example.com/remote.csv
-///    - cache_name: remote, final_uri: https://example.com/remote.csv, cache_age: 3600, column:
-///      None
+/// <https://example.com/remote.csv>
+///    - `cache_name`: remote, `final_uri`: <https://example.com/remote.csv>, `cache_age`: 3600,
+///      column: None
 ///
 /// # Returns
 /// * `(String, String, i64, Option<String>)` - Tuple containing:
-///   - cache_name: Name to use for caching the lookup table
-///   - final_uri: The actual URI/URL to load the lookup table from
-///   - cache_age: How long to cache the lookup table in seconds
+///   - `cache_name`: Name to use for caching the lookup table
+///   - `final_uri`: The actual URI/URL to load the lookup table from
+///   - `cache_age`: How long to cache the lookup table in seconds
 ///   - column: Optional column name/index to use from the lookup table
 #[cfg(not(feature = "lite"))]
 fn parse_dynenum_uri(uri: &str) -> (String, String, i64, Option<String>) {
@@ -887,20 +887,20 @@ fn load_dynenum_set<'a>(
     Ok(enum_set)
 }
 
-/// Factory function that creates a DynEnumValidator for validating against dynamic enums loaded
+/// Factory function that creates a `DynEnumValidator` for validating against dynamic enums loaded
 /// from CSV files.
 ///
-/// This function takes a CSV file path or URL and loads its first column into a HashSet to validate
-/// against. The CSV can be loaded from:
+/// This function takes a CSV file path or URL and loads its first column into a `HashSet` to
+/// validate against. The CSV can be loaded from:
 /// - Local filesystem
 /// - HTTP/HTTPS URLs
 /// - CKAN resources (requires --ckan-api and optionally --ckan-token)
 /// - datHere lookup tables
 ///
-/// The dynamicEnum value format is: "[cache_name;cache_age]|URL" where cache_name and cache_age are
-/// optional. Examples:
-/// - "https://example.com/data.csv" - Cache as data.csv with 1 hour default cache
-/// - "custom_name;600|https://example.com/data.csv" - Cache as custom_name.csv for 600 seconds
+/// The dynamicEnum value format is: "[`cache_name;cache_age`]|URL" where `cache_name` and
+/// `cache_age` are optional. Examples:
+/// - "<https://example.com/data.csv>" - Cache as data.csv with 1 hour default cache
+/// - "`custom_name;600|https://example.com/data.csv`" - Cache as `custom_name.csv` for 600 seconds
 /// - "resname|ckan://1234567" - Get CKAN resource ID 1234567, cache as resname.csv
 ///
 /// # Arguments
@@ -1031,7 +1031,7 @@ fn dyn_enum_validator_factory<'a>(
 
 /// Walk a parsed JSON Schema and detect which custom formats/keywords are present.
 ///
-/// Returns (has_currency_format, has_email_format, has_dynamic_enum, has_unique_combined).
+/// Returns (`has_currency_format`, `has_email_format`, `has_dynamic_enum`, `has_unique_combined`).
 ///
 /// We look for:
 /// - `"format": "currency"` and `"format": "email"` on objects (any nesting)
@@ -1961,7 +1961,7 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
 /// - The all-valid case is the common case and currently produces no output files at all; a
 ///   streaming approach would have to write every record to `.valid` and then delete the file on
 ///   success, costing extra I/O on the hot path.
-/// - Memory is bounded — we keep only the BitVec of valid/invalid flags, not the records
+/// - Memory is bounded — we keep only the `BitVec` of valid/invalid flags, not the records
 ///   themselves.
 ///
 /// Only called when there is at least one invalid record.
@@ -2103,7 +2103,7 @@ fn to_json_instance(
 }
 
 /// get JSON types for each column in CSV file
-/// returns a Vector of tuples of column/header name (String) & JSON type (JSONtypes enum)
+/// returns a Vector of tuples of column/header name (String) & JSON type (`JSONtypes` enum)
 #[inline]
 fn get_json_types(headers: &ByteRecord, schema: &Value) -> CliResult<Vec<(String, JSONtypes)>> {
     // make sure schema has expected structure

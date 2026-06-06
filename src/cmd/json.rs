@@ -436,7 +436,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 ///
 /// Note on numeric precision (CSV-sink-specific): `serde_json` is built without
 /// the `arbitrary_precision` feature in this project, so `serde_json::Number` is
-/// internally `i64`/`u64`/`f64`. To avoid silently rounding, BigInts that don't
+/// internally `i64`/`u64`/`f64`. To avoid silently rounding, `BigInts` that don't
 /// fit `i64`/`u64` and `Num::Dec` values (which jaq uses precisely to preserve
 /// decimals that did not parse as integers) are emitted as `Value::String` so
 /// their original digits round-trip verbatim into the CSV output.

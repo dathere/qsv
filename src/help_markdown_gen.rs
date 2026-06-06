@@ -30,7 +30,7 @@ struct CommandInfo {
 }
 
 /// Extract all commands from the README.md command table.
-/// Returns a Vec of CommandInfo with invocation name, source file, description and emojis.
+/// Returns a Vec of `CommandInfo` with invocation name, source file, description and emojis.
 fn extract_commands_from_readme(repo_root: &Path) -> Result<Vec<CommandInfo>, String> {
     let readme_path = repo_root.join("README.md");
     let readme_content =
@@ -117,7 +117,7 @@ fn is_legend_end_marker(line: &str) -> bool {
         || line.starts_with("[^")
 }
 
-/// Parse the legend section from README.md into a vec of (emoji_key, description) pairs.
+/// Parse the legend section from README.md into a vec of (`emoji_key`, description) pairs.
 /// Returns pairs sorted by key length descending for longest-match-first replacement.
 fn parse_legend(readme_content: &str) -> Vec<(String, String)> {
     let mut legend = Vec::new();
@@ -999,7 +999,7 @@ fn parse_usage_sections(usage_text: &str) -> UsageSections {
     }
 }
 
-/// Handle explicit ``` fenced-block start/continuation/end. Returns true when
+/// Handle explicit triple-backtick fenced-block start/continuation/end. Returns true when
 /// the line was consumed (the caller should `continue`). When opening a new
 /// fence, closes any active implicit `$ qsv` code block first.
 ///
@@ -1761,7 +1761,7 @@ fn strip_default_from_description(description: &str) -> String {
 }
 
 /// Parse options using docopt for structure and manual text for descriptions.
-/// Returns a vec of (section_title, options) pairs.
+/// Returns a vec of (`section_title`, options) pairs.
 fn parse_options_with_docopt(
     usage_text: &str,
     sections: &UsageSections,

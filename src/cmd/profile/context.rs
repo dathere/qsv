@@ -52,7 +52,7 @@ pub struct ContextArgs<'a> {
 /// §5.4 list of target JSON-Pointer paths that the user marked
 /// `{value, force: true}` (consulted by `discovery_merge::merge` to skip
 /// overlay at those paths), and the matching list of `(target_pointer, value)`
-/// pairs to apply unconditionally over inferred + discovered + dataset_info
+/// pairs to apply unconditionally over inferred + discovered + `dataset_info`
 /// (the `apply_force_overrides` step in `profile.rs::run`).
 ///
 /// `forced_package_fields` and `forced_resource_fields` are the CKAN-side
@@ -383,7 +383,7 @@ fn append_csv_flags(out: &mut Vec<String>, args: &ContextArgs, gates: FreqOrCoun
 ///
 /// Subtree handling:
 /// - `dataset_info/<key>` — key is already a target JSON pointer (e.g. `/projection/dct:title`);
-///   the raw value is written directly to that pointer via `apply_force_overrides`. dataset_info
+///   the raw value is written directly to that pointer via `apply_force_overrides`. `dataset_info`
 ///   bypasses the profile's templates by design — users who need direct DCAT shape control reach
 ///   for this knob.
 /// - `package/<key>` and `resource/<key>` — translated to a target pointer via
@@ -515,7 +515,7 @@ fn forced_inner(v: &Value) -> Option<&Value> {
 ///
 /// §5.4: `force: true` wrappers anywhere under `dataset_info` /
 /// `package` / `resource` are *additionally* recorded for the merge /
-/// override pathways. dataset_info entries also populate
+/// override pathways. `dataset_info` entries also populate
 /// `forced_values` for raw-write semantics; package/resource entries
 /// only register their CKAN field names in `forced_package_fields` /
 /// `forced_resource_fields` so `merge_formula_results` skips them

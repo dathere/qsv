@@ -1,9 +1,9 @@
 //! Mergeable single-pass sampling sketches for qsv.
 //!
 //! These are native Rust implementations written from the original algorithm
-//! papers. They are NOT bindings to, nor derived from, the Apache DataSketches
+//! papers. They are NOT bindings to, nor derived from, the Apache `DataSketches`
 //! C++/Java code or the `datasketches` Rust crate — which, as of this writing,
-//! does not expose any Sampling-family sketches. Where DataSketches is named
+//! does not expose any Sampling-family sketches. Where `DataSketches` is named
 //! below, it is only as a sibling implementation of the same well-known
 //! algorithms, for reader orientation.
 //!
@@ -25,8 +25,8 @@
 //! Both sketches are generic over the item type. The qsv use case instantiates
 //! with [`csv::ByteRecord`]. Serialization uses a qsv-defined binary layout
 //! whose preamble shape (magic, version, family id, flags, k, n) is similar in
-//! spirit to a DataSketches sketch preamble, but the actual byte layout, magic,
-//! and items payload are qsv-specific and NOT interoperable with DataSketches
+//! spirit to a `DataSketches` sketch preamble, but the actual byte layout, magic,
+//! and items payload are qsv-specific and NOT interoperable with `DataSketches`
 //! serialized sketches.
 
 // API surface intentionally exposes accessors (k, n, tau, total_weight,
@@ -191,7 +191,7 @@ impl<T: Clone> ReservoirItemsSketch<T> {
     /// `min(k, self.n + other.n)` from the combined stream.
     ///
     /// Algorithm (weighted-reservoir union, equivalent to Apache
-    /// DataSketches' ReservoirItemsUnion): assign each item in the
+    /// `DataSketches`' ReservoirItemsUnion): assign each item in the
     /// concatenated pool of `self.reservoir ∪ other.reservoir` an A-ExpJ
     /// key `u^(1/w)` (Efraimidis & Spirakis 2006), where its weight `w`
     /// equals the stream's mass-per-sampled-item it stands in for
@@ -287,8 +287,8 @@ impl<T: Clone + SerializableItem> ReservoirItemsSketch<T> {
     /// - 8B k
     /// - 8B n
     /// - 4B item count
-    /// - item count × { SerializableItem payload }
-    /// - if flags bit 0 set: 1× { SerializableItem header payload }
+    /// - item count × { `SerializableItem` payload }
+    /// - if flags bit 0 set: 1× { `SerializableItem` header payload }
     pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(32);
         buf.extend_from_slice(&SKETCH_MAGIC);
@@ -537,10 +537,10 @@ impl<T: Clone + SerializableItem> VarOptItemsSketch<T> {
     /// - 2B flags (reserved; bit 0 = header present)
     /// - 8B k
     /// - 8B n
-    /// - 8B total_weight
+    /// - 8B `total_weight`
     /// - 4B item count
-    /// - item count × { 8B key, 8B weight, SerializableItem payload }
-    /// - if flags bit 0 set: 1× { SerializableItem header payload }
+    /// - item count × { 8B key, 8B weight, `SerializableItem` payload }
+    /// - if flags bit 0 set: 1× { `SerializableItem` header payload }
     pub fn to_bytes(&self) -> io::Result<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(64);
         buf.extend_from_slice(&SKETCH_MAGIC);

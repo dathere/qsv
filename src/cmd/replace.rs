@@ -140,7 +140,7 @@ struct ChunkOutput {
 }
 
 /// Process a single record, applying the regex pattern and replacement to selected fields.
-/// Returns (processed_record, match_count).
+/// Returns (`processed_record`, `match_count`).
 #[inline]
 fn process_record(
     record: &csv::ByteRecord,
@@ -168,7 +168,7 @@ fn process_record(
 
 /// Handle the final results of a replace operation.
 /// Prints match count to stderr (unless quiet) and returns error if no matches found
-/// (unless not_one flag is set).
+/// (unless `not_one` flag is set).
 fn handle_replace_results(
     total_match_ctr: u64,
     flag_quiet: bool,

@@ -139,7 +139,7 @@ fn parse_quantile_agg(s: &str) -> Option<f64> {
     (p.is_finite() && (0.0..=1.0).contains(&p)).then_some(p)
 }
 
-/// Build the SchemaArgs used for stats/frequency lookups.
+/// Build the `SchemaArgs` used for stats/frequency lookups.
 /// Extracted to avoid duplicated construction at multiple call sites.
 fn build_schema_args(args: &Args) -> util::SchemaArgs {
     util::SchemaArgs {
@@ -162,7 +162,7 @@ fn build_schema_args(args: &Args) -> util::SchemaArgs {
     }
 }
 
-/// Populate STATS_RECORDS on first use. On error, logs once and caches an empty
+/// Populate `STATS_RECORDS` on first use. On error, logs once and caches an empty
 /// result so the command can still run (smart-agg and validation just become
 /// no-ops without stats).
 fn get_cached_stats(args: &Args) -> &'static (ByteRecord, Vec<StatsData>) {
@@ -295,7 +295,7 @@ fn validate_pivot_operation(metadata: &PivotMetadata) -> CliResult<()> {
     Ok(())
 }
 
-/// Build a single-row DataFrame containing a total row.
+/// Build a single-row `DataFrame` containing a total row.
 /// Numeric columns get their sum; index columns get the provided labels.
 #[allow(clippy::missing_asserts_for_indexing)]
 fn build_total_row(
@@ -335,7 +335,7 @@ fn build_total_row(
 }
 
 /// Insert subtotal rows after each group in the first index column.
-/// Returns a new DataFrame with subtotal rows interleaved.
+/// Returns a new `DataFrame` with subtotal rows interleaved.
 /// The data is sorted by all index columns to ensure contiguous groups and deterministic ordering.
 ///
 /// Precondition: the first index column must already be cast to `String`.

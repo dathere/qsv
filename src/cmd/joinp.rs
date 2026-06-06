@@ -957,7 +957,8 @@ impl Args {
             Ok(schema)
         }
 
-        /// Helper function to setup a LazyFrame with schema handling based on cache_schema flag.
+        /// Helper function to setup a `LazyFrame` with schema handling based on `cache_schema`
+        /// flag.
         ///
         /// # Arguments
         /// * `input_path` - Path to the input CSV file
@@ -968,7 +969,7 @@ impl Args {
         ///
         /// # Returns
         /// Returns a tuple containing:
-        /// * The configured LazyFrame for reading the CSV
+        /// * The configured `LazyFrame` for reading the CSV
         /// * A boolean indicating if a new schema needs to be created and cached
         ///
         /// # Schema Caching Modes
@@ -988,7 +989,7 @@ impl Args {
         /// Returns error if:
         /// * File operations fail
         /// * Schema parsing fails
-        /// * Invalid cache_schema value provided
+        /// * Invalid `cache_schema` value provided
         fn setup_lazy_frame(
             input_path: &Path,
             comment_char: Option<&PlSmallStr>,

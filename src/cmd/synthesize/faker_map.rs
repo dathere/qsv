@@ -286,7 +286,7 @@ define_locales! {
 /// `build_numeric` (which samples from min/max or quartile buckets — so it does
 /// NOT guarantee uniqueness and can emit duplicates), and string columns get
 /// type-based text. A future enhancement could swap in a dedicated unique-value
-/// generator (e.g. counter-backed for integers, UUIDv4 for strings) to honor
+/// generator (e.g. counter-backed for integers, `UUIDv4` for strings) to honor
 /// the `unique_id` contract; today the classification round-trips through the
 /// dictionary but synthesize's output is not guaranteed unique.
 ///
@@ -299,10 +299,10 @@ const NON_FAKER_TOKENS: &[&str] = &["category", "date", "datetime", "unique_id",
 /// Parse the duration cap (in seconds) from a `content_type` token.
 ///
 /// Returns `Some(cap)` for:
-///   * the bare `"duration"` token (defaults to 86_400 = 24 h)
+///   * the bare `"duration"` token (defaults to `86_400` = 24 h)
 ///   * `"duration:N"` where N is a positive integer (LLM-inferred upper bound; whitespace around N
 ///     is tolerated)
-///   * `"duration:<malformed>"` (non-numeric / zero / negative / empty) — degrades to the 86_400
+///   * `"duration:<malformed>"` (non-numeric / zero / negative / empty) — degrades to the `86_400`
 ///     default rather than `None`, so user-supplied dictionary JSON that bypasses
 ///     `describegpt::normalize_duration_token` still gets duration generation instead of falling
 ///     through to lorem fallback text
@@ -326,7 +326,7 @@ pub(crate) fn parse_duration_cap(content_type: &str) -> Option<u64> {
 }
 
 /// Extract the chrono strftime output format from a `date:<fmt>` /
-/// `datetime:<fmt>` content_type token.
+/// `datetime:<fmt>` `content_type` token.
 ///
 /// Returns `Some(fmt)` only when the `:<fmt>` suffix is present AND a
 /// syntactically valid chrono strftime string. Returns `None` for the bare

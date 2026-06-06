@@ -677,7 +677,7 @@ fn subsample_columns(col_values: &mut [Vec<f64>], max_n: usize, seed: u64) {
 }
 
 /// Try to read the stats cache and return `(column_index, ColType)` pairs for columns
-/// that pragmastat can analyse (Integer, Float, Date, DateTime).
+/// that pragmastat can analyse (Integer, Float, Date, `DateTime`).
 /// Returns `None` if the cache is unavailable or stale.
 /// This is purely opportunistic — it never triggers a stats run.
 fn columns_from_cache(args: &Args, headers: &csv::ByteRecord) -> Option<Vec<(usize, ColType)>> {

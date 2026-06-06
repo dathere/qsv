@@ -80,7 +80,7 @@ pub struct ExtDedupCache {
 }
 
 impl ExtDedupCache {
-    /// Create a new ExtDedupCache with default configuration.
+    /// Create a new `ExtDedupCache` with default configuration.
     ///
     /// # Arguments
     /// * `memo_limit` - Maximum memory usage in bytes before spilling to disk (0 = unlimited)
@@ -89,7 +89,7 @@ impl ExtDedupCache {
         Self::with_config(memo_limit, temp_dir, ExtDedupConfig::default())
     }
 
-    /// Create a new ExtDedupCache with custom configuration.
+    /// Create a new `ExtDedupCache` with custom configuration.
     ///
     /// # Arguments
     /// * `memo_limit` - Maximum memory usage in bytes before spilling to disk (0 = unlimited)

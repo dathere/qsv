@@ -211,7 +211,7 @@ pub fn current_exe() -> CliResult<PathBuf> {
 ///
 /// - If the input string contains only spaces, each space is replaced with "《_》"
 /// - For other whitespace characters (tab, newline, etc), uses markers defined in
-///   WHITESPACE_MARKERS
+///   `WHITESPACE_MARKERS`
 /// - Non-whitespace characters are left unchanged
 /// - For strings with mixed content, single spaces are preserved as-is
 ///
@@ -302,7 +302,7 @@ pub fn max_jobs() -> usize {
 /// returns number of cores to actually use and set
 /// rayon global thread pool size accordingly.
 /// If desired is None, zero, or greater than available cores,
-/// returns max_jobs, which is equal to number of available cores
+/// returns `max_jobs`, which is equal to number of available cores
 /// If desired is Some and less than available cores,
 /// returns desired number of cores
 pub fn njobs(flag_jobs: Option<usize>) -> usize {
@@ -372,7 +372,7 @@ pub fn init_allocator_runtime() {}
 /// — qsv is short-lived, so the process exits before retained pages matter; no
 /// restore is performed.
 ///
-/// NOTE: the MALLCTL_ARENAS_ALL (4096) pseudo-index segfaults here for decay
+/// NOTE: the `MALLCTL_ARENAS_ALL` (4096) pseudo-index segfaults here for decay
 /// writes via BOTH the string-name (`arena.4096.*`) and numeric-MIB interfaces
 /// (tikv-jemalloc-sys 0.7 / macOS), so all arenas can't be set in one call.
 /// Instead set the `arenas.*` template (inherited by arenas created later, e.g.
@@ -433,8 +433,8 @@ pub fn timeout_secs(timeout: u16) -> Result<u64, String> {
 
 /// sets custom user agent
 /// if user agent is not set, then use the default user agent
-/// it supports four special LITERALs: $QSV_BIN_NAME, $QSV_VERSION, $QSV_TARGET, $QSV_KIND
-/// and $QSV_COMMAND which will be replaced with the actual values during runtime
+/// it supports four special LITERALs: $`QSV_BIN_NAME`, $`QSV_VERSION`, $`QSV_TARGET`, $`QSV_KIND`
+/// and $`QSV_COMMAND` which will be replaced with the actual values during runtime
 pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
     use reqwest::header::HeaderValue;
 
@@ -527,7 +527,7 @@ pub fn create_reqwest_async_client(
 /// # Returns
 ///
 /// Returns a configured blocking reqwest client with the same options
-/// as create_reqwest_async_client
+/// as `create_reqwest_async_client`
 pub fn create_reqwest_blocking_client(
     user_agent: Option<String>,
     timeout_secs: u16,
@@ -891,7 +891,7 @@ fn count_with_csv_reader(conf: &Config) -> Option<u64> {
 }
 
 /// Count rows using the "regular" CSV reader, never the polars mem-mapped
-/// reader. The result is cached in ROW_COUNT so subsequent calls are free.
+/// reader. The result is cached in `ROW_COUNT` so subsequent calls are free.
 #[inline]
 pub fn count_rows_regular(conf: &Config) -> Result<u64, CliError> {
     if let Some(idx) = conf.indexed().unwrap_or(None) {
@@ -1061,7 +1061,7 @@ pub fn file_metadata(md: &fs::Metadata) -> (u64, u64) {
 /// Return the maximum file size that can be processed.
 /// If the file is larger than the maximum file size, return an error.
 /// If memcheck is true, check memory in CONSERVATIVE mode
-///   (i.e., Filesize < (AVAIL memory + SWAP) * platform_factor - headroom)
+///   (i.e., Filesize < (AVAIL memory + SWAP) * `platform_factor` - headroom)
 /// If memcheck is false, check memory in NORMAL mode
 ///   (i.e., Filesize < TOTAL memory - headroom)
 pub fn mem_file_check(
@@ -2034,14 +2034,14 @@ pub fn round_num(dec_f64: f64, places: u32) -> String {
 }
 
 #[inline]
-/// Transforms a byte slice into a ByteString with optional case-insensitive conversion.
+/// Transforms a byte slice into a `ByteString` with optional case-insensitive conversion.
 ///
 /// This function takes a byte slice and attempts to convert it to a UTF-8 string. If successful,
 /// it trims whitespace and optionally converts to lowercase. If the input is not valid UTF-8,
 /// it returns the original bytes unchanged.
 ///
 /// It's fine-tuned for speed and memory usage, using simdutf8 for UTF-8 validation and
-/// to_lowercase_into for non-allocating, in-place lowercase conversion.
+/// `to_lowercase_into` for non-allocating, in-place lowercase conversion.
 ///
 /// # Arguments
 ///
@@ -2311,12 +2311,12 @@ pub fn decompress_snappy_file(
 }
 
 /// downloads a file from a url and saves it to a path
-/// if show_progress is true, a progress bar will be shown
-/// if custom_user_agent is Some, it will be used as the user agent
-/// if download_timeout is Some, it will be used as the timeout in seconds. The
+/// if `show_progress` is true, a progress bar will be shown
+/// if `custom_user_agent` is Some, it will be used as the user agent
+/// if `download_timeout` is Some, it will be used as the timeout in seconds. The
 /// value is validated by `timeout_secs` and must be in the range 1..=3600;
 /// values of 0 or > 3600 cause this function to return an error. If
-/// sample_size is Some, it will be used as the number of bytes to download.
+/// `sample_size` is Some, it will be used as the number of bytes to download.
 pub async fn download_file(
     url: &str,
     path: PathBuf,
@@ -2407,8 +2407,8 @@ pub async fn download_file(
     Ok(file.flush()?)
 }
 
-/// this is a non-allocating to_lowercase that uses an existing buffer
-/// and should be faster than the allocating std::to_lowercase
+/// this is a non-allocating `to_lowercase` that uses an existing buffer
+/// and should be faster than the allocating `std::to_lowercase`
 #[inline]
 pub fn to_lowercase_into(s: &str, buf: &mut String) {
     buf.clear();
@@ -2675,7 +2675,7 @@ pub fn replace_column_value(
         .collect()
 }
 
-/// format a SystemTime from a file's metadata to a string using the format specifier
+/// format a `SystemTime` from a file's metadata to a string using the format specifier
 #[inline]
 pub fn format_systemtime(time: SystemTime, format_specifier: &str) -> String {
     // Default to UNIX_EPOCH for pre-1970 timestamps. They do occur in the wild —
@@ -2719,7 +2719,7 @@ pub fn create_json_writer(
     Ok(writer)
 }
 
-/// iterate over the CSV ByteRecords and write them to the JSON file.
+/// iterate over the CSV `ByteRecords` and write them to the JSON file.
 ///
 /// Records are taken as `csv::Result<ByteRecord>` so callers can pass the
 /// raw `byte_records()` iterator and have parse errors propagate with `?`
@@ -2802,12 +2802,12 @@ pub fn write_json(
     Ok(json_wtr.flush()?)
 }
 
-/// write a single csv::ByteRecord to a JSON record writer
-/// if no_headers is true, the column index (0-based) is used as the key
-/// if no_headers is false, the header is used as the key
-/// if is_first is true, a comma is not written before the record
-/// if is_first is false, a comma is written before the record
-/// is_first is passed as a mutable reference so that it can be updated
+/// write a single `csv::ByteRecord` to a JSON record writer
+/// if `no_headers` is true, the column index (0-based) is used as the key
+/// if `no_headers` is false, the header is used as the key
+/// if `is_first` is true, a comma is not written before the record
+/// if `is_first` is false, a comma is written before the record
+/// `is_first` is passed as a mutable reference so that it can be updated
 /// in this helper function efficiently
 /// in this way, we can stream JSON records to a writer
 pub fn write_json_record<W: std::io::Write>(
@@ -2880,7 +2880,7 @@ pub fn write_json_record<W: std::io::Write>(
 /// leaner mode can be reused by a richer one. Most modes only need the
 /// base cardinality/types set any cache carries, so they always pass.
 /// `StatsMode::ProfileSchema` additionally needs mode + quartiles; a cache
-/// from `qsv schema` (StatsMode::Schema) lacks both. Since no
+/// from `qsv schema` (`StatsMode::Schema`) lacks both. Since no
 /// producing-mode marker is stored, sufficiency is detected from the data:
 ///   * `--mode` populates the `mode_count` metadata field for every column (even `Some(0)` for an
 ///     all-unique column, where the `mode` value itself is `None`); a lean cache leaves
@@ -3341,12 +3341,12 @@ pub fn csv_to_jsonl(
 }
 
 /// get the optimal batch size
-/// if CSV is not indexed and ROW_COUNT is not set, return DEFAULT_BATCH_SIZE
-/// if batch_size is 0, return the number of rows in the CSV, effectively disabling batching
-/// if batch_size is 1, force batch_size to be set to "optimal_size", even though
+/// if CSV is not indexed and `ROW_COUNT` is not set, return `DEFAULT_BATCH_SIZE`
+/// if `batch_size` is 0, return the number of rows in the CSV, effectively disabling batching
+/// if `batch_size` is 1, force `batch_size` to be set to "`optimal_size`", even though
 /// its not recommended (number of rows is too small for parallel processing)
-/// if batch_size is equal to DEFAULT_BATCH_SIZE, return the optimal_size
-/// failing everything above, return the requested batch_size
+/// if `batch_size` is equal to `DEFAULT_BATCH_SIZE`, return the `optimal_size`
+/// failing everything above, return the requested `batch_size`
 #[inline]
 pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) -> usize {
     if batch_size > 1 && batch_size < DEFAULT_BATCH_SIZE {

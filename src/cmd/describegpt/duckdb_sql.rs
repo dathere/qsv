@@ -1,4 +1,4 @@
-//! DuckDB discovery, SQL escaping, query execution, SQL scoring + refinement,
+//! `DuckDB` discovery, SQL escaping, query execution, SQL scoring + refinement,
 //! and SQL-error recovery for describegpt.
 //!
 //! The LLM produces SQL in answer to a user question; everything else in this
@@ -19,7 +19,7 @@ use crate::{
 /// doubles `"` inside `"…"`.
 ///
 /// - Single quotes are escaped by doubling (`'` → `''`), per the SQL standard.
-/// - Backslashes are doubled (`\` → `\\`) — non-standard but matches DuckDB and prevents C-style
+/// - Backslashes are doubled (`\` → `\\`) — non-standard but matches `DuckDB` and prevents C-style
 ///   escape injection. Must be applied first.
 /// - Newline, CR, and null byte are replaced with their `\n` / `\r` / `\0` escape-sequence
 ///   spellings.
@@ -58,13 +58,13 @@ pub(super) fn extract_sql_sample(csv_path: &Path) -> CliResult<String> {
     Ok(result.trim().to_string())
 }
 
-/// Whether DuckDB should be used — true iff `QSV_DUCKDB_PATH` is set and
+/// Whether `DuckDB` should be used — true iff `QSV_DUCKDB_PATH` is set and
 /// non-empty. (Existence / executable checks happen later in `get_duckdb_path`.)
 pub(super) fn should_use_duckdb() -> bool {
     env::var(QSV_DUCKDB_PATH_ENV).is_ok_and(|val| !val.is_empty())
 }
 
-/// Resolve the DuckDB binary path from `QSV_DUCKDB_PATH`, verify it, and cache
+/// Resolve the `DuckDB` binary path from `QSV_DUCKDB_PATH`, verify it, and cache
 /// the result in a process-wide `OnceLock`.
 pub(super) fn get_duckdb_path() -> CliResult<String> {
     if let Some(path) = DUCKDB_PATH.get() {
@@ -91,11 +91,11 @@ pub(super) fn get_duckdb_path() -> CliResult<String> {
     Ok(duckdb_path)
 }
 
-/// Run a SQL query through the DuckDB CLI and return `(stdout, stderr)`.
+/// Run a SQL query through the `DuckDB` CLI and return `(stdout, stderr)`.
 ///
 /// On non-zero exit, writes the failed query to `output_path.sql` for
 /// debugging and returns an error. On success, if `output_path` is non-empty,
-/// writes stdout to `output_path.csv`. Also fails if DuckDB prints `" error:"`
+/// writes stdout to `output_path.csv`. Also fails if `DuckDB` prints `" error:"`
 /// to stderr even with a 0 exit — a belt-and-suspenders check.
 pub(super) fn run_duckdb_query(
     sql_query: &str,

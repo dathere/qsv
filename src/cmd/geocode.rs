@@ -671,8 +671,8 @@ struct NamesLang {
     countryname: String,
 }
 
-/// OpenCage Geocoding API response. Only the fields qsv uses are deserialized.
-/// See https://opencagedata.com/api for the full schema.
+/// `OpenCage` Geocoding API response. Only the fields qsv uses are deserialized.
+/// See <https://opencagedata.com/api> for the full schema.
 #[derive(Deserialize)]
 struct OpencageResponse {
     #[serde(default)]
@@ -709,7 +709,7 @@ struct OpencageGeometry {
     lng: f64,
 }
 
-/// Error from an OpenCage lookup. `Fatal` aborts the whole run (bad API key, quota
+/// Error from an `OpenCage` lookup. `Fatal` aborts the whole run (bad API key, quota
 /// exceeded); `Transient` is a per-row failure (network error, 5xx, rate-limited)
 /// that is handled via --invalid-result.
 enum OcError {
@@ -1636,9 +1636,9 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 }
 
 /// Run the `opencage` / `opencagenow` subcommands: online forward/reverse geocoding
-/// via the OpenCage API. Rows are processed sequentially behind a rate limiter, with
-/// a persistent on-disk result cache (OpenCage's TOS explicitly permits caching).
-/// This is a separate path from geocode_main's offline, rayon-parallel pipeline.
+/// via the `OpenCage` API. Rows are processed sequentially behind a rate limiter, with
+/// a persistent on-disk result cache (`OpenCage`'s TOS explicitly permits caching).
+/// This is a separate path from `geocode_main`'s offline, rayon-parallel pipeline.
 #[allow(clippy::future_not_send)]
 async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
     let now_cmd = mode == GeocodeSubCmd::OpencageNow;
@@ -1928,19 +1928,19 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
 
 // ─────────────────────── OpenCage disk-cache management ───────────────────────
 
-/// The cache name used for the persistent on-disk OpenCage result cache.
+/// The cache name used for the persistent on-disk `OpenCage` result cache.
 /// `cached`'s `DiskCacheBuilder` stores the sled DB in `{cache_dir}/{name}_v{N}`,
 /// where N is the crate's `DISK_FILE_VERSION` (currently 1).
 const OPENCAGE_CACHE_NAME: &str = "geocode-opencage";
 
-/// The on-disk directory `cached` uses for the OpenCage cache. The `_v1` suffix
+/// The on-disk directory `cached` uses for the `OpenCage` cache. The `_v1` suffix
 /// tracks `cached`'s `DISK_FILE_VERSION`; update it if the `cached` crate bumps it.
 fn opencage_cache_path(cache_dir: &Path) -> PathBuf {
     cache_dir.join(format!("{OPENCAGE_CACHE_NAME}_v1"))
 }
 
 /// Deserialize-only mirror of `cached` 0.59's private `CachedDiskValue<String>`.
-/// Entries are rmp_serde-encoded positionally as [value, created_at, version],
+/// Entries are rmp_serde-encoded positionally as [value, `created_at`, version],
 /// so the field ORDER here must match exactly. Used to read entry timestamps for
 /// `cache-info`; if `cached` changes its encoding, deserialization simply fails
 /// and oldest/newest gracefully degrade to "n/a".
@@ -2006,7 +2006,7 @@ fn resolve_older_than(value: &str) -> CliResult<Duration> {
 }
 
 /// Run the `cache-clear` / `cache-prune` / `cache-info` subcommands, which manage
-/// the persistent on-disk OpenCage result cache. Synchronous - does not use the
+/// the persistent on-disk `OpenCage` result cache. Synchronous - does not use the
 /// Geonames index nor make any network calls.
 fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
     let cache_path = opencage_cache_path(cache_dir);
@@ -2159,7 +2159,7 @@ cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=
     );
 }
 
-/// check if index_file exists and ends with a .rkyv extension
+/// check if `index_file` exists and ends with a .rkyv extension
 fn check_index_file(index_file: &str) -> CliResult<()> {
     // the only prebuilt index published to the qsv GitHub repo is cities15000,
     // so 15000 is the sole numeric shortcut accepted by the index-load subcommand
@@ -2193,9 +2193,9 @@ fn check_index_file(index_file: &str) -> CliResult<()> {
     Ok(())
 }
 
-/// load_engine_data loads the Geonames index file into memory
+/// `load_engine_data` loads the Geonames index file into memory
 /// if the index file does not exist, it will download the default index file
-/// from the qsv GitHub repo. For convenience, if geocode_index_file is the bare
+/// from the qsv GitHub repo. For convenience, if `geocode_index_file` is the bare
 /// number 15000 (no extension), it downloads the prebuilt cities15000 index instead.
 async fn load_engine_data(
     geocode_index_file: PathBuf,
@@ -2349,7 +2349,7 @@ async fn load_engine_data(
 /// derives the shard count from `std::thread::available_parallelism()` (`4 x cores`,
 /// rounded to a power of two and clamped to [8, 1024]), so it auto-scales to the host.
 /// `max_size` must be an integer literal (the macro parses it as a literal), so the
-/// 2_000_000 cap (~2M entries) is inlined here. The cap is split across shards (each
+/// `2_000_000` cap (~2M entries) is inlined here. The cap is split across shards (each
 /// shard's map allocates lazily), so the build can't fail on capacity — no
 /// graceful-fallback path is needed.
 #[concurrent_cached(
@@ -2961,7 +2961,7 @@ fn format_result(
     }
 }
 
-/// Helper: return the first present OpenCage component (as a plain string) from `keys`.
+/// Helper: return the first present `OpenCage` component (as a plain string) from `keys`.
 fn opencage_component(r: &OpencageResult, keys: &[&str]) -> String {
     for key in keys {
         if let Some(value) = r.components.get(*key) {
@@ -2971,7 +2971,7 @@ fn opencage_component(r: &OpencageResult, keys: &[&str]) -> String {
     String::new()
 }
 
-/// Helper: convert a serde_json::Value to a plain (unquoted) string.
+/// Helper: convert a `serde_json::Value` to a plain (unquoted) string.
 fn opencage_value_to_string(value: &serde_json::Value) -> String {
     match value {
         serde_json::Value::String(s) => s.clone(),
@@ -2980,7 +2980,7 @@ fn opencage_value_to_string(value: &serde_json::Value) -> String {
     }
 }
 
-/// Helper: walk a serde_json::Value by a dotted path (e.g. "timezone.name").
+/// Helper: walk a `serde_json::Value` by a dotted path (e.g. "timezone.name").
 fn opencage_json_dotpath(value: &serde_json::Value, path: &str) -> String {
     let mut current = value;
     for part in path.split('.') {
@@ -2992,7 +2992,7 @@ fn opencage_json_dotpath(value: &serde_json::Value, path: &str) -> String {
     opencage_value_to_string(current)
 }
 
-/// Helper: resolve a single dynamic-format field for an OpenCage result.
+/// Helper: resolve a single dynamic-format field for an `OpenCage` result.
 /// Returns None for an unrecognized key (which makes the whole template invalid).
 fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
     match key {
@@ -3016,8 +3016,8 @@ fn opencage_field_value(r: &OpencageResult, key: &str) -> Option<String> {
     }
 }
 
-/// Returns true if `key` is a valid "%dyncols:" field key for an OpenCage result,
-/// i.e. one that opencage_field_value() can resolve.
+/// Returns true if `key` is a valid "%dyncols:" field key for an `OpenCage` result,
+/// i.e. one that `opencage_field_value()` can resolve.
 /// `components.` / `annotations.` prefixes require a non-empty suffix - a bare
 /// prefix has no field to resolve and would silently yield an empty column.
 fn is_valid_opencage_dyncol(key: &str) -> bool {
@@ -3028,7 +3028,7 @@ fn is_valid_opencage_dyncol(key: &str) -> bool {
             .is_some_and(|suffix| !suffix.is_empty())
 }
 
-/// Build a JSON object from an OpenCage result for the %json / %pretty-json formats.
+/// Build a JSON object from an `OpenCage` result for the %json / %pretty-json formats.
 fn opencage_result_json(r: &OpencageResult, no_annotations: bool) -> serde_json::Value {
     let mut obj = json!({
         "formatted": r.formatted,
@@ -3042,9 +3042,9 @@ fn opencage_result_json(r: &OpencageResult, no_annotations: bool) -> serde_json:
     obj
 }
 
-/// Format an OpenCage geocoding result per `formatstr`.
+/// Format an `OpenCage` geocoding result per `formatstr`.
 /// Supports predefined %-formats and dotted-key dynamic templating.
-/// Unlike format_result(), this is bound to the OpenCage response shape, not Geonames.
+/// Unlike `format_result()`, this is bound to the `OpenCage` response shape, not Geonames.
 fn format_opencage_result(r: &OpencageResult, formatstr: &str, no_annotations: bool) -> String {
     if formatstr.starts_with('%') {
         #[allow(clippy::match_same_arms)]
@@ -3102,7 +3102,7 @@ fn format_opencage_result(r: &OpencageResult, formatstr: &str, no_annotations: b
     }
 }
 
-/// Normalize a query cell for the OpenCage API.
+/// Normalize a query cell for the `OpenCage` API.
 /// If the cell (after stripping one pair of surrounding parens) is entirely a
 /// WGS-84 coordinate, returns a bare "lat,long" string for reverse geocoding.
 /// Otherwise, for forward geocoding, returns the trimmed cell as-is.
@@ -3130,7 +3130,7 @@ fn normalize_opencage_query(cell: &str, reverse: bool) -> Option<String> {
     }
 }
 
-/// Encode an OpenCage lookup outcome for the string-valued cache.
+/// Encode an `OpenCage` lookup outcome for the string-valued cache.
 /// `Some(s)` is stored as "F"+s; `None` (zero results) is stored as "N".
 fn encode_opencage_cache(outcome: Option<&str>) -> String {
     match outcome {
@@ -3139,7 +3139,7 @@ fn encode_opencage_cache(outcome: Option<&str>) -> String {
     }
 }
 
-/// Decode a cached OpenCage lookup outcome (see encode_opencage_cache).
+/// Decode a cached `OpenCage` lookup outcome (see `encode_opencage_cache`).
 fn decode_opencage_cache(encoded: &str) -> Option<String> {
     if encoded == "N" {
         None
@@ -3148,7 +3148,7 @@ fn decode_opencage_cache(encoded: &str) -> Option<String> {
     }
 }
 
-/// Call the OpenCage Geocoding API for a single (already normalized) query.
+/// Call the `OpenCage` Geocoding API for a single (already normalized) query.
 /// The same `q` parameter does forward geocoding for an address and reverse
 /// geocoding for a "lat,long" coordinate.
 async fn opencage_fetch(
@@ -3231,7 +3231,7 @@ async fn opencage_fetch(
     }
 }
 
-/// Geocode a single normalized query via OpenCage, with caching.
+/// Geocode a single normalized query via `OpenCage`, with caching.
 /// Checks the in-run memory cache, then the persistent on-disk cache, and only
 /// then hits the API. Successful lookups (including zero-result lookups) are
 /// cached; `OcError::Fatal` aborts the run and is never cached.
@@ -3288,8 +3288,8 @@ async fn opencage_lookup(
     Ok(outcome)
 }
 
-/// Geocode a single normalized query via OpenCage for "%dyncols:" mode, with caching.
-/// Unlike opencage_lookup (which caches a single formatted string), this caches the
+/// Geocode a single normalized query via `OpenCage` for "%dyncols:" mode, with caching.
+/// Unlike `opencage_lookup` (which caches a single formatted string), this caches the
 /// raw first result as JSON, so any set of dyncols fields can be extracted from it -
 /// the cache key is therefore independent of the requested columns.
 /// Returns one value per `column_values` entry, or None for a zero-result lookup.
@@ -3376,7 +3376,7 @@ async fn opencage_lookup_dyncols(
     Ok(values)
 }
 
-/// get_countryinfo is a cached function that returns a countryinfo result for a given cell value.
+/// `get_countryinfo` is a cached function that returns a countryinfo result for a given cell value.
 /// It is used by the countryinfo/countryinfonow subcommands.
 #[cached(key = "String", convert = r#"{ format!("{cell}-{formatstr}") }"#)]
 fn get_countryinfo(
@@ -3491,7 +3491,7 @@ fn get_countryinfo(
     }
 }
 
-/// get_cityrecord_name_in_lang is a cached function that returns a NamesLang struct
+/// `get_cityrecord_name_in_lang` is a cached function that returns a `NamesLang` struct
 /// containing the city, admin1, admin2, and country names in the specified language.
 /// Note that the index file needs to be built with the desired languages for this to work.
 /// Use the "index-update" subcommand with the --languages option to rebuild the index

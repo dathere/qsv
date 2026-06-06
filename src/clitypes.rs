@@ -15,7 +15,7 @@ macro_rules! wout {
     });
 }
 
-/// write to stdout and log::info
+/// write to stdout and `log::info`
 macro_rules! woutinfo {
     ($($arg:tt)*) => ({
         use std::io::Write;
@@ -26,7 +26,7 @@ macro_rules! woutinfo {
     });
 }
 
-/// write to stderr and log::error
+/// write to stderr and `log::error`
 macro_rules! werr {
     ($($arg:tt)*) => ({
         use std::io::Write;
@@ -37,7 +37,7 @@ macro_rules! werr {
     });
 }
 
-/// write to stderr and log::warn
+/// write to stderr and `log::warn`
 macro_rules! wwarn {
     ($($arg:tt)*) => ({
         use std::io::Write;
@@ -48,7 +48,7 @@ macro_rules! wwarn {
     });
 }
 
-/// write to stderr and log::info
+/// write to stderr and `log::info`
 macro_rules! winfo {
     ($($arg:tt)*) => ({
         use std::io::Write;
@@ -59,7 +59,7 @@ macro_rules! winfo {
     });
 }
 
-/// write to stderr and log::error, returning Err(err)
+/// write to stderr and `log::error`, returning Err(err)
 macro_rules! fail {
     ($e:expr_2021) => {{
         use log::error;
@@ -69,7 +69,7 @@ macro_rules! fail {
     }};
 }
 
-/// write to stderr and log::error, using CliError::Other
+/// write to stderr and `log::error`, using `CliError::Other`
 macro_rules! fail_clierror {
     ($($t:tt)*) => {{
         use log::error;
@@ -80,7 +80,7 @@ macro_rules! fail_clierror {
     }};
 }
 
-/// write to stderr and log::error, using CliError::IncorrectUsage
+/// write to stderr and `log::error`, using `CliError::IncorrectUsage`
 macro_rules! fail_incorrectusage_clierror {
     ($($t:tt)*) => {{
         use log::error;
@@ -91,7 +91,7 @@ macro_rules! fail_incorrectusage_clierror {
     }};
 }
 
-/// write to stderr and log::error, using CliError::Encoding
+/// write to stderr and `log::error`, using `CliError::Encoding`
 macro_rules! fail_encoding_clierror {
     ($($t:tt)*) => {{
         use log::error;
@@ -102,7 +102,7 @@ macro_rules! fail_encoding_clierror {
     }};
 }
 
-/// write to stderr and log::error, using CliError::OutOfMemory
+/// write to stderr and `log::error`, using `CliError::OutOfMemory`
 macro_rules! fail_oom_clierror {
     ($($t:tt)*) => {{
         use log::error;
@@ -113,7 +113,7 @@ macro_rules! fail_oom_clierror {
     }};
 }
 
-/// write to stderr and log::error, returning Err(err) using a format string
+/// write to stderr and `log::error`, returning Err(err) using a format string
 macro_rules! fail_format {
     ($($t:tt)*) => {{
         use log::error;

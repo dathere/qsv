@@ -476,7 +476,7 @@ struct ValueIndex<R> {
 }
 
 impl<R: io::Read + io::Seek> ValueIndex<R> {
-    /// Creates a new ValueIndex by reading a CSV and building indexes for
+    /// Creates a new `ValueIndex` by reading a CSV and building indexes for
     /// both row positions and values.
     ///
     /// This function reads through a CSV file once to build two indexes:
@@ -493,8 +493,8 @@ impl<R: io::Read + io::Seek> ValueIndex<R> {
     ///
     /// # Returns
     ///
-    /// Returns a ValueIndex containing:
-    /// * `values` - HashMap mapping column values to row numbers
+    /// Returns a `ValueIndex` containing:
+    /// * `values` - `HashMap` mapping column values to row numbers
     /// * `idx` - Indexed CSV reader for random access
     /// * `num_rows` - Total number of data rows processed
     ///

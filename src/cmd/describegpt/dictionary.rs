@@ -359,7 +359,7 @@ pub(super) fn normalize_datetime_token(raw: &str) -> Option<String> {
     }
 }
 
-/// Returns the bare-token prefix of a content_type, i.e. the part before the
+/// Returns the bare-token prefix of a `content_type`, i.e. the part before the
 /// first `:` (`"datetime:%F"` → `"datetime"`, `"duration:3600"` → `"duration"`).
 /// Non-suffixed tokens are returned unchanged.
 pub(super) fn content_type_base(token: &str) -> &str {
@@ -491,7 +491,7 @@ pub(crate) struct FrequencyRecord {
 
 /// One weighted frequency sample for a field, carrying the qsv-computed
 /// `percentage` and `rank` that the flat `examples` string discards. Populated
-/// for the same top-N values shown in `examples`; consumed by the SemanticMd
+/// for the same top-N values shown in `examples`; consumed by the `SemanticMd`
 /// formatter to render richer Frequency tables. `value` is already display-
 /// formatted (bucket "…" suffix + `truncate_str` truncation) to match `examples`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -530,8 +530,8 @@ pub(super) struct DictionaryEntry {
     /// Structural "every row carries a distinct non-null value" flag (`cardinality ==
     /// rowcount`, no nulls), computed deterministically at generation time. Distinct
     /// from the overloaded `examples == "<ALL_UNIQUE>"` sentinel (which is also set for
-    /// constant-value and HIGH_CARDINALITY columns at 100% frequency). Consumed by the
-    /// SemanticMd formatter for primary-key inference. `#[serde(default)]` for cache
+    /// constant-value and `HIGH_CARDINALITY` columns at 100% frequency). Consumed by the
+    /// `SemanticMd` formatter for primary-key inference. `#[serde(default)]` for cache
     /// backward-compatibility.
     #[serde(default)]
     pub(super) is_unique_id: bool,
@@ -1178,7 +1178,7 @@ fn usable_samples_by_field<'a>(
 /// (`13/02/2020`), so all samples must parse; if any fails, the suffix is
 /// stripped back to the bare token.
 ///
-/// Entries with no usable sample (an ALL_UNIQUE date column, or one whose only
+/// Entries with no usable sample (an `ALL_UNIQUE` date column, or one whose only
 /// frequency row is the "Other" bucket) keep their suffix unchanged — there is
 /// nothing to validate them against.
 pub(super) fn validate_date_formats(

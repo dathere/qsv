@@ -648,9 +648,9 @@ impl Config {
 
     /// Check if the index file exists and is newer than the CSV file.
     /// If so, return the CSV file handle and the index file handle. If not, return None.
-    /// Unless the CSV's file size >= QSV_AUTOINDEX_SIZE, then we'll create an index automatically.
-    /// Stale indices (CSV newer than index) are rebuilt automatically, but only on the
-    /// `(Some(path), None)` branch that resolves the index path internally; the
+    /// Unless the CSV's file size >= `QSV_AUTOINDEX_SIZE`, then we'll create an index
+    /// automatically. Stale indices (CSV newer than index) are rebuilt automatically, but only
+    /// on the `(Some(path), None)` branch that resolves the index path internally; the
     /// `auto_indexed` and explicit-`(path, idx_path)` branches skip the staleness recheck.
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
         // Track the data file's mtime and the resolved index path *only* on the
@@ -745,7 +745,7 @@ impl Config {
     /// Check if the index file exists and is newer than the CSV file.
     /// If so, return the index file.
     /// If not, return None.
-    /// Unless QSV_AUTOINDEX_SIZE is set, in which case, we'll recreate the
+    /// Unless `QSV_AUTOINDEX_SIZE` is set, in which case, we'll recreate the
     /// stale index automatically
     #[inline]
     pub fn indexed(&self) -> CliResult<Option<Indexed<fs::File, fs::File>>> {

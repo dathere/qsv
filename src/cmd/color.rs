@@ -511,7 +511,7 @@ fn test_get_theme() {
 //
 
 /// Determine if we should force color on or off. Cli flags always take precedence. Note that when
-/// using ColorChoice::Auto, anstyle makes its own decision based on stdout tty, common env
+/// using `ColorChoice::Auto`, anstyle makes its own decision based on stdout tty, common env
 /// variables, terminal detection, etc.
 fn setup_color_choice(flag_color: bool, flag_output: bool, qsv_force_color: bool) {
     let color_choice = if flag_color {

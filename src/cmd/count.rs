@@ -255,10 +255,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 ///
 /// # Details
 /// - If an index exists for the file, uses that for the record count
-/// - If only counting records (CountDelimsMode::NotRequired), just returns count
+/// - If only counting records (`CountDelimsMode::NotRequired`), just returns count
 /// - For width statistics:
 ///   - Reads through file calculating width of each record
-///   - Width can optionally include delimiters based on CountDelimsMode
+///   - Width can optionally include delimiters based on `CountDelimsMode`
 ///   - Uses parallel sorting for performance on large files
 ///   - Handles potential numeric overflow in calculations
 ///
@@ -434,8 +434,8 @@ fn count_input(conf: &Config, count_delims_mode: CountDelimsMode) -> CliResult<(
 ///
 /// # Performance
 /// - Uses memory-mapped reading and multithreading for fast processing
-/// - For standard CSV files (comma-delimited, no comments), uses optimized read_csv() function
-/// - Otherwise uses LazyCsvReader with optimized settings
+/// - For standard CSV files (comma-delimited, no comments), uses optimized `read_csv()` function
+/// - Otherwise uses `LazyCsvReader` with optimized settings
 ///
 /// # Errors
 /// Returns error if:

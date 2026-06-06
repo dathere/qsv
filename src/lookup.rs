@@ -54,7 +54,7 @@ pub struct LookupTableResult {
 /// 1. Checks if lookup table exists as local file
 /// 2. If not local, checks cache:
 ///    - Uses cache if valid and not expired
-///    - Deletes cache if cache_age_secs is negative
+///    - Deletes cache if `cache_age_secs` is negative
 /// 3. For remote files:
 ///    - Handles dathere:// prefix for GitHub lookup tables
 ///    - Handles ckan:// prefix for CKAN resources

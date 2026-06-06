@@ -27,7 +27,7 @@ pub struct Spec {
     pub dataset_fields:   Vec<Field>,
     #[serde(default)]
     pub resource_fields:  Vec<Field>,
-    /// Any other top-level keys (display_group_order, draft_fields_required, ...)
+    /// Any other top-level keys (`display_group_order`, `draft_fields_required`, ...)
     /// are preserved here so the output can round-trip them.
     #[serde(flatten)]
     pub extras:           Map<String, Value>,
@@ -58,7 +58,7 @@ pub struct Field {
     #[serde(default)]
     pub suggestion_formula: Option<String>,
 
-    /// All other keys (preset, validators, choices, form_*, start_form_page,
+    /// All other keys (preset, validators, choices, form_*, `start_form_page`,
     /// dpp_*, …) preserved verbatim.
     #[serde(flatten)]
     pub extras: Map<String, Value>,

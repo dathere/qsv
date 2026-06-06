@@ -207,7 +207,7 @@ fn format_date(value: Value, format: Option<String>, kwargs: Kwargs) -> Result<V
 }
 
 /// Calculate percentage. Raises an error if `whole` is zero or inputs
-/// aren't numeric — mirrors DP+'s ValueError behavior.
+/// aren't numeric — mirrors DP+'s `ValueError` behavior.
 fn calculate_percentage(part: Value, whole: Value) -> Result<f64, Error> {
     let p = value_to_f64(&part).ok_or_else(|| value_err("Error calculating percentage"))?;
     let w = value_to_f64(&whole).ok_or_else(|| value_err("Error calculating percentage"))?;
@@ -324,7 +324,7 @@ fn spatial_extent_wkt(
     ))
 }
 
-/// Convert a bounding box to a named GeoJSON FeatureCollection string.
+/// Convert a bounding box to a named `GeoJSON` `FeatureCollection` string.
 /// DP+'s docstring documents this with three named slots, and the
 /// examples show both positional and keyword call styles:
 ///
@@ -687,7 +687,7 @@ fn resolve_date_field(arg: Option<&Value>, state: &minijinja::State) -> Result<S
     }
     Err(value_err("No date or datetime fields found"))
 }
-/// Parse ISO 8601 date / datetime / RFC3339 strings into NaiveDateTime
+/// Parse ISO 8601 date / datetime / RFC3339 strings into `NaiveDateTime`
 /// for interval math. Sub-second precision is preserved; date-only
 /// strings get midnight as the time component.
 ///
@@ -737,7 +737,7 @@ fn day_intervals(dates: &[NaiveDateTime]) -> Vec<i64> {
 /// nondeterministic and could change `guess_accrual_periodicity`
 /// results between runs when multiple intervals are equally common.
 /// Walking the input once to assign each unique value a stable index,
-/// then `max_by_key` over (count, -first_index), preserves first-seen
+/// then `max_by_key` over (count, -`first_index`), preserves first-seen
 /// order without needing an external `IndexMap` dep.
 fn mode(values: &[i64]) -> Option<i64> {
     use std::collections::HashMap;
@@ -799,7 +799,7 @@ struct BBoxCoords {
 
 /// Resolve a bounding box from the template context, with the same
 /// precedence DP+ uses:
-///   1. `resource.dpp_spatial_extent.coordinates` (BoundingBox geometry)
+///   1. `resource.dpp_spatial_extent.coordinates` (`BoundingBox` geometry)
 ///   2. `dpp.LAT_FIELD` / `dpp.LON_FIELD` → `dpps[field].stats.{min,max}`
 ///
 /// Raises a ValueError-equivalent if no lat/lon fields are found.

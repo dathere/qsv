@@ -21,7 +21,7 @@ struct SkillDefinition {
     name:        String,
     version:     String,
     /// Concise description from README.md command table
-    /// For detailed help, use `qsv <command> --help` via the qsv_help tool
+    /// For detailed help, use `qsv <command> --help` via the `qsv_help` tool
     description: String,
     category:    String,
     command:     CommandSpec,
@@ -883,7 +883,7 @@ impl UsageParser {
     }
 
     /// Extract hints from README.md command table
-    /// Returns (indexed, memory_intensive, proportional_memory)
+    /// Returns (indexed, `memory_intensive`, `proportional_memory`)
     fn extract_hints_from_readme(command_name: &str) -> (bool, bool, bool) {
         // Try to find the README.md in the repo root
         let readme_paths = ["README.md", "../README.md", "../../README.md"];

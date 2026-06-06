@@ -328,7 +328,7 @@ impl RequestedRange {
             .map(|r| r - 1)
     }
 
-    /// worksheet_size is from range.getsize, height,width. 1 indexed.
+    /// `worksheet_size` is from range.getsize, height,width. 1 indexed.
     fn from_string(range: &str, worksheet_size: (usize, usize)) -> CliResult<RequestedRange> {
         let Some((start, end)) = range.split_once(':') else {
             return fail_clierror!("Unable to parse range string");
@@ -383,13 +383,13 @@ fn float_to_i64_safe(value: f64) -> Option<i64> {
 ///
 /// # Returns
 ///
-/// * `Ok(String)` - The range part of the requested_range if successful.
+/// * `Ok(String)` - The range part of the `requested_range` if successful.
 /// * `Err(CliError)` - If there's an error in parsing or finding the requested sheet/range.
 ///
 /// # Errors
 ///
 /// This function will return an error if:
-/// * The requested_range format is invalid (doesn't contain a '!' separator).
+/// * The `requested_range` format is invalid (doesn't contain a '!' separator).
 /// * The specified sheet name is not found in the workbook.
 /// * The worksheet range cannot be retrieved for the specified sheet.
 fn get_requested_range(

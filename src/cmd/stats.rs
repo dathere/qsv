@@ -1011,7 +1011,7 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
     Ok(patterns)
 }
 
-/// Auto-enable approx DataSketches estimators when an OOM hit forces a memory
+/// Auto-enable approx `DataSketches` estimators when an OOM hit forces a memory
 /// budget cut. Returns the list of method names that were switched, in
 /// user-facing form. Caller is responsible for emitting the `wwarn!` message
 /// and for verifying that this was actually invoked from the OOM branch.
@@ -1032,7 +1032,7 @@ fn parse_boolean_patterns(boolean_patterns: &str) -> CliResult<Vec<BooleanPatter
 /// fallback that forces exact). The intent is that this auto-enable only flips
 /// methods that would have passed validation if the user had set them by hand.
 ///
-/// On big-endian targets the Apache DataSketches port is unavailable, so this
+/// On big-endian targets the Apache `DataSketches` port is unavailable, so this
 /// function compiles to a no-op stub that returns an empty `Vec`. The OOM
 /// branch in `run()` then falls through to returning the original error rather
 /// than auto-enabling an estimator that isn't compiled in.
@@ -1106,7 +1106,7 @@ fn try_enable_approx_sketches(
 ///
 /// 1. **Argument Parsing**: Parses command line arguments and validates configuration
 /// 2. **Boolean Inference Setup**: Configures boolean pattern matching if enabled
-/// 3. **Environment Variables**: Checks for QSV_PREFER_DMY environment variable
+/// 3. **Environment Variables**: Checks for `QSV_PREFER_DMY` environment variable
 /// 4. **Output Configuration**: Determines output format and compression settings
 /// 5. **Statistics Computation**: Processes CSV data using sequential or parallel approach
 /// 6. **Cache Management**: Handles statistics caching and cache invalidation
@@ -2079,7 +2079,7 @@ impl Args {
     /// * Requires a valid CSV index file for random access
     /// * Uses unsafe code for performance-critical operations
     /// * Thread safety is ensured through channel-based communication
-    /// * Index seeking operations are wrapped in expect() for better error messages
+    /// * Index seeking operations are wrapped in `expect()` for better error messages
     ///
     /// # Fallback Behavior
     ///
@@ -2293,7 +2293,7 @@ impl Args {
     /// # Arguments
     ///
     /// * `sel` - Column selection configuration
-    /// * `it` - Iterator over CSV records (ByteRecord results)
+    /// * `it` - Iterator over CSV records (`ByteRecord` results)
     ///
     /// # Returns
     ///
@@ -2311,7 +2311,7 @@ impl Args {
     ///
     /// * **Inline**: Function is marked as `#[inline]` for performance
     /// * **Unsafe Operations**: Uses unsafe code for bounds checking avoidance
-    /// * **Memory Reuse**: Reuses ByteRecord objects to reduce allocations
+    /// * **Memory Reuse**: Reuses `ByteRecord` objects to reduce allocations
     /// * **Hot Loop Optimization**: Critical path is optimized for speed
     /// * **Register Usage**: Frequently accessed variables are kept in registers
     ///
@@ -2388,7 +2388,7 @@ impl Args {
     ///
     /// # Arguments
     ///
-    /// * `full_headers` - The full CSV headers as a ByteRecord
+    /// * `full_headers` - The full CSV headers as a `ByteRecord`
     ///
     /// # Returns
     ///
@@ -2483,7 +2483,7 @@ impl Args {
             .select(self.flag_select.clone())
     }
 
-    /// Creates a WhichStats configuration from the current arguments.
+    /// Creates a `WhichStats` configuration from the current arguments.
     #[inline]
     fn which_stats(&self) -> WhichStats {
         // approx_quantiles selects the t-digest engine for median/quartiles/percentiles.
@@ -2744,7 +2744,7 @@ const fn estimate_chunk_memory(
 ///
 /// This function determines an appropriate chunk size based on:
 /// - Available memory per chunk (if configured)
-/// - Dynamic estimation via sampling (if max_chunk_memory_mb is Some(0))
+/// - Dynamic estimation via sampling (if `max_chunk_memory_mb` is Some(0))
 /// - CPU-based chunking (fallback)
 ///
 /// # Arguments
@@ -2883,7 +2883,7 @@ fn stats_path(stats_csv_path: &Path, stdin_flag: bool, weighted: bool) -> io::Re
 /// # Arguments
 ///
 /// * `infer_dates` - Whether date inference should be enabled at all
-/// * `headers` - The CSV headers as a ByteRecord containing column names
+/// * `headers` - The CSV headers as a `ByteRecord` containing column names
 /// * `flag_whitelist` - A comma-separated list of column name patterns to enable date inference
 ///   for. Use "all" (case-insensitive) to enable date inference for all columns.
 ///
@@ -3012,7 +3012,7 @@ fn read_current_sniff_whitelist(input_path: &std::path::Path, args: &Args) -> Op
 
 /// Resolves the "sniff" special value in dates-whitelist by sniffing the file
 /// in-process (via `sniff::date_columns`) and extracting the column names that have
-/// Date or DateTime types.
+/// Date or `DateTime` types.
 fn resolve_sniff_whitelist(input_path: &std::path::Path) -> CliResult<String> {
     let date_columns = crate::cmd::sniff::date_columns(input_path)?;
 
@@ -3046,18 +3046,18 @@ struct WhichStats {
     typesonly:            bool,
     percentiles:          bool,
     use_weights:          bool,
-    /// When true, use the Apache DataSketches t-digest engine for median, quartiles, and
+    /// When true, use the Apache `DataSketches` t-digest engine for median, quartiles, and
     /// custom percentiles instead of the exact (sort-based) `Unsorted<f64>` engine. Mutually
     /// exclusive with `mad` and `use_weights`; validation in the module-level `run(argv: ...)`
     /// function rejects the bad combinations.
     approx_quantiles:     bool,
-    /// When true, use the Apache DataSketches HyperLogLog engine for the cardinality
+    /// When true, use the Apache `DataSketches` `HyperLogLog` engine for the cardinality
     /// column instead of the exact `Unsorted<Vec<u8>>` / `HashMap<Vec<u8>, f64>` tracker.
     /// `--infer-boolean` forces this off in `run()` (HLL's ~1.5% RSE breaks
     /// `cardinality == 2` checks). Independent of `approx_quantiles`.
     approx_cardinality:   bool,
     /// When > 0, drop mode-tracking once a column accumulates more than this many samples
-    /// (Unsorted::len() for unweighted modes, HashMap::len() for weighted). 0 = unbounded
+    /// (`Unsorted::len()` for unweighted modes, `HashMap::len()` for weighted). 0 = unbounded
     /// (today's behavior). When the cap fires, output emits `*HIGH_CARDINALITY` for mode
     /// fields and `>=<cap>` for cardinality.
     mode_cardinality_cap: u64,
@@ -3258,7 +3258,7 @@ struct Stats {
     /// (neither an all-ASCII-digit integer, a zero-padded decimal code, nor a parseable float),
     /// after which the per-cell check is skipped. `zpn_has_value` records whether at least one
     /// non-null numeric-shaped value was seen. Combined with the final inferred type at output
-    /// time (flagged only when it is String — which from_sample() yields when at least one value
+    /// time (flagged only when it is String — which `from_sample()` yields when at least one value
     /// carries a leading zero), they identify columns whose leading/padding zeros would be lost if
     /// cast to a number (zip codes, barcodes, padded IDs, ICD-9/Dewey/HS-style decimal
     /// classification codes).
@@ -3321,25 +3321,25 @@ struct Stats {
 /// using an incremental algorithm that processes data in a single pass without storing
 /// all values. The algorithm is numerically stable and suitable for streaming data.
 ///
-/// The weighted mean is computed as: mean = Σ(w_i * x_i) / Σ(w_i)
-/// The weighted variance uses the frequency weight definition: variance = S_n / (W_n - 1)
+/// The weighted mean is computed as: mean = `Σ(w_i` * `x_i`) / `Σ(w_i)`
+/// The weighted variance uses the frequency weight definition: variance = `S_n` / (`W_n` - 1)
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct WeightedOnlineStats {
-    /// Sum of all weights: W_n = Σ(w_i)
+    /// Sum of all weights: `W_n` = `Σ(w_i)`
     sum_weights:              f64,
-    /// Current weighted mean: M_n
+    /// Current weighted mean: `M_n`
     weighted_mean:            f64,
-    /// Sum of squared differences: S_n = Σ(w_i * (x_i - M_{i-1}) * (x_i - M_i))
+    /// Sum of squared differences: `S_n` = `Σ(w_i` * (`x_i` - M_{i-1}) * (`x_i` - `M_i`))
     sum_squared_diffs:        f64,
-    /// Sum of weighted logarithms: Σ(w_i * ln(x_i)) for weighted geometric mean
+    /// Sum of weighted logarithms: `Σ(w_i` * `ln(x_i)`) for weighted geometric mean
     sum_weighted_logs:        f64,
     /// Sum of weights for positive values (used as denominator for geometric mean)
     sum_weights_positive:     f64,
-    /// Sum of weighted reciprocals: Σ(w_i / x_i) for weighted harmonic mean
+    /// Sum of weighted reciprocals: `Σ(w_i` / `x_i`) for weighted harmonic mean
     sum_weighted_reciprocals: f64,
     /// Sum of weights for non-zero values (used as denominator for harmonic mean)
     sum_weights_nonzero:      f64,
-    /// Count of samples (for compatibility with OnlineStats interface)
+    /// Count of samples (for compatibility with `OnlineStats` interface)
     count:                    usize,
 }
 
@@ -3368,11 +3368,11 @@ impl WeightedOnlineStats {
     /// # Algorithm
     ///
     /// Uses the weighted incremental algorithm:
-    /// - W_n = W_{n-1} + w_n
-    /// - M_n = M_{n-1} + (w_n / W_n) * (x_n - M_{n-1})
-    /// - S_n = S_{n-1} + w_n * (x_n - M_{n-1}) * (x_n - M_n)
-    /// - For geometric mean: accumulate w_i * ln(x_i) (only if x_i > 0)
-    /// - For harmonic mean: accumulate w_i / x_i (only if x_i != 0)
+    /// - `W_n` = W_{n-1} + `w_n`
+    /// - `M_n` = M_{n-1} + (`w_n` / `W_n`) * (`x_n` - M_{n-1})
+    /// - `S_n` = S_{n-1} + `w_n` * (`x_n` - M_{n-1}) * (`x_n` - `M_n`)
+    /// - For geometric mean: accumulate `w_i` * `ln(x_i)` (only if `x_i` > 0)
+    /// - For harmonic mean: accumulate `w_i` / `x_i` (only if `x_i` != 0)
     #[inline]
     fn add_weighted(&mut self, x: f64, w: f64) {
         if w <= 0.0 {
@@ -3408,7 +3408,7 @@ impl WeightedOnlineStats {
 
     /// Returns the weighted variance using frequency weight definition.
     ///
-    /// Uses denominator (W_n - 1) for sample variance when weights represent frequency counts.
+    /// Uses denominator (`W_n` - 1) for sample variance when weights represent frequency counts.
     #[inline]
     fn variance(&self) -> f64 {
         if self.sum_weights <= 1.0 {
@@ -3425,9 +3425,9 @@ impl WeightedOnlineStats {
 
     /// Returns the weighted geometric mean.
     ///
-    /// Formula: exp(Σ(w_i * ln(x_i)) / Σ(w_i)) where sums are over positive values only.
+    /// Formula: `exp(Σ(w_i` * `ln(x_i)`) / `Σ(w_i)`) where sums are over positive values only.
     ///
-    /// Returns NaN if no positive values were encountered or if sum_weights_positive is zero.
+    /// Returns NaN if no positive values were encountered or if `sum_weights_positive` is zero.
     #[inline]
     fn geometric_mean(&self) -> f64 {
         if self.sum_weights_positive <= 0.0 || self.sum_weighted_logs.is_nan() {
@@ -3438,9 +3438,9 @@ impl WeightedOnlineStats {
 
     /// Returns the weighted harmonic mean.
     ///
-    /// Formula: Σ(w_i) / Σ(w_i / x_i) where sums are over non-zero values only.
+    /// Formula: `Σ(w_i)` / `Σ(w_i` / `x_i`) where sums are over non-zero values only.
     ///
-    /// Returns NaN if no non-zero values were encountered or if sum_weighted_reciprocals is zero.
+    /// Returns NaN if no non-zero values were encountered or if `sum_weighted_reciprocals` is zero.
     #[inline]
     fn harmonic_mean(&self) -> f64 {
         if self.sum_weights_nonzero <= 0.0 || self.sum_weighted_reciprocals <= 0.0 {
@@ -3504,7 +3504,8 @@ impl WeightedOnlineStats {
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
+///   `to_record()`)
 /// * `total_weight` - Total sum of all weights
 /// * `percentile` - Percentile to compute (0.0 to 1.0, e.g., 0.5 for median)
 ///
@@ -3540,12 +3541,13 @@ fn weighted_quantile(data: &[(f64, f64)], total_weight: f64, percentile: f64) ->
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
+///   `to_record()`)
 /// * `total_weight` - Total sum of all weights
 ///
 /// # Returns
 ///
-/// Option containing (Q1, Q2, Q3) if data is not empty and total_weight > 0, None otherwise.
+/// Option containing (Q1, Q2, Q3) if data is not empty and `total_weight` > 0, None otherwise.
 fn weighted_quartiles(data: &[(f64, f64)], total_weight: f64) -> Option<(f64, f64, f64)> {
     if data.is_empty() || total_weight <= 0.0 {
         return None;
@@ -3598,7 +3600,8 @@ fn weighted_median(data: &[(f64, f64)], total_weight: f64) -> Option<f64> {
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
+///   `to_record()`)
 /// * `total_weight` - Total sum of all weights
 /// * `median` - The weighted median value
 ///
@@ -3679,13 +3682,14 @@ fn format_antimodes(
 ///
 /// # Arguments
 ///
-/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by to_record())
+/// * `data` - Vector of (value, weight) tuples (must be sorted by value, as sorted by
+///   `to_record()`)
 /// * `total_weight` - Total sum of all weights
 /// * `percentile_list` - List of percentiles to compute (as u8 values, e.g., 5, 10, 90, 95)
 ///
 /// # Returns
 ///
-/// Vector of percentile values in the same order as percentile_list, or None if data is empty
+/// Vector of percentile values in the same order as `percentile_list`, or None if data is empty
 fn weighted_percentiles(
     data: &[(f64, f64)],
     total_weight: f64,
@@ -3738,7 +3742,7 @@ fn weighted_percentiles(
 /// # Arguments
 ///
 /// * `timestamp` - Unix timestamp in milliseconds
-/// * `typ` - The field type (TDate or TDateTime)
+/// * `typ` - The field type (`TDate` or `TDateTime`)
 ///
 /// # Returns
 ///
@@ -3746,8 +3750,8 @@ fn weighted_percentiles(
 ///
 /// # Behavior
 ///
-/// * **TDate**: Returns only the date component (YYYY-MM-DD)
-/// * **TDateTime**: Returns full RFC3339 format with time and timezone
+/// * **`TDate`**: Returns only the date component (YYYY-MM-DD)
+/// * **`TDateTime`**: Returns full RFC3339 format with time and timezone
 /// * **Invalid Timestamps**: Returns default RFC3339 format for invalid timestamps
 #[inline]
 fn timestamp_ms_to_rfc3339(timestamp: i64, typ: FieldType) -> String {
@@ -5387,8 +5391,8 @@ fn is_zero_padded_float(sample: &[u8]) -> bool {
 
 impl FieldType {
     /// infer data type from a given sample & current type inference
-    /// infer_dates signals if date inference should be attempted
-    /// returns the inferred type and if infer_dates is true,
+    /// `infer_dates` signals if date inference should be attempted
+    /// returns the inferred type and if `infer_dates` is true,
     /// the date in ms since the epoch if the type is a date or datetime
     /// otherwise, 0
     /// it also returns the float value if the sample is a number
@@ -5631,8 +5635,8 @@ impl Commute for TypedSum {
     }
 }
 
-/// `TypedMinMax` keeps track of minimum/maximum/range/sort_order values for each possible type
-/// where min/max/range/sort_order makes sense.
+/// `TypedMinMax` keeps track of `minimum/maximum/range/sort_order` values for each possible type
+/// where `min/max/range/sort_order` makes sense.
 #[allow(clippy::unsafe_derive_deserialize)]
 #[derive(Clone, Default, Serialize, Deserialize, PartialEq)]
 struct TypedMinMax {

@@ -185,7 +185,7 @@ fn get_label(fmt: &file_format::FileFormat, mime_type: &str) -> String {
 }
 
 /// Detect mime type from bytes using available backend
-/// Returns (mime_type, label, inference_score)
+/// Returns (`mime_type`, label, `inference_score`)
 #[cfg(feature = "magika")]
 fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type
@@ -221,7 +221,7 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
 }
 
 /// Detect mime type from file using available backend
-/// Returns (mime_type, label, inference_score)
+/// Returns (`mime_type`, label, `inference_score`)
 #[cfg(feature = "magika")]
 fn detect_mime_from_file(path: &std::path::Path) -> Result<(String, String, f32), String> {
     match &*MAGIKA_SESSION {

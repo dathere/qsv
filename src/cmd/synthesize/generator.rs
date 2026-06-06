@@ -159,10 +159,10 @@ pub(crate) enum ColumnGenerator {
         is_int:     bool,
         null_ratio: f64,
     },
-    /// Date / DateTime column reproduced via quartile buckets over epoch seconds.
+    /// Date / `DateTime` column reproduced via quartile buckets over epoch seconds.
     /// `date_format` carries the describegpt-inferred chrono strftime format
     /// (from a `date:<fmt>` / `datetime:<fmt>` content type); when `None`,
-    /// `next()` falls back to RFC 3339 (DateTime) / `%Y-%m-%d` (Date).
+    /// `next()` falls back to RFC 3339 (`DateTime`) / `%Y-%m-%d` (Date).
     DateQuantile {
         buckets:     Vec<(i64, i64)>,
         is_datetime: bool,
@@ -700,7 +700,7 @@ pub(crate) fn numeric_quartile_buckets(stats: &StatsRecord) -> Option<Vec<(f64, 
 ///
 /// `date_format` is the describegpt-inferred chrono strftime output format
 /// (from a `date:<fmt>` / `datetime:<fmt>` content type); `None` falls back to
-/// RFC 3339 (DateTime) / `%Y-%m-%d` (Date) in `next()`.
+/// RFC 3339 (`DateTime`) / `%Y-%m-%d` (Date) in `next()`.
 fn build_date(
     stats: &StatsRecord,
     is_datetime: bool,

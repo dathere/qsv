@@ -130,7 +130,7 @@ pub(super) fn format_dictionary_json(
 /// `allow_extra_cols` toggles the schema-root `additionalProperties` between
 /// `false` (strict, the default) and `true` (permissive).
 ///
-/// `strict_dates` toggles whether columns whose stats type is Date / DateTime
+/// `strict_dates` toggles whether columns whose stats type is Date / `DateTime`
 /// emit `format: "date"` / `"date-time"`. Off by default because qsv's
 /// `--infer-dates` accepts many non-RFC-3339 strings (e.g. "June 27, 1968")
 /// that would fail JSON Schema format validation. Mirrors
@@ -192,7 +192,7 @@ pub(super) fn format_dictionary_jsonschema(
 /// Integer→integer, Float→number, String→string, Boolean→boolean,
 /// Date→string (+`format: "date"` only when `strict_dates`),
 /// DateTime→string (+`format: "date-time"` only when `strict_dates`),
-/// NULL→null. Nullable columns (null_count > 0) get `"null"` appended to
+/// NULL→null. Nullable columns (`null_count` > 0) get `"null"` appended to
 /// the `type` array.
 fn build_property_schema(
     entry: &DictionaryEntry,

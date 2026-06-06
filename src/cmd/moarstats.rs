@@ -984,7 +984,7 @@ fn compute_robust_cv(mad: Option<f64>, median: Option<f64>) -> Option<f64> {
 
 /// Compute Jarque-Bera test statistic: (n/6) * (S^2 + K^2/4)
 /// Tests whether data follows a normal distribution.
-/// Returns (jb_statistic, p_value) where p_value is from chi-squared(2) distribution.
+/// Returns (`jb_statistic`, `p_value`) where `p_value` is from chi-squared(2) distribution.
 #[inline]
 fn compute_jarque_bera(skewness: Option<f64>, kurtosis: Option<f64>, n: u64) -> Option<(f64, f64)> {
     if n < 3 {
@@ -1018,7 +1018,7 @@ fn compute_bimodality_coefficient(skewness: Option<f64>, kurtosis: Option<f64>) 
     }
 }
 
-/// Compute Normalized Entropy: shannon_entropy / log2(cardinality)
+/// Compute Normalized Entropy: `shannon_entropy` / log2(cardinality)
 /// Values range from 0 (all values identical) to 1 (all values equally distributed)
 fn compute_normalized_entropy(
     shannon_entropy: Option<f64>,
@@ -1081,7 +1081,7 @@ fn fmt_pct(p: f64) -> String {
 }
 
 /// Parse a percentile value from the percentiles column string
-/// Format: "5: value1|10: value2|..." (separator from QSV_STATS_SEPARATOR env var, default "|")
+/// Format: "5: value1|10: value2|..." (separator from `QSV_STATS_SEPARATOR` env var, default "|")
 /// For Date/DateTime types, values are RFC3339 date strings; for numeric types, they're numbers
 /// Returns the numeric value (in days since epoch for dates) for the specified percentile label, or
 /// None if not found
@@ -1118,7 +1118,7 @@ fn parse_percentile_value(
 }
 
 /// Parse all percentile string values from the percentiles column string
-/// Format: "5: value1|10: value2|25: value3|..." (separator from QSV_STATS_SEPARATOR env var,
+/// Format: "5: value1|10: value2|25: value3|..." (separator from `QSV_STATS_SEPARATOR` env var,
 /// default "|") Returns a vector of all percentile value strings (the values after colons)
 /// Used for pattern matching all percentile values in fast mode
 fn parse_all_percentile_string_values<'a>(
@@ -1146,7 +1146,7 @@ fn parse_all_percentile_string_values<'a>(
 }
 
 /// Field type enum for efficient comparisons
-/// Matches the FieldType enum from stats.rs but kept local for performance
+/// Matches the `FieldType` enum from stats.rs but kept local for performance
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum FieldType {
@@ -1160,7 +1160,7 @@ enum FieldType {
 }
 
 impl FieldType {
-    /// Convert string representation to FieldType enum
+    /// Convert string representation to `FieldType` enum
     /// Returns None if the string doesn't match any known type
     #[inline]
     fn from_str(s: &str) -> Option<FieldType> {
@@ -1189,7 +1189,7 @@ impl FieldType {
         )
     }
 
-    /// Check if this type is Date or DateTime
+    /// Check if this type is Date or `DateTime`
     #[inline]
     const fn is_date_or_datetime(self) -> bool {
         matches!(self, FieldType::TDate | FieldType::TDateTime)
@@ -1410,7 +1410,7 @@ fn detect_gregorian_date_type(
 
 /// Infer the most specific W3C XML Schema datatype based on field type and min/max values
 /// Returns the XSD type string (e.g., "byte", "int", "decimal", "string", "date", etc.)
-/// Based on the analysis at https://github.com/user-attachments/files/23841656/xsd_analysis.md
+/// Based on the analysis at <https://github.com/user-attachments/files/23841656/xsd_analysis.md>
 fn infer_xsd_type(
     field_type_str: &str,
     min_val: Option<f64>,
@@ -1529,7 +1529,7 @@ fn infer_xsd_type(
 
 /// Convert days since epoch to RFC3339 formatted date string
 /// For Date types, returns only the date component (YYYY-MM-DD)
-/// For DateTime types, returns full RFC3339 format with time and timezone
+/// For `DateTime` types, returns full RFC3339 format with time and timezone
 fn days_to_rfc3339(days: f64, field_type: FieldType) -> String {
     // Convert days to milliseconds
     #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
@@ -2031,8 +2031,8 @@ fn compute_mutual_information_from_counts(
 }
 
 /// Compute Shannon entropy from frequency counts
-/// Uses the same formula as compute_all_entropy(): H(X) = -Σ p_i * log2(p_i)
-/// where p_i = count_i / total
+/// Uses the same formula as `compute_all_entropy()`: H(X) = -Σ `p_i` * `log2(p_i)`
+/// where `p_i` = `count_i` / total
 #[allow(clippy::cast_precision_loss)]
 fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Option<f64> {
     if total == 0 {
@@ -2055,7 +2055,7 @@ fn compute_entropy_from_counts(counts: &HashMap<String, u64>, total: u64) -> Opt
 /// Compute normalized mutual information from mutual information and entropies
 /// NMI = MI / sqrt(H(X) * H(Y))
 /// Returns None if either entropy is invalid (0, negative, or None) or if the denominator
-/// is smaller than f64::EPSILON (guards against subnormal products from extremely low
+/// is smaller than `f64::EPSILON` (guards against subnormal products from extremely low
 /// entropies producing Inf/NaN).
 fn compute_normalized_mutual_information(
     mi: Option<f64>,
@@ -2093,7 +2093,7 @@ struct KGAFieldInfo {
 }
 
 /// Count outliers for a chunk of records and compute statistics
-/// Returns a HashMap mapping field names to their outlier statistics
+/// Returns a `HashMap` mapping field names to their outlier statistics
 fn count_chunk_outliers<I>(
     fields_to_count: &HashMap<String, OutlierFieldInfo>,
     records: I,
@@ -2231,7 +2231,7 @@ where
 }
 
 /// Count outliers for all fields, using parallel processing if index is available
-/// Returns a HashMap mapping field names to their outlier statistics
+/// Returns a `HashMap` mapping field names to their outlier statistics
 fn count_all_outliers(
     fields_to_count: HashMap<String, OutlierFieldInfo>,
     input_path: &Path,
@@ -2399,7 +2399,7 @@ fn count_all_outliers(
 }
 
 /// Process a chunk of records and update bivariate statistics
-/// Similar to count_chunk_outliers but for bivariate computation
+/// Similar to `count_chunk_outliers` but for bivariate computation
 fn compute_chunk_bivariate<I>(
     field_pairs: &HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     records: I,
@@ -2706,7 +2706,7 @@ fn finalize_bivariate_pair_stats(
 /// Uses parallel chunked processing when an index is available and there
 /// are more than 10,000 records.
 /// Otherwise, uses sequential processing.
-/// Returns a HashMap mapping field pairs to their bivariate statistics.
+/// Returns a `HashMap` mapping field pairs to their bivariate statistics.
 fn compute_all_bivariatestats(
     field_pairs: HashMap<(u16, u16), (BivariateFieldInfo, BivariateFieldInfo)>,
     field_names: &[String],
@@ -3030,7 +3030,7 @@ fn compute_all_bivariatestats_sequential(
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.
 /// Since Kurtosis, Gini & Atkinson Index require all values from the entire dataset, this always
 /// uses sequential processing to read all values in a single pass.
-/// Returns a HashMap mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
+/// Returns a `HashMap` mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
 /// statistics
 fn compute_all_kga(
     fields_to_compute: &HashMap<String, KGAFieldInfo>,
@@ -3053,7 +3053,7 @@ fn compute_all_kga(
 
 /// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields in a single pass through
 /// the CSV (sequential) The CSV reader should already be positioned after the headers
-/// Returns a HashMap mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
+/// Returns a `HashMap` mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
 /// statistics
 fn compute_all_kga_from_reader(
     fields_to_compute: &HashMap<String, KGAFieldInfo>,
@@ -3211,9 +3211,9 @@ fn compute_all_kga_from_reader(
 }
 
 /// Compute Shannon Entropy for all fields by calling the frequency command.
-/// Uses run_qsv_cmd to call frequency command with --limit 0 to get all frequencies,
+/// Uses `run_qsv_cmd` to call frequency command with --limit 0 to get all frequencies,
 /// then parses the CSV output and computes entropy for each field.
-/// Returns a HashMap mapping field names to their entropy statistics
+/// Returns a `HashMap` mapping field names to their entropy statistics
 fn compute_all_entropy(input_path: &Path) -> CliResult<HashMap<String, EntropyStats>> {
     let input_path_str = input_path
         .to_str()

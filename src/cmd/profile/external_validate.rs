@@ -316,7 +316,7 @@ fn resolve_args(
 /// validator that genuinely wants `{foo}` in its CLI gets it
 /// verbatim.
 ///
-/// Stitches the OsStr path segments into an `OsString` so the
+/// Stitches the `OsStr` path segments into an `OsString` so the
 /// substituted bytes pass through `Command::args` unchanged on all
 /// platforms.
 fn substitute_tokens(arg: &str, file_path: &OsStr, extras: &[(String, OsString)]) -> OsString {

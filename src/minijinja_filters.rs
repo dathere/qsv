@@ -1,8 +1,8 @@
-//! Shared, data-wrangling MiniJinja filters/functions used across qsv's
+//! Shared, data-wrangling `MiniJinja` filters/functions used across qsv's
 //! MiniJinja-powered commands (`template`, `fetchpost`, `describegpt`,
 //! `profile`).
 //!
-//! These fill real gaps that neither MiniJinja core, `minijinja-contrib`, nor
+//! These fill real gaps that neither `MiniJinja` core, `minijinja-contrib`, nor
 //! the command-specific qsv filters already cover:
 //!   - regex (none exists anywhere in the engine): `regex_replace`, `regex_match`, `regex_find`
 //!   - rounding modes the core `round` lacks: `floor`, `ceil`

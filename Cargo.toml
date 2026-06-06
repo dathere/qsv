@@ -96,7 +96,6 @@ similar_names         = "allow"
 too_many_lines        = "allow"
 struct_excessive_bools = "allow"
 # preference
-doc_markdown       = "allow"
 unnecessary_wraps  = "allow"
 # false positive
 needless_doctest_main = "allow"

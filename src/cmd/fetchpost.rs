@@ -1170,7 +1170,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     ty = "LruCache<String, Return<FetchResponse>>",
     create = r##"{
         let cache_size = MEM_CACHE_SIZE.get().unwrap();
-        let memcache = LruCache::with_size(*cache_size);
+        let memcache = LruCache::builder()
+            .max_size(*cache_size)
+            .build()
+            .expect("error building LRU cache");
         log::info!("In Memory cache created - size: {cache_size} entries");
         memcache
     }"##,

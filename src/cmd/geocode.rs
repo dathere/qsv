@@ -2331,11 +2331,9 @@ async fn load_engine_data(
 /// search_index_no_cache() is used in dyncols mode, and as the name implies, does not use a cache.
 #[cached(
     ty = "LruCache<String, String>",
-    create = "{ LruCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
-              LruCache::with_size(FALLBACK_CACHE_SIZE)) }",
+    create = r#"{ LruCache::builder().max_size(CACHE_SIZE).build().unwrap_or_else(|_| LruCache::builder().max_size(FALLBACK_CACHE_SIZE).build().expect("error building fallback LRU cache")) }"#,
     key = "String",
-    convert = r#"{ cell.to_owned() }"#,
-    option = true
+    convert = r#"{ cell.to_owned() }"#
 )]
 fn search_index(
     engine: &Engine,
@@ -2567,9 +2565,8 @@ fn search_index(
 }
 
 #[cached(
-    ty = "LruCache<String, Option<IpAddr>>",
-    create = "{ LruCache::try_with_size(CACHE_SIZE).unwrap_or_else(|_| \
-              LruCache::with_size(FALLBACK_CACHE_SIZE)) }",
+    ty = "LruCache<String, IpAddr>",
+    create = r#"{ LruCache::builder().max_size(CACHE_SIZE).build().unwrap_or_else(|_| LruCache::builder().max_size(FALLBACK_CACHE_SIZE).build().expect("error building fallback LRU cache")) }"#,
     key = "String",
     convert = r#"{ host.to_owned() }"#
 )]

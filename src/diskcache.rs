@@ -262,9 +262,13 @@ pub use rich::*;
 
 #[cfg(feature = "get")]
 mod rich {
+    // Only the get_cloud streaming BlobSink needs these; keep them gated so a
+    // bare `-F get` build doesn't warn on unused imports.
+    #[cfg(feature = "get_cloud")]
+    use std::io::{BufWriter, Write};
     use std::{
         fs,
-        io::{BufWriter, Read, Write},
+        io::Read,
         path::{Path, PathBuf},
         sync::{Arc, Mutex},
         time::SystemTime,
@@ -502,6 +506,14 @@ mod rich {
 
     fn idx_blob_path(root: &Path, b3: &str) -> PathBuf {
         blob_dir(root, b3).join(format!("{b3}.idx.zst"))
+    }
+
+    /// Path of the durable, content-addressed stats-cache blob for an entry's
+    /// content: the zstd-compressed `.stats.csv.data.jsonl` that the "smart"
+    /// commands (frequency, schema, profile, ...) build via `get_stats_records`.
+    /// Compression-agnostic (keyed by content hash), like `idx_blob_path`.
+    fn stats_blob_path(root: &Path, b3: &str) -> PathBuf {
+        blob_dir(root, b3).join(format!("{b3}.stats.jsonl.zst"))
     }
 
     fn entry_path(root: &Path, keyhash: &str) -> PathBuf {
@@ -861,6 +873,7 @@ mod rich {
             }
             if !entry_references_blob(root, &e.meta.blake3, keyhash) {
                 let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
+                let _ = fs::remove_file(stats_blob_path(root, &e.meta.blake3));
             }
         }
     }
@@ -1646,6 +1659,47 @@ mod rich {
                     filetime::FileTime::from_system_time(SystemTime::now()),
                 );
             }
+        }
+
+        // Stats-cache (persist-on-use): the `.stats.csv.data.jsonl` sidecar that
+        // the "smart" commands build via `util::get_stats_records` to skip
+        // recomputation. Capture a freshly-built one into a durable, content-
+        // addressed blob so it survives temp-dir cleanup, and restore it when the
+        // temp copy is gone or stale (CSV just rewritten). The sidecar location
+        // mirrors `get_stats_records` (canonical CSV path + `with_extension`).
+        let canonical_csv = fs::canonicalize(&csv_path).unwrap_or_else(|_| csv_path.clone());
+        let stats_sidecar = canonical_csv.with_extension("stats.csv.data.jsonl");
+        let stats_blob = stats_blob_path(&root, &entry.meta.blake3);
+
+        // A sidecar is usable only if newer than the CSV — qsv's stats-cache
+        // staleness rule (see `util::get_stats_records`).
+        let sidecar_fresh = stats_sidecar.exists() && {
+            let s = fs::metadata(&stats_sidecar)
+                .map(|m| filetime::FileTime::from_last_modification_time(&m));
+            let c = fs::metadata(&csv_path)
+                .map(|m| filetime::FileTime::from_last_modification_time(&m));
+            matches!((s, c), (Ok(s), Ok(c)) if s > c)
+        };
+
+        if sidecar_fresh {
+            // Capture-once (keyed by content hash). A leaner cache than a later
+            // consumer needs is still correct — that consumer just recomputes.
+            if !stats_blob.exists()
+                && let Ok(bytes) = fs::read(&stats_sidecar)
+                && let Ok(zst) = zstd::encode_all(&bytes[..], ZSTD_LEVEL)
+            {
+                let _ = atomic_write(&stats_blob, &zst);
+            }
+        } else if stats_blob.exists()
+            && let Ok(bytes) = read_zst(&stats_blob)
+        {
+            // Restore from the durable blob with a fresh mtime so it passes the
+            // staleness check (written after the CSV, like the .idx above).
+            let _ = atomic_write(&stats_sidecar, &bytes);
+            let _ = filetime::set_file_mtime(
+                &stats_sidecar,
+                filetime::FileTime::from_system_time(SystemTime::now()),
+            );
         }
 
         Ok(csv_path)

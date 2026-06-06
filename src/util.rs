@@ -2941,7 +2941,22 @@ pub fn get_stats_records(
         return Ok((ByteRecord::new(), Vec::new()));
     }
 
-    let input_path = args.arg_input.as_ref().ok_or("No input provided")?;
+    let input_path_raw = args.arg_input.as_ref().ok_or("No input provided")?;
+    // Resolve a `dc:<name>` disk-cache handle (the `get` command's cache) to its
+    // materialized CSV path: the stats cache is keyed/located by the concrete
+    // file path, so `canonicalize`, the `.stats.csv.data.jsonl` sidecar location,
+    // and the stats subprocess input all need a real path, not the "dc:" string.
+    #[cfg(feature = "get")]
+    let input_path_owned: String = if let Some(dc_name) = input_path_raw.strip_prefix("dc:") {
+        crate::diskcache::resolve_dc_path(dc_name)?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        input_path_raw.clone()
+    };
+    #[cfg(not(feature = "get"))]
+    let input_path_owned: String = input_path_raw.clone();
+    let input_path = &input_path_owned;
     let canonical_input_path = Path::new(input_path).canonicalize()?;
     let statsdata_path = canonical_input_path.with_extension("stats.csv.data.jsonl");
 
@@ -3039,7 +3054,9 @@ pub fn get_stats_records(
     // otherwise, run stats command to generate stats.csv.data.jsonl file
     if !stats_data_loaded {
         let stats_args = crate::cmd::stats::Args {
-            arg_input:                 args.arg_input.as_ref().map(String::from),
+            // the dc:-resolved concrete path, so the stats subprocess reads the
+            // real (materialized) file rather than re-resolving the "dc:" handle
+            arg_input:                 Some(input_path.clone()),
             flag_select:               crate::select::SelectColumns::parse("").unwrap(),
             flag_everything:           false,
             flag_typesonly:            false,

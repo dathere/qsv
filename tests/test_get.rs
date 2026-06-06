@@ -996,6 +996,72 @@ fn get_dc_works_with_process_input_commands() {
     assert_eq!(wrk.stdout::<String>(&mut count), "3");
 }
 
+// Recursively check whether `dir` contains any file whose name ends with `suffix`.
+fn dir_has_file_suffix(dir: &Path, suffix: &str) -> bool {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            if dir_has_file_suffix(&p, suffix) {
+                return true;
+            }
+        } else if p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(suffix))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+// Regression + feature (get §2.2): commands that use util::get_stats_records
+// (frequency, schema, ...) must (a) work on dc: inputs at all — they previously
+// errored because the raw "dc:" string failed canonicalize — and (b) have the
+// .stats.csv.data.jsonl sidecar they build captured into a durable, content-
+// addressed blob so it survives temp-dir cleanup.
+#[test]
+#[serial]
+fn get_dc_stats_cache_for_smart_commands() {
+    let wrk = Workdir::new("get_dc_stats_cache_for_smart_commands");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("cats.csv");
+    std::fs::write(&src, "id,cat\n1,a\n2,b\n3,a\n4,c\n5,a\n6,b\n").unwrap();
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "cats.csv"])
+        .arg(src.to_str().unwrap());
+    wrk.assert_success(&mut g);
+
+    // (a) frequency works on dc: and is cardinality-aware (the per-value counts
+    //     come from the stats-cache path that get_stats_records drives).
+    let mut freq = wrk.command("frequency");
+    freq.env("QSV_CACHE_DIR", &cache_dir).arg("dc:cats.csv");
+    let got = wrk.stdout::<String>(&mut freq);
+    assert!(
+        got.contains("cat,a,3"),
+        "frequency dc: should count cat=a 3x, got:\n{got}"
+    );
+
+    // (b) schema is another get_stats_records consumer; it must succeed too.
+    let mut schema = wrk.command("schema");
+    schema.env("QSV_CACHE_DIR", &cache_dir).arg("dc:cats.csv");
+    wrk.assert_success(&mut schema);
+
+    // (c) the stats-cache sidecar was captured into a durable blob under the
+    //     entry's content-addressed blob dir (cache root has a `get` subdir).
+    let blobs = cache_dir.join("get").join("blobs");
+    assert!(
+        dir_has_file_suffix(&blobs, ".stats.jsonl.zst"),
+        "expected a captured .stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+}
+
 // Build a `get` command that targets the mock S3 endpoint via path-style,
 // anonymous (skip_signature) access over plain HTTP.
 #[cfg(feature = "get_cloud")]

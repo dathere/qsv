@@ -210,6 +210,11 @@ fn get_local_file_and_dc_read() {
     let mut list = wrk.command("get");
     list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("states.csv"),
@@ -323,6 +328,11 @@ fn get_http_same_url_different_name() {
     let mut list = wrk.command("get");
     list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("a.csv") && stdout.contains("b.csv"),
@@ -527,6 +537,11 @@ fn get_name_reuse_replaces_entry() {
     let mut list = wrk.command("get");
     list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         stdout.matches("x.csv").count(),
@@ -565,10 +580,16 @@ fn get_alias_names_do_not_collide() {
     let got2: String = wrk.stdout(&mut c2);
     assert_eq!(got2, "1");
 
-    // cache-list shows both ORIGINAL names (decoded from the reversible alias)
+    // cache-list shows both ORIGINAL names (read from the alias file content,
+    // which stores the logical name; the alias filename itself is a BLAKE3 hash)
     let mut list = wrk.command("get");
     list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("a b.csv") && stdout.contains("a_b.csv"),
@@ -622,6 +643,11 @@ fn get_cache_clear() {
     let mut list = wrk.command("get");
     list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("empty"),
@@ -708,6 +734,11 @@ fn get_cache_set_ttl() {
     list.env("QSV_CACHE_DIR", &cache_dir)
         .args(["cache-list", "--json"]);
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(
         stdout.matches("\"ttl_secs\": 12345").count(),
@@ -737,6 +768,11 @@ fn get_cache_set_policy() {
     list.env("QSV_CACHE_DIR", &cache_dir)
         .args(["cache-list", "--json"]);
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("\"refresh_policy\": \"never\""),

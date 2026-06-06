@@ -25,10 +25,11 @@ use crate::{CliError, util};
 /// Default CKAN Action API base URL (datHere's public CKAN).
 pub const DEFAULT_CKAN_API: &str = "https://data.dathere.com/api/3/action";
 
-/// Resolve, create if needed, and canonicalize the qsv cache directory.
+/// Resolve the qsv cache directory and create it if needed.
 ///
 /// Honors the `QSV_CACHE_DIR` environment variable (which overrides
-/// `cache_dir`), expands a leading `~`, and creates the directory if absent.
+/// `cache_dir`) and expands a leading `~`. The path is otherwise returned as
+/// given (it is NOT canonicalized/made absolute), then created if absent.
 pub fn set_qsv_cache_dir(cache_dir: &str) -> Result<String, CliError> {
     // `expand_tilde` returns None if the home directory can't be determined;
     // propagate a CliError rather than panicking.
@@ -383,6 +384,12 @@ mod rich {
         /// Credentials are deliberately excluded. Empty for non-cloud entries.
         #[serde(default)]
         pub cloud_identity:     Vec<(String, String)>,
+        /// For `ckan://` sources, the effective CKAN Action API base URL used at
+        /// fetch time (the `--ckan-api` value or its resolved default), so a
+        /// `dc:` auto-refresh re-resolves against the SAME CKAN instance rather
+        /// than the ambient `QSV_CKAN_API`/default. None for non-CKAN entries.
+        #[serde(default)]
+        pub ckan_api_url:       Option<String>,
     }
 
     /// The on-disk record: metadata plus (for HTTP sources) the data needed to
@@ -839,6 +846,9 @@ mod rich {
         refresh_policy:     RefreshPolicy,
         compression:        Compression,
         ckan_resource_hash: Option<String>,
+        // The effective `--ckan-api` base URL (for ckan:// sources), persisted so
+        // a `dc:` auto-refresh re-resolves against the same CKAN instance.
+        ckan_api_url:       Option<String>,
         // The cache key the middleware last operated on (in get OR put), shared
         // with `get_resource` so it can recover the entry on a fresh cache hit
         // (where `put` is never called and no alias for the requested name is
@@ -903,6 +913,7 @@ mod rich {
                 refresh_policy: self.refresh_policy,
                 compression: self.compression,
                 cloud_identity: Vec::new(),
+                ckan_api_url: self.ckan_api_url.clone(),
             };
 
             let mut stored_response = res.clone();
@@ -961,6 +972,7 @@ mod rich {
             refresh_policy: opts.refresh_policy,
             compression: opts.compression,
             cloud_identity: Vec::new(),
+            ckan_api_url: None,
         };
         let mut entry = StoredEntry { meta, http: None };
         write_entry(root, &entry)?;
@@ -1169,6 +1181,7 @@ mod rich {
                         refresh_policy: opts.refresh_policy,
                         compression: opts.compression,
                         cloud_identity: identity.clone(),
+                        ckan_api_url: None,
                     },
                     http: None,
                 };
@@ -1268,6 +1281,7 @@ mod rich {
             refresh_policy:     opts.refresh_policy,
             compression:        opts.compression,
             ckan_resource_hash: ckan_hash,
+            ckan_api_url:       opts.ckan_api_url.clone(),
             observed_key:       observed_key.clone(),
         };
         // `--force` / `--refresh always` -> Reload: always hit the origin (even
@@ -1370,8 +1384,15 @@ mod rich {
                     refresh_policy: entry.meta.refresh_policy,
                     compression:    entry.meta.compression,
                     force:          false,
-                    ckan_api_url:   std::env::var("QSV_CKAN_API")
-                        .ok()
+                    // Re-resolve a ckan:// entry against the SAME CKAN instance it
+                    // was originally fetched from (the persisted `--ckan-api`),
+                    // falling back to the ambient env / default only for older
+                    // entries that predate this field.
+                    ckan_api_url:   entry
+                        .meta
+                        .ckan_api_url
+                        .clone()
+                        .or_else(|| std::env::var("QSV_CKAN_API").ok())
                         .or_else(|| Some(DEFAULT_CKAN_API.to_string())),
                     ckan_token:     std::env::var("QSV_CKAN_TOKEN").ok(),
                     timeout_secs:   30,

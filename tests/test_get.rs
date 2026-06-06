@@ -19,19 +19,31 @@ const ETAG: &str = "\"states-v1\"";
 // Local mock-server bind address for these tests (not production code).
 const BIND_HOST: &str = "127.0.0.1"; // DevSkim: ignore DS162092
 
+// Mock-server request counters: `body_sends` counts 200 responses that carry a
+// body; `revalidations` counts 304 (Not Modified) responses. Tracking 304s
+// separately lets a test prove a conditional request actually reached the server
+// and revalidated — distinct from `resolve_dc_path`'s fallback-to-stale path,
+// which makes no successful request yet still serves the cached data.
+#[derive(Clone)]
+struct Counters {
+    body_sends:    Arc<AtomicUsize>,
+    revalidations: Arc<AtomicUsize>,
+}
+
 // A request handler that serves STATES_CSV with an ETag and honors
-// conditional GETs: a matching `If-None-Match` yields 304 (and does NOT
-// increment the body-send counter), so a test can assert that a second
+// conditional GETs: a matching `If-None-Match` yields 304 (counted as a
+// revalidation, NOT a body send), so a test can assert that a second
 // `qsv get` revalidated rather than re-downloaded.
-async fn serve_states(counter: web::Data<Arc<AtomicUsize>>, req: HttpRequest) -> HttpResponse {
+async fn serve_states(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
     if let Some(inm) = req.headers().get("if-none-match")
         && inm.to_str().unwrap_or_default() == ETAG
     {
+        c.revalidations.fetch_add(1, Ordering::SeqCst);
         return HttpResponse::NotModified()
             .insert_header(("etag", ETAG))
             .finish();
     }
-    counter.fetch_add(1, Ordering::SeqCst);
+    c.body_sends.fetch_add(1, Ordering::SeqCst);
     HttpResponse::Ok()
         .insert_header(("etag", ETAG))
         .content_type("text/csv")
@@ -42,8 +54,8 @@ async fn serve_states(counter: web::Data<Arc<AtomicUsize>>, req: HttpRequest) ->
 // second request within the window is served from cache WITHOUT revalidation
 // (no `put` on the manager) — the path that previously failed when a cache hit
 // was requested under a different logical name.
-async fn serve_states_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpResponse {
-    counter.fetch_add(1, Ordering::SeqCst);
+async fn serve_states_fresh(c: web::Data<Counters>) -> HttpResponse {
+    c.body_sends.fetch_add(1, Ordering::SeqCst);
     HttpResponse::Ok()
         .insert_header(("etag", ETAG))
         .insert_header(("cache-control", "max-age=3600"))
@@ -53,8 +65,8 @@ async fn serve_states_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpRespons
 
 // A second fresh endpoint with DIFFERENT (1-row) content, for testing that a
 // fresh cache hit repoints a name that previously pointed at another entry.
-async fn serve_one_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpResponse {
-    counter.fetch_add(1, Ordering::SeqCst);
+async fn serve_one_fresh(c: web::Data<Counters>) -> HttpResponse {
+    c.body_sends.fetch_add(1, Ordering::SeqCst);
     HttpResponse::Ok()
         .insert_header(("etag", "\"one-v1\""))
         .insert_header(("cache-control", "max-age=3600"))
@@ -64,11 +76,11 @@ async fn serve_one_fresh(counter: web::Data<Arc<AtomicUsize>>) -> HttpResponse {
 
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
-    counter: Arc<AtomicUsize>,
+    counters: Counters,
 ) -> std::io::Result<()> {
     let server_builder = HttpServer::new(move || {
         App::new()
-            .app_data(web::Data::new(counter.clone()))
+            .app_data(web::Data::new(counters.clone()))
             .service(web::resource("/states.csv").to(serve_states))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
@@ -98,22 +110,25 @@ async fn run_webserver(
 }
 
 struct GetWebServer {
-    handle:  Option<ServerHandle>,
-    addr:    SocketAddr,
-    counter: Arc<AtomicUsize>,
+    handle:   Option<ServerHandle>,
+    addr:     SocketAddr,
+    counters: Counters,
 }
 
 impl GetWebServer {
     fn start() -> Self {
-        let counter = Arc::new(AtomicUsize::new(0));
-        let server_counter = counter.clone();
+        let counters = Counters {
+            body_sends:    Arc::new(AtomicUsize::new(0)),
+            revalidations: Arc::new(AtomicUsize::new(0)),
+        };
+        let server_counters = counters.clone();
         let (tx, rx) = mpsc::channel();
-        thread::spawn(move || rt::System::new().block_on(run_webserver(tx, server_counter)));
+        thread::spawn(move || rt::System::new().block_on(run_webserver(tx, server_counters)));
         match rx.recv_timeout(std::time::Duration::from_secs(10)) {
             Ok(Ok((handle, addr))) => Self {
                 handle: Some(handle),
                 addr,
-                counter,
+                counters,
             },
             Ok(Err(msg)) => panic!("test webserver failed to bind: {msg}"),
             Err(e) => panic!("test webserver did not start within 10s ({e:?})"),
@@ -126,8 +141,17 @@ impl GetWebServer {
         format!("http://{}/{path}", self.addr) // DevSkim: ignore DS137138
     }
 
+    // Number of 200 responses that carried a body (actual downloads).
     fn body_sends(&self) -> usize {
-        self.counter.load(Ordering::SeqCst)
+        self.counters.body_sends.load(Ordering::SeqCst)
+    }
+
+    // Number of 304 (Not Modified) responses — i.e. successful conditional
+    // revalidations against the server. Only the get_cloud refresh test asserts
+    // on this, so it is gated to avoid a dead-code warning in non-cloud builds.
+    #[cfg(feature = "get_cloud")]
+    fn revalidations(&self) -> usize {
+        self.counters.revalidations.load(Ordering::SeqCst)
     }
 }
 
@@ -959,6 +983,16 @@ fn get_s3_env_cloud_opt_override_refresh_stable() {
     let got: String = wrk.stdout(&mut count);
     assert_eq!(got, "4", "dc:r.csv should resolve to the cached data");
 
+    // The refresh must have made a *successful conditional request* (one 304).
+    // This is what proves the identity replay rebuilt the right store and hit the
+    // same entry — `resolve_dc_path` silently falls back to the stale copy on
+    // refresh failure, which would still yield count 4 and body_sends 1 but make
+    // zero successful requests.
+    assert_eq!(
+        server.revalidations(),
+        1,
+        "stale dc: refresh must issue exactly one conditional (304) revalidation request"
+    );
     assert_eq!(
         server.body_sends(),
         1,

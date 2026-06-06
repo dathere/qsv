@@ -552,7 +552,10 @@ use std::{
     time::{Duration, SystemTime},
 };
 
-use cached::{ConcurrentCached, DiskCache, DiskCacheBuilder, LruCache, macros::cached};
+use cached::{
+    ConcurrentCached, DiskCache, DiskCacheBuilder, LruCache,
+    macros::{cached, concurrent_cached},
+};
 use dynfmt2::Format;
 use geosuggest_core::{
     Engine, EngineData,
@@ -1615,9 +1618,22 @@ async fn geocode_main(args: Args) -> CliResult<()> {
 
     if show_progress {
         // the geocode result cache is NOT used in dyncols mode,
-        // so update the cache info only when dyncols_len == 0
+        // so update the cache info only when dyncols_len == 0.
+        // SEARCH_INDEX is a sharded ConcurrentCached store (not the RwLock-wrapped
+        // #[cached] store that util::update_cache_info! reads via .read()), so pull its
+        // stats from the store's own metrics() snapshot.
         if dyncols_len == 0 {
-            util::update_cache_info!(progress, SEARCH_INDEX);
+            let metrics = SEARCH_INDEX.metrics();
+            if metrics.size > 0 {
+                #[allow(clippy::cast_precision_loss)]
+                progress.set_message(format!(
+                    " of {} records. Cache {:.2}% entries: {} capacity: {}.",
+                    indicatif::HumanCount(progress.length().unwrap()),
+                    metrics.hit_ratio().unwrap_or(0.0) * 100.0,
+                    indicatif::HumanCount(metrics.size as u64),
+                    indicatif::HumanCount(metrics.capacity.unwrap_or(0) as u64),
+                ));
+            }
         }
         util::finish_progress(&progress);
     }
@@ -2322,20 +2338,61 @@ async fn load_engine_data(
     Ok(engine)
 }
 
-/// search_index is a cached function that returns a geocode result for a given cell value.
-/// It is used by the suggest/suggestnow and reverse/reversenow subcommands.
-/// It uses an LRU cache using the cell value/language as the key, storing the formatted geocoded
-/// result in the cache. As such, we CANNOT use the cache when in dyncols mode as the cached result
-/// is the formatted result, not the individual fields.
-/// search_index_no_cache() is automatically derived from search_index() by the cached macro.
-/// search_index_no_cache() is used in dyncols mode, and as the name implies, does not use a cache.
-#[cached(
-    ty = "LruCache<String, String>",
-    create = r#"{ LruCache::builder().max_size(CACHE_SIZE).build().unwrap_or_else(|_| LruCache::builder().max_size(FALLBACK_CACHE_SIZE).build().expect("error building fallback LRU cache")) }"#,
+/// `search_index` returns a geocode result for a given cell value, used by the
+/// suggest/suggestnow and reverse/reversenow subcommands. It wraps
+/// `search_index_no_cache` with a cache keyed on the cell value, storing the
+/// formatted geocoded result. We CANNOT use the cache in dyncols mode (the cached
+/// result is the formatted string, not the individual fields), so dyncols mode calls
+/// `search_index_no_cache` directly.
+///
+/// `search_index` wraps `search_index_no_cache` with a *sharded* concurrent LRU cache
+/// (cached 2.0 `#[concurrent_cached]`) keyed on the cell value. This replaces the
+/// single-`RwLock` `#[cached]` `LruCache`, whose per-hit recency-bump write lock
+/// serialized geocode's rayon-parallel pipeline (on a 16-core box this is ~2.2x faster
+/// on a high-hit-ratio workload). `ShardedLruCache` still takes a write lock per read
+/// hit, but spreads it across many independent shards. With `shards` omitted, the store
+/// derives the shard count from `std::thread::available_parallelism()` (`4 x cores`,
+/// rounded to a power of two and clamped to [8, 1024]), so it auto-scales to the host.
+/// `max_size` must be an integer literal (the macro parses it as a literal, so the
+/// `CACHE_SIZE` const can't be referenced); 2_000_000 mirrors `CACHE_SIZE`. The old
+/// `FALLBACK_CACHE_SIZE` graceful fallback isn't needed here — the 2M cap is split
+/// across shards (each map allocates lazily), so the build can't fail on capacity.
+#[concurrent_cached(
+    max_size = 2_000_000,
     key = "String",
     convert = r#"{ cell.to_owned() }"#
 )]
 fn search_index(
+    engine: &Engine,
+    mode: GeocodeSubCmd,
+    cell: &str,
+    formatstr: &str,
+    lang_lookup: &str,
+    min_score: Option<f32>,
+    k: Option<f32>,
+    country_filter_list: Option<&[String]>,
+    admin1_filter_list: Option<&[Admin1Filter]>,
+    column_values: &[&str],
+    record: &mut csv::StringRecord,
+) -> Option<String> {
+    search_index_no_cache(
+        engine,
+        mode,
+        cell,
+        formatstr,
+        lang_lookup,
+        min_score,
+        k,
+        country_filter_list,
+        admin1_filter_list,
+        column_values,
+        record,
+    )
+}
+
+/// Uncached geocode lookup — the raw body shared by the cached `search_index`
+/// wrapper and dyncols mode (which cannot use the cache).
+fn search_index_no_cache(
     engine: &Engine,
     mode: GeocodeSubCmd,
     cell: &str,

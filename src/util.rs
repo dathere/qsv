@@ -944,7 +944,7 @@ pub fn finish_progress(progress: &ProgressBar) {
     }
 }
 
-#[cfg(all(any(feature = "fetch", feature = "geocode"), not(feature = "lite")))]
+#[cfg(all(feature = "fetch", not(feature = "lite")))]
 macro_rules! update_cache_info {
     ($progress:expr_2021, $cache_instance:expr_2021) => {
         use cached::Cached;
@@ -980,7 +980,7 @@ macro_rules! update_cache_info {
     };
 }
 
-#[cfg(all(any(feature = "fetch", feature = "geocode"), not(feature = "lite")))]
+#[cfg(all(feature = "fetch", not(feature = "lite")))]
 pub(crate) use update_cache_info;
 
 pub fn get_args<T>(usage: &str, argv: &[&str]) -> CliResult<T>

@@ -515,7 +515,7 @@ mod rich {
     /// original name is preserved inside the file content (see `write_alias`).
     fn alias_path(root: &Path, name: &str) -> PathBuf {
         root.join("aliases")
-            .join(blake3::hash(name.as_bytes()).to_hex().to_string())
+            .join(blake3::hash(name.as_bytes()).to_hex())
     }
 
     /// Write an alias file: content is `"{keyhash}\n{name}"` so the original

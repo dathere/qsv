@@ -289,6 +289,43 @@ fn get_http_etag_revalidation() {
 
 #[test]
 #[serial]
+fn get_http_entry_has_no_ckan_api_metadata() {
+    // Regression (roborev #2760): a plain http:// source must NOT persist a CKAN
+    // API URL in its metadata — `ckan_api_url` is for ckan:// entries only, even
+    // though `--ckan-api` carries a default value for every invocation.
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_http_entry_has_no_ckan_api_metadata");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("states.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "states.csv"])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "cache-list exited non-zero:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"ckan_api_url\": null"),
+        "plain http entry must record a null ckan_api_url:\n{stdout}"
+    );
+    assert!(
+        !stdout.contains("data.dathere.com"),
+        "plain http entry must not persist the default CKAN API URL:\n{stdout}"
+    );
+}
+
+#[test]
+#[serial]
 fn get_http_same_url_different_name() {
     // Regression: a fresh cache hit requested under a NEW logical name used to
     // fail because no alias was created for that name (the manager's `put` is

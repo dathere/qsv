@@ -1281,7 +1281,14 @@ mod rich {
             refresh_policy:     opts.refresh_policy,
             compression:        opts.compression,
             ckan_resource_hash: ckan_hash,
-            ckan_api_url:       opts.ckan_api_url.clone(),
+            // Persist the CKAN API base only for actual ckan:// sources; plain
+            // http(s):// entries must not record one (it would be misleading in
+            // cache-list metadata, since `--ckan-api` defaults to a value).
+            ckan_api_url:       if resolved.is_ckan {
+                opts.ckan_api_url.clone()
+            } else {
+                None
+            },
             observed_key:       observed_key.clone(),
         };
         // `--force` / `--refresh always` -> Reload: always hit the origin (even

@@ -376,6 +376,13 @@ mod rich {
         pub refresh_policy:     RefreshPolicy,
         /// On-disk compression for the blob.
         pub compression:        Compression,
+        /// Non-secret cloud store-identity config (endpoint / region / account /
+        /// …) captured at fetch time for `get_cloud` sources. Scopes the same URL
+        /// across different S3-compatible endpoints or accounts so they do not
+        /// collide, and lets `dc:` auto-refresh rebuild the correct store.
+        /// Credentials are deliberately excluded. Empty for non-cloud entries.
+        #[serde(default)]
+        pub cloud_identity:     Vec<(String, String)>,
     }
 
     /// The on-disk record: metadata plus (for HTTP sources) the data needed to
@@ -895,6 +902,7 @@ mod rich {
                 ttl_secs: self.ttl_secs,
                 refresh_policy: self.refresh_policy,
                 compression: self.compression,
+                cloud_identity: Vec::new(),
             };
 
             let mut stored_response = res.clone();
@@ -952,6 +960,7 @@ mod rich {
             ttl_secs: opts.ttl_secs,
             refresh_policy: opts.refresh_policy,
             compression: opts.compression,
+            cloud_identity: Vec::new(),
         };
         let mut entry = StoredEntry { meta, http: None };
         write_entry(root, &entry)?;
@@ -994,6 +1003,57 @@ mod rich {
         opts
     }
 
+    /// True for config keys whose values are credentials/secrets, which must
+    /// never be folded into the (on-disk, plaintext) cache key or persisted
+    /// store identity.
+    #[cfg(feature = "get_cloud")]
+    fn is_secret_opt_key(key: &str) -> bool {
+        const SECRET_MARKERS: [&str; 8] = [
+            "secret",
+            "token",
+            "password",
+            "credential",
+            "key",
+            "sas",
+            "service_account",
+            "application_credentials",
+        ];
+        SECRET_MARKERS.iter().any(|m| key.contains(m))
+    }
+
+    /// The non-secret, identity-determining subset of cloud config options,
+    /// lower-cased (object_store treats keys case-insensitively), sorted and
+    /// de-duplicated. Two fetches of the same URL against different
+    /// endpoints/regions/accounts yield different identities (hence different
+    /// cache entries); credentials are excluded so they never reach the on-disk
+    /// cache key or the persisted entry.
+    #[cfg(feature = "get_cloud")]
+    fn cloud_identity_opts(opts: &[(String, String)]) -> Vec<(String, String)> {
+        let mut id: Vec<(String, String)> = opts
+            .iter()
+            .map(|(k, v)| (k.to_ascii_lowercase(), v.clone()))
+            .filter(|(k, _)| !is_secret_opt_key(k))
+            .collect();
+        id.sort();
+        id.dedup();
+        id
+    }
+
+    /// Build a cloud cache key that scopes `source` by its resolved store
+    /// identity, so the same URL on different backing stores does not collide.
+    #[cfg(feature = "get_cloud")]
+    fn cloud_cache_key(source: &str, identity: &[(String, String)]) -> String {
+        if identity.is_empty() {
+            return format!("CLOUD:{source}");
+        }
+        let joined = identity
+            .iter()
+            .map(|(k, v)| format!("{k}={v}"))
+            .collect::<Vec<_>>()
+            .join("&");
+        format!("CLOUD:{source}#{joined}")
+    }
+
     /// Fetch a cloud object-store source (`s3://`, `gs://`, `az://`, …) into the
     /// cache, with ETag-based conditional revalidation (parity with the HTTP
     /// path's "don't re-download unchanged" guarantee). Mirrors `ingest_local`
@@ -1005,12 +1065,17 @@ mod rich {
 
         let url = Url::parse(source)
             .map_err(|e| CliError::Other(format!("get: invalid cloud URL '{source}': {e}")))?;
-        let (store, path) =
-            parse_url_opts(&url, cloud_opts_for(&opts.cloud_opts)).map_err(|e| {
-                CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
-            })?;
+        // Scope the cache entry by the resolved store identity (endpoint /
+        // region / account / …) so the same URL on different backing stores does
+        // not collide, and persist that identity so a later `dc:` auto-refresh
+        // rebuilds the correct store. Credentials are excluded from both.
+        let all_opts = cloud_opts_for(&opts.cloud_opts);
+        let identity = cloud_identity_opts(&all_opts);
+        let (store, path) = parse_url_opts(&url, all_opts).map_err(|e| {
+            CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
+        })?;
 
-        let cache_key = format!("CLOUD:{source}");
+        let cache_key = cloud_cache_key(source, &identity);
         let kh = keyhash(&cache_key);
         let name = opts.name.clone().unwrap_or_else(|| derive_name(source));
 
@@ -1095,6 +1160,7 @@ mod rich {
                         ttl_secs: opts.ttl_secs,
                         refresh_policy: opts.refresh_policy,
                         compression: opts.compression,
+                        cloud_identity: identity.clone(),
                     },
                     http: None,
                 };
@@ -1301,9 +1367,17 @@ mod rich {
                         .or_else(|| Some(DEFAULT_CKAN_API.to_string())),
                     ckan_token:     std::env::var("QSV_CKAN_TOKEN").ok(),
                     timeout_secs:   30,
-                    // Auto-refresh of a cloud `dc:` entry relies on ambient
-                    // cloud credentials from the environment (no `--cloud-opt`).
-                    cloud_opts:     Vec::new(),
+                    // Replay the persisted store identity (endpoint/region/…) so
+                    // a cloud `dc:` refresh rebuilds the SAME store and resolves
+                    // to the SAME cache entry. Credentials still come from the
+                    // ambient environment (they are never persisted). Empty for
+                    // non-cloud entries.
+                    cloud_opts:     entry
+                        .meta
+                        .cloud_identity
+                        .iter()
+                        .map(|(k, v)| format!("{k}={v}"))
+                        .collect(),
                 };
                 // Best-effort: on refresh failure, fall back to the stale copy.
                 if get_resource(&refresh_opts).is_ok()

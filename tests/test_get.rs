@@ -883,3 +883,40 @@ fn get_s3_missing_object_errors_cleanly() {
         .arg("s3://test-bucket/does-not-exist.csv");
     wrk.assert_err(&mut g);
 }
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_identity_scopes_cache_key() {
+    // Regression (roborev #2756): the same s3:// URL against different store
+    // identities (here, region) must NOT share a cache entry. Each is fetched
+    // independently; a collision would make the second a 304 revalidation that
+    // serves the first store's data (body_sends would stay 1).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_identity_scopes_cache_key");
+    let cache_dir = wrk.path("qsvcache");
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    let get_region = |name: &str, region: &str| {
+        let mut c = wrk.command("get");
+        c.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", name])
+            .args(["--cloud-opt", &format!("aws_endpoint={endpoint}")])
+            .args(["--cloud-opt", &format!("aws_region={region}")])
+            .args(["--cloud-opt", "aws_allow_http=true"])
+            .args(["--cloud-opt", "aws_skip_signature=true"])
+            .arg("s3://test-bucket/states.csv");
+        c
+    };
+
+    let mut a = get_region("us.csv", "us-east-1");
+    wrk.assert_success(&mut a);
+    let mut b = get_region("eu.csv", "eu-west-1");
+    wrk.assert_success(&mut b);
+
+    assert_eq!(
+        server.body_sends(),
+        2,
+        "different store identities must not share a cache entry (no cross-store revalidation)"
+    );
+}

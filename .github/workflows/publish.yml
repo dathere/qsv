@@ -123,8 +123,6 @@ jobs:
             architecture: aarch64
             # build natively on GitHub's hosted ARM runner instead of QEMU cross-compiling
             use-cross: false
-            # 16GB hosted ARM runner OOM-kills the heavy qsvdp (Polars) build; add swap + cap codegen jobs
-            low-mem: true
             addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
             default-features:
             addl-qsvlite-features:
@@ -172,22 +170,6 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - name: Free disk space (constrained ARM runner)
-      # The heavy qsvdp/Polars compile exhausts the small ARM runner and the host
-      # is reclaimed mid-build (no log emitted). Reclaim disk before building.
-      if: ${{ matrix.job.low-mem }}
-      uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be   # v1.3.1
-      with:
-        tool-cache: false
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: false
-        swap-storage: false
-    - name: Cap codegen parallelism (constrained ARM runner)
-      # Lower peak RSS and concurrent temp usage during the qsvdp/Polars compile.
-      if: ${{ matrix.job.low-mem }}
-      run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
     - name: build prep for x86_64-unknown-linux-musl
       if: ${{ matrix.job.musl-prep }}
       run: |
@@ -214,6 +196,10 @@ jobs:
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp
+      # Skip on aarch64-unknown-linux-gnu: qsvdp pulls Polars, and fat-LTO linking it
+      # (release profile: lto = true, codegen-units = 1) OOM-kills the hosted ARM runner.
+      # qsvmcp (also Polars-heavy) is already excluded on this target below.
+      if: ${{ matrix.job.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
       uses: actions-rs/cargo@v1

@@ -1111,6 +1111,72 @@ fn get_dc_stats_cache_for_smart_commands() {
     );
 }
 
+// Regression (roborev #2776): two dc: aliases for the SAME bytes but different
+// tabular extensions must NOT share the durable stats cache. The extension
+// selects the delimiter, so a `.csv` alias (comma => 3 fields a,b,c) and a
+// `.tsv` alias (tab => 1 field, the whole comma line) parse differently. A stats
+// blob keyed only by content hash would let the second alias reuse the first's
+// stats and report the wrong fields; the fix keys the blob (and the materialized
+// temp dir) by extension, so each delimiter gets its own correct cache.
+#[test]
+#[serial]
+fn get_dc_stats_cache_not_shared_across_extensions() {
+    let wrk = Workdir::new("get_dc_stats_cache_not_shared_across_extensions");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("grid.csv");
+    // Comma-structured bytes: 3 columns parsed as CSV, 1 column parsed as TSV.
+    std::fs::write(&src, "a,b,c\n1,2,3\n1,2,3\n").unwrap();
+
+    // Same source under a .csv and a .tsv alias => one content hash, two aliases.
+    for alias in ["grid.csv", "grid.tsv"] {
+        let mut g = wrk.command("get");
+        g.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", alias])
+            .arg(src.to_str().unwrap());
+        wrk.assert_success(&mut g);
+    }
+
+    // frequency over the .csv alias: comma-delimited => header + three fields.
+    let mut fcsv = wrk.command("frequency");
+    fcsv.env("QSV_CACHE_DIR", &cache_dir).arg("dc:grid.csv");
+    let csv_out = wrk.stdout::<String>(&mut fcsv);
+
+    // frequency over the .tsv alias of the SAME bytes: tab-delimited => header +
+    // ONE field whose name is the whole comma line. If the stats cache
+    // cross-contaminated, this would instead inherit the comma fields a/b/c.
+    let mut ftsv = wrk.command("frequency");
+    ftsv.env("QSV_CACHE_DIR", &cache_dir).arg("dc:grid.tsv");
+    let tsv_out = wrk.stdout::<String>(&mut ftsv);
+
+    assert_eq!(
+        csv_out.lines().count(),
+        4,
+        "csv alias must see three fields (header + a/b/c); got:\n{csv_out}"
+    );
+    assert_eq!(
+        tsv_out.lines().count(),
+        2,
+        "tsv alias must see one combined field (header + 1); got:\n{tsv_out}"
+    );
+    assert!(
+        tsv_out.contains("\"a,b,c\""),
+        "tsv alias's single field is the whole comma line; got:\n{tsv_out}"
+    );
+
+    // Structural proof of the fix: distinct per-extension stats blobs coexist.
+    let blobs = cache_dir.join("get").join("blobs");
+    assert!(
+        dir_has_file_suffix(&blobs, ".csv.stats.jsonl.zst"),
+        "expected a .csv.stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+    assert!(
+        dir_has_file_suffix(&blobs, ".tsv.stats.jsonl.zst"),
+        "expected a .tsv.stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+}
+
 // Build a `get` command that targets the mock S3 endpoint via path-style,
 // anonymous (skip_signature) access over plain HTTP.
 #[cfg(feature = "get_cloud")]

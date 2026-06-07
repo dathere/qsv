@@ -440,17 +440,22 @@ mod rich {
             .collect()
     }
 
+    /// The tabular file extensions a `dc:` handle may materialize under. They
+    /// select the delimiter (`csv` => comma, `tsv`/`tab` => tab, `ssv` =>
+    /// semicolon), so they also scope the per-extension stats-cache blob and the
+    /// per-extension temp subdir in `resolve_dc_path`.
+    const TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
+
     /// A temp filename for a `dc:` handle that is guaranteed to carry a known
     /// tabular extension, so `Config`'s format check accepts it. Prefers the
     /// handle's own extension, then the cached source's, falling back to `.csv`.
     fn tabular_temp_name(name: &str, resolved_uri: &str) -> String {
-        const KNOWN: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
         let is_known = |p: &str| {
             Path::new(p)
                 .extension()
                 .and_then(|e| e.to_str())
                 .map(str::to_ascii_lowercase)
-                .is_some_and(|e| KNOWN.contains(&e.as_str()))
+                .is_some_and(|e| TABULAR_EXTS.contains(&e.as_str()))
         };
         let base = safe_name(name);
         if is_known(&base) {
@@ -464,7 +469,7 @@ mod rich {
             .extension()
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase)
-            .filter(|e| KNOWN.contains(&e.as_str()))
+            .filter(|e| TABULAR_EXTS.contains(&e.as_str()))
             .unwrap_or_else(|| "csv".to_string());
         format!("{base}.{ext}")
     }
@@ -486,11 +491,14 @@ mod rich {
     }
 
     /// Path of the durable, content-addressed stats-cache blob for an entry's
-    /// content: the zstd-compressed `.stats.csv.data.jsonl` that the "smart"
-    /// commands (frequency, schema, profile, ...) build via `get_stats_records`.
-    /// Compression-agnostic (keyed by content hash), like `idx_blob_path`.
-    fn stats_blob_path(root: &Path, b3: &str) -> PathBuf {
-        blob_dir(root, b3).join(format!("{b3}.stats.jsonl.zst"))
+    /// content AND parsing extension `ext` (csv/tsv/tab/ssv): the zstd-compressed
+    /// `.stats.csv.data.jsonl` that the "smart" commands (frequency, schema,
+    /// profile, ...) build via `get_stats_records`. Keyed by extension as well as
+    /// content hash because the stats fields depend on the delimiter the
+    /// extension selects, so `.csv` and `.tsv` aliases of the same bytes must not
+    /// share a blob. Compression-agnostic, like `idx_blob_path`.
+    fn stats_blob_path(root: &Path, b3: &str, ext: &str) -> PathBuf {
+        blob_dir(root, b3).join(format!("{b3}.{ext}.stats.jsonl.zst"))
     }
 
     fn entry_path(root: &Path, keyhash: &str) -> PathBuf {
@@ -605,7 +613,10 @@ mod rich {
     /// `ingest_cloud` ranged/streaming download paths).
     struct BlobSink {
         hasher:       blake3::Hasher,
-        writer:       BlobSinkWriter,
+        // `Some` while ingesting; `take`n by `finish` (or by `Drop` on a failed
+        // ingest) so the underlying file handle is released before the temp file
+        // is renamed into place or unlinked.
+        writer:       Option<BlobSinkWriter>,
         tmp:          PathBuf,
         compression:  Compression,
         uncompressed: u64,
@@ -625,7 +636,7 @@ mod rich {
             };
             Ok(Self {
                 hasher: blake3::Hasher::new(),
-                writer,
+                writer: Some(writer),
                 tmp,
                 compression,
                 uncompressed: 0,
@@ -635,46 +646,60 @@ mod rich {
         fn write(&mut self, chunk: &[u8]) -> std::io::Result<()> {
             self.hasher.update(chunk);
             self.uncompressed += chunk.len() as u64;
-            match &mut self.writer {
-                BlobSinkWriter::Zstd(e) => e.write_all(chunk),
-                BlobSinkWriter::Raw(w) => w.write_all(chunk),
+            match self.writer.as_mut() {
+                Some(BlobSinkWriter::Zstd(e)) => e.write_all(chunk),
+                Some(BlobSinkWriter::Raw(w)) => w.write_all(chunk),
+                // Unreachable: `finish` consumes the sink, so no write follows it.
+                None => Ok(()),
             }
         }
 
         /// Finalize the stream and atomically move it into place. On any error
-        /// the temp file is cleaned up so a failed ingest leaves no litter.
-        fn finish(self, root: &Path) -> CliResult<(String, u64, u64)> {
-            let Self {
-                hasher,
-                writer,
-                tmp,
-                compression,
-                uncompressed,
-            } = self;
+        /// here the temp file is removed; if the ingest errors out *before*
+        /// `finish` is ever called, `Drop` removes the partial temp instead, so a
+        /// failed ingest never leaves litter in the cache.
+        fn finish(mut self, root: &Path) -> CliResult<(String, u64, u64)> {
+            // Take the writer so it is dropped (closing the file) here, and so
+            // `Drop` sees the sink as already finalized and skips its cleanup.
+            let writer = self.writer.take();
             let result = (|| -> std::io::Result<(String, u64, u64)> {
                 // Flush the (zstd or plain) writer fully down to the file.
                 let buf = match writer {
-                    BlobSinkWriter::Zstd(e) => e.finish()?,
-                    BlobSinkWriter::Raw(w) => w,
+                    Some(BlobSinkWriter::Zstd(e)) => e.finish()?,
+                    Some(BlobSinkWriter::Raw(w)) => w,
+                    None => return Err(std::io::Error::other("BlobSink already finished")),
                 };
                 let file = buf
                     .into_inner()
                     .map_err(std::io::IntoInnerError::into_error)?;
                 file.sync_all()?;
                 drop(file);
-                let b3 = hasher.finalize().to_hex().to_string();
-                let size_compressed = fs::metadata(&tmp)?.len();
-                let dest = blob_path(root, &b3, compression);
+                let b3 = self.hasher.finalize().to_hex().to_string();
+                let size_compressed = fs::metadata(&self.tmp)?.len();
+                let dest = blob_path(root, &b3, self.compression);
                 if let Some(parent) = dest.parent() {
                     fs::create_dir_all(parent)?;
                 }
-                fs::rename(&tmp, &dest)?;
-                Ok((b3, size_compressed, uncompressed))
+                fs::rename(&self.tmp, &dest)?;
+                Ok((b3, size_compressed, self.uncompressed))
             })();
             if result.is_err() {
-                let _ = fs::remove_file(&tmp);
+                let _ = fs::remove_file(&self.tmp);
             }
             Ok(result?)
+        }
+    }
+
+    impl Drop for BlobSink {
+        fn drop(&mut self) {
+            // If `finish` ran it already took the writer (and renamed or removed
+            // the temp), so there is nothing to clean up. If the ingest errored
+            // out before `finish`, the writer is still here: drop it first to
+            // release the file handle (so Windows can unlink it), then remove the
+            // partial temp so a failed/aborted download leaves no litter.
+            if self.writer.take().is_some() {
+                let _ = fs::remove_file(&self.tmp);
+            }
         }
     }
 
@@ -733,6 +758,11 @@ mod rich {
                 && !entry_references_blob(root, &prev.meta.blake3, &kh)
             {
                 let _ = fs::remove_file(idx_blob_path(root, &prev.meta.blake3));
+                // Reclaim the per-extension stats-cache blobs for the old content
+                // too; otherwise a refresh-to-new-content orphans them.
+                for ext in TABULAR_EXTS {
+                    let _ = fs::remove_file(stats_blob_path(root, &prev.meta.blake3, ext));
+                }
             }
         }
 
@@ -847,7 +877,11 @@ mod rich {
             }
             if !entry_references_blob(root, &e.meta.blake3, keyhash) {
                 let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
-                let _ = fs::remove_file(stats_blob_path(root, &e.meta.blake3));
+                // Stats blobs are keyed by content hash AND parsing extension;
+                // free every per-extension variant for this content.
+                for ext in TABULAR_EXTS {
+                    let _ = fs::remove_file(stats_blob_path(root, &e.meta.blake3, ext));
+                }
             }
         }
     }
@@ -1791,9 +1825,25 @@ mod rich {
         }
 
         let body = read_blob(&root, &entry.meta.blake3, entry.meta.compression)?;
-        let dir = std::env::temp_dir().join("qsv-dc").join(&entry.meta.blake3);
+        // The materialized temp name carries a known tabular extension that
+        // selects the delimiter (.csv => comma, .tsv/.tab => tab, .ssv =>
+        // semicolon). Isolate each extension in its own subdir AND key the
+        // stats-cache blob by it, so two aliases of the same bytes with
+        // different extensions never share a materialized sidecar (same temp
+        // stem) or a durable stats blob — either of which would cross-contaminate
+        // schema/frequency results across delimiters.
+        let temp_name = tabular_temp_name(name, &entry.meta.resolved_uri);
+        let ext = Path::new(&temp_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "csv".to_string());
+        let dir = std::env::temp_dir()
+            .join("qsv-dc")
+            .join(&entry.meta.blake3)
+            .join(&ext);
         fs::create_dir_all(&dir)?;
-        let csv_path = dir.join(tabular_temp_name(name, &entry.meta.resolved_uri));
+        let csv_path = dir.join(&temp_name);
 
         let need_write = !csv_path.exists()
             || fs::metadata(&csv_path).map(|m| m.len()).unwrap_or(0)
@@ -1825,7 +1875,7 @@ mod rich {
         // mirrors `get_stats_records` (canonical CSV path + `with_extension`).
         let canonical_csv = fs::canonicalize(&csv_path).unwrap_or_else(|_| csv_path.clone());
         let stats_sidecar = canonical_csv.with_extension("stats.csv.data.jsonl");
-        let stats_blob = stats_blob_path(&root, &entry.meta.blake3);
+        let stats_blob = stats_blob_path(&root, &entry.meta.blake3, &ext);
 
         // A sidecar is usable only if newer than the CSV — qsv's stats-cache
         // staleness rule (see `util::get_stats_records`).

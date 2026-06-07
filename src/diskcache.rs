@@ -1311,7 +1311,7 @@ mod rich {
             StatusCode,
             header::{
                 ACCEPT_RANGES, AUTHORIZATION, CONTENT_RANGE, ETAG, IF_MATCH, IF_MODIFIED_SINCE,
-                IF_NONE_MATCH, LAST_MODIFIED, RANGE,
+                IF_NONE_MATCH, IF_UNMODIFIED_SINCE, LAST_MODIFIED, RANGE,
             },
         };
 
@@ -1371,6 +1371,24 @@ mod rich {
             Ok(have)
         }
 
+        // Parse a `Content-Range` value ("bytes START-END/TOTAL", or a "*" total
+        // for an unknown size) into (start, end, total). Used to validate that
+        // each follow-up range response actually carries the bytes we asked for.
+        fn parse_content_range(cr: &str) -> Option<(u64, u64, Option<u64>)> {
+            let rest = cr.trim().strip_prefix("bytes ")?.trim();
+            let (range, total) = rest.split_once('/')?;
+            let (start, end) = range.split_once('-')?;
+            let start = start.trim().parse::<u64>().ok()?;
+            let end = end.trim().parse::<u64>().ok()?;
+            let total = total.trim();
+            let total = if total == "*" {
+                None
+            } else {
+                Some(total.parse::<u64>().ok()?)
+            };
+            Some((start, end, total))
+        }
+
         // None => Not-Modified; Some => (blake3, compressed, uncompressed, etag, last_modified).
         let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
             rt.block_on(async {
@@ -1425,37 +1443,108 @@ mod rich {
                     // remaining bytes as parallel, in-order ranges (bounded memory).
                     let have = drain(&mut sink, resp, final_url).await?;
                     if have < total {
-                        let mut ranges = Vec::new();
-                        let mut start = have;
-                        while start < total {
-                            let end = (start + part_size).min(total);
-                            ranges.push((start, end));
-                            start = end;
-                        }
-                        let mut parts =
-                            futures_util::stream::iter(ranges.into_iter().map(|(s, e)| {
-                                let client = client.clone();
-                                let url = final_url.to_string();
-                                let auth = auth_token.map(ToString::to_string);
-                                let if_match = etag.clone();
-                                async move {
-                                    let mut req = client
-                                        .get(&url)
-                                        .header(RANGE, format!("bytes={s}-{}", e - 1));
-                                    if let Some(tok) = &auth {
-                                        req = req.header(AUTHORIZATION, tok);
-                                    }
-                                    if let Some(im) = &if_match {
-                                        req = req.header(IF_MATCH, im);
-                                    }
-                                    req.send().await?.error_for_status()?.bytes().await
+                        // Guard the follow-up ranges against the object changing
+                        // mid-download. `If-Match` mandates STRONG comparison, so a
+                        // weak validator (`W/"..."`) must NOT be sent there — a
+                        // compliant origin answers 412. Use the strong ETag when we
+                        // have one, else fall back to `If-Unmodified-Since` from the
+                        // Last-Modified, else rely on the per-range Content-Range /
+                        // length validation below.
+                        let strong_etag = etag
+                            .clone()
+                            .filter(|e| !e.starts_with("W/") && !e.starts_with("w/"));
+                        let guard_lastmod = if strong_etag.is_some() {
+                            None
+                        } else {
+                            last_modified.clone()
+                        };
+                        // Generate the (start, end) byte-ranges LAZILY so the list
+                        // never materializes in full — it would be `total /
+                        // part_size` entries for a huge object with a tiny part size.
+                        // `saturating_add` avoids overflow on a hostile total.
+                        let mut next = have;
+                        let range_iter = std::iter::from_fn(move || {
+                            if next >= total {
+                                return None;
+                            }
+                            let s = next;
+                            let e = s.saturating_add(part_size).min(total);
+                            next = e;
+                            Some((s, e))
+                        });
+                        let mut parts = futures_util::stream::iter(range_iter.map(|(s, e)| {
+                            let client = client.clone();
+                            let url = final_url.to_string();
+                            let auth = auth_token.map(ToString::to_string);
+                            let if_match = strong_etag.clone();
+                            let if_unmod = guard_lastmod.clone();
+                            async move {
+                                let mut req = client
+                                    .get(&url)
+                                    .header(RANGE, format!("bytes={s}-{}", e - 1));
+                                if let Some(tok) = &auth {
+                                    req = req.header(AUTHORIZATION, tok);
                                 }
-                            }))
-                            .buffered(concurrency);
+                                if let Some(im) = &if_match {
+                                    req = req.header(IF_MATCH, im);
+                                } else if let Some(lm) = &if_unmod {
+                                    req = req.header(IF_UNMODIFIED_SINCE, lm);
+                                }
+                                let resp = req.send().await.map_err(|err| {
+                                    CliError::Other(format!("get: reading {url} failed: {err}"))
+                                })?;
+                                // Each follow-up range MUST come back as 206 with a
+                                // Content-Range that matches exactly what we asked
+                                // for and a body of the requested length. Otherwise a
+                                // 200 full body, a wrong slice, or a short read would
+                                // be stitched in as if it were this range, silently
+                                // corrupting the reassembled blob.
+                                let st = resp.status();
+                                if st != StatusCode::PARTIAL_CONTENT {
+                                    return Err(CliError::Other(format!(
+                                        "get: range {s}-{} of {url} returned {st}, expected 206 \
+                                         Partial Content",
+                                        e - 1
+                                    )));
+                                }
+                                let cr =
+                                    header_str(resp.headers(), CONTENT_RANGE).ok_or_else(|| {
+                                        CliError::Other(format!(
+                                            "get: range {s}-{} of {url} is missing a \
+                                             Content-Range header",
+                                            e - 1
+                                        ))
+                                    })?;
+                                match parse_content_range(&cr) {
+                                    Some((rs, re, rtot))
+                                        if rs == s
+                                            && re == e - 1
+                                            && rtot.is_none_or(|t| t == total) => {},
+                                    _ => {
+                                        return Err(CliError::Other(format!(
+                                            "get: range {s}-{} of {url} returned a mismatched \
+                                             Content-Range '{cr}' (object changed mid-download?)",
+                                            e - 1
+                                        )));
+                                    },
+                                }
+                                let body = resp.bytes().await.map_err(|err| {
+                                    CliError::Other(format!("get: reading {url} failed: {err}"))
+                                })?;
+                                if body.len() as u64 != e - s {
+                                    return Err(CliError::Other(format!(
+                                        "get: range {s}-{} of {url} returned {} bytes, expected {}",
+                                        e - 1,
+                                        body.len(),
+                                        e - s
+                                    )));
+                                }
+                                Ok::<_, CliError>(body)
+                            }
+                        }))
+                        .buffered(concurrency);
                         while let Some(chunk) = parts.next().await {
-                            let chunk = chunk.map_err(|e| {
-                                CliError::Other(format!("get: reading {final_url} failed: {e}"))
-                            })?;
+                            let chunk = chunk?;
                             sink.write(&chunk)?;
                         }
                     }

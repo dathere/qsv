@@ -1011,6 +1011,9 @@ fn get_cache_verify_detects_corruption() {
 // file — previously only `Config::new` resolved `dc:`, so process_input's raw
 // `path.exists()` check failed for "dc:…". Uses a local get (no network) to
 // isolate the dc: read path.
+// `cat` is not bundled in reduced binaries (e.g. qsvdp), so gate on
+// `feature_capable`; `slice`/`count` still cover the process_input dc: path there.
+#[cfg(feature = "feature_capable")]
 #[test]
 #[serial]
 fn get_dc_works_with_process_input_commands() {
@@ -1072,6 +1075,10 @@ fn dir_has_file_suffix(dir: &Path, suffix: &str) -> bool {
 // errored because the raw "dc:" string failed canonicalize — and (b) have the
 // .stats.csv.data.jsonl sidecar they build captured into a durable, content-
 // addressed blob so it survives temp-dir cleanup.
+// Uses `schema`, which reduced binaries (e.g. qsvdp) do not bundle; gate on
+// `feature_capable`. `frequency` coverage of the dc: stats-cache path on qsvdp
+// is provided by `get_dc_stats_cache_not_shared_across_extensions`.
+#[cfg(feature = "feature_capable")]
 #[test]
 #[serial]
 fn get_dc_stats_cache_for_smart_commands() {

@@ -82,10 +82,8 @@ fn ranged_response(
 // A multi-part-sized CSV body (and its ETag) for exercising the cloud ranged
 // download path: ~500 deterministic rows, large enough to span many parts when
 // QSV_GET_PART_SIZE is set small. `value` = id*7 so reassembly can be checked.
-#[cfg(feature = "get_cloud")]
 const BIG_ETAG: &str = "\"big-v1\"";
 
-#[cfg(feature = "get_cloud")]
 fn big_csv() -> String {
     let mut s = String::from("id,name,value\n");
     for i in 0..500 {
@@ -94,7 +92,6 @@ fn big_csv() -> String {
     s
 }
 
-#[cfg(feature = "get_cloud")]
 async fn serve_big(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
     ranged_response(big_csv().as_bytes(), BIG_ETAG, &req, &c)
 }
@@ -116,28 +113,36 @@ async fn serve_states(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse 
     ranged_response(STATES_CSV.as_bytes(), ETAG, &req, &c)
 }
 
-// Like `serve_states` but explicitly fresh (Cache-Control: max-age), so a
-// second request within the window is served from cache WITHOUT revalidation
-// (no `put` on the manager) — the path that previously failed when a cache hit
-// was requested under a different logical name.
-async fn serve_states_fresh(c: web::Data<Counters>) -> HttpResponse {
-    c.body_sends.fetch_add(1, Ordering::SeqCst);
-    HttpResponse::Ok()
-        .insert_header(("etag", ETAG))
-        .insert_header(("cache-control", "max-age=3600"))
-        .content_type("text/csv")
-        .body(STATES_CSV)
+// A `states` endpoint that also advertises Cache-Control: max-age. With the
+// unified conditional downloader, a re-fetch sends If-None-Match and gets a 304
+// (no re-download), so the "served from cache, not re-downloaded" assertions
+// still hold via revalidation rather than an RFC9111 fresh hit.
+async fn serve_states_fresh(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    if let Some(inm) = req.headers().get("if-none-match")
+        && inm.to_str().unwrap_or_default() == ETAG
+    {
+        c.revalidations.fetch_add(1, Ordering::SeqCst);
+        return HttpResponse::NotModified()
+            .insert_header(("etag", ETAG))
+            .finish();
+    }
+    ranged_response(STATES_CSV.as_bytes(), ETAG, &req, &c)
 }
 
-// A second fresh endpoint with DIFFERENT (1-row) content, for testing that a
-// fresh cache hit repoints a name that previously pointed at another entry.
-async fn serve_one_fresh(c: web::Data<Counters>) -> HttpResponse {
-    c.body_sends.fetch_add(1, Ordering::SeqCst);
-    HttpResponse::Ok()
-        .insert_header(("etag", "\"one-v1\""))
-        .insert_header(("cache-control", "max-age=3600"))
-        .content_type("text/csv")
-        .body("name,abbr\nFoo,FO\n")
+// A second endpoint with DIFFERENT (1-row) content + its own ETag, for testing
+// that revalidating a name repoints it to the fetched entry.
+const ONE_ETAG: &str = "\"one-v1\"";
+const ONE_CSV: &[u8] = b"name,abbr\nFoo,FO\n";
+async fn serve_one_fresh(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    if let Some(inm) = req.headers().get("if-none-match")
+        && inm.to_str().unwrap_or_default() == ONE_ETAG
+    {
+        c.revalidations.fetch_add(1, Ordering::SeqCst);
+        return HttpResponse::NotModified()
+            .insert_header(("etag", ONE_ETAG))
+            .finish();
+    }
+    ranged_response(ONE_CSV, ONE_ETAG, &req, &c)
 }
 
 async fn run_webserver(
@@ -150,6 +155,8 @@ async fn run_webserver(
             .service(web::resource("/states.csv").to(serve_states))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
+            // A larger object for the HTTP ranged/streaming download test.
+            .service(web::resource("/big.csv").to(serve_big))
             // Path-style S3 object: object_store issues `GET /{bucket}/{key}`
             // against the endpoint override. Reuses the ETag/304 handler so the
             // cloud path can assert revalidation just like the HTTP path.
@@ -356,6 +363,48 @@ fn get_http_etag_revalidation() {
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
     let got: String = wrk.stdout(&mut count);
     assert_eq!(got, "4");
+}
+
+#[test]
+#[serial]
+fn get_http_ranged_download() {
+    // A large HTTP object with a tiny part size is fetched as many concurrent
+    // byte-ranges, then reassembled byte-for-byte. Exercises the unified
+    // streaming/ranged downloader on the HTTP path (the former http-cache
+    // middleware buffered the whole body).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_http_ranged_download");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("big.csv");
+    let outfile = wrk.path("big_out.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .env("QSV_GET_PART_SIZE", "64") // tiny parts -> many ranges
+        .env("QSV_GET_CONCURRENCY", "4")
+        .args(["--name", "big.csv"])
+        .args(["--output", outfile.to_str().unwrap()])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    assert!(
+        server.body_sends() > 1,
+        "a 64-byte part size should fan the HTTP download out into many ranged GETs, got {}",
+        server.body_sends()
+    );
+
+    // reassembled bytes match the origin exactly (proves correct in-order assembly)
+    let out = std::fs::read_to_string(&outfile).unwrap();
+    assert_eq!(
+        out,
+        big_csv(),
+        "reassembled --output bytes must match origin"
+    );
+
+    // and it's usable via the dc: prefix
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:big.csv");
+    assert_eq!(wrk.stdout::<String>(&mut count), "500");
 }
 
 #[test]

@@ -31,6 +31,8 @@ jobs:
     needs: analyze-tags
     runs-on: ${{ matrix.job.os }}
     strategy:
+      # don't cancel the other target builds if one fails; each platform publishes independently
+      fail-fast: false
       matrix:
         rust: [stable]
         job:
@@ -115,11 +117,12 @@ jobs:
           #   default-features: --no-default-features
           #   addl-qsvlite-features:
           #   addl-qsvdp-features:
-          - os: ubuntu-24.04
+          - os: ubuntu-24.04-arm
             os-name: linux
             target: aarch64-unknown-linux-gnu
             architecture: aarch64
-            use-cross: true
+            # build natively on GitHub's hosted ARM runner instead of QEMU cross-compiling
+            use-cross: false
             addl-build-args: --features=apply,fetch,foreach,self_update,lens,color
             default-features:
             addl-qsvlite-features:

@@ -1188,14 +1188,22 @@ mod rich {
                 // ORDER (buffered) so the blob reassembles correctly while memory
                 // stays bounded to ≈ concurrency * part_size.
                 if have < total {
-                    let mut ranges = Vec::new();
-                    let mut start = have;
-                    while start < total {
-                        let end = (start + part_size).min(total);
-                        ranges.push(start..end);
-                        start = end;
-                    }
-                    let mut parts = futures_util::stream::iter(ranges.into_iter().map(|r| {
+                    // Generate the outstanding byte-ranges LAZILY (via from_fn,
+                    // consumed by `buffered`) so the range list never materializes
+                    // in full — it would be `total / part_size` entries for a huge
+                    // object with a tiny part size. `saturating_add` avoids overflow
+                    // on a hostile total.
+                    let mut next = have;
+                    let range_iter = std::iter::from_fn(move || {
+                        if next >= total {
+                            return None;
+                        }
+                        let start = next;
+                        let end = start.saturating_add(part_size).min(total);
+                        next = end;
+                        Some(start..end)
+                    });
+                    let mut parts = futures_util::stream::iter(range_iter.map(|r| {
                         let store = Arc::clone(&store);
                         let path = path.clone();
                         let if_match = if_match.clone();

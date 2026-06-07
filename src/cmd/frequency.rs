@@ -8,7 +8,7 @@ columns - field,value,count,percentage,rank.
 
 The rank column is 1-based and is calculated based on the count of the values,
 with the most frequent having a rank of 1. In case of ties, the rank is calculated
-based on the rank-strategy option - "min" (default), "max", "dense", "ordinal", or "average".
+based on the rank-strategy option - "dense" (default), "min", "max", "ordinal", or "average".
 
 Only the top N values (set by the --limit option) are computed, with the rest of the values
 grouped into an "Other" category with a special rank of 0. The "Other" category includes

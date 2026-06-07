@@ -1010,10 +1010,9 @@ fn get_cache_verify_detects_corruption() {
 // slice, join, …) must honor the `dc:` prefix rather than reject it as a missing
 // file — previously only `Config::new` resolved `dc:`, so process_input's raw
 // `path.exists()` check failed for "dc:…". Uses a local get (no network) to
-// isolate the dc: read path.
-// `cat` is not bundled in reduced binaries (e.g. qsvdp), so gate on
-// `feature_capable`; `slice`/`count` still cover the process_input dc: path there.
-#[cfg(feature = "feature_capable")]
+// isolate the dc: read path. `slice` is bundled in reduced binaries (e.g. qsvdp)
+// too, so it keeps the process_input dc: regression covered there; only the
+// `cat` assertion is `feature_capable`-gated (qsvdp does not bundle `cat`).
 #[test]
 #[serial]
 fn get_dc_works_with_process_input_commands() {
@@ -1028,11 +1027,16 @@ fn get_dc_works_with_process_input_commands() {
         .arg(src.to_str().unwrap());
     wrk.assert_success(&mut g);
 
-    // `cat` routes inputs through process_input -> must echo the dc: content
-    let mut cat = wrk.command("cat");
-    cat.env("QSV_CACHE_DIR", &cache_dir)
-        .args(["rows", "dc:src.csv"]);
-    assert_eq!(wrk.stdout::<String>(&mut cat), "id,name\n0,a\n1,b\n2,c");
+    // `cat` routes inputs through process_input -> must echo the dc: content.
+    // Gated because qsvdp does not bundle `cat`; the `slice` check below covers
+    // the same process_input dc: path on reduced binaries.
+    #[cfg(feature = "feature_capable")]
+    {
+        let mut cat = wrk.command("cat");
+        cat.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["rows", "dc:src.csv"]);
+        assert_eq!(wrk.stdout::<String>(&mut cat), "id,name\n0,a\n1,b\n2,c");
+    }
 
     // `slice` likewise (and uses the materialized sibling .idx for --index)
     let mut slice = wrk.command("slice");

@@ -1075,6 +1075,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
 // we only need url in the cache key
 // as this is an in-memory cache that is only used for one qsv session
+//
+// NOTE on runtime-configurable cache params: the `#[cached(time = …)]` attribute
+// requires a compile-time literal TTL (see cached#246), but the `create = "…"`
+// escape hatch below sidesteps that — it runs once on first access and can read
+// runtime values (here `MEM_CACHE_SIZE`, a OnceLock set in run() *before* first
+// cache use). To give this in-memory cache a runtime TTL, swap the LruCache for
+// `TimedCache::with_lifespan(runtime_secs)` (or TimedSizedCache) in this block
+// instead of chasing the macro's `time =` literal. The disk/redis caches already
+// take a runtime TTL via their builder/constructor APIs (DiskCacheBuilder::ttl /
+// RedisCache::new), so this pattern is only relevant for the in-memory tier.
 #[cached(
     ty = "LruCache<String, Return<FetchResponse>>",
     create = r##"{

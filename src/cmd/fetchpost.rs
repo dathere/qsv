@@ -1168,6 +1168,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 // If you call fetchpost with a CSV that varies BOTH URL and body, two rows
 // sharing a body but using different URLs will collide on the same in-memory
 // entry. The disk and redis caches use the wider cross_session_cache_key.
+//
+// For runtime-configurable cache params (e.g. a runtime TTL via the `create = "…"`
+// escape hatch instead of the macro's compile-time `time =` literal, cached#246),
+// see the detailed note above the matching `get_cached_response` in fetch.rs.
 #[cached(
     ty = "LruCache<String, Return<FetchResponse>>",
     create = r##"{

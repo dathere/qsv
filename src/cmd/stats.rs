@@ -72,7 +72,8 @@ and each chunk is processed in parallel.
 
 As stats is a central command in qsv, and can be expensive to compute, `stats` caches results
 in <FILESTEM>.stats.csv & if the --stats-jsonl option is used, <FILESTEM>.stats.csv.data.jsonl
-(e.g., qsv stats nyc311.csv will create nyc311.stats.csv & nyc311.stats.csv.data.jsonl).
+(e.g., qsv stats nyc311.csv will create nyc311.stats.csv; adding --stats-jsonl also creates
+nyc311.stats.csv.data.jsonl).
 The arguments used to generate the cached stats are saved in <FILESTEM>.stats.csv.json.
 
 If stats have already been computed for the input file with similar arguments and the file

@@ -30,6 +30,72 @@ struct Counters {
     revalidations: Arc<AtomicUsize>,
 }
 
+// Parse an HTTP `Range: bytes=START-END` header into inclusive byte offsets,
+// clamped to `len`. Returns None for an unsatisfiable/unsupported spec (caller
+// then serves the full body). Only the single-range `bytes=a-b` / `bytes=a-`
+// forms are handled — all that object_store's ranged GETs send.
+fn parse_byte_range(header: &str, len: usize) -> Option<(usize, usize)> {
+    let spec = header.trim().strip_prefix("bytes=")?;
+    let (s, e) = spec.split_once('-')?;
+    let start: usize = s.trim().parse().ok()?;
+    let end = if e.trim().is_empty() {
+        len.saturating_sub(1)
+    } else {
+        e.trim().parse::<usize>().ok()?.min(len.saturating_sub(1))
+    };
+    if start > end || start >= len {
+        return None;
+    }
+    Some((start, end))
+}
+
+// Serve `body` with single-range support: a `Range` request yields 206 +
+// Content-Range (so object_store can drive a multipart/ranged download), any
+// other request yields the full 200 body. Both count as a body send.
+fn ranged_response(
+    body: &[u8],
+    etag: &str,
+    req: &HttpRequest,
+    counters: &Counters,
+) -> HttpResponse {
+    if let Some(rng) = req.headers().get("range").and_then(|v| v.to_str().ok())
+        && let Some((start, end)) = parse_byte_range(rng, body.len())
+    {
+        counters.body_sends.fetch_add(1, Ordering::SeqCst);
+        return HttpResponse::PartialContent()
+            .insert_header(("etag", etag.to_string()))
+            .insert_header(("accept-ranges", "bytes"))
+            .insert_header((
+                "content-range",
+                format!("bytes {start}-{end}/{}", body.len()),
+            ))
+            .content_type("text/csv")
+            .body(body[start..=end].to_vec());
+    }
+    counters.body_sends.fetch_add(1, Ordering::SeqCst);
+    HttpResponse::Ok()
+        .insert_header(("etag", etag.to_string()))
+        .content_type("text/csv")
+        .body(body.to_vec())
+}
+
+// A multi-part-sized CSV body (and its ETag) for exercising the cloud ranged
+// download path: ~500 deterministic rows, large enough to span many parts when
+// QSV_GET_PART_SIZE is set small. `value` = id*7 so reassembly can be checked.
+const BIG_ETAG: &str = "\"big-v1\"";
+
+fn big_csv() -> String {
+    let mut s = String::from("id,name,value\n");
+    for i in 0..500 {
+        s.push_str(&format!("{i},row-{i},{}\n", i * 7));
+    }
+    s
+}
+
+async fn serve_big(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(big_csv().as_bytes(), BIG_ETAG, &req, &c)
+}
+
 // A request handler that serves STATES_CSV with an ETag and honors
 // conditional GETs: a matching `If-None-Match` yields 304 (counted as a
 // revalidation, NOT a body send), so a test can assert that a second
@@ -43,35 +109,40 @@ async fn serve_states(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse 
             .insert_header(("etag", ETAG))
             .finish();
     }
-    c.body_sends.fetch_add(1, Ordering::SeqCst);
-    HttpResponse::Ok()
-        .insert_header(("etag", ETAG))
-        .content_type("text/csv")
-        .body(STATES_CSV)
+    // Range-aware (object_store's cloud GETs request a range and require a 206).
+    ranged_response(STATES_CSV.as_bytes(), ETAG, &req, &c)
 }
 
-// Like `serve_states` but explicitly fresh (Cache-Control: max-age), so a
-// second request within the window is served from cache WITHOUT revalidation
-// (no `put` on the manager) — the path that previously failed when a cache hit
-// was requested under a different logical name.
-async fn serve_states_fresh(c: web::Data<Counters>) -> HttpResponse {
-    c.body_sends.fetch_add(1, Ordering::SeqCst);
-    HttpResponse::Ok()
-        .insert_header(("etag", ETAG))
-        .insert_header(("cache-control", "max-age=3600"))
-        .content_type("text/csv")
-        .body(STATES_CSV)
+// A `states` endpoint that also advertises Cache-Control: max-age. With the
+// unified conditional downloader, a re-fetch sends If-None-Match and gets a 304
+// (no re-download), so the "served from cache, not re-downloaded" assertions
+// still hold via revalidation rather than an RFC9111 fresh hit.
+async fn serve_states_fresh(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    if let Some(inm) = req.headers().get("if-none-match")
+        && inm.to_str().unwrap_or_default() == ETAG
+    {
+        c.revalidations.fetch_add(1, Ordering::SeqCst);
+        return HttpResponse::NotModified()
+            .insert_header(("etag", ETAG))
+            .finish();
+    }
+    ranged_response(STATES_CSV.as_bytes(), ETAG, &req, &c)
 }
 
-// A second fresh endpoint with DIFFERENT (1-row) content, for testing that a
-// fresh cache hit repoints a name that previously pointed at another entry.
-async fn serve_one_fresh(c: web::Data<Counters>) -> HttpResponse {
-    c.body_sends.fetch_add(1, Ordering::SeqCst);
-    HttpResponse::Ok()
-        .insert_header(("etag", "\"one-v1\""))
-        .insert_header(("cache-control", "max-age=3600"))
-        .content_type("text/csv")
-        .body("name,abbr\nFoo,FO\n")
+// A second endpoint with DIFFERENT (1-row) content + its own ETag, for testing
+// that revalidating a name repoints it to the fetched entry.
+const ONE_ETAG: &str = "\"one-v1\"";
+const ONE_CSV: &[u8] = b"name,abbr\nFoo,FO\n";
+async fn serve_one_fresh(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    if let Some(inm) = req.headers().get("if-none-match")
+        && inm.to_str().unwrap_or_default() == ONE_ETAG
+    {
+        c.revalidations.fetch_add(1, Ordering::SeqCst);
+        return HttpResponse::NotModified()
+            .insert_header(("etag", ONE_ETAG))
+            .finish();
+    }
+    ranged_response(ONE_CSV, ONE_ETAG, &req, &c)
 }
 
 async fn run_webserver(
@@ -79,15 +150,22 @@ async fn run_webserver(
     counters: Counters,
 ) -> std::io::Result<()> {
     let server_builder = HttpServer::new(move || {
-        App::new()
+        let app = App::new()
             .app_data(web::Data::new(counters.clone()))
             .service(web::resource("/states.csv").to(serve_states))
             .service(web::resource("/states_fresh.csv").to(serve_states_fresh))
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
+            // A larger object for the HTTP ranged/streaming download test.
+            .service(web::resource("/big.csv").to(serve_big))
             // Path-style S3 object: object_store issues `GET /{bucket}/{key}`
             // against the endpoint override. Reuses the ETag/304 handler so the
             // cloud path can assert revalidation just like the HTTP path.
-            .service(web::resource("/test-bucket/states.csv").to(serve_states))
+            .service(web::resource("/test-bucket/states.csv").to(serve_states));
+        // A larger path-style object for the cloud ranged/multipart download
+        // test (only built with get_cloud).
+        #[cfg(feature = "get_cloud")]
+        let app = app.service(web::resource("/test-bucket/big.csv").to(serve_big));
+        app
     });
 
     let bound = match server_builder.bind((BIND_HOST, 0)) {
@@ -285,6 +363,48 @@ fn get_http_etag_revalidation() {
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:states.csv");
     let got: String = wrk.stdout(&mut count);
     assert_eq!(got, "4");
+}
+
+#[test]
+#[serial]
+fn get_http_ranged_download() {
+    // A large HTTP object with a tiny part size is fetched as many concurrent
+    // byte-ranges, then reassembled byte-for-byte. Exercises the unified
+    // streaming/ranged downloader on the HTTP path (the former http-cache
+    // middleware buffered the whole body).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_http_ranged_download");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("big.csv");
+    let outfile = wrk.path("big_out.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .env("QSV_GET_PART_SIZE", "64") // tiny parts -> many ranges
+        .env("QSV_GET_CONCURRENCY", "4")
+        .args(["--name", "big.csv"])
+        .args(["--output", outfile.to_str().unwrap()])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    assert!(
+        server.body_sends() > 1,
+        "a 64-byte part size should fan the HTTP download out into many ranged GETs, got {}",
+        server.body_sends()
+    );
+
+    // reassembled bytes match the origin exactly (proves correct in-order assembly)
+    let out = std::fs::read_to_string(&outfile).unwrap();
+    assert_eq!(
+        out,
+        big_csv(),
+        "reassembled --output bytes must match origin"
+    );
+
+    // and it's usable via the dc: prefix
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:big.csv");
+    assert_eq!(wrk.stdout::<String>(&mut count), "500");
 }
 
 #[test]
@@ -886,6 +1006,177 @@ fn get_cache_verify_detects_corruption() {
     );
 }
 
+// Regression: commands that route inputs through `util::process_input` (cat,
+// slice, join, …) must honor the `dc:` prefix rather than reject it as a missing
+// file — previously only `Config::new` resolved `dc:`, so process_input's raw
+// `path.exists()` check failed for "dc:…". Uses a local get (no network) to
+// isolate the dc: read path.
+#[test]
+#[serial]
+fn get_dc_works_with_process_input_commands() {
+    let wrk = Workdir::new("get_dc_works_with_process_input_commands");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("src.csv");
+    std::fs::write(&src, "id,name\n0,a\n1,b\n2,c\n").unwrap();
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "src.csv"])
+        .arg(src.to_str().unwrap());
+    wrk.assert_success(&mut g);
+
+    // `cat` routes inputs through process_input -> must echo the dc: content
+    let mut cat = wrk.command("cat");
+    cat.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["rows", "dc:src.csv"]);
+    assert_eq!(wrk.stdout::<String>(&mut cat), "id,name\n0,a\n1,b\n2,c");
+
+    // `slice` likewise (and uses the materialized sibling .idx for --index)
+    let mut slice = wrk.command("slice");
+    slice
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--index", "1"])
+        .arg("dc:src.csv");
+    assert_eq!(wrk.stdout::<String>(&mut slice), "id,name\n1,b");
+
+    // `count` (which already resolved dc: via Config::new) still works
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:src.csv");
+    assert_eq!(wrk.stdout::<String>(&mut count), "3");
+}
+
+// Recursively check whether `dir` contains any file whose name ends with `suffix`.
+fn dir_has_file_suffix(dir: &Path, suffix: &str) -> bool {
+    let Ok(rd) = std::fs::read_dir(dir) else {
+        return false;
+    };
+    for entry in rd.flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            if dir_has_file_suffix(&p, suffix) {
+                return true;
+            }
+        } else if p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.ends_with(suffix))
+        {
+            return true;
+        }
+    }
+    false
+}
+
+// Regression + feature (get §2.2): commands that use util::get_stats_records
+// (frequency, schema, ...) must (a) work on dc: inputs at all — they previously
+// errored because the raw "dc:" string failed canonicalize — and (b) have the
+// .stats.csv.data.jsonl sidecar they build captured into a durable, content-
+// addressed blob so it survives temp-dir cleanup.
+#[test]
+#[serial]
+fn get_dc_stats_cache_for_smart_commands() {
+    let wrk = Workdir::new("get_dc_stats_cache_for_smart_commands");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("cats.csv");
+    std::fs::write(&src, "id,cat\n1,a\n2,b\n3,a\n4,c\n5,a\n6,b\n").unwrap();
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "cats.csv"])
+        .arg(src.to_str().unwrap());
+    wrk.assert_success(&mut g);
+
+    // (a) frequency works on dc: and is cardinality-aware (the per-value counts
+    //     come from the stats-cache path that get_stats_records drives).
+    let mut freq = wrk.command("frequency");
+    freq.env("QSV_CACHE_DIR", &cache_dir).arg("dc:cats.csv");
+    let got = wrk.stdout::<String>(&mut freq);
+    assert!(
+        got.contains("cat,a,3"),
+        "frequency dc: should count cat=a 3x, got:\n{got}"
+    );
+
+    // (b) schema is another get_stats_records consumer; it must succeed too.
+    let mut schema = wrk.command("schema");
+    schema.env("QSV_CACHE_DIR", &cache_dir).arg("dc:cats.csv");
+    wrk.assert_success(&mut schema);
+
+    // (c) the stats-cache sidecar was captured into a durable blob under the
+    //     entry's content-addressed blob dir (cache root has a `get` subdir).
+    let blobs = cache_dir.join("get").join("blobs");
+    assert!(
+        dir_has_file_suffix(&blobs, ".stats.jsonl.zst"),
+        "expected a captured .stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+}
+
+// Regression (roborev #2776): two dc: aliases for the SAME bytes but different
+// tabular extensions must NOT share the durable stats cache. The extension
+// selects the delimiter, so a `.csv` alias (comma => 3 fields a,b,c) and a
+// `.tsv` alias (tab => 1 field, the whole comma line) parse differently. A stats
+// blob keyed only by content hash would let the second alias reuse the first's
+// stats and report the wrong fields; the fix keys the blob (and the materialized
+// temp dir) by extension, so each delimiter gets its own correct cache.
+#[test]
+#[serial]
+fn get_dc_stats_cache_not_shared_across_extensions() {
+    let wrk = Workdir::new("get_dc_stats_cache_not_shared_across_extensions");
+    let cache_dir = wrk.path("qsvcache");
+    let src = wrk.path("grid.csv");
+    // Comma-structured bytes: 3 columns parsed as CSV, 1 column parsed as TSV.
+    std::fs::write(&src, "a,b,c\n1,2,3\n1,2,3\n").unwrap();
+
+    // Same source under a .csv and a .tsv alias => one content hash, two aliases.
+    for alias in ["grid.csv", "grid.tsv"] {
+        let mut g = wrk.command("get");
+        g.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", alias])
+            .arg(src.to_str().unwrap());
+        wrk.assert_success(&mut g);
+    }
+
+    // frequency over the .csv alias: comma-delimited => header + three fields.
+    let mut fcsv = wrk.command("frequency");
+    fcsv.env("QSV_CACHE_DIR", &cache_dir).arg("dc:grid.csv");
+    let csv_out = wrk.stdout::<String>(&mut fcsv);
+
+    // frequency over the .tsv alias of the SAME bytes: tab-delimited => header +
+    // ONE field whose name is the whole comma line. If the stats cache
+    // cross-contaminated, this would instead inherit the comma fields a/b/c.
+    let mut ftsv = wrk.command("frequency");
+    ftsv.env("QSV_CACHE_DIR", &cache_dir).arg("dc:grid.tsv");
+    let tsv_out = wrk.stdout::<String>(&mut ftsv);
+
+    assert_eq!(
+        csv_out.lines().count(),
+        4,
+        "csv alias must see three fields (header + a/b/c); got:\n{csv_out}"
+    );
+    assert_eq!(
+        tsv_out.lines().count(),
+        2,
+        "tsv alias must see one combined field (header + 1); got:\n{tsv_out}"
+    );
+    assert!(
+        tsv_out.contains("\"a,b,c\""),
+        "tsv alias's single field is the whole comma line; got:\n{tsv_out}"
+    );
+
+    // Structural proof of the fix: distinct per-extension stats blobs coexist.
+    let blobs = cache_dir.join("get").join("blobs");
+    assert!(
+        dir_has_file_suffix(&blobs, ".csv.stats.jsonl.zst"),
+        "expected a .csv.stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+    assert!(
+        dir_has_file_suffix(&blobs, ".tsv.stats.jsonl.zst"),
+        "expected a .tsv.stats.jsonl.zst blob under {}",
+        blobs.display()
+    );
+}
+
 // Build a `get` command that targets the mock S3 endpoint via path-style,
 // anonymous (skip_signature) access over plain HTTP.
 #[cfg(feature = "get_cloud")]
@@ -956,6 +1247,54 @@ fn get_s3_etag_revalidation() {
         1,
         "second s3 get should revalidate (304), not re-download the body"
     );
+}
+
+#[cfg(feature = "get_cloud")]
+#[test]
+#[serial]
+fn get_s3_multipart_ranged_download() {
+    // Force a tiny part size so the ~8KB object is fetched as many concurrent
+    // byte-ranges, then assert the blob reassembled in the correct order
+    // (boundary + middle rows exact) and that it actually fanned out (>1 GET).
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_s3_multipart_ranged_download");
+    let cache_dir = wrk.path("qsvcache");
+    let endpoint = format!("http://{}", server.addr); // DevSkim: ignore DS137138
+
+    let outfile = wrk.path("big_out.csv");
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .env("QSV_GET_PART_SIZE", "64") // tiny parts -> many ranges
+        .env("QSV_GET_CONCURRENCY", "4")
+        .args(["--name", "big.csv"])
+        .args(["--cloud-opt", &format!("aws_endpoint={endpoint}")])
+        .args(["--cloud-opt", "aws_region=us-east-1"])
+        .args(["--cloud-opt", "aws_allow_http=true"])
+        .args(["--cloud-opt", "aws_skip_signature=true"])
+        .args(["--output", outfile.to_str().unwrap()])
+        .arg("s3://test-bucket/big.csv");
+    wrk.assert_success(&mut g);
+
+    assert!(
+        server.body_sends() > 1,
+        "a 64-byte part size should fan the download out into many ranged GETs, got {}",
+        server.body_sends()
+    );
+
+    // The fetched (decompressed) bytes must match the origin byte-for-byte: this
+    // proves the concurrently-fetched parts were streamed back into the blob in
+    // the correct order (a scrambled reassembly would diverge here).
+    let out = std::fs::read_to_string(&outfile).unwrap();
+    assert_eq!(
+        out,
+        big_csv(),
+        "reassembled --output bytes must match origin"
+    );
+
+    // and it's usable via the dc: prefix
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:big.csv");
+    assert_eq!(wrk.stdout::<String>(&mut count), "500");
 }
 
 #[cfg(feature = "get_cloud")]

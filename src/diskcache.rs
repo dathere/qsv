@@ -264,16 +264,11 @@ pub use rich::*;
 mod rich {
     use std::{
         fs,
-        io::Read,
+        io::{BufWriter, Read, Write},
         path::{Path, PathBuf},
-        sync::{Arc, Mutex},
         time::SystemTime,
     };
 
-    use http_cache::{CacheManager, CacheMode, HttpResponse};
-    use http_cache_reqwest::{Cache, HttpCache, HttpCacheOptions};
-    use http_cache_semantics::CachePolicy;
-    use reqwest_middleware::ClientBuilder;
     use serde::{Deserialize, Serialize};
 
     use super::{DEFAULT_CKAN_API, resolve_ckan_resource, resolve_uri_prefix, set_qsv_cache_dir};
@@ -392,19 +387,11 @@ mod rich {
         pub ckan_api_url:       Option<String>,
     }
 
-    /// The on-disk record: metadata plus (for HTTP sources) the data needed to
-    /// reconstruct an `http-cache` response for revalidation.
+    /// The on-disk record: per-entry metadata. The data blob is content-addressed
+    /// and stored separately (see `store_blob`).
     #[derive(Serialize, Deserialize)]
     struct StoredEntry {
         meta: CacheEntry,
-        http: Option<HttpStored>,
-    }
-
-    #[derive(Serialize, Deserialize)]
-    struct HttpStored {
-        /// The cached HTTP response with its body emptied (body lives in the blob).
-        response: HttpResponse,
-        policy:   CachePolicy,
     }
 
     /// Options for fetching a resource into the cache.
@@ -424,12 +411,6 @@ mod rich {
         /// overlaid on the `AWS_*`/`AZURE_*`/`GOOGLE_*` environment. Ignored for
         /// non-cloud sources. Empty for `dc:` auto-refresh (env-only).
         pub cloud_opts:     Vec<String>,
-    }
-
-    type BoxError = http_cache::BoxError;
-
-    fn box_err<E: std::fmt::Display>(e: E) -> BoxError {
-        Box::new(std::io::Error::other(e.to_string()))
     }
 
     fn unix_now() -> i64 {
@@ -459,17 +440,22 @@ mod rich {
             .collect()
     }
 
+    /// The tabular file extensions a `dc:` handle may materialize under. They
+    /// select the delimiter (`csv` => comma, `tsv`/`tab` => tab, `ssv` =>
+    /// semicolon), so they also scope the per-extension stats-cache blob and the
+    /// per-extension temp subdir in `resolve_dc_path`.
+    const TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
+
     /// A temp filename for a `dc:` handle that is guaranteed to carry a known
     /// tabular extension, so `Config`'s format check accepts it. Prefers the
     /// handle's own extension, then the cached source's, falling back to `.csv`.
     fn tabular_temp_name(name: &str, resolved_uri: &str) -> String {
-        const KNOWN: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
         let is_known = |p: &str| {
             Path::new(p)
                 .extension()
                 .and_then(|e| e.to_str())
                 .map(str::to_ascii_lowercase)
-                .is_some_and(|e| KNOWN.contains(&e.as_str()))
+                .is_some_and(|e| TABULAR_EXTS.contains(&e.as_str()))
         };
         let base = safe_name(name);
         if is_known(&base) {
@@ -483,7 +469,7 @@ mod rich {
             .extension()
             .and_then(|e| e.to_str())
             .map(str::to_ascii_lowercase)
-            .filter(|e| KNOWN.contains(&e.as_str()))
+            .filter(|e| TABULAR_EXTS.contains(&e.as_str()))
             .unwrap_or_else(|| "csv".to_string());
         format!("{base}.{ext}")
     }
@@ -504,6 +490,17 @@ mod rich {
         blob_dir(root, b3).join(format!("{b3}.idx.zst"))
     }
 
+    /// Path of the durable, content-addressed stats-cache blob for an entry's
+    /// content AND parsing extension `ext` (csv/tsv/tab/ssv): the zstd-compressed
+    /// `.stats.csv.data.jsonl` that the "smart" commands (frequency, schema,
+    /// profile, ...) build via `get_stats_records`. Keyed by extension as well as
+    /// content hash because the stats fields depend on the delimiter the
+    /// extension selects, so `.csv` and `.tsv` aliases of the same bytes must not
+    /// share a blob. Compression-agnostic, like `idx_blob_path`.
+    fn stats_blob_path(root: &Path, b3: &str, ext: &str) -> PathBuf {
+        blob_dir(root, b3).join(format!("{b3}.{ext}.stats.jsonl.zst"))
+    }
+
     fn entry_path(root: &Path, keyhash: &str) -> PathBuf {
         root.join("entries").join(format!("{keyhash}.json"))
     }
@@ -515,7 +512,9 @@ mod rich {
     /// original name is preserved inside the file content (see `write_alias`).
     fn alias_path(root: &Path, name: &str) -> PathBuf {
         root.join("aliases")
-            .join(blake3::hash(name.as_bytes()).to_hex())
+            // `.as_str()`: blake3's `to_hex()` is an `ArrayString` (impls
+            // `AsRef<str>`, not `AsRef<Path>`), so feed `Path::join` a `&str`.
+            .join(blake3::hash(name.as_bytes()).to_hex().as_str())
     }
 
     /// Write an alias file: content is `"{keyhash}\n{name}"` so the original
@@ -594,6 +593,116 @@ mod rich {
         Ok((b3, size_compressed, body.len() as u64))
     }
 
+    /// The compressed-output sink behind a `BlobSink` (zstd-encoding or raw),
+    /// kept as an enum (rather than `Box<dyn Write>`) so `finish` can propagate a
+    /// zstd flush error instead of swallowing it on drop.
+    enum BlobSinkWriter {
+        Zstd(zstd::stream::write::Encoder<'static, BufWriter<fs::File>>),
+        Raw(BufWriter<fs::File>),
+    }
+
+    /// Streaming, content-addressed blob writer. Feed it the uncompressed byte
+    /// chunks **in order** (`write`); it incrementally BLAKE3-hashes the stream
+    /// and writes the (optionally zstd-compressed) bytes to a temp file. `finish`
+    /// renames that temp to the content-addressed blob path `{blake3}.{ext}` and
+    /// returns `(blake3, compressed_size, uncompressed_size)`.
+    ///
+    /// Unlike `store_blob` (which takes the whole `&[u8]`), this never holds the
+    /// full object in memory — the prerequisite for ingesting large objects in
+    /// bounded memory (used by both the HTTP `ingest_http` and the cloud
+    /// `ingest_cloud` ranged/streaming download paths).
+    struct BlobSink {
+        hasher:       blake3::Hasher,
+        // `Some` while ingesting; `take`n by `finish` (or by `Drop` on a failed
+        // ingest) so the underlying file handle is released before the temp file
+        // is renamed into place or unlinked.
+        writer:       Option<BlobSinkWriter>,
+        tmp:          PathBuf,
+        compression:  Compression,
+        uncompressed: u64,
+    }
+
+    impl BlobSink {
+        fn new(root: &Path, compression: Compression) -> CliResult<Self> {
+            let blobs = root.join("blobs");
+            fs::create_dir_all(&blobs)?;
+            let tmp = blobs.join(format!("ingest-{}.tmp", unique_token()));
+            let buf = BufWriter::new(fs::File::create(&tmp)?);
+            let writer = match compression {
+                Compression::Zstd => {
+                    BlobSinkWriter::Zstd(zstd::stream::write::Encoder::new(buf, ZSTD_LEVEL)?)
+                },
+                Compression::None => BlobSinkWriter::Raw(buf),
+            };
+            Ok(Self {
+                hasher: blake3::Hasher::new(),
+                writer: Some(writer),
+                tmp,
+                compression,
+                uncompressed: 0,
+            })
+        }
+
+        fn write(&mut self, chunk: &[u8]) -> std::io::Result<()> {
+            self.hasher.update(chunk);
+            self.uncompressed += chunk.len() as u64;
+            match self.writer.as_mut() {
+                Some(BlobSinkWriter::Zstd(e)) => e.write_all(chunk),
+                Some(BlobSinkWriter::Raw(w)) => w.write_all(chunk),
+                // Unreachable: `finish` consumes the sink, so no write follows it.
+                None => Ok(()),
+            }
+        }
+
+        /// Finalize the stream and atomically move it into place. On any error
+        /// here the temp file is removed; if the ingest errors out *before*
+        /// `finish` is ever called, `Drop` removes the partial temp instead, so a
+        /// failed ingest never leaves litter in the cache.
+        fn finish(mut self, root: &Path) -> CliResult<(String, u64, u64)> {
+            // Take the writer so it is dropped (closing the file) here, and so
+            // `Drop` sees the sink as already finalized and skips its cleanup.
+            let writer = self.writer.take();
+            let result = (|| -> std::io::Result<(String, u64, u64)> {
+                // Flush the (zstd or plain) writer fully down to the file.
+                let buf = match writer {
+                    Some(BlobSinkWriter::Zstd(e)) => e.finish()?,
+                    Some(BlobSinkWriter::Raw(w)) => w,
+                    None => return Err(std::io::Error::other("BlobSink already finished")),
+                };
+                let file = buf
+                    .into_inner()
+                    .map_err(std::io::IntoInnerError::into_error)?;
+                file.sync_all()?;
+                drop(file);
+                let b3 = self.hasher.finalize().to_hex().to_string();
+                let size_compressed = fs::metadata(&self.tmp)?.len();
+                let dest = blob_path(root, &b3, self.compression);
+                if let Some(parent) = dest.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                fs::rename(&self.tmp, &dest)?;
+                Ok((b3, size_compressed, self.uncompressed))
+            })();
+            if result.is_err() {
+                let _ = fs::remove_file(&self.tmp);
+            }
+            Ok(result?)
+        }
+    }
+
+    impl Drop for BlobSink {
+        fn drop(&mut self) {
+            // If `finish` ran it already took the writer (and renamed or removed
+            // the temp), so there is nothing to clean up. If the ingest errored
+            // out before `finish`, the writer is still here: drop it first to
+            // release the file handle (so Windows can unlink it), then remove the
+            // partial temp so a failed/aborted download leaves no litter.
+            if self.writer.take().is_some() {
+                let _ = fs::remove_file(&self.tmp);
+            }
+        }
+    }
+
     fn read_blob(root: &Path, b3: &str, compression: Compression) -> std::io::Result<Vec<u8>> {
         let path = blob_path(root, b3, compression);
         match compression {
@@ -649,6 +758,11 @@ mod rich {
                 && !entry_references_blob(root, &prev.meta.blake3, &kh)
             {
                 let _ = fs::remove_file(idx_blob_path(root, &prev.meta.blake3));
+                // Reclaim the per-extension stats-cache blobs for the old content
+                // too; otherwise a refresh-to-new-content orphans them.
+                for ext in TABULAR_EXTS {
+                    let _ = fs::remove_file(stats_blob_path(root, &prev.meta.blake3, ext));
+                }
             }
         }
 
@@ -763,6 +877,11 @@ mod rich {
             }
             if !entry_references_blob(root, &e.meta.blake3, keyhash) {
                 let _ = fs::remove_file(idx_blob_path(root, &e.meta.blake3));
+                // Stats blobs are keyed by content hash AND parsing extension;
+                // free every per-extension variant for this content.
+                for ext in TABULAR_EXTS {
+                    let _ = fs::remove_file(stats_blob_path(root, &e.meta.blake3, ext));
+                }
             }
         }
     }
@@ -835,106 +954,6 @@ mod rich {
         Ok(())
     }
 
-    /// The custom `http-cache` manager: persists response bodies into the
-    /// content-addressed zstd blob store and metadata into the JSON entry index.
-    #[derive(Clone)]
-    struct QsvCacheManager {
-        root:               PathBuf,
-        source_uri:         String,
-        logical_name:       String,
-        ttl_secs:           i64,
-        refresh_policy:     RefreshPolicy,
-        compression:        Compression,
-        ckan_resource_hash: Option<String>,
-        // The effective `--ckan-api` base URL (for ckan:// sources), persisted so
-        // a `dc:` auto-refresh re-resolves against the same CKAN instance.
-        ckan_api_url:       Option<String>,
-        // The cache key the middleware last operated on (in get OR put), shared
-        // with `get_resource` so it can recover the entry on a fresh cache hit
-        // (where `put` is never called and no alias for the requested name is
-        // created).
-        observed_key:       Arc<Mutex<Option<String>>>,
-    }
-
-    impl CacheManager for QsvCacheManager {
-        async fn get(
-            &self,
-            cache_key: &str,
-        ) -> http_cache::Result<Option<(HttpResponse, CachePolicy)>> {
-            if let Ok(mut g) = self.observed_key.lock() {
-                *g = Some(cache_key.to_string());
-            }
-            let ep = entry_path(&self.root, &keyhash(cache_key));
-            if !ep.exists() {
-                return Ok(None);
-            }
-            let entry = load_entry_at(&ep).map_err(box_err)?;
-            let Some(httpstored) = entry.http else {
-                return Ok(None);
-            };
-            let body = read_blob(&self.root, &entry.meta.blake3, entry.meta.compression)
-                .map_err(box_err)?;
-            let mut response = httpstored.response;
-            response.body = body;
-            Ok(Some((response, httpstored.policy)))
-        }
-
-        async fn put(
-            &self,
-            cache_key: String,
-            res: HttpResponse,
-            policy: CachePolicy,
-        ) -> http_cache::Result<HttpResponse> {
-            if let Ok(mut g) = self.observed_key.lock() {
-                *g = Some(cache_key.clone());
-            }
-            let (b3, size_compressed, size_uncompressed) =
-                store_blob(&self.root, &res.body, self.compression).map_err(box_err)?;
-
-            let parts = res.parts().map_err(box_err)?;
-            let etag = header_str(&parts.headers, reqwest::header::ETAG);
-            let last_modified = header_str(&parts.headers, reqwest::header::LAST_MODIFIED);
-
-            let meta = CacheEntry {
-                logical_name: self.logical_name.clone(),
-                cache_key,
-                source_uri: self.source_uri.clone(),
-                resolved_uri: res.url.to_string(),
-                blake3: b3,
-                etag,
-                last_modified,
-                ckan_resource_hash: self.ckan_resource_hash.clone(),
-                size_compressed,
-                size_uncompressed,
-                record_count: None,
-                indexed: false,
-                downloaded_at: unix_now(),
-                ttl_secs: self.ttl_secs,
-                refresh_policy: self.refresh_policy,
-                compression: self.compression,
-                cloud_identity: Vec::new(),
-                ckan_api_url: self.ckan_api_url.clone(),
-            };
-
-            let mut stored_response = res.clone();
-            stored_response.body = Vec::new();
-            let entry = StoredEntry {
-                meta,
-                http: Some(HttpStored {
-                    response: stored_response,
-                    policy,
-                }),
-            };
-            write_entry(&self.root, &entry).map_err(box_err)?;
-            Ok(res)
-        }
-
-        async fn delete(&self, cache_key: &str) -> http_cache::Result<()> {
-            delete_entry_by_keyhash(&self.root, &keyhash(cache_key));
-            Ok(())
-        }
-    }
-
     fn ingest_local(opts: &GetOptions, root: &Path, path: &Path) -> CliResult<CacheEntry> {
         let body = fs::read(path)?;
         let (b3, size_compressed, size_uncompressed) = store_blob(root, &body, opts.compression)?;
@@ -974,7 +993,7 @@ mod rich {
             cloud_identity: Vec::new(),
             ckan_api_url: None,
         };
-        let mut entry = StoredEntry { meta, http: None };
+        let mut entry = StoredEntry { meta };
         write_entry(root, &entry)?;
         ensure_indexed(root, &mut entry)?;
         Ok(entry.meta)
@@ -1074,13 +1093,42 @@ mod rich {
         format!("CLOUD:{source}#{joined}")
     }
 
+    /// Default per-part size for ranged downloads (HTTP and cloud): objects larger
+    /// than this are fetched as parallel byte-ranges of this size (8 MiB). Override
+    /// with `QSV_GET_PART_SIZE` (bytes).
+    const DEFAULT_PART_SIZE: u64 = 8 * 1024 * 1024;
+    /// Default max number of concurrent range GETs for one download (4). Override
+    /// with `QSV_GET_CONCURRENCY`. Peak extra memory is roughly
+    /// `concurrency * part_size`, independent of total object size.
+    const DEFAULT_DL_CONCURRENCY: u64 = 4;
+
+    /// Read a `u64` tuning value from environment variable `name`, falling back
+    /// to `default` when it is unset or does not parse.
+    fn env_u64(name: &str, default: u64) -> u64 {
+        std::env::var(name)
+            .ok()
+            .and_then(|v| v.trim().parse().ok())
+            .unwrap_or(default)
+    }
+
     /// Fetch a cloud object-store source (`s3://`, `gs://`, `az://`, …) into the
     /// cache, with ETag-based conditional revalidation (parity with the HTTP
-    /// path's "don't re-download unchanged" guarantee). Mirrors `ingest_local`
-    /// plus the alias/orphan-cleanup tail of `get_resource`.
+    /// path's "don't re-download unchanged" guarantee) and **streaming, parallel
+    /// ranged downloads** for large objects. Mirrors `ingest_local` plus the
+    /// alias/orphan-cleanup tail of `get_resource`.
+    ///
+    /// A single ranged GET of the first part doubles as the conditional
+    /// revalidation request AND the size probe (a 206 carries the total object
+    /// size via `Content-Range`), so there is no extra HEAD round-trip. Objects
+    /// larger than one part are fetched as concurrent byte-ranges and streamed
+    /// straight into a `BlobSink`, so peak memory is bounded (≈ `concurrency *
+    /// part_size`) rather than the whole object.
     #[cfg(feature = "get_cloud")]
     fn ingest_cloud(opts: &GetOptions, root: &Path, source: &str) -> CliResult<CacheEntry> {
-        use object_store::{GetOptions as OsGetOptions, ObjectStore, parse_url_opts};
+        use std::sync::Arc;
+
+        use futures_util::stream::StreamExt;
+        use object_store::{GetOptions as OsGetOptions, GetRange, ObjectStore, parse_url_opts};
         use url::Url;
 
         let url = Url::parse(source)
@@ -1094,6 +1142,8 @@ mod rich {
         let (store, path) = parse_url_opts(&url, all_opts).map_err(|e| {
             CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
         })?;
+        // Shared across the concurrent range fetches below.
+        let store = Arc::new(store);
 
         let cache_key = cloud_cache_key(source, &identity);
         let kh = keyhash(&cache_key);
@@ -1102,9 +1152,6 @@ mod rich {
         let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
 
         // --refresh never: serve the cached copy without touching the origin.
-        // `take()` consumes `existing` only on the Never+cached path (which then
-        // returns); the not-Never and Never-with-empty-cache paths leave it
-        // intact to drive conditional revalidation / the not-modified arm below.
         if opts.refresh_policy == RefreshPolicy::Never
             && let Some(mut entry) = existing.take()
         {
@@ -1116,33 +1163,112 @@ mod rich {
         }
 
         // --force / --refresh always -> unconditional GET; otherwise send a
-        // conditional If-None-Match when we already hold an ETag.
+        // conditional If-None-Match (on the probe) when we already hold an ETag.
         let unconditional = opts.force || opts.refresh_policy == RefreshPolicy::Always;
-        let mut gopts = OsGetOptions::default();
-        if !unconditional
-            && let Some(entry) = &existing
-            && let Some(tag) = &entry.meta.etag
-        {
-            gopts.if_none_match = Some(tag.clone());
-        }
+        let conditional_etag = if unconditional {
+            None
+        } else {
+            existing.as_ref().and_then(|e| e.meta.etag.clone())
+        };
+
+        // Tuning knobs are environment-only so they never collide with the
+        // object_store config keys that `--cloud-opt` feeds to parse_url_opts.
+        let part_size = env_u64("QSV_GET_PART_SIZE", DEFAULT_PART_SIZE).max(1);
+        let concurrency =
+            env_u64("QSV_GET_CONCURRENCY", DEFAULT_DL_CONCURRENCY).clamp(1, 64) as usize;
 
         let rt = tokio::runtime::Runtime::new()?;
-        let fetched = rt.block_on(async {
-            match store.get_opts(&path, gopts).await {
-                Err(object_store::Error::NotModified { .. }) => Ok(None),
-                Ok(result) => {
-                    let etag = result.meta.e_tag.clone();
-                    let last_modified = result.meta.last_modified.to_rfc2822();
-                    let bytes = result.bytes().await.map_err(|e| {
-                        CliError::Other(format!("get: reading {source} failed: {e}"))
-                    })?;
-                    Ok(Some((etag, last_modified, bytes)))
-                },
-                Err(e) => Err(CliError::Other(format!(
-                    "get: fetching {source} failed: {e}"
-                ))),
-            }
-        })?;
+        // None => origin reported Not-Modified; Some => the freshly stored blob's
+        // (blake3, compressed_size, uncompressed_size, etag, last_modified).
+        let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
+            rt.block_on(async {
+                // Probe the first part. A ranged GET returns the TOTAL object size
+                // via Content-Range (object_store sets meta.size), so this single
+                // request serves as both the conditional revalidation and the size
+                // probe. If the origin ignores Range it replies with the full body
+                // and we store it as one part.
+                let probe = OsGetOptions {
+                    range: Some(GetRange::Bounded(0..part_size)),
+                    if_none_match: conditional_etag.clone(),
+                    ..OsGetOptions::default()
+                };
+
+                let first = match store.get_opts(&path, probe).await {
+                    Err(object_store::Error::NotModified { .. }) => return Ok(None),
+                    Ok(r) => r,
+                    Err(e) => {
+                        return Err(CliError::Other(format!(
+                            "get: fetching {source} failed: {e}"
+                        )));
+                    },
+                };
+                let total = first.meta.size;
+                let etag = first.meta.e_tag.clone();
+                let last_modified = first.meta.last_modified.to_rfc2822();
+                // Guard the remaining range fetches against the object changing
+                // mid-download (the store returns a precondition error).
+                let if_match = etag.clone();
+                let first_bytes = first
+                    .bytes()
+                    .await
+                    .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
+
+                let mut sink = BlobSink::new(root, opts.compression)?;
+                let have = first_bytes.len() as u64;
+                sink.write(&first_bytes)?;
+                drop(first_bytes);
+
+                // Fetch any outstanding ranges concurrently, but consume them IN
+                // ORDER (buffered) so the blob reassembles correctly while memory
+                // stays bounded to ≈ concurrency * part_size.
+                if have < total {
+                    // Generate the outstanding byte-ranges LAZILY (via from_fn,
+                    // consumed by `buffered`) so the range list never materializes
+                    // in full — it would be `total / part_size` entries for a huge
+                    // object with a tiny part size. `saturating_add` avoids overflow
+                    // on a hostile total.
+                    let mut next = have;
+                    let range_iter = std::iter::from_fn(move || {
+                        if next >= total {
+                            return None;
+                        }
+                        let start = next;
+                        let end = start.saturating_add(part_size).min(total);
+                        next = end;
+                        Some(start..end)
+                    });
+                    let mut parts = futures_util::stream::iter(range_iter.map(|r| {
+                        let store = Arc::clone(&store);
+                        let path = path.clone();
+                        let if_match = if_match.clone();
+                        async move {
+                            let o = OsGetOptions {
+                                range: Some(GetRange::Bounded(r)),
+                                if_match,
+                                ..OsGetOptions::default()
+                            };
+                            store.get_opts(&path, o).await?.bytes().await
+                        }
+                    }))
+                    .buffered(concurrency);
+
+                    while let Some(chunk) = parts.next().await {
+                        let chunk = chunk.map_err(|e| {
+                            CliError::Other(format!("get: reading {source} failed: {e}"))
+                        })?;
+                        sink.write(&chunk)?;
+                    }
+                }
+
+                let (b3, size_compressed, size_uncompressed) = sink.finish(root)?;
+                Ok(Some((
+                    b3,
+                    size_compressed,
+                    size_uncompressed,
+                    etag,
+                    Some(last_modified),
+                )))
+            })?;
 
         match fetched {
             // Not-Modified: just refresh the freshness clock on the existing entry.
@@ -1158,10 +1284,9 @@ mod rich {
                 })?;
                 atomic_write(&entry_path(root, &kh), &json)?;
             },
-            // Fresh bytes: store the content-addressed blob + entry metadata.
-            Some((etag, last_modified, bytes)) => {
-                let (b3, size_compressed, size_uncompressed) =
-                    store_blob(root, &bytes, opts.compression)?;
+            // Fresh bytes: the streaming sink already stored the content-addressed
+            // blob; record the entry metadata pointing at it.
+            Some((b3, size_compressed, size_uncompressed, etag, last_modified)) => {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
@@ -1170,7 +1295,7 @@ mod rich {
                         resolved_uri: source.to_string(),
                         blake3: b3,
                         etag,
-                        last_modified: Some(last_modified),
+                        last_modified,
                         ckan_resource_hash: None,
                         size_compressed,
                         size_uncompressed,
@@ -1183,7 +1308,366 @@ mod rich {
                         cloud_identity: identity.clone(),
                         ckan_api_url: None,
                     },
-                    http: None,
+                };
+                write_entry(root, &entry)?;
+            },
+        }
+
+        // Bind the requested name to this entry and reclaim an orphaned previous
+        // target (the same two-level alias bookkeeping as `get_resource`).
+        let prev_target = alias_keyhash(root, &name)?;
+        bind_alias(root, &name, &kh)?;
+        if let Some(old) = prev_target
+            && old != kh
+            && aliases_pointing_to(root, &old).is_empty()
+        {
+            delete_entry_by_keyhash(root, &old);
+        }
+
+        let mut entry = load_entry_at(&entry_path(root, &kh))?;
+        ensure_indexed(root, &mut entry)?;
+        let mut meta = entry.meta;
+        meta.logical_name = name;
+        Ok(meta)
+    }
+
+    /// Stream a fully-resolved `http(s)` URL into the cache. Replaces the former
+    /// http-cache middleware path with a unified conditional-revalidation +
+    /// streaming/ranged downloader that mirrors `ingest_cloud`: the first-part
+    /// ranged GET doubles as the conditional revalidation (ETag / Last-Modified)
+    /// AND the size probe (a 206's `Content-Range` carries the total), so large
+    /// objects stream into a `BlobSink` as parallel in-order byte-ranges (bounded
+    /// memory) and small ones in a single streamed pass. Freshness is
+    /// ETag/Last-Modified based — qsv's `dc:` TTL/RefreshPolicy governs staleness,
+    /// so RFC 9111 `Cache-Control` max-age is intentionally not honored.
+    fn ingest_http(
+        opts: &GetOptions,
+        root: &Path,
+        final_url: &str,
+        auth_token: Option<&str>,
+        ckan_resource_hash: Option<String>,
+        is_ckan: bool,
+    ) -> CliResult<CacheEntry> {
+        use futures_util::stream::StreamExt;
+        use reqwest::{
+            StatusCode,
+            header::{
+                ACCEPT_RANGES, AUTHORIZATION, CONTENT_RANGE, ETAG, IF_MATCH, IF_MODIFIED_SINCE,
+                IF_NONE_MATCH, IF_UNMODIFIED_SINCE, LAST_MODIFIED, RANGE,
+            },
+        };
+
+        let cache_key = format!("HTTP:{}", opts.source);
+        let kh = keyhash(&cache_key);
+        let name = opts.name.clone().unwrap_or_else(|| derive_name(final_url));
+
+        let mut existing = load_entry_at(&entry_path(root, &kh)).ok();
+
+        // --refresh never: serve the cached copy without touching the origin.
+        if opts.refresh_policy == RefreshPolicy::Never
+            && let Some(mut entry) = existing.take()
+        {
+            bind_alias(root, &name, &kh)?;
+            ensure_indexed(root, &mut entry)?;
+            let mut meta = entry.meta;
+            meta.logical_name = name;
+            return Ok(meta);
+        }
+
+        // --force / --refresh always -> unconditional; otherwise revalidate with
+        // the stored ETag (If-None-Match) and/or Last-Modified (If-Modified-Since).
+        let unconditional = opts.force || opts.refresh_policy == RefreshPolicy::Always;
+        let cond_etag = if unconditional {
+            None
+        } else {
+            existing.as_ref().and_then(|e| e.meta.etag.clone())
+        };
+        let cond_lastmod = if unconditional {
+            None
+        } else {
+            existing.as_ref().and_then(|e| e.meta.last_modified.clone())
+        };
+
+        let part_size = env_u64("QSV_GET_PART_SIZE", DEFAULT_PART_SIZE).max(1);
+        let concurrency =
+            env_u64("QSV_GET_CONCURRENCY", DEFAULT_DL_CONCURRENCY).clamp(1, 64) as usize;
+
+        let client = util::create_reqwest_async_client(
+            None,
+            opts.timeout_secs,
+            Some(final_url.to_string()),
+        )?;
+        let rt = tokio::runtime::Runtime::new()?;
+
+        // Stream a whole response body into the sink, returning the byte count.
+        async fn drain(sink: &mut BlobSink, resp: reqwest::Response, url: &str) -> CliResult<u64> {
+            use futures_util::stream::StreamExt;
+            let mut have = 0u64;
+            let mut stream = resp.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk = chunk
+                    .map_err(|e| CliError::Other(format!("get: reading {url} failed: {e}")))?;
+                have += chunk.len() as u64;
+                sink.write(&chunk)?;
+            }
+            Ok(have)
+        }
+
+        // Parse a `Content-Range` value ("bytes START-END/TOTAL", or a "*" total
+        // for an unknown size) into (start, end, total). Used to validate that
+        // each follow-up range response actually carries the bytes we asked for.
+        fn parse_content_range(cr: &str) -> Option<(u64, u64, Option<u64>)> {
+            let rest = cr.trim().strip_prefix("bytes ")?.trim();
+            let (range, total) = rest.split_once('/')?;
+            let (start, end) = range.split_once('-')?;
+            let start = start.trim().parse::<u64>().ok()?;
+            let end = end.trim().parse::<u64>().ok()?;
+            let total = total.trim();
+            let total = if total == "*" {
+                None
+            } else {
+                Some(total.parse::<u64>().ok()?)
+            };
+            Some((start, end, total))
+        }
+
+        // None => Not-Modified; Some => (blake3, compressed, uncompressed, etag, last_modified).
+        let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
+            rt.block_on(async {
+                // First-part ranged probe (also the conditional revalidation).
+                let mut req = client
+                    .get(final_url)
+                    .header(RANGE, format!("bytes=0-{}", part_size - 1));
+                if let Some(tok) = auth_token {
+                    req = req.header(AUTHORIZATION, tok);
+                }
+                if let Some(e) = &cond_etag {
+                    req = req.header(IF_NONE_MATCH, e);
+                }
+                if let Some(lm) = &cond_lastmod {
+                    req = req.header(IF_MODIFIED_SINCE, lm);
+                }
+                let resp = req.send().await.map_err(|e| {
+                    CliError::Other(format!("get: request to {final_url} failed: {e}"))
+                })?;
+
+                let status = resp.status();
+                if status == StatusCode::NOT_MODIFIED {
+                    return Ok(None);
+                }
+                if !status.is_success() {
+                    return Err(CliError::Other(format!(
+                        "get: {final_url} returned {status}"
+                    )));
+                }
+
+                let headers = resp.headers().clone();
+                let etag = header_str(&headers, ETAG);
+                let last_modified = header_str(&headers, LAST_MODIFIED);
+                let ranges_supported = status == StatusCode::PARTIAL_CONTENT
+                    && header_str(&headers, ACCEPT_RANGES)
+                        .unwrap_or_default()
+                        .to_ascii_lowercase()
+                        .contains("bytes");
+                // Total object size from Content-Range ("bytes 0-N/TOTAL") on a 206.
+                let total: Option<u64> = if status == StatusCode::PARTIAL_CONTENT {
+                    header_str(&headers, CONTENT_RANGE)
+                        .and_then(|cr| cr.rsplit('/').next().map(|t| t.trim().to_string()))
+                        .and_then(|t| t.parse::<u64>().ok())
+                } else {
+                    None
+                };
+
+                let mut sink = BlobSink::new(root, opts.compression)?;
+
+                if ranges_supported && let Some(total) = total {
+                    // 206 with a known total: stream the first part, then fetch the
+                    // remaining bytes as parallel, in-order ranges (bounded memory).
+                    let have = drain(&mut sink, resp, final_url).await?;
+                    if have < total {
+                        // Guard the follow-up ranges against the object changing
+                        // mid-download. `If-Match` mandates STRONG comparison, so a
+                        // weak validator (`W/"..."`) must NOT be sent there — a
+                        // compliant origin answers 412. Use the strong ETag when we
+                        // have one, else fall back to `If-Unmodified-Since` from the
+                        // Last-Modified, else rely on the per-range Content-Range /
+                        // length validation below.
+                        let strong_etag = etag
+                            .clone()
+                            .filter(|e| !e.starts_with("W/") && !e.starts_with("w/"));
+                        let guard_lastmod = if strong_etag.is_some() {
+                            None
+                        } else {
+                            last_modified.clone()
+                        };
+                        // Generate the (start, end) byte-ranges LAZILY so the list
+                        // never materializes in full — it would be `total /
+                        // part_size` entries for a huge object with a tiny part size.
+                        // `saturating_add` avoids overflow on a hostile total.
+                        let mut next = have;
+                        let range_iter = std::iter::from_fn(move || {
+                            if next >= total {
+                                return None;
+                            }
+                            let s = next;
+                            let e = s.saturating_add(part_size).min(total);
+                            next = e;
+                            Some((s, e))
+                        });
+                        let mut parts = futures_util::stream::iter(range_iter.map(|(s, e)| {
+                            let client = client.clone();
+                            let url = final_url.to_string();
+                            let auth = auth_token.map(ToString::to_string);
+                            let if_match = strong_etag.clone();
+                            let if_unmod = guard_lastmod.clone();
+                            async move {
+                                let mut req = client
+                                    .get(&url)
+                                    .header(RANGE, format!("bytes={s}-{}", e - 1));
+                                if let Some(tok) = &auth {
+                                    req = req.header(AUTHORIZATION, tok);
+                                }
+                                if let Some(im) = &if_match {
+                                    req = req.header(IF_MATCH, im);
+                                } else if let Some(lm) = &if_unmod {
+                                    req = req.header(IF_UNMODIFIED_SINCE, lm);
+                                }
+                                let resp = req.send().await.map_err(|err| {
+                                    CliError::Other(format!("get: reading {url} failed: {err}"))
+                                })?;
+                                // Each follow-up range MUST come back as 206 with a
+                                // Content-Range that matches exactly what we asked
+                                // for and a body of the requested length. Otherwise a
+                                // 200 full body, a wrong slice, or a short read would
+                                // be stitched in as if it were this range, silently
+                                // corrupting the reassembled blob.
+                                let st = resp.status();
+                                if st != StatusCode::PARTIAL_CONTENT {
+                                    return Err(CliError::Other(format!(
+                                        "get: range {s}-{} of {url} returned {st}, expected 206 \
+                                         Partial Content",
+                                        e - 1
+                                    )));
+                                }
+                                let cr =
+                                    header_str(resp.headers(), CONTENT_RANGE).ok_or_else(|| {
+                                        CliError::Other(format!(
+                                            "get: range {s}-{} of {url} is missing a \
+                                             Content-Range header",
+                                            e - 1
+                                        ))
+                                    })?;
+                                match parse_content_range(&cr) {
+                                    Some((rs, re, rtot))
+                                        if rs == s
+                                            && re == e - 1
+                                            && rtot.is_none_or(|t| t == total) => {},
+                                    _ => {
+                                        return Err(CliError::Other(format!(
+                                            "get: range {s}-{} of {url} returned a mismatched \
+                                             Content-Range '{cr}' (object changed mid-download?)",
+                                            e - 1
+                                        )));
+                                    },
+                                }
+                                let body = resp.bytes().await.map_err(|err| {
+                                    CliError::Other(format!("get: reading {url} failed: {err}"))
+                                })?;
+                                if body.len() as u64 != e - s {
+                                    return Err(CliError::Other(format!(
+                                        "get: range {s}-{} of {url} returned {} bytes, expected {}",
+                                        e - 1,
+                                        body.len(),
+                                        e - s
+                                    )));
+                                }
+                                Ok::<_, CliError>(body)
+                            }
+                        }))
+                        .buffered(concurrency);
+                        while let Some(chunk) = parts.next().await {
+                            let chunk = chunk?;
+                            sink.write(&chunk)?;
+                        }
+                    }
+                } else if status == StatusCode::PARTIAL_CONTENT {
+                    // 206 but the total is unknown (Content-Range "*"): the first
+                    // part alone is incomplete, so re-fetch the whole object in one
+                    // streamed pass.
+                    drop(resp);
+                    let mut req = client.get(final_url);
+                    if let Some(tok) = auth_token {
+                        req = req.header(AUTHORIZATION, tok);
+                    }
+                    let full = req.send().await.map_err(|e| {
+                        CliError::Other(format!("get: request to {final_url} failed: {e}"))
+                    })?;
+                    if !full.status().is_success() {
+                        return Err(CliError::Other(format!(
+                            "get: {final_url} returned {}",
+                            full.status()
+                        )));
+                    }
+                    drain(&mut sink, full, final_url).await?;
+                } else {
+                    // 200 (server ignored Range / no range support): stream the full
+                    // body straight into the sink.
+                    drain(&mut sink, resp, final_url).await?;
+                }
+
+                let (b3, size_compressed, size_uncompressed) = sink.finish(root)?;
+                Ok(Some((
+                    b3,
+                    size_compressed,
+                    size_uncompressed,
+                    etag,
+                    last_modified,
+                )))
+            })?;
+
+        match fetched {
+            // Not-Modified: refresh the freshness clock on the existing entry.
+            None => {
+                let mut entry = existing.ok_or_else(|| {
+                    CliError::Other(format!(
+                        "get: {final_url} returned not-modified but no cached entry exists"
+                    ))
+                })?;
+                entry.meta.downloaded_at = unix_now();
+                let json = serde_json::to_vec(&entry).map_err(|e| {
+                    CliError::Other(format!("get: failed to serialize cache entry: {e}"))
+                })?;
+                atomic_write(&entry_path(root, &kh), &json)?;
+            },
+            // Fresh bytes: the streaming sink already stored the content-addressed
+            // blob; record the entry metadata pointing at it.
+            Some((b3, size_compressed, size_uncompressed, etag, last_modified)) => {
+                let entry = StoredEntry {
+                    meta: CacheEntry {
+                        logical_name: name.clone(),
+                        cache_key: cache_key.clone(),
+                        source_uri: opts.source.clone(),
+                        resolved_uri: final_url.to_string(),
+                        blake3: b3,
+                        etag,
+                        last_modified,
+                        ckan_resource_hash: ckan_resource_hash.clone(),
+                        size_compressed,
+                        size_uncompressed,
+                        record_count: None,
+                        indexed: false,
+                        downloaded_at: unix_now(),
+                        ttl_secs: opts.ttl_secs,
+                        refresh_policy: opts.refresh_policy,
+                        compression: opts.compression,
+                        cloud_identity: Vec::new(),
+                        // Persist the CKAN API base only for actual ckan:// sources.
+                        ckan_api_url: if is_ckan {
+                            opts.ckan_api_url.clone()
+                        } else {
+                            None
+                        },
+                    },
                 };
                 write_entry(root, &entry)?;
             },
@@ -1270,100 +1754,16 @@ mod rich {
             (resolved.url.clone(), None, None)
         };
 
-        let name = opts.name.clone().unwrap_or_else(|| derive_name(&final_url));
-
-        let observed_key = Arc::new(Mutex::new(None));
-        let manager = QsvCacheManager {
-            root:               root.clone(),
-            source_uri:         opts.source.clone(),
-            logical_name:       name.clone(),
-            ttl_secs:           opts.ttl_secs,
-            refresh_policy:     opts.refresh_policy,
-            compression:        opts.compression,
-            ckan_resource_hash: ckan_hash,
-            // Persist the CKAN API base only for actual ckan:// sources; plain
-            // http(s):// entries must not record one (it would be misleading in
-            // cache-list metadata, since `--ckan-api` defaults to a value).
-            ckan_api_url:       if resolved.is_ckan {
-                opts.ckan_api_url.clone()
-            } else {
-                None
-            },
-            observed_key:       observed_key.clone(),
-        };
-        // `--force` / `--refresh always` -> Reload: always hit the origin (even
-        // when the entry is shared by other names) and update the cache. This
-        // is more correct than deleting the requested alias, which would leave a
-        // multi-aliased entry behind that could still be served as a fresh hit.
-        // `--refresh never` -> ForceCache (serve cached regardless of freshness).
-        let mode = if opts.force || opts.refresh_policy == RefreshPolicy::Always {
-            CacheMode::Reload
-        } else if opts.refresh_policy == RefreshPolicy::Never {
-            CacheMode::ForceCache
-        } else {
-            CacheMode::Default
-        };
-
-        let async_client =
-            util::create_reqwest_async_client(None, opts.timeout_secs, Some(final_url.clone()))?;
-        let client = ClientBuilder::new(async_client)
-            .with(Cache(HttpCache {
-                mode,
-                manager,
-                options: HttpCacheOptions::default(),
-            }))
-            .build();
-
-        let rt = tokio::runtime::Runtime::new()?;
-        rt.block_on(async {
-            let mut req = client.get(&final_url);
-            if let Some(tok) = &auth_token {
-                req = req.header(reqwest::header::AUTHORIZATION, tok);
-            }
-            let resp = req
-                .send()
-                .await
-                .map_err(|e| CliError::Other(format!("get: request to {final_url} failed: {e}")))?;
-            resp.error_for_status()
-                .map_err(|e| CliError::Other(format!("get: {final_url} returned {e}")))?;
-            Ok::<(), CliError>(())
-        })?;
-
-        // The entry the middleware actually operated on for this request is the
-        // authoritative one for the requested name — whether `put` ran (miss) or
-        // the response was served fresh from the read path (hit). Bind the name
-        // to it unconditionally: this handles a missing name, AND the case where
-        // the name still points at a *different* (stale) entry, which would
-        // otherwise keep resolving old data. Clean up the previous target if
-        // binding leaves it with no names.
-        let kh = observed_key
-            .lock()
-            .ok()
-            .and_then(|g| g.clone())
-            .as_deref()
-            .map(keyhash)
-            .filter(|k| entry_path(&root, k).exists())
-            .ok_or_else(|| {
-                CliError::Other(format!(
-                    "get: no cache entry for '{name}' after fetching {final_url}"
-                ))
-            })?;
-        let prev_target = alias_keyhash(&root, &name)?;
-        bind_alias(&root, &name, &kh)?;
-        if let Some(old) = prev_target
-            && old != kh
-            && aliases_pointing_to(&root, &old).is_empty()
-        {
-            delete_entry_by_keyhash(&root, &old);
-        }
-
-        let mut entry = load_entry_at(&entry_path(&root, &kh))?;
-        ensure_indexed(&root, &mut entry)?;
-        // Report the metadata under the requested name (the stored entry keeps
-        // its own primary name; cache-list enumerates all names via aliases).
-        let mut meta = entry.meta;
-        meta.logical_name = name;
-        Ok(meta)
+        // Stream the resolved http(s) URL into the cache via a conditional,
+        // ranged downloader (replaces the former http-cache middleware).
+        ingest_http(
+            opts,
+            &root,
+            &final_url,
+            auth_token.as_deref(),
+            ckan_hash,
+            resolved.is_ckan,
+        )
     }
 
     /// Resolve a `dc:<name>` input path to a usable (decompressed) CSV file path,
@@ -1425,9 +1825,25 @@ mod rich {
         }
 
         let body = read_blob(&root, &entry.meta.blake3, entry.meta.compression)?;
-        let dir = std::env::temp_dir().join("qsv-dc").join(&entry.meta.blake3);
+        // The materialized temp name carries a known tabular extension that
+        // selects the delimiter (.csv => comma, .tsv/.tab => tab, .ssv =>
+        // semicolon). Isolate each extension in its own subdir AND key the
+        // stats-cache blob by it, so two aliases of the same bytes with
+        // different extensions never share a materialized sidecar (same temp
+        // stem) or a durable stats blob — either of which would cross-contaminate
+        // schema/frequency results across delimiters.
+        let temp_name = tabular_temp_name(name, &entry.meta.resolved_uri);
+        let ext = Path::new(&temp_name)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_else(|| "csv".to_string());
+        let dir = std::env::temp_dir()
+            .join("qsv-dc")
+            .join(&entry.meta.blake3)
+            .join(&ext);
         fs::create_dir_all(&dir)?;
-        let csv_path = dir.join(tabular_temp_name(name, &entry.meta.resolved_uri));
+        let csv_path = dir.join(&temp_name);
 
         let need_write = !csv_path.exists()
             || fs::metadata(&csv_path).map(|m| m.len()).unwrap_or(0)
@@ -1449,6 +1865,47 @@ mod rich {
                     filetime::FileTime::from_system_time(SystemTime::now()),
                 );
             }
+        }
+
+        // Stats-cache (persist-on-use): the `.stats.csv.data.jsonl` sidecar that
+        // the "smart" commands build via `util::get_stats_records` to skip
+        // recomputation. Capture a freshly-built one into a durable, content-
+        // addressed blob so it survives temp-dir cleanup, and restore it when the
+        // temp copy is gone or stale (CSV just rewritten). The sidecar location
+        // mirrors `get_stats_records` (canonical CSV path + `with_extension`).
+        let canonical_csv = fs::canonicalize(&csv_path).unwrap_or_else(|_| csv_path.clone());
+        let stats_sidecar = canonical_csv.with_extension("stats.csv.data.jsonl");
+        let stats_blob = stats_blob_path(&root, &entry.meta.blake3, &ext);
+
+        // A sidecar is usable only if newer than the CSV — qsv's stats-cache
+        // staleness rule (see `util::get_stats_records`).
+        let sidecar_fresh = stats_sidecar.exists() && {
+            let s = fs::metadata(&stats_sidecar)
+                .map(|m| filetime::FileTime::from_last_modification_time(&m));
+            let c = fs::metadata(&csv_path)
+                .map(|m| filetime::FileTime::from_last_modification_time(&m));
+            matches!((s, c), (Ok(s), Ok(c)) if s > c)
+        };
+
+        if sidecar_fresh {
+            // Capture-once (keyed by content hash). A leaner cache than a later
+            // consumer needs is still correct — that consumer just recomputes.
+            if !stats_blob.exists()
+                && let Ok(bytes) = fs::read(&stats_sidecar)
+                && let Ok(zst) = zstd::encode_all(&bytes[..], ZSTD_LEVEL)
+            {
+                let _ = atomic_write(&stats_blob, &zst);
+            }
+        } else if stats_blob.exists()
+            && let Ok(bytes) = read_zst(&stats_blob)
+        {
+            // Restore from the durable blob with a fresh mtime so it passes the
+            // staleness check (written after the CSV, like the .idx above).
+            let _ = atomic_write(&stats_sidecar, &bytes);
+            let _ = filetime::set_file_mtime(
+                &stats_sidecar,
+                filetime::FileTime::from_system_time(SystemTime::now()),
+            );
         }
 
         Ok(csv_path)

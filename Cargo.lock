@@ -3312,66 +3312,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "http-cache"
-version = "1.0.0-alpha.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d01e0b5d3afe17eadd68dad863adc0715b7ccfa887effbb9ea4de3c7c78c6c44"
-dependencies = [
- "bytes",
- "futures",
- "hex",
- "http 1.4.1",
- "http-body",
- "http-cache-semantics",
- "httpdate",
- "log",
- "pin-project-lite",
- "serde",
- "url",
-]
-
-[[package]]
-name = "http-cache-reqwest"
-version = "1.0.0-alpha.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ff1fa00fd5b0d38c26d5f24f1cf513e286a988b57880c2bf357304669268fa3"
-dependencies = [
- "anyhow",
- "async-trait",
- "bytes",
- "http 1.4.1",
- "http-body",
- "http-body-util",
- "http-cache",
- "http-cache-semantics",
- "reqwest 0.13.4",
- "reqwest-middleware",
- "url",
-]
-
-[[package]]
-name = "http-cache-semantics"
-version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0603b99309a1e404c2c0945650c0f775b50bb72ac90ae570cb93f9ff05d9efe7"
-dependencies = [
- "http 1.4.1",
- "http-serde",
- "serde",
- "time",
-]
-
-[[package]]
-name = "http-serde"
-version = "2.1.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0f056c8559e3757392c8d091e796416e4649d8e49e88b8d76df6c002f05027fd"
-dependencies = [
- "http 1.4.1",
- "serde",
-]
-
-[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6273,9 +6213,6 @@ dependencies = [
  "grex",
  "gzp",
  "hostname-validator",
- "http-cache",
- "http-cache-reqwest",
- "http-cache-semantics",
  "human-panic",
  "iana-time-zone",
  "indexmap",
@@ -6318,7 +6255,6 @@ dependencies = [
  "redis",
  "regex",
  "reqwest 0.13.4",
- "reqwest-middleware",
  "rfd",
  "rmp-serde",
  "rust_decimal",
@@ -7085,20 +7021,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-streams 0.5.0",
  "web-sys",
-]
-
-[[package]]
-name = "reqwest-middleware"
-version = "0.5.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "07bc3f1384cffa4f274dad2d4ddd73aed32fed8f786d96c6be8aa4e5fd3c3b58"
-dependencies = [
- "anyhow",
- "async-trait",
- "http 1.4.1",
- "reqwest 0.13.4",
- "thiserror 2.0.18",
- "tower-service",
 ]
 
 [[package]]
@@ -8966,7 +8888,6 @@ dependencies = [
  "idna",
  "percent-encoding",
  "serde",
- "serde_derive",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 # get
 
-> Get tabular data from local files, URLs (http/https & `dathere://`) & [CKAN](https://ckan.org) (`ckan://`) into a managed, queryable disk cache - with HTTP cache semantics (ETag/Cache-Control), transparent [zstd](https://github.com/facebook/zstd) compression, [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hashing & automatic indexing. Cached resources are reusable by ANY qsv command via the `dc:` prefix (e.g. `qsv stats dc:data.csv`), with stale entries auto-refreshed. Efficiently seeds `luau` lookup tables, `validate` dynamicEnum reference data & speeds up Datapusher+ harvesting.
+> Get tabular data from local files, URLs (http/https & `dathere://`) & [CKAN](https://ckan.org) (`ckan://`) into a managed, queryable disk cache - with conditional revalidation (ETag/Last-Modified), transparent [zstd](https://github.com/facebook/zstd) compression, [BLAKE3](https://github.com/BLAKE3-team/BLAKE3) hashing & automatic indexing. Cached resources are reusable by ANY qsv command via the `dc:` prefix (e.g. `qsv stats dc:data.csv`), with stale entries auto-refreshed. Efficiently seeds `luau` lookup tables, `validate` dynamicEnum reference data & speeds up Datapusher+ harvesting.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/get.rs](https://github.com/dathere/qsv/blob/master/src/cmd/get.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🌐](TableOfContents.md#legend "has web-aware options.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
@@ -16,8 +16,10 @@ Get tabular data from various sources into a managed, queryable disk cache.
 `get` fetches a resource once, stores it compressed (zstd) and content-addressed
 (BLAKE3) in the qsv cache, auto-builds a qsv index for it (for instant random
 access & exact record counts), and records rich metadata (ETag, Last-Modified,
-sizes, record count, TTL). Subsequent fetches reuse HTTP cache semantics
-(ETag/Cache-Control via http-cache) so unchanged resources are not re-downloaded.
+sizes, record count, TTL). Re-fetches send a conditional request
+(ETag/Last-Modified) so unchanged resources are revalidated, not re-downloaded.
+Large remote resources stream into the cache as parallel byte-ranges (tune with
+the QSV_GET_PART_SIZE and QSV_GET_CONCURRENCY env vars).
 
 Once cached, a resource can be read by ANY qsv command using the `dc:` prefix,
 e.g. `qsv stats dc:data.csv`. Stale `dc:` entries are auto-refreshed.

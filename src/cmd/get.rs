@@ -4,8 +4,10 @@ Get tabular data from various sources into a managed, queryable disk cache.
 `get` fetches a resource once, stores it compressed (zstd) and content-addressed
 (BLAKE3) in the qsv cache, auto-builds a qsv index for it (for instant random
 access & exact record counts), and records rich metadata (ETag, Last-Modified,
-sizes, record count, TTL). Subsequent fetches reuse HTTP cache semantics
-(ETag/Cache-Control via http-cache) so unchanged resources are not re-downloaded.
+sizes, record count, TTL). Re-fetches send a conditional request
+(ETag/Last-Modified) so unchanged resources are revalidated, not re-downloaded.
+Large remote resources stream into the cache as parallel byte-ranges (tune with
+the QSV_GET_PART_SIZE and QSV_GET_CONCURRENCY env vars).
 
 Once cached, a resource can be read by ANY qsv command using the `dc:` prefix,
 e.g. `qsv stats dc:data.csv`. Stale `dc:` entries are auto-refreshed.

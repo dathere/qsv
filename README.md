@@ -566,7 +566,7 @@ See [FAQ](https://github.com/dathere/qsv/discussions/287) for more details.
 
 ## AI Policy
 qsv has a very fast development pace with frequent releases. To keep up with this pace, we use the latest AI tools to help with various tasks, including code generation, documentation, testing, bug fixing, code review, etc.
-To ensure the quality of the work, we maintain 3,094 tests; use multi-agent adversarial code reviews with [roborev](https://roborev.io) and GitHub Copilot; heavily comment the code to help Agents, Users and Developers understand it; and use tools like [Serena](https://oraios.github.io/serena) and [Context7](https://context7.com) to give Agents semantic context.
+To ensure the quality of the work, we maintain 4,042 tests; use multi-agent adversarial code reviews with [roborev](https://roborev.io) and GitHub Copilot; heavily comment the code to help Agents, Users and Developers understand it; and use tools like [Serena](https://oraios.github.io/serena) and [Context7](https://context7.com) to give Agents semantic context.
 
 We accredit the Agent/Model used in commit messages and pull request descriptions. Contributors must do the same — see the [AI Policy in CONTRIBUTING.md](CONTRIBUTING.md#ai-policy) for the full contributor guidelines (attribution, review, licensing).
 

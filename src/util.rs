@@ -788,6 +788,7 @@ pub fn show_env_vars() {
         if env_var.starts_with("QSV_")
             || env_var.starts_with("JEMALLOC_")
             || env_var == "MALLOC_CONF"
+            || env_var == "_RJEM_MALLOC_CONF"
             || OTHER_ENV_VARS.contains(&env_var.to_ascii_lowercase().as_str())
         {
             env_var_set = true;

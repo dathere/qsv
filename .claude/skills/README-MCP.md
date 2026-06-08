@@ -14,16 +14,16 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 63 commands needed by the MCP server (vs 73 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 65 commands needed by the MCP server (vs 74 in the full qsv binary), resulting in a smaller, faster binary.
 
-**Features included in qsvmcp**: Polars, Luau scripting, geocoding, self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
+**Features included in qsvmcp**: Polars, geocoding, disk-cache `get` (incl. cloud sources), self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 
-**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `clipboard`, `color`, `fetch`, `fetchpost`, `foreach`, `lens`, `prompt`, and `py` — 9 commands total.
+**Commands excluded from qsvmcp** (not needed for MCP): `apply`, `clipboard`, `color`, `fetch`, `fetchpost`, `foreach`, `lens`, `luau`, and `prompt` — 9 commands total.
 
 | Binary | Commands | MCP Server Support | Notes |
 |--------|----------|-------------------|-------|
-| **qsvmcp** | 63 | Preferred | Optimized for MCP, smaller binary |
-| **qsv** | 73 | Supported | Full-featured, includes extra commands not used by MCP |
+| **qsvmcp** | 65 | Preferred | Optimized for MCP, smaller binary |
+| **qsv** | 74 | Supported | Full-featured, includes extra commands not used by MCP |
 | qsvlite | — | Not supported | Missing Polars and other required features |
 | qsvdp | — | Not supported | DataPusher+ variant, missing required features |
 
@@ -617,8 +617,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-05-18
-**Version**: 20.1.0
+**Updated**: 2026-06-07
+**Version**: 21.0.0
 **Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 54 discoverable via `qsv_search_tools`
 **Skills**: 54 qsv commands
 **Status**: Production Ready

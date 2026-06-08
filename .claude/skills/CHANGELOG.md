@@ -7,13 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Removed
-- **`luau` skill dropped from qsvmcp** — the `qsvmcp` binary no longer enables the `luau` feature, so `qsv-luau.json` is no longer part of the generated skill set. Luau requires `panic = "unwind"`, which is incompatible with qsvmcp's `panic = "abort"` release build (a Luau callback error would abort the process instead of surfacing — see qsv [#3937](https://github.com/dathere/qsv/issues/3937)). The `luau` command remains available in the full `qsv` binary.
+## [21.0.0] - 2026-06-07
+
+Companion release to qsv 21.0.0. The MCP server tracks the qsv binary version per the policy adopted in 20.0.0.
+
+### Added
+- **Environment-variables documentation** — `README-MCP.md` now documents the `QSV_MCP_*` environment variables supported by the qsv MCP server.
 
 ### Changed
+- **Minimum qsv version raised to 21.0.0** — single-sourced in `manifest.json` (`_meta.com.dathere.qsv.minimum_qsv_version`); `src/config.ts` and `scripts/cowork-setup.cjs` read it dynamically at runtime ([#3897](https://github.com/dathere/qsv/pull/3897) made it a single source of truth).
+- **Minimum Node.js version raised to 20.0.0** (from 18.0.0); all docs swept for the Node 18 → 20 change.
+- **Command counts: qsvmcp 64 → 65, full `qsv` binary 73 → 74** — the new `get` command (disk-cache fetch with cloud sources, qsv [#2263](https://github.com/dathere/qsv/issues/2263)) joins both the `qsvmcp` and full `qsv` feature sets; reflected in `manifest.json`, `README-MCP.md`, and `README-MCPB.md`. `get`/`fetch` are intentionally NOT exposed as MCP skills, so the skill count is unaffected.
 - **Skill count: 55 → 54** — reflected in `manifest.json`, `.claude-plugin/plugin.json`, root `.claude-plugin/marketplace.json`, `README-MCP.md`, `README.md`, `README-MCPB.md`, `GEMINI.md`, `cowork-CLAUDE.md`, and `skills/csv-wrangling/SKILL.md`.
-- **qsvmcp binary command count: 64 → 63** — `luau` removed from the `qsvmcp` feature set; updated in `README-MCP.md` and `README-MCPB.md`. The full `qsv` binary remains **73** (it retains Luau).
-- **Skill JSONs regenerated from qsv USAGE text** — beyond dropping `luau`, the regeneration synced two drifted skills: `qsv-describegpt.json` (neuro-symbolic rename) and `qsv-sniff.json` (`--sample` distributed-sampling note when a CSV index is present).
+- **Skill JSONs regenerated from qsv USAGE text** — beyond dropping `luau`, the regeneration synced two drifted skills: `qsv-describegpt.json` (neuro-symbolic rename) and `qsv-sniff.json` (`--sample` distributed-sampling note when a CSV index is present), plus an updated `stats` skill description.
+
+### Fixed
+- **Symlink bypass closed + Parquet fallback warning sanitized** — hardened input path handling against a symlink-based bypass and sanitized the Parquet fallback warning message.
+
+### Removed
+- **`luau` skill dropped from qsvmcp** — the `qsvmcp` binary no longer enables the `luau` feature, so `qsv-luau.json` is no longer part of the generated skill set. Luau requires `panic = "unwind"`, which is incompatible with qsvmcp's `panic = "abort"` release build (a Luau callback error would abort the process instead of surfacing — see qsv [#3937](https://github.com/dathere/qsv/issues/3937)). The `luau` command remains available in the full `qsv` binary.
 
 ## [20.1.0] - 2026-05-18
 

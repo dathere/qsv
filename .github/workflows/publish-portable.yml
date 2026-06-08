@@ -178,6 +178,10 @@ jobs:
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp
+      # Skip on aarch64-unknown-linux-gnu: qsvdp pulls Polars, and fat-LTO linking it
+      # (release profile: lto = true, codegen-units = 1) exhausts the runner. qsvmcp
+      # (also Polars-heavy) is already excluded on this target below.
+      if: ${{ matrix.job.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
       uses: actions-rs/cargo@v1

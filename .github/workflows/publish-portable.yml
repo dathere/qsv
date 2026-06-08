@@ -212,7 +212,7 @@ jobs:
         cd qsv-${{ needs.analyze-tags.outputs.previous-tag }}
         mv qsv qsvp
         mv qsvlite qsvplite
-        mv qsvdp qsvpdp
+        if [ -f qsvdp ]; then mv qsvdp qsvpdp; fi
         if [ -f qsvmcp ]; then mv qsvmcp qsvpmcp; fi
         cd ..
     - name: Create README

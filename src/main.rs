@@ -76,6 +76,12 @@ struct Args {
 }
 
 fn main() -> QsvExitCode {
+    // Lever C: if QSV_THP is set, inject jemalloc THP config and re-exec once so a
+    // fresh allocator reads it (thp/metadata_thp are read-only opt.* knobs that
+    // can't be set at runtime). Must be first — before any allocation-heavy work —
+    // to minimize wasted parent work before re-exec. No-op unless jemalloc/Linux.
+    util::maybe_apply_thp();
+
     util::qsv_custom_panic();
     util::reset_sigpipe();
 

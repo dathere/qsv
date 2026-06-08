@@ -416,6 +416,79 @@ pub fn retain_alloc_pages_for_aggregation() {
 #[cfg(not(all(feature = "jemallocator", not(feature = "mimalloc"))))]
 pub fn retain_alloc_pages_for_aggregation() {}
 
+/// Lever C (opt-in, Linux-only): apply jemalloc Transparent Huge Pages (THP).
+///
+/// `thp` / `metadata_thp` are jemalloc `opt.*` knobs — read-only once the
+/// allocator initializes — so unlike Levers A and B (runtime `mallctl`) they
+/// CANNOT be set in-process. They can only be read from the config env var
+/// before the allocator wakes up. When `QSV_THP` is set, we inject
+/// `thp:always,metadata_thp:always` into `_RJEM_MALLOC_CONF` (qsv's default build
+/// links tikv-jemallocator with prefixed symbols, so that — not the bare
+/// `MALLOC_CONF` — is the var jemalloc reads; see `show_env_vars()`) and re-exec
+/// the process once so a fresh jemalloc reads it at startup. A sentinel env var
+/// (`QSV_THP_APPLIED`) prevents an infinite re-exec loop. Mirrors Polars'
+/// `POLARS_THP`.
+///
+/// 2 MB huge pages cut TLB misses on aggregation-heavy commands over large
+/// arenas, but huge-page allocation overhead can erase that win on small inputs,
+/// so THP is strictly opt-in. Honors `QSV_NO_ALLOC_TUNING`. Best-effort: any
+/// failure (no `current_exe`, `exec` error) leaves the current process running
+/// untuned rather than aborting. No-op unless built with jemalloc on Linux.
+///
+/// Must be called as the very first thing in `main()` — before the logger is up —
+/// to minimize the work wasted in the parent process before re-exec, hence the
+/// `eprintln!` (not `log::warn!`) on the failure paths.
+#[cfg(all(
+    feature = "jemallocator",
+    not(feature = "mimalloc"),
+    target_os = "linux"
+))]
+pub fn maybe_apply_thp() {
+    use std::os::unix::process::CommandExt;
+
+    const SENTINEL: &str = "QSV_THP_APPLIED";
+
+    // Already re-exec'd once; the child reads the injected config at jemalloc init.
+    if env::var_os(SENTINEL).is_some() {
+        return;
+    }
+    if !get_envvar_flag("QSV_THP") || get_envvar_flag("QSV_NO_ALLOC_TUNING") {
+        return;
+    }
+
+    let thp = "thp:always,metadata_thp:always";
+    let conf = match env::var("_RJEM_MALLOC_CONF") {
+        // Append THP so an existing user config keeps precedence for shared keys.
+        Ok(existing) if !existing.is_empty() => format!("{existing},{thp}"),
+        _ => thp.to_string(),
+    };
+
+    // SAFETY: this runs as the first statement in main(), before any threads are
+    // spawned, so there is no concurrent reader/writer of the environment. set_var
+    // is sound only in such a single-threaded context.
+    unsafe {
+        env::set_var("_RJEM_MALLOC_CONF", &conf);
+        env::set_var(SENTINEL, "1");
+    }
+
+    let Ok(exe) = env::current_exe() else {
+        eprintln!("QSV_THP: current_exe() failed; continuing without THP");
+        return;
+    };
+    // exec() replaces the process image and only returns on failure.
+    let err = std::process::Command::new(exe)
+        .args(env::args_os().skip(1))
+        .exec();
+    eprintln!("QSV_THP: re-exec failed ({err}); continuing without THP");
+}
+
+#[cfg(not(all(
+    feature = "jemallocator",
+    not(feature = "mimalloc"),
+    target_os = "linux"
+)))]
+pub fn maybe_apply_thp() {}
+
 pub fn timeout_secs(timeout: u16) -> Result<u64, String> {
     let timeout = match env::var("QSV_TIMEOUT") {
         Ok(val) => val.parse::<u16>().unwrap_or(30_u16),

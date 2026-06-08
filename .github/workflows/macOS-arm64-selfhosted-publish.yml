@@ -69,15 +69,7 @@ jobs:
         use-cross: ${{ matrix.job.use-cross }}
         toolchain: ${{ matrix.rust }}
         args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
-    - name: Build qsvdp
-      env:
-        RUSTFLAGS: --emit=asm -C target-cpu=native
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+    # qsvdp (datapusher_plus) is a Linux deployment helper — not built/shipped for macOS.
     - name: Build qsvmcp
       env:
         RUSTFLAGS: --emit=asm -C target-cpu=native

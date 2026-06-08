@@ -1,6 +1,6 @@
 {
   "name": "qsv-describegpt",
-  "version": "20.1.0",
+  "version": "21.0.0",
   "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema, Semantic Markdown, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
   "category": "documentation",
   "command": {

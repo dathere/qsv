@@ -22,6 +22,9 @@ jobs:
       !contains(github.event.head_commit.message, '(mcp):')
 
     runs-on: windows-11-arm
+    # Hard cap so a hung test (e.g. flaky streaming-URL sample tests) fails fast
+    # instead of burning the 6-hour GitHub default. Normal runs finish in ~45 min.
+    timeout-minutes: 90
 
     steps:
     - uses: actions/checkout@v6

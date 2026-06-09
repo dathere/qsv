@@ -2183,9 +2183,22 @@ impl SampleWebServer {
 impl Drop for SampleWebServer {
     fn drop(&mut self) {
         if let Some(handle) = self.handle.take() {
-            // block_on returns whatever stop() returns; we don't care about
-            // errors during teardown — best-effort cleanup.
-            rt::System::new().block_on(handle.stop(true));
+            // Non-graceful stop (graceful = false) so an abandoned mid-response
+            // connection — e.g. the --max-size test that stops reading early —
+            // can't wedge teardown waiting for in-flight requests to drain.
+            //
+            // Belt-and-suspenders: run the stop on a detached thread and only
+            // wait a bounded time for it. On a slow/contended runner (this hung
+            // the Windows ARM64 CI to the 6-hour ceiling) a wedged shutdown must
+            // never block the test thread forever; if it doesn't finish in time
+            // we leak the ephemeral-port server and move on — the next #[serial]
+            // test simply binds a fresh OS-assigned port.
+            let (done_tx, done_rx) = mpsc::channel();
+            thread::spawn(move || {
+                rt::System::new().block_on(handle.stop(false));
+                let _ = done_tx.send(());
+            });
+            let _ = done_rx.recv_timeout(std::time::Duration::from_secs(10));
         }
     }
 }

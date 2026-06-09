@@ -337,10 +337,10 @@ pub fn njobs(flag_jobs: Option<usize>) -> usize {
 /// Lever A: enable jemalloc `background_thread`, which offloads page purging
 /// (`madvise`) to background threads, removing it from the foreground hot path at
 /// NO RSS cost. Supported on Linux; rejected on macOS (the write errors — handled
-/// best-effort, leaving `BACKGROUND_THREADS_ACTIVE` false so the per-command
-/// retention lever engages there instead). Disabled entirely by
-/// `QSV_NO_ALLOC_TUNING`. No `cfg(target_os)` gate: the write+read-back is
-/// self-correcting across platforms.
+/// best-effort, leaving `BACKGROUND_THREADS_ACTIVE` false). The per-command
+/// retention lever (Lever B) is itself gated to Linux, so it does NOT engage on
+/// macOS as a fallback. Disabled entirely by `QSV_NO_ALLOC_TUNING`. No
+/// `cfg(target_os)` gate: the write+read-back is self-correcting across platforms.
 #[cfg(all(feature = "jemallocator", not(feature = "mimalloc")))]
 pub fn init_allocator_runtime() {
     use std::sync::atomic::Ordering;

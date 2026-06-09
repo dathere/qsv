@@ -269,7 +269,7 @@ odht = "0.3"
 ort = { version = "2.0.0-rc.11", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
 pragmastat = "12.1"
-polars = { version = "0.54", features = [
+polars = { version = "0.54.4", features = [
     "asof_join",
     "avro",
     # "avx512" is x86_64-only — enabled via the
@@ -453,23 +453,18 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parki
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# Polars (rev 1c11555 / rs-0.54.4) patches object_store to a fork that adds the
-# public `ClientOptions::with_dns_resolver` method (used in polars-io's
-# get_client_options). Cargo ignores [patch] sections from dependencies, so we
-# must mirror polars' patch here in the root manifest, otherwise polars-io fails
-# to build against stock object_store 0.13.2 from crates.io with:
-#   error[E0599]: no method named `with_dns_resolver` found for struct `ClientOptions`
-# This also applies to qsv's own direct `object_store` dep (get_cloud feature).
-# Remove this patch once polars/object_store ship the method in a crates.io release.
-object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
-
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
 # It's qsv's policy to use the latest upstream of polars/py-polars
 # to take advantage of Polars' latest unreleased fixes and features.
 # Based on what's available at the time of qsv's release, we may need to pin polars to a py-polars tag
 # or a specific commit if more revisions have been made since the latest polars/py-polars release.
-# BUILD NOTE: Be sure to set QSV_POLARS_REV below to the latest commit short hash or tag
+# When pinning to an unreleased rev, re-add a `polars = { git = ..., rev = ... }`
+# entry here AND make sure that rev's own Cargo.toml version matches the
+# `version = "x.y.z"` requirement in [dependencies] below — otherwise Cargo
+# silently ignores the patch (it shows up as [[patch.unused]] in Cargo.lock) and
+# resolves polars from crates.io instead.
+# BUILD NOTE: Be sure to set QSV_POLARS_REV to the commit short hash or tag
 # of polars/py-polars before building qsv. This allows us to show the polars rev/tag in --version.
 # The convention to use for QSV_POLARS_REV is:
 # - if we are using a release version of Rust Polars, leave QSV_POLARS_REV empty
@@ -481,9 +476,9 @@ object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch 
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=1c11555
+# QSV_POLARS_REV=
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "1c11555", optional = true }
+# polars = { git = "https://github.com/pola-rs/polars", rev = "1c11555", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.
@@ -497,7 +492,7 @@ datasketches = { version = "0.3", features = ["frequencies", "hll", "tdigest"] }
 # aarch64 (and other arches) don't carry it. Polars dispatches the AVX-512
 # kernels at runtime, so enabling it for all x86_64 builds is safe.
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-polars = { version = "0.54", features = ["avx512"], optional = true }
+polars = { version = "0.54.4", features = ["avx512"], optional = true }
 
 [features]
 default = ["jemallocator"]

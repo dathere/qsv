@@ -104,7 +104,7 @@ jobs:
           # distinct, mid ~100k, lo ~100, plus two numeric cols for quartile/median
           # vectors. id+hi drive the cardinality/frequency hashmaps into the millions.
           gawk -v rows="$ROWS" 'BEGIN{
-            srand(42);
+            srand(42);  # DevSkim: ignore DS149435 - fixed seed is intentional: reproducible synthetic benchmark data, not security-sensitive randomness
             print "id,hi,mid,lo,num1,num2";
             for (i = 0; i < rows; i++) {
               printf "%d,%d,%d,%d,%d,%.4f\n", \

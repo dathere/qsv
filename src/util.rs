@@ -431,9 +431,11 @@ pub fn retain_alloc_pages_for_aggregation() {}
 ///
 /// 2 MB huge pages cut TLB misses on aggregation-heavy commands over large
 /// arenas, but huge-page allocation overhead can erase that win on small inputs,
-/// so THP is strictly opt-in. Honors `QSV_NO_ALLOC_TUNING`. Best-effort: any
-/// failure (no `current_exe`, `exec` error) leaves the current process running
-/// untuned rather than aborting. No-op unless built with jemalloc on Linux.
+/// so THP is strictly opt-in. Honors `QSV_NO_ALLOC_TUNING`. Best-effort: the
+/// re-exec target is resolved BEFORE any environment is mutated, and if `exec`
+/// itself fails the injected config + sentinel are rolled back, so a failure
+/// leaves the still-running process (and anything it spawns) pristine — untuned,
+/// not half-applied. No-op unless built with jemalloc on Linux.
 ///
 /// Must be called as the very first thing in `main()` — before the logger is up —
 /// to minimize the work wasted in the parent process before re-exec, hence the
@@ -456,10 +458,20 @@ pub fn maybe_apply_thp() {
         return;
     }
 
+    // Resolve the re-exec target BEFORE touching the environment, so a failure
+    // here leaves process state pristine (no half-applied THP config surfacing in
+    // `--envlist`, no sentinel leaked to later-spawned child processes).
+    let Ok(exe) = env::current_exe() else {
+        eprintln!("QSV_THP: current_exe() failed; continuing without THP");
+        return;
+    };
+
     let thp = "thp:always,metadata_thp:always";
-    let conf = match env::var("_RJEM_MALLOC_CONF") {
-        // Append THP so an existing user config keeps precedence for shared keys.
-        Ok(existing) if !existing.is_empty() => format!("{existing},{thp}"),
+    let prev_conf = env::var_os("_RJEM_MALLOC_CONF");
+    let conf = match prev_conf.as_ref().and_then(|v| v.to_str()) {
+        // jemalloc's MALLOC_CONF is last-wins per key, so put THP FIRST and the
+        // existing config LAST — any user-set thp/metadata_thp then overrides ours.
+        Some(existing) if !existing.is_empty() => format!("{thp},{existing}"),
         _ => thp.to_string(),
     };
 
@@ -471,14 +483,22 @@ pub fn maybe_apply_thp() {
         env::set_var(SENTINEL, "1");
     }
 
-    let Ok(exe) = env::current_exe() else {
-        eprintln!("QSV_THP: current_exe() failed; continuing without THP");
-        return;
-    };
     // exec() replaces the process image and only returns on failure.
     let err = std::process::Command::new(exe)
         .args(env::args_os().skip(1))
         .exec();
+
+    // Re-exec failed before replacing the image. Roll the environment back so the
+    // still-running parent (and anything it spawns) doesn't carry the half-applied
+    // THP config or the sentinel.
+    // SAFETY: still single-threaded — exec failed, no image replacement occurred.
+    unsafe {
+        env::remove_var(SENTINEL);
+        match prev_conf {
+            Some(v) => env::set_var("_RJEM_MALLOC_CONF", v),
+            None => env::remove_var("_RJEM_MALLOC_CONF"),
+        }
+    }
     eprintln!("QSV_THP: re-exec failed ({err}); continuing without THP");
 }
 

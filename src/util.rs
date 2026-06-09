@@ -437,9 +437,12 @@ pub fn retain_alloc_pages_for_aggregation() {}
 /// leaves the still-running process (and anything it spawns) pristine — untuned,
 /// not half-applied. No-op unless built with jemalloc on Linux.
 ///
-/// Must be called as the very first thing in `main()` — before the logger is up —
-/// to minimize the work wasted in the parent process before re-exec, hence the
-/// `eprintln!` (not `log::warn!`) on the failure paths.
+/// Called from `main()` right after `load_dotenv()`, so a `.env`-configured
+/// `QSV_THP` / `QSV_NO_ALLOC_TUNING` / `_RJEM_MALLOC_CONF` is honored in the
+/// re-exec decision and config merge. The discarded parent setup before this
+/// point is cheap. Failure paths use `eprintln!` rather than `log::warn!` because
+/// qsv's default log level is `off`, so a re-exec failure should still surface on
+/// stderr.
 #[cfg(all(
     feature = "jemallocator",
     not(feature = "mimalloc"),

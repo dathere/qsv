@@ -76,12 +76,6 @@ struct Args {
 }
 
 fn main() -> QsvExitCode {
-    // Lever C: if QSV_THP is set, inject jemalloc THP config and re-exec once so a
-    // fresh allocator reads it (thp/metadata_thp are read-only opt.* knobs that
-    // can't be set at runtime). Must be first — before any allocation-heavy work —
-    // to minimize wasted parent work before re-exec. No-op unless jemalloc/Linux.
-    util::maybe_apply_thp();
-
     util::qsv_custom_panic();
     util::reset_sigpipe();
 
@@ -272,6 +266,12 @@ fn main() -> QsvExitCode {
     if util::load_dotenv().is_err() {
         return QsvExitCode::Bad;
     }
+    // Lever C: re-exec with jemalloc THP config when QSV_THP is set. Placed after
+    // load_dotenv() so a `.env`-configured QSV_THP / QSV_NO_ALLOC_TUNING /
+    // _RJEM_MALLOC_CONF is honored in the re-exec decision and config merge (the
+    // re-exec only discards the cheap startup work above; the fresh child reads the
+    // injected opt.* config at allocator init). No-op unless jemalloc/Linux.
+    util::maybe_apply_thp();
     util::init_allocator_runtime();
 
     let args: Args = Docopt::new(format!("{USAGE}\n\n{SPONSOR_MESSAGE}"))

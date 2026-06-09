@@ -55,3 +55,79 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
          (load_dotenv must precede init_allocator_runtime); log ({log_name}) was:\n{log}"
     );
 }
+
+// THP Lever C (`maybe_apply_thp`) re-execs to enable jemalloc Transparent Huge
+// Pages, and like Lever A must observe the `.env` flow — so it has to run AFTER
+// `load_dotenv()` (roborev #2810). On a successful re-exec the child carries the
+// `QSV_THP_APPLIED` sentinel, which `--envlist` surfaces (it lists every `QSV_`
+// var). These assert the sentinel's presence/absence to prove the `.env`-driven
+// decision works end-to-end.
+//
+// Linux + jemalloc only: `maybe_apply_thp` is a no-op stub elsewhere (THP is a
+// Linux-only jemalloc opt.* knob), so there is no re-exec to observe.
+
+/// `.env`-configured `QSV_THP` must trigger the re-exec (proving `maybe_apply_thp`
+/// runs after `load_dotenv`, not before it where the process env is all it sees).
+#[cfg(all(
+    target_os = "linux",
+    feature = "jemallocator",
+    not(feature = "mimalloc")
+))]
+#[test]
+fn thp_dotenv_opt_in_honored_at_startup() {
+    use crate::workdir::Workdir;
+
+    let wrk = Workdir::new("thp_dotenv_opt_in");
+
+    // Opt-in supplied ONLY via .env (loaded by load_dotenv from the cwd), not the
+    // process environment — exactly the flow the pre-dotenv ordering broke.
+    wrk.create_from_string(".env", "QSV_THP=true\n");
+
+    let mut cmd = wrk.command("--envlist");
+    // Hermetic env: the opt-in must come ONLY from the workdir .env (an inherited
+    // QSV_THP would mask the regression), load_dotenv must read the workdir .env
+    // (not an inherited QSV_DOTENV_PATH), no inherited QSV_NO_ALLOC_TUNING may
+    // suppress it, and no pre-set sentinel may short-circuit the re-exec or pollute
+    // the assertion.
+    cmd.env_remove("QSV_THP")
+        .env_remove("QSV_THP_APPLIED")
+        .env_remove("QSV_NO_ALLOC_TUNING")
+        .env_remove("QSV_DOTENV_PATH");
+    let got: String = wrk.stdout(&mut cmd);
+
+    assert!(
+        got.contains("QSV_THP_APPLIED"),
+        "expected the .env-configured QSV_THP opt-in to trigger the THP re-exec (maybe_apply_thp \
+         must run after load_dotenv); --envlist was:\n{got}"
+    );
+}
+
+/// A `.env`-configured `QSV_NO_ALLOC_TUNING` must suppress the THP re-exec even
+/// when `.env` also sets `QSV_THP` — both are only visible after `load_dotenv`.
+#[cfg(all(
+    target_os = "linux",
+    feature = "jemallocator",
+    not(feature = "mimalloc")
+))]
+#[test]
+fn thp_dotenv_opt_in_suppressed_by_no_alloc_tuning() {
+    use crate::workdir::Workdir;
+
+    let wrk = Workdir::new("thp_dotenv_suppressed");
+
+    wrk.create_from_string(".env", "QSV_THP=true\nQSV_NO_ALLOC_TUNING=true\n");
+
+    let mut cmd = wrk.command("--envlist");
+    cmd.env_remove("QSV_THP")
+        .env_remove("QSV_THP_APPLIED")
+        .env_remove("QSV_NO_ALLOC_TUNING")
+        .env_remove("QSV_DOTENV_PATH");
+    let got: String = wrk.stdout(&mut cmd);
+
+    // `QSV_THP` (the toggle) still appears in --envlist; only the APPLIED sentinel
+    // (set solely by a successful re-exec) must be absent.
+    assert!(
+        !got.contains("QSV_THP_APPLIED"),
+        "expected .env QSV_NO_ALLOC_TUNING to suppress the THP re-exec; --envlist was:\n{got}"
+    );
+}

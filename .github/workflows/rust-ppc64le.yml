@@ -14,6 +14,8 @@ jobs:
   build:
 
     runs-on: ubuntu-24.04-ppc64le
+    # Hard cap so a hung test fails fast instead of burning the 6-hour GitHub default.
+    timeout-minutes: 90
 
     steps:
     - name: apt-get update Ubuntu, libwayland-dev

@@ -12,6 +12,8 @@ jobs:
   build:
 
     runs-on: ubuntu-latest
+    # Hard cap so a hung test fails fast instead of burning the 6-hour GitHub default.
+    timeout-minutes: 90
 
     steps:
     - uses: actions/checkout@v6

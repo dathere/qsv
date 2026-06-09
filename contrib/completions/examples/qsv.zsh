@@ -488,6 +488,9 @@ _arguments "${_arguments_options[@]}" : \
 '--ckan-api=[]: :_default' \
 '--ckan-token=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
+'--ds-license=[]: :_default' \
+'--ds-source=[]: :_default' \
+'--ds-updated=[]: :_default' \
 '--enum-threshold=[]: :_default' \
 '--export-prompt=[]: :_default' \
 '--format=[]: :_default' \
@@ -519,6 +522,7 @@ _arguments "${_arguments_options[@]}" : \
 '--addl-cols[]' \
 '-A[]' \
 '--all[]' \
+'--allow-extra-cols[]' \
 '--description[]' \
 '--dictionary[]' \
 '--fewshot-examples[]' \
@@ -533,6 +537,7 @@ _arguments "${_arguments_options[@]}" : \
 '-q[]' \
 '--quiet[]' \
 '--redis-cache[]' \
+'--strict-dates[]' \
 '--tags[]' \
 '--two-pass[]' \
 '-h[Print help]' \
@@ -916,9 +921,11 @@ _arguments "${_arguments_options[@]}" : \
 (geocode)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -936,14 +943,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__subcmd__geocode_commands" \
@@ -956,12 +968,14 @@ _arguments "${_arguments_options[@]}" : \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:qsv-geocode-command-$line[1]:"
         case $line[1] in
-            (countryinfo)
+            (cache-clear)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -979,14 +993,145 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(countryinfo)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -994,9 +1139,11 @@ _arguments "${_arguments_options[@]}" : \
 (countryinfonow)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1014,14 +1161,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1029,9 +1181,11 @@ _arguments "${_arguments_options[@]}" : \
 (index-check)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1049,14 +1203,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1064,9 +1223,11 @@ _arguments "${_arguments_options[@]}" : \
 (index-load)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1084,14 +1245,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1099,9 +1265,11 @@ _arguments "${_arguments_options[@]}" : \
 (index-reset)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1119,14 +1287,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1134,9 +1307,11 @@ _arguments "${_arguments_options[@]}" : \
 (index-update)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1154,14 +1329,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1169,9 +1349,11 @@ _arguments "${_arguments_options[@]}" : \
 (iplookup)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1189,14 +1371,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1204,9 +1391,11 @@ _arguments "${_arguments_options[@]}" : \
 (iplookupnow)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1224,14 +1413,103 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(opencage)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(opencagenow)
+_arguments "${_arguments_options[@]}" : \
+'--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
+'--cities-url=[]: :_default' \
+'--country=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'--invalid-result=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-k+[]: :_default' \
+'--k_weight=[]: :_default' \
+'-l+[]: :_default' \
+'--language=[]: :_default' \
+'--languages=[]: :_default' \
+'--min-score=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'--timeout=[]: :_default' \
+'--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
+'-p[]' \
+'--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1239,9 +1517,11 @@ _arguments "${_arguments_options[@]}" : \
 (reverse)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1259,14 +1539,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1274,9 +1559,11 @@ _arguments "${_arguments_options[@]}" : \
 (reversenow)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1294,14 +1581,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1309,9 +1601,11 @@ _arguments "${_arguments_options[@]}" : \
 (suggest)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1329,14 +1623,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1344,9 +1643,11 @@ _arguments "${_arguments_options[@]}" : \
 (suggestnow)
 _arguments "${_arguments_options[@]}" : \
 '--admin1=[]: :_default' \
+'--api-key=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
 '--cache-dir=[]: :_default' \
+'--cache-ttl=[]: :_default' \
 '--cities-url=[]: :_default' \
 '--country=[]: :_default' \
 '-d+[]: :_default' \
@@ -1364,14 +1665,19 @@ _arguments "${_arguments_options[@]}" : \
 '--min-score=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '--timeout=[]: :_default' \
 '--force[]' \
+'--no-annotations[]' \
+'--no-cache[]' \
 '-p[]' \
 '--progressbar[]' \
+'--reverse[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -1388,7 +1694,19 @@ _arguments "${_arguments_options[@]}" : \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:qsv-geocode-help-command-$line[1]:"
         case $line[1] in
-            (countryinfo)
+            (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(countryinfo)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -1417,6 +1735,14 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (iplookupnow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(opencage)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(opencagenow)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -1463,6 +1789,223 @@ _arguments "${_arguments_options[@]}" : \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+":: :_qsv__subcmd__get_commands" \
+"*::: :->get" \
+&& ret=0
+
+    case $state in
+    (get)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-get-command-$line[1]:"
+        case $line[1] in
+            (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-list)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-set-policy)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(cache-set-ttl)
+_arguments "${_arguments_options[@]}" : \
+'--cache-dir=[]: :_default' \
+'--ckan-api=[]: :_default' \
+'--ckan-token=[]: :_default' \
+'--cloud-opt=[]: :_default' \
+'--compress=[]: :_default' \
+'--name=[]: :_default' \
+'--older-than=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--refresh=[]: :_default' \
+'--timeout=[]: :_default' \
+'--ttl=[]: :_default' \
+'--force[]' \
+'--json[]' \
+'-q[]' \
+'--quiet[]' \
+'--verify[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+":: :_qsv__subcmd__get__subcmd__help_commands" \
+"*::: :->help" \
+&& ret=0
+
+    case $state in
+    (help)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-get-help-command-$line[1]:"
+        case $line[1] in
+            (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-set-policy)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-set-ttl)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(help)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
+;;
+        esac
+    ;;
+esac
 ;;
 (headers)
 _arguments "${_arguments_options[@]}" : \
@@ -1959,6 +2502,35 @@ esac
     ;;
 esac
 ;;
+(profile)
+_arguments "${_arguments_options[@]}" : \
+'--dcat-discovery-timeout=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--initial-context=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--profile=[]: :_default' \
+'--spec=[]: :_default' \
+'--allow-external-validator[]' \
+'--catalog[]' \
+'--croissant-frequency[]' \
+'--dcat-legacy-license[]' \
+'--force[]' \
+'--memcheck[]' \
+'--no-ckan[]' \
+'--no-dcat-discovery[]' \
+'-n[]' \
+'--no-headers[]' \
+'--no-projection[]' \
+'--strict[]' \
+'--validate[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
 (prompt)
 _arguments "${_arguments_options[@]}" : \
 '--base-delay-ms=[]: :_default' \
@@ -2166,6 +2738,8 @@ _arguments "${_arguments_options[@]}" : \
 '--output=[]: :_default' \
 '--rng=[]: :_default' \
 '--seed=[]: :_default' \
+'--sketch-in=[]: :_default' \
+'--sketch-out=[]: :_default' \
 '--stratified=[]: :_default' \
 '--systematic=[]: :_default' \
 '--timeout=[]: :_default' \
@@ -2176,9 +2750,11 @@ _arguments "${_arguments_options[@]}" : \
 '--ts-interval=[]: :_default' \
 '--ts-start=[]: :_default' \
 '--user-agent=[]: :_default' \
+'--varopt=[]: :_default' \
 '--weighted=[]: :_default' \
 '--bernoulli[]' \
 '--force[]' \
+'--mergeable-reservoir[]' \
 '-n[]' \
 '--no-headers[]' \
 '--ts-prefer-dmy[]' \
@@ -2647,6 +3223,32 @@ _arguments "${_arguments_options[@]}" : \
 '--stats-jsonl[]' \
 '--typesonly[]' \
 '--vis-whitespace[]' \
+'--zero-padded-numeric[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(synthesize)
+_arguments "${_arguments_options[@]}" : \
+'--correlation-threshold=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'--dictionary=[]: :_default' \
+'--freq-limit=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'--joint-cardinality-cap=[]: :_default' \
+'--locale=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'-n+[]: :_default' \
+'--rows=[]: :_default' \
+'--seed=[]: :_default' \
+'--stats-options=[]: :_default' \
+'--consistent-fakes[]' \
+'--infer-content-type[]' \
+'--no-relationships[]' \
+'--strict-relationships[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -3341,7 +3943,19 @@ _arguments "${_arguments_options[@]}" : \
         (( CURRENT += 1 ))
         curcontext="${curcontext%:*:*}:qsv-help-geocode-command-$line[1]:"
         case $line[1] in
-            (countryinfo)
+            (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(countryinfo)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -3373,6 +3987,14 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(opencage)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(opencagenow)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (reverse)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -3396,6 +4018,46 @@ esac
 (geoconvert)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
+;;
+(get)
+_arguments "${_arguments_options[@]}" : \
+":: :_qsv__subcmd__help__subcmd__get_commands" \
+"*::: :->get" \
+&& ret=0
+
+    case $state in
+    (get)
+        words=($line[1] "${words[@]}")
+        (( CURRENT += 1 ))
+        curcontext="${curcontext%:*:*}:qsv-help-get-command-$line[1]:"
+        case $line[1] in
+            (cache-clear)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-info)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-list)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-prune)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-set-policy)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(cache-set-ttl)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+        esac
+    ;;
+esac
 ;;
 (headers)
 _arguments "${_arguments_options[@]}" : \
@@ -3500,6 +4162,10 @@ _arguments "${_arguments_options[@]}" : \
         esac
     ;;
 esac
+;;
+(profile)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
 ;;
 (prompt)
 _arguments "${_arguments_options[@]}" : \
@@ -3633,6 +4299,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(synthesize)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
 (table)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
@@ -3753,6 +4423,7 @@ _qsv_commands() {
 'frequency:' \
 'geocode:' \
 'geoconvert:' \
+'get:' \
 'headers:' \
 'implode:' \
 'index:' \
@@ -3769,6 +4440,7 @@ _qsv_commands() {
 'pivotp:' \
 'pragmastat:' \
 'pro:' \
+'profile:' \
 'prompt:' \
 'pseudo:' \
 'py:' \
@@ -3790,6 +4462,7 @@ _qsv_commands() {
 'split:' \
 'sqlp:' \
 'stats:' \
+'synthesize:' \
 'table:' \
 'template:' \
 'to:' \
@@ -4045,6 +4718,9 @@ _qsv__subcmd__frequency_commands() {
 (( $+functions[_qsv__subcmd__geocode_commands] )) ||
 _qsv__subcmd__geocode_commands() {
     local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-prune:' \
 'countryinfo:' \
 'countryinfonow:' \
 'index-check:' \
@@ -4053,6 +4729,8 @@ _qsv__subcmd__geocode_commands() {
 'index-update:' \
 'iplookup:' \
 'iplookupnow:' \
+'opencage:' \
+'opencagenow:' \
 'reverse:' \
 'reversenow:' \
 'suggest:' \
@@ -4060,6 +4738,21 @@ _qsv__subcmd__geocode_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv geocode commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__geocode__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__geocode__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__geocode__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode cache-prune commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__geocode__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__geocode__subcmd__countryinfo_commands() {
@@ -4074,6 +4767,9 @@ _qsv__subcmd__geocode__subcmd__countryinfonow_commands() {
 (( $+functions[_qsv__subcmd__geocode__subcmd__help_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help_commands() {
     local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-prune:' \
 'countryinfo:' \
 'countryinfonow:' \
 'index-check:' \
@@ -4082,6 +4778,8 @@ _qsv__subcmd__geocode__subcmd__help_commands() {
 'index-update:' \
 'iplookup:' \
 'iplookupnow:' \
+'opencage:' \
+'opencagenow:' \
 'reverse:' \
 'reversenow:' \
 'suggest:' \
@@ -4089,6 +4787,21 @@ _qsv__subcmd__geocode__subcmd__help_commands() {
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv geocode help commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help cache-prune commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo_commands() {
@@ -4134,6 +4847,16 @@ _qsv__subcmd__geocode__subcmd__help__subcmd__iplookup_commands() {
 _qsv__subcmd__geocode__subcmd__help__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode help iplookupnow commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__opencage_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__opencage_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help opencage commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__opencagenow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__help__subcmd__opencagenow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode help opencagenow commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__geocode__subcmd__help__subcmd__reverse_commands] )) ||
 _qsv__subcmd__geocode__subcmd__help__subcmd__reverse_commands() {
@@ -4185,6 +4908,16 @@ _qsv__subcmd__geocode__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geocode iplookupnow commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__geocode__subcmd__opencage_commands] )) ||
+_qsv__subcmd__geocode__subcmd__opencage_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode opencage commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__geocode__subcmd__opencagenow_commands] )) ||
+_qsv__subcmd__geocode__subcmd__opencagenow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv geocode opencagenow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__geocode__subcmd__reverse_commands] )) ||
 _qsv__subcmd__geocode__subcmd__reverse_commands() {
     local commands; commands=()
@@ -4209,6 +4942,97 @@ _qsv__subcmd__geocode__subcmd__suggestnow_commands() {
 _qsv__subcmd__geoconvert_commands() {
     local commands; commands=()
     _describe -t commands 'qsv geoconvert commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get_commands] )) ||
+_qsv__subcmd__get_commands() {
+    local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-list:' \
+'cache-prune:' \
+'cache-set-policy:' \
+'cache-set-ttl:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'qsv get commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-list_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-list_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-list commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-prune commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-set-policy_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-set-policy_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-set-policy commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__cache-set-ttl_commands] )) ||
+_qsv__subcmd__get__subcmd__cache-set-ttl_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get cache-set-ttl commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help_commands] )) ||
+_qsv__subcmd__get__subcmd__help_commands() {
+    local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-list:' \
+'cache-prune:' \
+'cache-set-policy:' \
+'cache-set-ttl:' \
+'help:Print this message or the help of the given subcommand(s)' \
+    )
+    _describe -t commands 'qsv get help commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-list_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-list_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-list commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-prune commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-set-policy_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-set-policy_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-set-policy commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__cache-set-ttl_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__cache-set-ttl_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help cache-set-ttl commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__get__subcmd__help__subcmd__help_commands] )) ||
+_qsv__subcmd__get__subcmd__help__subcmd__help_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv get help help commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__headers_commands] )) ||
 _qsv__subcmd__headers_commands() {
@@ -4246,6 +5070,7 @@ _qsv__subcmd__help_commands() {
 'frequency:' \
 'geocode:' \
 'geoconvert:' \
+'get:' \
 'headers:' \
 'implode:' \
 'index:' \
@@ -4262,6 +5087,7 @@ _qsv__subcmd__help_commands() {
 'pivotp:' \
 'pragmastat:' \
 'pro:' \
+'profile:' \
 'prompt:' \
 'pseudo:' \
 'py:' \
@@ -4283,6 +5109,7 @@ _qsv__subcmd__help_commands() {
 'split:' \
 'sqlp:' \
 'stats:' \
+'synthesize:' \
 'table:' \
 'template:' \
 'to:' \
@@ -4470,6 +5297,9 @@ _qsv__subcmd__help__subcmd__frequency_commands() {
 (( $+functions[_qsv__subcmd__help__subcmd__geocode_commands] )) ||
 _qsv__subcmd__help__subcmd__geocode_commands() {
     local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-prune:' \
 'countryinfo:' \
 'countryinfonow:' \
 'index-check:' \
@@ -4478,12 +5308,29 @@ _qsv__subcmd__help__subcmd__geocode_commands() {
 'index-update:' \
 'iplookup:' \
 'iplookupnow:' \
+'opencage:' \
+'opencagenow:' \
 'reverse:' \
 'reversenow:' \
 'suggest:' \
 'suggestnow:' \
     )
     _describe -t commands 'qsv help geocode commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode cache-prune commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands] )) ||
 _qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo_commands() {
@@ -4525,6 +5372,16 @@ _qsv__subcmd__help__subcmd__geocode__subcmd__iplookupnow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geocode iplookupnow commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__opencage_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__opencage_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode opencage commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__opencagenow_commands] )) ||
+_qsv__subcmd__help__subcmd__geocode__subcmd__opencagenow_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help geocode opencagenow commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__help__subcmd__geocode__subcmd__reverse_commands] )) ||
 _qsv__subcmd__help__subcmd__geocode__subcmd__reverse_commands() {
     local commands; commands=()
@@ -4549,6 +5406,48 @@ _qsv__subcmd__help__subcmd__geocode__subcmd__suggestnow_commands() {
 _qsv__subcmd__help__subcmd__geoconvert_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help geoconvert commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get_commands] )) ||
+_qsv__subcmd__help__subcmd__get_commands() {
+    local commands; commands=(
+'cache-clear:' \
+'cache-info:' \
+'cache-list:' \
+'cache-prune:' \
+'cache-set-policy:' \
+'cache-set-ttl:' \
+    )
+    _describe -t commands 'qsv help get commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-clear_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-clear_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-clear commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-info_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-info_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-info commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-list_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-list_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-list commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-prune_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-prune_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-prune commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-set-policy_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-set-policy_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-set-policy commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__get__subcmd__cache-set-ttl_commands] )) ||
+_qsv__subcmd__help__subcmd__get__subcmd__cache-set-ttl_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help get cache-set-ttl commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__headers_commands] )) ||
 _qsv__subcmd__help__subcmd__headers_commands() {
@@ -4660,6 +5559,11 @@ _qsv__subcmd__help__subcmd__pro__subcmd__lens_commands() {
 _qsv__subcmd__help__subcmd__pro__subcmd__workflow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help pro workflow commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__profile_commands] )) ||
+_qsv__subcmd__help__subcmd__profile_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help profile commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__prompt_commands] )) ||
 _qsv__subcmd__help__subcmd__prompt_commands() {
@@ -4803,6 +5707,11 @@ _qsv__subcmd__help__subcmd__sqlp_commands() {
 _qsv__subcmd__help__subcmd__stats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help stats commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__synthesize_commands] )) ||
+_qsv__subcmd__help__subcmd__synthesize_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help synthesize commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__table_commands] )) ||
 _qsv__subcmd__help__subcmd__table_commands() {
@@ -5029,6 +5938,11 @@ _qsv__subcmd__pro__subcmd__workflow_commands() {
     local commands; commands=()
     _describe -t commands 'qsv pro workflow commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__profile_commands] )) ||
+_qsv__subcmd__profile_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv profile commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__prompt_commands] )) ||
 _qsv__subcmd__prompt_commands() {
     local commands; commands=()
@@ -5233,6 +6147,11 @@ _qsv__subcmd__sqlp_commands() {
 _qsv__subcmd__stats_commands() {
     local commands; commands=()
     _describe -t commands 'qsv stats commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__synthesize_commands] )) ||
+_qsv__subcmd__synthesize_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv synthesize commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__table_commands] )) ||
 _qsv__subcmd__table_commands() {

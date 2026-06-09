@@ -1112,6 +1112,30 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--ds-license",
+          isRepeatable: true,
+          args: {
+            name: "ds-license",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ds-source",
+          isRepeatable: true,
+          args: {
+            name: "ds-source",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ds-updated",
+          isRepeatable: true,
+          args: {
+            name: "ds-updated",
+            isOptional: true,
+          },
+        },
+        {
           name: "--enum-threshold",
           isRepeatable: true,
           args: {
@@ -1310,6 +1334,9 @@ const completion: Fig.Spec = {
           name: ["-A", "--all"],
         },
         {
+          name: "--allow-extra-cols",
+        },
+        {
           name: "--description",
         },
         {
@@ -1347,6 +1374,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--redis-cache",
+        },
+        {
+          name: "--strict-dates",
         },
         {
           name: "--tags",
@@ -2664,13 +2694,21 @@ const completion: Fig.Spec = {
       name: "geocode",
       subcommands: [
         {
-          name: "countryinfo",
+          name: "cache-clear",
           options: [
             {
               name: "--admin1",
               isRepeatable: true,
               args: {
                 name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
                 isOptional: true,
               },
             },
@@ -2687,6 +2725,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -2779,10 +2825,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -2806,7 +2868,592 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-info",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-prune",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "countryinfo",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -2826,6 +3473,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -2838,6 +3493,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -2930,10 +3593,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -2957,7 +3636,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -2977,6 +3665,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -2989,6 +3685,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3081,10 +3785,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3108,7 +3828,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3128,6 +3857,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3140,6 +3877,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3232,10 +3977,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3259,7 +4020,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3279,6 +4049,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3291,6 +4069,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3383,10 +4169,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3410,7 +4212,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3430,6 +4241,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3442,6 +4261,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3534,10 +4361,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3561,7 +4404,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3581,6 +4433,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3593,6 +4453,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3685,10 +4553,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3712,7 +4596,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3732,6 +4625,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3744,6 +4645,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3836,10 +4745,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -3863,7 +4788,400 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "opencage",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "opencagenow",
+          options: [
+            {
+              name: "--admin1",
+              isRepeatable: true,
+              args: {
+                name: "admin1",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-b", "--batch"],
+              isRepeatable: true,
+              args: {
+                name: "batch",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cities-url",
+              isRepeatable: true,
+              args: {
+                name: "cities-url",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--country",
+              isRepeatable: true,
+              args: {
+                name: "country",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-d", "--delimiter"],
+              isRepeatable: true,
+              args: {
+                name: "delimiter",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-f", "--formatstr"],
+              isRepeatable: true,
+              args: {
+                name: "formatstr",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--invalid-result",
+              isRepeatable: true,
+              args: {
+                name: "invalid-result",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-j", "--jobs"],
+              isRepeatable: true,
+              args: {
+                name: "jobs",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-k", "--k_weight"],
+              isRepeatable: true,
+              args: {
+                name: "k_weight",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-l", "--language"],
+              isRepeatable: true,
+              args: {
+                name: "language",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--languages",
+              isRepeatable: true,
+              args: {
+                name: "languages",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--min-score",
+              isRepeatable: true,
+              args: {
+                name: "min-score",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-c", "--new-column"],
+              isRepeatable: true,
+              args: {
+                name: "new-column",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-r", "--rename"],
+              isRepeatable: true,
+              args: {
+                name: "rename",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
+              name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -3883,6 +5201,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -3895,6 +5221,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -3987,10 +5321,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -4014,7 +5364,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -4034,6 +5393,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -4046,6 +5413,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -4138,10 +5513,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -4165,7 +5556,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -4185,6 +5585,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -4197,6 +5605,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -4289,10 +5705,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -4316,7 +5748,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -4336,6 +5777,14 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--api-key",
+              isRepeatable: true,
+              args: {
+                name: "api-key",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-b", "--batch"],
               isRepeatable: true,
               args: {
@@ -4348,6 +5797,14 @@ const completion: Fig.Spec = {
               isRepeatable: true,
               args: {
                 name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cache-ttl",
+              isRepeatable: true,
+              args: {
+                name: "cache-ttl",
                 isOptional: true,
               },
             },
@@ -4440,10 +5897,26 @@ const completion: Fig.Spec = {
               },
             },
             {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
               name: ["-o", "--output"],
               isRepeatable: true,
               args: {
                 name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--rate-limit",
+              isRepeatable: true,
+              args: {
+                name: "rate-limit",
                 isOptional: true,
               },
             },
@@ -4467,7 +5940,16 @@ const completion: Fig.Spec = {
               name: "--force",
             },
             {
+              name: "--no-annotations",
+            },
+            {
+              name: "--no-cache",
+            },
+            {
               name: ["-p", "--progressbar"],
+            },
+            {
+              name: "--reverse",
             },
             {
               name: ["-h", "--help"],
@@ -4479,6 +5961,15 @@ const completion: Fig.Spec = {
           name: "help",
           description: "Print this message or the help of the given subcommand(s)",
           subcommands: [
+            {
+              name: "cache-clear",
+            },
+            {
+              name: "cache-info",
+            },
+            {
+              name: "cache-prune",
+            },
             {
               name: "countryinfo",
             },
@@ -4502,6 +5993,12 @@ const completion: Fig.Spec = {
             },
             {
               name: "iplookupnow",
+            },
+            {
+              name: "opencage",
+            },
+            {
+              name: "opencagenow",
             },
             {
               name: "reverse",
@@ -4532,6 +6029,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--api-key",
+          isRepeatable: true,
+          args: {
+            name: "api-key",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-b", "--batch"],
           isRepeatable: true,
           args: {
@@ -4544,6 +6049,14 @@ const completion: Fig.Spec = {
           isRepeatable: true,
           args: {
             name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cache-ttl",
+          isRepeatable: true,
+          args: {
+            name: "cache-ttl",
             isOptional: true,
           },
         },
@@ -4636,10 +6149,26 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--older-than",
+          isRepeatable: true,
+          args: {
+            name: "older-than",
+            isOptional: true,
+          },
+        },
+        {
           name: ["-o", "--output"],
           isRepeatable: true,
           args: {
             name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--rate-limit",
+          isRepeatable: true,
+          args: {
+            name: "rate-limit",
             isOptional: true,
           },
         },
@@ -4663,7 +6192,16 @@ const completion: Fig.Spec = {
           name: "--force",
         },
         {
+          name: "--no-annotations",
+        },
+        {
+          name: "--no-cache",
+        },
+        {
           name: ["-p", "--progressbar"],
+        },
+        {
+          name: "--reverse",
         },
         {
           name: ["-h", "--help"],
@@ -4713,6 +6251,799 @@ const completion: Fig.Spec = {
             name: "output",
             isOptional: true,
           },
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "get",
+      subcommands: [
+        {
+          name: "cache-clear",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-info",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-list",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-prune",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-set-policy",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "cache-set-ttl",
+          options: [
+            {
+              name: "--cache-dir",
+              isRepeatable: true,
+              args: {
+                name: "cache-dir",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-api",
+              isRepeatable: true,
+              args: {
+                name: "ckan-api",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ckan-token",
+              isRepeatable: true,
+              args: {
+                name: "ckan-token",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--cloud-opt",
+              isRepeatable: true,
+              args: {
+                name: "cloud-opt",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--compress",
+              isRepeatable: true,
+              args: {
+                name: "compress",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--name",
+              isRepeatable: true,
+              args: {
+                name: "name",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--older-than",
+              isRepeatable: true,
+              args: {
+                name: "older-than",
+                isOptional: true,
+              },
+            },
+            {
+              name: ["-o", "--output"],
+              isRepeatable: true,
+              args: {
+                name: "output",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--refresh",
+              isRepeatable: true,
+              args: {
+                name: "refresh",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--timeout",
+              isRepeatable: true,
+              args: {
+                name: "timeout",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--ttl",
+              isRepeatable: true,
+              args: {
+                name: "ttl",
+                isOptional: true,
+              },
+            },
+            {
+              name: "--force",
+            },
+            {
+              name: "--json",
+            },
+            {
+              name: ["-q", "--quiet"],
+            },
+            {
+              name: "--verify",
+            },
+            {
+              name: ["-h", "--help"],
+              description: "Print help",
+            },
+          ],
+        },
+        {
+          name: "help",
+          description: "Print this message or the help of the given subcommand(s)",
+          subcommands: [
+            {
+              name: "cache-clear",
+            },
+            {
+              name: "cache-info",
+            },
+            {
+              name: "cache-list",
+            },
+            {
+              name: "cache-prune",
+            },
+            {
+              name: "cache-set-policy",
+            },
+            {
+              name: "cache-set-ttl",
+            },
+            {
+              name: "help",
+              description: "Print this message or the help of the given subcommand(s)",
+            },
+          ],
+        },
+      ],
+      options: [
+        {
+          name: "--cache-dir",
+          isRepeatable: true,
+          args: {
+            name: "cache-dir",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-api",
+          isRepeatable: true,
+          args: {
+            name: "ckan-api",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ckan-token",
+          isRepeatable: true,
+          args: {
+            name: "ckan-token",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--cloud-opt",
+          isRepeatable: true,
+          args: {
+            name: "cloud-opt",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--compress",
+          isRepeatable: true,
+          args: {
+            name: "compress",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--name",
+          isRepeatable: true,
+          args: {
+            name: "name",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--older-than",
+          isRepeatable: true,
+          args: {
+            name: "older-than",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--refresh",
+          isRepeatable: true,
+          args: {
+            name: "refresh",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--timeout",
+          isRepeatable: true,
+          args: {
+            name: "timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--ttl",
+          isRepeatable: true,
+          args: {
+            name: "ttl",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--force",
+        },
+        {
+          name: "--json",
+        },
+        {
+          name: ["-q", "--quiet"],
+        },
+        {
+          name: "--verify",
         },
         {
           name: ["-h", "--help"],
@@ -6135,6 +8466,107 @@ const completion: Fig.Spec = {
       ],
     },
     {
+      name: "profile",
+      options: [
+        {
+          name: "--dcat-discovery-timeout",
+          isRepeatable: true,
+          args: {
+            name: "dcat-discovery-timeout",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--initial-context",
+          isRepeatable: true,
+          args: {
+            name: "initial-context",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--profile",
+          isRepeatable: true,
+          args: {
+            name: "profile",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--spec",
+          isRepeatable: true,
+          args: {
+            name: "spec",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--allow-external-validator",
+        },
+        {
+          name: "--catalog",
+        },
+        {
+          name: "--croissant-frequency",
+        },
+        {
+          name: "--dcat-legacy-license",
+        },
+        {
+          name: "--force",
+        },
+        {
+          name: "--memcheck",
+        },
+        {
+          name: "--no-ckan",
+        },
+        {
+          name: "--no-dcat-discovery",
+        },
+        {
+          name: ["-n", "--no-headers"],
+        },
+        {
+          name: "--no-projection",
+        },
+        {
+          name: "--strict",
+        },
+        {
+          name: "--validate",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
       name: "prompt",
       options: [
         {
@@ -6652,6 +9084,22 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--sketch-in",
+          isRepeatable: true,
+          args: {
+            name: "sketch-in",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--sketch-out",
+          isRepeatable: true,
+          args: {
+            name: "sketch-out",
+            isOptional: true,
+          },
+        },
+        {
           name: "--stratified",
           isRepeatable: true,
           args: {
@@ -6732,6 +9180,14 @@ const completion: Fig.Spec = {
           },
         },
         {
+          name: "--varopt",
+          isRepeatable: true,
+          args: {
+            name: "varopt",
+            isOptional: true,
+          },
+        },
+        {
           name: "--weighted",
           isRepeatable: true,
           args: {
@@ -6744,6 +9200,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "--force",
+        },
+        {
+          name: "--mergeable-reservoir",
         },
         {
           name: ["-n", "--no-headers"],
@@ -8074,6 +10533,118 @@ const completion: Fig.Spec = {
         },
         {
           name: "--vis-whitespace",
+        },
+        {
+          name: "--zero-padded-numeric",
+        },
+        {
+          name: ["-h", "--help"],
+          description: "Print help",
+        },
+      ],
+    },
+    {
+      name: "synthesize",
+      options: [
+        {
+          name: "--correlation-threshold",
+          isRepeatable: true,
+          args: {
+            name: "correlation-threshold",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-d", "--delimiter"],
+          isRepeatable: true,
+          args: {
+            name: "delimiter",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--dictionary",
+          isRepeatable: true,
+          args: {
+            name: "dictionary",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--freq-limit",
+          isRepeatable: true,
+          args: {
+            name: "freq-limit",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-j", "--jobs"],
+          isRepeatable: true,
+          args: {
+            name: "jobs",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--joint-cardinality-cap",
+          isRepeatable: true,
+          args: {
+            name: "joint-cardinality-cap",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--locale",
+          isRepeatable: true,
+          args: {
+            name: "locale",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-o", "--output"],
+          isRepeatable: true,
+          args: {
+            name: "output",
+            isOptional: true,
+          },
+        },
+        {
+          name: ["-n", "--rows"],
+          isRepeatable: true,
+          args: {
+            name: "rows",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--seed",
+          isRepeatable: true,
+          args: {
+            name: "seed",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--stats-options",
+          isRepeatable: true,
+          args: {
+            name: "stats-options",
+            isOptional: true,
+          },
+        },
+        {
+          name: "--consistent-fakes",
+        },
+        {
+          name: "--infer-content-type",
+        },
+        {
+          name: "--no-relationships",
+        },
+        {
+          name: "--strict-relationships",
         },
         {
           name: ["-h", "--help"],
@@ -9594,6 +12165,15 @@ const completion: Fig.Spec = {
           name: "geocode",
           subcommands: [
             {
+              name: "cache-clear",
+            },
+            {
+              name: "cache-info",
+            },
+            {
+              name: "cache-prune",
+            },
+            {
               name: "countryinfo",
             },
             {
@@ -9618,6 +12198,12 @@ const completion: Fig.Spec = {
               name: "iplookupnow",
             },
             {
+              name: "opencage",
+            },
+            {
+              name: "opencagenow",
+            },
+            {
               name: "reverse",
             },
             {
@@ -9633,6 +12219,29 @@ const completion: Fig.Spec = {
         },
         {
           name: "geoconvert",
+        },
+        {
+          name: "get",
+          subcommands: [
+            {
+              name: "cache-clear",
+            },
+            {
+              name: "cache-info",
+            },
+            {
+              name: "cache-list",
+            },
+            {
+              name: "cache-prune",
+            },
+            {
+              name: "cache-set-policy",
+            },
+            {
+              name: "cache-set-ttl",
+            },
+          ],
         },
         {
           name: "headers",
@@ -9697,6 +12306,9 @@ const completion: Fig.Spec = {
               name: "workflow",
             },
           ],
+        },
+        {
+          name: "profile",
         },
         {
           name: "prompt",
@@ -9782,6 +12394,9 @@ const completion: Fig.Spec = {
         },
         {
           name: "stats",
+        },
+        {
+          name: "synthesize",
         },
         {
           name: "table",

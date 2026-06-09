@@ -251,33 +251,50 @@ fn build_command_from_usage(command_name: &str, usage_text: &str) -> Result<Comm
 pub fn build_cli(repo_root: &Path) -> Command {
     let cmd_dir = repo_root.join("src/cmd");
 
-    let mut entries: Vec<_> = fs::read_dir(&cmd_dir)
+    // Collect (source path, command stem) pairs. Most commands are flat
+    // `src/cmd/<name>.rs` files; a few (e.g. `synthesize`) are directory modules
+    // with their USAGE in `src/cmd/<name>/mod.rs`, so scan both.
+    let mut entries: Vec<(PathBuf, String)> = Vec::new();
+    let mut flat_stems = std::collections::HashSet::new();
+
+    for entry in fs::read_dir(&cmd_dir)
         .unwrap_or_else(|e| panic!("Failed to read {}: {e}", cmd_dir.display()))
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            let name = e.file_name();
-            let name_str = name.to_string_lossy();
-            name_str.ends_with(".rs") && {
-                let stem = name_str.trim_end_matches(".rs");
-                !SKIP_FILES.contains(&stem)
+    {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if let Some(stem) = name_str.strip_suffix(".rs") {
+            if !SKIP_FILES.contains(&stem) {
+                flat_stems.insert(stem.to_owned());
+                entries.push((entry.path(), stem.to_owned()));
             }
-        })
-        .collect();
+        }
+    }
 
-    entries.sort_by_key(|e| e.file_name());
+    // Directory-module commands: `src/cmd/<name>/mod.rs` whose name isn't already
+    // covered by a flat file and isn't skipped.
+    for entry in fs::read_dir(&cmd_dir)
+        .unwrap_or_else(|e| panic!("Failed to read {}: {e}", cmd_dir.display()))
+        .filter_map(|e| e.ok())
+    {
+        if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+            continue;
+        }
+        let dir_name = entry.file_name().to_string_lossy().into_owned();
+        if SKIP_FILES.contains(&dir_name.as_str()) || flat_stems.contains(&dir_name) {
+            continue;
+        }
+        let mod_rs = entry.path().join("mod.rs");
+        if mod_rs.is_file() {
+            entries.push((mod_rs, dir_name));
+        }
+    }
+
+    entries.sort_by(|a, b| a.1.cmp(&b.1));
 
     let mut commands: Vec<Command> = Vec::new();
 
-    for entry in entries {
-        let path = entry.path();
-        let file_stem = match path.file_stem() {
-            Some(s) => s.to_string_lossy().into_owned(),
-            None => {
-                eprintln!("Warning: skipping {}: no file stem", path.display());
-                continue;
-            },
-        };
-
+    for (path, file_stem) in entries {
         // Extract USAGE text
         let usage_text = match extract_usage_from_file(&path) {
             Ok(text) => text,

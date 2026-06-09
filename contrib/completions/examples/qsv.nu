@@ -256,6 +256,7 @@ module completions {
     --addl-cols-list: string
     --addl-props: string
     --all(-A)
+    --allow-extra-cols
     --api-key(-k): string
     --base-url(-u): string
     --cache-dir: string
@@ -264,6 +265,9 @@ module completions {
     --description
     --dictionary
     --disk-cache-dir: string
+    --ds-license: string
+    --ds-source: string
+    --ds-updated: string
     --enum-threshold: string
     --export-prompt: string
     --fewshot-examples
@@ -295,6 +299,7 @@ module completions {
     --session-len: string
     --sql-results: string
     --stats-options: string
+    --strict-dates
     --tag-vocab: string
     --tags
     --timeout: string
@@ -562,8 +567,10 @@ module completions {
 
   export extern "qsv geocode" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -576,17 +583,114 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
+    --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode cache-clear" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --cache-dir: string
+    --cache-ttl: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode cache-info" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --cache-dir: string
+    --cache-ttl: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode cache-prune" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --cache-dir: string
+    --cache-ttl: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode countryinfo" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -599,17 +703,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode countryinfonow" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -622,17 +733,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-check" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -645,17 +763,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-load" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -668,17 +793,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-reset" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -691,17 +823,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode index-update" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -714,17 +853,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode iplookup" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -737,17 +883,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode iplookupnow" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -760,17 +913,84 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
+    --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode opencage" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --cache-dir: string
+    --cache-ttl: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
+    --timeout: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv geocode opencagenow" [
+    --admin1: string
+    --api-key: string
+    --batch(-b): string
+    --cache-dir: string
+    --cache-ttl: string
+    --cities-url: string
+    --country: string
+    --delimiter(-d): string
+    --force
+    --formatstr(-f): string
+    --invalid-result: string
+    --jobs(-j): string
+    --k_weight(-k): string
+    --language(-l): string
+    --languages: string
+    --min-score: string
+    --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
+    --output(-o): string
+    --progressbar(-p)
+    --rate-limit: string
+    --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode reverse" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -783,17 +1003,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode reversenow" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -806,17 +1033,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode suggest" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -829,17 +1063,24 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv geocode suggestnow" [
     --admin1: string
+    --api-key: string
     --batch(-b): string
     --cache-dir: string
+    --cache-ttl: string
     --cities-url: string
     --country: string
     --delimiter(-d): string
@@ -852,15 +1093,29 @@ module completions {
     --languages: string
     --min-score: string
     --new-column(-c): string
+    --no-annotations
+    --no-cache
+    --older-than: string
     --output(-o): string
     --progressbar(-p)
+    --rate-limit: string
     --rename(-r): string
+    --reverse
     --timeout: string
     --help(-h)                # Print help
   ]
 
   # Print this message or the help of the given subcommand(s)
   export extern "qsv geocode help" [
+  ]
+
+  export extern "qsv geocode help cache-clear" [
+  ]
+
+  export extern "qsv geocode help cache-info" [
+  ]
+
+  export extern "qsv geocode help cache-prune" [
   ]
 
   export extern "qsv geocode help countryinfo" [
@@ -887,6 +1142,12 @@ module completions {
   export extern "qsv geocode help iplookupnow" [
   ]
 
+  export extern "qsv geocode help opencage" [
+  ]
+
+  export extern "qsv geocode help opencagenow" [
+  ]
+
   export extern "qsv geocode help reverse" [
   ]
 
@@ -910,6 +1171,165 @@ module completions {
     --max-length(-l): string
     --output(-o): string
     --help(-h)                # Print help
+  ]
+
+  export extern "qsv get" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-clear" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-info" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-list" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-prune" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-set-policy" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv get cache-set-ttl" [
+    --cache-dir: string
+    --ckan-api: string
+    --ckan-token: string
+    --cloud-opt: string
+    --compress: string
+    --force
+    --json
+    --name: string
+    --older-than: string
+    --output(-o): string
+    --quiet(-q)
+    --refresh: string
+    --timeout: string
+    --ttl: string
+    --verify
+    --help(-h)                # Print help
+  ]
+
+  # Print this message or the help of the given subcommand(s)
+  export extern "qsv get help" [
+  ]
+
+  export extern "qsv get help cache-clear" [
+  ]
+
+  export extern "qsv get help cache-info" [
+  ]
+
+  export extern "qsv get help cache-list" [
+  ]
+
+  export extern "qsv get help cache-prune" [
+  ]
+
+  export extern "qsv get help cache-set-policy" [
+  ]
+
+  export extern "qsv get help cache-set-ttl" [
+  ]
+
+  # Print this message or the help of the given subcommand(s)
+  export extern "qsv get help help" [
   ]
 
   export extern "qsv headers" [
@@ -1226,6 +1646,29 @@ module completions {
   export extern "qsv pro help help" [
   ]
 
+  export extern "qsv profile" [
+    --allow-external-validator
+    --catalog
+    --croissant-frequency
+    --dcat-discovery-timeout: string
+    --dcat-legacy-license
+    --delimiter(-d): string
+    --force
+    --initial-context: string
+    --jobs(-j): string
+    --memcheck
+    --no-ckan
+    --no-dcat-discovery
+    --no-headers(-n)
+    --no-projection
+    --output(-o): string
+    --profile: string
+    --spec: string
+    --strict
+    --validate
+    --help(-h)                # Print help
+  ]
+
   export extern "qsv prompt" [
     --base-delay-ms: string
     --fd-output(-f)
@@ -1341,10 +1784,13 @@ module completions {
     --delimiter(-d): string
     --force
     --max-size: string
+    --mergeable-reservoir
     --no-headers(-n)
     --output(-o): string
     --rng: string
     --seed: string
+    --sketch-in: string
+    --sketch-out: string
     --stratified: string
     --systematic: string
     --timeout: string
@@ -1356,6 +1802,7 @@ module completions {
     --ts-prefer-dmy
     --ts-start: string
     --user-agent: string
+    --varopt: string
     --weighted: string
     --help(-h)                # Print help
   ]
@@ -1659,6 +2106,26 @@ module completions {
     --typesonly
     --vis-whitespace
     --weight: string
+    --zero-padded-numeric
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv synthesize" [
+    --consistent-fakes
+    --correlation-threshold: string
+    --delimiter(-d): string
+    --dictionary: string
+    --freq-limit: string
+    --infer-content-type
+    --jobs(-j): string
+    --joint-cardinality-cap: string
+    --locale: string
+    --no-relationships
+    --output(-o): string
+    --rows(-n): string
+    --seed: string
+    --stats-options: string
+    --strict-relationships
     --help(-h)                # Print help
   ]
 
@@ -2072,6 +2539,15 @@ module completions {
   export extern "qsv help geocode" [
   ]
 
+  export extern "qsv help geocode cache-clear" [
+  ]
+
+  export extern "qsv help geocode cache-info" [
+  ]
+
+  export extern "qsv help geocode cache-prune" [
+  ]
+
   export extern "qsv help geocode countryinfo" [
   ]
 
@@ -2096,6 +2572,12 @@ module completions {
   export extern "qsv help geocode iplookupnow" [
   ]
 
+  export extern "qsv help geocode opencage" [
+  ]
+
+  export extern "qsv help geocode opencagenow" [
+  ]
+
   export extern "qsv help geocode reverse" [
   ]
 
@@ -2109,6 +2591,27 @@ module completions {
   ]
 
   export extern "qsv help geoconvert" [
+  ]
+
+  export extern "qsv help get" [
+  ]
+
+  export extern "qsv help get cache-clear" [
+  ]
+
+  export extern "qsv help get cache-info" [
+  ]
+
+  export extern "qsv help get cache-list" [
+  ]
+
+  export extern "qsv help get cache-prune" [
+  ]
+
+  export extern "qsv help get cache-set-policy" [
+  ]
+
+  export extern "qsv help get cache-set-ttl" [
   ]
 
   export extern "qsv help headers" [
@@ -2169,6 +2672,9 @@ module completions {
   ]
 
   export extern "qsv help pro workflow" [
+  ]
+
+  export extern "qsv help profile" [
   ]
 
   export extern "qsv help prompt" [
@@ -2250,6 +2756,9 @@ module completions {
   ]
 
   export extern "qsv help stats" [
+  ]
+
+  export extern "qsv help synthesize" [
   ]
 
   export extern "qsv help table" [

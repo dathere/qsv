@@ -100,6 +100,9 @@ _qsv() {
             qsv,geoconvert)
                 cmd="qsv__subcmd__geoconvert"
                 ;;
+            qsv,get)
+                cmd="qsv__subcmd__get"
+                ;;
             qsv,headers)
                 cmd="qsv__subcmd__headers"
                 ;;
@@ -150,6 +153,9 @@ _qsv() {
                 ;;
             qsv,pro)
                 cmd="qsv__subcmd__pro"
+                ;;
+            qsv,profile)
+                cmd="qsv__subcmd__profile"
                 ;;
             qsv,prompt)
                 cmd="qsv__subcmd__prompt"
@@ -213,6 +219,9 @@ _qsv() {
                 ;;
             qsv,stats)
                 cmd="qsv__subcmd__stats"
+                ;;
+            qsv,synthesize)
+                cmd="qsv__subcmd__synthesize"
                 ;;
             qsv,table)
                 cmd="qsv__subcmd__table"
@@ -286,6 +295,15 @@ _qsv() {
             qsv__subcmd__cat__subcmd__help,rowskey)
                 cmd="qsv__subcmd__cat__subcmd__help__subcmd__rowskey"
                 ;;
+            qsv__subcmd__geocode,cache-clear)
+                cmd="qsv__subcmd__geocode__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__geocode,cache-info)
+                cmd="qsv__subcmd__geocode__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__geocode,cache-prune)
+                cmd="qsv__subcmd__geocode__subcmd__cache__subcmd__prune"
+                ;;
             qsv__subcmd__geocode,countryinfo)
                 cmd="qsv__subcmd__geocode__subcmd__countryinfo"
                 ;;
@@ -313,6 +331,12 @@ _qsv() {
             qsv__subcmd__geocode,iplookupnow)
                 cmd="qsv__subcmd__geocode__subcmd__iplookupnow"
                 ;;
+            qsv__subcmd__geocode,opencage)
+                cmd="qsv__subcmd__geocode__subcmd__opencage"
+                ;;
+            qsv__subcmd__geocode,opencagenow)
+                cmd="qsv__subcmd__geocode__subcmd__opencagenow"
+                ;;
             qsv__subcmd__geocode,reverse)
                 cmd="qsv__subcmd__geocode__subcmd__reverse"
                 ;;
@@ -324,6 +348,15 @@ _qsv() {
                 ;;
             qsv__subcmd__geocode,suggestnow)
                 cmd="qsv__subcmd__geocode__subcmd__suggestnow"
+                ;;
+            qsv__subcmd__geocode__subcmd__help,cache-clear)
+                cmd="qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__geocode__subcmd__help,cache-info)
+                cmd="qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__geocode__subcmd__help,cache-prune)
+                cmd="qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__prune"
                 ;;
             qsv__subcmd__geocode__subcmd__help,countryinfo)
                 cmd="qsv__subcmd__geocode__subcmd__help__subcmd__countryinfo"
@@ -352,6 +385,12 @@ _qsv() {
             qsv__subcmd__geocode__subcmd__help,iplookupnow)
                 cmd="qsv__subcmd__geocode__subcmd__help__subcmd__iplookupnow"
                 ;;
+            qsv__subcmd__geocode__subcmd__help,opencage)
+                cmd="qsv__subcmd__geocode__subcmd__help__subcmd__opencage"
+                ;;
+            qsv__subcmd__geocode__subcmd__help,opencagenow)
+                cmd="qsv__subcmd__geocode__subcmd__help__subcmd__opencagenow"
+                ;;
             qsv__subcmd__geocode__subcmd__help,reverse)
                 cmd="qsv__subcmd__geocode__subcmd__help__subcmd__reverse"
                 ;;
@@ -363,6 +402,48 @@ _qsv() {
                 ;;
             qsv__subcmd__geocode__subcmd__help,suggestnow)
                 cmd="qsv__subcmd__geocode__subcmd__help__subcmd__suggestnow"
+                ;;
+            qsv__subcmd__get,cache-clear)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__get,cache-info)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__get,cache-list)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__list"
+                ;;
+            qsv__subcmd__get,cache-prune)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__prune"
+                ;;
+            qsv__subcmd__get,cache-set-policy)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__policy"
+                ;;
+            qsv__subcmd__get,cache-set-ttl)
+                cmd="qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__ttl"
+                ;;
+            qsv__subcmd__get,help)
+                cmd="qsv__subcmd__get__subcmd__help"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-clear)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-info)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-list)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__list"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-prune)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__prune"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-set-policy)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__set__subcmd__policy"
+                ;;
+            qsv__subcmd__get__subcmd__help,cache-set-ttl)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__set__subcmd__ttl"
+                ;;
+            qsv__subcmd__get__subcmd__help,help)
+                cmd="qsv__subcmd__get__subcmd__help__subcmd__help"
                 ;;
             qsv__subcmd__help,apply)
                 cmd="qsv__subcmd__help__subcmd__apply"
@@ -448,6 +529,9 @@ _qsv() {
             qsv__subcmd__help,geoconvert)
                 cmd="qsv__subcmd__help__subcmd__geoconvert"
                 ;;
+            qsv__subcmd__help,get)
+                cmd="qsv__subcmd__help__subcmd__get"
+                ;;
             qsv__subcmd__help,headers)
                 cmd="qsv__subcmd__help__subcmd__headers"
                 ;;
@@ -498,6 +582,9 @@ _qsv() {
                 ;;
             qsv__subcmd__help,pro)
                 cmd="qsv__subcmd__help__subcmd__pro"
+                ;;
+            qsv__subcmd__help,profile)
+                cmd="qsv__subcmd__help__subcmd__profile"
                 ;;
             qsv__subcmd__help,prompt)
                 cmd="qsv__subcmd__help__subcmd__prompt"
@@ -562,6 +649,9 @@ _qsv() {
             qsv__subcmd__help,stats)
                 cmd="qsv__subcmd__help__subcmd__stats"
                 ;;
+            qsv__subcmd__help,synthesize)
+                cmd="qsv__subcmd__help__subcmd__synthesize"
+                ;;
             qsv__subcmd__help,table)
                 cmd="qsv__subcmd__help__subcmd__table"
                 ;;
@@ -601,6 +691,15 @@ _qsv() {
             qsv__subcmd__help__subcmd__cat,rowskey)
                 cmd="qsv__subcmd__help__subcmd__cat__subcmd__rowskey"
                 ;;
+            qsv__subcmd__help__subcmd__geocode,cache-clear)
+                cmd="qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__help__subcmd__geocode,cache-info)
+                cmd="qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__help__subcmd__geocode,cache-prune)
+                cmd="qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__prune"
+                ;;
             qsv__subcmd__help__subcmd__geocode,countryinfo)
                 cmd="qsv__subcmd__help__subcmd__geocode__subcmd__countryinfo"
                 ;;
@@ -625,6 +724,12 @@ _qsv() {
             qsv__subcmd__help__subcmd__geocode,iplookupnow)
                 cmd="qsv__subcmd__help__subcmd__geocode__subcmd__iplookupnow"
                 ;;
+            qsv__subcmd__help__subcmd__geocode,opencage)
+                cmd="qsv__subcmd__help__subcmd__geocode__subcmd__opencage"
+                ;;
+            qsv__subcmd__help__subcmd__geocode,opencagenow)
+                cmd="qsv__subcmd__help__subcmd__geocode__subcmd__opencagenow"
+                ;;
             qsv__subcmd__help__subcmd__geocode,reverse)
                 cmd="qsv__subcmd__help__subcmd__geocode__subcmd__reverse"
                 ;;
@@ -636,6 +741,24 @@ _qsv() {
                 ;;
             qsv__subcmd__help__subcmd__geocode,suggestnow)
                 cmd="qsv__subcmd__help__subcmd__geocode__subcmd__suggestnow"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-clear)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__clear"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-info)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__info"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-list)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__list"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-prune)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__prune"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-set-policy)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__set__subcmd__policy"
+                ;;
+            qsv__subcmd__help__subcmd__get,cache-set-ttl)
+                cmd="qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__set__subcmd__ttl"
                 ;;
             qsv__subcmd__help__subcmd__luau,filter)
                 cmd="qsv__subcmd__help__subcmd__luau__subcmd__filter"
@@ -833,7 +956,7 @@ _qsv() {
 
     case "${cmd}" in
         qsv)
-            opts="-V -h --list --envlist --update --updatenow --version --help apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="-V -h --list --envlist --update --updatenow --version --help apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 1 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1893,7 +2016,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__describegpt)
-            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --api-key --base-url --cache-dir --ckan-api --ckan-token --description --dictionary --disk-cache-dir --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --infer-content-type --language --markdown-template --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --tag-vocab --tags --timeout --truncate-str --two-pass --user-agent --help"
+            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --allow-extra-cols --api-key --base-url --cache-dir --ckan-api --ckan-token --description --dictionary --disk-cache-dir --ds-license --ds-source --ds-updated --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --infer-content-type --language --markdown-template --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --strict-dates --tag-vocab --tags --timeout --truncate-str --two-pass --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1936,6 +2059,18 @@ _qsv() {
                     return 0
                     ;;
                 --disk-cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ds-license)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ds-source)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ds-updated)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2975,13 +3110,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow reverse reversenow suggest suggestnow help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2994,6 +3133,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3065,11 +3208,421 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__cache__subcmd__clear)
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --languages)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --min-score)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__cache__subcmd__info)
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --languages)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --min-score)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__cache__subcmd__prune)
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --languages)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --min-score)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3093,13 +3646,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__countryinfo)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3112,6 +3669,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3183,11 +3744,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3211,13 +3780,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__countryinfonow)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3230,6 +3803,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3301,11 +3878,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3329,8 +3914,50 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__help)
-            opts="countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow reverse reversenow suggest suggestnow help"
+            opts="cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__help__subcmd__cache__subcmd__prune)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -3468,6 +4095,34 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__geocode__subcmd__help__subcmd__opencage)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__help__subcmd__opencagenow)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__geocode__subcmd__help__subcmd__reverse)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -3525,13 +4180,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__index__subcmd__check)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3544,6 +4203,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3615,11 +4278,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3643,13 +4314,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__index__subcmd__load)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3662,6 +4337,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3733,11 +4412,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3761,13 +4448,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__index__subcmd__reset)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3780,6 +4471,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3851,11 +4546,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3879,13 +4582,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__index__subcmd__update)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3898,6 +4605,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3969,11 +4680,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -3997,13 +4716,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__iplookup)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4016,6 +4739,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4087,11 +4814,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4115,13 +4850,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__iplookupnow)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4134,6 +4873,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4205,11 +4948,287 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__opencage)
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --languages)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --min-score)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__geocode__subcmd__opencagenow)
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cities-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --country)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --invalid-result)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --k_weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --language)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -l)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --languages)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --min-score)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4233,13 +5252,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__reverse)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4252,6 +5275,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4323,11 +5350,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4351,13 +5386,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__reversenow)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4370,6 +5409,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4441,11 +5484,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4469,13 +5520,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__suggest)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4488,6 +5543,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4559,11 +5618,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4587,13 +5654,17 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__geocode__subcmd__suggestnow)
-            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --batch --cache-dir --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --output --progressbar --rename --timeout --help"
+            opts="-b -d -f -j -k -l -c -o -p -r -h --admin1 --api-key --batch --cache-dir --cache-ttl --cities-url --country --delimiter --force --formatstr --invalid-result --jobs --k_weight --language --languages --min-score --new-column --no-annotations --no-cache --older-than --output --progressbar --rate-limit --rename --reverse --timeout --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
                 --admin1)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4606,6 +5677,10 @@ _qsv() {
                     return 0
                     ;;
                 --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-ttl)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4677,11 +5752,19 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -4758,6 +5841,552 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__get)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__clear)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__info)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__list)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__prune)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__policy)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__ttl)
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-api)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cloud-opt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --compress)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --name)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --older-than)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --ttl)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help)
+            opts="cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__prune)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__set__subcmd__policy)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__cache__subcmd__set__subcmd__ttl)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__get__subcmd__help__subcmd__help)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__headers)
             opts="-d -J -j -h --delimiter --just-count --just-names --trim --union --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -4781,7 +6410,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help)
-            opts="apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats table template to tojsonl transpose validate help"
+            opts="apply behead blake3 cat clipboard color count datefmt dedup describegpt diff edit enum excel exclude explode extdedup extsort fetch fetchpost fill fixlengths flatten fmt foreach frequency geocode geoconvert get headers implode index input join joinp json jsonl lens log luau moarstats partition pivotp pragmastat pro profile prompt pseudo py rename replace reverse safenames sample schema scoresql search searchset select slice snappy sniff sort sortcheck split sqlp stats synthesize table template to tojsonl transpose validate help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5257,8 +6886,50 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__geocode)
-            opts="countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow reverse reversenow suggest suggestnow"
+            opts="cache-clear cache-info cache-prune countryinfo countryinfonow index-check index-load index-reset index-update iplookup iplookupnow opencage opencagenow reverse reversenow suggest suggestnow"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__geocode__subcmd__cache__subcmd__prune)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -5382,6 +7053,34 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__help__subcmd__geocode__subcmd__opencage)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__geocode__subcmd__opencagenow)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__help__subcmd__geocode__subcmd__reverse)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
@@ -5441,6 +7140,104 @@ _qsv() {
         qsv__subcmd__help__subcmd__geoconvert)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get)
+            opts="cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__clear)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__info)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__list)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__prune)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__set__subcmd__policy)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__get__subcmd__cache__subcmd__set__subcmd__ttl)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -5735,6 +7532,20 @@ _qsv() {
         qsv__subcmd__help__subcmd__pro__subcmd__workflow)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__profile)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
@@ -6111,6 +7922,20 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__stats)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__synthesize)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -7364,6 +9189,60 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__profile)
+            opts="-d -j -n -o -h --allow-external-validator --catalog --croissant-frequency --dcat-discovery-timeout --dcat-legacy-license --delimiter --force --initial-context --jobs --memcheck --no-ckan --no-dcat-discovery --no-headers --no-projection --output --profile --spec --strict --validate --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --dcat-discovery-timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --initial-context)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --profile)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --spec)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__prompt)
             opts="-f -F -m -o -q -d -h --base-delay-ms --fd-output --filters --msg --output --quiet --save-fname --workdir --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
@@ -7811,7 +9690,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__sample)
-            opts="-d -n -o -h --bernoulli --cluster --delimiter --force --max-size --no-headers --output --rng --seed --stratified --systematic --timeout --timeseries --ts-adaptive --ts-aggregate --ts-input-tz --ts-interval --ts-prefer-dmy --ts-start --user-agent --weighted --help"
+            opts="-d -n -o -h --bernoulli --cluster --delimiter --force --max-size --mergeable-reservoir --no-headers --output --rng --seed --sketch-in --sketch-out --stratified --systematic --timeout --timeseries --ts-adaptive --ts-aggregate --ts-input-tz --ts-interval --ts-prefer-dmy --ts-start --user-agent --varopt --weighted --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -7846,6 +9725,14 @@ _qsv() {
                     return 0
                     ;;
                 --seed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sketch-in)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sketch-out)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -7886,6 +9773,10 @@ _qsv() {
                     return 0
                     ;;
                 --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --varopt)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -8745,7 +10636,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__stats)
-            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --cardinality-method --dates-whitelist --delimiter --everything --force --infer-boolean --infer-dates --jobs --mad --median --memcheck --mode --mode-cardinality-cap --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --quantile-method --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --help"
+            opts="-c -d -E -j -n -o -s -h --boolean-patterns --cache-threshold --cardinality --cardinality-method --dates-whitelist --delimiter --everything --force --infer-boolean --infer-dates --jobs --mad --median --memcheck --mode --mode-cardinality-cap --no-headers --nulls --output --percentile-list --percentiles --prefer-dmy --quantile-method --quartiles --round --select --stats-jsonl --typesonly --vis-whitespace --weight --zero-padded-numeric --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -8820,6 +10711,80 @@ _qsv() {
                     return 0
                     ;;
                 --weight)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__synthesize)
+            opts="-d -j -o -n -h --consistent-fakes --correlation-threshold --delimiter --dictionary --freq-limit --infer-content-type --jobs --joint-cardinality-cap --locale --no-relationships --output --rows --seed --stats-options --strict-relationships --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --correlation-threshold)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --dictionary)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --freq-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --joint-cardinality-cap)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --locale)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rows)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -n)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --seed)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --stats-options)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;

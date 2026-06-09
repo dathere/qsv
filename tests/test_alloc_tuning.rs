@@ -63,15 +63,19 @@ fn alloc_tuning_dotenv_opt_out_honored_at_startup() {
 // var). These assert the sentinel's presence/absence to prove the `.env`-driven
 // decision works end-to-end.
 //
-// Linux + jemalloc only: `maybe_apply_thp` is a no-op stub elsewhere (THP is a
-// Linux-only jemalloc opt.* knob), so there is no re-exec to observe.
+// Gated to Linux + jemalloc (THP is a Linux-only jemalloc opt.* knob;
+// `maybe_apply_thp` is a no-op stub elsewhere) AND `feature_capable` — the `qsv`
+// and `qsvmcp` binaries share `main.rs` and call `maybe_apply_thp`, but `qsvlite`
+// (mainlite.rs) and `qsvdp` (maindp.rs) do not, so without the feature_capable
+// gate these would run against a binary that never re-execs and fail.
 
 /// `.env`-configured `QSV_THP` must trigger the re-exec (proving `maybe_apply_thp`
 /// runs after `load_dotenv`, not before it where the process env is all it sees).
 #[cfg(all(
     target_os = "linux",
     feature = "jemallocator",
-    not(feature = "mimalloc")
+    not(feature = "mimalloc"),
+    feature = "feature_capable"
 ))]
 #[test]
 fn thp_dotenv_opt_in_honored_at_startup() {
@@ -107,7 +111,8 @@ fn thp_dotenv_opt_in_honored_at_startup() {
 #[cfg(all(
     target_os = "linux",
     feature = "jemallocator",
-    not(feature = "mimalloc")
+    not(feature = "mimalloc"),
+    feature = "feature_capable"
 ))]
 #[test]
 fn thp_dotenv_opt_in_suppressed_by_no_alloc_tuning() {

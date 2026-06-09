@@ -431,18 +431,18 @@ pub fn retain_alloc_pages_for_aggregation() {}
 ///
 /// 2 MB huge pages cut TLB misses on aggregation-heavy commands over large
 /// arenas, but huge-page allocation overhead can erase that win on small inputs,
-/// so THP is strictly opt-in. Honors `QSV_NO_ALLOC_TUNING`. Best-effort: the
-/// re-exec target is resolved BEFORE any environment is mutated, and if `exec`
-/// itself fails the injected config + sentinel are rolled back, so a failure
-/// leaves the still-running process (and anything it spawns) pristine — untuned,
-/// not half-applied. No-op unless built with jemalloc on Linux.
+/// so THP is strictly opt-in. Honors `QSV_NO_ALLOC_TUNING`. The THP config and
+/// sentinel are set on the child `Command` (via `Command::env`), NOT on the
+/// parent's environment — so the path stays sound even though the logger thread
+/// is already running (mutating the shared process env would be a data race), and
+/// a failed `exec()` leaves the still-running parent pristine with nothing to roll
+/// back. No-op unless built with jemalloc on Linux.
 ///
 /// Called from `main()` right after `load_dotenv()`, so a `.env`-configured
 /// `QSV_THP` / `QSV_NO_ALLOC_TUNING` / `_RJEM_MALLOC_CONF` is honored in the
-/// re-exec decision and config merge. The discarded parent setup before this
-/// point is cheap. Failure paths use `eprintln!` rather than `log::warn!` because
-/// qsv's default log level is `off`, so a re-exec failure should still surface on
-/// stderr.
+/// re-exec decision and config merge. Failure paths use `eprintln!` rather than
+/// `log::warn!` because qsv's default log level is `off`, so a re-exec failure
+/// should still surface on stderr.
 #[cfg(all(
     feature = "jemallocator",
     not(feature = "mimalloc"),
@@ -461,47 +461,32 @@ pub fn maybe_apply_thp() {
         return;
     }
 
-    // Resolve the re-exec target BEFORE touching the environment, so a failure
-    // here leaves process state pristine (no half-applied THP config surfacing in
-    // `--envlist`, no sentinel leaked to later-spawned child processes).
     let Ok(exe) = env::current_exe() else {
         eprintln!("QSV_THP: current_exe() failed; continuing without THP");
         return;
     };
 
     let thp = "thp:always,metadata_thp:always";
-    let prev_conf = env::var_os("_RJEM_MALLOC_CONF");
-    let conf = match prev_conf.as_ref().and_then(|v| v.to_str()) {
+    let conf = match env::var_os("_RJEM_MALLOC_CONF")
+        .as_ref()
+        .and_then(|v| v.to_str())
+    {
         // jemalloc's MALLOC_CONF is last-wins per key, so put THP FIRST and the
         // existing config LAST — any user-set thp/metadata_thp then overrides ours.
         Some(existing) if !existing.is_empty() => format!("{thp},{existing}"),
         _ => thp.to_string(),
     };
 
-    // SAFETY: this runs as the first statement in main(), before any threads are
-    // spawned, so there is no concurrent reader/writer of the environment. set_var
-    // is sound only in such a single-threaded context.
-    unsafe {
-        env::set_var("_RJEM_MALLOC_CONF", &conf);
-        env::set_var(SENTINEL, "1");
-    }
-
-    // exec() replaces the process image and only returns on failure.
+    // Inject the THP config + sentinel on the CHILD only (via Command::env), never
+    // on the parent's environment. That keeps this sound now that the logger thread
+    // is already running (mutating the shared process env would be a data race), and
+    // a failed exec() leaves the still-running parent pristine — nothing to roll
+    // back. exec() replaces the process image and only returns on failure.
     let err = std::process::Command::new(exe)
         .args(env::args_os().skip(1))
+        .env("_RJEM_MALLOC_CONF", &conf)
+        .env(SENTINEL, "1")
         .exec();
-
-    // Re-exec failed before replacing the image. Roll the environment back so the
-    // still-running parent (and anything it spawns) doesn't carry the half-applied
-    // THP config or the sentinel.
-    // SAFETY: still single-threaded — exec failed, no image replacement occurred.
-    unsafe {
-        env::remove_var(SENTINEL);
-        match prev_conf {
-            Some(v) => env::set_var("_RJEM_MALLOC_CONF", v),
-            None => env::remove_var("_RJEM_MALLOC_CONF"),
-        }
-    }
     eprintln!("QSV_THP: re-exec failed ({err}); continuing without THP");
 }
 

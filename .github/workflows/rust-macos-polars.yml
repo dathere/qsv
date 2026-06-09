@@ -23,6 +23,8 @@ jobs:
 
     # runs-on: self-hosted
     runs-on: macos-26
+    # Hard cap so a hung test fails fast instead of burning the 6-hour GitHub default.
+    timeout-minutes: 90
 
     steps:
     - uses: actions/checkout@v6        

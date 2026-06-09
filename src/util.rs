@@ -372,6 +372,15 @@ pub fn init_allocator_runtime() {}
 /// — qsv is short-lived, so the process exits before retained pages matter; no
 /// restore is performed.
 ///
+/// LINUX-ONLY: this is only a win where jemalloc's default `madvise`-based page
+/// decay creates the foreground purge churn it removes. On macOS, Lever A
+/// (`background_thread`) is unsupported, so this fallback would otherwise run —
+/// but the macOS memory compressor turns page retention into a net loss
+/// (measured on a 32 GB host: `moarstats --bivariate-stats all` peak footprint
+/// +23% and peak RSS ~32 GB, tipping into swap for a 40-60% slowdown; even on a
+/// 64 GB host where it fits, ~+10 GB footprint, ~1.7x system time, and ~6%
+/// slower wall-clock, with byte-identical output). So it is gated off there.
+///
 /// NOTE: the `MALLCTL_ARENAS_ALL` (4096) pseudo-index segfaults here for decay
 /// writes via BOTH the string-name (`arena.4096.*`) and numeric-MIB interfaces
 /// (tikv-jemalloc-sys 0.7 / macOS), so all arenas can't be set in one call.
@@ -390,6 +399,12 @@ pub fn retain_alloc_pages_for_aggregation() {
     // background purging already removes the madvise churn without the RSS cost of
     // retaining pages, so applying retention on top would be pure RSS loss.
     if get_envvar_flag("QSV_NO_ALLOC_TUNING") || BACKGROUND_THREADS_ACTIVE.load(Ordering::Relaxed) {
+        return;
+    }
+    // Retention only pays off on Linux (see fn doc). On macOS the memory
+    // compressor makes it a net loss, and macOS can't run Lever A to offset it,
+    // so the fallback would otherwise misfire here.
+    if !cfg!(target_os = "linux") {
         return;
     }
     // safety: tikv_jemalloc_ctl::raw {read,write} call jemalloc's mallctl by name.

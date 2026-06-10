@@ -430,7 +430,10 @@ use foldhash::{HashMap, HashMapExt};
 use itertools::Itertools;
 use phf::phf_map;
 use qsv_dateparser::parse_with_preference;
-use rayon::slice::ParallelSliceMut;
+use rayon::{
+    iter::{IndexedParallelIterator, IntoParallelRefMutIterator, ParallelIterator},
+    slice::ParallelSliceMut,
+};
 use serde::{Deserialize, Serialize};
 // Use serde_json on big-endian platforms (e.g. s390x) due to simd_json endianness issues
 #[cfg(target_endian = "little")]
@@ -2031,14 +2034,22 @@ impl Args {
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
         // record_count is only a capacity hint for the per-column accumulators;
-        // the read limit stays usize::MAX so we always process the whole file
-        let stats = self.compute(
-            &sel,
-            &mut rdr,
-            usize::MAX,
-            record_count as usize,
-            weight_col_idx,
-        );
+        // the read limit stays usize::MAX so we always process the whole file.
+        // With more than one job available, overlap CSV parsing with stats
+        // accumulation via a two-thread pipeline - records are processed in
+        // arrival order, so results are bit-identical to the single-threaded
+        // path. --jobs 1 keeps everything on one thread.
+        let stats = if util::njobs(self.flag_jobs) > 1 {
+            self.compute_pipelined(&sel, rdr, record_count as usize, weight_col_idx)
+        } else {
+            self.compute(
+                &sel,
+                &mut rdr,
+                usize::MAX,
+                record_count as usize,
+                weight_col_idx,
+            )
+        };
         Ok((headers, stats))
     }
 
@@ -2252,7 +2263,16 @@ impl Args {
             pending.insert(i, chunk_stats);
             while let Some(chunk_stats) = pending.remove(&next_chunk) {
                 match merged {
-                    Some(ref mut m) => m.merge(chunk_stats),
+                    // Merge column-by-column in parallel: columns are
+                    // independent, and each column still sees chunks in file
+                    // order, so results are identical to a serial merge. This
+                    // keeps the merge from becoming a serial tail - merging a
+                    // high-cardinality column's Frequencies map hash-inserts
+                    // every unique value of the incoming chunk.
+                    Some(ref mut m) => m
+                        .par_iter_mut()
+                        .zip(chunk_stats)
+                        .for_each(|(acc, chunk_col)| acc.merge(chunk_col)),
                     None => merged = Some(chunk_stats),
                 }
                 next_chunk += 1;
@@ -2395,7 +2415,6 @@ impl Args {
         // one reused record buffer for the entire scan - read_byte_record fills it
         // in place, so the hot loop does no per-record heap allocation
         let mut row = csv::ByteRecord::new();
-        let mut i;
         let mut records_read = 0_usize;
         while records_read < limit {
             // safety: `stats` assumes a valid CSV, so we don't check for CSV errors
@@ -2406,38 +2425,150 @@ impl Args {
             }
             records_read += 1;
 
-            // reset the index for each row
-            i = 0;
+            Self::add_row(
+                &mut stats,
+                sel,
+                &row,
+                weight_col_idx,
+                infer_date_flags,
+                infer_boolean,
+                prefer_dmy,
+            );
+        }
+        stats
+    }
 
-            // Extract weight value if weight column is specified
-            // safety: we know the weight column index is valid because we checked it above
-            // in case of a parse error, invalid weight defaults to 1.0
-            let weight = if let Some(widx) = weight_col_idx {
-                if widx < row.len() {
-                    fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
-                } else {
-                    1.0
-                }
+    /// Processes one CSV record: extracts the optional weight and feeds every
+    /// selected field into its column's `Stats` accumulator.
+    ///
+    /// This is the per-row hot loop, shared by `compute` (single reused buffer)
+    /// and `compute_pipelined` (reader-thread batches) so it has exactly one
+    /// implementation.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn add_row(
+        stats: &mut [Stats],
+        sel: &Selection,
+        row: &csv::ByteRecord,
+        weight_col_idx: Option<usize>,
+        infer_date_flags: &[bool],
+        infer_boolean: bool,
+        prefer_dmy: bool,
+    ) {
+        // Extract weight value if weight column is specified
+        // in case of a parse error, invalid weight defaults to 1.0
+        let weight = if let Some(widx) = weight_col_idx {
+            if widx < row.len() {
+                fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
             } else {
                 1.0
-            };
+            }
+        } else {
+            1.0
+        };
 
-            // safety: because we're using iterators and INFER_DATE_FLAGS has the same size,
-            // we know we don't need to bounds check
-            debug_assert_eq!(infer_date_flags.len(), sel_len);
+        // safety: INFER_DATE_FLAGS is initialized with one flag per selected
+        // column, so it has the same size as the selection - no bounds checks
+        debug_assert_eq!(infer_date_flags.len(), sel.len());
+        let mut i = 0;
+        unsafe {
+            for field in sel.select(row) {
+                stats.get_unchecked_mut(i).add(
+                    field,
+                    weight,
+                    *infer_date_flags.get_unchecked(i),
+                    infer_boolean,
+                    prefer_dmy,
+                );
+                i += 1;
+            }
+        }
+    }
+
+    /// Pipelined variant of `compute` for the unindexed (sequential) path:
+    /// a reader thread parses CSV records into recycled batches while this
+    /// thread runs the statistics accumulation, overlapping I/O + CSV parsing
+    /// with stats work.
+    ///
+    /// Records are processed strictly in arrival (file) order, so the add()
+    /// sequence - and therefore every Stats result, including order-dependent
+    /// sortiness and t-digest state - is bit-identical to the single-threaded
+    /// `compute`. Batches are recycled through a return channel, so
+    /// steady-state processing does no per-record or per-batch allocation.
+    fn compute_pipelined(
+        &self,
+        sel: &Selection,
+        rdr: csv::Reader<Box<dyn std::io::Read + Send + 'static>>,
+        expected_rows: usize,
+        weight_col_idx: Option<usize>,
+    ) -> Vec<Stats> {
+        const BATCH_SIZE: usize = 1024;
+        // one being filled + one being drained + two in flight
+        const NBATCHES: usize = 4;
+
+        let sel_len = sel.len();
+        let mut stats = self.new_stats(sel_len, expected_rows);
+
+        // safety: we know INFER_DATE_FLAGS is Some because we called init_date_inference
+        let infer_date_flags = INFER_DATE_FLAGS.get().unwrap();
+        let infer_boolean = self.flag_infer_boolean;
+        let prefer_dmy = self.flag_prefer_dmy;
+
+        // (batch, n): n = number of valid records in the batch
+        let (full_tx, full_rx) =
+            crossbeam_channel::bounded::<(Vec<csv::ByteRecord>, usize)>(NBATCHES);
+        let (empty_tx, empty_rx) = crossbeam_channel::bounded::<Vec<csv::ByteRecord>>(NBATCHES);
+        for _ in 0..NBATCHES {
+            // safety: the channel holds NBATCHES items, so send cannot fail here
             unsafe {
-                for field in sel.select(&row) {
-                    stats.get_unchecked_mut(i).add(
-                        field,
-                        weight,
-                        *infer_date_flags.get_unchecked(i),
+                empty_tx
+                    .send(vec![csv::ByteRecord::new(); BATCH_SIZE])
+                    .unwrap_unchecked();
+            }
+        }
+
+        std::thread::scope(|s| {
+            // reader thread: fills recycled batches in place
+            s.spawn(move || {
+                let mut rdr = rdr;
+                while let Ok(mut batch) = empty_rx.recv() {
+                    let mut n = 0;
+                    while n < BATCH_SIZE {
+                        // safety: n < BATCH_SIZE == batch.len(); CSV read errors are
+                        // not checked - same "assume valid CSV" semantics as compute()
+                        if !unsafe {
+                            rdr.read_byte_record(batch.get_unchecked_mut(n))
+                                .unwrap_unchecked()
+                        } {
+                            break;
+                        }
+                        n += 1;
+                    }
+                    let eof = n < BATCH_SIZE;
+                    if full_tx.send((batch, n)).is_err() || eof {
+                        // dropping full_tx (and empty_rx) ends the consumer loop
+                        return;
+                    }
+                }
+            });
+
+            // consumer (this thread): the same per-row hot loop as compute()
+            for (batch, n) in &full_rx {
+                for row in &batch[..n] {
+                    Self::add_row(
+                        &mut stats,
+                        sel,
+                        row,
+                        weight_col_idx,
+                        infer_date_flags,
                         infer_boolean,
                         prefer_dmy,
                     );
-                    i += 1;
                 }
+                // recycle the batch; fails only after the reader exited at EOF
+                let _ = empty_tx.send(batch);
             }
-        }
+        });
         stats
     }
 

@@ -3262,6 +3262,40 @@ fn apply_summarize_stats_columns() {
 }
 
 #[test]
+fn apply_summarize_colliding_sanitized_headers() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_colliding_sanitized_headers");
+    // `a.b` and `a_b` both naively sanitize to `a_b`; without unique-name
+    // disambiguation the second column would overwrite the first in the context
+    // map (and the default prompt would reference `{{ a_b }}` twice), silently
+    // summarizing the wrong value. With util::safe_header_names they become
+    // `a_b` and `a_b_2`, so both distinct values must reach the prompt.
+    // (`.` is used rather than `-` since `-` is a range operator in select syntax.)
+    wrk.create(
+        "data.csv",
+        vec![svec!["a.b", "a_b"], svec!["valueAAA", "valueBBB"]],
+    );
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("a.b,a_b")
+        .args(["-c", "summary"])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let summary = &got[1][2];
+    assert!(summary.contains("valueAAA"), "missing first col: {summary}");
+    assert!(
+        summary.contains("valueBBB"),
+        "missing second col: {summary}"
+    );
+}
+
+#[test]
 fn apply_summarize_requires_new_column() {
     let wrk = Workdir::new("apply_summarize_requires_new_column");
     wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);

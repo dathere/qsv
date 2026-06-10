@@ -939,15 +939,12 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
         return fail_incorrectusage_clierror!("apply summarize requires --new-column (-c).");
     };
 
-    // sanitize header names the same way `qsv template` does: non-alphanumeric -> '_'
-    let sanitized_headers: Vec<String> = headers
-        .iter()
-        .map(|h| {
-            h.chars()
-                .map(|c| if c.is_alphanumeric() { c } else { '_' })
-                .collect()
-        })
-        .collect();
+    // Sanitize header names into safe Mini Jinja context keys (non-alphanumeric -> '_').
+    // Use util::safe_header_names (keep_case=true) rather than a naive per-char map so that
+    // headers which sanitize to the same key (e.g. `a-b` and `a_b`) get unique disambiguated
+    // names (`a_b`, `a_b_2`) instead of silently colliding & overwriting each other in the
+    // per-record context map. The SAME mapping drives both the default prompt and the context.
+    let (sanitized_headers, _) = util::safe_header_names(headers, false, false, None, "", true);
 
     // resolve effective base_url / model / api_key: CLI flag > env var > built-in default
     let base_url = args

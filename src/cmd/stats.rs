@@ -235,7 +235,7 @@ stats options:
                                              this choice is rejected.
                               [default: exact]
     --cardinality-method <m>  Algorithm used to compute the --cardinality column. Choices:
-                                exact  - track every unique value in a HashMap/Unsorted
+                                exact  - track every unique value in a frequency map
                                          (current behavior). O(cardinality) memory per
                                          column. Subject to --mode-cardinality-cap, which
                                          emits the ">=<n>" sentinel on overflow.

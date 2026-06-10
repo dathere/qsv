@@ -1846,7 +1846,7 @@ dependencies = [
 [[package]]
 name = "csvs_convert"
 version = "0.13.1"
-source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats_with_qsv-stats#62405775888d7b2888770b2fdb9895a6b0e86d6c"
+source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats_with_qsv-stats#dfd65e209b7a9e012a104fbbf80b611597e1df7a"
 dependencies = [
  "chrono",
  "counter",
@@ -1860,7 +1860,7 @@ dependencies = [
  "pdatastructs",
  "petgraph",
  "postgres",
- "qsv-stats 0.53.0",
+ "qsv-stats",
  "rand 0.10.1",
  "regex",
  "rusqlite",
@@ -6232,7 +6232,7 @@ dependencies = [
  "pragmastat",
  "pyo3",
  "qsv-dateparser",
- "qsv-stats 0.54.0",
+ "qsv-stats",
  "qsv-tabwriter",
  "qsv_currency",
  "qsv_docopt",
@@ -6302,21 +6302,9 @@ dependencies = [
 
 [[package]]
 name = "qsv-stats"
-version = "0.53.0"
+version = "0.54.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0718dad04c7f53a00ccf6947de6daccaf7194ef1408f3d4b034adef8a7adf6c"
-dependencies = [
- "hashbrown 0.17.1",
- "num-traits",
- "rayon",
- "serde",
-]
-
-[[package]]
-name = "qsv-stats"
-version = "0.54.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb55945e1a013c2afeaca3e6735513fc5bb55bc252ea6ff7c251edc45fd2e39f"
+checksum = "8e834151cd17615d7666f5c86a5d7f6b768f67dd9b20feb583be2ae23e8a6b7a"
 dependencies = [
  "hashbrown 0.17.1",
  "num-traits",
@@ -9998,18 +9986,18 @@ dependencies = [
 
 [[package]]
 name = "zerocopy"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b065d4f0e55f82fae73202e189638116a87c55ab6b8e6c2721e13dd9d854ad1"
+checksum = "ce1022995ff5ff5d841ad7d994facc23098cd40152f2c1d11cd607c6f530653f"
 dependencies = [
  "zerocopy-derive",
 ]
 
 [[package]]
 name = "zerocopy-derive"
-version = "0.8.50"
+version = "0.8.52"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0b631b19d36a892ab55420c92dbc83ccd79274f25be714855d3074aa71cab639"
+checksum = "1ae7f38b72ec2a254e2b87ef277cf2cd4fb97cbebf944faa6f33354da0867930"
 dependencies = [
  "proc-macro2",
  "quote",

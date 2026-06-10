@@ -285,13 +285,21 @@ fn describegpt_context_file_injects_into_prompt() {
     );
 
     // With --context-file, the rendered system prompt must contain the context block.
+    // Capture Output once and assert success before inspecting stdout, so a non-zero
+    // exit that still emits partial output can't mask a failure.
     let mut cmd = wrk.command("describegpt");
     cmd.arg("in.csv")
         .arg("--dictionary")
         .arg("--prepare-context")
         .args(["--context-file", "context.md"])
         .arg("--no-cache");
-    let got: String = wrk.stdout(&mut cmd);
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        output.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let got = String::from_utf8(output.stdout).expect("describegpt stdout should be UTF-8");
     assert!(
         got.contains("ADDITIONAL CONTEXT"),
         "context block missing from prepared prompt"
@@ -308,7 +316,14 @@ fn describegpt_context_file_injects_into_prompt() {
         .arg("--dictionary")
         .arg("--prepare-context")
         .arg("--no-cache");
-    let got_no_ctx: String = wrk.stdout(&mut cmd_no_ctx);
+    let output_no_ctx = cmd_no_ctx.output().expect("describegpt should run");
+    assert!(
+        output_no_ctx.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output_no_ctx.stderr)
+    );
+    let got_no_ctx =
+        String::from_utf8(output_no_ctx.stdout).expect("describegpt stdout should be UTF-8");
     assert!(
         !got_no_ctx.contains("ADDITIONAL CONTEXT"),
         "context block should be absent when --context-file is not set"
@@ -329,8 +344,13 @@ fn describegpt_context_file_missing_errors() {
         .args(["--context-file", "does_not_exist.md"])
         .arg("--no-cache");
 
-    wrk.assert_err(&mut cmd);
-    let got = wrk.output_stderr(&mut cmd);
+    // Run once and check both exit status and stderr, avoiding a duplicate invocation.
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        !output.status.success(),
+        "describegpt should fail on a missing --context-file"
+    );
+    let got = String::from_utf8_lossy(&output.stderr);
     assert!(
         got.contains("Failed to read --context-file"),
         "expected context-file read error, got: {got}"

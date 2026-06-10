@@ -2542,12 +2542,20 @@ fn get_cache_key_with_flag(
         .map_or(String::new(), path_fingerprint);
     // The --context-file contents are inlined into the rendered prompts via the `{{ context }}`
     // template variable, so track local-file edits by content fingerprint. The key is only
-    // EXTENDED when the option is set; an unconditional suffix would change the key for every
-    // run that doesn't use --context-file, busting describegpt caches (keyed on file content,
-    // not qsv version, so they're meant to survive upgrades) despite identical rendered prompts.
+    // EXTENDED when the file actually contributes content to the prompt, for two reasons:
+    //  1. Unset: an unconditional suffix would change the key for every run that doesn't use
+    //     --context-file, busting describegpt caches (keyed on file content, not qsv version, so
+    //     they're meant to survive upgrades) despite identical rendered prompts.
+    //  2. Set-but-empty: an empty file renders no `{{ context }}` block (the `{% if context %}`
+    //     guard sees an empty string), so its prompt is byte-for-byte identical to the unset case
+    //     and its key must match too. Gating on file length keeps that parity. A missing /
+    //     unreadable file never reaches a cache lookup — `get_prompt` reads it first and errors out
+    //     — so it needs no special handling here.
     let context_suffix = match args.flag_context_file.as_deref() {
-        Some(path) => format!(";{path:?};{fp}", fp = path_fingerprint(path)),
-        None => String::new(),
+        Some(path) if fs::metadata(path).is_ok_and(|m| m.len() > 0) => {
+            format!(";{path:?};{fp}", fp = path_fingerprint(path))
+        },
+        _ => String::new(),
     };
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
@@ -6330,10 +6338,9 @@ mod tests {
                 "flag_fewshot_examples",
                 Box::new(|a| a.flag_fewshot_examples = true),
             ),
-            (
-                "flag_context_file",
-                Box::new(|a| a.flag_context_file = Some("context.md".to_string())),
-            ),
+            // flag_context_file is covered by the dedicated cache_key_reflects_context_file_*
+            // tests below — its key contribution is gated on the file existing & being
+            // non-empty, which a bare-string closure here can't set up.
         ];
 
         for (label, mutate) in cases {
@@ -6408,6 +6415,31 @@ mod tests {
         assert_ne!(
             key_v1, key_v2,
             "in-place context-file edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_empty_context_file_matches_unset() {
+        // An empty --context-file renders no `{{ context }}` block, so its prompt is
+        // identical to the unset case and its cache key must match too — otherwise an
+        // empty context file would bust caches despite a byte-for-byte identical prompt.
+        let tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_empty_context_")
+            .suffix(".md")
+            .tempfile()
+            .expect("create empty context tmpfile");
+        // tmp is created empty (zero bytes) and left empty.
+
+        let unset = default_args_for_test();
+        let key_unset = get_cache_key_with_flag(&unset, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut empty = default_args_for_test();
+        empty.flag_context_file = Some(tmp.path().to_string_lossy().into_owned());
+        let key_empty = get_cache_key_with_flag(&empty, PromptType::Dictionary, "gpt-x", "valid");
+
+        assert_eq!(
+            key_unset, key_empty,
+            "empty context-file must produce the same cache key as no context-file"
         );
     }
 

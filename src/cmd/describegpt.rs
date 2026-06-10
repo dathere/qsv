@@ -481,7 +481,7 @@ use whatlang::detect;
 use crate::{
     CliError, CliResult,
     config::Config,
-    regex_oncelock, util,
+    llmutil, regex_oncelock, util,
     util::{QUIET_FLAG, print_status, process_input, run_qsv_cmd},
 };
 #[cfg(feature = "feature_capable")]
@@ -989,80 +989,6 @@ fn parse_language_option(language: Option<&String>) -> (bool, f64, Option<String
     }
 }
 
-/// Sends an HTTP request using the provided client and parameters.
-///
-/// # Arguments
-///
-/// * `client` - The HTTP client used to make the request
-/// * `api_key` - Optional API key for authentication via Bearer token
-/// * `request_data` - Optional JSON data to include in POST requests
-/// * `method` - HTTP method to use ("GET" or "POST")
-/// * `url` - The URL to send the request to
-///
-/// # Returns
-///
-/// Returns a `CliResult` containing the HTTP response on success.
-///
-/// # Errors
-///
-/// Returns a `CliError` if:
-/// * An unsupported HTTP method is specified
-/// * GET request includes request data
-/// * POST request is missing required request data
-/// * The HTTP request fails
-/// * The response has a non-success status code
-fn send_request(
-    client: &Client,
-    api_key: Option<&str>,
-    request_data: Option<&serde_json::Value>,
-    method: &str,
-    url: &str,
-) -> CliResult<reqwest::blocking::Response> {
-    // Build request based on method
-    let mut request = match method {
-        "GET" => {
-            if request_data.is_some() {
-                return fail_clierror!("GET requests cannot include request data");
-            }
-            client.get(url)
-        },
-        "POST" => {
-            let Some(data) = request_data else {
-                return fail_clierror!("POST requests require request data");
-            };
-            client
-                .post(url)
-                .header("Content-Type", "application/json")
-                .body(data.to_string())
-        },
-        other => {
-            let error_json = json!({"Unsupported HTTP method ": other});
-            return fail_clierror!("{error_json}");
-        },
-    };
-
-    // Add API key header if provided
-    if let Some(key) = api_key
-        && !key.is_empty()
-    {
-        request = request.header("Authorization", format!("Bearer {key}"));
-    }
-
-    // Send request and handle response
-    let response = request.send()?;
-
-    // Check for HTTP error status
-    if !response.status().is_success() {
-        let status = response.status();
-        let output = response
-            .text()
-            .unwrap_or_else(|_| "Unable to read error response".to_string());
-        return fail_clierror!("HTTP {status} error: {output}");
-    }
-
-    Ok(response)
-}
-
 /// Validates the provided model against available models from the API endpoint.
 ///
 /// # Arguments
@@ -1102,7 +1028,7 @@ fn check_model(client: &Client, api_key: Option<&str>, args: &Args) -> CliResult
     // previous branch where the no-flag case skipped the prompt-file
     // fallback.
     let base_url = prompt_file.base_url.clone();
-    let response = send_request(
+    let response = llmutil::send_request(
         client,
         api_key,
         None,
@@ -2280,40 +2206,6 @@ fn get_prompt(
     ))
 }
 
-/// Makes a completion request to the LLM API and processes the response.
-///
-/// # Arguments
-///
-/// * `args` - Command line arguments containing configuration options
-/// * `client` - The HTTP client used to make API requests
-/// * `model` - The model to use for completion
-/// * `api_key` - API key for authentication
-/// * `messages` - The messages to send to the API
-///
-/// # Returns
-///
-/// Returns a `CompletionResponse` containing:
-/// * The completion text
-/// * Optional reasoning
-/// * Token usage statistics
-///
-/// # Details
-///
-/// This function:
-/// 1. Gets prompt file configuration
-/// 2. Constructs the API request with model, max tokens, messages
-/// 3. Adds any additional model properties specified
-/// 4. Makes POST request to chat completions endpoint
-/// 5. Processes response to extract completion, reasoning, token usage
-/// 6. Replaces placeholder signature with model name and timestamp
-///
-/// # Errors
-///
-/// Returns a `CliError` if:
-/// * The API request fails
-/// * The response cannot be parsed
-/// * Required fields are missing from response
-/// * The API returns an error message
 fn get_completion(
     args: &Args,
     client: &Client,
@@ -2328,85 +2220,22 @@ fn get_completion(
 
     let max_tokens = (prompt_file.tokens > 0).then_some(prompt_file.tokens);
 
-    // Create request data
-    let mut request_data = json!({
-        "model": model,
-        "max_tokens": max_tokens,
-        "messages": messages,
-        "stream": false
-    });
-
-    // Add additional model properties if provided
-    if let Some(addl_props) = args.flag_addl_props.as_ref() {
-        let addl_props_json: serde_json::Value = serde_json::from_str(addl_props)
-            .map_err(|e| CliError::Other(format!("Invalid JSON in --addl-props: {e:?}")))?;
-
-        // If addl_props_json is an object, extend/overlay all its keys into request_data
-        if let Some(obj) = addl_props_json.as_object() {
-            for (key, value) in obj {
-                request_data[key] = value.clone();
-            }
-        } else {
-            // If it is not an object, treat as error (must be JSON object of key/values)
-            return fail_clierror!(
-                "--addl-props should be a JSON object mapping keys to values; got: {}",
-                addl_props_json
-            );
-        }
-    }
-
-    // deserializing request_data is relatively expensive, so only do it if debug is enabled
-    if log::log_enabled!(log::Level::Trace) {
-        log::trace!("Request data: {request_data:?}");
-    }
-
-    // Get response from POST request to chat completions endpoint
-    let completions_endpoint = "/chat/completions";
-    let start_time = Instant::now();
-    let response = send_request(
+    // Delegate the HTTP request/response plumbing to the shared llmutil helper.
+    let llm_response = llmutil::chat_completion(
         client,
-        Some(api_key),
-        Some(&request_data),
-        "POST",
-        &format!("{base_url}{completions_endpoint}"),
+        &base_url,
+        api_key,
+        model,
+        max_tokens,
+        messages,
+        args.flag_addl_props.as_deref(),
     )?;
 
-    // Parse response as JSON
-    let response_json: serde_json::Value = response.json()?;
-    if log::log_enabled!(log::Level::Trace) {
-        log::trace!("Response: {response_json:?}");
-    }
-
-    // If response is an error, print error message
-    if let serde_json::Value::Object(ref map) = response_json
-        && map.contains_key("error")
-    {
-        return fail_clierror!("LLM API Error: {}", map["error"]);
-    }
-
-    // Get completion and reasoning from response
-    let Some(completion) = response_json["choices"]
-        .get(0)
-        .and_then(|choice| choice["message"]["content"].as_str())
-    else {
-        return fail_clierror!("Invalid response: missing or malformed completion content");
-    };
-    // Reasoning is optional - use empty string if not provided
-    let reasoning = response_json["choices"]
-        .get(0)
-        .and_then(|choice| choice["message"]["reasoning"].as_str())
-        .unwrap_or("");
-
-    // Get token usage from response
-    let Some(usage) = response_json["usage"].as_object() else {
-        return fail_clierror!("Invalid response: missing or malformed usage");
-    };
-    let elapsed_ms = start_time.elapsed().as_millis() as u64;
     let token_usage = TokenUsage {
-        prompt:     usage["prompt_tokens"].as_u64().unwrap_or(0),
-        completion: usage["completion_tokens"].as_u64().unwrap_or(0),
-        total:      usage["total_tokens"].as_u64().unwrap_or(0),
-        elapsed:    elapsed_ms,
+        prompt:     llm_response.prompt_tokens,
+        completion: llm_response.completion_tokens,
+        total:      llm_response.total_tokens,
+        elapsed:    llm_response.elapsed_ms,
     };
 
     // Determine format based on prompt type and flag_prompt
@@ -2417,12 +2246,18 @@ fn get_completion(
     };
 
     // Replace attribution placeholder using unified function
-    let completion =
-        replace_attribution_placeholder(completion, args, model, &base_url, format, kind);
+    let completion = replace_attribution_placeholder(
+        &llm_response.content,
+        args,
+        model,
+        &base_url,
+        format,
+        kind,
+    );
 
     Ok(CompletionResponse {
         response: completion,
-        reasoning: reasoning.to_string(),
+        reasoning: llm_response.reasoning,
         token_usage,
     })
 }

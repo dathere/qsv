@@ -1,5 +1,128 @@
 use crate::workdir::Workdir;
 
+// ---------------------------------------------------------------------------
+// `apply summarize` tests use an in-process actix mock of an OpenAI-compatible
+// /chat/completions endpoint so no real network/LLM is hit.
+// ---------------------------------------------------------------------------
+mod summarize_mock {
+    use std::{
+        net::SocketAddr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+            mpsc,
+        },
+        thread,
+    };
+
+    use actix_web::{App, HttpResponse, HttpServer, dev::ServerHandle, rt, web};
+    use serde_json::{Value, json};
+
+    // Local mock-server bind address (not production code).
+    const BIND_HOST: &str = "127.0.0.1"; // DevSkim: ignore DS162092
+
+    #[derive(Clone)]
+    pub struct ChatState {
+        pub requests: Arc<AtomicUsize>,
+    }
+
+    // OpenAI-compatible chat-completions handler. Echoes the received user prompt
+    // back as the completion content (so tests can assert the Mini Jinja prompt was
+    // rendered with the expected columns), and reflects an addl-prop `temperature`
+    // when present (so the --addl-props passthrough can be verified).
+    async fn serve_chat(state: web::Data<ChatState>, body: web::Bytes) -> HttpResponse {
+        state.requests.fetch_add(1, Ordering::SeqCst);
+        let v: Value = serde_json::from_slice(&body).unwrap_or_else(|_| json!({}));
+        let user = v["messages"][0]["content"].as_str().unwrap_or("");
+        let content = if let Some(t) = v["temperature"].as_f64() {
+            format!("TEMP={t}")
+        } else {
+            format!("SUMMARY[{user}]")
+        };
+        HttpResponse::Ok().json(json!({
+            "choices": [{"message": {"content": content}}],
+            "usage": {"prompt_tokens": 5, "completion_tokens": 7, "total_tokens": 12}
+        }))
+    }
+
+    // Always-fails handler for exercising --on-error.
+    async fn serve_fail(state: web::Data<ChatState>) -> HttpResponse {
+        state.requests.fetch_add(1, Ordering::SeqCst);
+        HttpResponse::InternalServerError().body("boom")
+    }
+
+    async fn run_webserver(
+        tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
+        state: ChatState,
+    ) -> std::io::Result<()> {
+        let server_builder = HttpServer::new(move || {
+            App::new()
+                .app_data(web::Data::new(state.clone()))
+                .service(web::resource("/v1/chat/completions").to(serve_chat))
+                .service(web::resource("/vfail/chat/completions").to(serve_fail))
+        });
+        let bound = match server_builder.bind((BIND_HOST, 0)) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = tx.send(Err(format!("bind failed: {e}")));
+                return Err(e);
+            },
+        };
+        let addr = bound.addrs().into_iter().next().unwrap();
+        let server = bound.run();
+        let _ = tx.send(Ok((server.handle(), addr)));
+        server.await
+    }
+
+    pub struct ChatWebServer {
+        handle: Option<ServerHandle>,
+        addr:   SocketAddr,
+        state:  ChatState,
+    }
+
+    impl ChatWebServer {
+        pub fn start() -> Self {
+            let state = ChatState {
+                requests: Arc::new(AtomicUsize::new(0)),
+            };
+            let server_state = state.clone();
+            let (tx, rx) = mpsc::channel();
+            thread::spawn(move || rt::System::new().block_on(run_webserver(tx, server_state)));
+            match rx.recv_timeout(std::time::Duration::from_secs(10)) {
+                Ok(Ok((handle, addr))) => Self {
+                    handle: Some(handle),
+                    addr,
+                    state,
+                },
+                Ok(Err(msg)) => panic!("test webserver failed to bind: {msg}"),
+                Err(e) => panic!("test webserver did not start within 10s ({e:?})"),
+            }
+        }
+
+        // Base URL for the OK endpoint (qsv appends `/chat/completions`).
+        pub fn base_url(&self) -> String {
+            format!("http://{}/v1", self.addr) // DevSkim: ignore DS137138
+        }
+
+        // Base URL for the always-fail endpoint.
+        pub fn fail_url(&self) -> String {
+            format!("http://{}/vfail", self.addr) // DevSkim: ignore DS137138
+        }
+
+        pub fn requests(&self) -> usize {
+            self.state.requests.load(Ordering::SeqCst)
+        }
+    }
+
+    impl Drop for ChatWebServer {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                rt::System::new().block_on(handle.stop(true));
+            }
+        }
+    }
+}
+
 #[test]
 fn apply_ops_unknown_operation() {
     let wrk = Workdir::new("unknown_op");
@@ -2996,4 +3119,228 @@ fn apply_empty_selection_without_new_column() {
     let got: String = wrk.output_stderr(&mut cmd);
     let expected = "usage error: No columns selected. Column selection is empty.\n";
     assert_eq!(got, expected);
+}
+
+#[test]
+fn apply_summarize_default_prompt() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_default_prompt");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "text"],
+            svec!["1", "hello world"],
+            svec!["2", "goodbye moon"],
+        ],
+    );
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // header row + 2 data rows
+    assert_eq!(got[0], svec!["id", "text", "summary"]);
+    // the default prompt echoes the selected column value back through the mock
+    assert!(
+        got[1][2].contains("hello world"),
+        "row 1 summary missing column value: {:?}",
+        got[1]
+    );
+    assert!(got[2][2].contains("goodbye moon"), "row 2: {:?}", got[2]);
+}
+
+#[test]
+fn apply_summarize_custom_prompt_multi_col() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_custom_prompt_multi_col");
+    wrk.create(
+        "data.csv",
+        vec![svec!["subject", "body"], svec!["Outage", "Server is down"]],
+    );
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("subject,body")
+        .args(["-c", "summary"])
+        .args([
+            "--prompt",
+            "Subject: {{ subject }} | Body: {{ body }} | Row: {{ QSV_ROWNO }}",
+        ])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], svec!["subject", "body", "summary"]);
+    let summary = &got[1][2];
+    assert!(summary.contains("Outage"), "missing subject: {summary}");
+    assert!(
+        summary.contains("Server is down"),
+        "missing body: {summary}"
+    );
+    assert!(summary.contains("Row: 1"), "missing rowno: {summary}");
+}
+
+#[test]
+fn apply_summarize_prompt_file() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_prompt_file");
+    wrk.create("data.csv", vec![svec!["text"], svec!["alpha"]]);
+    wrk.create_from_string("prompt.txt", "PROMPT:{{ text }}");
+
+    let prompt_path = wrk.path("prompt.txt");
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .args(["--prompt-file", prompt_path.to_str().unwrap()])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got[1][1].contains("PROMPT:alpha"), "got: {:?}", got[1]);
+}
+
+#[test]
+fn apply_summarize_addl_props() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_addl_props");
+    wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .args(["--addl-props", r#"{"temperature": 0.2}"#])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // the mock reflects the temperature prop back, proving it was sent through
+    assert_eq!(got[1][1], "TEMP=0.2");
+}
+
+#[test]
+fn apply_summarize_stats_columns() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_stats_columns");
+    wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .arg("--stats")
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got[0],
+        svec!["text", "summary", "summary_elapsed_ms", "summary_tokens"]
+    );
+    // the mock always reports 12 total tokens
+    assert_eq!(got[1][3], "12");
+}
+
+#[test]
+fn apply_summarize_requires_new_column() {
+    let wrk = Workdir::new("apply_summarize_requires_new_column");
+    wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);
+
+    // docopt requires --new-column for the summarize usage pattern, so omitting it
+    // is rejected before any LLM call is attempted.
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize").arg("text").arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn apply_summarize_no_headers_error() {
+    let wrk = Workdir::new("apply_summarize_no_headers_error");
+    wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);
+
+    // select by 1-based index so the selection itself succeeds with --no-headers,
+    // letting summarize_run's own "requires headers" guard fire.
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("1")
+        .args(["-c", "summary"])
+        .arg("--no-headers")
+        .args(["-u", "http://127.0.0.1:1/v1"]) // DevSkim: ignore DS137138
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    let got: String = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("requires headers"), "got: {got}");
+}
+
+#[test]
+fn apply_summarize_on_error_skip() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_on_error_skip");
+    wrk.create("data.csv", vec![svec!["text"], svec!["x"]]);
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .args(["--on-error", "skip"])
+        .args(["-u", &server.fail_url()]) // always returns HTTP 500
+        .args(["-k", "NONE"])
+        .arg("--no-cache")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert!(got[1][1].starts_with("<ERROR:"), "got: {:?}", got[1]);
+}
+
+#[test]
+fn apply_summarize_cache_hit() {
+    use summarize_mock::ChatWebServer;
+    let server = ChatWebServer::start();
+    let wrk = Workdir::new("apply_summarize_cache_hit");
+    // two IDENTICAL rows -> identical rendered prompt -> identical cache key
+    wrk.create(
+        "data.csv",
+        vec![svec!["text"], svec!["same"], svec!["same"]],
+    );
+    let cache_dir = wrk.path("summ-cache");
+
+    let mut cmd = wrk.command("apply");
+    cmd.arg("summarize")
+        .arg("text")
+        .args(["-c", "summary"])
+        .args(["-u", &server.base_url()])
+        .args(["-k", "NONE"])
+        .args(["--cache-dir", cache_dir.to_str().unwrap()])
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.len(), 3); // header + 2 rows
+    assert_eq!(got[1][1], got[2][1]); // identical summaries
+    // the second identical row should be a cache hit -> only ONE LLM request
+    assert_eq!(server.requests(), 1, "expected exactly one LLM call");
 }

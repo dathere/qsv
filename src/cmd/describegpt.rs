@@ -2541,21 +2541,24 @@ fn get_cache_key_with_flag(
         .as_deref()
         .map_or(String::new(), path_fingerprint);
     // The --context-file contents are inlined into the rendered prompts via the `{{ context }}`
-    // template variable, so track local-file edits by content fingerprint. The key is only
-    // EXTENDED when the file actually contributes content to the prompt, for two reasons:
-    //  1. Unset: an unconditional suffix would change the key for every run that doesn't use
+    // template variable, so track local-file edits by content fingerprint. The key collapses to
+    // the unset (suffix-less) key in exactly TWO cases, and keeps a path-specific suffix otherwise:
+    //  1. Unset (None): an unconditional suffix would change the key for every run that doesn't use
     //     --context-file, busting describegpt caches (keyed on file content, not qsv version, so
     //     they're meant to survive upgrades) despite identical rendered prompts.
-    //  2. Set-but-empty: an empty file renders no `{{ context }}` block (the `{% if context %}`
-    //     guard sees an empty string), so its prompt is byte-for-byte identical to the unset case
-    //     and its key must match too. Gating on file length keeps that parity. A missing /
-    //     unreadable file never reaches a cache lookup — `get_prompt` reads it first and errors out
-    //     — so it needs no special handling here.
+    //  2. Set to a readable ZERO-BYTE file: it renders no `{{ context }}` block (the `{% if context
+    //     %}` guard sees an empty string), so its prompt is byte-for-byte identical to the unset
+    //     case and its key must match too.
+    // A missing/unreadable path is NOT collapsed: the inference path's `get_prompt` reads the file
+    // first and errors out before any lookup, but cache-removal/inspection paths (--forget,
+    // invalidate_cache_entry) compute this key WITHOUT reading the file. Collapsing a typo'd or
+    // deleted path onto the unset key there would forget/inspect the wrong (no-context) entry, so
+    // it keeps a path-specific suffix (path_fingerprint returns "" for a missing/unreadable file,
+    // leaving the quoted path alone - still distinct from the suffix-less unset key).
     let context_suffix = match args.flag_context_file.as_deref() {
-        Some(path) if fs::metadata(path).is_ok_and(|m| m.len() > 0) => {
-            format!(";{path:?};{fp}", fp = path_fingerprint(path))
-        },
-        _ => String::new(),
+        None => String::new(),
+        Some(path) if fs::metadata(path).is_ok_and(|m| m.len() == 0) => String::new(),
+        Some(path) => format!(";{path:?};{fp}", fp = path_fingerprint(path)),
     };
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
@@ -6440,6 +6443,26 @@ mod tests {
         assert_eq!(
             key_unset, key_empty,
             "empty context-file must produce the same cache key as no context-file"
+        );
+    }
+
+    #[test]
+    fn cache_key_missing_context_file_differs_from_unset() {
+        // A missing/typo'd --context-file must NOT collapse onto the unset key. The inference
+        // path errors in get_prompt before any lookup, but cache-removal paths (--forget,
+        // invalidate_cache_entry) compute the key WITHOUT reading the file; collapsing onto the
+        // unset key there would forget/inspect the wrong (no-context) cache entry.
+        let unset = default_args_for_test();
+        let key_unset = get_cache_key_with_flag(&unset, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut missing = default_args_for_test();
+        missing.flag_context_file = Some("this_context_file_does_not_exist.md".to_string());
+        let key_missing =
+            get_cache_key_with_flag(&missing, PromptType::Dictionary, "gpt-x", "valid");
+
+        assert_ne!(
+            key_unset, key_missing,
+            "a missing context-file must not share the unset cache key"
         );
     }
 

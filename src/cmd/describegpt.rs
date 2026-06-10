@@ -2541,11 +2541,14 @@ fn get_cache_key_with_flag(
         .as_deref()
         .map_or(String::new(), path_fingerprint);
     // The --context-file contents are inlined into the rendered prompts via the `{{ context }}`
-    // template variable, so track local-file edits by content fingerprint. Empty when unset.
-    let context_file_fp = args
-        .flag_context_file
-        .as_deref()
-        .map_or(String::new(), path_fingerprint);
+    // template variable, so track local-file edits by content fingerprint. The key is only
+    // EXTENDED when the option is set; an unconditional suffix would change the key for every
+    // run that doesn't use --context-file, busting describegpt caches (keyed on file content,
+    // not qsv version, so they're meant to survive upgrades) despite identical rendered prompts.
+    let context_suffix = match args.flag_context_file.as_deref() {
+        Some(path) => format!(";{path:?};{fp}", fp = path_fingerprint(path)),
+        None => String::new(),
+    };
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
     // binary swap / upgrade invalidates cached prompts. `should_use_duckdb()` is true
@@ -2566,10 +2569,9 @@ fn get_cache_key_with_flag(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
          {num_tags};{enum_threshold};{infer_content_type};{sample_size};{fewshot_examples};\
-         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?};\
-         {context_file:?};{context_file_fp}",
+         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?\
+         }{context_suffix}",
         prompt_file = args.flag_prompt_file,
-        context_file = args.flag_context_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
         language = args.flag_language,
@@ -6459,11 +6461,11 @@ mod tests {
                 );
             },
             None => {
-                // The dictionary fingerprint serializes as None. It's now followed by the
-                // context-file segment ({context_file:?};{context_file_fp}), which is
-                // None;<empty> for the default test args, so the key tail is ";None;None;".
+                // With --context-file unset (the default test args) the context suffix is
+                // empty, so the key still ends with the dictionary fingerprint serialized
+                // as None — unchanged from before --context-file was added.
                 assert!(
-                    key.ends_with(";None;None;"),
+                    key.ends_with(";None"),
                     "unset dictionary should serialize as None: {key}"
                 );
             },

@@ -4019,16 +4019,16 @@ impl Stats {
 
         // preallocate memory for the unsorted stats structs.
         // expected_rows is the actual row count (sequential) or chunk size
-        // (parallel worker) - if the caller has no estimate (0), fall back to
-        // 10,000 to avoid allocating too much memory.
+        // (parallel worker), used directly: every caller passes a real value,
+        // so 0 means a genuinely empty input - reserving anything for it would
+        // be waste. Vec::with_capacity(0) doesn't allocate, and the frequency
+        // map capacities below clamp to a small minimum. If a row count was
+        // ever underestimated (e.g. a partial count after a CSV read error),
+        // the accumulators simply grow organically - capacity is never a limit.
         // NOTE: this was previously read from RECORD_COUNT, which is only set
-        // AFTER the compute pass, so the 10,000 fallback was always used (and
+        // AFTER the compute pass, so a 10,000 fallback was always used (and
         // the repeat_n clone in new_stats discarded the reservation anyway).
-        let record_count = if expected_rows == 0 {
-            10_000
-        } else {
-            expected_rows
-        };
+        let record_count = expected_rows;
         // Under --cardinality-method approx with mode tracking off, the HLL sketch
         // alone covers the cardinality column — skip allocating the exact modes
         // tracker (Unsorted/HashMap) entirely. When mode/antimode are also requested

@@ -52,9 +52,9 @@ CACHING:
 As LLM inferencing takes time and can be expensive, describegpt caches the LLM inferencing results
 in a either a disk cache (default) or a Redis cache. It does so by calculating the BLAKE3 hash of the
 input file and using it as the primary cache key along with the prompt type, model and every flag that
-influences the rendered prompt (including prompt-file, language, tag-vocab, num-tags, enum-threshold,
-infer-content-type, sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the generated Data
-Dictionary), so changing any of them produces a fresh LLM call rather than stale cached output.
+influences the rendered prompt (including prompt-file, context-file, language, tag-vocab, num-tags,
+enum-threshold, infer-content-type, sample-size, fewshot-examples, the QSV_DUCKDB_PATH toggle and the
+generated Data Dictionary), so changing any of them produces a fresh LLM call rather than stale cached output.
 
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
@@ -265,6 +265,14 @@ describegpt options:
                            If no file is provided, default prompts will be used.
                            The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
+    --context-file <file>  Path to a Markdown (or plain text) file with additional context about the
+                           dataset - e.g. variable/code labels, provenance & domain notes - that is
+                           injected into the prompts as the {{ context }} Mini Jinja variable.
+                           The default prompts add this context to the system prompt; custom prompt
+                           file templates may reference {{ context }} anywhere.
+                           If the option is unset or the file is empty, {{ context }} renders as an
+                           empty string and the prompts are unaffected. The file's contents are part
+                           of the cache key, so editing it produces a fresh LLM call.
     --markdown-template <file>  TOML file with Mini Jinja templates for Markdown output. The TOML
                            contains four wrapper templates - one per inference kind:
                            dictionary_md_template, description_md_template, tags_md_template
@@ -547,6 +555,7 @@ struct Args {
     flag_prompt:             Option<String>,
     flag_sql_results:        Option<String>,
     flag_prompt_file:        Option<String>,
+    flag_context_file:       Option<String>,
     flag_markdown_template:  Option<String>,
     flag_sample_size:        u16,
     flag_fewshot_examples:   bool,
@@ -2177,6 +2186,15 @@ fn get_prompt(
         String::new()
     };
 
+    // Load the optional --context-file contents to expose as the `{{ context }}` template
+    // variable. Empty string when the option is unset so templates guarded with
+    // `{% if context %}` render unchanged. A set-but-unreadable file is a hard error.
+    let context_content = match args.flag_context_file.as_deref() {
+        Some(path) => fs::read_to_string(path)
+            .map_err(|e| CliError::Other(format!("Failed to read --context-file '{path}': {e}")))?,
+        None => String::new(),
+    };
+
     // Set up Mini Jinja environment for template rendering
     let mut env = Environment::new();
 
@@ -2229,6 +2247,7 @@ fn get_prompt(
             .clone()
             .unwrap_or_default(),
         generated_by_signature => "{GENERATED_BY_SIGNATURE}",
+        context => context_content.as_str(),
     };
 
     // Render prompt using Mini Jinja
@@ -2521,6 +2540,26 @@ fn get_cache_key_with_flag(
         .flag_tag_vocab
         .as_deref()
         .map_or(String::new(), path_fingerprint);
+    // The --context-file contents are inlined into the rendered prompts via the `{{ context }}`
+    // template variable, so track local-file edits by content fingerprint. The key collapses to
+    // the unset (suffix-less) key in exactly TWO cases, and keeps a path-specific suffix otherwise:
+    //  1. Unset (None): an unconditional suffix would change the key for every run that doesn't use
+    //     --context-file, busting describegpt caches (keyed on file content, not qsv version, so
+    //     they're meant to survive upgrades) despite identical rendered prompts.
+    //  2. Set to a readable ZERO-BYTE file: it renders no `{{ context }}` block (the `{% if context
+    //     %}` guard sees an empty string), so its prompt is byte-for-byte identical to the unset
+    //     case and its key must match too.
+    // A missing/unreadable path is NOT collapsed: the inference path's `get_prompt` reads the file
+    // first and errors out before any lookup, but cache-removal/inspection paths (--forget,
+    // invalidate_cache_entry) compute this key WITHOUT reading the file. Collapsing a typo'd or
+    // deleted path onto the unset key there would forget/inspect the wrong (no-context) entry, so
+    // it keeps a path-specific suffix (path_fingerprint returns "" for a missing/unreadable file,
+    // leaving the quoted path alone - still distinct from the suffix-less unset key).
+    let context_suffix = match args.flag_context_file.as_deref() {
+        None => String::new(),
+        Some(path) if fs::metadata(path).is_ok_and(|m| m.len() == 0) => String::new(),
+        Some(path) => format!(";{path:?};{fp}", fp = path_fingerprint(path)),
+    };
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
     // extensions and bakes them into the SQL guidance. Fingerprint the binary so a
     // binary swap / upgrade invalidates cached prompts. `should_use_duckdb()` is true
@@ -2541,7 +2580,8 @@ fn get_cache_key_with_flag(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
          {num_tags};{enum_threshold};{infer_content_type};{sample_size};{fewshot_examples};\
-         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?}",
+         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?\
+         }{context_suffix}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -6301,6 +6341,9 @@ mod tests {
                 "flag_fewshot_examples",
                 Box::new(|a| a.flag_fewshot_examples = true),
             ),
+            // flag_context_file is covered by the dedicated cache_key_reflects_context_file_*
+            // tests below — its key contribution is gated on the file existing & being
+            // non-empty, which a bare-string closure here can't set up.
         ];
 
         for (label, mutate) in cases {
@@ -6345,6 +6388,81 @@ mod tests {
         assert_ne!(
             key_v1, key_v2,
             "in-place vocab edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_reflects_context_file_contents() {
+        // Editing a local --context-file in place must change the cache key so the
+        // cache doesn't return output generated against different context.
+        use std::io::Write;
+        let mut tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_context_")
+            .suffix(".md")
+            .tempfile()
+            .expect("create context tmpfile");
+        writeln!(tmp, "# Provenance\nFirst version of the context.").expect("write v1");
+        tmp.flush().expect("flush v1");
+
+        let mut args = default_args_for_test();
+        args.flag_context_file = Some(tmp.path().to_string_lossy().into_owned());
+        let key_v1 = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+
+        // Rewrite in place with different bytes; content hashing detects this.
+        let mut f = fs::File::create(tmp.path()).expect("rewrite context tmpfile");
+        writeln!(f, "# Provenance\nCompletely different context contents.").expect("write v2");
+        f.flush().expect("flush v2");
+        drop(f);
+
+        let key_v2 = get_cache_key_with_flag(&args, PromptType::Dictionary, "gpt-x", "valid");
+        assert_ne!(
+            key_v1, key_v2,
+            "in-place context-file edit must change the cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_empty_context_file_matches_unset() {
+        // An empty --context-file renders no `{{ context }}` block, so its prompt is
+        // identical to the unset case and its cache key must match too — otherwise an
+        // empty context file would bust caches despite a byte-for-byte identical prompt.
+        let tmp = tempfile::Builder::new()
+            .prefix("qsv_describegpt_empty_context_")
+            .suffix(".md")
+            .tempfile()
+            .expect("create empty context tmpfile");
+        // tmp is created empty (zero bytes) and left empty.
+
+        let unset = default_args_for_test();
+        let key_unset = get_cache_key_with_flag(&unset, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut empty = default_args_for_test();
+        empty.flag_context_file = Some(tmp.path().to_string_lossy().into_owned());
+        let key_empty = get_cache_key_with_flag(&empty, PromptType::Dictionary, "gpt-x", "valid");
+
+        assert_eq!(
+            key_unset, key_empty,
+            "empty context-file must produce the same cache key as no context-file"
+        );
+    }
+
+    #[test]
+    fn cache_key_missing_context_file_differs_from_unset() {
+        // A missing/typo'd --context-file must NOT collapse onto the unset key. The inference
+        // path errors in get_prompt before any lookup, but cache-removal paths (--forget,
+        // invalidate_cache_entry) compute the key WITHOUT reading the file; collapsing onto the
+        // unset key there would forget/inspect the wrong (no-context) cache entry.
+        let unset = default_args_for_test();
+        let key_unset = get_cache_key_with_flag(&unset, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut missing = default_args_for_test();
+        missing.flag_context_file = Some("this_context_file_does_not_exist.md".to_string());
+        let key_missing =
+            get_cache_key_with_flag(&missing, PromptType::Dictionary, "gpt-x", "valid");
+
+        assert_ne!(
+            key_unset, key_missing,
+            "a missing context-file must not share the unset cache key"
         );
     }
 
@@ -6398,6 +6516,9 @@ mod tests {
                 );
             },
             None => {
+                // With --context-file unset (the default test args) the context suffix is
+                // empty, so the key still ends with the dictionary fingerprint serialized
+                // as None — unchanged from before --context-file was added.
                 assert!(
                     key.ends_with(";None"),
                     "unset dictionary should serialize as None: {key}"
@@ -6732,6 +6853,7 @@ p_fewshot_examples = ""
             flag_prompt:             None,
             flag_sql_results:        None,
             flag_prompt_file:        None,
+            flag_context_file:       None,
             flag_markdown_template:  None,
             flag_sample_size:        0,
             flag_fewshot_examples:   false,

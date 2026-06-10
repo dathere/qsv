@@ -267,6 +267,96 @@ fn describegpt_dictionary_flag() {
     wrk.assert_success(&mut cmd);
 }
 
+// Test that --context-file injects its contents into the rendered prompt as the
+// `{{ context }}` template variable. Uses --prepare-context so no LLM is needed:
+// the prompts are rendered and emitted as JSON without calling the model.
+#[test]
+fn describegpt_context_file_injects_into_prompt() {
+    let wrk = Workdir::new("describegpt_context");
+
+    wrk.create(
+        "in.csv",
+        vec![svec!["id", "city"], svec!["1", "NYC"], svec!["2", "LA"]],
+    );
+    wrk.create_from_string(
+        "context.md",
+        "# Provenance\nData from the 2020 municipal survey. The city field uses IATA-style \
+         codes.\n",
+    );
+
+    // With --context-file, the rendered system prompt must contain the context block.
+    // Capture Output once and assert success before inspecting stdout, so a non-zero
+    // exit that still emits partial output can't mask a failure.
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "context.md"])
+        .arg("--no-cache");
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        output.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let got = String::from_utf8(output.stdout).expect("describegpt stdout should be UTF-8");
+    assert!(
+        got.contains("ADDITIONAL CONTEXT"),
+        "context block missing from prepared prompt"
+    );
+    assert!(
+        got.contains("municipal survey"),
+        "context file contents missing from prepared prompt"
+    );
+
+    // Without --context-file, the context block must be absent.
+    let mut cmd_no_ctx = wrk.command("describegpt");
+    cmd_no_ctx
+        .arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .arg("--no-cache");
+    let output_no_ctx = cmd_no_ctx.output().expect("describegpt should run");
+    assert!(
+        output_no_ctx.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output_no_ctx.stderr)
+    );
+    let got_no_ctx =
+        String::from_utf8(output_no_ctx.stdout).expect("describegpt stdout should be UTF-8");
+    assert!(
+        !got_no_ctx.contains("ADDITIONAL CONTEXT"),
+        "context block should be absent when --context-file is not set"
+    );
+}
+
+// Test that a missing --context-file is a hard error.
+#[test]
+fn describegpt_context_file_missing_errors() {
+    let wrk = Workdir::new("describegpt_context_err");
+
+    wrk.create("in.csv", vec![svec!["id"], svec!["1"]]);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "does_not_exist.md"])
+        .arg("--no-cache");
+
+    // Run once and check both exit status and stderr, avoiding a duplicate invocation.
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        !output.status.success(),
+        "describegpt should fail on a missing --context-file"
+    );
+    let got = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        got.contains("Failed to read --context-file"),
+        "expected context-file read error, got: {got}"
+    );
+}
+
 // Test that --dictionary --infer-content-type infers inter-column relationships
 // and emits them as a structurally-valid `relationships` array (consumed by
 // `synthesize` to preserve inter-column structure).

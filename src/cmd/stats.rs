@@ -262,14 +262,12 @@ stats options:
                                              this choice is rejected.
                               [default: exact]
     --mode-cardinality-cap <n>  Bound mode-tracking memory on high-cardinality columns.
-                              When > 0, if a column's mode tracker grows past <n>, qsv
-                              drops it and emits sentinel values instead of exact modes
-                              and cardinality. The cap measures:
-                                * unweighted: total samples added (~ row count, since
-                                  every cell is pushed onto the underlying Vec).
-                                * weighted (--weight): number of unique values seen (the
-                                  HashMap's len(), == true cardinality).
-                              Both are direct memory bounds on their respective tracker.
+                              When > 0, if a column's mode tracker grows past <n> UNIQUE
+                              values (true cardinality, for both unweighted and weighted
+                              runs), qsv drops it and emits sentinel values instead of
+                              exact modes and cardinality. The cap is a direct memory
+                              bound on the tracker, which stores one entry per unique
+                              value.
                               Sentinel output:
                                 * mode columns: "*HIGH_CARDINALITY"
                                 * cardinality column: ">=<n>" (the ">=" prefix DOES break
@@ -438,7 +436,7 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_endian = "little")]
 use simd_json::{OwnedValue, prelude::ValueAsScalar, prelude::ValueObjectAccess};
 use smallvec::SmallVec;
-use stats::{Commute, MinMax, OnlineStats, Unsorted, merge_all};
+use stats::{Commute, Frequencies, MinMax, OnlineStats, Unsorted};
 use tempfile::Builder as TempFileBuilder;
 use threadpool::ThreadPool;
 
@@ -2085,7 +2083,7 @@ impl Args {
     /// * Uses `ThreadPool` with number of jobs from `self.flag_jobs`
     /// * Chunk size is calculated based on total records and number of jobs
     /// * Each thread processes a contiguous chunk of records
-    /// * Results are merged using the `merge_all` function
+    /// * Results are merged incrementally, in chunk order
     ///
     /// # Safety Considerations
     ///
@@ -2241,15 +2239,27 @@ impl Args {
         // deterministic - and only equal to the sequential result - when
         // chunks are merged in file order. Completion-order merging made
         // sortiness vary from run to run.
-        let mut chunk_results: Vec<(usize, Vec<Stats>)> = recv.iter().collect();
-        chunk_results.sort_unstable_by_key(|(i, _)| *i);
-        // safety: we know the merge_all will not return an Error because we're using an iterator
-        // and we know the iterator will not be empty because we're using a bounded channel
+        //
+        // Merge INCREMENTALLY as results arrive: each chunk's Stats are folded
+        // in (and freed) as soon as all earlier chunks have been merged.
+        // Workers start in chunk order, so results arrive roughly in order and
+        // the out-of-order buffer stays small - collecting everything before
+        // merging would hold all nchunks results resident simultaneously.
+        let mut pending: HashMap<usize, Vec<Stats>> = HashMap::default();
+        let mut next_chunk = 0_usize;
+        let mut merged: Option<Vec<Stats>> = None;
+        for (i, chunk_stats) in &recv {
+            pending.insert(i, chunk_stats);
+            while let Some(chunk_stats) = pending.remove(&next_chunk) {
+                match merged {
+                    Some(ref mut m) => m.merge(chunk_stats),
+                    None => merged = Some(chunk_stats),
+                }
+                next_chunk += 1;
+            }
+        }
         // in the event of a channel error, we will return an empty vector
-        Ok((
-            headers,
-            merge_all(chunk_results.into_iter().map(|(_, stats)| stats)).unwrap_or_default(),
-        ))
+        Ok((headers, merged.unwrap_or_default()))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -2738,9 +2748,11 @@ fn estimate_record_memory(record: &csv::ByteRecord, which_stats: &WhichStats) ->
     }
 
     // For modes (mode/cardinality)
-    // Each field value is stored as Vec<u8>, so we need the field length
+    // The Frequencies tracker stores one entry per UNIQUE value, not per row.
+    // Assume 10% of rows introduce a new unique value (same heuristic as the
+    // weighted_modes capacity hint) - still conservative for typical columns.
     if which_stats.mode || which_stats.cardinality {
-        additional_memory += base_size; // Store all field values
+        additional_memory += base_size / 10;
     }
 
     // Add overhead for Vec capacity (average of base_size and additional_memory)
@@ -2779,9 +2791,10 @@ const fn estimate_chunk_memory(
         additional_memory += record_count.saturating_mul((field_count / 2).saturating_mul(8));
     }
 
-    // For modes: store all field values
+    // For modes: the Frequencies tracker stores one entry per UNIQUE value,
+    // not per row - assume 10% of rows are unique (conservative)
     if which_stats.mode || which_stats.cardinality {
-        additional_memory += record_count.saturating_mul(avg_record_size);
+        additional_memory += record_count.saturating_mul(avg_record_size) / 10;
     }
 
     // Add overhead for data structures (Stats objects, Vec capacity, etc.)
@@ -3105,14 +3118,14 @@ struct WhichStats {
     /// function rejects the bad combinations.
     approx_quantiles:     bool,
     /// When true, use the Apache `DataSketches` `HyperLogLog` engine for the cardinality
-    /// column instead of the exact `Unsorted<Vec<u8>>` / `HashMap<Vec<u8>, f64>` tracker.
+    /// column instead of the exact `Frequencies<Vec<u8>>` / `HashMap<Vec<u8>, f64>` tracker.
     /// `--infer-boolean` forces this off in `run()` (HLL's ~1.5% RSE breaks
     /// `cardinality == 2` checks). Independent of `approx_quantiles`.
     approx_cardinality:   bool,
-    /// When > 0, drop mode-tracking once a column accumulates more than this many samples
-    /// (`Unsorted::len()` for unweighted modes, `HashMap::len()` for weighted). 0 = unbounded
-    /// (today's behavior). When the cap fires, output emits `*HIGH_CARDINALITY` for mode
-    /// fields and `>=<cap>` for cardinality.
+    /// When > 0, drop mode-tracking once a column sees more than this many UNIQUE values
+    /// (`Frequencies::len()` for unweighted modes, `HashMap::len()` for weighted - both are
+    /// true cardinality). 0 = unbounded (the default). When the cap fires, output emits
+    /// `*HIGH_CARDINALITY` for mode fields and `>=<cap>` for cardinality.
     mode_cardinality_cap: u64,
     percentile_list:      Box<str>,
 }
@@ -3341,7 +3354,9 @@ struct Stats {
     weighted_online: Option<WeightedOnlineStats>, // 72 bytes - Weighted online statistics
 
     // CACHE LINE 4+: Mode and cardinality computation
-    modes:          Option<Unsorted<Vec<u8>>>, // 32 bytes - used for mode/cardinality
+    // Counted-runs frequency map: one entry per UNIQUE value (vs the previous
+    // Unsorted<Vec<u8>> which buffered every sample - one alloc+copy per row).
+    modes:          Option<Frequencies<Vec<u8>>>, // 48 bytes - used for mode/cardinality
     weighted_modes: Option<HashMap<Vec<u8>, f64>>, // 48 bytes - Weighted mode/antimode tracking
 
     // CACHE LINE 5+: Sorting-based statistics
@@ -3896,7 +3911,13 @@ impl Stats {
                 // Estimate capacity: assume average cardinality of 10% of records
                 weighted_modes = Some(HashMap::with_capacity((record_count / 10).max(16)));
             } else {
-                modes = Some(stats::Unsorted::with_capacity(record_count));
+                // Frequencies grows with UNIQUE values, not rows. Use the same
+                // 10%-of-rows cardinality heuristic as weighted_modes, capped:
+                // hashbrown's with_capacity eagerly allocates its bucket array,
+                // so an uncapped hint on a billion-row file would waste RSS.
+                modes = Some(Frequencies::with_capacity(
+                    (record_count / 10).clamp(16, 65_536),
+                ));
             }
         }
         // we use the same Unsorted struct for median, mad, quartiles & percentiles —
@@ -4050,14 +4071,15 @@ impl Stats {
                 wm.insert(sample.to_vec(), weight);
             }
         } else if let Some(v) = self.modes.as_mut() {
-            // Unweighted modes: Unsorted::len() == total samples added (memory cost).
-            // `>= cap` before add_bytes() bounds peak at exactly `cap` entries.
-            if cap > 0 && v.len() as u64 >= cap {
+            // Unweighted modes: Frequencies::len() == unique values seen (true
+            // cardinality), same cap semantics as the weighted tracker.
+            // add_borrowed_capped single-probes: existing keys always increment
+            // (the map doesn't grow); a NEW key that would push the tracker past
+            // `cap` unique entries is rejected and we drop the tracker instead.
+            if !v.add_borrowed_capped(sample, cap) {
                 self.modes = None;
                 self.modes_dropped = true;
-                return;
             }
-            v.add_bytes(sample);
         }
     }
 
@@ -4368,7 +4390,6 @@ impl Stats {
         let minmax_range_sortorder_pieces: Vec<String>;
         let mut minval = String::new();
         let mut maxval = String::new();
-        let mut column_sorted = false;
         if let Some(mm) = self
             .minmax
             .as_ref()
@@ -4377,9 +4398,6 @@ impl Stats {
             // save min/max values for boolean inferencing
             minval.clone_from(&mm.0);
             maxval.clone_from(&mm.1);
-            if mm.3.starts_with("Ascending") {
-                column_sorted = true;
-            }
             minmax_range_sortorder_pieces = vec![mm.0, mm.1, mm.2, mm.3, mm.4];
         } else {
             minmax_range_sortorder_pieces = vec![EMPTY_STRING; 5];
@@ -4569,7 +4587,7 @@ impl Stats {
             }
         } else {
             // Unweighted modes/antimodes computation (existing logic)
-            match self.modes.as_mut() {
+            match self.modes.as_ref() {
                 None => {
                     if self.which.cardinality {
                         mc_pieces = vec![EMPTY_STRING; 2];
@@ -4581,7 +4599,7 @@ impl Stats {
                 Some(v) => {
                     mc_pieces.reserve(8);
                     if self.which.cardinality {
-                        cardinality = v.cardinality(column_sorted, 1);
+                        cardinality = v.cardinality();
                         mc_pieces.push(itoa_buf.format(cardinality).to_owned());
                         // uniqueness_ratio = cardinality / record_count
                         #[allow(clippy::cast_precision_loss)]

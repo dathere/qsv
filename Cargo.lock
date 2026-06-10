@@ -3183,6 +3183,8 @@ dependencies = [
  "allocator-api2",
  "equivalent",
  "foldhash 0.2.0",
+ "serde",
+ "serde_core",
 ]
 
 [[package]]
@@ -6301,8 +6303,6 @@ dependencies = [
 [[package]]
 name = "qsv-stats"
 version = "0.53.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0718dad04c7f53a00ccf6947de6daccaf7194ef1408f3d4b034adef8a7adf6c"
 dependencies = [
  "hashbrown 0.17.1",
  "num-traits",

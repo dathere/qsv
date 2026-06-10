@@ -329,7 +329,7 @@ pyo3 = { version = "0.28", features = ["auto-initialize"], optional = true }
 yaml_serde = { version = "0.10", optional = true }
 qsv-dateparser = "0.15"
 qsv_docopt = "1.10"
-qsv-stats = "0.53"
+qsv-stats = "0.54"
 qsv_currency = "0.7"
 qsv-tabwriter = "2"
 qsv_vader_sentiment_analysis = { version = "0.2", optional = true }
@@ -415,11 +415,6 @@ quickcheck  = { version = "1", default-features = false }
 serial_test = { version = "3.4", features = ["file_locks"] }
 
 [patch.crates-io]
-# DEV ONLY: local qsv-stats with the counted-runs Frequencies modes tracker.
-# Remove before release once qsv-stats 0.54 is published, and bump the
-# qsv-stats dependency above to "0.54".
-qsv-stats = { path = "../qsv-stats" }
-
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
 # the main features of this csv fork is SIMD-accelerated UTF-8 validation;

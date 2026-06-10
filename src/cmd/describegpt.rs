@@ -2546,18 +2546,22 @@ fn get_cache_key_with_flag(
     //  1. Unset (None): an unconditional suffix would change the key for every run that doesn't use
     //     --context-file, busting describegpt caches (keyed on file content, not qsv version, so
     //     they're meant to survive upgrades) despite identical rendered prompts.
-    //  2. Set to a readable ZERO-BYTE file: it renders no `{{ context }}` block (the `{% if context
-    //     %}` guard sees an empty string), so its prompt is byte-for-byte identical to the unset
-    //     case and its key must match too.
-    // A missing/unreadable path is NOT collapsed: the inference path's `get_prompt` reads the file
-    // first and errors out before any lookup, but cache-removal/inspection paths (--forget,
-    // invalidate_cache_entry) compute this key WITHOUT reading the file. Collapsing a typo'd or
-    // deleted path onto the unset key there would forget/inspect the wrong (no-context) entry, so
-    // it keeps a path-specific suffix (path_fingerprint returns "" for a missing/unreadable file,
-    // leaving the quoted path alone - still distinct from the suffix-less unset key).
+    //  2. Set to a readable file whose contents are EMPTY: it renders no `{{ context }}` block (the
+    //     `{% if context %}` guard sees an empty string), so its prompt is byte-for-byte identical
+    //     to the unset case and its key must match too. The check mirrors get_prompt's own
+    //     `fs::read_to_string` so the cache decision matches what is actually rendered: only a
+    //     real, readable, empty file collapses. A zero-byte directory or a perms-denied path fails
+    //     read_to_string and does NOT collapse, even though its metadata length may read as 0.
+    // Any path that does not read back as empty content is NOT collapsed: the inference path's
+    // `get_prompt` reads the file first and errors out before any lookup, but cache-removal/
+    // inspection paths (--forget, invalidate_cache_entry) compute this key WITHOUT reading the
+    // file. Collapsing a typo'd, deleted, or unreadable path onto the unset key there would
+    // forget/inspect the wrong (no-context) entry, so it keeps a path-specific suffix
+    // (path_fingerprint returns "" for a missing/unreadable file, leaving the quoted path alone -
+    // still distinct from the suffix-less unset key).
     let context_suffix = match args.flag_context_file.as_deref() {
         None => String::new(),
-        Some(path) if fs::metadata(path).is_ok_and(|m| m.len() == 0) => String::new(),
+        Some(path) if fs::read_to_string(path).is_ok_and(|s| s.is_empty()) => String::new(),
         Some(path) => format!(";{path:?};{fp}", fp = path_fingerprint(path)),
     };
     // When DuckDB is enabled, `get_prompt` queries the binary for version() and loaded
@@ -6463,6 +6467,30 @@ mod tests {
         assert_ne!(
             key_unset, key_missing,
             "a missing context-file must not share the unset cache key"
+        );
+    }
+
+    #[test]
+    fn cache_key_unreadable_context_file_differs_from_unset() {
+        // A path that exists but is NOT a readable file (here a directory) must not collapse
+        // onto the unset key just because its metadata length may report as 0. The collapse
+        // condition reads the file (fs::read_to_string), which fails for a directory, so the
+        // path keeps a distinct, path-specific suffix — protecting the cache-removal paths.
+        let dir = tempfile::Builder::new()
+            .prefix("qsv_describegpt_ctx_dir_")
+            .tempdir()
+            .expect("create context tmpdir");
+
+        let unset = default_args_for_test();
+        let key_unset = get_cache_key_with_flag(&unset, PromptType::Dictionary, "gpt-x", "valid");
+
+        let mut as_dir = default_args_for_test();
+        as_dir.flag_context_file = Some(dir.path().to_string_lossy().into_owned());
+        let key_dir = get_cache_key_with_flag(&as_dir, PromptType::Dictionary, "gpt-x", "valid");
+
+        assert_ne!(
+            key_unset, key_dir,
+            "an unreadable (directory) context-file path must not share the unset cache key"
         );
     }
 

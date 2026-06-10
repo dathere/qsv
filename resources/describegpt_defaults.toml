@@ -1,7 +1,7 @@
 name = "qsv Default Prompt File"
 description = "Default prompt file for qsv's describegpt command."
 author = "qsv team"
-version = "7.1.0"
+version = "7.2.0"
 tokens = 20000
 base_url = "http://localhost:1234/v1"
 model = "openai/gpt-oss-20b"
@@ -45,6 +45,11 @@ language = ""
 #                     LLM so it can refine Label, Description and Content Type using
 #                     cross-field context (e.g. recognizing that street_no + street_name +
 #                     city + state + zip describe a single mailing address).
+# {{ context }} - Additional, user-supplied context about the dataset, provided via the
+#                     --context-file option (a Markdown or plain text file with variable/code
+#                     labels, provenance, domain notes, etc.). Empty string when --context-file
+#                     is not set, so guard usage with `{% if context %}`. The default system
+#                     prompt below injects it; custom templates may reference it in any prompt.
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -63,8 +68,17 @@ The "N" in "Other (N)" indicates the count of "Other" unique values. The "Other"
 The Frequency Distribution's `rank` column is 1-based and is calculated based on the count of the values, with the
 most frequent having a rank of 1. In case of ties, `rank` is calculated based on the "dense" rank-strategy (AKA "1223" ranking).
 
-For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the Frequency Distribution's 
+For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the Frequency Distribution's
 `value` column is the special value "<ALL_UNIQUE>"; `count` - the number of records; `percentage` - 100; and `rank` - 0.
+{% if context %}
+The user has also provided the following ADDITIONAL CONTEXT about this specific Dataset (e.g. variable
+or code labels, provenance, and other domain knowledge). Use it to enrich and improve the accuracy of
+your response, giving it precedence over inferences drawn solely from the statistics when they conflict:
+
+BEGIN ADDITIONAL CONTEXT
+{{ context }}
+END ADDITIONAL CONTEXT
+{% endif %}
 """
 
 dictionary_prompt = """

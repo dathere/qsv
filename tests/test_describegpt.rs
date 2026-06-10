@@ -267,6 +267,76 @@ fn describegpt_dictionary_flag() {
     wrk.assert_success(&mut cmd);
 }
 
+// Test that --context-file injects its contents into the rendered prompt as the
+// `{{ context }}` template variable. Uses --prepare-context so no LLM is needed:
+// the prompts are rendered and emitted as JSON without calling the model.
+#[test]
+fn describegpt_context_file_injects_into_prompt() {
+    let wrk = Workdir::new("describegpt_context");
+
+    wrk.create(
+        "in.csv",
+        vec![svec!["id", "city"], svec!["1", "NYC"], svec!["2", "LA"]],
+    );
+    wrk.create_from_string(
+        "context.md",
+        "# Provenance\nData from the 2020 municipal survey. The city field uses IATA-style \
+         codes.\n",
+    );
+
+    // With --context-file, the rendered system prompt must contain the context block.
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "context.md"])
+        .arg("--no-cache");
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(
+        got.contains("ADDITIONAL CONTEXT"),
+        "context block missing from prepared prompt"
+    );
+    assert!(
+        got.contains("municipal survey"),
+        "context file contents missing from prepared prompt"
+    );
+
+    // Without --context-file, the context block must be absent.
+    let mut cmd_no_ctx = wrk.command("describegpt");
+    cmd_no_ctx
+        .arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .arg("--no-cache");
+    let got_no_ctx: String = wrk.stdout(&mut cmd_no_ctx);
+    assert!(
+        !got_no_ctx.contains("ADDITIONAL CONTEXT"),
+        "context block should be absent when --context-file is not set"
+    );
+}
+
+// Test that a missing --context-file is a hard error.
+#[test]
+fn describegpt_context_file_missing_errors() {
+    let wrk = Workdir::new("describegpt_context_err");
+
+    wrk.create("in.csv", vec![svec!["id"], svec!["1"]]);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "does_not_exist.md"])
+        .arg("--no-cache");
+
+    wrk.assert_err(&mut cmd);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Failed to read --context-file"),
+        "expected context-file read error, got: {got}"
+    );
+}
+
 // Test that --dictionary --infer-content-type infers inter-column relationships
 // and emits them as a structurally-valid `relationships` array (consumed by
 // `synthesize` to preserve inter-column structure).

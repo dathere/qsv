@@ -1704,7 +1704,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // without an index, we need to count the number of records in the file
                     // safety: we know util::count_rows() will not return an Err
                     record_count = util::count_rows(&rconfig).unwrap();
-                    args.sequential_stats(&resolved_whitelist)
+                    args.sequential_stats(&resolved_whitelist, record_count)
                 },
                 Some(idx) => {
                     // with an index, we get the rowcount instantaneously from the index
@@ -1712,7 +1712,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     match args.flag_jobs {
                         Some(num_jobs) => {
                             if num_jobs == 1 {
-                                args.sequential_stats(&resolved_whitelist)
+                                args.sequential_stats(&resolved_whitelist, record_count)
                             } else {
                                 args.parallel_stats(&resolved_whitelist, record_count)
                             }
@@ -2018,7 +2018,11 @@ impl Args {
     /// * CSV parsing errors are propagated as `CliError`
     /// * Date inference initialization errors are handled
     /// * File I/O errors are wrapped in appropriate error types
-    fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
+    fn sequential_stats(
+        &self,
+        whitelist: &str,
+        record_count: u64,
+    ) -> CliResult<(csv::ByteRecord, Vec<Stats>)> {
         let mut rdr = self.rconfig().reader()?;
         let full_headers = rdr.byte_headers()?.clone();
 
@@ -2028,7 +2032,15 @@ impl Args {
 
         init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
 
-        let stats = self.compute(&sel, rdr.byte_records(), weight_col_idx);
+        // record_count is only a capacity hint for the per-column accumulators;
+        // the read limit stays usize::MAX so we always process the whole file
+        let stats = self.compute(
+            &sel,
+            &mut rdr,
+            usize::MAX,
+            record_count as usize,
+            weight_col_idx,
+        );
         Ok((headers, stats))
     }
 
@@ -2094,7 +2106,7 @@ impl Args {
         // N.B. This method doesn't handle the case when the number of records
         // is zero correctly. So we use `sequential_stats` instead.
         if idx_count == 0 {
-            return self.sequential_stats(whitelist);
+            return self.sequential_stats(whitelist, 0);
         }
 
         // Retain freed jemalloc pages for the duration of this parallel run when it
@@ -2208,19 +2220,36 @@ impl Args {
                 // with some actionable info if the index is corrupted
                 idx.seek((i * chunk_size) as u64)
                     .expect("Index seek failed.");
-                let it = idx.byte_records().take(chunk_size);
-                // safety: this will only return an Error if the channel has been disconnected
+                // Indexed DerefMuts to csv::Reader, so compute reads the chunk
+                // directly with a reused ByteRecord (no per-record allocation).
+                // chunk_size doubles as the capacity hint: each worker only ever
+                // accumulates one chunk's worth of values, so hinting the full
+                // file row count here would balloon RSS x nchunks.
+                // safety: send will only return an Error if the channel has been disconnected
                 unsafe {
-                    send.send(args.compute(&sel, it, weight_idx))
-                        .unwrap_unchecked();
+                    send.send((
+                        i,
+                        args.compute(&sel, &mut idx, chunk_size, chunk_size, weight_idx),
+                    ))
+                    .unwrap_unchecked();
                 }
             });
         }
         drop(send);
+        // Merge in CHUNK order, not completion order. Order-dependent stats
+        // (sortiness/sort_order pair counts at chunk boundaries) are only
+        // deterministic - and only equal to the sequential result - when
+        // chunks are merged in file order. Completion-order merging made
+        // sortiness vary from run to run.
+        let mut chunk_results: Vec<(usize, Vec<Stats>)> = recv.iter().collect();
+        chunk_results.sort_unstable_by_key(|(i, _)| *i);
         // safety: we know the merge_all will not return an Error because we're using an iterator
         // and we know the iterator will not be empty because we're using a bounded channel
         // in the event of a channel error, we will return an empty vector
-        Ok((headers, merge_all(recv.iter()).unwrap_or_default()))
+        Ok((
+            headers,
+            merge_all(chunk_results.into_iter().map(|(_, stats)| stats)).unwrap_or_default(),
+        ))
     }
 
     /// Converts a vector of `Stats` objects into CSV records for output.
@@ -2285,16 +2314,25 @@ impl Args {
         records
     }
 
-    /// Computes statistics for CSV data from an iterator of records.
+    /// Computes statistics for CSV data read directly from a CSV reader.
     ///
-    /// This function processes CSV records from an iterator and computes comprehensive
-    /// statistics for each column. It's the core computation engine used by both
-    /// sequential and parallel processing approaches.
+    /// This function reads up to `limit` records from the reader and computes
+    /// comprehensive statistics for each column. It's the core computation engine
+    /// used by both sequential and parallel processing approaches.
+    ///
+    /// It reads records with `read_byte_record` into a single reused `ByteRecord`,
+    /// avoiding the per-record allocation + copy that the `ByteRecords` iterator
+    /// incurs (its `next()` clones the internal record for each row).
     ///
     /// # Arguments
     ///
     /// * `sel` - Column selection configuration
-    /// * `it` - Iterator over CSV records (`ByteRecord` results)
+    /// * `rdr` - CSV reader positioned at the first record to process
+    /// * `limit` - Maximum number of records to process (`usize::MAX` for all)
+    /// * `expected_rows` - Expected number of records, used ONLY as a capacity hint for the
+    ///   per-column accumulators (never as a read limit, so an inexact estimate cannot affect
+    ///   results)
+    /// * `weight_col_idx` - Optional index of the weight column
     ///
     /// # Returns
     ///
@@ -2303,7 +2341,7 @@ impl Args {
     /// # Process
     ///
     /// 1. **Initialization**: Creates `Stats` objects for each selected column
-    /// 2. **Record Processing**: Iterates through all CSV records
+    /// 2. **Record Processing**: Reads records into a reused buffer
     /// 3. **Field Processing**: For each record, processes selected fields
     /// 4. **Statistics Accumulation**: Updates statistics for each field
     /// 5. **Type Inference**: Automatically detects data types during processing
@@ -2312,7 +2350,8 @@ impl Args {
     ///
     /// * **Inline**: Function is marked as `#[inline]` for performance
     /// * **Unsafe Operations**: Uses unsafe code for bounds checking avoidance
-    /// * **Memory Reuse**: Reuses `ByteRecord` objects to reduce allocations
+    /// * **Memory Reuse**: One `ByteRecord` is reused for all rows - zero per-record allocations in
+    ///   the hot loop
     /// * **Hot Loop Optimization**: Critical path is optimized for speed
     /// * **Register Usage**: Frequently accessed variables are kept in registers
     ///
@@ -2321,14 +2360,19 @@ impl Args {
     /// * Uses unsafe code for performance-critical operations
     /// * Assumes `INFER_DATE_FLAGS` is properly initialized
     /// * Bounds checking is avoided where safe
-    /// * Iterator errors are handled gracefully
+    /// * Assumes a valid CSV; read errors are not checked in this performance-critical path (same
+    ///   semantics as before)
     #[inline]
-    fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
-    where
-        I: Iterator<Item = csv::Result<csv::ByteRecord>>,
-    {
+    fn compute<R: std::io::Read>(
+        &self,
+        sel: &Selection,
+        rdr: &mut csv::Reader<R>,
+        limit: usize,
+        expected_rows: usize,
+        weight_col_idx: Option<usize>,
+    ) -> Vec<Stats> {
         let sel_len = sel.len();
-        let mut stats = self.new_stats(sel_len);
+        let mut stats = self.new_stats(sel_len, expected_rows);
 
         // safety: we know INFER_DATE_FLAGS is Some because we called init_date_inference
         let infer_date_flags = INFER_DATE_FLAGS.get().unwrap();
@@ -2338,23 +2382,29 @@ impl Args {
         let infer_boolean = self.flag_infer_boolean;
         let prefer_dmy = self.flag_prefer_dmy;
 
+        // one reused record buffer for the entire scan - read_byte_record fills it
+        // in place, so the hot loop does no per-record heap allocation
+        let mut row = csv::ByteRecord::new();
         let mut i;
-        for row in it {
+        let mut records_read = 0_usize;
+        while records_read < limit {
+            // safety: `stats` assumes a valid CSV, so we don't check for CSV errors
+            // in this performance-critical path (mirrors the previous
+            // `row.unwrap_unchecked()` on the ByteRecords iterator)
+            if !unsafe { rdr.read_byte_record(&mut row).unwrap_unchecked() } {
+                break;
+            }
+            records_read += 1;
+
             // reset the index for each row
             i = 0;
-
-            // safety: we know the row is Ok because we're using an iterator
-            // Note that `stats` assumes a valid CSV, so we don't check for CSV errors
-            // in this performance-critical path
-            let row_result: csv::ByteRecord = unsafe { row.unwrap_unchecked() };
 
             // Extract weight value if weight column is specified
             // safety: we know the weight column index is valid because we checked it above
             // in case of a parse error, invalid weight defaults to 1.0
             let weight = if let Some(widx) = weight_col_idx {
-                if widx < row_result.len() {
-                    fast_float2::parse::<f64, &[u8]>(row_result.get(widx).unwrap_or(b"1.0"))
-                        .unwrap_or(1.0)
+                if widx < row.len() {
+                    fast_float2::parse::<f64, &[u8]>(row.get(widx).unwrap_or(b"1.0")).unwrap_or(1.0)
                 } else {
                     1.0
                 }
@@ -2366,7 +2416,7 @@ impl Args {
             // we know we don't need to bounds check
             debug_assert_eq!(infer_date_flags.len(), sel_len);
             unsafe {
-                for field in sel.select(&row_result) {
+                for field in sel.select(&row) {
                     stats.get_unchecked_mut(i).add(
                         field,
                         weight,
@@ -2546,13 +2596,15 @@ impl Args {
     /// # Performance
     ///
     /// * **Inline**: Function is marked as `#[inline]` for performance
-    /// * **Pre-allocated**: Uses `Vec::with_capacity` for efficient allocation
-    /// * **Bulk Initialization**: Uses `repeat_n` for efficient object creation
+    /// * **Pre-allocated**: Each `Stats` is constructed in place (NOT cloned - `Vec::clone` only
+    ///   allocates `len`, which would silently discard the `with_capacity` reservations made in
+    ///   `Stats::new`)
     #[inline]
-    fn new_stats(&self, record_len: usize) -> Vec<Stats> {
-        let mut stats: Vec<Stats> = Vec::with_capacity(record_len);
-        stats.extend(repeat_n(Stats::new(self.which_stats()), record_len));
-        stats
+    fn new_stats(&self, record_len: usize, expected_rows: usize) -> Vec<Stats> {
+        let which = self.which_stats();
+        (0..record_len)
+            .map(|_| Stats::new(which.clone(), expected_rows))
+            .collect()
     }
 
     pub fn stats_headers(&self) -> csv::StringRecord {
@@ -3797,7 +3849,7 @@ impl Stats {
     /// * **Efficient Allocation**: Only allocates memory for enabled statistics
     /// * **Cache-Friendly**: Field layout optimized for CPU cache lines
     /// * **Pre-allocation**: Uses record count to pre-allocate appropriate memory sizes
-    fn new(which: WhichStats) -> Stats {
+    fn new(which: WhichStats, expected_rows: usize) -> Stats {
         let use_weights = which.use_weights;
         let (mut sum, mut minmax, mut online, mut online_len, mut modes, mut unsorted_stats) =
             (None, None, None, None, None, None);
@@ -3819,10 +3871,18 @@ impl Stats {
             }
         }
 
-        // preallocate memory for the unsorted stats structs
-        // if we dont't have a record count, we use a default of 10,000
-        // to avoid allocating too much memory
-        let record_count = *RECORD_COUNT.get().unwrap_or(&10_000) as usize;
+        // preallocate memory for the unsorted stats structs.
+        // expected_rows is the actual row count (sequential) or chunk size
+        // (parallel worker) - if the caller has no estimate (0), fall back to
+        // 10,000 to avoid allocating too much memory.
+        // NOTE: this was previously read from RECORD_COUNT, which is only set
+        // AFTER the compute pass, so the 10,000 fallback was always used (and
+        // the repeat_n clone in new_stats discarded the reservation anyway).
+        let record_count = if expected_rows == 0 {
+            10_000
+        } else {
+            expected_rows
+        };
         // Under --cardinality-method approx with mode tracking off, the HLL sketch
         // alone covers the cardinality column — skip allocating the exact modes
         // tracker (Unsorted/HashMap) entirely. When mode/antimode are also requested

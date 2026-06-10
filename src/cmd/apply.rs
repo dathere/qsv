@@ -916,6 +916,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(wtr.flush()?)
 }
 
+/// Returns true if `base_url`'s host is a loopback address (localhost / 127.0.0.1 / ::1).
+///
+/// Parses the URL and checks the actual host so values like `https://localhost.evil.com/v1`
+/// are NOT misclassified as local (a naive substring match would). Falls back to a substring
+/// check only if the URL can't be parsed.
+fn is_localhost_url(base_url: &str) -> bool {
+    match reqwest::Url::parse(base_url) {
+        Ok(url) => matches!(
+            url.host_str(),
+            Some("localhost" | "127.0.0.1" | "::1" | "[::1]")
+        ),
+        Err(_) => base_url.contains("localhost") || base_url.contains("127.0.0.1"),
+    }
+}
+
 /// Runs the `apply summarize` subcommand.
 ///
 /// Unlike the other (CPU-bound, Rayon-parallel) apply subcommands, summarize is network-bound:
@@ -940,11 +955,14 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
     };
 
     // Sanitize header names into safe Mini Jinja context keys (non-alphanumeric -> '_').
-    // Use util::safe_header_names (keep_case=true) rather than a naive per-char map so that
-    // headers which sanitize to the same key (e.g. `a-b` and `a_b`) get unique disambiguated
-    // names (`a_b`, `a_b_2`) instead of silently colliding & overwriting each other in the
-    // per-record context map. The SAME mapping drives both the default prompt and the context.
-    let (sanitized_headers, _) = util::safe_header_names(headers, false, false, None, "", true);
+    // Use util::safe_header_names rather than a naive per-char map so that:
+    //  - headers which sanitize to the same key (e.g. `a.b` and `a_b`) get unique disambiguated
+    //    names (`a_b`, `a_b_2`) instead of silently colliding & overwriting each other; and
+    //  - digit-leading headers (e.g. `1st_col`) get a leading `_` (check_first_char=true), since
+    //    Mini Jinja/Jinja identifiers can't start with a digit (`{{ 1st_col }}` would fail).
+    // keep_case=true preserves the original casing. The SAME mapping drives both the default
+    // prompt and the per-record context insertion.
+    let (sanitized_headers, _) = util::safe_header_names(headers, true, false, None, "", true);
 
     // resolve effective base_url / model / api_key: CLI flag > env var > built-in default
     let base_url = args
@@ -963,7 +981,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
         .or_else(|| std::env::var("QSV_LLM_APIKEY").ok())
         .unwrap_or_default();
 
-    let is_localhost = base_url.contains("localhost") || base_url.contains("127.0.0.1");
+    let is_localhost = is_localhost_url(&base_url);
     // "NONE" (case-insensitive) means: explicitly don't send an Authorization header
     let suppress_key = resolved_key.eq_ignore_ascii_case("NONE");
     let api_key = if suppress_key {

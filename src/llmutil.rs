@@ -69,7 +69,7 @@ pub fn send_request(
                 .body(data.to_string())
         },
         other => {
-            let error_json = json!({ "Unsupported HTTP method ": other });
+            let error_json = json!({ "Unsupported HTTP method": other });
             return fail_clierror!("{error_json}");
         },
     };
@@ -98,8 +98,9 @@ pub fn send_request(
 
 /// Builds the JSON request body for a chat-completion call.
 ///
-/// Constructs `{"model", "max_tokens", "messages", "stream": false}` and overlays any
-/// additional model properties supplied as a JSON object string (`addl_props`).
+/// Constructs `{"model", "messages", "stream": false}`, includes `max_tokens` only when set
+/// (omitted entirely when `None`, since some OpenAI-compatible servers reject a `null` value),
+/// and overlays any additional model properties supplied as a JSON object string (`addl_props`).
 ///
 /// # Errors
 ///
@@ -112,10 +113,15 @@ pub fn build_request(
 ) -> CliResult<Value> {
     let mut request_data = json!({
         "model": model,
-        "max_tokens": max_tokens,
         "messages": messages,
         "stream": false
     });
+
+    // Only send max_tokens when explicitly set; a `null` value is rejected by some servers,
+    // and "unset" is the documented meaning of --max-tokens 0 / localhost.
+    if let Some(max_tokens) = max_tokens {
+        request_data["max_tokens"] = json!(max_tokens);
+    }
 
     if let Some(addl_props) = addl_props {
         let addl_props_json: Value = serde_json::from_str(addl_props)
@@ -162,12 +168,14 @@ pub fn chat_completion(
     }
 
     let start_time = Instant::now();
+    // trim a trailing '/' so a base_url like ".../v1/" doesn't yield a double-slash path
+    let endpoint = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let response = send_request(
         client,
         Some(api_key),
         Some(&request_data),
         "POST",
-        &format!("{base_url}/chat/completions"),
+        &endpoint,
     )?;
 
     let response_json: Value = response.json()?;

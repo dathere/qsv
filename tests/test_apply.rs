@@ -3144,7 +3144,7 @@ fn apply_summarize_default_prompt() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // header row + 2 data rows
     assert_eq!(got[0], svec!["id", "text", "summary"]);
     // the default prompt echoes the selected column value back through the mock
@@ -3179,7 +3179,7 @@ fn apply_summarize_custom_prompt_multi_col() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got[0], svec!["subject", "body", "summary"]);
     let summary = &got[1][2];
     assert!(summary.contains("Outage"), "missing subject: {summary}");
@@ -3209,7 +3209,7 @@ fn apply_summarize_prompt_file() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(got[1][1].contains("PROMPT:alpha"), "got: {:?}", got[1]);
 }
 
@@ -3230,7 +3230,7 @@ fn apply_summarize_addl_props() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // the mock reflects the temperature prop back, proving it was sent through
     assert_eq!(got[1][1], "TEMP=0.2");
 }
@@ -3252,7 +3252,7 @@ fn apply_summarize_stats_columns() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
         got[0],
         svec!["text", "summary", "summary_elapsed_ms", "summary_tokens"]
@@ -3286,7 +3286,7 @@ fn apply_summarize_colliding_sanitized_headers() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let summary = &got[1][2];
     assert!(summary.contains("valueAAA"), "missing first col: {summary}");
     assert!(
@@ -3347,7 +3347,7 @@ fn apply_summarize_on_error_skip() {
         .arg("--no-cache")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert!(got[1][1].starts_with("<ERROR:"), "got: {:?}", got[1]);
 }
 
@@ -3372,7 +3372,7 @@ fn apply_summarize_cache_hit() {
         .args(["--cache-dir", cache_dir.to_str().unwrap()])
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got.len(), 3); // header + 2 rows
     assert_eq!(got[1][1], got[2][1]); // identical summaries
     // the second identical row should be a cache hit -> only ONE LLM request

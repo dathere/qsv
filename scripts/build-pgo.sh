@@ -61,6 +61,14 @@ if [[ -z "${PROFILE:-}" ]]; then
   fi
 fi
 
+# Windows targets produce <bin>.exe; resolve the suffix so the path checks and the
+# training invocation find the actual executable (the Windows PGO jobs build qsv.exe)
+bin_ext=""
+case "$TARGET" in
+  *windows*) bin_ext=".exe" ;;
+esac
+bin_file="${BIN}${bin_ext}"
+
 # the qsv binary always builds with feature_capable (mirrors publish.yml)
 features_arg=""
 if [[ -n "$QSV_FEATURES" ]]; then
@@ -113,7 +121,7 @@ CARGO_PROFILE_RELEASE_LTO=thin \
 CARGO_PROFILE_RELEASE_LUAU_LTO=thin \
   cargo pgo instrument build -- "${cargo_args[@]}"
 
-instrumented_bin="target/$TARGET/$PROFILE/$BIN"
+instrumented_bin="target/$TARGET/$PROFILE/$bin_file"
 if [[ ! -x "$instrumented_bin" ]]; then
   echo "ERROR: instrumented binary not found at $instrumented_bin" >&2
   exit 1
@@ -136,7 +144,7 @@ else
   cargo pgo optimize build -- "${cargo_args[@]}"
 fi
 
-optimized_bin="target/$TARGET/$PROFILE/$BIN"
+optimized_bin="target/$TARGET/$PROFILE/$bin_file"
 echo ""
 echo "================ PGO build done ================"
 echo "  optimized binary: $repo_root/$optimized_bin"

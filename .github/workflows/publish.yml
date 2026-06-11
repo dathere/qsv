@@ -46,6 +46,10 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            # native runner - PGO-optimize the main qsv binary (issue #1448)
+            pgo: true
+            pgo-train-flags:
+            pgo-lto:
           - os: ubuntu-24.04
             os-name: linux
             target: x86_64-unknown-linux-musl
@@ -57,6 +61,10 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            # musl is a reduced-feature, lower-priority target - PGO deferred (plan #1448)
+            pgo: false
+            pgo-train-flags:
+            pgo-lto:
           # - os: ubuntu-24.04
           #   os-name: linux
           #   target: i686-unknown-linux-gnu
@@ -78,6 +86,11 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            # native runner - PGO with --minimal training (benchmarks.sh data prep
+            # does not run natively on Windows; train via git-bash on a synthesized CSV)
+            pgo: true
+            pgo-train-flags: --minimal
+            pgo-lto:
           # - os: windows-latest
           #   os-name: windows
           #   target: i686-pc-windows-msvc
@@ -99,6 +112,10 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            # native runner - PGO with --minimal training (Windows, see msvc note above)
+            pgo: true
+            pgo-train-flags: --minimal
+            pgo-lto:
           # - os: macos-12
           #   os-name: macos
           #   target: x86_64-apple-darwin
@@ -128,6 +145,12 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
+            # native ARM runner - PGO the qsv binary. The PGO optimize build is one more
+            # fat-LTO link of the same qsv that already builds here, so memory use matches
+            # today's working build. If it ever OOMs, set pgo-lto: thin as the escape hatch.
+            pgo: true
+            pgo-train-flags:
+            pgo-lto:
           # - os: ubuntu-20.04
           #   os-name: linux
           #   target: arm-unknown-linux-gnueabihf
@@ -175,7 +198,29 @@ jobs:
       run: |
         sudo apt-get install musl-tools musl-dev
         sudo ln -s /usr/bin/g++ /usr/bin/musl-g++
-    - name: Build qsv
+    # PGO-optimized qsv build for native-runner targets (issue #1448). build-pgo.sh
+    # runs the instrument -> train -> optimize cycle and leaves the binary in the same
+    # target/<target>/<profile>/ path the "Copy binaries" step globs. QSV_KIND is set to
+    # prebuilt-pgo so `qsv --version` reflects the PGO build (util.rs starts_with("prebuilt")
+    # still treats it as a prebuilt for self-update).
+    - name: Build qsv (PGO)
+      if: ${{ matrix.job.pgo }}
+      shell: bash
+      env:
+        QSV_KIND: prebuilt-pgo
+        TARGET: ${{ matrix.job.target }}
+        DEFAULT_FEATURES: ${{ matrix.job.default-features }}
+        RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
+        PGO_LTO: ${{ matrix.job.pgo-lto }}
+        TRAIN_FLAGS: ${{ matrix.job.pgo-train-flags }}
+        ADDL_BUILD_ARGS: ${{ matrix.job.addl-build-args }}
+      run: |
+        # strip the leading "--features=" to get the bare comma-separated feature list
+        export QSV_FEATURES="${ADDL_BUILD_ARGS#--features=}"
+        chmod +x scripts/build-pgo.sh scripts/pgo-train.sh
+        ./scripts/build-pgo.sh
+    - name: Build qsv (normal)
+      if: ${{ !matrix.job.pgo }}
       # env:
       #   RUSTFLAGS: --emit=asm
       env:

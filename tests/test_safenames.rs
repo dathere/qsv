@@ -607,6 +607,24 @@ fn safenames_conditional_unicode_leading_digit() {
 }
 
 #[test]
+fn safenames_conditional_unicode_combining_mark() {
+    // A decomposed header (base + combining mark) must be rewritten in
+    // conditional+unicode mode (consistent with always/verify), since the unicode
+    // sanitizer replaces the \p{M} mark; the composed form is preserved.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![svec!["cafe\u{301}", "caf\u{e9}"], svec!["1", "2"]],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["cafe_", "caf\u{e9}"], svec!["1", "2"]]);
+}
+
+#[test]
 fn safenames_reserved_names_specified() {
     let wrk = Workdir::new("safenames");
     wrk.create(

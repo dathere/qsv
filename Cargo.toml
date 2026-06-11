@@ -417,24 +417,7 @@ serial_test = { version = "3.4", features = ["file_locks"] }
 [patch.crates-io]
 # use our tweaked fork of csv crate
 # the csv crate underpins a lot of qsv's functionality, so every perf tweak helps
-# the main features of this csv fork:
-# SIMD-accelerated UTF-8 validation via simdutf8; non-ASCII records are
-# validated with a single whole-buffer pass + per-field-boundary checks
-# instead of per-field calls;
-# non-allocating ByteRecord trim and StringRecord trim;
-# skip the redundant ASCII trim on the StringRecord read path (~12% on str reads);
-# a faster `is_non_numeric()` helper;
-# add the scan_and_copy fast-path to read_field_dfa (previously only in read_record_dfa);
-# replaced 8-way unrolled table lookup in `needs_quotes` with memchr-based SIMD
-# scanning, plus a lookup-table fast path for short (<=16 byte) fields;
-# derive Copy for `Position`, eliminating clone overhead;
-# faster float serialization via zmij (replaces ryu, ~10% on serialize);
-# faster float parsing via fast-float2 in the Serde deserializer;
-# first-byte gate in deserialize_any type inference, skipping
-# guaranteed-to-fail integer/float parses (-21% str/-45% bytes on
-# inference-heavy deserialization);
-# and various clippy lint suggestions applied
-# for more details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
+# for details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

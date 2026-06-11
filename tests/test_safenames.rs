@@ -549,6 +549,64 @@ fn safenames_60byte_truncation_collapse() {
 }
 
 #[test]
+fn safenames_conditional_collapse() {
+    // In conditional mode, --collapse must still rewrite headers with a
+    // collapsible run (a__b -> a_b), while preserving single-separator names
+    // and genuine quoted identifiers.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a__b", "single_us", "Col with Embedded Spaces"],
+            svec!["1", "2", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--collapse").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a_b", "single_us", "Col with Embedded Spaces"],
+            svec!["1", "2", "3"],
+        ]
+    );
+}
+
+#[test]
+fn safenames_unicode_leading_digit_prefixed() {
+    // With --unicode, a preserved leading Unicode digit must still trigger the
+    // unsafe_ prefix (full-width '２' and arabic-indic '٣').
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["２col", "٣col"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("S").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["unsafe_２col", "unsafe_٣col"], svec!["1", "2"]]
+    );
+}
+
+#[test]
+fn safenames_conditional_unicode_leading_digit() {
+    // conditional + unicode: a valid unicode identifier is preserved, but a
+    // leading unicode digit is not (it gets the unsafe_ prefix).
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["café", "２col"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![svec!["café", "unsafe_２col"], svec!["1", "2"]]);
+}
+
+#[test]
 fn safenames_reserved_names_specified() {
     let wrk = Workdir::new("safenames");
     wrk.create(

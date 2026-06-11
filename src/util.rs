@@ -1765,7 +1765,10 @@ pub fn safe_header_names(
         } else {
             false
         };
-        safe_name = if conditional && is_safe_name(header_name) && !reserved_found {
+        safe_name = if conditional
+            && is_conditionally_safe(header_name, collapse, unicode)
+            && !reserved_found
+        {
             header_name.to_string()
         } else {
             // Trim first so whitespace-only headers are treated as empty —
@@ -1778,9 +1781,20 @@ pub fn safe_header_names(
                     .replace_all(header_name.trim(), "_")
                     .to_string()
             };
+            // Check the first *scalar value*, not the first byte: in unicode
+            // mode a preserved leading Unicode digit (e.g. "２col", "٣col") must
+            // also trigger the unsafe prefix, otherwise it bypasses the
+            // "starts with a number" safety rule. In ASCII mode the string is
+            // pure ASCII, so is_ascii_digit on the first char is equivalent to
+            // the previous first-byte check.
             if check_first_char
-                && !safename_always.is_empty()
-                && safename_always.as_bytes()[0].is_ascii_digit()
+                && safename_always.chars().next().is_some_and(|c| {
+                    if unicode {
+                        c.is_numeric()
+                    } else {
+                        c.is_ascii_digit()
+                    }
+                })
             {
                 safename_always = format!("{prefix}{safename_always}");
             }
@@ -1860,6 +1874,41 @@ pub fn is_safe_name(header_name: &str) -> bool {
     }
     let safename_re = regex_oncelock!(r"^[\w\-\s]+$");
     safename_re.is_match(header_name)
+}
+
+/// Whether `header_name` may be kept as-is in conditional mode given the active
+/// `collapse`/`unicode` options. Beyond `is_safe_name`, a name is NOT
+/// preservable when `collapse` is set and it contains a run of 2+ characters the
+/// active rewrite would collapse (e.g. the "__" in `a__b`), or when `unicode` is
+/// set and it starts with a Unicode digit (which the rewrite would prefix). This
+/// keeps conditional mode consistent with always/verify under those flags — e.g.
+/// `--mode c --collapse` rewrites `a__b` to `a_b` while still preserving genuine
+/// quoted identifiers like `Col with Embedded Spaces` (single-char separators).
+#[inline]
+fn is_conditionally_safe(header_name: &str, collapse: bool, unicode: bool) -> bool {
+    if !is_safe_name(header_name) {
+        return false;
+    }
+    if collapse {
+        let run_re = if unicode {
+            regex_oncelock!(r"[^\p{L}\p{N}]{2,}")
+        } else {
+            regex_oncelock!(r"[^A-Za-z0-9]{2,}")
+        };
+        if run_re.is_match(header_name.trim()) {
+            return false;
+        }
+    }
+    if unicode
+        && header_name
+            .trim_start_matches('_')
+            .chars()
+            .next()
+            .is_some_and(char::is_numeric)
+    {
+        return false;
+    }
+    true
 }
 
 pub fn log_end(mut qsv_args: String, now: std::time::Instant) {

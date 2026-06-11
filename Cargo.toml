@@ -434,6 +434,7 @@ serial_test = { version = "3.4", features = ["file_locks"] }
 # guaranteed-to-fail integer/float parses (-21% str/-45% bytes on
 # inference-heavy deserialization);
 # and various clippy lint suggestions applied
+# for more details, see https://github.com/dathere/qsv/wiki/Tuned-csv-Fork-Benchmarks
 csv       = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-core  = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }
 csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" }

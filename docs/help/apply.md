@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Summarize Options](#summarize-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -14,13 +14,16 @@
 Apply a series of transformation functions to given CSV column/s. This can be used to
 perform typical data-wrangling tasks and/or to harmonize some values, etc.
 
-It has four subcommands:  
+It has five subcommands:  
 1. operations*   - 40 string, format, currency, regex & NLP operators.
 2. emptyreplace* - replace empty cells with <--replacement> string.
 3. dynfmt        - Dynamically constructs a new column from other columns using
 the <--formatstr> template.
 4. calcconv      - parse and evaluate math expressions, with support for units
 and conversions.
+5. summarize*    - summarize a column or group of columns using an OpenAI
+API-compatible LLM (local or commercial), with customizable,
+Mini Jinja-templated per-record prompts.
 * subcommand is multi-column capable.
 
 OPERATIONS (multi-column capable)
@@ -314,6 +317,39 @@ qsv apply calcconv --formatstr '10% of abs(sin(pi)) horsepower to watts' -c watt
 qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv
 ```
 
+### SUMMARIZE
+
+The summarize subcommand sends each record to an OpenAI API-compatible LLM and stores the
+returned summary in a new column. The prompt is a Mini Jinja template (like `qsv template`)
+rendered per record - reference any column by its "safe" name (non-alphanumeric chars become
+'_'); the 1-based row number is available as {{QSV_ROWNO}}.
+If no --prompt/--prompt-file is given, a default prompt that summarizes the selected column/s
+is used. The LLM endpoint, model & API key are resolved with this precedence:  
+CLI flag > env var (QSV_LLM_BASE_URL / QSV_LLM_MODEL / QSV_LLM_APIKEY) > built-in default
+(default base-url: <http://localhost:1234/v1> ; default model: openai/gpt-oss-20b).
+An API key is required when the base URL is not a localhost endpoint (set --api-key to "NONE"
+to suppress sending a key). One HTTP call is made per uncached row, so summarizing large files
+can be slow & costly. Results are cached on disk (keyed by base-url, model, max-tokens,
+addl-props & the rendered prompt) so repeated rows & re-runs don't re-pay for inference;
+use --no-cache to disable & --fresh to force fresh calls that refresh the cache.
+> Summarize the support_ticket column into a new "summary" column using a local LLM:
+
+```console
+qsv apply summarize support_ticket -c summary file.csv
+```
+
+> Use a custom prompt referencing multiple columns against a cloud provider:
+
+```console
+qsv apply summarize subject,body -c summary --prompt 'Summarize: {{subject}} - {{body}}' -u https://api.openai.com/v1 -m gpt-4o-mini -k $OPENAI_API_KEY file.csv
+```
+
+> Also capture per-row inference time & token usage in extra columns:
+
+```console
+qsv apply summarize notes -c summary --stats file.csv
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_apply.rs).
 
 See also <https://github.com/dathere/qsv/wiki/Transform-and-Reshape#apply>
@@ -327,6 +363,7 @@ qsv apply operations <operations> [options] <column> [<input>]
 qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
 qsv apply dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
 qsv apply calcconv --formatstr=<string> [options] --new-column=<name> [<input>]
+qsv apply summarize [options] --new-column=<name> <column> [<input>]
 qsv apply --help
 ```
 
@@ -340,6 +377,7 @@ qsv apply --help
 | &nbsp;`<operations>`&nbsp; | The operation/s to apply. |
 | &nbsp;`<column>`&nbsp; | The column/s to apply the operations to. |
 | &nbsp;`<column>`&nbsp; | The column/s to check for emptiness. |
+| &nbsp;`<column>`&nbsp; | The column/s whose values are summarized by the LLM. Used to build the default prompt. With a custom prompt (via the --prompt/--prompt-file options), any column can be referenced. |
 | &nbsp;`<input>`&nbsp; | The input file to read from. If not specified, reads from stdin. |
 
 <a name="apply-options"></a>
@@ -362,6 +400,28 @@ qsv apply --help
 |--------|------|-------------|--------|
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 | &nbsp;`‑b,`<br>`‑‑batch`&nbsp; | integer | The number of rows per batch to load into memory, before running in parallel. Automatically determined for CSV files with more than 50000 rows. Set to 0 to load all rows in one batch. Set to 1 to force batch optimization even for files with less than 50000 rows. | `50000` |
+
+<a name="summarize-options"></a>
+
+## Summarize Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑u,`<br>`‑‑base‑url`&nbsp; | string | Base URL of the OpenAI API-compatible endpoint. Precedence: this flag > QSV_LLM_BASE_URL env var > <http://localhost:1234/v1> |  |
+| &nbsp;`‑m,`<br>`‑‑model`&nbsp; | string | Model name compatible with the OpenAI API spec. Precedence: this flag > QSV_LLM_MODEL env var > openai/gpt-oss-20b |  |
+| &nbsp;`‑k,`<br>`‑‑api‑key`&nbsp; | string | API key for Bearer token authentication. Precedence: this flag > QSV_LLM_APIKEY env var. Set to "NONE" to suppress sending a key. Required for non-localhost URLs. |  |
+| &nbsp;`‑t,`<br>`‑‑max‑tokens`&nbsp; | integer | Maximum number of tokens in the LLM output. Set to 0 to not send a max_tokens limit (automatically used for localhost endpoints). | `10000` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for each LLM request in seconds (0 = no timeout). | `300` |
+| &nbsp;`‑‑addl‑props`&nbsp; | string | Additional model properties as a JSON object, e.g. '{"reasoning_effort": "high", "temperature": 0.2}' |  |
+| &nbsp;`‑‑prompt`&nbsp; | string | Mini Jinja prompt template rendered per record. Overrides the default prompt. Reference columns by their safe name. |  |
+| &nbsp;`‑‑prompt‑file`&nbsp; | string | Read the prompt template from a file. Ignored if --prompt is set. |  |
+| &nbsp;`‑‑rate‑limit`&nbsp; | float | Seconds to sleep between LLM requests to avoid provider rate limits. Accepts fractional seconds (e.g. 0.5). | `0` |
+| &nbsp;`‑‑on‑error`&nbsp; | string | What to do when an LLM request fails: "fail" aborts; "skip" writes an "<ERROR: ...>" cell and continues. | `fail` |
+| &nbsp;`‑‑user‑agent`&nbsp; | string | Custom user agent for LLM requests. Supports variables like $QSV_VERSION. |  |
+| &nbsp;`‑‑cache‑dir`&nbsp; | string | Directory for the disk cache. | `~/.qsv-cache/apply-summarize` |
+| &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the disk cache (one LLM call per row, always). |  |
+| &nbsp;`‑‑fresh`&nbsp; | flag | Force fresh LLM calls, refreshing any cached values. |  |
+| &nbsp;`‑‑stats`&nbsp; | flag | Append two extra columns per row alongside --new-column: "<new-column>_elapsed_ms" (inference time in milliseconds) and "<new-column>_tokens" (total tokens used). For cached rows, these report the values captured when the summary was first computed. |  |
 
 <a name="common-options"></a>
 

@@ -59,6 +59,7 @@ mod cmd;
 mod config;
 mod diskcache;
 mod index;
+mod llmutil;
 mod lookup;
 mod minijinja_filters;
 mod odhtcache;

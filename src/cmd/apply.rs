@@ -2,13 +2,16 @@ static USAGE: &str = r#"
 Apply a series of transformation functions to given CSV column/s. This can be used to
 perform typical data-wrangling tasks and/or to harmonize some values, etc.
 
-It has four subcommands:
+It has five subcommands:
  1. operations*   - 40 string, format, currency, regex & NLP operators.
  2. emptyreplace* - replace empty cells with <--replacement> string.
  3. dynfmt        - Dynamically constructs a new column from other columns using
                     the <--formatstr> template.
  4. calcconv      - parse and evaluate math expressions, with support for units
                     and conversions.
+ 5. summarize*    - summarize a column or group of columns using an OpenAI
+                    API-compatible LLM (local or commercial), with customizable,
+                    Mini Jinja-templated per-record prompts.
     * subcommand is multi-column capable.
 
 OPERATIONS (multi-column capable)
@@ -216,6 +219,33 @@ Examples:
   # Use very large numbers:
   qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vigintillion' -c num_atoms file.csv
 
+== SUMMARIZE ==
+
+The summarize subcommand sends each record to an OpenAI API-compatible LLM and stores the
+returned summary in a new column. The prompt is a Mini Jinja template (like `qsv template`)
+rendered per record - reference any column by its "safe" name (non-alphanumeric chars become
+'_'); the 1-based row number is available as {{QSV_ROWNO}}.
+
+If no --prompt/--prompt-file is given, a default prompt that summarizes the selected column/s
+is used. The LLM endpoint, model & API key are resolved with this precedence:
+  CLI flag > env var (QSV_LLM_BASE_URL / QSV_LLM_MODEL / QSV_LLM_APIKEY) > built-in default
+(default base-url: http://localhost:1234/v1 ; default model: openai/gpt-oss-20b).
+
+An API key is required when the base URL is not a localhost endpoint (set --api-key to "NONE"
+to suppress sending a key). One HTTP call is made per uncached row, so summarizing large files
+can be slow & costly. Results are cached on disk (keyed by base-url, model, max-tokens,
+addl-props & the rendered prompt) so repeated rows & re-runs don't re-pay for inference;
+use --no-cache to disable & --fresh to force fresh calls that refresh the cache.
+
+  # Summarize the support_ticket column into a new "summary" column using a local LLM:
+  qsv apply summarize support_ticket -c summary file.csv
+
+  # Use a custom prompt referencing multiple columns against a cloud provider:
+  qsv apply summarize subject,body -c summary --prompt 'Summarize: {{subject}} - {{body}}' -u https://api.openai.com/v1 -m gpt-4o-mini -k $OPENAI_API_KEY file.csv
+
+  # Also capture per-row inference time & token usage in extra columns:
+  qsv apply summarize notes -c summary --stats file.csv
+
 For more extensive examples, see https://github.com/dathere/qsv/blob/master/tests/test_apply.rs.
 See also https://github.com/dathere/qsv/wiki/Transform-and-Reshape#apply
 
@@ -224,6 +254,7 @@ qsv apply operations <operations> [options] <column> [<input>]
 qsv apply emptyreplace --replacement=<string> [options] <column> [<input>]
 qsv apply dynfmt --formatstr=<string> [options] --new-column=<name> [<input>]
 qsv apply calcconv --formatstr=<string> [options] --new-column=<name> [<input>]
+qsv apply summarize [options] --new-column=<name> <column> [<input>]
 qsv apply --help
 
 apply arguments:
@@ -248,6 +279,13 @@ apply arguments:
     CALCCONV subcommand:
         --formatstr=<string>        The calculation/conversion expression to use.
         --new-column=<name>         Put the calculated/converted values in a new column.
+
+    SUMMARIZE subcommand:
+        <column>                    The column/s whose values are summarized by the LLM.
+                                    Used to build the default prompt. With a custom prompt
+                                    (via the --prompt/--prompt-file options), any column
+                                    can be referenced.
+        --new-column=<name>         Put the generated summaries in a new column (required).
 
     <input>                     The input file to read from. If not specified, reads from stdin.
 
@@ -291,6 +329,37 @@ apply options:
                                 even for files with less than 50000 rows.
                                 [default: 50000]
 
+SUMMARIZE options:
+    -u, --base-url <url>        Base URL of the OpenAI API-compatible endpoint.
+                                Precedence: this flag > QSV_LLM_BASE_URL env var > http://localhost:1234/v1
+    -m, --model <model>         Model name compatible with the OpenAI API spec.
+                                Precedence: this flag > QSV_LLM_MODEL env var > openai/gpt-oss-20b
+    -k, --api-key <key>         API key for Bearer token authentication.
+                                Precedence: this flag > QSV_LLM_APIKEY env var.
+                                Set to "NONE" to suppress sending a key. Required for non-localhost URLs.
+    -t, --max-tokens <n>        Maximum number of tokens in the LLM output. Set to 0 to not send a
+                                max_tokens limit (automatically used for localhost endpoints).
+                                [default: 10000]
+    --timeout <secs>            Timeout for each LLM request in seconds (0 = no timeout).
+                                [default: 300]
+    --addl-props <json>         Additional model properties as a JSON object, e.g.
+                                '{"reasoning_effort": "high", "temperature": 0.2}'
+    --prompt <template>         Mini Jinja prompt template rendered per record. Overrides the
+                                default prompt. Reference columns by their safe name.
+    --prompt-file <file>        Read the prompt template from a file. Ignored if --prompt is set.
+    --rate-limit <secs>         Seconds to sleep between LLM requests to avoid provider rate limits.
+                                Accepts fractional seconds (e.g. 0.5). [default: 0]
+    --on-error <mode>           What to do when an LLM request fails: "fail" aborts; "skip" writes
+                                an "<ERROR: ...>" cell and continues. [default: fail]
+    --user-agent <agent>        Custom user agent for LLM requests. Supports variables like $QSV_VERSION.
+    --cache-dir <dir>           Directory for the disk cache. [default: ~/.qsv-cache/apply-summarize]
+    --no-cache                  Disable the disk cache (one LLM call per row, always).
+    --fresh                     Force fresh LLM calls, refreshing any cached values.
+    --stats                     Append two extra columns per row alongside --new-column:
+                                "<new-column>_elapsed_ms" (inference time in milliseconds) and
+                                "<new-column>_tokens" (total tokens used). For cached rows, these
+                                report the values captured when the summary was first computed.
+
 Common options:
     -h, --help                  Display this message
     -o, --output <file>         Write output to <file> instead of stdout.
@@ -301,9 +370,10 @@ Common options:
     -p, --progressbar           Show progress bars. Not valid for stdin.
 "#;
 
-use std::{str::FromStr, sync::OnceLock};
+use std::{collections::BTreeMap, str::FromStr, sync::OnceLock, time::Duration};
 
 use base64_simd::STANDARD as BASE64;
+use cached::{ConcurrentCached, DiskCache, DiskCacheBuilder};
 use censor::{Censor, Sex, Zealous};
 use cpc::eval;
 use dynfmt2::Format;
@@ -311,6 +381,7 @@ use eudex::Hash;
 use gender_guesser::Gender;
 use indicatif::{ProgressBar, ProgressDrawTarget};
 use log::debug;
+use minijinja::Environment;
 use qsv_currency::Currency;
 use qsv_vader_sentiment_analysis::SentimentIntensityAnalyzer;
 use rayon::{
@@ -318,7 +389,8 @@ use rayon::{
     prelude::IntoParallelRefIterator,
 };
 use regex::Regex;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
 use smallvec::SmallVec;
 use strsim::{
     damerau_levenshtein, hamming, jaro_winkler, normalized_damerau_levenshtein, osa_distance,
@@ -333,8 +405,8 @@ use crate::{
     CliResult,
     clitypes::CliError,
     config::{Config, DEFAULT_RDR_BUFFER_CAPACITY, Delimiter},
-    regex_oncelock,
-    select::SelectColumns,
+    llmutil, regex_oncelock,
+    select::{SelectColumns, Selection},
     util,
     util::replace_column_value,
 };
@@ -394,6 +466,7 @@ struct Args {
     cmd_dynfmt:       bool,
     cmd_emptyreplace: bool,
     cmd_calcconv:     bool,
+    cmd_summarize:    bool,
     arg_input:        Option<String>,
     flag_rename:      Option<String>,
     flag_comparand:   String,
@@ -406,6 +479,22 @@ struct Args {
     flag_no_headers:  bool,
     flag_delimiter:   Option<Delimiter>,
     flag_progressbar: bool,
+    // summarize subcommand options
+    flag_base_url:    Option<String>,
+    flag_model:       Option<String>,
+    flag_api_key:     Option<String>,
+    flag_max_tokens:  u32,
+    flag_timeout:     u16,
+    flag_addl_props:  Option<String>,
+    flag_prompt:      Option<String>,
+    flag_prompt_file: Option<String>,
+    flag_rate_limit:  f64,
+    flag_on_error:    String,
+    flag_user_agent:  Option<String>,
+    flag_cache_dir:   Option<String>,
+    flag_no_cache:    bool,
+    flag_fresh:       bool,
+    flag_stats:       bool,
 }
 
 static CENSOR: OnceLock<Censor> = OnceLock::new();
@@ -424,6 +513,22 @@ const DEFAULT_THRESHOLD: f64 = 0.9;
 const DEFAULT_ROUND_PLACES: u32 = 3;
 
 const NULL_VALUE: &str = "<null>";
+
+// summarize subcommand defaults (mirror describegpt)
+const DEFAULT_LLM_BASE_URL: &str = "http://localhost:1234/v1";
+const DEFAULT_LLM_MODEL: &str = "openai/gpt-oss-20b";
+// default disk cache TTL for apply-summarize: 28 days (matches describegpt)
+const DEFAULT_SUMMARIZE_CACHE_TTL_SECS: u64 = 60 * 60 * 24 * 28;
+
+// What we persist in the disk cache for each summarized row. We store the token count &
+// elapsed time (in addition to the content) so that --stats can report them even on a
+// cache hit, using the values captured when the summary was first computed.
+#[derive(Serialize, Deserialize, Clone)]
+struct CachedSummary {
+    content:      String,
+    total_tokens: u64,
+    elapsed_ms:   u64,
+}
 
 // for thousands operator
 static INDIANCOMMA_POLICY: SeparatorPolicy = SeparatorPolicy {
@@ -445,6 +550,7 @@ enum ApplySubCmd {
     DynFmt,
     EmptyReplace,
     CalcConv,
+    Summarize,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -452,7 +558,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers)
-        .select(args.arg_column)
+        .select(args.arg_column.clone())
         // since apply does batch processing,
         // use a bigger read buffer unless the user set their own buffer
         .set_read_buffer(if std::env::var("QSV_RDR_BUFFER_CAPACITY").is_err() {
@@ -488,6 +594,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let column_index = *sel.iter().next().unwrap();
 
     let mut headers = rdr.headers()?.clone();
+
+    // The summarize subcommand has a fundamentally different (network-bound, sequential,
+    // cached) execution model than the CPU-bound parallel subcommands, so handle it in a
+    // dedicated function and return early.
+    if args.cmd_summarize {
+        return summarize_run(&args, &mut rdr, &mut wtr, &sel, &headers, &rconfig);
+    }
 
     if let Some(new_name) = args.flag_rename {
         let new_col_names = util::ColumnNameParser::new(&new_name).parse()?;
@@ -555,6 +668,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ApplySubCmd::EmptyReplace
     } else if args.cmd_calcconv {
         ApplySubCmd::CalcConv
+    } else if args.cmd_summarize {
+        ApplySubCmd::Summarize
     } else {
         return fail_incorrectusage_clierror!("Unknown apply subcommand.");
     };
@@ -774,6 +889,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             record = replace_column_value(&record, column_index, &result);
                         }
                     },
+                    // summarize is network-bound & handled in summarize_run() before this
+                    // parallel batch loop is ever reached.
+                    ApplySubCmd::Summarize => unreachable!(),
                 }
 
                 record
@@ -791,6 +909,283 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
         batch.clear();
     } // end batch loop
+
+    if show_progress {
+        util::finish_progress(&progress);
+    }
+    Ok(wtr.flush()?)
+}
+
+/// Returns true if `base_url`'s host is a loopback address (localhost / 127.0.0.1 / ::1).
+///
+/// Parses the URL and checks the actual host so values like `https://localhost.evil.com/v1`
+/// are NOT misclassified as local (a naive substring match would). Falls back to a substring
+/// check only if the URL can't be parsed.
+fn is_localhost_url(base_url: &str) -> bool {
+    match reqwest::Url::parse(base_url) {
+        Ok(url) => matches!(
+            url.host_str(),
+            Some("localhost" | "127.0.0.1" | "::1" | "[::1]")
+        ),
+        Err(_) => base_url.contains("localhost") || base_url.contains("127.0.0.1"),
+    }
+}
+
+/// Runs the `apply summarize` subcommand.
+///
+/// Unlike the other (CPU-bound, Rayon-parallel) apply subcommands, summarize is network-bound:
+/// it renders a Mini Jinja prompt per record, calls an OpenAI API-compatible LLM, and stores
+/// the returned summary in a new column. It runs sequentially so HTTP errors propagate cleanly
+/// and requests can be rate-limited, and it caches results on disk so repeated rows / re-runs
+/// don't re-pay for inference.
+#[allow(clippy::too_many_lines)]
+fn summarize_run<R: std::io::Read, W: std::io::Write>(
+    args: &Args,
+    rdr: &mut csv::Reader<R>,
+    wtr: &mut csv::Writer<W>,
+    sel: &Selection,
+    headers: &csv::StringRecord,
+    rconfig: &Config,
+) -> CliResult<()> {
+    if args.flag_no_headers {
+        return fail_incorrectusage_clierror!("apply summarize requires headers.");
+    }
+    let Some(new_column) = args.flag_new_column.as_ref() else {
+        return fail_incorrectusage_clierror!("apply summarize requires --new-column (-c).");
+    };
+
+    // Sanitize header names into safe Mini Jinja context keys (non-alphanumeric -> '_').
+    // Use util::safe_header_names rather than a naive per-char map so that:
+    //  - headers which sanitize to the same key (e.g. `a.b` and `a_b`) get unique disambiguated
+    //    names (`a_b`, `a_b_2`) instead of silently colliding & overwriting each other; and
+    //  - digit-leading headers (e.g. `1st_col`) get a leading `_` (check_first_char=true), since
+    //    Mini Jinja/Jinja identifiers can't start with a digit (`{{ 1st_col }}` would fail).
+    // keep_case=true preserves the original casing. The SAME mapping drives both the default
+    // prompt and the per-record context insertion.
+    let (sanitized_headers, _) = util::safe_header_names(headers, true, false, None, "", true);
+
+    // resolve effective base_url / model / api_key: CLI flag > env var > built-in default
+    let base_url = args
+        .flag_base_url
+        .clone()
+        .or_else(|| std::env::var("QSV_LLM_BASE_URL").ok())
+        .unwrap_or_else(|| DEFAULT_LLM_BASE_URL.to_string());
+    let model = args
+        .flag_model
+        .clone()
+        .or_else(|| std::env::var("QSV_LLM_MODEL").ok())
+        .unwrap_or_else(|| DEFAULT_LLM_MODEL.to_string());
+    let resolved_key = args
+        .flag_api_key
+        .clone()
+        .or_else(|| std::env::var("QSV_LLM_APIKEY").ok())
+        .unwrap_or_default();
+
+    let is_localhost = is_localhost_url(&base_url);
+    // "NONE" (case-insensitive) means: explicitly don't send an Authorization header
+    let suppress_key = resolved_key.eq_ignore_ascii_case("NONE");
+    let api_key = if suppress_key {
+        String::new()
+    } else {
+        resolved_key
+    };
+    // require an API key for non-localhost endpoints (unless explicitly suppressed with NONE)
+    if !is_localhost && api_key.is_empty() && !suppress_key {
+        return fail_incorrectusage_clierror!(
+            "An --api-key (or QSV_LLM_APIKEY env var) is required for non-localhost endpoints. \
+             Set --api-key NONE to suppress sending a key."
+        );
+    }
+
+    // localhost LLMs typically don't want a max_tokens cap; mirror describegpt behavior
+    let max_tokens = if is_localhost || args.flag_max_tokens == 0 {
+        None
+    } else {
+        Some(args.flag_max_tokens)
+    };
+
+    // build the prompt template: --prompt > --prompt-file > generated default
+    let prompt_str = if let Some(p) = args.flag_prompt.clone() {
+        p
+    } else if let Some(pf) = args.flag_prompt_file.as_ref() {
+        std::fs::read_to_string(pf)
+            .map_err(|e| CliError::Other(format!("Cannot read --prompt-file '{pf}': {e}")))?
+    } else {
+        // default: summarize the selected column/s
+        let mut s = String::from("Summarize the following text concisely:\n");
+        for col_index in sel.iter() {
+            let safe = &sanitized_headers[*col_index];
+            s.push_str(&format!("{safe}: {{{{ {safe} }}}}\n"));
+        }
+        s
+    };
+
+    // set up Mini Jinja with qsv's shared filter set (regex, datefmt, slugify, etc.)
+    let mut env = Environment::new();
+    minijinja_contrib::add_to_environment(&mut env);
+    env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);
+    crate::minijinja_filters::register(&mut env);
+    env.add_template_owned("prompt", prompt_str)
+        .map_err(|e| CliError::Other(format!("Invalid prompt template: {e}")))?;
+    let template = env
+        .get_template("prompt")
+        .map_err(|e| CliError::Other(format!("Invalid prompt template: {e}")))?;
+
+    // build the blocking HTTP client
+    let client = util::create_reqwest_blocking_client(
+        args.flag_user_agent.clone(),
+        args.flag_timeout,
+        Some(base_url.clone()),
+    )?;
+
+    // set up the disk cache (unless --no-cache)
+    let cache: Option<DiskCache<String, CachedSummary>> = if args.flag_no_cache {
+        None
+    } else {
+        let cache_dir = if let Some(dir) = args.flag_cache_dir.clone() {
+            dir
+        } else {
+            util::expand_tilde("~/.qsv-cache/apply-summarize")
+                .ok_or_else(|| {
+                    CliError::Other("Cannot determine default cache directory".to_string())
+                })?
+                .to_string_lossy()
+                .into_owned()
+        };
+        let ttl_secs = std::env::var("QSV_DISKCACHE_TTL_SECS")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(DEFAULT_SUMMARIZE_CACHE_TTL_SECS);
+        let dc = DiskCacheBuilder::new("apply-summarize")
+            .disk_directory(&cache_dir)
+            .ttl(Duration::from_secs(ttl_secs))
+            .sync_to_disk_on_cache_change(true)
+            .build()
+            .map_err(|e| CliError::Other(format!("Cannot build disk cache: {e:?}")))?;
+        Some(dc)
+    };
+
+    let addl_props = args.flag_addl_props.as_deref();
+
+    // write headers: new_column (+ optional stats columns)
+    let mut out_headers = headers.clone();
+    out_headers.push_field(new_column);
+    if args.flag_stats {
+        out_headers.push_field(&format!("{new_column}_elapsed_ms"));
+        out_headers.push_field(&format!("{new_column}_tokens"));
+    }
+    wtr.write_record(&out_headers)?;
+
+    // progress bar
+    let show_progress =
+        (args.flag_progressbar || util::get_envvar_flag("QSV_PROGRESSBAR")) && !rconfig.is_stdin();
+    let progress = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+    if show_progress {
+        util::prep_progress(&progress, util::count_rows(rconfig)?);
+    } else {
+        progress.set_draw_target(ProgressDrawTarget::hidden());
+    }
+
+    let rate_limit = if args.flag_rate_limit > 0.0 {
+        Some(Duration::from_secs_f64(args.flag_rate_limit))
+    } else {
+        None
+    };
+    let skip_on_error = args.flag_on_error.eq_ignore_ascii_case("skip");
+
+    let mut record = csv::StringRecord::new();
+    let mut row_number: u64 = 0;
+    let mut first_request = true;
+    while rdr.read_record(&mut record)? {
+        row_number += 1;
+
+        // build the per-record template context (sanitized header -> field) + QSV_ROWNO
+        let rowno_str = row_number.to_string();
+        let mut ctx: BTreeMap<&str, &str> = BTreeMap::new();
+        for (header, field) in sanitized_headers.iter().zip(record.iter()) {
+            ctx.insert(header.as_str(), field);
+        }
+        ctx.insert("QSV_ROWNO", rowno_str.as_str());
+
+        let user_prompt = template
+            .render(&ctx)
+            .map_err(|e| CliError::Other(format!("Prompt render error (row {row_number}): {e}")))?;
+
+        // cache key: base_url | model | max_tokens | addl_props | rendered prompt
+        let cache_key = blake3::hash(
+            format!(
+                "{base_url}|{model}|{max_tokens:?}|{}|{user_prompt}",
+                addl_props.unwrap_or("")
+            )
+            .as_bytes(),
+        )
+        .to_hex()
+        .to_string();
+
+        // try the cache first (unless --fresh forces a new call)
+        let mut cached: Option<CachedSummary> = None;
+        if let Some(cache) = &cache
+            && !args.flag_fresh
+        {
+            cached = cache
+                .cache_get(&cache_key)
+                .map_err(|e| CliError::Other(format!("Disk cache error: {e:?}")))?;
+        }
+
+        let summary = if let Some(cs) = cached {
+            cs
+        } else {
+            // rate-limit between live requests
+            if let Some(rl) = rate_limit
+                && !first_request
+            {
+                std::thread::sleep(rl);
+            }
+            first_request = false;
+
+            let messages = json!([{ "role": "user", "content": user_prompt }]);
+            let cs = match llmutil::chat_completion(
+                &client, &base_url, &api_key, &model, max_tokens, &messages, addl_props,
+            ) {
+                Ok(resp) => CachedSummary {
+                    content:      resp.content,
+                    total_tokens: resp.total_tokens,
+                    elapsed_ms:   resp.elapsed_ms,
+                },
+                Err(e) => {
+                    if skip_on_error {
+                        CachedSummary {
+                            content:      format!("<ERROR: {e}>"),
+                            total_tokens: 0,
+                            elapsed_ms:   0,
+                        }
+                    } else {
+                        return Err(e);
+                    }
+                },
+            };
+            // only cache successful results
+            if let Some(cache) = &cache
+                && !cs.content.starts_with("<ERROR:")
+            {
+                cache
+                    .cache_set(cache_key.clone(), cs.clone())
+                    .map_err(|e| CliError::Other(format!("Disk cache error: {e:?}")))?;
+            }
+            cs
+        };
+
+        record.push_field(&summary.content);
+        if args.flag_stats {
+            record.push_field(&summary.elapsed_ms.to_string());
+            record.push_field(&summary.total_tokens.to_string());
+        }
+        wtr.write_record(&record)?;
+
+        if show_progress {
+            progress.inc(1);
+        }
+    }
 
     if show_progress {
         util::finish_progress(&progress);

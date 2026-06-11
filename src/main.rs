@@ -28,6 +28,7 @@ mod diskcache;
 mod generators_common;
 mod help_markdown_gen;
 mod index;
+mod llmutil;
 mod lookup;
 #[cfg(feature = "mcp")]
 mod mcp_skills_gen;

@@ -637,7 +637,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         dynfmt_fields.sort_unstable();
 
         // now, get the indices of the columns for the lookup vec
-        let (safe_headers, _) = util::safe_header_names(&headers, false, false, None, "", true);
+        let (safe_headers, _) =
+            util::safe_header_names(&headers, false, false, None, "", true, false, false);
         for (i, field) in safe_headers.iter().enumerate() {
             if dynfmt_fields.binary_search(&field.as_str()).is_ok() {
                 let field_with_curly = format!("{{{field}}}");
@@ -962,7 +963,8 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
     //    Mini Jinja/Jinja identifiers can't start with a digit (`{{ 1st_col }}` would fail).
     // keep_case=true preserves the original casing. The SAME mapping drives both the default
     // prompt and the per-record context insertion.
-    let (sanitized_headers, _) = util::safe_header_names(headers, true, false, None, "", true);
+    let (sanitized_headers, _) =
+        util::safe_header_names(headers, true, false, None, "", true, false, false);
 
     // resolve effective base_url / model / api_key: CLI flag > env var > built-in default
     let base_url = args

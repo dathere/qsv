@@ -258,7 +258,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // Compute Python-safe local-variable names from the input headers BEFORE
     // any new output column is appended below, so header_vec.len() ==
     // headers_len and the per-row loop doesn't need a .take() guard.
-    let (header_vec, _) = util::safe_header_names(&headers, true, false, None, "_", false);
+    let (header_vec, _) =
+        util::safe_header_names(&headers, true, false, None, "_", false, false, false);
 
     if !rconfig.no_headers {
         if !args.cmd_filter {

@@ -350,6 +350,289 @@ fn safenames_reserved_names_default() {
 }
 
 #[test]
+fn safenames_mode_s_ascii_collapse() {
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec![
+                "c1",
+                "12_col",
+                "Col with Embedded Spaces",
+                "",
+                "Column!@Invalid+Chars",
+                "c1"
+            ],
+            svec!["1", "a2", "a3", "a4", "a5", "a6"],
+        ],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![
+        svec![
+            "c1",
+            "unsafe_12_col",
+            "col_with_embedded_spaces",
+            "unsafe_",
+            // runs of non-alphanumerics collapse to a single _
+            // ("column_invalid_chars", not "column__invalid_chars")
+            "column_invalid_chars",
+            "c1_2"
+        ],
+        svec!["1", "a2", "a3", "a4", "a5", "a6"],
+    ];
+    assert_eq!(got, expected);
+
+    // fresh Command for the stderr assertion; stderr_on_success also asserts the
+    // command exited 0 so a silent failure can't masquerade as the expected count.
+    let mut cmd_stderr = wrk.command("safenames");
+    cmd_stderr.arg("--mode").arg("s").arg("in.csv");
+    assert_eq!(wrk.stderr_on_success(&mut cmd_stderr), "5\n");
+}
+
+#[test]
+fn safenames_collapse_flag_equivalence() {
+    // --mode s is shorthand for --mode a --collapse; both must produce
+    // identical output.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![svec!["Column!@Invalid+Chars", "a__b"], svec!["1", "2"]],
+    );
+
+    let mut cmd_s = wrk.command("safenames");
+    cmd_s.arg("--mode").arg("s").arg("in.csv");
+    let got_s: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_s);
+
+    let mut cmd_flag = wrk.command("safenames");
+    cmd_flag
+        .arg("--mode")
+        .arg("a")
+        .arg("--collapse")
+        .arg("in.csv");
+    let got_flag: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_flag);
+
+    assert_eq!(got_s, got_flag);
+    assert_eq!(
+        got_s,
+        vec![svec!["column_invalid_chars", "a_b"], svec!["1", "2"],]
+    );
+}
+
+#[test]
+fn safenames_mode_s_lowercase() {
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["MixedCASE"], svec!["1"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["mixedcase"], svec!["1"]]);
+}
+
+#[test]
+fn safenames_mode_S_unicode_preserve() {
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![svec!["Café #Ñ5", "naïve Column"], svec!["1", "2"]],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("S").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    // unicode letters & numbers preserved, lowercased, separators collapsed
+    assert_eq!(got, vec![svec!["café_ñ5", "naïve_column"], svec!["1", "2"]]);
+
+    // fresh Command for the stderr assertion (stderr_on_success also asserts exit 0)
+    let mut cmd_stderr = wrk.command("safenames");
+    cmd_stderr.arg("--mode").arg("S").arg("in.csv");
+    assert_eq!(wrk.stderr_on_success(&mut cmd_stderr), "2\n");
+}
+
+#[test]
+fn safenames_mode_s_vs_S_unicode_difference() {
+    // ASCII mode s strips the unicode chars; mode S preserves them.
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["Café #Ñ5"], svec!["1"]]);
+
+    let mut cmd_s = wrk.command("safenames");
+    cmd_s.arg("--mode").arg("s").arg("in.csv");
+    let got_s: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_s);
+    assert_eq!(got_s, vec![svec!["caf_5"], svec!["1"]]);
+}
+
+#[test]
+fn safenames_collapse_prefix_interaction() {
+    // A leading run of non-alphanumerics collapses to a single _, which then
+    // triggers the unsafe_ prefix prepend (documents the prefix-join _ adjacency).
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["!!weird"], svec!["1"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["unsafe__weird"], svec!["1"]]);
+}
+
+#[test]
+fn safenames_collapse_leading_digit() {
+    // collapse does not interfere with the leading-digit unsafe_ prefix.
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["12col", "5 apples"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["unsafe_12col", "unsafe_5_apples"], svec!["1", "2"]]
+    );
+}
+
+#[test]
+fn safenames_collapse_duplicate_suffix() {
+    // Two distinct headers that collapse to the same name still get
+    // disambiguated with a sequence suffix.
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["a!b", "a@b"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["a_b", "a_b_2"], svec!["1", "2"]]);
+}
+
+#[test]
+fn safenames_json_mode_collapse() {
+    // The collapse & unicode flags compose with the JSON report mode, so the
+    // safe/unsafe classification reflects the "safer" rewrite. Without
+    // --collapse, "a__b" would be classified safe; with it, it's unsafe.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![svec!["id", "a__b", "Café"], svec!["1", "2", "3"]],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode")
+        .arg("j")
+        .arg("--collapse")
+        .arg("--unicode")
+        .arg("in.csv");
+
+    // single run: capture Output once and assert on both status and stdout so a
+    // non-zero exit can't be masked by a re-run.
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success(), "command failed: {output:?}");
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "{\"header_count\":3,\"duplicate_count\":0,\"duplicate_headers\":[],\"\
+                    unsafe_headers\":[\"a__b\",\"Café\"],\"safe_headers\":[\"id\"]}\n";
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn safenames_60byte_truncation_collapse() {
+    // A long separator-heavy header must still be truncated to <= 60 bytes
+    // after collapsing.
+    let wrk = Workdir::new("safenames");
+    let long_header = "z!".repeat(40); // 80 chars -> collapses to "z_" x40 = 80 chars
+    wrk.create("in.csv", vec![vec![long_header], vec!["1".to_string()]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("s").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let header = &got[0][0];
+    assert_eq!(header.len(), 60);
+    assert!(header.starts_with("z_z_"));
+}
+
+#[test]
+fn safenames_conditional_collapse() {
+    // In conditional mode, --collapse must still rewrite headers with a
+    // collapsible run (a__b -> a_b), while preserving single-separator names
+    // and genuine quoted identifiers.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["a__b", "single_us", "Col with Embedded Spaces"],
+            svec!["1", "2", "3"],
+        ],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--collapse").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![
+            svec!["a_b", "single_us", "Col with Embedded Spaces"],
+            svec!["1", "2", "3"],
+        ]
+    );
+}
+
+#[test]
+fn safenames_unicode_leading_digit_prefixed() {
+    // With --unicode, a preserved leading Unicode digit must still trigger the
+    // unsafe_ prefix (full-width '２' and arabic-indic '٣').
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["２col", "٣col"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("S").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(
+        got,
+        vec![svec!["unsafe_２col", "unsafe_٣col"], svec!["1", "2"]]
+    );
+}
+
+#[test]
+fn safenames_conditional_unicode_leading_digit() {
+    // conditional + unicode: a valid unicode identifier is preserved, but a
+    // leading unicode digit is not (it gets the unsafe_ prefix).
+    let wrk = Workdir::new("safenames");
+    wrk.create("in.csv", vec![svec!["café", "２col"], svec!["1", "2"]]);
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["café", "unsafe_２col"], svec!["1", "2"]]);
+}
+
+#[test]
+fn safenames_conditional_unicode_combining_mark() {
+    // A decomposed header (base + combining mark) must be rewritten in
+    // conditional+unicode mode (consistent with always/verify), since the unicode
+    // sanitizer replaces the \p{M} mark; the composed form is preserved.
+    let wrk = Workdir::new("safenames");
+    wrk.create(
+        "in.csv",
+        vec![svec!["cafe\u{301}", "caf\u{e9}"], svec!["1", "2"]],
+    );
+
+    let mut cmd = wrk.command("safenames");
+    cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    assert_eq!(got, vec![svec!["cafe_", "caf\u{e9}"], svec!["1", "2"]]);
+}
+
+#[test]
 fn safenames_reserved_names_specified() {
     let wrk = Workdir::new("safenames");
     wrk.create(

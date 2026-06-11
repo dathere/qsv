@@ -1712,6 +1712,8 @@ pub fn safe_header_names(
     reserved_names: Option<&Vec<String>>,
     unsafe_prefix: &str,
     keep_case: bool,
+    collapse: bool,
+    unicode: bool,
 ) -> (Vec<String>, u16) {
     // Create "safe" var/key names - to support dynfmt/url-template, valid python vars & db-safe
     // column names. Fold to lowercase if keep_case is false. Trim leading & trailing whitespace.
@@ -1721,6 +1723,11 @@ pub fn safe_header_names(
     // a UTF-8 char boundary), matching `is_safe_name`'s byte check and staying within
     // Postgres' default NAMEDATALEN of 63 bytes — including any disambiguation suffix.
     // Empty names are replaced with unsafe_prefix as well.
+    //
+    // If `collapse` is true, runs of non-alphanumeric characters collapse into a
+    // single `_` (the regex gains a `+`); since `_` is itself non-alphanumeric,
+    // runs of literal underscores collapse too. If `unicode` is true, unicode
+    // letters & numbers are preserved instead of being stripped to ASCII.
 
     // If conditional = true & reserved_names is none, only rename the header if its not safe
     let prefix = if unsafe_prefix.is_empty() {
@@ -1728,7 +1735,15 @@ pub fn safe_header_names(
     } else {
         unsafe_prefix
     };
-    let safename_regex = regex_oncelock!(r"[^A-Za-z0-9]");
+    // Select the sanitization regex based on the (collapse, unicode) axes. Each
+    // `regex_oncelock!` literal compiles to its own static OnceLock; we just pick
+    // the reference at runtime. Appending `+` collapses runs into one `_`.
+    let safename_regex = match (collapse, unicode) {
+        (false, false) => regex_oncelock!(r"[^A-Za-z0-9]"),
+        (true, false) => regex_oncelock!(r"[^A-Za-z0-9]+"),
+        (false, true) => regex_oncelock!(r"[^\p{L}\p{N}]"),
+        (true, true) => regex_oncelock!(r"[^\p{L}\p{N}]+"),
+    };
     let mut changed_count = 0_u16;
     let mut name_vec: Vec<String> = Vec::with_capacity(headers.len());
     let mut safe_name: String;
@@ -1750,7 +1765,10 @@ pub fn safe_header_names(
         } else {
             false
         };
-        safe_name = if conditional && is_safe_name(header_name) && !reserved_found {
+        safe_name = if conditional
+            && is_conditionally_safe(header_name, collapse, unicode)
+            && !reserved_found
+        {
             header_name.to_string()
         } else {
             // Trim first so whitespace-only headers are treated as empty —
@@ -1763,9 +1781,20 @@ pub fn safe_header_names(
                     .replace_all(header_name.trim(), "_")
                     .to_string()
             };
+            // Check the first *scalar value*, not the first byte: in unicode
+            // mode a preserved leading Unicode digit (e.g. "２col", "٣col") must
+            // also trigger the unsafe prefix, otherwise it bypasses the
+            // "starts with a number" safety rule. In ASCII mode the string is
+            // pure ASCII, so is_ascii_digit on the first char is equivalent to
+            // the previous first-byte check.
             if check_first_char
-                && !safename_always.is_empty()
-                && safename_always.as_bytes()[0].is_ascii_digit()
+                && safename_always.chars().next().is_some_and(|c| {
+                    if unicode {
+                        c.is_numeric()
+                    } else {
+                        c.is_ascii_digit()
+                    }
+                })
             {
                 safename_always = format!("{prefix}{safename_always}");
             }
@@ -1845,6 +1874,59 @@ pub fn is_safe_name(header_name: &str) -> bool {
     }
     let safename_re = regex_oncelock!(r"^[\w\-\s]+$");
     safename_re.is_match(header_name)
+}
+
+/// Whether `header_name` may be kept as-is in conditional mode given the active
+/// `collapse`/`unicode` options. Beyond `is_safe_name`, a name is NOT
+/// preservable when:
+///  - `collapse` is set and it contains a run of 2+ characters the active rewrite would collapse
+///    (e.g. the "__" in `a__b`); or
+///  - `unicode` is set and it contains a character the unicode sanitizer (`[^\p{L}\p{N}]`) would
+///    replace but `is_safe_name`'s lenient `\w` admits — e.g. combining marks (`\p{M}`) or
+///    connector punctuation — apart from the quoted-identifier separators (`_`, `-`, whitespace);
+///    or
+///  - `unicode` is set and it starts with a Unicode digit (the rewrite prefixes it).
+///
+/// This keeps conditional mode consistent with always/verify under those flags —
+/// e.g. `--mode c --collapse` rewrites `a__b` to `a_b` and `--mode c --unicode`
+/// rewrites a decomposed `cafe\u{301}` to `cafe_`, while still preserving genuine
+/// quoted identifiers like `Col with Embedded Spaces` and composed unicode names.
+#[inline]
+fn is_conditionally_safe(header_name: &str, collapse: bool, unicode: bool) -> bool {
+    if !is_safe_name(header_name) {
+        return false;
+    }
+    if collapse {
+        let run_re = if unicode {
+            regex_oncelock!(r"[^\p{L}\p{N}]{2,}")
+        } else {
+            regex_oncelock!(r"[^A-Za-z0-9]{2,}")
+        };
+        if run_re.is_match(header_name.trim()) {
+            return false;
+        }
+    }
+    if unicode {
+        // Reject any character the unicode sanitizer would replace, except the
+        // quoted-identifier separators we intentionally preserve (`_`, `-`,
+        // whitespace). Without this, `\w`-only chars such as combining marks
+        // would be kept here yet rewritten by always/verify.
+        let unicode_extra_re = regex_oncelock!(r"[^\p{L}\p{N}_\-\s]");
+        if unicode_extra_re.is_match(header_name) {
+            return false;
+        }
+        // A preserved leading Unicode digit must also be rejected so the
+        // "starts with a number" rule still applies (e.g. `２col`).
+        if header_name
+            .trim_start_matches('_')
+            .chars()
+            .next()
+            .is_some_and(char::is_numeric)
+        {
+            return false;
+        }
+    }
+    true
 }
 
 pub fn log_end(mut qsv_args: String, now: std::time::Instant) {

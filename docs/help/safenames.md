@@ -74,6 +74,31 @@ stderr: 6 header/s
 4 unsafe header/s: ["12_col", "Col with Embedded Spaces", "", "Column!@Invalid+Chars"]
 1 safe header/s: ["c1"]
 
+"Safer" (s) mode - like always, but collapses runs of non-alphanumeric
+characters into a single _ (note "column_invalid_chars", not "column__invalid_chars"):  
+```console
+$ qsv safenames --mode s data.csv
+```
+
+c1,unsafe_12_col,col_with_embedded_spaces,unsafe_,column_invalid_chars,c1_2
+1,a2,a3,a4,a5,a6
+stderr: 5
+
+"Safer" with unicode (S) mode - same as s, but preserves unicode letters & numbers.
+Given a header "Café #5", "--mode S" yields "café_5", whereas the ASCII
+"--mode s" strips the accent, yielding "caf_5":  
+```console
+$ qsv safenames --mode S data.csv
+```
+
+
+The --collapse & --unicode flags can be combined with ANY mode, including the
+verify & JSON modes, so the report reflects the "safer" rewrite:  
+```console
+$ qsv safenames --mode j --collapse --unicode data.csv
+```
+
+
 Note that even if "Col with Embedded Spaces" is technically safe, it is generally discouraged.
 Though it can be created as a "quoted identifier" in PostgreSQL, it is still marked "unsafe"
 by default, unless mode is set to "conditional."
@@ -100,9 +125,11 @@ qsv safenames --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑mode`&nbsp; | string | Rename header names to "safe" names — guaranteed "database-ready" names. Mode is selected by the FIRST character: c/C conditional, a/A always, v verify, V Verbose, j JSON, J pretty JSON (case matters for v vs V and j vs J; --mode verbose maps to 'v', NOT V). | `Always` |
+| &nbsp;`‑‑mode`&nbsp; | string | Rename header names to "safe" names — guaranteed "database-ready" names. Mode is selected by the FIRST character: c/C conditional, a/A always, s safer, S Safer (unicode), v verify, V Verbose, j JSON, J pretty JSON (case matters for s vs S, v vs V and j vs J; --mode verbose maps to 'v', NOT V). | `Always` |
 | &nbsp;`‑‑reserved`&nbsp; | string | Comma-delimited list of additional case-insensitive reserved names that should be considered "unsafe." If a header name is found in the reserved list, it will be prefixed with "reserved_". | `_id` |
 | &nbsp;`‑‑prefix`&nbsp; | string | Certain systems do not allow header names to start with "_" (e.g. CKAN Datastore). This option allows the specification of the unsafe prefix to use when a header starts with "_". | `unsafe_` |
+| &nbsp;`‑‑collapse`&nbsp; | flag | Collapse consecutive runs of non-alphanumeric characters into a single _. Composes with ALL modes (including verify & JSON modes). Implied by --mode s and --mode S. |  |
+| &nbsp;`‑‑unicode`&nbsp; | flag | Preserve unicode letters & numbers instead of stripping to ASCII. Composes with ALL modes (including verify & JSON modes). Implied by --mode S. |  |
 
 <a name="common-options"></a>
 

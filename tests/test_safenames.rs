@@ -370,7 +370,7 @@ fn safenames_mode_s_ascii_collapse() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![
         svec![
             "c1",
@@ -386,8 +386,11 @@ fn safenames_mode_s_ascii_collapse() {
     ];
     assert_eq!(got, expected);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
-    assert_eq!(changed_headers, "5\n");
+    // fresh Command for the stderr assertion; stderr_on_success also asserts the
+    // command exited 0 so a silent failure can't masquerade as the expected count.
+    let mut cmd_stderr = wrk.command("safenames");
+    cmd_stderr.arg("--mode").arg("s").arg("in.csv");
+    assert_eq!(wrk.stderr_on_success(&mut cmd_stderr), "5\n");
 }
 
 #[test]
@@ -402,7 +405,7 @@ fn safenames_collapse_flag_equivalence() {
 
     let mut cmd_s = wrk.command("safenames");
     cmd_s.arg("--mode").arg("s").arg("in.csv");
-    let got_s: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_s);
+    let got_s: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_s);
 
     let mut cmd_flag = wrk.command("safenames");
     cmd_flag
@@ -410,7 +413,7 @@ fn safenames_collapse_flag_equivalence() {
         .arg("a")
         .arg("--collapse")
         .arg("in.csv");
-    let got_flag: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_flag);
+    let got_flag: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_flag);
 
     assert_eq!(got_s, got_flag);
     assert_eq!(
@@ -427,7 +430,7 @@ fn safenames_mode_s_lowercase() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["mixedcase"], svec!["1"]]);
 }
 
@@ -442,12 +445,14 @@ fn safenames_mode_S_unicode_preserve() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("S").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // unicode letters & numbers preserved, lowercased, separators collapsed
     assert_eq!(got, vec![svec!["café_ñ5", "naïve_column"], svec!["1", "2"]]);
 
-    let changed_headers = wrk.output_stderr(&mut cmd);
-    assert_eq!(changed_headers, "2\n");
+    // fresh Command for the stderr assertion (stderr_on_success also asserts exit 0)
+    let mut cmd_stderr = wrk.command("safenames");
+    cmd_stderr.arg("--mode").arg("S").arg("in.csv");
+    assert_eq!(wrk.stderr_on_success(&mut cmd_stderr), "2\n");
 }
 
 #[test]
@@ -458,7 +463,7 @@ fn safenames_mode_s_vs_S_unicode_difference() {
 
     let mut cmd_s = wrk.command("safenames");
     cmd_s.arg("--mode").arg("s").arg("in.csv");
-    let got_s: Vec<Vec<String>> = wrk.read_stdout(&mut cmd_s);
+    let got_s: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd_s);
     assert_eq!(got_s, vec![svec!["caf_5"], svec!["1"]]);
 }
 
@@ -472,7 +477,7 @@ fn safenames_collapse_prefix_interaction() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["unsafe__weird"], svec!["1"]]);
 }
 
@@ -485,7 +490,7 @@ fn safenames_collapse_leading_digit() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
         got,
         vec![svec!["unsafe_12col", "unsafe_5_apples"], svec!["1", "2"]]
@@ -502,7 +507,7 @@ fn safenames_collapse_duplicate_suffix() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["a_b", "a_b_2"], svec!["1", "2"]]);
 }
 
@@ -524,11 +529,14 @@ fn safenames_json_mode_collapse() {
         .arg("--unicode")
         .arg("in.csv");
 
-    let got: String = wrk.stdout(&mut cmd);
-    let expected = r#"{"header_count":3,"duplicate_count":0,"duplicate_headers":[],"unsafe_headers":["a__b","Café"],"safe_headers":["id"]}"#;
+    // single run: capture Output once and assert on both status and stdout so a
+    // non-zero exit can't be masked by a re-run.
+    let output = wrk.output(&mut cmd);
+    assert!(output.status.success(), "command failed: {output:?}");
+    let got = String::from_utf8_lossy(&output.stdout);
+    let expected = "{\"header_count\":3,\"duplicate_count\":0,\"duplicate_headers\":[],\"\
+                    unsafe_headers\":[\"a__b\",\"Café\"],\"safe_headers\":[\"id\"]}\n";
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 #[test]
@@ -542,7 +550,7 @@ fn safenames_60byte_truncation_collapse() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("s").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let header = &got[0][0];
     assert_eq!(header.len(), 60);
     assert!(header.starts_with("z_z_"));
@@ -565,7 +573,7 @@ fn safenames_conditional_collapse() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("c").arg("--collapse").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
         got,
         vec![
@@ -585,7 +593,7 @@ fn safenames_unicode_leading_digit_prefixed() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("S").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(
         got,
         vec![svec!["unsafe_２col", "unsafe_٣col"], svec!["1", "2"]]
@@ -602,7 +610,7 @@ fn safenames_conditional_unicode_leading_digit() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["café", "unsafe_２col"], svec!["1", "2"]]);
 }
 
@@ -620,7 +628,7 @@ fn safenames_conditional_unicode_combining_mark() {
     let mut cmd = wrk.command("safenames");
     cmd.arg("--mode").arg("c").arg("--unicode").arg("in.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     assert_eq!(got, vec![svec!["cafe_", "caf\u{e9}"], svec!["1", "2"]]);
 }
 

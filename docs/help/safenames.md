@@ -85,7 +85,8 @@ c1,unsafe_12_col,col_with_embedded_spaces,unsafe_,column_invalid_chars,c1_2
 stderr: 5
 
 "Safer" with unicode (S) mode - same as s, but preserves unicode letters & numbers.
-Given a header "Café #5", "--mode S" yields "café_5" (instead of "caf__5"):  
+Given a header "Café #5", "--mode S" yields "café_5", whereas the ASCII
+"--mode s" strips the accent, yielding "caf_5":  
 ```console
 $ qsv safenames --mode S data.csv
 ```

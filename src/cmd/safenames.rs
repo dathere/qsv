@@ -58,7 +58,8 @@ Given data.csv:
   stderr: 5
 
   "Safer" with unicode (S) mode - same as s, but preserves unicode letters & numbers.
-  Given a header "Café #5", "--mode S" yields "café_5" (instead of "caf__5"):
+  Given a header "Café #5", "--mode S" yields "café_5", whereas the ASCII
+  "--mode s" strips the accent, yielding "caf_5":
   $ qsv safenames --mode S data.csv
 
   The --collapse & --unicode flags can be combined with ANY mode, including the

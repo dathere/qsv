@@ -69,14 +69,18 @@ case "$TARGET" in
 esac
 bin_file="${BIN}${bin_ext}"
 
-# the qsv binary always builds with feature_capable (mirrors publish.yml)
+# the qsv binary requires feature_capable (Cargo.toml required-features), so always
+# include it for BIN=qsv - even when QSV_FEATURES is empty - or the build fails
+# (mirrors publish.yml)
 features_arg=""
-if [[ -n "$QSV_FEATURES" ]]; then
-  if [[ "$BIN" == "qsv" ]]; then
+if [[ "$BIN" == "qsv" ]]; then
+  if [[ -n "$QSV_FEATURES" ]]; then
     features_arg="--features=${QSV_FEATURES},feature_capable"
   else
-    features_arg="--features=${QSV_FEATURES}"
+    features_arg="--features=feature_capable"
   fi
+elif [[ -n "$QSV_FEATURES" ]]; then
+  features_arg="--features=${QSV_FEATURES}"
 fi
 
 # cargo's per-profile env override key: profile name uppercased, '-' -> '_'
@@ -105,7 +109,7 @@ echo ">>> [0/3] toolchain check (llvm-tools-preview + cargo-pgo)"
 rustup component add llvm-tools-preview
 if ! cargo pgo info &>/dev/null; then
   echo "cargo-pgo not found; installing..."
-  cargo install cargo-pgo
+  cargo install cargo-pgo --locked
 fi
 cargo pgo info || true
 

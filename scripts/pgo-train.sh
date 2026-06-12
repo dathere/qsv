@@ -171,6 +171,10 @@ fi
 
 echo ""
 echo "> PGO training complete."
-profile_dir="../pgo-profiles"
-[[ -d "$profile_dir" ]] && echo "  profraw files: $(ls -1 "$profile_dir"/*.profraw 2>/dev/null | wc -l | tr -d ' ') in $(cd "$profile_dir" && pwd)"
+# cargo-pgo writes profiles to <project>/target/pgo-profiles. Derive that from the
+# instrumented binary path (target/<triple>/<profile>/qsv) - which we resolved to an
+# absolute path above - so the summary is correct even when PGO_TRAIN_DIR is elsewhere.
+target_dir="$(cd "$(dirname "$qsv_bin")/../.." 2>/dev/null && pwd)"
+profile_dir="$target_dir/pgo-profiles"
+[[ -d "$profile_dir" ]] && echo "  profraw files: $(ls -1 "$profile_dir"/*.profraw 2>/dev/null | wc -l | tr -d ' ') in $profile_dir"
 exit 0

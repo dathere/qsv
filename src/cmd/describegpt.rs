@@ -6126,7 +6126,6 @@ mod tests {
         assert_eq!(v["b"], "x");
     }
 
-
     #[test]
     fn localhost_timeout_disable_matrix() {
         // (flag_timeout, qsv_timeout_env_set, base_url, expect_disable)

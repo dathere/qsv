@@ -362,7 +362,9 @@ describegpt options:
                            the default is automatically set to 0.
                            [default: 10000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
-                           [default: 300]
+                           Defaults to 300 if not set. If the --base-url is localhost,
+                           indicating a local LLM, the timeout is automatically disabled
+                           unless you set --timeout (or the QSV_TIMEOUT envvar) explicitly.
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -565,7 +567,7 @@ struct Args {
     flag_addl_props:         Option<String>,
     flag_api_key:            Option<String>,
     flag_max_tokens:         u32,
-    flag_timeout:            u16,
+    flag_timeout:            Option<u16>,
     flag_user_agent:         Option<String>,
     flag_export_prompt:      Option<String>,
     flag_no_cache:           bool,
@@ -2033,7 +2035,7 @@ fn get_prompt(
                         ckan_token:     TAG_VOCAB_CKAN_TOKEN
                             .get()
                             .and_then(std::clone::Clone::clone),
-                        timeout_secs:   args.flag_timeout,
+                        timeout_secs:   args.flag_timeout.unwrap_or(300),
                     };
                     let lookup_result = lookup::load_lookup_table(&lookup_opts).map_err(|e| {
                         CliError::Other(format!(
@@ -4730,6 +4732,24 @@ fn is_yaml_implicit_typed(s: &str) -> bool {
         })
 }
 
+/// Decide whether describegpt should auto-disable the completion timeout for a
+/// localhost (local LLM) base URL.
+///
+/// Precedence: an explicit `--timeout` (`flag_timeout.is_some()`) or the
+/// `QSV_TIMEOUT` env override (`qsv_timeout_env_set`) are explicit timeout sources
+/// that always win. Only when neither is set AND the base URL points at a local LLM
+/// (contains "localhost") do we disable the timeout — local models can take a long
+/// time to load/respond and the 300s default would otherwise abort legitimate runs.
+///
+/// Pure (no env reads) so the behavior matrix is deterministically testable.
+fn should_disable_localhost_timeout(
+    flag_timeout: Option<u16>,
+    qsv_timeout_env_set: bool,
+    base_url: &str,
+) -> bool {
+    flag_timeout.is_none() && !qsv_timeout_env_set && base_url.contains("localhost")
+}
+
 /// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
 /// to the per-phase helpers in `Dictionary → Description → Tags → Prompt` order, applies
 /// the max-tokens gate against the final phase's token usage, routes any SQL response
@@ -4753,10 +4773,27 @@ fn run_inference_options(
     // skip the prompt_file fallback — codex review job 2372.
     let base_url = get_prompt_file(args)?.base_url.clone();
 
+    // Resolve the completion timeout. An explicit --timeout, or the QSV_TIMEOUT
+    // env override, always wins — even on localhost. Only when neither is set does a
+    // localhost base URL (local LLM) disable the timeout entirely, since local models
+    // can take a long time to load/respond and the 300s default would otherwise abort
+    // legitimate runs. Mirrors the --max-tokens localhost auto-disable above.
+    // util::timeout_secs reads QSV_TIMEOUT, so it is consulted whenever an explicit
+    // timeout source exists. unwrap_or 0 because 0 is a valid timeout per the usage
+    // text (it means "no timeout").
+    let timeout_secs = if should_disable_localhost_timeout(
+        args.flag_timeout,
+        env::var("QSV_TIMEOUT").is_ok(),
+        &base_url,
+    ) {
+        0
+    } else {
+        util::timeout_secs(args.flag_timeout.unwrap_or(300)).unwrap_or(0) as u16
+    };
+
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
-        // unwrap_or 0 because 0 is a valid timeout per the usage text (local LLMs)
-        util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
+        timeout_secs,
         Some(base_url.clone()),
     )?;
 
@@ -6090,6 +6127,32 @@ mod tests {
     }
 
     #[test]
+    fn localhost_timeout_disable_matrix() {
+        // (flag_timeout, qsv_timeout_env_set, base_url, expect_disable)
+        let cases = [
+            // unset + localhost, no env override => auto-disable
+            (None, false, "http://localhost:1234/v1", true),
+            (None, false, "http://127.0.0.1:11434/v1", false), // only "localhost" literal triggers
+            // unset + non-localhost => keep default timeout
+            (None, false, "https://api.openai.com/v1", false),
+            // explicit --timeout overrides localhost auto-disable
+            (Some(30), false, "http://localhost:1234/v1", false),
+            (Some(0), false, "http://localhost:1234/v1", false),
+            // QSV_TIMEOUT env override also wins over localhost auto-disable
+            (None, true, "http://localhost:1234/v1", false),
+            // explicit + env on non-localhost are never "disable" decisions
+            (Some(30), true, "https://api.openai.com/v1", false),
+        ];
+        for (flag_timeout, env_set, base_url, expect_disable) in cases {
+            assert_eq!(
+                should_disable_localhost_timeout(flag_timeout, env_set, base_url),
+                expect_disable,
+                "flag_timeout={flag_timeout:?} env_set={env_set} base_url={base_url}"
+            );
+        }
+    }
+
+    #[test]
     fn extract_json_handles_unfenced_with_trailing_text() {
         let out = "{\"k\": 42}\n\nThe value is 42.";
         let v = extract_json_from_output(out).unwrap();
@@ -6726,7 +6789,7 @@ p_fewshot_examples = ""
             flag_addl_props:         None,
             flag_api_key:            None,
             flag_max_tokens:         0,
-            flag_timeout:            0,
+            flag_timeout:            None,
             flag_user_agent:         None,
             flag_export_prompt:      None,
             flag_no_cache:           true,

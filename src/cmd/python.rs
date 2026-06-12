@@ -292,9 +292,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_batch
     };
 
-    // reuse batch buffers; cap the initial allocation as batch_size is
-    // usize::MAX for "--batch 0" stdin input
-    let mut batch = Vec::with_capacity(batch_size.min(50_000));
+    // reuse batch buffers; batch_size is usize::MAX for "--batch 0" stdin
+    // input, so cap that initial allocation while keeping the exact
+    // pre-allocation when the row count is known
+    let mut batch = Vec::with_capacity(if batch_size == usize::MAX {
+        50_000
+    } else {
+        batch_size
+    });
 
     // safety: safe to unwrap as these are statically defined
     let helpers_code = CString::new(HELPERS).unwrap();

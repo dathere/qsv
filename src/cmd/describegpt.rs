@@ -364,7 +364,7 @@ describegpt options:
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
                            Defaults to 300 if not set. If the --base-url is localhost,
                            indicating a local LLM, the timeout is automatically disabled
-                           unless you set --timeout explicitly.
+                           unless you set --timeout (or the QSV_TIMEOUT envvar) explicitly.
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -4755,14 +4755,18 @@ fn run_inference_options(
     // skip the prompt_file fallback — codex review job 2372.
     let base_url = get_prompt_file(args)?.base_url.clone();
 
-    // Resolve the completion timeout. An explicit --timeout always wins, even on
-    // localhost. When --timeout is unset, a localhost base URL (local LLM) disables
-    // the timeout entirely, since local models can take a long time to load/respond
-    // and the 300s default would otherwise abort legitimate runs. Mirrors the
-    // --max-tokens localhost auto-disable above. unwrap_or 0 because 0 is a valid
-    // timeout per the usage text (it means "no timeout").
+    // Resolve the completion timeout. An explicit --timeout, or the QSV_TIMEOUT
+    // env override, always wins — even on localhost. Only when neither is set does a
+    // localhost base URL (local LLM) disable the timeout entirely, since local models
+    // can take a long time to load/respond and the 300s default would otherwise abort
+    // legitimate runs. Mirrors the --max-tokens localhost auto-disable above.
+    // util::timeout_secs reads QSV_TIMEOUT, so it is consulted whenever an explicit
+    // timeout source exists. unwrap_or 0 because 0 is a valid timeout per the usage
+    // text (it means "no timeout").
     let timeout_secs = if let Some(t) = args.flag_timeout {
         util::timeout_secs(t).unwrap_or(0) as u16
+    } else if env::var("QSV_TIMEOUT").is_ok() {
+        util::timeout_secs(300).unwrap_or(0) as u16
     } else if base_url.contains("localhost") {
         0
     } else {

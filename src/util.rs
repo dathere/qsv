@@ -84,6 +84,8 @@ pub static QUIET_FLAG: std::sync::atomic::AtomicBool = std::sync::atomic::Atomic
 pub static BACKGROUND_THREADS_ACTIVE: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
+// only consumed by non-lite commands (describegpt, lens, python, luau)
+#[cfg(not(feature = "lite"))]
 pub static FILE_PATH_PREFIX: &str = "file:";
 
 pub type ByteString = Vec<u8>;
@@ -3516,6 +3518,9 @@ pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) 
 }
 
 /// Expand the tilde (`~`) from within the provided path.
+// only consumed by non-lite commands (describegpt, fetchpost, geocode) and the
+// `get`/diskcache subsystem, none of which are in qsvlite
+#[cfg(not(feature = "lite"))]
 pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
     let p = path.as_ref();
 
@@ -4011,6 +4016,8 @@ pub fn infer_polars_schema(
 
 /// BLAKE3 hash of a file optimized for maximum performance
 /// Uses memory mapping and multithreading for fast hashing of files of any size
+// only consumed by describegpt, which is excluded from qsvlite
+#[cfg(not(feature = "lite"))]
 pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
     let mut hasher = blake3::Hasher::new();
 
@@ -4021,6 +4028,7 @@ pub fn hash_blake3_file(path: &Path) -> CliResult<String> {
     Ok(hasher.finalize().to_hex().to_string())
 }
 
+#[cfg(not(feature = "lite"))]
 pub fn is_executable(path: &str) -> std::io::Result<bool> {
     cfg_select! {
         unix => {

@@ -15,6 +15,10 @@ pub mod color;
 pub mod count;
 pub mod datefmt;
 pub mod dedup;
+// describegpt is excluded from qsvlite (it pulls in ~3.8 MiB of LLM/cache/redis
+// infrastructure that nothing else in the lite build uses). Use qsv, qsvmcp, or
+// qsvdp for describegpt.
+#[cfg(not(feature = "lite"))]
 pub mod describegpt;
 pub mod diff;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]

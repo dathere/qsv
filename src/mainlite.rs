@@ -27,7 +27,6 @@ static COMMAND_LIST: &str = r#"
     count       Count records
     datefmt     Format date/datetime columns
     dedup       Remove redundant rows
-    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     edit        Replace a cell's value specified by row and column
     enum        Add a new column enumerating CSV lines
@@ -79,8 +78,6 @@ mod clitypes;
 mod cmd;
 mod config;
 mod index;
-mod llmutil;
-mod minijinja_filters;
 mod odhtcache;
 mod select;
 mod util;
@@ -162,7 +159,7 @@ fn main() -> QsvExitCode {
         None => {
             werr!(
                 "qsvlite is a suite of CSV command line utilities.\n\nPlease choose one of the \
-                 following 51 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
+                 following 50 commands:\n{COMMAND_LIST}\n\n{SPONSOR_MESSAGE}",
             );
 
             // if no command is specified, auto-check for updates 50% of the time
@@ -244,7 +241,6 @@ enum Command {
     Count,
     Datefmt,
     Dedup,
-    Describegpt,
     Diff,
     Edit,
     Enum,
@@ -313,7 +309,6 @@ impl Command {
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),
-            Command::Describegpt => cmd::describegpt::run(argv),
             Command::Diff => cmd::diff::run(argv),
             Command::Edit => cmd::edit::run(argv),
             Command::Enum => cmd::enumerate::run(argv),

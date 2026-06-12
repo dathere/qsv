@@ -107,8 +107,9 @@ py options:
                            The returned value is used in the map or filter operation.
 
     -b, --batch <size>     The number of rows per batch to process before
-                           releasing memory and acquiring a new GILpool.
-                           Set to 0 to process the entire file in one batch.
+                           releasing memory and reattaching to the Python
+                           interpreter. Set to 0 to process the entire file
+                           in one batch.
                            [default: 50000]
 
 Common options:
@@ -129,7 +130,7 @@ use indicatif::{ProgressBar, ProgressDrawTarget};
 use pyo3::{
     PyErr, PyResult, Python, intern,
     prelude::*,
-    types::{PyDict, PyList, PyModule},
+    types::{PyDict, PyList, PyModule, PyString},
 };
 use serde::Deserialize;
 
@@ -140,14 +141,6 @@ use crate::{
 };
 
 const HELPERS: &str = r#"
-def cast_as_string(value):
-    if isinstance(value, str):
-        return value
-    return str(value)
-
-def cast_as_bool(value):
-    return bool(value)
-
 class QSVRow(object):
     def __init__(self, headers):
         self.__data = None
@@ -200,8 +193,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let debug_flag = log::log_enabled!(log::Level::Debug);
 
     if debug_flag {
-        Python::attach(|py| {
-            let msg = format!("Detected Python={}", py.version());
+        Python::attach(|_| {
+            let msg = format!("Detected Python={}", Python::version_str());
             winfo!("{msg}");
         });
     }
@@ -288,13 +281,25 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut error_count = 0_usize;
 
     let batch_size = if args.flag_batch == 0 {
-        util::count_rows(&rconfig)? as usize
+        if rconfig.is_stdin() {
+            // we can't pre-count stdin rows without consuming the stream,
+            // so read until EOF to honor "0 = entire file in one batch"
+            usize::MAX
+        } else {
+            util::count_rows(&rconfig)? as usize
+        }
     } else {
         args.flag_batch
     };
 
-    // reuse batch buffers
-    let mut batch = Vec::with_capacity(batch_size);
+    // reuse batch buffers; batch_size is usize::MAX for "--batch 0" stdin
+    // input, so cap that initial allocation while keeping the exact
+    // pre-allocation when the row count is known
+    let mut batch = Vec::with_capacity(if batch_size == usize::MAX {
+        50_000
+    } else {
+        batch_size
+    });
 
     // safety: safe to unwrap as these are statically defined
     let helpers_code = CString::new(HELPERS).unwrap();
@@ -311,17 +316,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let mut row_number = 0_u64;
 
-    // Build modules and the QSVRow instance ONCE up front. They don't change
-    // across batches, so re-creating them each batch was wasted work.
-    // We hold them as Py<...> across Python::attach calls and re-bind per batch.
+    // Build modules, interned column-name keys and the QSVRow instance ONCE up
+    // front. They don't change across batches, so re-creating them each batch
+    // was wasted work. We hold them as Py<...> across Python::attach calls and
+    // re-bind per batch.
     let (
-        helpers_pymod,
         user_helpers_pymod,
         builtins_pymod,
         math_pymod,
         random_pymod,
         datetime_pymod,
         py_row_obj,
+        local_keys,
     ) = Python::attach(|py| -> PyResult<_> {
         let helpers =
             PyModule::from_code(py, &helpers_code, &helpers_filename, &helpers_module_name)?;
@@ -343,20 +349,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .getattr("QSVRow")?
             .call1((headers.iter().take(headers_len).collect::<Vec<&str>>(),))?;
 
+        // Intern the Python-safe column names once so the per-row loop doesn't
+        // re-create a Python string per column for the batch_locals keys.
+        let local_keys: Vec<Py<PyString>> = header_vec
+            .iter()
+            .map(|k| PyString::intern(py, k).unbind())
+            .collect();
+
         Ok((
-            helpers.unbind(),
             user_helpers.unbind(),
             builtins.unbind(),
             math_module.unbind(),
             random_module.unbind(),
             datetime_module.unbind(),
             py_row.unbind(),
+            local_keys,
         ))
     })?;
 
     // main loop to read CSV and construct batches.
-    // we batch Python operations so that the GILPool does not get very large
-    // as we release the pool after each batch
+    // we batch Python operations to bound memory use - the per-batch Python
+    // objects are dropped when each Python::attach scope ends.
     // loop exits when batch is empty.
     'batch_loop: loop {
         for _ in 0..batch_size {
@@ -381,7 +394,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
 
         Python::attach(|py| -> PyResult<()> {
-            let helpers = helpers_pymod.bind(py);
             let user_helpers = user_helpers_pymod.bind(py);
             let builtins = builtins_pymod.bind(py);
             let math_module = math_pymod.bind(py);
@@ -406,14 +418,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 row_number += 1;
 
                 // Tolerate jagged rows: short records yield "" via unwrap_or_default,
-                // long records are ignored beyond header_vec.len() (== headers_len).
+                // long records are ignored beyond local_keys.len() (== headers_len).
                 // The PyList is built in the same pass that sets the per-column
                 // locals, and storing the row data directly in a Python object
                 // releases the &str borrows on `record` before push_field below.
                 let row_data = PyList::empty(py);
-                for (i, key) in header_vec.iter().enumerate() {
+                for (i, key) in local_keys.iter().enumerate() {
                     let cell_value = record.get(i).unwrap_or_default();
-                    batch_locals.set_item(key, cell_value)?;
+                    batch_locals.set_item(key.bind(py), cell_value)?;
                     row_data.append(cell_value)?;
                 }
                 py_row.call_method1(intern!(py, "_update_underlying_data"), (row_data,))?;
@@ -432,10 +444,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     };
 
                 if args.cmd_map {
-                    let result = helpers
-                        .getattr(intern!(py, "cast_as_string"))?
-                        .call1((result,))?;
-                    let value: String = result.extract()?;
+                    // equivalent to Python str(result)
+                    let value: String = result.str()?.extract()?;
 
                     record.push_field(&value);
                     if let Err(e) = wtr.write_record(&*record) {
@@ -447,10 +457,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         )));
                     }
                 } else if args.cmd_filter {
-                    let result = helpers
-                        .getattr(intern!(py, "cast_as_bool"))?
-                        .call1((result,))?;
-                    let include_record: bool = result.extract()?;
+                    // equivalent to Python bool(result)
+                    let include_record = result.is_truthy()?;
 
                     if include_record && let Err(e) = wtr.write_record(&*record) {
                         return Err(pyo3::PyErr::new::<pyo3::exceptions::PyIOError, _>(format!(

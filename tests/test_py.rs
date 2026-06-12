@@ -663,3 +663,32 @@ fn py_map_jagged_rows_error() {
         "expected csv reader error about field count, got: {stderr}"
     );
 }
+
+// Locks in that `--batch 0` ("entire file in one batch") works with stdin
+// input, where the row count can't be pre-computed without consuming the
+// stream.
+#[test]
+fn py_map_batch_zero_stdin() {
+    use std::io::Write;
+
+    let wrk = Workdir::new("py");
+    let mut cmd = wrk.command("py");
+    cmd.arg("map")
+        .arg("c")
+        .arg("int(a) + int(b)")
+        .args(["--batch", "0"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    std::thread::spawn(move || {
+        stdin.write_all(b"a,b\n1,2\n3,4\n").unwrap();
+    });
+
+    let output = child.wait_with_output().unwrap();
+    assert!(output.status.success());
+
+    let got = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    assert_eq!(got.replace("\r\n", "\n"), "a,b,c\n1,2,3\n3,4,7");
+}

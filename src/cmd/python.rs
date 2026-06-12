@@ -282,9 +282,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let batch_size = if args.flag_batch == 0 {
         if rconfig.is_stdin() {
-            // counting rows would consume stdin before the main read loop,
-            // so fall back to the default batch size
-            50_000
+            // we can't pre-count stdin rows without consuming the stream,
+            // so read until EOF to honor "0 = entire file in one batch"
+            usize::MAX
         } else {
             util::count_rows(&rconfig)? as usize
         }
@@ -292,8 +292,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         args.flag_batch
     };
 
-    // reuse batch buffers
-    let mut batch = Vec::with_capacity(batch_size);
+    // reuse batch buffers; cap the initial allocation as batch_size is
+    // usize::MAX for "--batch 0" stdin input
+    let mut batch = Vec::with_capacity(batch_size.min(50_000));
 
     // safety: safe to unwrap as these are statically defined
     let helpers_code = CString::new(HELPERS).unwrap();

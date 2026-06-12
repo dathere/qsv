@@ -362,7 +362,9 @@ describegpt options:
                            the default is automatically set to 0.
                            [default: 10000]
     --timeout <secs>       Timeout for completions in seconds. If 0, no timeout is used.
-                           [default: 300]
+                           Defaults to 300 if not set. If the --base-url is localhost,
+                           indicating a local LLM, the timeout is automatically disabled
+                           unless you set --timeout explicitly.
     --user-agent <agent>   Specify custom user agent. It supports the following variables -
                            $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND.
                            Try to follow the syntax here -
@@ -565,7 +567,7 @@ struct Args {
     flag_addl_props:         Option<String>,
     flag_api_key:            Option<String>,
     flag_max_tokens:         u32,
-    flag_timeout:            u16,
+    flag_timeout:            Option<u16>,
     flag_user_agent:         Option<String>,
     flag_export_prompt:      Option<String>,
     flag_no_cache:           bool,
@@ -2033,7 +2035,7 @@ fn get_prompt(
                         ckan_token:     TAG_VOCAB_CKAN_TOKEN
                             .get()
                             .and_then(std::clone::Clone::clone),
-                        timeout_secs:   args.flag_timeout,
+                        timeout_secs:   args.flag_timeout.unwrap_or(300),
                     };
                     let lookup_result = lookup::load_lookup_table(&lookup_opts).map_err(|e| {
                         CliError::Other(format!(
@@ -4753,10 +4755,23 @@ fn run_inference_options(
     // skip the prompt_file fallback — codex review job 2372.
     let base_url = get_prompt_file(args)?.base_url.clone();
 
+    // Resolve the completion timeout. An explicit --timeout always wins, even on
+    // localhost. When --timeout is unset, a localhost base URL (local LLM) disables
+    // the timeout entirely, since local models can take a long time to load/respond
+    // and the 300s default would otherwise abort legitimate runs. Mirrors the
+    // --max-tokens localhost auto-disable above. unwrap_or 0 because 0 is a valid
+    // timeout per the usage text (it means "no timeout").
+    let timeout_secs = if let Some(t) = args.flag_timeout {
+        util::timeout_secs(t).unwrap_or(0) as u16
+    } else if base_url.contains("localhost") {
+        0
+    } else {
+        util::timeout_secs(300).unwrap_or(0) as u16
+    };
+
     let client = util::create_reqwest_blocking_client(
         args.flag_user_agent.clone(),
-        // unwrap_or 0 because 0 is a valid timeout per the usage text (local LLMs)
-        util::timeout_secs(args.flag_timeout).unwrap_or(0) as u16,
+        timeout_secs,
         Some(base_url.clone()),
     )?;
 
@@ -6726,7 +6741,7 @@ p_fewshot_examples = ""
             flag_addl_props:         None,
             flag_api_key:            None,
             flag_max_tokens:         0,
-            flag_timeout:            0,
+            flag_timeout:            None,
             flag_user_agent:         None,
             flag_export_prompt:      None,
             flag_no_cache:           true,

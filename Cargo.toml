@@ -322,7 +322,7 @@ polars = { version = "0.54.4", features = [
     "sql",
     "timezones",
 ], optional = true }
-pyo3 = { version = "0.28", features = ["auto-initialize"], optional = true }
+pyo3 = { version = "0.29", features = ["auto-initialize"], optional = true }
 # yaml_serde: serde_yaml fork maintained by The YAML Organization
 # https://github.com/yaml/yaml-serde - used by the `profile` command to parse
 # CKAN scheming specs (e.g. dataset-druf.yaml).

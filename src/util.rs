@@ -4232,8 +4232,11 @@ pub fn sync_directory(path: &Path) {
 
 #[cfg(test)]
 mod tests {
+    // only used by the hash_blake3_file tests, which are gated out of qsvlite
+    #[cfg(not(feature = "lite"))]
     use std::io::Write;
 
+    #[cfg(not(feature = "lite"))]
     use tempfile::NamedTempFile;
 
     use super::*;
@@ -4256,6 +4259,7 @@ mod tests {
         sync_directory(&dir.path().join("definitely_does_not_exist"));
     }
 
+    #[cfg(not(feature = "lite"))]
     #[test]
     fn test_hash_blake3_file() {
         // Create a temporary file with known content
@@ -4275,6 +4279,7 @@ mod tests {
         assert_eq!(actual_hash, expected_hash);
     }
 
+    #[cfg(not(feature = "lite"))]
     #[test]
     fn test_hash_blake3_file_large() {
         // Create a larger test file (1MB)
@@ -4294,6 +4299,7 @@ mod tests {
         assert_eq!(actual_hash, expected_hash);
     }
 
+    #[cfg(not(feature = "lite"))]
     #[test]
     fn benchmark_hash_blake3_file() {
         // Create a test file for benchmarking
@@ -4320,6 +4326,7 @@ mod tests {
         );
     }
 
+    #[cfg(not(feature = "lite"))]
     #[test]
     fn benchmark_hash_blake3_file_large() {
         // Create a larger test file (100MB) to test parallel processing

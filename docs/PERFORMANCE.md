@@ -94,6 +94,56 @@ rustc --print cfg -C target-cpu=native | grep -i target_feature
 rustc --print target-features
 ```
 
+## Profile-Guided Optimization (PGO)
+
+[Profile-Guided Optimization](https://doc.rust-lang.org/rustc/profile-guided-optimization.html) (PGO)
+is a compiler technique that makes qsv faster by optimizing it based on how it *actually* runs. It works
+in three steps: (1) build an **instrumented** binary, (2) **train** it by running a representative
+workload so it records which code paths are hot, then (3) **re-build** using those profiles so the
+compiler can lay out and inline hot code optimally. PGO measurably improves qsv performance on many
+commands (see [issue #1448](https://github.com/dathere/qsv/issues/1448)).
+
+The prebuilt qsv binaries for **native targets** are PGO-optimized: `x86_64-unknown-linux-gnu`,
+`aarch64-unknown-linux-gnu`, `x86_64-pc-windows-msvc`, `x86_64-pc-windows-gnu`, and
+`aarch64-apple-darwin`. These show `prebuilt-pgo` as their `QSV_KIND` in `qsv --version`.
+Cross-compiled / emulated targets (and `x86_64-unknown-linux-musl`) are **not** PGO-optimized, because
+the instrumented binary cannot be run on the build host to collect a training profile.
+
+### Building a PGO-optimized qsv yourself
+
+qsv ships two helper scripts that wrap [`cargo-pgo`](https://github.com/Kobzol/cargo-pgo):
+
+- [`scripts/build-pgo.sh`](../scripts/build-pgo.sh) — orchestrates the instrument → train → optimize
+  cycle for one binary/target. The optimized binary lands in `target/<target>/<profile>/qsv`.
+- [`scripts/pgo-train.sh`](../scripts/pgo-train.sh) — the training harness. It exercises a
+  representative spread of qsv subcommands once (no hyperfine). It downloads the same NYC-311 sample
+  used by `benchmarks.sh`, or, with `--minimal`, synthesizes a small dataset (used on Windows).
+
+The optimize step keeps qsv's normal fat-LTO release settings; only the instrument step drops to
+thin-LTO. Example (Linux/macOS), building a PGO `qsv` for your host target with the full feature set:
+
+```bash
+# one-time: PGO toolchain (build-pgo.sh also does this for you)
+rustup component add llvm-tools-preview
+cargo install cargo-pgo
+
+TARGET=$(rustc -vV | sed -n 's/host: //p') \
+QSV_FEATURES=apply,luau,fetch,foreach,self_update,geocode,polars,to,lens,prompt,magika,color \
+RUSTFLAGS='-C target-cpu=native' \
+  ./scripts/build-pgo.sh
+```
+
+For the best possible local binary, combine PGO with `target-cpu=native` (as above) — and, if you want
+to go further, with the Rust Nightly build settings described in [Nightly Release Builds](#nightly-release-builds).
+
+### Future: LLVM BOLT (Post-Link Optimization)
+
+[LLVM BOLT](https://github.com/llvm/llvm-project/tree/main/bolt) Post-Link Optimization (PLO) is a
+planned follow-up (Linux x86_64 first). BOLT re-orders the final binary's code layout using a profile,
+on top of PGO, for additional gains — the same way Clang and rustc themselves are built. `build-pgo.sh`
+contains a commented stub showing where the BOLT steps will go. Tracked in
+[issue #1448](https://github.com/dathere/qsv/issues/1448).
+
 ## Memory Management
 ### Memory Allocator
 
@@ -195,8 +245,8 @@ The `--version` option shows a lot of information about qsv. It displays:
 * memory-related OOM prevention info (max "non-streaming" input file size, free swap memory, available memory & total memory)
 * the target platform
 * the Rust version used to compile qsv
-* QSV_KIND - `prebuilt`, `prebuilt-*`, `installed` & `compiled`.
-   The prebuilts are the qsv binaries published on Github with every release. `prebuilt` is built using the current Rust stable at the time of release. `prebuilt-nightly` is built using Rust nightly that passes all CI tests at the time of release.
+* QSV_KIND - `prebuilt`, `prebuilt-pgo`, `prebuilt-nightly`, `prebuilt-*`, `installed` & `compiled`.
+   The prebuilts are the qsv binaries published on Github with every release. `prebuilt` is built using the current Rust stable at the time of release. `prebuilt-pgo` is a stable prebuilt that was additionally [Profile-Guided Optimized](#profile-guided-optimization-pgo) (the default for native targets). `prebuilt-nightly` is built using Rust nightly that passes all CI tests at the time of release (`prebuilt-nightly-pgo` is reserved for a future nightly+PGO build).
    `installed` is qsv built using `cargo install`. `compiled` is qsv built using `cargo build`.
 
 ```bash

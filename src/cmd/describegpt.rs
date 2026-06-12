@@ -4732,6 +4732,24 @@ fn is_yaml_implicit_typed(s: &str) -> bool {
         })
 }
 
+/// Decide whether describegpt should auto-disable the completion timeout for a
+/// localhost (local LLM) base URL.
+///
+/// Precedence: an explicit `--timeout` (`flag_timeout.is_some()`) or the
+/// `QSV_TIMEOUT` env override (`qsv_timeout_env_set`) are explicit timeout sources
+/// that always win. Only when neither is set AND the base URL points at a local LLM
+/// (contains "localhost") do we disable the timeout — local models can take a long
+/// time to load/respond and the 300s default would otherwise abort legitimate runs.
+///
+/// Pure (no env reads) so the behavior matrix is deterministically testable.
+fn should_disable_localhost_timeout(
+    flag_timeout: Option<u16>,
+    qsv_timeout_env_set: bool,
+    base_url: &str,
+) -> bool {
+    flag_timeout.is_none() && !qsv_timeout_env_set && base_url.contains("localhost")
+}
+
 /// Top-level orchestrator for all inference phases. Thin: runs `check_model`, dispatches
 /// to the per-phase helpers in `Dictionary → Description → Tags → Prompt` order, applies
 /// the max-tokens gate against the final phase's token usage, routes any SQL response
@@ -4763,14 +4781,14 @@ fn run_inference_options(
     // util::timeout_secs reads QSV_TIMEOUT, so it is consulted whenever an explicit
     // timeout source exists. unwrap_or 0 because 0 is a valid timeout per the usage
     // text (it means "no timeout").
-    let timeout_secs = if let Some(t) = args.flag_timeout {
-        util::timeout_secs(t).unwrap_or(0) as u16
-    } else if env::var("QSV_TIMEOUT").is_ok() {
-        util::timeout_secs(300).unwrap_or(0) as u16
-    } else if base_url.contains("localhost") {
+    let timeout_secs = if should_disable_localhost_timeout(
+        args.flag_timeout,
+        env::var("QSV_TIMEOUT").is_ok(),
+        &base_url,
+    ) {
         0
     } else {
-        util::timeout_secs(300).unwrap_or(0) as u16
+        util::timeout_secs(args.flag_timeout.unwrap_or(300)).unwrap_or(0) as u16
     };
 
     let client = util::create_reqwest_blocking_client(
@@ -6106,6 +6124,33 @@ mod tests {
         let v = extract_json_from_output(out).unwrap();
         assert_eq!(v["a"], 1);
         assert_eq!(v["b"], "x");
+    }
+
+
+    #[test]
+    fn localhost_timeout_disable_matrix() {
+        // (flag_timeout, qsv_timeout_env_set, base_url, expect_disable)
+        let cases = [
+            // unset + localhost, no env override => auto-disable
+            (None, false, "http://localhost:1234/v1", true),
+            (None, false, "http://127.0.0.1:11434/v1", false), // only "localhost" literal triggers
+            // unset + non-localhost => keep default timeout
+            (None, false, "https://api.openai.com/v1", false),
+            // explicit --timeout overrides localhost auto-disable
+            (Some(30), false, "http://localhost:1234/v1", false),
+            (Some(0), false, "http://localhost:1234/v1", false),
+            // QSV_TIMEOUT env override also wins over localhost auto-disable
+            (None, true, "http://localhost:1234/v1", false),
+            // explicit + env on non-localhost are never "disable" decisions
+            (Some(30), true, "https://api.openai.com/v1", false),
+        ];
+        for (flag_timeout, env_set, base_url, expect_disable) in cases {
+            assert_eq!(
+                should_disable_localhost_timeout(flag_timeout, env_set, base_url),
+                expect_disable,
+                "flag_timeout={flag_timeout:?} env_set={env_set} base_url={base_url}"
+            );
+        }
     }
 
     #[test]

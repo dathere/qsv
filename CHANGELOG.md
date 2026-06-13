@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - special-format conversion failures are now surfaced as errors instead of being silently swallowed. When a detected special-format input (Avro, Parquet, Arrow IPC, JSON, JSONL, or a gzip/zlib/zstd/snappy-compressed CSV/TSV/SSV) fails to convert, qsv previously fell back to reading the original (often binary) bytes as delimited text — emitting garbage with a *success* exit code. This fallback now applies to **all** special formats only when the user explicitly opts in via `QSV_SKIP_FORMAT_CHECK`; otherwise the conversion error is reported and qsv exits non-zero (matching the pre-existing behavior for `.zip`). This surfaced a genuinely unreadable Avro test fixture (regenerated) and two `slice` Decimal-pschema tests that had only ever passed because the error was swallowed ([#3988](https://github.com/dathere/qsv/issues/3988)).
 
+### Fixed
+- a remote lookup table whose tabular extension isn't knowable from the URL — a `.zip` (inner entry), or a `ckan://`/`dathere://` source that resolves to an arbitrary data URL — is now cached with the correct extension, so `luau`/`validate`/`template`/`describegpt` infer the right delimiter. Previously the cache file defaulted to `.csv`, so a `.tsv`/`.tab`/`.ssv` inner file was mis-parsed when no explicit delimiter was given; for `ckan://`/`dathere://` the subsequent cache lookup also missed (it only looked for `{name}.csv`), bypassing `cache_age_secs` and re-downloading every call. The downloader now names the cache file from the extension discovered during extraction (resetting back to `.csv` if a source is later refreshed with a csv inner file), and the cache-hit path probes the tabular extensions to find it ([#3988](https://github.com/dathere/qsv/issues/3988)).
+- local compressed `get`/`dc:` ingests (`.gz`/`.zlib`/`.zst`) now stream-decompress with bounded memory instead of reading the whole file into memory, mirroring the remote ingest path and avoiding OOM on large local compressed inputs ([#3988](https://github.com/dathere/qsv/issues/3988)).
+
 ---
 
 ## [21.0.0] - 2026-06-08 🌐 The "F-AI-Rification" Release 📇

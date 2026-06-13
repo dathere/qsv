@@ -254,6 +254,30 @@ pub fn http_get_conditional(
     client.get(url).headers(headers).send().map_err(Into::into)
 }
 
+/// The lowercased outer extension of `source` (query/fragment stripped) when it
+/// is a compression extension this module knows (`zip`/`sz`/`gz`/`zlib`/`zst`),
+/// else `None`. The set must match [`decompress_source`]'s arms.
+fn compression_ext(source: &str) -> Option<String> {
+    let path_part = source.split(['?', '#']).next().unwrap_or(source);
+    Path::new(path_part)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|e| matches!(e.as_str(), "zip" | "sz" | "gz" | "zlib" | "zst"))
+}
+
+/// The tabular extension of `source`'s stem (e.g. `data.tsv.gz` → `Some("tsv")`),
+/// used to pick the delimiter of decompressed content. `None` when the stem has no
+/// recognized tabular extension.
+fn inner_tabular_ext(source: &str) -> Option<String> {
+    let path_part = source.split(['?', '#']).next().unwrap_or(source);
+    Path::new(Path::new(path_part).file_stem()?)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .filter(|e| matches!(e.as_str(), "csv" | "tsv" | "tab" | "ssv"))
+}
+
 /// Result of [`decompress_source`]: the (possibly) decompressed payload plus the
 /// tabular extension of the inner content when determinable. `inner_ext` drives
 /// delimiter selection downstream (so a decompressed `.tsv.gz` is not read as CSV).
@@ -277,30 +301,25 @@ pub fn decompress_source(source: &str, body: Vec<u8>) -> Result<Decompressed, Cl
 
     // outer extension of the source, lowercased, with any query/fragment stripped
     let path_part = source.split(['?', '#']).next().unwrap_or(source);
-    let path = Path::new(path_part);
-    let outer_ext = path
+    let outer_ext = Path::new(path_part)
         .extension()
         .and_then(|e| e.to_str())
         .map(str::to_ascii_lowercase);
 
-    // tabular extension of the stem (e.g. "data.tsv.gz" -> Some("tsv"))
-    let inner_ext_of_stem = || -> Option<String> {
-        Path::new(path.file_stem()?)
-            .extension()
-            .and_then(|e| e.to_str())
-            .map(str::to_ascii_lowercase)
-            .filter(|e| matches!(e.as_str(), "csv" | "tsv" | "tab" | "ssv"))
-    };
-    let io_err = |e: std::io::Error| CliError::Other(format!("get: decompressing {source}: {e}"));
+    let inner_ext_of_stem = || inner_tabular_ext(source);
+    // Neutral, source-scoped messages: this helper is shared by `get` ingest AND
+    // `luau`/`validate`/`describegpt` lookup-table downloads, so do NOT prefix with
+    // a single command name.
+    let io_err = |e: std::io::Error| CliError::Other(format!("failed to decompress {source}: {e}"));
 
     match outer_ext.as_deref() {
         Some("zip") => {
             let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&body))
-                .map_err(|e| CliError::Other(format!("get: invalid zip from {source}: {e}")))?;
+                .map_err(|e| CliError::Other(format!("invalid zip archive {source}: {e}")))?;
             let (idx, inner_ext) = util::select_zip_entry(&mut archive)?;
-            let mut entry = archive.by_index(idx).map_err(|e| {
-                CliError::Other(format!("get: reading zip entry from {source}: {e}"))
-            })?;
+            let mut entry = archive
+                .by_index(idx)
+                .map_err(|e| CliError::Other(format!("reading zip entry from {source}: {e}")))?;
             let mut out = Vec::with_capacity(entry.size() as usize);
             entry.read_to_end(&mut out).map_err(io_err)?;
             Ok(Decompressed {
@@ -350,13 +369,15 @@ pub fn decompress_source(source: &str, body: Vec<u8>) -> Result<Decompressed, Cl
         },
         #[cfg(not(feature = "flate2"))]
         Some(ext @ ("gz" | "zlib")) => Err(CliError::Other(format!(
-            "get: .{ext} sources require a qsv build with the 'flate2' codec (e.g. the 'fetch', \
-             'apply', 'get' or 'luau' feature). Source: {source}"
+            "cannot decompress .{ext} source {source}: this qsv build lacks the 'flate2' codec. \
+             The standard qsv and qsvmcp builds include it; otherwise rebuild with a feature that \
+             enables it (e.g. 'fetch', 'apply', 'get', or 'luau')."
         ))),
         #[cfg(not(feature = "zstd"))]
         Some("zst") => Err(CliError::Other(format!(
-            "get: .zst sources require a qsv build with the 'zstd' codec (e.g. the 'get' or \
-             'luau' feature). Source: {source}"
+            "cannot decompress .zst source {source}: this qsv build lacks the 'zstd' codec. The \
+             standard qsv and qsvmcp builds include it; otherwise rebuild with a feature that \
+             enables it (e.g. 'get' or 'luau')."
         ))),
         // not a known compression extension: passthrough. Record the tabular outer
         // extension (if any) so the caller can still pick the right delimiter.
@@ -369,20 +390,6 @@ pub fn decompress_source(source: &str, body: Vec<u8>) -> Result<Decompressed, Cl
             })
         },
     }
-}
-
-/// True when `source` (a path or URL) has an extension this module knows how to
-/// decompress (`.zip`/`.sz`/`.gz`/`.zlib`/`.zst`), independent of which codec
-/// features are compiled in. A recognized-but-uncompiled extension still routes
-/// to [`decompress_source`], which emits an actionable build-feature error rather
-/// than silently caching the compressed bytes.
-pub fn is_compressed_source(source: &str) -> bool {
-    let path_part = source.split(['?', '#']).next().unwrap_or(source);
-    Path::new(path_part)
-        .extension()
-        .and_then(|e| e.to_str())
-        .map(str::to_ascii_lowercase)
-        .is_some_and(|e| matches!(e.as_str(), "zip" | "sz" | "gz" | "zlib" | "zst"))
 }
 
 // ============================================================================
@@ -787,7 +794,11 @@ mod rich {
             })
         }
 
-        fn write(&mut self, chunk: &[u8]) -> std::io::Result<()> {
+        // Feed the next uncompressed chunk: hash it and write it (optionally
+        // zstd-compressed) to the temp blob. Named `push` (not `write`) so the
+        // `std::io::Write` impl below — used to stream a decoder's output into the
+        // sink — doesn't collide with this inherent method.
+        fn push(&mut self, chunk: &[u8]) -> std::io::Result<()> {
             self.hasher.update(chunk);
             self.uncompressed += chunk.len() as u64;
             match self.writer.as_mut() {
@@ -834,6 +845,21 @@ mod rich {
         }
     }
 
+    // Lets a streaming decoder (flate2/zstd `write::*Decoder`) write its
+    // decompressed output straight into the sink, so a compressed download is
+    // decoded in bounded memory instead of being fully buffered first. `flush` is
+    // a no-op — the data is finalized in `finish`.
+    impl std::io::Write for BlobSink {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.push(buf)?;
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     impl Drop for BlobSink {
         fn drop(&mut self) {
             // If `finish` ran it already took the writer (and renamed or removed
@@ -852,10 +878,34 @@ mod rich {
     /// payload on `finish` (compressed sources, where the codec needs the full
     /// payload so streaming buys nothing). Both expose the same `write`/`finish`,
     /// so the HTTP and cloud download loops stay identical regardless of mode.
+    // A `write::*Decoder` that streams a download's decompressed bytes into a
+    // `BlobSink` (bounded memory). Only formats that decode push-style live here;
+    // `.zip` (needs random access) and `.sz` (snap has no push-decoder) stay on the
+    // full-buffer `IngestSink::Buffer` path.
+    enum DecodeWriter {
+        #[cfg(feature = "flate2")]
+        Gz(flate2::write::GzDecoder<BlobSink>),
+        #[cfg(feature = "flate2")]
+        Zlib(flate2::write::ZlibDecoder<BlobSink>),
+        #[cfg(feature = "zstd")]
+        Zst(zstd::stream::write::Decoder<'static, BlobSink>),
+    }
+
+    // Boxed (it owns a `BlobSink`) so it doesn't bloat `IngestSink`.
+    struct DecodeState {
+        writer:    DecodeWriter,
+        inner_ext: Option<String>,
+    }
+
     enum IngestSink {
         // Boxed: `BlobSink` (with its zstd encoder) is far larger than the
         // `Buffer` variant, so box it to keep the enum small.
         Stream(Box<BlobSink>),
+        // Streaming decompression into a `BlobSink` (gz/zlib/zst): bounded memory.
+        Decode(Box<DecodeState>),
+        // Full-buffer decompression on `finish` (zip & sz; also gz/zlib/zst when
+        // their codec feature is absent — `finish` then surfaces the actionable
+        // build-feature error via `decompress_source`).
         Buffer {
             source:      String,
             compression: Compression,
@@ -864,39 +914,89 @@ mod rich {
     }
 
     impl IngestSink {
-        /// Buffer-and-decompress when `source` has a known compression extension,
-        /// else stream as before.
+        /// Pick the ingest mode from `source`'s extension: stream-decode the
+        /// push-decodable compressed formats into the blob (bounded memory),
+        /// full-buffer `.zip`/`.sz`, and stream plain sources unchanged.
         fn for_source(root: &Path, compression: Compression, source: &str) -> CliResult<Self> {
-            if super::is_compressed_source(source) {
+            let buffer = |_root| {
                 Ok(IngestSink::Buffer {
                     source: source.to_string(),
                     compression,
                     buf: Vec::new(),
                 })
-            } else {
-                Ok(IngestSink::Stream(Box::new(BlobSink::new(
+            };
+            let decode = |writer| {
+                Ok(IngestSink::Decode(Box::new(DecodeState {
+                    writer,
+                    inner_ext: super::inner_tabular_ext(source),
+                })))
+            };
+            match super::compression_ext(source).as_deref() {
+                #[cfg(feature = "flate2")]
+                Some("gz") => decode(DecodeWriter::Gz(flate2::write::GzDecoder::new(
+                    BlobSink::new(root, compression)?,
+                ))),
+                #[cfg(feature = "flate2")]
+                Some("zlib") => decode(DecodeWriter::Zlib(flate2::write::ZlibDecoder::new(
+                    BlobSink::new(root, compression)?,
+                ))),
+                #[cfg(feature = "zstd")]
+                Some("zst") => decode(DecodeWriter::Zst(zstd::stream::write::Decoder::new(
+                    BlobSink::new(root, compression)?,
+                )?)),
+                // zip, sz, and (codec-absent) gz/zlib/zst -> full-buffer path.
+                Some(_) => buffer(root),
+                None => Ok(IngestSink::Stream(Box::new(BlobSink::new(
                     root,
                     compression,
-                )?)))
+                )?))),
             }
         }
 
         fn write(&mut self, chunk: &[u8]) -> CliResult<()> {
+            use std::io::Write;
             match self {
-                IngestSink::Stream(s) => s.write(chunk)?,
+                IngestSink::Stream(s) => s.push(chunk)?,
                 IngestSink::Buffer { buf, .. } => buf.extend_from_slice(chunk),
+                IngestSink::Decode(state) => match &mut state.writer {
+                    #[cfg(feature = "flate2")]
+                    DecodeWriter::Gz(w) => w.write_all(chunk)?,
+                    #[cfg(feature = "flate2")]
+                    DecodeWriter::Zlib(w) => w.write_all(chunk)?,
+                    #[cfg(feature = "zstd")]
+                    DecodeWriter::Zst(w) => w.write_all(chunk)?,
+                },
             }
             Ok(())
         }
 
         /// Finalize and store the blob. Returns `(blake3, compressed_size,
-        /// uncompressed_size, inner_ext)` — `inner_ext` is the decompressed
-        /// content's tabular extension (only ever `Some` in `Buffer` mode).
+        /// uncompressed_size, inner_ext)`.
         fn finish(self, root: &Path) -> CliResult<(String, u64, u64, Option<String>)> {
             match self {
                 IngestSink::Stream(s) => {
                     let (b3, sc, su) = s.finish(root)?;
                     Ok((b3, sc, su, None))
+                },
+                IngestSink::Decode(state) => {
+                    // Finalize the decoder (flushing all decompressed output into the
+                    // sink), recover the BlobSink, then finalize the blob.
+                    let blob = match state.writer {
+                        #[cfg(feature = "flate2")]
+                        DecodeWriter::Gz(w) => w.finish()?,
+                        #[cfg(feature = "flate2")]
+                        DecodeWriter::Zlib(w) => w.finish()?,
+                        #[cfg(feature = "zstd")]
+                        DecodeWriter::Zst(mut w) => {
+                            // zstd's write Decoder buffers decompressed output;
+                            // `into_inner` alone truncates it, so flush first to
+                            // drain every remaining byte into the sink.
+                            std::io::Write::flush(&mut w)?;
+                            w.into_inner()
+                        },
+                    };
+                    let (b3, sc, su) = blob.finish(root)?;
+                    Ok((b3, sc, su, state.inner_ext))
                 },
                 IngestSink::Buffer {
                     source,

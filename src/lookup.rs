@@ -306,8 +306,8 @@ fn download_lookup_table(
         .into());
     }
 
-    let decompressed =
-        diskcache::decompress_source(&fetched_url, raw_body.to_vec()).map_err(|e| e.to_string())?;
+    let decompressed = diskcache::decompress_source(&fetched_url, raw_body.to_vec())
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
 
     write_cache_file(
         cache_file_path,

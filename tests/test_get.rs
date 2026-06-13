@@ -157,6 +157,17 @@ async fn serve_boston_gz(c: web::Data<Counters>, req: HttpRequest) -> HttpRespon
     ranged_response(BOSTON_GZ, BOSTON_GZ_ETAG, &req, &c)
 }
 
+// issue #1417: a zstd-compressed remote source, to exercise the streaming zstd
+// decode path (zstd::stream::write::Decoder + into_inner finalization).
+#[cfg(feature = "zstd")]
+const BOSTON_ZST: &[u8] = include_bytes!("../resources/test/boston311-100.csv.zst");
+#[cfg(feature = "zstd")]
+const BOSTON_ZST_ETAG: &str = "\"boston-zst-v1\"";
+#[cfg(feature = "zstd")]
+async fn serve_boston_zst(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(BOSTON_ZST, BOSTON_ZST_ETAG, &req, &c)
+}
+
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     counters: Counters,
@@ -176,6 +187,9 @@ async fn run_webserver(
         // issue #1417: gzip-compressed source for the remote-decompression test.
         #[cfg(feature = "flate2")]
         let app = app.service(web::resource("/boston311-100.csv.gz").to(serve_boston_gz));
+        // issue #1417: zstd-compressed source for the streaming-decode test.
+        #[cfg(feature = "zstd")]
+        let app = app.service(web::resource("/boston311-100.csv.zst").to(serve_boston_zst));
         // A larger path-style object for the cloud ranged/multipart download
         // test (only built with get_cloud).
         #[cfg(feature = "get_cloud")]
@@ -1460,7 +1474,13 @@ fn check_local_compressed_get(testname: &str, fixture: &str) {
     // dc: read-back proves decompress -> store -> auto-index -> read end to end.
     let mut count = wrk.command("count");
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:b.csv");
-    let got: String = wrk.stdout(&mut count);
+    let cout = wrk.output(&mut count);
+    assert!(
+        cout.status.success(),
+        "{fixture}: count dc:b.csv failed:\n{}",
+        String::from_utf8_lossy(&cout.stderr)
+    );
+    let got = String::from_utf8_lossy(&cout.stdout).trim().to_string();
     assert_eq!(
         got, "100",
         "{fixture}: dc: count must be the 100 decompressed rows, not raw bytes"
@@ -1471,6 +1491,11 @@ fn check_local_compressed_get(testname: &str, fixture: &str) {
     list.env("QSV_CACHE_DIR", &cache_dir)
         .args(["cache-list", "--json"]);
     let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "{fixture}: cache-list --json failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("\"record_count\": 100"),
@@ -1507,16 +1532,14 @@ fn get_local_zst_decompresses() {
     check_local_compressed_get("get_local_zst_decompresses", "boston311-100.csv.zst");
 }
 
-// Remote (HTTP) compressed source: exercises the streaming download path's
-// buffer-and-decompress branch (IngestSink::Buffer), not just ingest_local.
-#[cfg(feature = "flate2")]
-#[test]
-#[serial]
-fn get_http_gz_decompresses() {
+// Remote (HTTP) compressed source: drives the download through the mock server
+// and asserts `dc:` reads the decompressed rows, not raw bytes. boston311-100 has
+// 100 data rows.
+fn check_http_compressed_get(testname: &str, route: &str) {
     let server = GetWebServer::start();
-    let wrk = Workdir::new("get_http_gz_decompresses");
+    let wrk = Workdir::new(testname);
     let cache_dir = wrk.path("qsvcache");
-    let url = server.url("boston311-100.csv.gz");
+    let url = server.url(route);
 
     let mut g = wrk.command("get");
     g.env("QSV_CACHE_DIR", &cache_dir)
@@ -1526,9 +1549,32 @@ fn get_http_gz_decompresses() {
 
     let mut count = wrk.command("count");
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:b.csv");
-    let got: String = wrk.stdout(&mut count);
+    let cout = wrk.output(&mut count);
+    assert!(
+        cout.status.success(),
+        "{route}: count dc:b.csv failed:\n{}",
+        String::from_utf8_lossy(&cout.stderr)
+    );
+    let got = String::from_utf8_lossy(&cout.stdout).trim().to_string();
     assert_eq!(
         got, "100",
-        "remote .gz must be decompressed before caching (not stored as raw gzip)"
+        "{route}: remote source must be decompressed before caching (not stored raw)"
     );
+}
+
+// gz: streams through `IngestSink::Decode` (flate2 write::GzDecoder).
+#[cfg(feature = "flate2")]
+#[test]
+#[serial]
+fn get_http_gz_decompresses() {
+    check_http_compressed_get("get_http_gz_decompresses", "boston311-100.csv.gz");
+}
+
+// zst: streams through `IngestSink::Decode` (zstd write::Decoder + into_inner) —
+// proves the zstd decoder finalization flushes all output.
+#[cfg(feature = "zstd")]
+#[test]
+#[serial]
+fn get_http_zst_decompresses() {
+    check_http_compressed_get("get_http_zst_decompresses", "boston311-100.csv.zst");
 }

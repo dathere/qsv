@@ -681,14 +681,14 @@ fn slice_from_jsonl() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Assert the full converted row, not a substring. The literal "Unique Key":"20520945"
     // is embedded in the raw JSONL bytes, so a substring check passes even when conversion
     // fails and the original bytes are read as-is. A full-object match can only pass on
     // genuine conversion (see issue #3988). Compare as parsed JSON because polars does not
-    // preserve the source column order when converting JSONL.
-    let got: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+    // preserve the source column order when converting JSONL; serde_json's (preserve_order)
+    // Map is IndexMap-backed, whose PartialEq is order-independent.
+    let got: serde_json::Value =
+        serde_json::from_str(&wrk.stdout_on_success::<String>(&mut cmd)).unwrap();
     let expected: serde_json::Value = serde_json::from_str(
         r#"[{"Unique Key":"20520945","Created Date":"05/27/2011 12:00:00 AM","Closed Date":null,"Agency":"HPD","Agency Name":"Department of Housing Preservation and Development","Complaint Type":"PAINT - PLASTER","Descriptor":"WALLS","Location Type":"RESIDENTIAL BUILDING","Incident Zip":"11225","Incident Address":"1700 BEDFORD AVENUE","Street Name":"BEDFORD AVENUE","Cross Street 1":"MONTGOMERY STREET","Cross Street 2":"SULLIVAN PLACE","Intersection Street 1":null,"Intersection Street 2":null,"Address Type":"ADDRESS","City":"BROOKLYN","Landmark":null,"Facility Type":"N/A","Status":"Open","Due Date":null,"Resolution Description":"The following complaint conditions are still open.HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection.","Resolution Action Updated Date":"06/15/2011 12:00:00 AM","Community Board":"09 BROOKLYN","BBL":"3013020001","Borough":"BROOKLYN","X Coordinate (State Plane)":"996197","Y Coordinate (State Plane)":"181752","Open Data Channel Type":"UNKNOWN","Park Facility Name":"Unspecified","Park Borough":"BROOKLYN","Vehicle Type":null,"Taxi Company Borough":null,"Taxi Pick Up Location":null,"Bridge Highway Name":null,"Bridge Highway Direction":null,"Road Ramp":null,"Bridge Highway Segment":null,"Latitude":null,"Longitude":null,"Location":null}]"#,
     )
@@ -704,13 +704,11 @@ fn slice_from_avro() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Assert the full converted row, not a substring. String values are stored verbatim
     // in the Avro binary, so a substring check passes even when conversion fails and the
     // raw bytes are read as-is. An exact match can only pass on genuine conversion
     // (see issue #3988).
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     let expected = r#"[{"Unique Key":"20520945","Created Date":"05/27/2011 12:00:00 AM","Closed Date":null,"Agency":"HPD","Agency Name":"Department of Housing Preservation and Development","Complaint Type":"PAINT - PLASTER","Descriptor":"WALLS","Location Type":"RESIDENTIAL BUILDING","Incident Zip":"11225","Incident Address":"1700 BEDFORD AVENUE","Street Name":"BEDFORD AVENUE","Cross Street 1":"MONTGOMERY STREET","Cross Street 2":"SULLIVAN PLACE","Intersection Street 1":null,"Intersection Street 2":null,"Address Type":"ADDRESS","City":"BROOKLYN","Landmark":null,"Facility Type":"N/A","Status":"Open","Due Date":null,"Resolution Description":"The following complaint conditions are still open.HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection.","Resolution Action Updated Date":"06/15/2011 12:00:00 AM","Community Board":"09 BROOKLYN","BBL":"3013020001","Borough":"BROOKLYN","X Coordinate (State Plane)":"996197","Y Coordinate (State Plane)":"181752","Open Data Channel Type":"UNKNOWN","Park Facility Name":"Unspecified","Park Borough":"BROOKLYN","Vehicle Type":null,"Taxi Company Borough":null,"Taxi Pick Up Location":null,"Bridge Highway Name":null,"Bridge Highway Direction":null,"Road Ramp":null,"Bridge Highway Segment":null,"Latitude":null,"Longitude":null,"Location":null}]"#;
     assert_eq!(got, expected);
 }
@@ -1228,10 +1226,8 @@ fn slice_from_csvgz_with_decimal_precision() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.csv.gz").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // All decimal places are preserved (an f64 round-trip would truncate these).
-    let got: String = wrk.stdout(&mut cmd);
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert!(got.contains("3.1415926535897932384626433"));
     assert!(got.contains("2.7182818284590452353602874"));
     assert!(got.contains("1.4142135623730950488016887"));
@@ -1319,10 +1315,8 @@ fn slice_from_csvgz_with_decimal_precision_vs_float() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.csv.gz").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Get the output with Decimal schema
-    let decimal_output: String = wrk.stdout(&mut cmd);
+    let decimal_output: String = wrk.stdout_on_success(&mut cmd);
 
     // Now create a schema with Float64 instead of Decimal
     let float_schema = r#"{
@@ -1338,10 +1332,8 @@ fn slice_from_csvgz_with_decimal_precision_vs_float() {
     let mut cmd = wrk.command("slice");
     cmd.arg("test.csv.gz").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
     // Get the output with Float64 schema
-    let float_output: String = wrk.stdout(&mut cmd);
+    let float_output: String = wrk.stdout_on_success(&mut cmd);
 
     // Verify that the Decimal schema preserves more precision than Float64
     // The Float64 output should be truncated compared to the Decimal output

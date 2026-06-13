@@ -52,19 +52,23 @@ const TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
 /// only discovered after fetching, and the cache-hit path must probe for it.
 /// True only for the cases where `decompress_source` can surface a *non-csv*
 /// tabular extension that differs from the `csv` default:
-///   - a `.zip` (the inner entry's name), and
-///   - the `ckan://` / `dathere://` schemes, which `resolve_uri_prefix` expands to an arbitrary
-///     data URL (`.tsv`, `.ssv`, `.zip`, …) at download time.
+///   - a `.zip` (the inner entry's name) — including a `dathere://…/x.zip`, whose `.zip` extension
+///     is preserved in the resolved URL and so is caught by `is_zip_source`; and
+///   - the `ckan://` scheme, where `resolve_uri_prefix` expands `ckan://<id>` / `ckan://<name>?`
+///     (which carry no file extension) to an arbitrary data URL (`.tsv`, `.ssv`, `.zip`, …) only
+///     known after the CKAN API resolves it.
 ///
-/// Everything else yields a deterministic cache extension via `lookup_cache_ext`
-/// (an explicit `.csv`/`.tsv`/`.csv.gz`/…, a bare `.gz`/`.zst`/… with no inner
-/// tabular hint, or no extension — all of which the downloader writes under that
-/// same extension), so probing alternates would only risk picking up a stale
-/// same-named file of a different extension.
+/// `dathere://` is NOT inherently uncertain: `resolve_uri_prefix` preserves its
+/// path (extension included) in the GitHub raw URL, so `dathere://x.tsv` has a
+/// deterministic cache extension via `lookup_cache_ext` just like a plain URL.
+/// Everything else (an explicit `.csv`/`.tsv`/`.csv.gz`/…, a bare `.gz`/`.zst`/…
+/// with no inner tabular hint, or no extension — all written under that same
+/// extension) is likewise deterministic, so probing alternates would only risk
+/// picking up a stale same-named file of a different extension.
 fn cache_ext_uncertain(uri: &str) -> bool {
-    // `ckan://` / `dathere://` are matched case-sensitively to mirror
-    // `resolve_uri_prefix`'s `strip_prefix` checks (it only expands those forms).
-    uri.starts_with("ckan://") || uri.starts_with("dathere://") || is_zip_source(uri)
+    // `ckan://` is matched case-sensitively to mirror `resolve_uri_prefix`'s
+    // `strip_prefix` check (it only expands that exact form).
+    uri.starts_with("ckan://") || is_zip_source(uri)
 }
 
 /// Whether `uri`'s outer extension is `.zip` (query/fragment stripped) — the one
@@ -467,9 +471,9 @@ mod tests {
         assert!(cache_ext_uncertain("https://x/data.zip"));
         assert!(cache_ext_uncertain("https://x/data.ZIP")); // ext is case-insensitive
         assert!(cache_ext_uncertain("https://x/data.zip?token=abc#frag")); // query/fragment ignored
-        assert!(cache_ext_uncertain("ckan://my-resource-id"));
-        assert!(cache_ext_uncertain("ckan://my-name?"));
-        assert!(cache_ext_uncertain("dathere://us-states.csv"));
+        assert!(cache_ext_uncertain("ckan://my-resource-id")); // no ext in id
+        assert!(cache_ext_uncertain("ckan://my-name?")); // resource_search form
+        assert!(cache_ext_uncertain("dathere://data.zip")); // preserved path -> .zip is uncertain
         // Deterministic cache extension -> exact path, no probe (must NOT pick up
         // a stale same-named file of a different extension).
         assert!(!cache_ext_uncertain("https://x/data.csv"));
@@ -477,6 +481,10 @@ mod tests {
         assert!(!cache_ext_uncertain("https://x/data.tsv"));
         assert!(!cache_ext_uncertain("https://x/data.gz")); // bare codec -> csv default
         assert!(!cache_ext_uncertain("https://x/data")); // no extension -> csv default
+        // dathere:// preserves its path (extension included) in the resolved URL,
+        // so an explicit tabular extension is deterministic — not uncertain.
+        assert!(!cache_ext_uncertain("dathere://us-states.csv"));
+        assert!(!cache_ext_uncertain("dathere://us-states.tsv"));
     }
 
     #[test]

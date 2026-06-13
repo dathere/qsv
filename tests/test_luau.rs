@@ -438,6 +438,46 @@ END {
     wrk.assert_success(&mut cmd);
 }
 
+#[cfg(feature = "polars")]
+#[test]
+fn luau_register_lookup_table_local_zip() {
+    // issue #1417: a lookup table may be a zip-compressed CSV. The zip is
+    // transparently decompressed (first CSV/TSV/SSV entry) before parsing.
+    let wrk = Workdir::new("luau_register_lookup_table_local_zip");
+    wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+    // boston311-100.csv.zip contains a single entry: boston311-100.csv, whose
+    // key column is case_enquiry_id. Row 101004143000 has ontime == OVERDUE.
+    let lookup = wrk.load_test_file("boston311-100.csv.zip");
+
+    wrk.create_from_string(
+        "ziplookup.luau",
+        &format!(
+            r#"
+BEGIN {{
+    boston_headers = qsv_register_lookup("boston", "{}", 0)
+    if not boston_headers then
+        qsv_break("Failed to register boston lookup table from zip")
+    end
+}}!
+return tostring(boston["101004143000"].ontime);
+"#,
+            lookup.replace('\\', "/")
+        ),
+    );
+
+    let mut cmd = wrk.command("luau");
+    cmd.arg("map")
+        .arg("looked_up")
+        .arg("file:ziplookup.luau")
+        .arg("data.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a", "b", "looked_up"], svec!["1", "2", "OVERDUE"]];
+    assert_eq!(got, expected);
+
+    wrk.assert_success(&mut cmd);
+}
+
 // TODO: Ignore this test on Windows for now.
 // Multiple attempts to fix this test on Windows
 // have not been successful. The error is related to a file open

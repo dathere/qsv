@@ -770,6 +770,25 @@ fn sort_natural_numeric_precedence() {
     assert_eq!(got, expected);
 }
 
+// issue #1417 / mem-check regression: `sort` loads the whole file into memory and
+// runs `mem_file_check` before reading. With lazy special-format conversion the
+// check must resolve to the DECOMPRESSED data (via Config::resolved_path), not the
+// compressed `.zip` source. This verifies sort reads the decompressed CSV.
+#[test]
+fn sort_from_zip_reads_decompressed() {
+    let wrk = Workdir::new("sort_from_zip_reads_decompressed");
+    // boston311-100.csv.zip contains a single entry: boston311-100.csv (100 rows)
+    let test_file = wrk.load_test_file("boston311-100.csv.zip");
+    let mut cmd = wrk.command("sort");
+    cmd.arg(&test_file);
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // header + 100 decompressed data rows (not the binary zip read as one column)
+    assert_eq!(got.len(), 101);
+    assert_eq!(got[0][0], "case_enquiry_id");
+}
+
 /// Order `a` and `b` lexicographically using `Ord`
 pub fn iter_cmp<A, L, R>(mut a: L, mut b: R) -> cmp::Ordering
 where

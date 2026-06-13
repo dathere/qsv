@@ -7381,3 +7381,16 @@ fn stats_widen_no_regression_pure_integer_issue3855() {
     assert_eq!(row.get("variance_length").map(String::as_str), Some(""));
     assert_eq!(row.get("cv_length").map(String::as_str), Some(""));
 }
+
+// issue #1417 regression: `stats` checks `rconfig.format_error` directly (ignoring
+// skip_format_check). An explicit QSV_SKIP_FORMAT_CHECK opt-out must therefore not
+// leave a format_error set on a failed `.zip` conversion, so the bad zip is read as
+// raw bytes instead of being rejected.
+#[test]
+fn stats_invalid_zip_with_skip_format_check_does_not_error() {
+    let wrk = Workdir::new("stats_invalid_zip_with_skip_format_check_does_not_error");
+    wrk.create_from_string("bad.zip", "header\nvalue\n");
+    let mut cmd = wrk.command("stats");
+    cmd.env("QSV_SKIP_FORMAT_CHECK", "1").arg("bad.zip");
+    wrk.assert_success(&mut cmd);
+}

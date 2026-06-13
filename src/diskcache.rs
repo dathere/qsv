@@ -254,6 +254,137 @@ pub fn http_get_conditional(
     client.get(url).headers(headers).send().map_err(Into::into)
 }
 
+/// Result of [`decompress_source`]: the (possibly) decompressed payload plus the
+/// tabular extension of the inner content when determinable. `inner_ext` drives
+/// delimiter selection downstream (so a decompressed `.tsv.gz` is not read as CSV).
+pub struct Decompressed {
+    pub bytes:     Vec<u8>,
+    pub inner_ext: Option<String>,
+}
+
+/// Detect compression from `source` (a path or URL; query/fragment stripped) by its
+/// lowercased outer extension and decompress `body` in memory. Bytes are returned
+/// unchanged (passthrough) when no known compression extension is present.
+///
+/// `.zip` and `.sz` are always available (the `zip` and `snap` crates are
+/// non-optional); `.gz`/`.zlib` require the `flate2` codec and `.zst` the `zstd`
+/// codec, returning an actionable error when the codec is not in the build.
+///
+/// Lives in the always-compiled core (not the `get`-gated `rich` tier) so both the
+/// `get`/diskcache ingest and the lookup-table downloader (`lookup.rs`) can share it.
+pub fn decompress_source(source: &str, body: Vec<u8>) -> Result<Decompressed, CliError> {
+    use std::io::Read;
+
+    // outer extension of the source, lowercased, with any query/fragment stripped
+    let path_part = source.split(['?', '#']).next().unwrap_or(source);
+    let path = Path::new(path_part);
+    let outer_ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+
+    // tabular extension of the stem (e.g. "data.tsv.gz" -> Some("tsv"))
+    let inner_ext_of_stem = || -> Option<String> {
+        Path::new(path.file_stem()?)
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .filter(|e| matches!(e.as_str(), "csv" | "tsv" | "tab" | "ssv"))
+    };
+    let io_err = |e: std::io::Error| CliError::Other(format!("get: decompressing {source}: {e}"));
+
+    match outer_ext.as_deref() {
+        Some("zip") => {
+            let mut archive = zip::ZipArchive::new(std::io::Cursor::new(&body))
+                .map_err(|e| CliError::Other(format!("get: invalid zip from {source}: {e}")))?;
+            let (idx, inner_ext) = util::select_zip_entry(&mut archive)?;
+            let mut entry = archive.by_index(idx).map_err(|e| {
+                CliError::Other(format!("get: reading zip entry from {source}: {e}"))
+            })?;
+            let mut out = Vec::with_capacity(entry.size() as usize);
+            entry.read_to_end(&mut out).map_err(io_err)?;
+            Ok(Decompressed {
+                bytes: out,
+                inner_ext,
+            })
+        },
+        Some("sz") => {
+            let mut out = Vec::new();
+            snap::read::FrameDecoder::new(std::io::Cursor::new(&body))
+                .read_to_end(&mut out)
+                .map_err(io_err)?;
+            Ok(Decompressed {
+                bytes:     out,
+                inner_ext: inner_ext_of_stem(),
+            })
+        },
+        #[cfg(feature = "flate2")]
+        Some("gz") => {
+            let mut out = Vec::new();
+            flate2::read::MultiGzDecoder::new(std::io::Cursor::new(&body))
+                .read_to_end(&mut out)
+                .map_err(io_err)?;
+            Ok(Decompressed {
+                bytes:     out,
+                inner_ext: inner_ext_of_stem(),
+            })
+        },
+        #[cfg(feature = "flate2")]
+        Some("zlib") => {
+            let mut out = Vec::new();
+            flate2::read::ZlibDecoder::new(std::io::Cursor::new(&body))
+                .read_to_end(&mut out)
+                .map_err(io_err)?;
+            Ok(Decompressed {
+                bytes:     out,
+                inner_ext: inner_ext_of_stem(),
+            })
+        },
+        #[cfg(feature = "zstd")]
+        Some("zst") => {
+            let out = zstd::decode_all(std::io::Cursor::new(&body)).map_err(io_err)?;
+            Ok(Decompressed {
+                bytes:     out,
+                inner_ext: inner_ext_of_stem(),
+            })
+        },
+        #[cfg(not(feature = "flate2"))]
+        Some(ext @ ("gz" | "zlib")) => Err(CliError::Other(format!(
+            "get: .{ext} sources require a qsv build with the 'flate2' codec (e.g. the 'fetch', \
+             'apply', 'get' or 'luau' feature). Source: {source}"
+        ))),
+        #[cfg(not(feature = "zstd"))]
+        Some("zst") => Err(CliError::Other(format!(
+            "get: .zst sources require a qsv build with the 'zstd' codec (e.g. the 'get' or \
+             'luau' feature). Source: {source}"
+        ))),
+        // not a known compression extension: passthrough. Record the tabular outer
+        // extension (if any) so the caller can still pick the right delimiter.
+        _ => {
+            let inner_ext =
+                outer_ext.filter(|e| matches!(e.as_str(), "csv" | "tsv" | "tab" | "ssv"));
+            Ok(Decompressed {
+                bytes: body,
+                inner_ext,
+            })
+        },
+    }
+}
+
+/// True when `source` (a path or URL) has an extension this module knows how to
+/// decompress (`.zip`/`.sz`/`.gz`/`.zlib`/`.zst`), independent of which codec
+/// features are compiled in. A recognized-but-uncompiled extension still routes
+/// to [`decompress_source`], which emits an actionable build-feature error rather
+/// than silently caching the compressed bytes.
+pub fn is_compressed_source(source: &str) -> bool {
+    let path_part = source.split(['?', '#']).next().unwrap_or(source);
+    Path::new(path_part)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .is_some_and(|e| matches!(e.as_str(), "zip" | "sz" | "gz" | "zlib" | "zst"))
+}
+
 // ============================================================================
 // get-feature-gated rich cache
 // ============================================================================
@@ -385,6 +516,11 @@ mod rich {
         /// than the ambient `QSV_CKAN_API`/default. None for non-CKAN entries.
         #[serde(default)]
         pub ckan_api_url:       Option<String>,
+        /// Tabular extension (`csv`/`tsv`/`tab`/`ssv`) of the decompressed content
+        /// for compressed sources, so a `dc:` materialized temp gets the right
+        /// extension (and thus delimiter). None for plain or unknown sources.
+        #[serde(default)]
+        pub inner_ext:          Option<String>,
     }
 
     /// The on-disk record: per-entry metadata. The data blob is content-addressed
@@ -448,8 +584,10 @@ mod rich {
 
     /// A temp filename for a `dc:` handle that is guaranteed to carry a known
     /// tabular extension, so `Config`'s format check accepts it. Prefers the
-    /// handle's own extension, then the cached source's, falling back to `.csv`.
-    fn tabular_temp_name(name: &str, resolved_uri: &str) -> String {
+    /// handle's own extension, then the decompressed content's `inner_ext` (for
+    /// compressed sources, where the source URI's outer extension is the codec,
+    /// not the tabular format), then the cached source's, falling back to `.csv`.
+    fn tabular_temp_name(name: &str, resolved_uri: &str, inner_ext: Option<&str>) -> String {
         let is_known = |p: &str| {
             Path::new(p)
                 .extension()
@@ -460,6 +598,12 @@ mod rich {
         let base = safe_name(name);
         if is_known(&base) {
             return base;
+        }
+        // The decompressed content's tabular extension wins over the source's
+        // outer extension: a `data.tsv.gz` has resolved_uri ending in `.gz`, but
+        // its inner_ext is `tsv` — so it must materialize as `.tsv`, not `.csv`.
+        if let Some(ext) = inner_ext.filter(|e| TABULAR_EXTS.contains(e)) {
+            return format!("{base}.{ext}");
         }
         let source = resolved_uri
             .split(['?', '#'])
@@ -702,6 +846,82 @@ mod rich {
             }
         }
     }
+
+    /// Ingest target for a download: either the streaming `BlobSink` (uncompressed
+    /// sources — bounded memory) or an in-memory buffer that decompresses the whole
+    /// payload on `finish` (compressed sources, where the codec needs the full
+    /// payload so streaming buys nothing). Both expose the same `write`/`finish`,
+    /// so the HTTP and cloud download loops stay identical regardless of mode.
+    enum IngestSink {
+        // Boxed: `BlobSink` (with its zstd encoder) is far larger than the
+        // `Buffer` variant, so box it to keep the enum small.
+        Stream(Box<BlobSink>),
+        Buffer {
+            source:      String,
+            compression: Compression,
+            buf:         Vec<u8>,
+        },
+    }
+
+    impl IngestSink {
+        /// Buffer-and-decompress when `source` has a known compression extension,
+        /// else stream as before.
+        fn for_source(root: &Path, compression: Compression, source: &str) -> CliResult<Self> {
+            if super::is_compressed_source(source) {
+                Ok(IngestSink::Buffer {
+                    source: source.to_string(),
+                    compression,
+                    buf: Vec::new(),
+                })
+            } else {
+                Ok(IngestSink::Stream(Box::new(BlobSink::new(
+                    root,
+                    compression,
+                )?)))
+            }
+        }
+
+        fn write(&mut self, chunk: &[u8]) -> CliResult<()> {
+            match self {
+                IngestSink::Stream(s) => s.write(chunk)?,
+                IngestSink::Buffer { buf, .. } => buf.extend_from_slice(chunk),
+            }
+            Ok(())
+        }
+
+        /// Finalize and store the blob. Returns `(blake3, compressed_size,
+        /// uncompressed_size, inner_ext)` — `inner_ext` is the decompressed
+        /// content's tabular extension (only ever `Some` in `Buffer` mode).
+        fn finish(self, root: &Path) -> CliResult<(String, u64, u64, Option<String>)> {
+            match self {
+                IngestSink::Stream(s) => {
+                    let (b3, sc, su) = s.finish(root)?;
+                    Ok((b3, sc, su, None))
+                },
+                IngestSink::Buffer {
+                    source,
+                    compression,
+                    buf,
+                } => {
+                    let d = super::decompress_source(&source, buf)?;
+                    let (b3, sc, su) = store_blob(root, &d.bytes, compression)?;
+                    Ok((b3, sc, su, d.inner_ext))
+                },
+            }
+        }
+    }
+
+    /// What a successful download yields: `(blake3, compressed_size,
+    /// uncompressed_size, etag, last_modified, inner_ext)`. `None` (at the
+    /// `Option` use sites) means the origin reported Not-Modified.
+    type FetchedBlob = (
+        String,
+        u64,
+        u64,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    );
 
     fn read_blob(root: &Path, b3: &str, compression: Compression) -> std::io::Result<Vec<u8>> {
         let path = blob_path(root, b3, compression);
@@ -955,7 +1175,12 @@ mod rich {
     }
 
     fn ingest_local(opts: &GetOptions, root: &Path, path: &Path) -> CliResult<CacheEntry> {
-        let body = fs::read(path)?;
+        // Decompress compressed local sources before caching so the stored blob is
+        // plain CSV (auto-indexable, correct record_count). Passthrough otherwise.
+        let raw = fs::read(path)?;
+        let decompressed = super::decompress_source(&path.to_string_lossy(), raw)?;
+        let inner_ext = decompressed.inner_ext;
+        let body = decompressed.bytes;
         let (b3, size_compressed, size_uncompressed) = store_blob(root, &body, opts.compression)?;
         let abs = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         let name = opts
@@ -992,6 +1217,7 @@ mod rich {
             compression: opts.compression,
             cloud_identity: Vec::new(),
             ckan_api_url: None,
+            inner_ext,
         };
         let mut entry = StoredEntry { meta };
         write_entry(root, &entry)?;
@@ -1180,95 +1406,95 @@ mod rich {
         let rt = tokio::runtime::Runtime::new()?;
         // None => origin reported Not-Modified; Some => the freshly stored blob's
         // (blake3, compressed_size, uncompressed_size, etag, last_modified).
-        let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
-            rt.block_on(async {
-                // Probe the first part. A ranged GET returns the TOTAL object size
-                // via Content-Range (object_store sets meta.size), so this single
-                // request serves as both the conditional revalidation and the size
-                // probe. If the origin ignores Range it replies with the full body
-                // and we store it as one part.
-                let probe = OsGetOptions {
-                    range: Some(GetRange::Bounded(0..part_size)),
-                    if_none_match: conditional_etag.clone(),
-                    ..OsGetOptions::default()
-                };
+        let fetched: Option<FetchedBlob> = rt.block_on(async {
+            // Probe the first part. A ranged GET returns the TOTAL object size
+            // via Content-Range (object_store sets meta.size), so this single
+            // request serves as both the conditional revalidation and the size
+            // probe. If the origin ignores Range it replies with the full body
+            // and we store it as one part.
+            let probe = OsGetOptions {
+                range: Some(GetRange::Bounded(0..part_size)),
+                if_none_match: conditional_etag.clone(),
+                ..OsGetOptions::default()
+            };
 
-                let first = match store.get_opts(&path, probe).await {
-                    Err(object_store::Error::NotModified { .. }) => return Ok(None),
-                    Ok(r) => r,
-                    Err(e) => {
-                        return Err(CliError::Other(format!(
-                            "get: fetching {source} failed: {e}"
-                        )));
-                    },
-                };
-                let total = first.meta.size;
-                let etag = first.meta.e_tag.clone();
-                let last_modified = first.meta.last_modified.to_rfc2822();
-                // Guard the remaining range fetches against the object changing
-                // mid-download (the store returns a precondition error).
-                let if_match = etag.clone();
-                let first_bytes = first
-                    .bytes()
-                    .await
-                    .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
+            let first = match store.get_opts(&path, probe).await {
+                Err(object_store::Error::NotModified { .. }) => return Ok(None),
+                Ok(r) => r,
+                Err(e) => {
+                    return Err(CliError::Other(format!(
+                        "get: fetching {source} failed: {e}"
+                    )));
+                },
+            };
+            let total = first.meta.size;
+            let etag = first.meta.e_tag.clone();
+            let last_modified = first.meta.last_modified.to_rfc2822();
+            // Guard the remaining range fetches against the object changing
+            // mid-download (the store returns a precondition error).
+            let if_match = etag.clone();
+            let first_bytes = first
+                .bytes()
+                .await
+                .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
 
-                let mut sink = BlobSink::new(root, opts.compression)?;
-                let have = first_bytes.len() as u64;
-                sink.write(&first_bytes)?;
-                drop(first_bytes);
+            let mut sink = IngestSink::for_source(root, opts.compression, source)?;
+            let have = first_bytes.len() as u64;
+            sink.write(&first_bytes)?;
+            drop(first_bytes);
 
-                // Fetch any outstanding ranges concurrently, but consume them IN
-                // ORDER (buffered) so the blob reassembles correctly while memory
-                // stays bounded to ≈ concurrency * part_size.
-                if have < total {
-                    // Generate the outstanding byte-ranges LAZILY (via from_fn,
-                    // consumed by `buffered`) so the range list never materializes
-                    // in full — it would be `total / part_size` entries for a huge
-                    // object with a tiny part size. `saturating_add` avoids overflow
-                    // on a hostile total.
-                    let mut next = have;
-                    let range_iter = std::iter::from_fn(move || {
-                        if next >= total {
-                            return None;
-                        }
-                        let start = next;
-                        let end = start.saturating_add(part_size).min(total);
-                        next = end;
-                        Some(start..end)
-                    });
-                    let mut parts = futures_util::stream::iter(range_iter.map(|r| {
-                        let store = Arc::clone(&store);
-                        let path = path.clone();
-                        let if_match = if_match.clone();
-                        async move {
-                            let o = OsGetOptions {
-                                range: Some(GetRange::Bounded(r)),
-                                if_match,
-                                ..OsGetOptions::default()
-                            };
-                            store.get_opts(&path, o).await?.bytes().await
-                        }
-                    }))
-                    .buffered(concurrency);
-
-                    while let Some(chunk) = parts.next().await {
-                        let chunk = chunk.map_err(|e| {
-                            CliError::Other(format!("get: reading {source} failed: {e}"))
-                        })?;
-                        sink.write(&chunk)?;
+            // Fetch any outstanding ranges concurrently, but consume them IN
+            // ORDER (buffered) so the blob reassembles correctly while memory
+            // stays bounded to ≈ concurrency * part_size.
+            if have < total {
+                // Generate the outstanding byte-ranges LAZILY (via from_fn,
+                // consumed by `buffered`) so the range list never materializes
+                // in full — it would be `total / part_size` entries for a huge
+                // object with a tiny part size. `saturating_add` avoids overflow
+                // on a hostile total.
+                let mut next = have;
+                let range_iter = std::iter::from_fn(move || {
+                    if next >= total {
+                        return None;
                     }
-                }
+                    let start = next;
+                    let end = start.saturating_add(part_size).min(total);
+                    next = end;
+                    Some(start..end)
+                });
+                let mut parts = futures_util::stream::iter(range_iter.map(|r| {
+                    let store = Arc::clone(&store);
+                    let path = path.clone();
+                    let if_match = if_match.clone();
+                    async move {
+                        let o = OsGetOptions {
+                            range: Some(GetRange::Bounded(r)),
+                            if_match,
+                            ..OsGetOptions::default()
+                        };
+                        store.get_opts(&path, o).await?.bytes().await
+                    }
+                }))
+                .buffered(concurrency);
 
-                let (b3, size_compressed, size_uncompressed) = sink.finish(root)?;
-                Ok(Some((
-                    b3,
-                    size_compressed,
-                    size_uncompressed,
-                    etag,
-                    Some(last_modified),
-                )))
-            })?;
+                while let Some(chunk) = parts.next().await {
+                    let chunk = chunk.map_err(|e| {
+                        CliError::Other(format!("get: reading {source} failed: {e}"))
+                    })?;
+                    sink.write(&chunk)?;
+                }
+            }
+
+            let (b3, size_compressed, size_uncompressed, inner_ext) = sink.finish(root)?;
+            Ok(Some((
+                b3,
+                size_compressed,
+                size_uncompressed,
+                etag,
+                Some(last_modified),
+                inner_ext,
+            )))
+        })?;
 
         match fetched {
             // Not-Modified: just refresh the freshness clock on the existing entry.
@@ -1286,7 +1512,7 @@ mod rich {
             },
             // Fresh bytes: the streaming sink already stored the content-addressed
             // blob; record the entry metadata pointing at it.
-            Some((b3, size_compressed, size_uncompressed, etag, last_modified)) => {
+            Some((b3, size_compressed, size_uncompressed, etag, last_modified, inner_ext)) => {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
@@ -1307,6 +1533,7 @@ mod rich {
                         compression: opts.compression,
                         cloud_identity: identity.clone(),
                         ckan_api_url: None,
+                        inner_ext,
                     },
                 };
                 write_entry(root, &entry)?;
@@ -1400,7 +1627,11 @@ mod rich {
         let rt = tokio::runtime::Runtime::new()?;
 
         // Stream a whole response body into the sink, returning the byte count.
-        async fn drain(sink: &mut BlobSink, resp: reqwest::Response, url: &str) -> CliResult<u64> {
+        async fn drain(
+            sink: &mut IngestSink,
+            resp: reqwest::Response,
+            url: &str,
+        ) -> CliResult<u64> {
             use futures_util::stream::StreamExt;
             let mut have = 0u64;
             let mut stream = resp.bytes_stream();
@@ -1432,198 +1663,199 @@ mod rich {
         }
 
         // None => Not-Modified; Some => (blake3, compressed, uncompressed, etag, last_modified).
-        let fetched: Option<(String, u64, u64, Option<String>, Option<String>)> =
-            rt.block_on(async {
-                // First-part ranged probe (also the conditional revalidation).
-                let mut req = client
-                    .get(final_url)
-                    .header(RANGE, format!("bytes=0-{}", part_size - 1));
+        let fetched: Option<FetchedBlob> = rt.block_on(async {
+            // First-part ranged probe (also the conditional revalidation).
+            let mut req = client
+                .get(final_url)
+                .header(RANGE, format!("bytes=0-{}", part_size - 1));
+            if let Some(tok) = auth_token {
+                req = req.header(AUTHORIZATION, tok);
+            }
+            if let Some(e) = &cond_etag {
+                req = req.header(IF_NONE_MATCH, e);
+            }
+            if let Some(lm) = &cond_lastmod {
+                req = req.header(IF_MODIFIED_SINCE, lm);
+            }
+            let resp = req
+                .send()
+                .await
+                .map_err(|e| CliError::Other(format!("get: request to {final_url} failed: {e}")))?;
+
+            let status = resp.status();
+            if status == StatusCode::NOT_MODIFIED {
+                return Ok(None);
+            }
+            if !status.is_success() {
+                return Err(CliError::Other(format!(
+                    "get: {final_url} returned {status}"
+                )));
+            }
+
+            let headers = resp.headers().clone();
+            let etag = header_str(&headers, ETAG);
+            let last_modified = header_str(&headers, LAST_MODIFIED);
+            let ranges_supported = status == StatusCode::PARTIAL_CONTENT
+                && header_str(&headers, ACCEPT_RANGES)
+                    .unwrap_or_default()
+                    .to_ascii_lowercase()
+                    .contains("bytes");
+            // Total object size from Content-Range ("bytes 0-N/TOTAL") on a 206.
+            let total: Option<u64> = if status == StatusCode::PARTIAL_CONTENT {
+                header_str(&headers, CONTENT_RANGE)
+                    .and_then(|cr| cr.rsplit('/').next().map(|t| t.trim().to_string()))
+                    .and_then(|t| t.parse::<u64>().ok())
+            } else {
+                None
+            };
+
+            let mut sink = IngestSink::for_source(root, opts.compression, final_url)?;
+
+            if ranges_supported && let Some(total) = total {
+                // 206 with a known total: stream the first part, then fetch the
+                // remaining bytes as parallel, in-order ranges (bounded memory).
+                let have = drain(&mut sink, resp, final_url).await?;
+                if have < total {
+                    // Guard the follow-up ranges against the object changing
+                    // mid-download. `If-Match` mandates STRONG comparison, so a
+                    // weak validator (`W/"..."`) must NOT be sent there — a
+                    // compliant origin answers 412. Use the strong ETag when we
+                    // have one, else fall back to `If-Unmodified-Since` from the
+                    // Last-Modified, else rely on the per-range Content-Range /
+                    // length validation below.
+                    let strong_etag = etag
+                        .clone()
+                        .filter(|e| !e.starts_with("W/") && !e.starts_with("w/"));
+                    let guard_lastmod = if strong_etag.is_some() {
+                        None
+                    } else {
+                        last_modified.clone()
+                    };
+                    // Generate the (start, end) byte-ranges LAZILY so the list
+                    // never materializes in full — it would be `total /
+                    // part_size` entries for a huge object with a tiny part size.
+                    // `saturating_add` avoids overflow on a hostile total.
+                    let mut next = have;
+                    let range_iter = std::iter::from_fn(move || {
+                        if next >= total {
+                            return None;
+                        }
+                        let s = next;
+                        let e = s.saturating_add(part_size).min(total);
+                        next = e;
+                        Some((s, e))
+                    });
+                    let mut parts = futures_util::stream::iter(range_iter.map(|(s, e)| {
+                        let client = client.clone();
+                        let url = final_url.to_string();
+                        let auth = auth_token.map(ToString::to_string);
+                        let if_match = strong_etag.clone();
+                        let if_unmod = guard_lastmod.clone();
+                        async move {
+                            let mut req = client
+                                .get(&url)
+                                .header(RANGE, format!("bytes={s}-{}", e - 1));
+                            if let Some(tok) = &auth {
+                                req = req.header(AUTHORIZATION, tok);
+                            }
+                            if let Some(im) = &if_match {
+                                req = req.header(IF_MATCH, im);
+                            } else if let Some(lm) = &if_unmod {
+                                req = req.header(IF_UNMODIFIED_SINCE, lm);
+                            }
+                            let resp = req.send().await.map_err(|err| {
+                                CliError::Other(format!("get: reading {url} failed: {err}"))
+                            })?;
+                            // Each follow-up range MUST come back as 206 with a
+                            // Content-Range that matches exactly what we asked
+                            // for and a body of the requested length. Otherwise a
+                            // 200 full body, a wrong slice, or a short read would
+                            // be stitched in as if it were this range, silently
+                            // corrupting the reassembled blob.
+                            let st = resp.status();
+                            if st != StatusCode::PARTIAL_CONTENT {
+                                return Err(CliError::Other(format!(
+                                    "get: range {s}-{} of {url} returned {st}, expected 206 \
+                                     Partial Content",
+                                    e - 1
+                                )));
+                            }
+                            let cr =
+                                header_str(resp.headers(), CONTENT_RANGE).ok_or_else(|| {
+                                    CliError::Other(format!(
+                                        "get: range {s}-{} of {url} is missing a Content-Range \
+                                         header",
+                                        e - 1
+                                    ))
+                                })?;
+                            match parse_content_range(&cr) {
+                                Some((rs, re, rtot))
+                                    if rs == s
+                                        && re == e - 1
+                                        && rtot.is_none_or(|t| t == total) => {},
+                                _ => {
+                                    return Err(CliError::Other(format!(
+                                        "get: range {s}-{} of {url} returned a mismatched \
+                                         Content-Range '{cr}' (object changed mid-download?)",
+                                        e - 1
+                                    )));
+                                },
+                            }
+                            let body = resp.bytes().await.map_err(|err| {
+                                CliError::Other(format!("get: reading {url} failed: {err}"))
+                            })?;
+                            if body.len() as u64 != e - s {
+                                return Err(CliError::Other(format!(
+                                    "get: range {s}-{} of {url} returned {} bytes, expected {}",
+                                    e - 1,
+                                    body.len(),
+                                    e - s
+                                )));
+                            }
+                            Ok::<_, CliError>(body)
+                        }
+                    }))
+                    .buffered(concurrency);
+                    while let Some(chunk) = parts.next().await {
+                        let chunk = chunk?;
+                        sink.write(&chunk)?;
+                    }
+                }
+            } else if status == StatusCode::PARTIAL_CONTENT {
+                // 206 but the total is unknown (Content-Range "*"): the first
+                // part alone is incomplete, so re-fetch the whole object in one
+                // streamed pass.
+                drop(resp);
+                let mut req = client.get(final_url);
                 if let Some(tok) = auth_token {
                     req = req.header(AUTHORIZATION, tok);
                 }
-                if let Some(e) = &cond_etag {
-                    req = req.header(IF_NONE_MATCH, e);
-                }
-                if let Some(lm) = &cond_lastmod {
-                    req = req.header(IF_MODIFIED_SINCE, lm);
-                }
-                let resp = req.send().await.map_err(|e| {
+                let full = req.send().await.map_err(|e| {
                     CliError::Other(format!("get: request to {final_url} failed: {e}"))
                 })?;
-
-                let status = resp.status();
-                if status == StatusCode::NOT_MODIFIED {
-                    return Ok(None);
-                }
-                if !status.is_success() {
+                if !full.status().is_success() {
                     return Err(CliError::Other(format!(
-                        "get: {final_url} returned {status}"
+                        "get: {final_url} returned {}",
+                        full.status()
                     )));
                 }
+                drain(&mut sink, full, final_url).await?;
+            } else {
+                // 200 (server ignored Range / no range support): stream the full
+                // body straight into the sink.
+                drain(&mut sink, resp, final_url).await?;
+            }
 
-                let headers = resp.headers().clone();
-                let etag = header_str(&headers, ETAG);
-                let last_modified = header_str(&headers, LAST_MODIFIED);
-                let ranges_supported = status == StatusCode::PARTIAL_CONTENT
-                    && header_str(&headers, ACCEPT_RANGES)
-                        .unwrap_or_default()
-                        .to_ascii_lowercase()
-                        .contains("bytes");
-                // Total object size from Content-Range ("bytes 0-N/TOTAL") on a 206.
-                let total: Option<u64> = if status == StatusCode::PARTIAL_CONTENT {
-                    header_str(&headers, CONTENT_RANGE)
-                        .and_then(|cr| cr.rsplit('/').next().map(|t| t.trim().to_string()))
-                        .and_then(|t| t.parse::<u64>().ok())
-                } else {
-                    None
-                };
-
-                let mut sink = BlobSink::new(root, opts.compression)?;
-
-                if ranges_supported && let Some(total) = total {
-                    // 206 with a known total: stream the first part, then fetch the
-                    // remaining bytes as parallel, in-order ranges (bounded memory).
-                    let have = drain(&mut sink, resp, final_url).await?;
-                    if have < total {
-                        // Guard the follow-up ranges against the object changing
-                        // mid-download. `If-Match` mandates STRONG comparison, so a
-                        // weak validator (`W/"..."`) must NOT be sent there — a
-                        // compliant origin answers 412. Use the strong ETag when we
-                        // have one, else fall back to `If-Unmodified-Since` from the
-                        // Last-Modified, else rely on the per-range Content-Range /
-                        // length validation below.
-                        let strong_etag = etag
-                            .clone()
-                            .filter(|e| !e.starts_with("W/") && !e.starts_with("w/"));
-                        let guard_lastmod = if strong_etag.is_some() {
-                            None
-                        } else {
-                            last_modified.clone()
-                        };
-                        // Generate the (start, end) byte-ranges LAZILY so the list
-                        // never materializes in full — it would be `total /
-                        // part_size` entries for a huge object with a tiny part size.
-                        // `saturating_add` avoids overflow on a hostile total.
-                        let mut next = have;
-                        let range_iter = std::iter::from_fn(move || {
-                            if next >= total {
-                                return None;
-                            }
-                            let s = next;
-                            let e = s.saturating_add(part_size).min(total);
-                            next = e;
-                            Some((s, e))
-                        });
-                        let mut parts = futures_util::stream::iter(range_iter.map(|(s, e)| {
-                            let client = client.clone();
-                            let url = final_url.to_string();
-                            let auth = auth_token.map(ToString::to_string);
-                            let if_match = strong_etag.clone();
-                            let if_unmod = guard_lastmod.clone();
-                            async move {
-                                let mut req = client
-                                    .get(&url)
-                                    .header(RANGE, format!("bytes={s}-{}", e - 1));
-                                if let Some(tok) = &auth {
-                                    req = req.header(AUTHORIZATION, tok);
-                                }
-                                if let Some(im) = &if_match {
-                                    req = req.header(IF_MATCH, im);
-                                } else if let Some(lm) = &if_unmod {
-                                    req = req.header(IF_UNMODIFIED_SINCE, lm);
-                                }
-                                let resp = req.send().await.map_err(|err| {
-                                    CliError::Other(format!("get: reading {url} failed: {err}"))
-                                })?;
-                                // Each follow-up range MUST come back as 206 with a
-                                // Content-Range that matches exactly what we asked
-                                // for and a body of the requested length. Otherwise a
-                                // 200 full body, a wrong slice, or a short read would
-                                // be stitched in as if it were this range, silently
-                                // corrupting the reassembled blob.
-                                let st = resp.status();
-                                if st != StatusCode::PARTIAL_CONTENT {
-                                    return Err(CliError::Other(format!(
-                                        "get: range {s}-{} of {url} returned {st}, expected 206 \
-                                         Partial Content",
-                                        e - 1
-                                    )));
-                                }
-                                let cr =
-                                    header_str(resp.headers(), CONTENT_RANGE).ok_or_else(|| {
-                                        CliError::Other(format!(
-                                            "get: range {s}-{} of {url} is missing a \
-                                             Content-Range header",
-                                            e - 1
-                                        ))
-                                    })?;
-                                match parse_content_range(&cr) {
-                                    Some((rs, re, rtot))
-                                        if rs == s
-                                            && re == e - 1
-                                            && rtot.is_none_or(|t| t == total) => {},
-                                    _ => {
-                                        return Err(CliError::Other(format!(
-                                            "get: range {s}-{} of {url} returned a mismatched \
-                                             Content-Range '{cr}' (object changed mid-download?)",
-                                            e - 1
-                                        )));
-                                    },
-                                }
-                                let body = resp.bytes().await.map_err(|err| {
-                                    CliError::Other(format!("get: reading {url} failed: {err}"))
-                                })?;
-                                if body.len() as u64 != e - s {
-                                    return Err(CliError::Other(format!(
-                                        "get: range {s}-{} of {url} returned {} bytes, expected {}",
-                                        e - 1,
-                                        body.len(),
-                                        e - s
-                                    )));
-                                }
-                                Ok::<_, CliError>(body)
-                            }
-                        }))
-                        .buffered(concurrency);
-                        while let Some(chunk) = parts.next().await {
-                            let chunk = chunk?;
-                            sink.write(&chunk)?;
-                        }
-                    }
-                } else if status == StatusCode::PARTIAL_CONTENT {
-                    // 206 but the total is unknown (Content-Range "*"): the first
-                    // part alone is incomplete, so re-fetch the whole object in one
-                    // streamed pass.
-                    drop(resp);
-                    let mut req = client.get(final_url);
-                    if let Some(tok) = auth_token {
-                        req = req.header(AUTHORIZATION, tok);
-                    }
-                    let full = req.send().await.map_err(|e| {
-                        CliError::Other(format!("get: request to {final_url} failed: {e}"))
-                    })?;
-                    if !full.status().is_success() {
-                        return Err(CliError::Other(format!(
-                            "get: {final_url} returned {}",
-                            full.status()
-                        )));
-                    }
-                    drain(&mut sink, full, final_url).await?;
-                } else {
-                    // 200 (server ignored Range / no range support): stream the full
-                    // body straight into the sink.
-                    drain(&mut sink, resp, final_url).await?;
-                }
-
-                let (b3, size_compressed, size_uncompressed) = sink.finish(root)?;
-                Ok(Some((
-                    b3,
-                    size_compressed,
-                    size_uncompressed,
-                    etag,
-                    last_modified,
-                )))
-            })?;
+            let (b3, size_compressed, size_uncompressed, inner_ext) = sink.finish(root)?;
+            Ok(Some((
+                b3,
+                size_compressed,
+                size_uncompressed,
+                etag,
+                last_modified,
+                inner_ext,
+            )))
+        })?;
 
         match fetched {
             // Not-Modified: refresh the freshness clock on the existing entry.
@@ -1641,7 +1873,7 @@ mod rich {
             },
             // Fresh bytes: the streaming sink already stored the content-addressed
             // blob; record the entry metadata pointing at it.
-            Some((b3, size_compressed, size_uncompressed, etag, last_modified)) => {
+            Some((b3, size_compressed, size_uncompressed, etag, last_modified, inner_ext)) => {
                 let entry = StoredEntry {
                     meta: CacheEntry {
                         logical_name: name.clone(),
@@ -1667,6 +1899,7 @@ mod rich {
                         } else {
                             None
                         },
+                        inner_ext,
                     },
                 };
                 write_entry(root, &entry)?;
@@ -1832,7 +2065,11 @@ mod rich {
         // different extensions never share a materialized sidecar (same temp
         // stem) or a durable stats blob — either of which would cross-contaminate
         // schema/frequency results across delimiters.
-        let temp_name = tabular_temp_name(name, &entry.meta.resolved_uri);
+        let temp_name = tabular_temp_name(
+            name,
+            &entry.meta.resolved_uri,
+            entry.meta.inner_ext.as_deref(),
+        );
         let ext = Path::new(&temp_name)
             .extension()
             .and_then(|e| e.to_str())

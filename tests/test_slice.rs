@@ -808,6 +808,41 @@ fn slice_from_tsvzlib() {
     assert!(got.contains(expected));
 }
 
+#[cfg(feature = "polars")]
+#[test]
+fn slice_from_csvzip() {
+    // single-entry zip (boston311-100.csv.zip contains just boston311-100.csv)
+    let wrk = Workdir::new("slice_from_csvzip");
+    let test_file = wrk.load_test_file("boston311-100.csv.zip");
+    let mut cmd = wrk.command("slice");
+    cmd.arg(test_file).arg("--index").arg("0").arg("--json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    let expected = "101004143000";
+    assert!(got.contains(expected));
+}
+
+#[cfg(feature = "polars")]
+#[test]
+fn slice_from_zip_multientry() {
+    // testzip.zip has multiple entries (positions.csv, NYC311-5.ssv, buses.csv,
+    // NYC311-5.tsv) plus __MACOSX system files. select_zip_entry skips the
+    // system files and picks the FIRST CSV/TSV/TAB/SSV entry in archive order:
+    // positions.csv (headers: position,title).
+    let wrk = Workdir::new("slice_from_zip_multientry");
+    let test_file = wrk.load_test_file("testzip.zip");
+    let mut cmd = wrk.command("slice");
+    cmd.arg(test_file).arg("--index").arg("0").arg("--json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    assert!(got.contains("position"));
+    assert!(got.contains("title"));
+}
+
 #[test]
 fn slice_from_tsv() {
     let wrk = Workdir::new("slice_from_tsv");

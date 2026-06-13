@@ -700,8 +700,12 @@ fn get_unique_values(
     // Bypass the stats cache while running our nested frequency pass.
     // The guard restores the prior value (or unsets it) even if `?` below errors.
     let _statscache_guard = EnvVarGuard::set("QSV_STATSCACHE_MODE", "none");
-    let (headers, ftables, _) = match freq_args.rconfig().indexed()? {
-        Some(idx) => freq_args.parallel_ftables(&idx),
+    // Bind the resolved Config so the index and the parallel workers share the
+    // same (lazily-resolved) temp path for special-format inputs — see
+    // `parallel_ftables`.
+    let freq_rconfig = freq_args.rconfig();
+    let (headers, ftables, _) = match freq_rconfig.indexed()? {
+        Some(idx) => freq_args.parallel_ftables(&idx, &freq_rconfig),
         _ => freq_args.sequential_ftables(),
     }?;
 

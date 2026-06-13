@@ -82,7 +82,7 @@ Common options:
                            into memory using CONSERVATIVE heuristics.
 "#;
 
-use std::{io, path::Path};
+use std::io;
 
 use foldhash::{HashSet, HashSetExt};
 use serde::Deserialize;
@@ -171,8 +171,8 @@ impl Args {
             .select(self.arg_columns2.clone());
 
         // input2 is fully loaded into memory; guard against OOM.
-        if let Some(path) = rconf2.path.as_ref() {
-            util::mem_file_check(Path::new(path), false, self.flag_memcheck)?;
+        if let Some(path) = rconf2.resolved_path()? {
+            util::mem_file_check(&path, false, self.flag_memcheck)?;
         }
 
         let mut rdr1 = rconf1.reader_file_stdin()?;

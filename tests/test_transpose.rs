@@ -871,3 +871,34 @@ fn transpose_select_all_columns() {
     wrk.assert_success(&mut cmd);
     assert_eq!(got, expected);
 }
+
+// issue #1417: transpose must read the DECOMPRESSED data from a special-format
+// input with the resolved inner delimiter. tsv-in-zip.zip's entry is a TAB-
+// delimited data.tsv (col_a<TAB>col_b / x<TAB>y); transposing it must yield two
+// rows, not one mangled row (which is what reading the raw zip / using the outer
+// `.zip` comma delimiter would produce).
+#[test]
+fn transpose_from_zip_inmemory_uses_inner_delimiter() {
+    let wrk = Workdir::new("transpose_from_zip_inmemory_uses_inner_delimiter");
+    let test_file = wrk.load_test_file("tsv-in-zip.zip");
+    let mut cmd = wrk.command("transpose");
+    cmd.arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["col_a", "x"], svec!["col_b", "y"]];
+    assert_eq!(got, expected);
+}
+
+// Same as above but forcing the multipass (mmap) path, which previously reopened
+// the original `.zip` bytes directly instead of the resolved temp.
+#[test]
+fn transpose_multipass_from_zip_uses_inner_delimiter() {
+    let wrk = Workdir::new("transpose_multipass_from_zip_uses_inner_delimiter");
+    let test_file = wrk.load_test_file("tsv-in-zip.zip");
+    let mut cmd = wrk.command("transpose");
+    cmd.arg("--multipass").arg(&test_file);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let expected = vec![svec!["col_a", "x"], svec!["col_b", "y"]];
+    assert_eq!(got, expected);
+}

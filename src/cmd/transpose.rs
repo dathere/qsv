@@ -228,7 +228,7 @@ impl Args {
 
     fn in_memory_transpose(&self) -> CliResult<()> {
         // we're loading the entire file into memory, we need to check avail mem
-        if let Some(path) = self.rconfig().path
+        if let Some(path) = self.rconfig().resolved_path()?
             && let Err(e) = util::mem_file_check(&path, false, self.flag_memcheck)
         {
             eprintln!("File too large for in-memory transpose: {e}.\nDoing multipass transpose...");
@@ -264,10 +264,18 @@ impl Args {
     }
 
     fn multipass_transpose_streaming(&self) -> CliResult<()> {
+        // Resolve special-format inputs (zip/parquet/compressed CSV) to their
+        // decompressed temp before mmapping, so we read the delimited data — not
+        // the raw archive bytes — and with the resolved (inner) delimiter.
+        let rconfig = self.rconfig().prepared_for_read()?;
+        // safety: a non-stdin input always has a path; special-format inputs
+        // resolve to a temp path above.
+        let read_path = rconfig.path.as_ref().unwrap();
+
         // Memory map the file for efficient cross-pass access.
         // No `.populate()` here on purpose — `--multipass` exists to avoid loading
         // the whole dataset into memory, so we let the OS page in lazily.
-        let file = File::open(self.arg_input.as_ref().unwrap())?;
+        let file = File::open(read_path)?;
         // safety: `run()` only routes here when `input_is_stdin == false`, so
         // `arg_input` names an on-disk file that can be memory-mapped. The
         // `file` binding stays in scope for the rest of this function and all
@@ -278,8 +286,6 @@ impl Args {
         // soundness still relies on no other process concurrently truncating
         // or otherwise mutating the file while the mapping is live.
         let mmap = unsafe { MmapOptions::new().map(&file)? };
-
-        let rconfig = self.rconfig();
 
         // Read the first record to determine column count & resolve --select. This
         // also serves as the header row for name-based selection.

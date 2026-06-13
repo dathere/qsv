@@ -20,6 +20,63 @@ fn count_simple() {
     assert_eq!(got, expected.to_string());
 }
 
+// issue #1417: `count` reads via `Config` directly (no `util::process_input`), so
+// these exercise the `Config` special-format zip path (`select_zip_entry` /
+// `extract_zip_to_temp`) — distinct from the `process_input` path used by slice/cat/etc.
+// NOT polars-gated: zip extraction needs only the always-compiled `zip` crate, so it
+// must work in non-polars builds (qsvlite) too.
+#[test]
+fn count_from_csvzip() {
+    // single-entry zip: boston311-100.csv.zip contains just boston311-100.csv (100 rows)
+    let wrk = Workdir::new("count_from_csvzip");
+    let test_file = wrk.load_test_file("boston311-100.csv.zip");
+    let mut cmd = wrk.command("count");
+    cmd.arg(test_file);
+
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "100".to_string());
+}
+
+#[test]
+fn count_from_zip_multientry() {
+    // testzip.zip has multiple entries (positions.csv, NYC311-5.ssv, buses.csv,
+    // NYC311-5.tsv) plus __MACOSX system files. select_zip_entry skips the system
+    // files and picks the FIRST CSV/TSV/TAB/SSV entry in archive order: positions.csv,
+    // which has 6 data rows.
+    let wrk = Workdir::new("count_from_zip_multientry");
+    let test_file = wrk.load_test_file("testzip.zip");
+    let mut cmd = wrk.command("count");
+    cmd.arg(test_file);
+
+    wrk.assert_success(&mut cmd);
+    let got: String = wrk.stdout(&mut cmd);
+    assert_eq!(got, "6".to_string());
+}
+
+// A non-zip file with a `.zip` extension must surface a clear conversion error
+// rather than silently reading the raw bytes as CSV. Regression for the
+// `skip_format_check` ordering fix (zip conversion failures are not swallowed).
+#[test]
+fn count_from_invalid_zip_errors() {
+    let wrk = Workdir::new("count_from_invalid_zip_errors");
+    wrk.create_from_string("bad.zip", "this is not a zip archive\n");
+    let mut cmd = wrk.command("count");
+    cmd.arg("bad.zip");
+    wrk.assert_err(&mut cmd);
+}
+
+// Even with sniffing enabled (which sets skip_format_check up-front), a corrupt/
+// non-zip `.zip` must still surface the conversion error rather than be read as CSV.
+#[test]
+fn count_invalid_zip_errors_even_when_sniffing() {
+    let wrk = Workdir::new("count_invalid_zip_errors_even_when_sniffing");
+    wrk.create_from_string("bad.zip", "this is not a zip archive\n");
+    let mut cmd = wrk.command("count");
+    cmd.env("QSV_SNIFF_DELIMITER", "1").arg("bad.zip");
+    wrk.assert_err(&mut cmd);
+}
+
 #[test]
 fn count_empty() {
     let wrk = Workdir::new("count_empty");

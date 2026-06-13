@@ -163,9 +163,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // we're loading the entire file into memory, we need to check avail memory.
     // we only check if we're doing a stable sort and its not --random,
     // because --faster sorts in-place (non-allocating) and --random shuffles.
-    if let Some(path) = rconfig.path.clone()
-        && !faster
+    if !faster
         && !random
+        && let Some(path) = rconfig.resolved_path()?
     {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }

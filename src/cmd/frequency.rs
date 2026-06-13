@@ -858,7 +858,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Check if we have an index and will use parallel processing
     // If so, skip mem_file_check since memory-aware chunking will handle it
-    let mut indexed_result = args.rconfig().indexed()?;
+    // Reuse the existing `rconfig` (not a fresh `args.rconfig()`): for special-format
+    // inputs (e.g. `.zip`) each `Config` lazily resolves to its own temp path, so a
+    // fresh Config would check an index next to a *different* temp than the one used
+    // for `resolved_path()`/auto-indexing below.
+    let mut indexed_result = rconfig.indexed()?;
     let will_use_parallel = match &indexed_result {
         Some(_) => {
             // We have an index, check if we'll use parallel processing
@@ -872,7 +876,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // we're loading the entire file into memory, we need to check avail mem
     // Skip this check for parallel processing since memory-aware chunking handles it
-    if !will_use_parallel && let Some(path) = rconfig.path.clone() {
+    if !will_use_parallel && let Some(path) = rconfig.resolved_path()? {
         // Try mem_file_check, and if it fails for an unindexed file, auto-create index
         match util::mem_file_check(&path, false, args.flag_memcheck) {
             Ok(_) => {
@@ -892,7 +896,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     );
                     match util::create_index_for_file(&path, &rconfig) {
                         Ok(()) => {
-                            indexed_result = args.rconfig().indexed()?;
+                            indexed_result = rconfig.indexed()?;
                             index_succeeded = indexed_result.is_some();
                             if index_succeeded {
                                 log::info!(
@@ -1024,7 +1028,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let (headers, mut tables, weighted_tables) = if let Some(idx) = indexed_result
         && util::njobs(args.flag_jobs) > 1
     {
-        args.parallel_ftables(&idx)
+        args.parallel_ftables(&idx, &rconfig)
     } else {
         args.sequential_ftables()
     }?;
@@ -2773,11 +2777,17 @@ impl Args {
         }
     }
 
+    // `rconfig` must be the SAME (already-resolved) Config that produced `idx`.
+    // For special-format inputs (e.g. `.zip`) each `Config` lazily resolves to its
+    // own temp path; cloning `rconfig` shares its `Arc<OnceLock>` so every worker
+    // re-opens the index next to the same temp. Recreating `args.rconfig()` inside
+    // a worker would resolve to a different temp with no sibling `.idx` and panic.
     pub fn parallel_ftables(
         &self,
         idx: &Indexed<fs::File, fs::File>,
+        rconfig: &Config,
     ) -> CliResult<(Headers, FTables, Option<WeightedFTables>)> {
-        let mut rdr = self.rconfig().reader()?;
+        let mut rdr = rconfig.reader()?;
         let (headers, sel, weight_col_idx) = self.sel_headers(&mut rdr)?;
 
         let idx_count = idx.count() as usize;
@@ -2814,7 +2824,7 @@ impl Args {
         // Always sample when QSV_FREQ_CHUNK_MEMORY_MB is set to ANY value (including 0)
         // or when not set (to enable dynamic sizing)
         let sample_records = if max_chunk_memory_mb.is_some() {
-            util::sample_records(&self.rconfig(), 1000)
+            util::sample_records(rconfig, 1000)
         } else {
             None
         };
@@ -2868,10 +2878,15 @@ impl Args {
             let pool = ThreadPool::new(njobs);
             let (send, recv) = crossbeam_channel::bounded(nchunks);
             for i in 0..nchunks {
-                let (send, args, sel, weight_idx) =
-                    (send.clone(), self.clone(), sel.clone(), weight_col_idx);
+                let (send, args, rconf, sel, weight_idx) = (
+                    send.clone(),
+                    self.clone(),
+                    rconfig.clone(),
+                    sel.clone(),
+                    weight_col_idx,
+                );
                 pool.execute(move || {
-                    let mut idx = args.rconfig().indexed().unwrap().unwrap();
+                    let mut idx = rconf.indexed().unwrap().unwrap();
                     idx.seek((i * chunk_size) as u64).unwrap();
                     let it = idx.byte_records().take(chunk_size);
                     send.send(args.ftables_weighted_internal(&sel, it, nchunks, weight_idx))
@@ -2894,9 +2909,10 @@ impl Args {
             let pool = ThreadPool::new(njobs);
             let (send, recv) = crossbeam_channel::bounded(nchunks);
             for i in 0..nchunks {
-                let (send, args, sel) = (send.clone(), self.clone(), sel.clone());
+                let (send, args, rconf, sel) =
+                    (send.clone(), self.clone(), rconfig.clone(), sel.clone());
                 pool.execute(move || {
-                    let mut idx = args.rconfig().indexed().unwrap().unwrap();
+                    let mut idx = rconf.indexed().unwrap().unwrap();
                     idx.seek((i * chunk_size) as u64).unwrap();
                     let it = idx.byte_records().take(chunk_size);
                     send.send(args.ftables_unweighted(&sel, it, nchunks))

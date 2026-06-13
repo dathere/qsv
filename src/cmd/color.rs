@@ -712,7 +712,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .flexible(false); // don't support ragged csvs for now
 
     // we're loading the entire file into memory, we need to check avail mem
-    if let Some(path) = rconfig.path.clone() {
+    if let Some(path) = rconfig.resolved_path()? {
         util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 

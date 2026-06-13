@@ -3646,6 +3646,105 @@ fn load_schema_from_file(path: &Path) -> Result<Option<Arc<Schema>>, Box<dyn std
     }
 }
 
+/// Tabular file extensions qsv recognizes for delimiter inference inside a zip.
+const ZIP_TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
+
+/// Choose which entry of a zip archive to treat as the tabular payload.
+///
+/// Returns the chosen entry's 0-based index and its lower-cased tabular extension
+/// (`csv`/`tsv`/`tab`/`ssv`). Selection rule:
+/// 1. Skip directory entries and system files (e.g. `__MACOSX`, `.DS_Store`) via
+///    `root_dir_common_filter`.
+/// 2. Use the first entry (in archive order) whose extension is tabular.
+/// 3. Error if no tabular entry exists — including the single-entry case. We do NOT silently treat
+///    an arbitrary file as CSV, matching the documented "first CSV/TSV/TAB/SSV entry" behavior.
+///
+/// Generic over `Read + Seek` so it serves both file-backed archives
+/// (`extract_zip_to_temp`) and in-memory `Cursor`-backed ones (`diskcache`).
+pub fn select_zip_entry<R: Read + std::io::Seek>(
+    archive: &mut zip::ZipArchive<R>,
+) -> CliResult<(usize, Option<String>)> {
+    let mut usable_count = 0_usize;
+    let mut first_tabular: Option<(usize, String)> = None;
+
+    for i in 0..archive.len() {
+        // Inspect the central-directory name only (no decoder is constructed), so
+        // an encrypted or unsupported-compression entry elsewhere in the archive
+        // can't fail selection of a valid earlier CSV/TSV/TAB/SSV entry. The chosen
+        // entry is decoded later (by `extract_zip_to_temp` via `by_index`).
+        let entry = archive.by_index_raw(i)?;
+        let name = entry.name().to_string();
+        if name.ends_with('/') || !root_dir_common_filter(Path::new(&name)) {
+            continue;
+        }
+        usable_count += 1;
+        if first_tabular.is_none()
+            && let Some(ext) = Path::new(&name)
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .filter(|e| ZIP_TABULAR_EXTS.contains(&e.as_str()))
+        {
+            first_tabular = Some((i, ext));
+        }
+    }
+
+    if let Some((idx, ext)) = first_tabular {
+        if usable_count > 1 {
+            log::info!(
+                "zip archive has multiple entries; using first CSV/TSV/TAB/SSV entry (index {idx})"
+            );
+        }
+        return Ok((idx, Some(ext)));
+    }
+    Err(CliError::IncorrectUsage(if usable_count == 0 {
+        "zip archive contains no usable file entry.".to_string()
+    } else {
+        "zip archive contains no CSV/TSV/TAB/SSV entry.".to_string()
+    }))
+}
+
+/// Map a chosen zip entry's tabular extension to a temp-file suffix that qsv's
+/// delimiter inference (`get_delim_by_extension`) understands.
+fn zip_inner_ext_to_suffix(inner_ext: Option<&str>) -> &'static str {
+    match inner_ext {
+        Some("tsv" | "tab") => ".tsv",
+        Some("ssv") => ".ssv",
+        _ => ".csv",
+    }
+}
+
+/// Extract the tabular entry of a zip archive to a temp file whose extension
+/// selects the delimiter downstream (via `get_delim_by_extension`). The temp file
+/// lives in `TEMP_FILE_DIR` and is `keep()`-ed (process-lifetime), matching
+/// `convert_special_format`'s temp lifecycle.
+///
+/// Always compiled (needs only the non-optional `zip` crate), so it is usable in
+/// non-polars builds and from `convert_special_format`'s non-polars stub.
+pub fn extract_zip_to_temp(
+    path: &Path,
+    _default_delim: u8,
+) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    let zip_file = File::open(path)?;
+    let mut archive = zip::ZipArchive::new(zip_file)?;
+    let (idx, inner_ext) = select_zip_entry(&mut archive).map_err(|e| e.to_string())?;
+    let suffix = zip_inner_ext_to_suffix(inner_ext.as_deref());
+
+    let temp_dir =
+        crate::config::TEMP_FILE_DIR.get_or_init(|| tempfile::TempDir::new().unwrap().keep());
+    let mut temp_file = tempfile::Builder::new()
+        .suffix(suffix)
+        .tempfile_in(temp_dir)?;
+
+    let mut entry = archive.by_index(idx)?;
+    std::io::copy(&mut entry, &mut temp_file)?;
+    temp_file.flush()?;
+
+    let out = temp_file.path().to_path_buf();
+    temp_file.keep()?;
+    Ok(out)
+}
+
 /// Converts files in special formats (Parquet, Avro, Arrow IPC, JSONL, JSON, or compressed CSV)
 /// into a standard delimited text file. The output file extension will be:
 /// - .tsv for tab-delimited
@@ -3675,6 +3774,12 @@ pub fn convert_special_format(
             LazyJsonLineReader, ParquetReader, PlRefPath, SerReader, SerWriter,
         },
     };
+
+    // Zip is not a polars-native format; extract the chosen tabular entry to a
+    // temp file (always-compiled path) and return it directly.
+    if format == SpecialFormat::CompressedZip {
+        return extract_zip_to_temp(path, delim);
+    }
 
     // Check if there's a pschema.json file with the same filestem
     // the Polars schema will be used in parsing
@@ -3767,6 +3872,8 @@ pub fn convert_special_format(
             }
         },
         SpecialFormat::Unknown => return Err("Unknown format".into()),
+        // handled by the early return at the top of this function
+        SpecialFormat::CompressedZip => unreachable!(),
     };
 
     // Get or initialize temp directory that persists until program exit
@@ -3807,6 +3914,11 @@ pub fn convert_special_format(
     format: SpecialFormat,
     delim: u8,
 ) -> Result<PathBuf, Box<dyn std::error::Error>> {
+    // Zip extraction needs only the always-compiled `zip` crate, so it works
+    // even in non-polars builds.
+    if format == SpecialFormat::CompressedZip {
+        return extract_zip_to_temp(path, delim);
+    }
     Err(
         "This file type cannot be opened with your current version of qsv. You need the full, \
          polars-enabled version to work with Avro, Arrow, Parquet, JSON/JSONL and gzip/zlib/zst \

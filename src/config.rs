@@ -3,7 +3,7 @@ use std::{
     io::{self, Read},
     path::{Path, PathBuf},
     sync::{
-        OnceLock,
+        Arc, OnceLock,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -45,8 +45,13 @@ pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
 // Variants are constructed by `get_special_format` but only meaningfully matched
 // when the `polars` feature is enabled (via `util::convert_special_format`),
 // so non-polars builds see them as never read.
+//
+// Exception: `CompressedZip` is both *detected* and *handled* in all builds. It
+// is handled by `util::extract_zip_to_temp` (always compiled — it needs only the
+// non-optional `zip` crate), and `Config::new` preserves `CompressedZip` even in
+// non-polars builds (mapping only the other, polars-only variants to `Unknown`).
 #[allow(dead_code)]
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecialFormat {
     Avro,
     Parquet,
@@ -56,6 +61,7 @@ pub enum SpecialFormat {
     CompressedCsv,
     CompressedTsv,
     CompressedSsv,
+    CompressedZip,
     Unknown,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -105,6 +111,14 @@ pub struct Config {
     idx_path:              Option<PathBuf>,
     select_columns:        Option<SelectColumns>,
     delimiter:             u8,
+    // The detected special input format (Parquet/Avro/Arrow/JSON/JSONL, compressed
+    // CSV, or zip). Conversion to a delimited temp file is deferred to the read
+    // path (see `prepared_for_read`), so a Config used only for writing never
+    // converts its (output) path. `Unknown` for ordinary inputs, stdin & writers.
+    special_format:        SpecialFormat,
+    // Lazily-resolved, cached (shared across clones) converted-input (temp path,
+    // delimiter) for `special_format` inputs. Populated on first read.
+    read_input:            Arc<OnceLock<Result<(PathBuf, u8), String>>>,
     pub no_headers:        bool,
     pub flexible:          bool,
     terminator:            csv::Terminator,
@@ -213,8 +227,8 @@ impl Config {
             || util::get_envvar_flag("QSV_SNIFF_PREAMBLE");
         let mut skip_format_check = true;
         let mut format_error = None;
-        let (path, mut delim, snappy) = match path {
-            None => (None, default_delim, false),
+        let (path, mut delim, snappy, special_format) = match path {
+            None => (None, default_delim, false, SpecialFormat::Unknown),
             // WIP: support remote files; currently only http(s) is supported
             // Some(ref s) if s.starts_with("http") && Url::parse(s).is_ok() => {
             //     let mut snappy = false;
@@ -231,9 +245,9 @@ impl Config {
             //     util::download_file()
             //     (Some(PathBuf::from(s)), delim, snappy)
             // },
-            Some(s) if s == "-" => (None, default_delim, false),
+            Some(s) if s == "-" => (None, default_delim, false, SpecialFormat::Unknown),
             Some(s) => {
-                let mut path = PathBuf::from(s);
+                let path = PathBuf::from(s);
 
                 // if QSV_SKIP_FORMAT_CHECK is set or path is a temp file, we skip format check
                 let temp_dir = crate::config::TEMP_FILE_DIR.get_or_init(|| {
@@ -251,19 +265,28 @@ impl Config {
                     || util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
                     || path.starts_with(temp_dir);
 
+                // Detect special formats. The actual conversion to a delimited temp
+                // file is DEFERRED to the read path (see `prepared_for_read`), so a
+                // Config used only for writing never converts its (output) path.
+                // `.zip` is detected even without polars (it needs only the `zip`
+                // crate); the other special formats require polars to convert and so
+                // stay `Unknown` otherwise.
                 #[cfg(feature = "polars")]
-                let special_format = {
-                    let special_format = get_special_format(&path);
-                    if special_format != SpecialFormat::Unknown {
-                        skip_format_check = true;
-                    }
-                    special_format
-                };
+                let special_format = get_special_format(&path);
                 #[cfg(not(feature = "polars"))]
-                let special_format = SpecialFormat::Unknown;
-                let (delim, snappy) = if special_format == SpecialFormat::Unknown {
-                    let (file_extension, delim, snappy) =
-                        get_delim_by_extension(&path, default_delim);
+                let special_format = if get_special_format(&path) == SpecialFormat::CompressedZip {
+                    SpecialFormat::CompressedZip
+                } else {
+                    SpecialFormat::Unknown
+                };
+
+                // Delimiter/snappy come from the path's own extension. For special
+                // formats this is the write/fallback delimiter; the read delimiter
+                // is re-derived from the converted temp in `prepared_for_read`.
+                let (file_extension, delim, snappy) = get_delim_by_extension(&path, default_delim);
+
+                if special_format == SpecialFormat::Unknown {
+                    // Only ordinary inputs are subject to the extension check.
                     format_error = if skip_format_check {
                         None
                     } else {
@@ -276,23 +299,12 @@ impl Config {
                             )),
                         }
                     };
-                    (delim, snappy)
                 } else {
-                    match util::convert_special_format(&path, special_format, default_delim) {
-                        Ok(temp_path) => {
-                            path.clone_from(&temp_path);
-                            sniff = false;
-                            let (_, delim, snappy) =
-                                get_delim_by_extension(&temp_path, default_delim);
-                            (delim, snappy)
-                        },
-                        Err(e) => {
-                            format_error = Some(format!("Failed to convert special format: {e}"));
-                            (default_delim, false)
-                        },
-                    }
-                };
-                (Some(path), delim, snappy)
+                    // Don't sniff a binary/compressed special-format file; the
+                    // converted temp is what actually gets read.
+                    sniff = false;
+                }
+                (Some(path), delim, snappy, special_format)
             },
         };
         let comment: Option<u8> = env::var("QSV_COMMENT_CHAR")
@@ -336,6 +348,8 @@ impl Config {
             idx_path: None,
             select_columns: None,
             delimiter: delim,
+            special_format,
+            read_input: Arc::new(OnceLock::new()),
             no_headers,
             flexible: false,
             terminator: csv::Terminator::Any(b'\n'),
@@ -370,7 +384,17 @@ impl Config {
         self
     }
 
-    pub const fn get_delimiter(&self) -> u8 {
+    pub fn get_delimiter(&self) -> u8 {
+        // For a special-format input the effective delimiter is the converted
+        // temp's (e.g. a `.tsv` entry inside a `.zip`), not the outer path's
+        // default. Resolve (cached) so callers see the real delimiter regardless
+        // of whether they've read yet; fall back to the configured delimiter if
+        // conversion fails.
+        if self.special_format != SpecialFormat::Unknown
+            && let Ok((_, delim)) = self.resolve_converted()
+        {
+            return delim;
+        }
         self.delimiter
     }
 
@@ -550,7 +574,79 @@ impl Config {
         Ok(self.from_writer(self.io_writer()?))
     }
 
+    /// Lazily convert a `special_format` input to a delimited temp file, returning
+    /// the temp path and its delimiter. The result is cached and shared across
+    /// clones, so a Config that is read more than once converts only once. With an
+    /// explicit `QSV_SKIP_FORMAT_CHECK`, a conversion failure falls back to reading
+    /// the original bytes as-is rather than erroring.
+    fn resolve_converted(&self) -> io::Result<(PathBuf, u8)> {
+        // safety: only called when special_format != Unknown, which implies a path
+        let src = self
+            .path
+            .as_ref()
+            .expect("special-format Config must have a path");
+        let cached = self.read_input.get_or_init(|| {
+            match util::convert_special_format(src, self.special_format, self.delimiter) {
+                Ok(temp) => {
+                    let (_, delim, _) = get_delim_by_extension(&temp, self.delimiter);
+                    Ok((temp, delim))
+                },
+                Err(e) => Err(format!("Failed to convert special format: {e}")),
+            }
+        });
+        match cached {
+            Ok((p, d)) => Ok((p.clone(), *d)),
+            Err(e) => {
+                // Preserve historical behavior: a failed conversion of a
+                // polars-native special format falls back to reading the raw bytes
+                // (the error was previously swallowed). For zip we surface the
+                // error — unless the user explicitly opted out via
+                // QSV_SKIP_FORMAT_CHECK, in which case we also read raw.
+                if self.special_format == SpecialFormat::CompressedZip
+                    && !util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
+                {
+                    Err(io::Error::new(io::ErrorKind::InvalidInput, e.clone()))
+                } else {
+                    Ok((src.clone(), self.delimiter))
+                }
+            },
+        }
+    }
+
+    /// The path that will actually be read. For a `special_format` input this
+    /// lazily converts to (and returns the path of) the delimited temp file, so
+    /// callers that need the *decompressed* size — e.g. `util::mem_file_check`
+    /// memory guards — see the real data rather than the compressed source. For
+    /// ordinary inputs and stdin, returns `path` unchanged. The conversion is
+    /// cached, so the subsequent reader reuses the same temp.
+    pub fn resolved_path(&self) -> CliResult<Option<PathBuf>> {
+        if self.special_format == SpecialFormat::Unknown {
+            return Ok(self.path.clone());
+        }
+        Ok(Some(self.resolve_converted()?.0))
+    }
+
+    /// Returns a Config ready to *read* this input. For a `special_format` input,
+    /// it is a clone whose `path` points at the lazily-converted delimited temp
+    /// (with that temp's delimiter) and whose `special_format` is `Unknown`, so the
+    /// read methods treat it as an ordinary delimited file (no re-entry). Only
+    /// called from the read entry points when `special_format != Unknown`.
+    pub(crate) fn prepared_for_read(&self) -> io::Result<Config> {
+        if self.special_format == SpecialFormat::Unknown {
+            return Ok(self.clone());
+        }
+        let (temp, delim) = self.resolve_converted()?;
+        let mut c = self.clone();
+        c.path = Some(temp);
+        c.delimiter = delim;
+        c.special_format = SpecialFormat::Unknown;
+        Ok(c)
+    }
+
     pub fn reader(&self) -> io::Result<csv::Reader<Box<dyn io::Read + Send + 'static>>> {
+        if self.special_format != SpecialFormat::Unknown {
+            return self.prepared_for_read()?.reader();
+        }
         if !self.skip_format_check && self.format_error.is_some() {
             Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -562,6 +658,9 @@ impl Config {
     }
 
     pub fn reader_file(&self) -> io::Result<csv::Reader<fs::File>> {
+        if self.special_format != SpecialFormat::Unknown {
+            return self.prepared_for_read()?.reader_file();
+        }
         match self.path {
             None => Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -581,6 +680,9 @@ impl Config {
     }
 
     pub fn reader_file_stdin(&self) -> io::Result<csv::Reader<Box<dyn SeekRead + 'static>>> {
+        if self.special_format != SpecialFormat::Unknown {
+            return self.prepared_for_read()?.reader_file_stdin();
+        }
         Ok(match self.path {
             None => {
                 // Create a buffer in memory for stdin
@@ -653,6 +755,9 @@ impl Config {
     /// on the `(Some(path), None)` branch that resolves the index path internally; the
     /// `auto_indexed` and explicit-`(path, idx_path)` branches skip the staleness recheck.
     pub fn index_files(&self) -> io::Result<Option<(csv::Reader<fs::File>, fs::File)>> {
+        if self.special_format != SpecialFormat::Unknown {
+            return self.prepared_for_read()?.index_files();
+        }
         // Track the data file's mtime and the resolved index path *only* on the
         // path that may need a staleness recheck. For the auto_indexed and
         // explicit-(path, idx_path) branches, staleness is not re-checked, so
@@ -756,6 +861,9 @@ impl Config {
     }
 
     pub fn io_reader(&self) -> io::Result<Box<dyn io::Read + Send + 'static>> {
+        if self.special_format != SpecialFormat::Unknown {
+            return self.prepared_for_read()?.io_reader();
+        }
         Ok(match self.path {
             None => Box::new(io::stdin()),
             Some(ref p) => match fs::File::open(p) {
@@ -814,6 +922,8 @@ impl Config {
     }
 
     pub fn io_writer(&self) -> io::Result<Box<dyn io::Write + 'static>> {
+        // `path` is the user-specified path (special-format conversion is deferred
+        // to the read path and never rewrites it), so writers target it directly.
         Ok(match self.path {
             None => Box::new(io::stdout()),
             Some(ref p) => {
@@ -936,6 +1046,10 @@ pub fn get_special_format(path: &Path) -> SpecialFormat {
         "jsonl" | "ndjson" => SpecialFormat::Jsonl,
         "json" => SpecialFormat::Json,
         "gz" | "zst" | "zlib" => compressed_csv_format(path),
+        // zip is detected at the outer-extension level (not via
+        // `compressed_csv_format`), since the inner entry's name — and thus the
+        // delimiter — is only knowable after opening the archive.
+        "zip" => SpecialFormat::CompressedZip,
         _ => SpecialFormat::Unknown,
     }
 }

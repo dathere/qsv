@@ -435,6 +435,7 @@ fn safenames_mode_s_lowercase() {
 }
 
 #[test]
+#[allow(non_snake_case)]
 fn safenames_mode_S_unicode_preserve() {
     let wrk = Workdir::new("safenames");
     wrk.create(
@@ -456,6 +457,7 @@ fn safenames_mode_S_unicode_preserve() {
 }
 
 #[test]
+#[allow(non_snake_case)]
 fn safenames_mode_s_vs_S_unicode_difference() {
     // ASCII mode s strips the unicode chars; mode S preserves them.
     let wrk = Workdir::new("safenames");

@@ -43,52 +43,38 @@ fn lookup_cache_ext(uri: &str) -> &'static str {
 }
 
 /// Tabular cache-file extensions a lookup table can resolve to. `csv` is the
-/// default (and the `.zip` "inner unknown" sentinel from `lookup_cache_ext`).
+/// default (and the "inner unknown" sentinel `lookup_cache_ext` returns for a
+/// `.zip`, a `ckan://`/`dathere://` source, or a bare/unknown extension).
 const TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
 
-/// Whether `uri`'s outer extension is `.zip` — the one compressed format whose
-/// inner tabular extension cannot be inferred from the URL (so `lookup_cache_ext`
-/// defaults it to `csv`); the real extension is only known after the archive is
-/// downloaded and its entry inspected by `decompress_source`.
-fn is_zip_source(uri: &str) -> bool {
-    let path_part = uri.split(['?', '#']).next().unwrap_or(uri);
-    Path::new(path_part)
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
-}
-
-/// The canonical non-default tabular cache extension for a `decompress_source`
-/// `inner_ext`, or `None` for csv/unknown (csv is the default — the provisional
-/// `cache_file_path` already carries it, so no correction is needed).
-fn corrected_tabular_ext(inner_ext: Option<&str>) -> Option<&'static str> {
+/// The canonical tabular cache-file extension for a `decompress_source`
+/// `inner_ext`, defaulting to `csv` for csv/unknown/none.
+fn cache_ext_for_inner(inner_ext: Option<&str>) -> &'static str {
     match inner_ext.map(str::to_ascii_lowercase).as_deref() {
-        Some("tsv") => Some("tsv"),
-        Some("tab") => Some("tab"),
-        Some("ssv") => Some("ssv"),
-        _ => None,
+        Some("tsv") => "tsv",
+        Some("tab") => "tab",
+        Some("ssv") => "ssv",
+        _ => "csv",
     }
 }
 
-/// The cache-file path to actually write, given the provisional URL-derived
-/// `cache_file_path` and the `inner_ext` discovered during decompression. For a
-/// `.zip` this corrects the provisional `.csv` to the real inner tabular
-/// extension (tsv/tab/ssv) so `Config` later infers the right delimiter; every
-/// other source already carries the correct extension from its URL, so it is
-/// returned unchanged.
+/// The cache-file path to actually write, given the provisional `cache_file_path`
+/// (whose stem is `{name}`) and the `inner_ext` discovered during decompression.
+/// The extension is set explicitly from `inner_ext` — *including* resetting back
+/// to `csv` when a previously non-csv source is refreshed with a csv inner file —
+/// so the cached file's extension always matches its real delimiter and `Config`
+/// infers it correctly.
 fn corrected_cache_path(cache_file_path: &Path, inner_ext: Option<&str>) -> PathBuf {
-    match corrected_tabular_ext(inner_ext) {
-        Some(ext) => cache_file_path.with_extension(ext),
-        None => cache_file_path.to_path_buf(),
-    }
+    cache_file_path.with_extension(cache_ext_for_inner(inner_ext))
 }
 
 /// Find an existing cached lookup file for `name` among the tabular extensions.
-/// Used for `.zip` sources, whose cache file may have been written under a
-/// non-`csv` extension discovered at download time. Steady state holds a single
-/// file per name (the downloader removes the provisional one), so the probe
-/// order is not significant.
-fn existing_zip_cache_file(cache_dir: &Path, name: &str) -> Option<PathBuf> {
+/// Used when the cache file's real extension can't be known from the URL — a
+/// `.zip`'s inner entry, or a `ckan://`/`dathere://` source that resolves to an
+/// arbitrary data URL — so it may have been written under a non-`csv` extension
+/// discovered at download time. Steady state holds a single file per name (the
+/// downloader removes the provisional one), so the probe order is not significant.
+fn existing_tabular_cache_file(cache_dir: &Path, name: &str) -> Option<PathBuf> {
     TABULAR_EXTS
         .iter()
         .map(|ext| cache_dir.join(format!("{name}.{ext}")))
@@ -159,16 +145,19 @@ pub fn load_lookup_table(
     // consistently on both fresh download and cache hit. Defaults to `csv`.
     let cache_ext = lookup_cache_ext(&opts.uri);
     let cache_dir = Path::new(&opts.cache_dir);
-    // For a `.zip` the inner tabular extension isn't knowable from the URL, so
-    // the cache file may have been written with the discovered ext (tsv/tab/ssv)
-    // at download time. Reuse an existing candidate; otherwise fall back to the
-    // URL-derived default as the provisional fresh-download target (which the
-    // downloader corrects once the inner ext is known).
-    let cached_csv_path = if is_zip_source(&opts.uri) {
-        existing_zip_cache_file(cache_dir, &opts.name)
-            .unwrap_or_else(|| cache_dir.join(format!("{}.{cache_ext}", opts.name)))
+    let default_path = cache_dir.join(format!("{}.{cache_ext}", opts.name));
+    // The cached file's extension may differ from the URL-derived default when
+    // the real (inner) tabular extension is only knowable after download — a
+    // `.zip`'s inner entry, or a `ckan://`/`dathere://` source that resolves to
+    // an arbitrary data URL. In those cases `lookup_cache_ext` returns the `csv`
+    // default; if that file isn't present, probe for one the downloader wrote
+    // under a discovered non-csv extension (tsv/tab/ssv) so cache hits — and
+    // therefore `cache_age_secs` — still work instead of re-downloading. A
+    // non-csv `cache_ext` came from an explicit URL extension, so it is exact.
+    let cached_csv_path = if cache_ext == "csv" && !default_path.exists() {
+        existing_tabular_cache_file(cache_dir, &opts.name).unwrap_or(default_path)
     } else {
-        cache_dir.join(format!("{}.{cache_ext}", opts.name))
+        default_path
     };
 
     // Check if local file
@@ -436,22 +425,12 @@ fn write_cache_file(
 mod tests {
     use std::path::Path;
 
-    use super::{corrected_cache_path, existing_zip_cache_file, is_zip_source, lookup_cache_ext};
+    use super::{corrected_cache_path, existing_tabular_cache_file, lookup_cache_ext};
 
     #[test]
-    fn is_zip_source_detects_outer_zip() {
-        assert!(is_zip_source("https://x/data.zip"));
-        assert!(is_zip_source("https://x/data.ZIP")); // case-insensitive
-        assert!(is_zip_source("https://x/data.zip?token=abc#frag")); // query/fragment ignored
-        assert!(!is_zip_source("https://x/data.csv"));
-        assert!(!is_zip_source("https://x/data.tsv.gz"));
-        assert!(!is_zip_source("https://x/data")); // no extension
-    }
-
-    #[test]
-    fn corrected_cache_path_fixes_zip_inner_ext() {
+    fn corrected_cache_path_sets_ext_from_inner() {
         let provisional = Path::new("/cache/mytable.csv");
-        // A `.zip` whose inner entry is tsv/tab/ssv corrects the provisional .csv.
+        // A non-csv inner entry (tsv/tab/ssv) corrects the provisional .csv.
         assert_eq!(
             corrected_cache_path(provisional, Some("tsv")),
             Path::new("/cache/mytable.tsv")
@@ -464,10 +443,21 @@ mod tests {
             corrected_cache_path(provisional, Some("ssv")),
             Path::new("/cache/mytable.ssv")
         );
-        // csv / unknown / none -> unchanged (csv is the default).
+        // csv / unknown / none -> csv (the default).
         assert_eq!(corrected_cache_path(provisional, Some("csv")), provisional);
         assert_eq!(corrected_cache_path(provisional, Some("json")), provisional);
         assert_eq!(corrected_cache_path(provisional, None), provisional);
+        // Refreshing a previously non-csv cache file back to a csv inner file
+        // must RESET the extension to csv — otherwise csv content would be
+        // written under a stale .tsv name and mis-parsed as tab-delimited.
+        assert_eq!(
+            corrected_cache_path(Path::new("/cache/mytable.tsv"), Some("csv")),
+            Path::new("/cache/mytable.csv")
+        );
+        assert_eq!(
+            corrected_cache_path(Path::new("/cache/mytable.tsv"), None),
+            Path::new("/cache/mytable.csv")
+        );
         // A name containing dots keeps its stem; only the final ext changes.
         assert_eq!(
             corrected_cache_path(Path::new("/cache/my.data.csv"), Some("tsv")),
@@ -476,15 +466,15 @@ mod tests {
     }
 
     #[test]
-    fn existing_zip_cache_file_finds_written_candidate() {
+    fn existing_tabular_cache_file_finds_written_candidate() {
         let dir = tempfile::tempdir().unwrap();
         // No candidate yet.
-        assert!(existing_zip_cache_file(dir.path(), "boston").is_none());
-        // The downloader wrote the corrected .tsv file; the cache-hit probe
-        // must find it even though the URL (.zip) implies a .csv default.
+        assert!(existing_tabular_cache_file(dir.path(), "boston").is_none());
+        // The downloader wrote the corrected .tsv file; the cache-hit probe must
+        // find it even though the URL (.zip / ckan://) implies a .csv default.
         let tsv = dir.path().join("boston.tsv");
         std::fs::write(&tsv, b"a\tb\n1\t2\n").unwrap();
-        assert_eq!(existing_zip_cache_file(dir.path(), "boston"), Some(tsv));
+        assert_eq!(existing_tabular_cache_file(dir.path(), "boston"), Some(tsv));
     }
 
     #[test]

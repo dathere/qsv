@@ -574,7 +574,7 @@ foreach = []
 # Last-Modified conditional revalidation with streaming, ranged (parallel)
 # fetches for large objects. Backs the `dc:` input prefix usable by any qsv
 # command. See `qsv get --help`.
-get = ["zstd"]
+get = ["zstd", "flate2"]
 # get_cloud: adds cloud object-storage sources (s3://, gs://, az://) to `get`,
 # via the object_store crate. Opt-in so a bare `-F get` build stays lean;
 # included in distrib_features/qsvmcp/datapusher_plus (where polars already
@@ -590,7 +590,9 @@ geocode = [
     "rmp-serde",
     "sled",
 ]
-luau = ["mlua", "sanitize-filename"]
+# luau lookup tables auto-decompress remote .gz/.zlib/.zst/.zip/.sz sources, so
+# luau pulls the flate2 + zstd codecs (.zip/.sz need no extra deps). See #1417.
+luau = ["mlua", "sanitize-filename", "flate2", "zstd"]
 magika = ["dep:magika", "dep:ort"]
 mcp = []
 polars = ["dep:polars", "bytemuck"]
@@ -617,7 +619,10 @@ lite = []
 datapusher_plus = ["geocode", "get", "get_cloud", "polars", "profile", "self_update"]
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
-feature_capable = []
+# feature_capable backs the always-compiled commands that consume lookup tables
+# (validate/template/describegpt). Pull flate2 + zstd so their remote lookups
+# auto-decompress .gz/.zlib/.zst (alongside the always-available .zip/.sz). #1417.
+feature_capable = ["flate2", "zstd"]
 nightly = [
     "crc32fast/nightly",
     "pyo3/nightly",

@@ -12,6 +12,36 @@ use log::{debug, info};
 pub use crate::diskcache::set_qsv_cache_dir;
 use crate::{diskcache, util};
 
+/// The tabular extension to give a (remote) lookup table's cache file, derived
+/// from the source `uri` so it is stable across fresh downloads and cache hits.
+/// A compressed source's inner tabular extension wins (e.g. `foo.tsv.gz` → `tsv`),
+/// so `Config` picks the right delimiter from the cached file's extension when the
+/// caller did not specify one. `.zip` inner content can't be known from the URI,
+/// so it (and anything unrecognized) defaults to `csv`.
+fn lookup_cache_ext(uri: &str) -> &'static str {
+    const COMPRESSION: [&str; 5] = ["zip", "sz", "gz", "zlib", "zst"];
+    let path_part = uri.split(['?', '#']).next().unwrap_or(uri);
+    let p = Path::new(path_part);
+    let outer = p
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase);
+    let candidate = match outer.as_deref() {
+        // compressed: look at the stem's extension (foo.tsv.gz -> tsv)
+        Some(o) if COMPRESSION.contains(&o) => Path::new(p.file_stem().unwrap_or_default())
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase),
+        other => other.map(str::to_string),
+    };
+    match candidate.as_deref() {
+        Some("tsv") => "tsv",
+        Some("tab") => "tab",
+        Some("ssv") => "ssv",
+        _ => "csv",
+    }
+}
+
 pub struct LookupTableOptions {
     pub name:           String,
     pub uri:            String,
@@ -71,7 +101,11 @@ pub fn load_lookup_table(
     opts: &LookupTableOptions,
 ) -> Result<LookupTableResult, Box<dyn std::error::Error>> {
     let mut lookup_table_uri = opts.uri.clone();
-    let cached_csv_path = Path::new(&opts.cache_dir).join(format!("{}.csv", opts.name));
+    // Name the cache file with the source's (inner) tabular extension so a
+    // decompressed remote `.tsv.gz`/`.ssv.gz` is read with the right delimiter,
+    // consistently on both fresh download and cache hit. Defaults to `csv`.
+    let cache_ext = lookup_cache_ext(&opts.uri);
+    let cached_csv_path = Path::new(&opts.cache_dir).join(format!("{}.{cache_ext}", opts.name));
 
     // Check if local file
     let lookup_table_path = Path::new(&lookup_table_uri);
@@ -199,7 +233,9 @@ fn download_lookup_table(
     let downloaded_at_dt: chrono::DateTime<chrono::Utc> = SystemTime::now().into();
     let downloaded_at_rfc2822 = downloaded_at_dt.to_rfc2822();
 
-    let lookup_csv_response = if lookup_ckan {
+    // Also capture the URL actually fetched (the CKAN data URL for ckan://) so
+    // compression detection sees the real file extension, not the ckan:// alias.
+    let (lookup_csv_response, fetched_url) = if lookup_ckan {
         // Resolve the CKAN resource to its actual data URL (and whether the
         // bearer token may be sent), then fetch it.
         let ckan = diskcache::resolve_ckan_resource(
@@ -214,9 +250,16 @@ fn download_lookup_table(
         } else {
             None
         };
-        diskcache::http_get_conditional(&client, &ckan.data_url, None, auth)?
+        let resp = diskcache::http_get_conditional(&client, &ckan.data_url, None, auth)?;
+        (resp, ckan.data_url)
     } else {
-        diskcache::http_get_conditional(&client, lookup_table_uri, cache_csv_last_modified, None)?
+        let resp = diskcache::http_get_conditional(
+            &client,
+            lookup_table_uri,
+            cache_csv_last_modified,
+            None,
+        )?;
+        (resp, lookup_table_uri.to_string())
     };
 
     let status = lookup_csv_response.status();
@@ -241,8 +284,11 @@ fn download_lookup_table(
         .into());
     }
 
-    let lookup_csv_contents = lookup_csv_response.text()?;
-    if lookup_csv_contents.is_empty() {
+    // Read the raw bytes (NOT .text(), which would corrupt a compressed/binary
+    // body), then decompress based on the fetched URL's extension. `.zip`/`.sz`
+    // always work; `.gz`/`.zlib`/`.zst` need the relevant codec feature.
+    let raw_body = lookup_csv_response.bytes()?;
+    if raw_body.is_empty() {
         // Misconfigured CDN edges sometimes return 200 with Content-Length: 0.
         // Fall back to the existing cache when one is present; only error
         // when there is no cache to fall back to.
@@ -260,9 +306,12 @@ fn download_lookup_table(
         .into());
     }
 
+    let decompressed = diskcache::decompress_source(&fetched_url, raw_body.to_vec())
+        .map_err(|e| std::io::Error::other(e.to_string()))?;
+
     write_cache_file(
         cache_file_path,
-        &lookup_csv_contents,
+        &decompressed.bytes,
         &downloaded_at_rfc2822,
         download_start,
         opts,
@@ -273,7 +322,7 @@ fn download_lookup_table(
 
 fn write_cache_file(
     cache_file_path: &Path,
-    contents: &str,
+    contents: &[u8],
     downloaded_at: &str,
     download_start: Instant,
     opts: &LookupTableOptions,
@@ -296,9 +345,38 @@ fn write_cache_file(
         "# Download-duration-ms: {}",
         download_start.elapsed().as_millis()
     )?;
-    cache_file.write_all(contents.as_bytes())?;
+    cache_file.write_all(contents)?;
     cache_file.flush()?;
     drop(cache_file);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::lookup_cache_ext;
+
+    #[test]
+    fn lookup_cache_ext_plain_and_compressed() {
+        // plain tabular: outer extension is the tabular one
+        assert_eq!(lookup_cache_ext("https://x/data.csv"), "csv");
+        assert_eq!(lookup_cache_ext("https://x/data.tsv"), "tsv");
+        assert_eq!(lookup_cache_ext("https://x/data.ssv"), "ssv");
+        // compressed: the stem's tabular extension wins over the codec extension
+        assert_eq!(lookup_cache_ext("https://x/data.csv.gz"), "csv");
+        assert_eq!(lookup_cache_ext("https://x/data.tsv.gz"), "tsv");
+        assert_eq!(lookup_cache_ext("https://x/data.ssv.zst"), "ssv");
+        assert_eq!(lookup_cache_ext("https://x/data.tsv.zlib"), "tsv");
+        assert_eq!(lookup_cache_ext("https://x/data.csv.sz"), "csv");
+        // query/fragment are ignored
+        assert_eq!(
+            lookup_cache_ext("https://x/data.tsv.gz?token=abc#frag"),
+            "tsv"
+        );
+        // unknown / non-tabular inner / bare compression / no extension -> csv
+        assert_eq!(lookup_cache_ext("https://x/data.gz"), "csv");
+        assert_eq!(lookup_cache_ext("https://x/data.zip"), "csv"); // inner unknown from URL
+        assert_eq!(lookup_cache_ext("https://x/data.json.gz"), "csv");
+        assert_eq!(lookup_cache_ext("https://x/data"), "csv");
+    }
 }

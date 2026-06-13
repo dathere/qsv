@@ -145,6 +145,42 @@ async fn serve_one_fresh(c: web::Data<Counters>, req: HttpRequest) -> HttpRespon
     ranged_response(ONE_CSV, ONE_ETAG, &req, &c)
 }
 
+// issue #1417: a gzip-compressed remote source. Served as raw .gz bytes (no
+// Content-Encoding header, so reqwest does NOT transport-decode) — `get` must
+// decompress it on ingest. boston311-100.csv has 100 data rows.
+#[cfg(feature = "flate2")]
+const BOSTON_GZ: &[u8] = include_bytes!("../resources/test/boston311-100.csv.gz");
+#[cfg(feature = "flate2")]
+const BOSTON_GZ_ETAG: &str = "\"boston-gz-v1\"";
+#[cfg(feature = "flate2")]
+async fn serve_boston_gz(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(BOSTON_GZ, BOSTON_GZ_ETAG, &req, &c)
+}
+
+// issue #1417 / roborev 2921: a MULTI-MEMBER gzip (two concatenated gzip members:
+// header+50 rows, then the last 50 rows). The streaming path must use a
+// multi-member decoder; a single-member decoder would stop after member 1 (50
+// rows). Decompresses to the full 100-row CSV.
+#[cfg(feature = "flate2")]
+const BOSTON_MULTIGZ: &[u8] = include_bytes!("../resources/test/boston311-100.csv.multimember.gz");
+#[cfg(feature = "flate2")]
+const BOSTON_MULTIGZ_ETAG: &str = "\"boston-multigz-v1\"";
+#[cfg(feature = "flate2")]
+async fn serve_boston_multigz(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(BOSTON_MULTIGZ, BOSTON_MULTIGZ_ETAG, &req, &c)
+}
+
+// issue #1417: a zstd-compressed remote source, to exercise the streaming zstd
+// decode path (zstd::stream::write::Decoder + into_inner finalization).
+#[cfg(feature = "zstd")]
+const BOSTON_ZST: &[u8] = include_bytes!("../resources/test/boston311-100.csv.zst");
+#[cfg(feature = "zstd")]
+const BOSTON_ZST_ETAG: &str = "\"boston-zst-v1\"";
+#[cfg(feature = "zstd")]
+async fn serve_boston_zst(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(BOSTON_ZST, BOSTON_ZST_ETAG, &req, &c)
+}
+
 async fn run_webserver(
     tx: mpsc::Sender<Result<(ServerHandle, SocketAddr), String>>,
     counters: Counters,
@@ -161,6 +197,16 @@ async fn run_webserver(
             // against the endpoint override. Reuses the ETag/304 handler so the
             // cloud path can assert revalidation just like the HTTP path.
             .service(web::resource("/test-bucket/states.csv").to(serve_states));
+        // issue #1417: gzip-compressed source for the remote-decompression test.
+        #[cfg(feature = "flate2")]
+        let app = app.service(web::resource("/boston311-100.csv.gz").to(serve_boston_gz));
+        // issue #1417: multi-member gzip for the streaming multi-member test.
+        #[cfg(feature = "flate2")]
+        let app = app
+            .service(web::resource("/boston311-100.csv.multimember.gz").to(serve_boston_multigz));
+        // issue #1417: zstd-compressed source for the streaming-decode test.
+        #[cfg(feature = "zstd")]
+        let app = app.service(web::resource("/boston311-100.csv.zst").to(serve_boston_zst));
         // A larger path-style object for the cloud ranged/multipart download
         // test (only built with get_cloud).
         #[cfg(feature = "get_cloud")]
@@ -1422,4 +1468,142 @@ fn get_s3_env_cloud_opt_override_refresh_stable() {
         "stale refresh must revalidate the SAME entry (304), not re-download under a changed env \
          var"
     );
+}
+
+// ============================================================================
+// issue #1417: compressed-source auto-decompression on `get` ingest
+// ============================================================================
+
+// `get` decompresses a compressed LOCAL source before caching, so the stored blob
+// is plain CSV: auto-indexed (record_count correct) and readable via `dc:`.
+// boston311-100.csv has 100 data rows.
+fn check_local_compressed_get(testname: &str, fixture: &str) {
+    let wrk = Workdir::new(testname);
+    let src = wrk.load_test_file(fixture);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut cmd = wrk.command("get");
+    cmd.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "b.csv"])
+        .arg(&src);
+    wrk.assert_success(&mut cmd);
+
+    // dc: read-back proves decompress -> store -> auto-index -> read end to end.
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:b.csv");
+    let cout = wrk.output(&mut count);
+    assert!(
+        cout.status.success(),
+        "{fixture}: count dc:b.csv failed:\n{}",
+        String::from_utf8_lossy(&cout.stderr)
+    );
+    let got = String::from_utf8_lossy(&cout.stdout).trim().to_string();
+    assert_eq!(
+        got, "100",
+        "{fixture}: dc: count must be the 100 decompressed rows, not raw bytes"
+    );
+
+    // and the entry records the exact count from the auto-built index.
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let out = wrk.output(&mut list);
+    assert!(
+        out.status.success(),
+        "{fixture}: cache-list --json failed:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        stdout.contains("\"record_count\": 100"),
+        "{fixture}: expected record_count 100 in cache-list:\n{stdout}"
+    );
+}
+
+// .zip and .sz need no codec feature (zip + snap are non-optional).
+#[test]
+fn get_local_zip_decompresses() {
+    check_local_compressed_get("get_local_zip_decompresses", "boston311-100.csv.zip");
+}
+
+#[test]
+fn get_local_sz_decompresses() {
+    check_local_compressed_get("get_local_sz_decompresses", "boston311-100.csv.sz");
+}
+
+#[cfg(feature = "flate2")]
+#[test]
+fn get_local_gz_decompresses() {
+    check_local_compressed_get("get_local_gz_decompresses", "boston311-100.csv.gz");
+}
+
+#[cfg(feature = "flate2")]
+#[test]
+fn get_local_zlib_decompresses() {
+    check_local_compressed_get("get_local_zlib_decompresses", "boston311-100.csv.zlib");
+}
+
+#[cfg(feature = "zstd")]
+#[test]
+fn get_local_zst_decompresses() {
+    check_local_compressed_get("get_local_zst_decompresses", "boston311-100.csv.zst");
+}
+
+// Remote (HTTP) compressed source: drives the download through the mock server
+// and asserts `dc:` reads the decompressed rows, not raw bytes. boston311-100 has
+// 100 data rows.
+fn check_http_compressed_get(testname: &str, route: &str) {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new(testname);
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url(route);
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "b.csv"])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    let mut count = wrk.command("count");
+    count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:b.csv");
+    let cout = wrk.output(&mut count);
+    assert!(
+        cout.status.success(),
+        "{route}: count dc:b.csv failed:\n{}",
+        String::from_utf8_lossy(&cout.stderr)
+    );
+    let got = String::from_utf8_lossy(&cout.stdout).trim().to_string();
+    assert_eq!(
+        got, "100",
+        "{route}: remote source must be decompressed before caching (not stored raw)"
+    );
+}
+
+// gz: streams through `IngestSink::Decode` (flate2 write::MultiGzDecoder).
+#[cfg(feature = "flate2")]
+#[test]
+#[serial]
+fn get_http_gz_decompresses() {
+    check_http_compressed_get("get_http_gz_decompresses", "boston311-100.csv.gz");
+}
+
+// multi-member gz: the streaming decoder must read ALL members (roborev 2921).
+// A single-member decoder would yield only 50 rows; multi-member yields 100.
+#[cfg(feature = "flate2")]
+#[test]
+#[serial]
+fn get_http_multimember_gz_decompresses() {
+    check_http_compressed_get(
+        "get_http_multimember_gz_decompresses",
+        "boston311-100.csv.multimember.gz",
+    );
+}
+
+// zst: streams through `IngestSink::Decode` (zstd write::Decoder + into_inner) —
+// proves the zstd decoder finalization flushes all output.
+#[cfg(feature = "zstd")]
+#[test]
+#[serial]
+fn get_http_zst_decompresses() {
+    check_http_compressed_get("get_http_zst_decompresses", "boston311-100.csv.zst");
 }

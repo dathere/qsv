@@ -1,6 +1,26 @@
 # Performance Tuning
 ([TLDR Guide](PERFORMANCE_TLDR.md))
 
+## Auto-tuning with `qsv-tune`
+
+qsv has many performance-related environment variables (see [Environment Variables](ENVIRONMENT_VARIABLES.md)). To get a sensible starting point for *your* machine without reading all of them, use the [`qsv-tune`](../scripts/qsv-tune.sh) helper script. It profiles the current machine — total/available RAM, logical CPU count, disk type (SSD vs HDD), and the qsv binary's compiled-in memory allocator (from `qsv --version`) — and prints tuned `QSV_*` settings in [`.env`](ENVIRONMENT_VARIABLES.md#env-file-support) format.
+
+It is **dry-run by default** — it prints the recommendations and writes nothing:
+
+```bash
+# print recommended settings for this machine (writes nothing)
+scripts/qsv-tune.sh
+
+# merge the tuned QSV_* settings into ./.env (idempotent; makes a .env.bak backup)
+scripts/qsv-tune.sh --write
+```
+
+On Windows, use the best-effort PowerShell equivalent [`scripts/qsv-tune.ps1`](../scripts/qsv-tune.ps1) (`.\scripts\qsv-tune.ps1 -Write`).
+
+Allocator settings (jemalloc/mimalloc) are reported separately as `export` lines rather than `.env` entries, because allocators read their configuration at process start — before qsv loads `.env` — so they must be set in your real shell environment.
+
+The values are **heuristic starting points**. Always [benchmark](#benchmarking-for-performance) against your own data shapes before relying on them.
+
 ## Index! Index! Index!
 
 Indexing your CSV files is key for performance. Here's why:

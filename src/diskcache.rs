@@ -884,7 +884,7 @@ mod rich {
     // full-buffer `IngestSink::Buffer` path.
     enum DecodeWriter {
         #[cfg(feature = "flate2")]
-        Gz(flate2::write::GzDecoder<BlobSink>),
+        Gz(flate2::write::MultiGzDecoder<BlobSink>),
         #[cfg(feature = "flate2")]
         Zlib(flate2::write::ZlibDecoder<BlobSink>),
         #[cfg(feature = "zstd")]
@@ -933,7 +933,7 @@ mod rich {
             };
             match super::compression_ext(source).as_deref() {
                 #[cfg(feature = "flate2")]
-                Some("gz") => decode(DecodeWriter::Gz(flate2::write::GzDecoder::new(
+                Some("gz") => decode(DecodeWriter::Gz(flate2::write::MultiGzDecoder::new(
                     BlobSink::new(root, compression)?,
                 ))),
                 #[cfg(feature = "flate2")]

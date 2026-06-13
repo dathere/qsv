@@ -157,6 +157,19 @@ async fn serve_boston_gz(c: web::Data<Counters>, req: HttpRequest) -> HttpRespon
     ranged_response(BOSTON_GZ, BOSTON_GZ_ETAG, &req, &c)
 }
 
+// issue #1417 / roborev 2921: a MULTI-MEMBER gzip (two concatenated gzip members:
+// header+50 rows, then the last 50 rows). The streaming path must use a
+// multi-member decoder; a single-member decoder would stop after member 1 (50
+// rows). Decompresses to the full 100-row CSV.
+#[cfg(feature = "flate2")]
+const BOSTON_MULTIGZ: &[u8] = include_bytes!("../resources/test/boston311-100.csv.multimember.gz");
+#[cfg(feature = "flate2")]
+const BOSTON_MULTIGZ_ETAG: &str = "\"boston-multigz-v1\"";
+#[cfg(feature = "flate2")]
+async fn serve_boston_multigz(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
+    ranged_response(BOSTON_MULTIGZ, BOSTON_MULTIGZ_ETAG, &req, &c)
+}
+
 // issue #1417: a zstd-compressed remote source, to exercise the streaming zstd
 // decode path (zstd::stream::write::Decoder + into_inner finalization).
 #[cfg(feature = "zstd")]
@@ -187,6 +200,10 @@ async fn run_webserver(
         // issue #1417: gzip-compressed source for the remote-decompression test.
         #[cfg(feature = "flate2")]
         let app = app.service(web::resource("/boston311-100.csv.gz").to(serve_boston_gz));
+        // issue #1417: multi-member gzip for the streaming multi-member test.
+        #[cfg(feature = "flate2")]
+        let app = app
+            .service(web::resource("/boston311-100.csv.multimember.gz").to(serve_boston_multigz));
         // issue #1417: zstd-compressed source for the streaming-decode test.
         #[cfg(feature = "zstd")]
         let app = app.service(web::resource("/boston311-100.csv.zst").to(serve_boston_zst));
@@ -1562,12 +1579,24 @@ fn check_http_compressed_get(testname: &str, route: &str) {
     );
 }
 
-// gz: streams through `IngestSink::Decode` (flate2 write::GzDecoder).
+// gz: streams through `IngestSink::Decode` (flate2 write::MultiGzDecoder).
 #[cfg(feature = "flate2")]
 #[test]
 #[serial]
 fn get_http_gz_decompresses() {
     check_http_compressed_get("get_http_gz_decompresses", "boston311-100.csv.gz");
+}
+
+// multi-member gz: the streaming decoder must read ALL members (roborev 2921).
+// A single-member decoder would yield only 50 rows; multi-member yields 100.
+#[cfg(feature = "flate2")]
+#[test]
+#[serial]
+fn get_http_multimember_gz_decompresses() {
+    check_http_compressed_get(
+        "get_http_multimember_gz_decompresses",
+        "boston311-100.csv.multimember.gz",
+    );
 }
 
 // zst: streams through `IngestSink::Decode` (zstd write::Decoder + into_inner) —

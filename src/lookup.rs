@@ -47,6 +47,37 @@ fn lookup_cache_ext(uri: &str) -> &'static str {
 /// `.zip`, a `ckan://`/`dathere://` source, or a bare/unknown extension).
 const TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
 
+/// Whether the cache file's real tabular extension cannot be determined from
+/// `uri` up front — so the downloader may write it under a non-`csv` extension
+/// only discovered after fetching, and the cache-hit path must probe for it.
+/// True only for the cases where `decompress_source` can surface a *non-csv*
+/// tabular extension that differs from the `csv` default:
+///   - a `.zip` (the inner entry's name), and
+///   - the `ckan://` / `dathere://` schemes, which `resolve_uri_prefix` expands to an arbitrary
+///     data URL (`.tsv`, `.ssv`, `.zip`, …) at download time.
+///
+/// Everything else yields a deterministic cache extension via `lookup_cache_ext`
+/// (an explicit `.csv`/`.tsv`/`.csv.gz`/…, a bare `.gz`/`.zst`/… with no inner
+/// tabular hint, or no extension — all of which the downloader writes under that
+/// same extension), so probing alternates would only risk picking up a stale
+/// same-named file of a different extension.
+fn cache_ext_uncertain(uri: &str) -> bool {
+    // `ckan://` / `dathere://` are matched case-sensitively to mirror
+    // `resolve_uri_prefix`'s `strip_prefix` checks (it only expands those forms).
+    uri.starts_with("ckan://") || uri.starts_with("dathere://") || is_zip_source(uri)
+}
+
+/// Whether `uri`'s outer extension is `.zip` (query/fragment stripped) — the one
+/// HTTP source whose inner tabular extension is only known after the archive is
+/// downloaded and its entry inspected by `decompress_source`.
+fn is_zip_source(uri: &str) -> bool {
+    let path_part = uri.split(['?', '#']).next().unwrap_or(uri);
+    Path::new(path_part)
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
+}
+
 /// The canonical tabular cache-file extension for a `decompress_source`
 /// `inner_ext`, defaulting to `csv` for csv/unknown/none.
 fn cache_ext_for_inner(inner_ext: Option<&str>) -> &'static str {
@@ -146,15 +177,16 @@ pub fn load_lookup_table(
     let cache_ext = lookup_cache_ext(&opts.uri);
     let cache_dir = Path::new(&opts.cache_dir);
     let default_path = cache_dir.join(format!("{}.{cache_ext}", opts.name));
-    // The cached file's extension may differ from the URL-derived default when
-    // the real (inner) tabular extension is only knowable after download — a
-    // `.zip`'s inner entry, or a `ckan://`/`dathere://` source that resolves to
-    // an arbitrary data URL. In those cases `lookup_cache_ext` returns the `csv`
-    // default; if that file isn't present, probe for one the downloader wrote
-    // under a discovered non-csv extension (tsv/tab/ssv) so cache hits — and
-    // therefore `cache_age_secs` — still work instead of re-downloading. A
-    // non-csv `cache_ext` came from an explicit URL extension, so it is exact.
-    let cached_csv_path = if cache_ext == "csv" && !default_path.exists() {
+    // When the real tabular extension isn't knowable from the URL (a `.zip`'s
+    // inner entry, or a `ckan://`/`dathere://` source that resolves to an
+    // arbitrary data URL), the downloader may have written the cache file under
+    // a discovered non-csv extension. If the URL-derived default isn't present,
+    // probe the tabular extensions for it so cache hits — and therefore
+    // `cache_age_secs` — still work instead of re-downloading. Sources with a
+    // deterministic cache extension (explicit `.csv`/`.tsv`/…, bare `.gz`, no
+    // extension) are left exact, so a stale same-named file of a different
+    // extension can't hijack them.
+    let cached_csv_path = if cache_ext_uncertain(&opts.uri) && !default_path.exists() {
         existing_tabular_cache_file(cache_dir, &opts.name).unwrap_or(default_path)
     } else {
         default_path
@@ -425,7 +457,27 @@ fn write_cache_file(
 mod tests {
     use std::path::Path;
 
-    use super::{corrected_cache_path, existing_tabular_cache_file, lookup_cache_ext};
+    use super::{
+        cache_ext_uncertain, corrected_cache_path, existing_tabular_cache_file, lookup_cache_ext,
+    };
+
+    #[test]
+    fn cache_ext_uncertain_only_for_unknowable_sources() {
+        // Unknowable up front -> probe for a discovered non-csv cache file.
+        assert!(cache_ext_uncertain("https://x/data.zip"));
+        assert!(cache_ext_uncertain("https://x/data.ZIP")); // ext is case-insensitive
+        assert!(cache_ext_uncertain("https://x/data.zip?token=abc#frag")); // query/fragment ignored
+        assert!(cache_ext_uncertain("ckan://my-resource-id"));
+        assert!(cache_ext_uncertain("ckan://my-name?"));
+        assert!(cache_ext_uncertain("dathere://us-states.csv"));
+        // Deterministic cache extension -> exact path, no probe (must NOT pick up
+        // a stale same-named file of a different extension).
+        assert!(!cache_ext_uncertain("https://x/data.csv"));
+        assert!(!cache_ext_uncertain("https://x/data.csv.gz"));
+        assert!(!cache_ext_uncertain("https://x/data.tsv"));
+        assert!(!cache_ext_uncertain("https://x/data.gz")); // bare codec -> csv default
+        assert!(!cache_ext_uncertain("https://x/data")); // no extension -> csv default
+    }
 
     #[test]
     fn corrected_cache_path_sets_ext_from_inner() {

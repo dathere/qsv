@@ -17,6 +17,10 @@
 # Invalid boolean values will be interpreted as false.
 #
 # Lines that start with a '#' are ignored.
+#
+# TIP: to auto-generate tuned performance settings for your machine (memory, CPU,
+# disk type & allocator), run the helper script `scripts/qsv-tune.sh` (or
+# `scripts/qsv-tune.ps1` on Windows). It is dry-run by default; see docs/PERFORMANCE.md.
 # ==============================================================================
 
 # single ascii character to use as delimiter.  Overrides `--delimiter` option.

@@ -352,6 +352,42 @@ fn get_local_file_and_dc_read() {
     assert_eq!(got, "4");
 }
 
+// issue #3988: local compressed sources are STREAMED into the content-addressed
+// blob store (bounded memory) and stored DECOMPRESSED, so `dc:` reads see plain
+// CSV with a correct record_count. Exercises `ingest_local`'s streaming-decode
+// path for gz (incl. multi-member) and zst, plus the full-buffer zip path.
+#[test]
+fn get_local_compressed_streams_and_decompresses() {
+    let wrk = Workdir::new("get_local_compressed_streams_and_decompresses");
+    let cache_dir = wrk.path("qsvcache");
+
+    for (file, bytes, name) in [
+        ("boston311-100.csv.gz", BOSTON_GZ, "gz.csv"),
+        (
+            "boston311-100.csv.multimember.gz",
+            BOSTON_MULTIGZ,
+            "multigz.csv",
+        ),
+        ("boston311-100.csv.zst", BOSTON_ZST, "zst.csv"),
+    ] {
+        std::fs::write(wrk.path(file), bytes).unwrap();
+
+        let mut cmd = wrk.command("get");
+        cmd.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", name])
+            .arg(file);
+        wrk.assert_success(&mut cmd);
+
+        // the stored blob must be the DECOMPRESSED CSV: 100 data rows.
+        let mut count = wrk.command("count");
+        count
+            .env("QSV_CACHE_DIR", &cache_dir)
+            .arg(format!("dc:{name}"));
+        let got: String = wrk.stdout_on_success(&mut count);
+        assert_eq!(got, "100", "{file} should decompress to 100 data rows");
+    }
+}
+
 #[test]
 fn get_local_dedup_shares_blob() {
     let wrk = Workdir::new("get_local_dedup_shares_blob");

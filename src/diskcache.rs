@@ -1275,13 +1275,24 @@ mod rich {
     }
 
     fn ingest_local(opts: &GetOptions, root: &Path, path: &Path) -> CliResult<CacheEntry> {
-        // Decompress compressed local sources before caching so the stored blob is
-        // plain CSV (auto-indexable, correct record_count). Passthrough otherwise.
-        let raw = fs::read(path)?;
-        let decompressed = super::decompress_source(&path.to_string_lossy(), raw)?;
-        let inner_ext = decompressed.inner_ext;
-        let body = decompressed.bytes;
-        let (b3, size_compressed, size_uncompressed) = store_blob(root, &body, opts.compression)?;
+        // Stream the (possibly compressed) local source into the content-addressed
+        // blob store so the stored blob is plain CSV (auto-indexable, correct
+        // record_count). Streaming gz/zlib/zst keeps memory bounded for large local
+        // inputs — mirroring the remote `ingest_http`/`ingest_cloud` paths — while
+        // zip/sz (and codec-absent gz/zlib/zst) still full-buffer per `IngestSink`'s
+        // per-format policy. Plain sources stream through unchanged.
+        use std::io::Read;
+        let mut sink = IngestSink::for_source(root, opts.compression, &path.to_string_lossy())?;
+        let mut reader = std::io::BufReader::new(fs::File::open(path)?);
+        let mut chunk = [0u8; 64 * 1024];
+        loop {
+            let n = reader.read(&mut chunk)?;
+            if n == 0 {
+                break;
+            }
+            sink.write(&chunk[..n])?;
+        }
+        let (b3, size_compressed, size_uncompressed, inner_ext) = sink.finish(root)?;
         let abs = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
         let name = opts
             .name

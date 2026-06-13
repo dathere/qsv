@@ -872,7 +872,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // we're loading the entire file into memory, we need to check avail mem
     // Skip this check for parallel processing since memory-aware chunking handles it
-    if !will_use_parallel && let Some(path) = rconfig.path.clone() {
+    if !will_use_parallel && let Some(path) = rconfig.resolved_path()? {
         // Try mem_file_check, and if it fails for an unindexed file, auto-create index
         match util::mem_file_check(&path, false, args.flag_memcheck) {
             Ok(_) => {

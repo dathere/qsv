@@ -1637,8 +1637,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     || args.flag_mad
                     || args.flag_percentiles)
             {
+                // For special-format inputs (zip/parquet/compressed CSV) the data
+                // actually read is the decompressed temp, so memory-size checks and
+                // index creation must target it — not the compressed source `path`
+                // (which is kept for stats-cache naming).
+                let mem_path = rconfig.resolved_path()?.unwrap_or_else(|| path.clone());
                 // Try mem_file_check, and if it fails for an unindexed file, auto-create index
-                match util::mem_file_check(&path, false, args.flag_memcheck) {
+                match util::mem_file_check(&mem_path, false, args.flag_memcheck) {
                     Ok(_) => {
                         // Memory check passed, proceed with sequential processing
                     },
@@ -1654,7 +1659,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                                 "File too large for sequential processing. Auto-creating index to \
                                  enable parallel processing..."
                             );
-                            match util::create_index_for_file(&path, &rconfig) {
+                            match util::create_index_for_file(&mem_path, &rconfig) {
                                 Ok(()) => {
                                     indexed_result = rconfig.indexed()?;
                                     index_succeeded = indexed_result.is_some();

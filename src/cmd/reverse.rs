@@ -68,8 +68,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     } else {
         // we don't have an index, we need to read the entire file into memory
         // we're loading the entire file into memory, we need to check avail mem
-        if let Some(ref path) = rconfig.path {
-            util::mem_file_check(path, false, args.flag_memcheck)?;
+        if let Some(path) = rconfig.resolved_path()? {
+            util::mem_file_check(&path, false, args.flag_memcheck)?;
         }
 
         let mut all = rdr.byte_records().collect::<Result<Vec<_>, _>>()?;

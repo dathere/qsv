@@ -603,8 +603,8 @@ fn read_columns(args: &Args) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
 
-    if let Some(ref path) = rconfig.path {
-        util::mem_file_check(path, false, args.flag_memcheck)?;
+    if let Some(path) = rconfig.resolved_path()? {
+        util::mem_file_check(&path, false, args.flag_memcheck)?;
     }
 
     let idx_count = rconfig.indexed()?.map(|idx| idx.count() as usize);

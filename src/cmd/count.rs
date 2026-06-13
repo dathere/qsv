@@ -454,6 +454,17 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
 
     let is_stdin = conf.is_stdin();
 
+    // For non-stdin special-format inputs (.zip/.gz/parquet/…), resolve to the
+    // decompressed temp so Polars/DuckDB read the delimited data — not the raw
+    // archive bytes — and any zip conversion error propagates here rather than
+    // silently counting garbage.
+    let prepared = if is_stdin {
+        None
+    } else {
+        Some(conf.prepared_for_read()?)
+    };
+    let read_conf = prepared.as_ref().unwrap_or(conf);
+
     let filepath = if is_stdin {
         let mut temp_file = tempfile::Builder::new().suffix(".csv").tempfile()?;
         let stdin = std::io::stdin();
@@ -468,7 +479,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
 
         tempfile_pb
     } else {
-        conf.path.as_ref().unwrap().clone()
+        read_conf.path.as_ref().unwrap().clone()
     };
 
     // For stdin, the original `conf` has `path = None` and stdin has already been
@@ -481,7 +492,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
         c.autoindex_size = 0;
         c
     } else {
-        conf.clone()
+        read_conf.clone()
     };
 
     let result = (|| -> CliResult<u64> {
@@ -495,7 +506,7 @@ pub fn polars_count_input(conf: &Config, low_memory: bool) -> CliResult<u64> {
 
         let mut ctx = SQLContext::new();
         let lazy_df: LazyFrame;
-        let delimiter = conf.get_delimiter();
+        let delimiter = read_conf.get_delimiter();
 
         {
             // First, try to read the first row to check if the file is empty

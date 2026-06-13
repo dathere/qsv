@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - special-format conversion failures are now surfaced as errors instead of being silently swallowed. When a detected special-format input (Avro, Parquet, Arrow IPC, JSON, JSONL, or a gzip/zlib/zstd/snappy-compressed CSV/TSV/SSV) fails to convert, qsv previously fell back to reading the original (often binary) bytes as delimited text — emitting garbage with a *success* exit code. This fallback now applies to **all** special formats only when the user explicitly opts in via `QSV_SKIP_FORMAT_CHECK`; otherwise the conversion error is reported and qsv exits non-zero (matching the pre-existing behavior for `.zip`). This surfaced a genuinely unreadable Avro test fixture (regenerated) and two `slice` Decimal-pschema tests that had only ever passed because the error was swallowed ([#3988](https://github.com/dathere/qsv/issues/3988)).
 
+### Fixed
+- a remote `.zip` lookup table whose inner tabular file is non-CSV-delimited (`.tsv`/`.tab`/`.ssv`) is now cached with the correct extension, so `luau`/`validate`/`template`/`describegpt` infer the right delimiter. Previously the cache file always defaulted to `.csv` (the inner extension can't be known from the `.zip` URL), so a TSV/SSV inner file was mis-parsed when no explicit delimiter was given. The downloader now names the cache file from the zip entry's extension discovered during extraction, and the cache-hit path resolves it accordingly ([#3988](https://github.com/dathere/qsv/issues/3988)).
+- local compressed `get`/`dc:` ingests (`.gz`/`.zlib`/`.zst`) now stream-decompress with bounded memory instead of reading the whole file into memory, mirroring the remote ingest path and avoiding OOM on large local compressed inputs ([#3988](https://github.com/dathere/qsv/issues/3988)).
+
 ---
 
 ## [21.0.0] - 2026-06-08 🌐 The "F-AI-Rification" Release 📇

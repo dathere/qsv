@@ -781,9 +781,8 @@ fn sort_from_zip_reads_decompressed() {
     let test_file = wrk.load_test_file("boston311-100.csv.zip");
     let mut cmd = wrk.command("sort");
     cmd.arg(&test_file);
-    wrk.assert_success(&mut cmd);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     // header + 100 decompressed data rows (not the binary zip read as one column)
     assert_eq!(got.len(), 101);
     assert_eq!(got[0][0], "case_enquiry_id");

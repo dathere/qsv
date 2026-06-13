@@ -858,7 +858,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     // Check if we have an index and will use parallel processing
     // If so, skip mem_file_check since memory-aware chunking will handle it
-    let mut indexed_result = args.rconfig().indexed()?;
+    // Reuse the existing `rconfig` (not a fresh `args.rconfig()`): for special-format
+    // inputs (e.g. `.zip`) each `Config` lazily resolves to its own temp path, so a
+    // fresh Config would check an index next to a *different* temp than the one used
+    // for `resolved_path()`/auto-indexing below.
+    let mut indexed_result = rconfig.indexed()?;
     let will_use_parallel = match &indexed_result {
         Some(_) => {
             // We have an index, check if we'll use parallel processing
@@ -892,7 +896,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     );
                     match util::create_index_for_file(&path, &rconfig) {
                         Ok(()) => {
-                            indexed_result = args.rconfig().indexed()?;
+                            indexed_result = rconfig.indexed()?;
                             index_succeeded = indexed_result.is_some();
                             if index_succeeded {
                                 log::info!(

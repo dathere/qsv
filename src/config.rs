@@ -46,10 +46,10 @@ pub static POLARS_FLOAT_PRECISION: OnceLock<Option<usize>> = OnceLock::new();
 // when the `polars` feature is enabled (via `util::convert_special_format`),
 // so non-polars builds see them as never read.
 //
-// Exception: `CompressedZip` is handled by `util::extract_zip_to_temp`, which is
-// always compiled (it needs only the non-optional `zip` crate). Whether `.zip`
-// is *detected* still depends on the polars-gated `get_special_format` call site
-// in `Config::new`, so non-polars builds construct it only if that gate changes.
+// Exception: `CompressedZip` is both *detected* and *handled* in all builds. It
+// is handled by `util::extract_zip_to_temp` (always compiled — it needs only the
+// non-optional `zip` crate), and `Config::new` preserves `CompressedZip` even in
+// non-polars builds (mapping only the other, polars-only variants to `Unknown`).
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecialFormat {

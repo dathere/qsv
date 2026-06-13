@@ -3657,7 +3657,7 @@ const ZIP_TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
 ///    `root_dir_common_filter`.
 /// 2. Use the first entry (in archive order) whose extension is tabular.
 /// 3. Error if no tabular entry exists — including the single-entry case. We do NOT silently treat
-///    an arbitrary file as CSV, matching the documented "first CSV/TSV/SSV entry" behavior.
+///    an arbitrary file as CSV, matching the documented "first CSV/TSV/TAB/SSV entry" behavior.
 ///
 /// Generic over `Read + Seek` so it serves both file-backed archives
 /// (`extract_zip_to_temp`) and in-memory `Cursor`-backed ones (`diskcache`).
@@ -3670,7 +3670,7 @@ pub fn select_zip_entry<R: Read + std::io::Seek>(
     for i in 0..archive.len() {
         // Inspect the central-directory name only (no decoder is constructed), so
         // an encrypted or unsupported-compression entry elsewhere in the archive
-        // can't fail selection of a valid earlier CSV/TSV/SSV entry. The chosen
+        // can't fail selection of a valid earlier CSV/TSV/TAB/SSV entry. The chosen
         // entry is decoded later (by `extract_zip_to_temp` via `by_index`).
         let entry = archive.by_index_raw(i)?;
         let name = entry.name().to_string();
@@ -3692,7 +3692,7 @@ pub fn select_zip_entry<R: Read + std::io::Seek>(
     if let Some((idx, ext)) = first_tabular {
         if usable_count > 1 {
             log::info!(
-                "zip archive has multiple entries; using first CSV/TSV/SSV entry (index {idx})"
+                "zip archive has multiple entries; using first CSV/TSV/TAB/SSV entry (index {idx})"
             );
         }
         return Ok((idx, Some(ext)));
@@ -3700,7 +3700,7 @@ pub fn select_zip_entry<R: Read + std::io::Seek>(
     Err(CliError::IncorrectUsage(if usable_count == 0 {
         "zip archive contains no usable file entry.".to_string()
     } else {
-        "zip archive contains no CSV/TSV/SSV entry.".to_string()
+        "zip archive contains no CSV/TSV/TAB/SSV entry.".to_string()
     }))
 }
 

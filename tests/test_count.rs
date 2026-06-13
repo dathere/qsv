@@ -42,7 +42,7 @@ fn count_from_csvzip() {
 fn count_from_zip_multientry() {
     // testzip.zip has multiple entries (positions.csv, NYC311-5.ssv, buses.csv,
     // NYC311-5.tsv) plus __MACOSX system files. select_zip_entry skips the system
-    // files and picks the FIRST CSV/TSV/SSV entry in archive order: positions.csv,
+    // files and picks the FIRST CSV/TSV/TAB/SSV entry in archive order: positions.csv,
     // which has 6 data rows.
     let wrk = Workdir::new("count_from_zip_multientry");
     let test_file = wrk.load_test_file("testzip.zip");

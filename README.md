@@ -410,7 +410,7 @@ Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compr
 > - TSV/TAB: `.tsv.gz`, `.tsv.zst`, `.tsv.zlib`; `.tab.gz`, `.tab.zst`, `.tab.zlib`  
 > - SSV: `.ssv.gz`, `.ssv.zst`, `.ssv.zlib`
 >
-> `.zip` archives are auto-decompressed in **all** builds (including qsvlite — zip needs no polars): the first CSV/TSV/SSV entry in archive order is used, with the delimiter taken from that entry's extension. A `.zip` with no CSV/TSV/SSV entry errors rather than parsing an arbitrary file as CSV.
+> `.zip` archives are auto-decompressed in **all** builds (including qsvlite — zip needs no polars): the first CSV/TSV/TAB/SSV entry in archive order is used, with the delimiter taken from that entry's extension. A `.zip` with no CSV/TSV/TAB/SSV entry errors rather than parsing an arbitrary file as CSV.
 >
 > This automatic decompression applies both to commands that read through qsv's standard CSV reader (e.g. `count`, `stats`, `frequency`) and to reference data loaded as `luau`, `validate` & `describegpt` lookup tables.
 >

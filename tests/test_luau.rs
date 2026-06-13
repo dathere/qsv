@@ -442,7 +442,7 @@ END {
 #[test]
 fn luau_register_lookup_table_local_zip() {
     // issue #1417: a lookup table may be a zip-compressed CSV. The zip is
-    // transparently decompressed (first CSV/TSV/SSV entry) before parsing.
+    // transparently decompressed (first CSV/TSV/TAB/SSV entry) before parsing.
     let wrk = Workdir::new("luau_register_lookup_table_local_zip");
     wrk.create("data.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
     // boston311-100.csv.zip contains a single entry: boston311-100.csv, whose
@@ -471,11 +471,9 @@ return tostring(boston["101004143000"].ontime);
         .arg("file:ziplookup.luau")
         .arg("data.csv");
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["a", "b", "looked_up"], svec!["1", "2", "OVERDUE"]];
     assert_eq!(got, expected);
-
-    wrk.assert_success(&mut cmd);
 }
 
 // TODO: Ignore this test on Windows for now.

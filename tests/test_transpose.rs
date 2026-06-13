@@ -884,7 +884,7 @@ fn transpose_from_zip_inmemory_uses_inner_delimiter() {
     let mut cmd = wrk.command("transpose");
     cmd.arg(&test_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["col_a", "x"], svec!["col_b", "y"]];
     assert_eq!(got, expected);
 }
@@ -898,7 +898,7 @@ fn transpose_multipass_from_zip_uses_inner_delimiter() {
     let mut cmd = wrk.command("transpose");
     cmd.arg("--multipass").arg(&test_file);
 
-    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
     let expected = vec![svec!["col_a", "x"], svec!["col_b", "y"]];
     assert_eq!(got, expected);
 }

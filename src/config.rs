@@ -597,17 +597,15 @@ impl Config {
         match cached {
             Ok((p, d)) => Ok((p.clone(), *d)),
             Err(e) => {
-                // Preserve historical behavior: a failed conversion of a
-                // polars-native special format falls back to reading the raw bytes
-                // (the error was previously swallowed). For zip we surface the
-                // error — unless the user explicitly opted out via
-                // QSV_SKIP_FORMAT_CHECK, in which case we also read raw.
-                if self.special_format == SpecialFormat::CompressedZip
-                    && !util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK")
-                {
-                    Err(io::Error::new(io::ErrorKind::InvalidInput, e.clone()))
-                } else {
+                // A detected special format that fails to convert is a hard error
+                // for ALL formats — reading the raw (binary) bytes as delimited text
+                // silently produces garbage with a success exit code. The only escape
+                // hatch is an explicit QSV_SKIP_FORMAT_CHECK, which means "I know what
+                // I'm doing, read the original bytes as-is".
+                if util::get_envvar_flag("QSV_SKIP_FORMAT_CHECK") {
                     Ok((src.clone(), self.delimiter))
+                } else {
+                    Err(io::Error::new(io::ErrorKind::InvalidInput, e.clone()))
                 }
             },
         }

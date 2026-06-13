@@ -681,11 +681,19 @@ fn slice_from_jsonl() {
     let mut cmd = wrk.command("slice");
     cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected = r#""Unique Key":"20520945""#;
-    assert!(got.contains(expected));
+    // Assert the full converted row, not a substring. The literal "Unique Key":"20520945"
+    // is embedded in the raw JSONL bytes, so a substring check passes even when conversion
+    // fails and the original bytes are read as-is. A full-object match can only pass on
+    // genuine conversion (see issue #3988). Compare as parsed JSON because polars does not
+    // preserve the source column order when converting JSONL; serde_json's (preserve_order)
+    // Map is IndexMap-backed, whose PartialEq is order-independent.
+    let got: serde_json::Value =
+        serde_json::from_str(&wrk.stdout_on_success::<String>(&mut cmd)).unwrap();
+    let expected: serde_json::Value = serde_json::from_str(
+        r#"[{"Unique Key":"20520945","Created Date":"05/27/2011 12:00:00 AM","Closed Date":null,"Agency":"HPD","Agency Name":"Department of Housing Preservation and Development","Complaint Type":"PAINT - PLASTER","Descriptor":"WALLS","Location Type":"RESIDENTIAL BUILDING","Incident Zip":"11225","Incident Address":"1700 BEDFORD AVENUE","Street Name":"BEDFORD AVENUE","Cross Street 1":"MONTGOMERY STREET","Cross Street 2":"SULLIVAN PLACE","Intersection Street 1":null,"Intersection Street 2":null,"Address Type":"ADDRESS","City":"BROOKLYN","Landmark":null,"Facility Type":"N/A","Status":"Open","Due Date":null,"Resolution Description":"The following complaint conditions are still open.HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection.","Resolution Action Updated Date":"06/15/2011 12:00:00 AM","Community Board":"09 BROOKLYN","BBL":"3013020001","Borough":"BROOKLYN","X Coordinate (State Plane)":"996197","Y Coordinate (State Plane)":"181752","Open Data Channel Type":"UNKNOWN","Park Facility Name":"Unspecified","Park Borough":"BROOKLYN","Vehicle Type":null,"Taxi Company Borough":null,"Taxi Pick Up Location":null,"Bridge Highway Name":null,"Bridge Highway Direction":null,"Road Ramp":null,"Bridge Highway Segment":null,"Latitude":null,"Longitude":null,"Location":null}]"#,
+    )
+    .unwrap();
+    assert_eq!(got, expected);
 }
 
 #[cfg(feature = "polars")]
@@ -694,13 +702,15 @@ fn slice_from_avro() {
     let wrk = Workdir::new("slice_from_avro");
     let test_file = wrk.load_test_file("NYC311-5.avro");
     let mut cmd = wrk.command("slice");
-    cmd.arg(test_file).arg("--index").arg("2");
+    cmd.arg(test_file).arg("--index").arg("2").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected = "03/30/2019 04:06:23 AM";
-    assert!(got.contains(expected));
+    // Assert the full converted row, not a substring. String values are stored verbatim
+    // in the Avro binary, so a substring check passes even when conversion fails and the
+    // raw bytes are read as-is. An exact match can only pass on genuine conversion
+    // (see issue #3988).
+    let got: String = wrk.stdout_on_success(&mut cmd);
+    let expected = r#"[{"Unique Key":"20520945","Created Date":"05/27/2011 12:00:00 AM","Closed Date":null,"Agency":"HPD","Agency Name":"Department of Housing Preservation and Development","Complaint Type":"PAINT - PLASTER","Descriptor":"WALLS","Location Type":"RESIDENTIAL BUILDING","Incident Zip":"11225","Incident Address":"1700 BEDFORD AVENUE","Street Name":"BEDFORD AVENUE","Cross Street 1":"MONTGOMERY STREET","Cross Street 2":"SULLIVAN PLACE","Intersection Street 1":null,"Intersection Street 2":null,"Address Type":"ADDRESS","City":"BROOKLYN","Landmark":null,"Facility Type":"N/A","Status":"Open","Due Date":null,"Resolution Description":"The following complaint conditions are still open.HPD may attempt to contact you to verify the correction of the condition or may conduct an inspection.","Resolution Action Updated Date":"06/15/2011 12:00:00 AM","Community Board":"09 BROOKLYN","BBL":"3013020001","Borough":"BROOKLYN","X Coordinate (State Plane)":"996197","Y Coordinate (State Plane)":"181752","Open Data Channel Type":"UNKNOWN","Park Facility Name":"Unspecified","Park Borough":"BROOKLYN","Vehicle Type":null,"Taxi Company Borough":null,"Taxi Pick Up Location":null,"Bridge Highway Name":null,"Bridge Highway Direction":null,"Road Ramp":null,"Bridge Highway Segment":null,"Latitude":null,"Longitude":null,"Location":null}]"#;
+    assert_eq!(got, expected);
 }
 
 #[cfg(feature = "polars")]
@@ -1182,44 +1192,45 @@ fn slice_from_csvzlib_with_pschema() {
 
 #[cfg(feature = "polars")]
 #[test]
-fn slice_from_jsonl_with_decimal_precision() {
-    let wrk = Workdir::new("slice_from_jsonl_with_decimal_precision");
+// A Decimal pschema applied during special-format conversion preserves all decimal places
+// (more than f64 can hold). NOTE: this is exercised via the compressed-CSV reader, NOT
+// JSONL — polars' JSONL reader does not support a Decimal target type (it refuses to coerce
+// JSON values into a Decimal column), so a JSONL+Decimal pschema simply fails to convert.
+// This test previously used JSONL and only "passed" because the resulting conversion error
+// was swallowed and the raw bytes (which embed the asserted decimals verbatim) were read
+// as-is. See issue #3988.
+fn slice_from_csvgz_with_decimal_precision() {
+    let wrk = Workdir::new("slice_from_csvgz_with_decimal_precision");
 
-    // Create a test JSONL file with high precision decimal values
-    let jsonl_data = r#"{"id": "1", "name": "John", "value": 3.1415926535897932384626433}
-{"id": "2", "name": "Jane", "value": 2.7182818284590452353602874}
-{"id": "3", "name": "Bob", "value": 1.4142135623730950488016887}"#;
-    wrk.create_from_string("test.jsonl", jsonl_data);
+    // High-precision decimal values that exceed f64's ~17 significant digits.
+    let csv_data = "id,name,value\n1,John,3.1415926535897932384626433\n2,Jane,2.\
+                    7182818284590452353602874\n3,Bob,1.4142135623730950488016887\n";
+    wrk.create_from_string("test.csv", csv_data);
 
-    // Create a pschema.json file with Decimal type for the 'value' field
-    // Using Decimal with precision 25 and scale 25 to maintain all decimal places
+    // gzip the CSV; Config detects the .csv.gz special format and decompresses via polars.
+    let mut cmd = std::process::Command::new("gzip");
+    cmd.arg(wrk.path("test.csv"));
+    wrk.assert_success(&mut cmd);
+
+    // The pschema MUST be named to match the actual input (.csv.gz), otherwise it is not
+    // loaded and polars falls back to f64 inference (which truncates the precision).
     let schema_data = r#"{
         "fields": {
             "id": "String",
             "name": "String",
-            "value": { "Decimal": [25, 25] }
-        }
+            "value": { "Decimal": [38, 25] }
+        },"metadata": null
     }"#;
-    wrk.create_from_string("test.jsonl.pschema.json", schema_data);
+    wrk.create_from_string("test.csv.gz.pschema.json", schema_data);
 
-    // Run slice command
     let mut cmd = wrk.command("slice");
-    cmd.arg("test.jsonl").arg("--json");
+    cmd.arg("test.csv.gz").arg("--json");
 
-    wrk.assert_success(&mut cmd);
-
-    // Verify the output - value should maintain all decimal places
-    let got: String = wrk.stdout(&mut cmd);
-
-    // Check that the high precision values are preserved
-    // The output format is different than expected, so we need to adjust our assertions
-    // We're checking for the presence of the high precision values in the output
+    // All decimal places are preserved (an f64 round-trip would truncate these).
+    let got: String = wrk.stdout_on_success(&mut cmd);
     assert!(got.contains("3.1415926535897932384626433"));
     assert!(got.contains("2.7182818284590452353602874"));
     assert!(got.contains("1.4142135623730950488016887"));
-
-    // We're removing the negative assertions as they're causing issues
-    // The output format is complex and contains nested JSON objects
 }
 
 #[cfg(feature = "polars")]
@@ -1273,33 +1284,39 @@ fn slice_from_tsvgz_with_decimal_precision() {
 
 #[cfg(feature = "polars")]
 #[test]
-fn slice_from_jsonl_with_decimal_precision_vs_float() {
-    let wrk = Workdir::new("slice_from_jsonl_with_decimal_precision_vs_float");
+// A Decimal pschema preserves more precision than Float64. Exercised via the compressed-CSV
+// reader because polars' JSONL reader does not support a Decimal target type — see the note
+// on slice_from_csvgz_with_decimal_precision and issue #3988. Previously used JSONL and only
+// "passed" because the conversion error was swallowed and raw bytes were read as-is.
+fn slice_from_csvgz_with_decimal_precision_vs_float() {
+    let wrk = Workdir::new("slice_from_csvgz_with_decimal_precision_vs_float");
 
-    // Create a test JSONL file with high precision decimal values
-    let jsonl_data = r#"{"id": "1", "name": "John", "value": 3.1415926535897932384626433}
-{"id": "2", "name": "Jane", "value": 2.7182818284590452353602874}
-{"id": "3", "name": "Bob", "value": 1.4142135623730950488016887}"#;
-    wrk.create_from_string("test.jsonl", jsonl_data);
+    // High-precision decimal values that exceed f64's ~17 significant digits.
+    let csv_data = "id,name,value\n1,John,3.1415926535897932384626433\n2,Jane,2.\
+                    7182818284590452353602874\n3,Bob,1.4142135623730950488016887\n";
+    wrk.create_from_string("test.csv", csv_data);
 
-    // Create a pschema.json file with Decimal type for the 'value' field
+    // gzip the CSV; Config detects the .csv.gz special format and decompresses via polars.
+    let mut cmd = std::process::Command::new("gzip");
+    cmd.arg(wrk.path("test.csv"));
+    wrk.assert_success(&mut cmd);
+
+    // Decimal schema (named to match the .csv.gz input) preserves all decimal places.
     let decimal_schema = r#"{
         "fields": {
             "id": "String",
             "name": "String",
-            "value": { "Decimal": [35, 25] }
-        }
+            "value": { "Decimal": [38, 25] }
+        },"metadata": null
     }"#;
-    wrk.create_from_string("test.jsonl.pschema.json", decimal_schema);
+    wrk.create_from_string("test.csv.gz.pschema.json", decimal_schema);
 
     // Run slice command with Decimal schema
     let mut cmd = wrk.command("slice");
-    cmd.arg("test.jsonl").arg("--json");
-
-    wrk.assert_success(&mut cmd);
+    cmd.arg("test.csv.gz").arg("--json");
 
     // Get the output with Decimal schema
-    let decimal_output: String = wrk.stdout(&mut cmd);
+    let decimal_output: String = wrk.stdout_on_success(&mut cmd);
 
     // Now create a schema with Float64 instead of Decimal
     let float_schema = r#"{
@@ -1309,16 +1326,14 @@ fn slice_from_jsonl_with_decimal_precision_vs_float() {
             "value": "Float64"
         },"metadata": null
     }"#;
-    wrk.create_from_string("test.jsonl.pschema.json", float_schema);
+    wrk.create_from_string("test.csv.gz.pschema.json", float_schema);
 
     // Run slice command with Float64 schema
     let mut cmd = wrk.command("slice");
-    cmd.arg("test.jsonl").arg("--json");
-
-    wrk.assert_success(&mut cmd);
+    cmd.arg("test.csv.gz").arg("--json");
 
     // Get the output with Float64 schema
-    let float_output: String = wrk.stdout(&mut cmd);
+    let float_output: String = wrk.stdout_on_success(&mut cmd);
 
     // Verify that the Decimal schema preserves more precision than Float64
     // The Float64 output should be truncated compared to the Decimal output

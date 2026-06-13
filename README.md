@@ -414,6 +414,8 @@ Compare that to [zip 3.0](https://infozip.sourceforge.net/Zip.html), which compr
 >
 > This automatic decompression applies both to commands that read through qsv's standard CSV reader (e.g. `count`, `stats`, `frequency`) and to reference data loaded as `luau`, `validate` & `describegpt` lookup tables.
 >
+> Compressed **remote/downloaded** sources are also auto-decompressed *before* caching, so the cached copy is plain CSV (correctly delimited, auto-indexed): remote `luau`/`validate`/`describegpt` lookup tables (http/https, `dathere://`, `ckan://`) and `get`/`dc:` cached resources. `.zip`/`.sz` work in every build that has those commands; `.gz`/`.zlib`/`.zst` need the `flate2`/`zstd` codecs (bundled in the standard `qsv` & `qsvmcp` builds), otherwise an actionable error names the missing build feature.
+>
 > Commands with Extended and Limited Extended Input support handle `.zip` differently: they expand a `.zip`'s contents as input files (all entries for Extended Input commands like `cat`/`sqlp`/`to`; only the first entry for Limited Extended Input commands like `slice`/`tojsonl`).
 
 ## RFC 4180 CSV Standard

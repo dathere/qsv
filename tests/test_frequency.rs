@@ -6927,3 +6927,37 @@ fn frequency_big_endian_sketch_method_frequent_items_rejected() {
         "error should name the flag, the platform constraint, and s390x; got: {stderr}"
     );
 }
+
+// issue #1417 / roborev 2914: a `.zip` input that takes the auto-indexed PARALLEL
+// path must not panic. Parallel workers re-open the index on a cloned Config; if a
+// worker rebuilt `args.rconfig()` it would resolve to a *different* decompressed
+// temp with no sibling `.idx` and panic on `indexed().unwrap().unwrap()`.
+// QSV_AUTOINDEX_SIZE=1 forces an index to be auto-created for the resolved temp so
+// `--jobs 4` deterministically exercises `parallel_ftables`.
+#[test]
+fn frequency_from_zip_parallel_autoindexed() {
+    let wrk = Workdir::new("frequency_from_zip_parallel_autoindexed");
+    let test_file = wrk.load_test_file("boston311-100.csv.zip");
+
+    let mut cmd = wrk.command("frequency");
+    cmd.env("QSV_AUTOINDEX_SIZE", "1")
+        .env("QSV_STATSCACHE_MODE", "none")
+        .arg(&test_file)
+        .args(["--select", "source"])
+        .args(["--jobs", "4"]);
+
+    // Must succeed (not panic) and produce the decompressed CSV's frequencies, not
+    // the raw zip bytes parsed as one column.
+    let got: Vec<Vec<String>> = wrk.read_stdout_on_success(&mut cmd);
+    let header = got.first().expect("frequency produced no output");
+    assert_eq!(
+        header,
+        &svec!["field", "value", "count", "percentage", "rank"]
+    );
+    // every data row is for the selected `source` column
+    assert!(
+        got.len() > 1,
+        "expected frequency rows for the `source` column"
+    );
+    assert!(got[1..].iter().all(|r| r[0] == "source"));
+}

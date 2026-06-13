@@ -26,15 +26,20 @@ include = [
     "resources/describegpt_defaults.toml",
     # Profile engine resources — bundled via include_str! in
     # src/cmd/profile/profile_spec.rs::EMBEDDED and
-    # src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES. Must be
-    # in this whitelist so `cargo install qsv -F all_features` (or
-    # `-F datapusher_plus,geoconnex`) builds cleanly from the
-    # crates.io tarball; without these patterns the include_str!
-    # calls fail at compile time. The geoconnex paths are tracked here
-    # unconditionally — feature gating happens at the Rust level, not
-    # at packaging time, and the ~10KB of geoconnex/SHACL Turtle plus
-    # the small YAML is harmless to anyone who doesn't compile the
-    # feature.
+    # src/cmd/profile/external_validate.rs::EMBEDDED_RESOURCES. These
+    # patterns only affect the `cargo package`/`cargo publish` tarball;
+    # they have no effect on builds from a git checkout (CI, local dev,
+    # the binary-release workflows), where the files are always present
+    # on disk. They're kept so the tarball stays complete (the
+    # include_str! resources must ship with it) in case we run
+    # `cargo package` or resume crates.io publishing. NOTE: we do not
+    # currently support `cargo install qsv` — [patch.crates-io] forks
+    # are stripped on publish, yielding an untested dependency tree —
+    # so the crates.io build path is not exercised today. The geoconnex
+    # paths are tracked here unconditionally — feature gating happens at
+    # the Rust level, not at packaging time, and the ~10KB of
+    # geoconnex/SHACL Turtle plus the small YAML is harmless to anyone
+    # who doesn't compile the feature.
     "resources/profiles/*.yaml",
     "resources/profiles/README.md",
     "resources/dcat-us-v3/**/*",

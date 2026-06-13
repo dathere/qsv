@@ -110,7 +110,7 @@ detect_total_mem() {
     fi
     case "$OS" in
         Darwin) sysctl -n hw.memsize ;;
-        Linux) awk '/^MemTotal:/ {print $2 * 1024; exit}' /proc/meminfo ;;
+        Linux) awk '/^MemTotal:/ {printf "%.0f\n", $2 * 1024; exit}' /proc/meminfo ;;
         *) printf '0' ;;
     esac
 }
@@ -123,9 +123,9 @@ detect_avail_mem() {
                 /page size of/ { for (i=1;i<=NF;i++) if ($i ~ /^[0-9]+$/) ps=$i }
                 /Pages free:/ { gsub(/[^0-9]/,"",$3); free=$3 }
                 /Pages inactive:/ { gsub(/[^0-9]/,"",$3); inact=$3 }
-                END { print (free + inact) * ps }'
+                END { printf "%.0f\n", (free + inact) * ps }'
             ;;
-        Linux) awk '/^MemAvailable:/ {print $2 * 1024; exit}' /proc/meminfo ;;
+        Linux) awk '/^MemAvailable:/ {printf "%.0f\n", $2 * 1024; exit}' /proc/meminfo ;;
         *) printf '0' ;;
     esac
 }

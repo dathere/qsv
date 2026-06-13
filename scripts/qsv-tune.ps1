@@ -55,6 +55,20 @@ function Format-Bytes([long]$b) {
     else { "$b B" }
 }
 
+# qsv's .env loader expects UTF-8/ASCII without a BOM. Set-Content/Add-Content
+# default to UTF-16LE (Windows PowerShell 5.1) or UTF-8-with-BOM depending on the
+# host, which can corrupt the first key. Always write UTF-8 *without* BOM via .NET.
+$Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+function Resolve-FullPath([string]$p) {
+    $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($p)
+}
+function Write-EnvFile([string]$p, [string]$text) {
+    [System.IO.File]::WriteAllText((Resolve-FullPath $p), $text + "`n", $Utf8NoBom)
+}
+function Add-EnvFile([string]$p, [string]$text) {
+    [System.IO.File]::AppendAllText((Resolve-FullPath $p), $text + "`n", $Utf8NoBom)
+}
+
 # --- profile the machine -------------------------------------------------
 if ($DebugTotalMemBytes -gt 0) {
     $totalMem = $DebugTotalMemBytes
@@ -216,23 +230,28 @@ if (-not $Write) {
 
 if ($Force) {
     if (Test-Path $Path) { Copy-Item $Path "$Path.bak" -Force }
-    Set-Content -Path $Path -Value $envBlock
+    Write-EnvFile $Path $envBlock
     Write-Information "qsv-tune: wrote $Path (overwrote; backup at $Path.bak)." -InformationAction Continue
 } elseif (Test-Path $Path) {
     Copy-Item $Path "$Path.bak" -Force
     $content = Get-Content $Path -Raw
     if ($content -match [regex]::Escape($MarkStart)) {
+        # refuse to touch a corrupt/partial block (start marker but no end marker)
+        if ($content -notmatch [regex]::Escape($MarkEnd)) {
+            Write-Error "qsv-tune: $Path has a start marker but no end marker (partial/corrupt block). Fix it manually or re-run with -Force to overwrite."
+            return
+        }
         $pattern = "(?s)" + [regex]::Escape($MarkStart) + ".*?" + [regex]::Escape($MarkEnd)
         # MatchEvaluator avoids $-group interpretation in the replacement text
         $content = [regex]::Replace($content, $pattern, { param($m) $envBlock })
-        Set-Content -Path $Path -Value $content
+        Write-EnvFile $Path $content
         Write-Information "qsv-tune: updated qsv-tune block in $Path (backup at $Path.bak)." -InformationAction Continue
     } else {
-        Add-Content -Path $Path -Value "`n$envBlock"
+        Add-EnvFile $Path "`n$envBlock"
         Write-Information "qsv-tune: appended qsv-tune block to $Path (backup at $Path.bak)." -InformationAction Continue
     }
 } else {
-    Set-Content -Path $Path -Value $envBlock
+    Write-EnvFile $Path $envBlock
     Write-Information "qsv-tune: created $Path." -InformationAction Continue
 }
 

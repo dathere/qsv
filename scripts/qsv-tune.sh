@@ -162,7 +162,13 @@ detect_disk_type() {
             ;;
         Linux)
             local src base
-            src="$(df --output=source "$dir" 2> /dev/null | tail -1)"
+            # df -P is POSIX (single line per entry); --output=source is GNU-only and
+            # aborts under `set -e` on busybox/Alpine. `|| true` keeps the fallback path.
+            src="$(df -P "$dir" 2> /dev/null | awk 'NR==2 {print $1}')" || src=""
+            [ -z "$src" ] && {
+                printf 'unknown'
+                return
+            }
             base="$(basename "$src")"
             # nvme devices are always SSD
             case "$base" in
@@ -396,15 +402,24 @@ if [ "$FORCE" -eq 1 ]; then
 elif [ -f "$TARGET_ENV" ]; then
     cp "$TARGET_ENV" "${TARGET_ENV}.bak"
     if grep -qF "$MARK_START" "$TARGET_ENV"; then
-        # replace existing managed block in place
-        tmp="$(mktemp)"
+        # refuse to touch a corrupt/partial block (start marker but no end marker),
+        # otherwise the awk skip below would drop everything after the start marker.
+        if ! grep -qF "$MARK_END" "$TARGET_ENV"; then
+            log "qsv-tune: ${TARGET_ENV} has a start marker but no end marker (partial/corrupt block)."
+            log "qsv-tune: refusing to edit. Fix it manually or re-run with --force to overwrite."
+            exit 1
+        fi
+        # replace existing managed block, preserving the target's inode/permissions/symlink
+        # (write back by truncating in place rather than mv'ing a temp over it).
+        tmp="$(mktemp "${TMPDIR:-/tmp}/qsv-tune.XXXXXXXX")"
         awk -v s="$MARK_START" -v e="$MARK_END" '
             $0 == s {skip=1}
             skip && $0 == e {skip=0; next}
             !skip {print}
         ' "$TARGET_ENV" > "$tmp"
         printf '%s\n' "$ENV_BLOCK" >> "$tmp"
-        mv "$tmp" "$TARGET_ENV"
+        cat "$tmp" > "$TARGET_ENV"
+        rm -f "$tmp"
         log "qsv-tune: updated qsv-tune block in ${TARGET_ENV} (backup at ${TARGET_ENV}.bak)."
     else
         printf '\n%s\n' "$ENV_BLOCK" >> "$TARGET_ENV"

@@ -65,9 +65,6 @@ function Resolve-FullPath([string]$p) {
 function Write-EnvFile([string]$p, [string]$text) {
     [System.IO.File]::WriteAllText((Resolve-FullPath $p), $text + "`n", $Utf8NoBom)
 }
-function Add-EnvFile([string]$p, [string]$text) {
-    [System.IO.File]::AppendAllText((Resolve-FullPath $p), $text + "`n", $Utf8NoBom)
-}
 
 # --- profile the machine -------------------------------------------------
 if ($DebugTotalMemBytes -gt 0) {
@@ -247,8 +244,11 @@ if ($Force) {
         Write-EnvFile $Path $content
         Write-Information "qsv-tune: updated qsv-tune block in $Path (backup at $Path.bak)." -InformationAction Continue
     } else {
-        Add-EnvFile $Path "`n$envBlock"
-        Write-Information "qsv-tune: appended qsv-tune block to $Path (backup at $Path.bak)." -InformationAction Continue
+        # Rewrite the whole file (Get-Content -Raw decodes any UTF-16/BOM input) so the
+        # result is normalized to UTF-8 without BOM, rather than appending UTF-8 bytes
+        # onto a possibly UTF-16/BOM file and leaving it mixed-encoded.
+        Write-EnvFile $Path ($content.TrimEnd("`r", "`n") + "`n`n" + $envBlock)
+        Write-Information "qsv-tune: appended qsv-tune block to $Path (rewritten as UTF-8; backup at $Path.bak)." -InformationAction Continue
     }
 } else {
     Write-EnvFile $Path $envBlock

@@ -1,6 +1,6 @@
 {
   "name": "qsv-sample",
-  "version": "21.0.0",
+  "version": "21.1.0",
   "description": "Randomly draw rows (with optional seed) from a CSV using ten different sampling methods - reservoir (default), indexed, bernoulli, systematic, stratified, weighted, varopt, mergeable-reservoir, cluster & timeseries sampling. The `--varopt` & `--mergeable-reservoir` modes support mergeable sketch I/O (`--sketch-out`/`--sketch-in`) so sharded inputs can be sampled and combined without re-reading the corpus. Supports sampling from CSVs on remote URLs. Uses the stats cache to skip unnecessary scanning and inform its sampling strategies.",
   "category": "selection",
   "command": {

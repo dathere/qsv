@@ -256,6 +256,9 @@ _qsv() {
             qsv__subcmd__apply,operations)
                 cmd="qsv__subcmd__apply__subcmd__operations"
                 ;;
+            qsv__subcmd__apply,summarize)
+                cmd="qsv__subcmd__apply__subcmd__summarize"
+                ;;
             qsv__subcmd__apply__subcmd__help,calcconv)
                 cmd="qsv__subcmd__apply__subcmd__help__subcmd__calcconv"
                 ;;
@@ -270,6 +273,9 @@ _qsv() {
                 ;;
             qsv__subcmd__apply__subcmd__help,operations)
                 cmd="qsv__subcmd__apply__subcmd__help__subcmd__operations"
+                ;;
+            qsv__subcmd__apply__subcmd__help,summarize)
+                cmd="qsv__subcmd__apply__subcmd__help__subcmd__summarize"
                 ;;
             qsv__subcmd__cat,columns)
                 cmd="qsv__subcmd__cat__subcmd__columns"
@@ -682,6 +688,9 @@ _qsv() {
             qsv__subcmd__help__subcmd__apply,operations)
                 cmd="qsv__subcmd__help__subcmd__apply__subcmd__operations"
                 ;;
+            qsv__subcmd__help__subcmd__apply,summarize)
+                cmd="qsv__subcmd__help__subcmd__apply__subcmd__summarize"
+                ;;
             qsv__subcmd__help__subcmd__cat,columns)
                 cmd="qsv__subcmd__help__subcmd__cat__subcmd__columns"
                 ;;
@@ -970,17 +979,41 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__apply)
-            opts="-b -C -d -f -j -c -n -o -p -r -R -h --batch --comparand --delimiter --formatstr --jobs --new-column --no-headers --output --progressbar --rename --replacement --help calcconv dynfmt emptyreplace operations help"
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help calcconv dynfmt emptyreplace operations summarize help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1016,6 +1049,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1024,11 +1073,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1045,6 +1110,14 @@ _qsv() {
                     return 0
                     ;;
                 -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1056,17 +1129,41 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__apply__subcmd__calcconv)
-            opts="-b -C -d -f -j -c -n -o -p -r -R -h --batch --comparand --delimiter --formatstr --jobs --new-column --no-headers --output --progressbar --rename --replacement --help"
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1102,6 +1199,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1110,11 +1223,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1131,6 +1260,14 @@ _qsv() {
                     return 0
                     ;;
                 -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1142,17 +1279,41 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__apply__subcmd__dynfmt)
-            opts="-b -C -d -f -j -c -n -o -p -r -R -h --batch --comparand --delimiter --formatstr --jobs --new-column --no-headers --output --progressbar --rename --replacement --help"
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1188,6 +1349,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1196,11 +1373,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1217,6 +1410,14 @@ _qsv() {
                     return 0
                     ;;
                 -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1228,17 +1429,41 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__apply__subcmd__emptyreplace)
-            opts="-b -C -d -f -j -c -n -o -p -r -R -h --batch --comparand --delimiter --formatstr --jobs --new-column --no-headers --output --progressbar --rename --replacement --help"
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1274,6 +1499,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1282,11 +1523,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1306,6 +1563,14 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 *)
                     COMPREPLY=()
                     ;;
@@ -1314,7 +1579,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__apply__subcmd__help)
-            opts="calcconv dynfmt emptyreplace operations help"
+            opts="calcconv dynfmt emptyreplace operations summarize help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -1397,18 +1662,56 @@ _qsv() {
             COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
             return 0
             ;;
+        qsv__subcmd__apply__subcmd__help__subcmd__summarize)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
         qsv__subcmd__apply__subcmd__operations)
-            opts="-b -C -d -f -j -c -n -o -p -r -R -h --batch --comparand --delimiter --formatstr --jobs --new-column --no-headers --output --progressbar --rename --replacement --help"
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
             fi
             case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --batch)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1444,6 +1747,22 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --new-column)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -1452,11 +1771,27 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --output)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
                 -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -1473,6 +1808,164 @@ _qsv() {
                     return 0
                     ;;
                 -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__apply__subcmd__summarize)
+            opts="-k -u -b -C -d -f -j -t -m -c -n -o -p -r -R -h --addl-props --api-key --base-url --batch --cache-dir --comparand --delimiter --formatstr --fresh --jobs --max-tokens --model --new-column --no-cache --no-headers --on-error --output --progressbar --prompt --prompt-file --rate-limit --rename --replacement --stats --timeout --user-agent --help"
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                --addl-props)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --api-key)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -k)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --base-url)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -u)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --batch)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -b)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --cache-dir)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --comparand)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -C)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --delimiter)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -d)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --formatstr)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -f)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --jobs)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -j)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --max-tokens)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -t)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --model)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -m)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --new-column)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -c)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --on-error)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --output)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -o)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --prompt-file)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rate-limit)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --rename)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -r)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --replacement)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                -R)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --timeout)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --user-agent)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2016,7 +2509,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__describegpt)
-            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --allow-extra-cols --api-key --base-url --cache-dir --ckan-api --ckan-token --description --dictionary --disk-cache-dir --ds-license --ds-source --ds-updated --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --infer-content-type --language --markdown-template --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --strict-dates --tag-vocab --tags --timeout --truncate-str --two-pass --user-agent --help"
+            opts="-A -k -u -t -m -o -p -q -h --addl-cols --addl-cols-list --addl-props --all --allow-extra-cols --api-key --base-url --cache-dir --ckan-api --ckan-token --context-file --description --dictionary --disk-cache-dir --ds-license --ds-source --ds-updated --enum-threshold --export-prompt --fewshot-examples --flush-cache --forget --format --freq-options --fresh --infer-content-type --language --markdown-template --max-tokens --model --no-cache --no-score-sql --num-examples --num-tags --output --prepare-context --process-response --prompt --prompt-file --quiet --redis-cache --sample-size --score-max-retries --score-threshold --session --session-len --sql-results --stats-options --strict-dates --tag-vocab --tags --timeout --truncate-str --two-pass --user-agent --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -2055,6 +2548,10 @@ _qsv() {
                     return 0
                     ;;
                 --ckan-token)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --context-file)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -2194,7 +2691,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__diff)
-            opts="-d -j -k -o -h --delimiter --delimiter-left --delimiter-output --delimiter-right --drop-equal-fields --jobs --key --no-headers-left --no-headers-output --no-headers-right --output --sort-columns --help"
+            opts="-d -j -k -o -h --delimiter --delimiter-left --delimiter-output --delimiter-right --drop-equal-columns --drop-equal-fields --jobs --key --no-headers-left --no-headers-output --no-headers-right --output --sort-columns --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5842,7 +6339,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5872,6 +6369,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -5885,6 +6386,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -5904,7 +6409,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__clear)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5934,6 +6439,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -5947,6 +6456,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -5966,7 +6479,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__info)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -5996,6 +6509,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6009,6 +6526,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6028,7 +6549,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__list)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6058,6 +6579,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6071,6 +6596,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6090,7 +6619,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__prune)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6120,6 +6649,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6133,6 +6666,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6152,7 +6689,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__policy)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6182,6 +6719,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6195,6 +6736,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6214,7 +6759,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__get__subcmd__cache__subcmd__set__subcmd__ttl)
-            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --older-than --output --quiet --refresh --timeout --ttl --verify --help"
+            opts="-o -q -h --cache-dir --ckan-api --ckan-token --cloud-opt --compress --force --json --name --offset --older-than --output --quiet --random --refresh --sample --timeout --ttl --verify --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6244,6 +6789,10 @@ _qsv() {
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
+                --offset)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
                 --older-than)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
@@ -6257,6 +6806,10 @@ _qsv() {
                     return 0
                     ;;
                 --refresh)
+                    COMPREPLY=($(compgen -f "${cur}"))
+                    return 0
+                    ;;
+                --sample)
                     COMPREPLY=($(compgen -f "${cur}"))
                     return 0
                     ;;
@@ -6424,7 +6977,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__apply)
-            opts="calcconv dynfmt emptyreplace operations"
+            opts="calcconv dynfmt emptyreplace operations summarize"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 3 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0
@@ -6480,6 +7033,20 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__help__subcmd__apply__subcmd__operations)
+            opts=""
+            if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
+                COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+                return 0
+            fi
+            case "${prev}" in
+                *)
+                    COMPREPLY=()
+                    ;;
+            esac
+            COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
+            return 0
+            ;;
+        qsv__subcmd__help__subcmd__apply__subcmd__summarize)
             opts=""
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 4 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
@@ -9648,7 +10215,7 @@ _qsv() {
             return 0
             ;;
         qsv__subcmd__safenames)
-            opts="-d -o -h --delimiter --mode --output --prefix --reserved --help"
+            opts="-d -o -h --collapse --delimiter --mode --output --prefix --reserved --unicode --help"
             if [[ ${cur} == -* || ${COMP_CWORD} -eq 2 ]] ; then
                 COMPREPLY=( $(compgen -W "${opts}" -- "${cur}") )
                 return 0

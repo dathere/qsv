@@ -105,75 +105,179 @@ complete -c qsv -n "__fish_qsv_needs_command" -f -a "tojsonl"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "transpose"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "validate"
 complete -c qsv -n "__fish_qsv_needs_command" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s b -l batch -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s C -l comparand -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s d -l delimiter -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s f -l formatstr -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s j -l jobs -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s c -l new-column -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s o -l output -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s r -l rename -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s R -l replacement -r
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s n -l no-headers
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s p -l progressbar
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -s h -l help -d 'Print help'
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -f -a "calcconv"
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -f -a "dynfmt"
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -f -a "emptyreplace"
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -f -a "operations"
-complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s u -l base-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s C -l comparand -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s m -l model -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l on-error -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -l stats
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "calcconv"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "dynfmt"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "emptyreplace"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "operations"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "summarize"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and not __fish_seen_subcommand_from calcconv dynfmt emptyreplace operations summarize help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s u -l base-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s C -l comparand -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l on-error -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -l stats
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from calcconv" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s u -l base-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s C -l comparand -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l on-error -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -l stats
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from dynfmt" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s u -l base-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s C -l comparand -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l on-error -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -l stats
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from emptyreplace" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s u -l base-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s C -l comparand -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s d -l delimiter -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s f -l formatstr -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s m -l model -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l on-error -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l rate-limit -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s r -l rename -r
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l no-cache
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s n -l no-headers
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -l stats
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from operations" -s h -l help -d 'Print help'
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l addl-props -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s k -l api-key -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s u -l base-url -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s b -l batch -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l cache-dir -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s C -l comparand -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s d -l delimiter -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s f -l formatstr -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s j -l jobs -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s t -l max-tokens -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s m -l model -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s c -l new-column -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l on-error -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s o -l output -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l prompt -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l prompt-file -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l rate-limit -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s r -l rename -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s R -l replacement -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l timeout -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l user-agent -r
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l fresh
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l no-cache
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s n -l no-headers
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s p -l progressbar
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -l stats
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from summarize" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "calcconv"
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "dynfmt"
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "emptyreplace"
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "operations"
+complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "summarize"
 complete -c qsv -n "__fish_qsv_using_subcommand apply; and __fish_seen_subcommand_from help" -f -a "help" -d 'Print this message or the help of the given subcommand(s)'
 complete -c qsv -n "__fish_qsv_using_subcommand behead" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand behead" -s f -l flexible
@@ -287,6 +391,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -s u -l base-url -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l ckan-api -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l ckan-token -r
+complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l context-file -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l disk-cache-dir -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l ds-license -r
 complete -c qsv -n "__fish_qsv_using_subcommand describegpt" -l ds-source -r
@@ -343,6 +448,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand diff" -s j -l jobs -r
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -s k -l key -r
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -l sort-columns -r
+complete -c qsv -n "__fish_qsv_using_subcommand diff" -l drop-equal-columns
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -l drop-equal-fields
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -l no-headers-left
 complete -c qsv -n "__fish_qsv_using_subcommand diff" -l no-headers-output
@@ -1077,14 +1183,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcomm
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and not __fish_seen_subcommand_from cache-clear cache-info cache-list cache-prune cache-set-policy cache-set-ttl help" -f -a "cache-clear"
@@ -1100,14 +1209,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-clear" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l cache-dir -r
@@ -1116,14 +1228,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-info" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l cache-dir -r
@@ -1132,14 +1247,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-list" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l cache-dir -r
@@ -1148,14 +1266,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-prune" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l cache-dir -r
@@ -1164,14 +1285,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-policy" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l cache-dir -r
@@ -1180,14 +1304,17 @@ complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l cloud-opt -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l compress -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l name -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l offset -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l older-than -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l refresh -r
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l sample -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l timeout -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l ttl -r
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l force
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l json
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -s q -l quiet
+complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l random
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -l verify
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from cache-set-ttl" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand get; and __fish_seen_subcommand_from help" -f -a "cache-clear"
@@ -1528,6 +1655,8 @@ complete -c qsv -n "__fish_qsv_using_subcommand safenames" -l mode -r
 complete -c qsv -n "__fish_qsv_using_subcommand safenames" -s o -l output -r
 complete -c qsv -n "__fish_qsv_using_subcommand safenames" -l prefix -r
 complete -c qsv -n "__fish_qsv_using_subcommand safenames" -l reserved -r
+complete -c qsv -n "__fish_qsv_using_subcommand safenames" -l collapse
+complete -c qsv -n "__fish_qsv_using_subcommand safenames" -l unicode
 complete -c qsv -n "__fish_qsv_using_subcommand safenames" -s h -l help -d 'Print help'
 complete -c qsv -n "__fish_qsv_using_subcommand sample" -l cluster -r
 complete -c qsv -n "__fish_qsv_using_subcommand sample" -s d -l delimiter -r
@@ -2138,6 +2267,7 @@ complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "dynfmt"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "emptyreplace"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "operations"
+complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from apply" -f -a "summarize"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from cat" -f -a "columns"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from cat" -f -a "rows"
 complete -c qsv -n "__fish_qsv_using_subcommand help; and __fish_seen_subcommand_from cat" -f -a "rowskey"

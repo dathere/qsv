@@ -6,13 +6,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+---
+
+## [21.1.0] - 2026-06-14
+
+### Added
+- `get`: CSV/TSV-aware ingest features — delimiter `sniff`ing, a sampling preview, and glob-pattern expansion for batch fetches ([#654](https://github.com/dathere/qsv/issues/654); [#3999](https://github.com/dathere/qsv/pull/3999)).
+- `diff`: new `--drop-equal-columns` flag to omit columns whose values are identical across both inputs, focusing the diff on what actually changed ([#2000](https://github.com/dathere/qsv/issues/2000); [#3998](https://github.com/dathere/qsv/pull/3998)).
+- `apply`: new `summarize` subcommand that condenses text using OpenAI-compatible LLMs ([#2691](https://github.com/dathere/qsv/issues/2691); [#3974](https://github.com/dathere/qsv/pull/3974)).
+- `describegpt`: new `--context-file` option to enrich prompts with additional dataset context ([#3969](https://github.com/dathere/qsv/issues/3969); [#3972](https://github.com/dathere/qsv/pull/3972)).
+- `safenames`: new "safer" `s`/`S` modes plus `--collapse` and `--unicode` flags for finer control over header sanitization ([#1921](https://github.com/dathere/qsv/issues/1921); [#3975](https://github.com/dathere/qsv/pull/3975)).
+- compressed inputs now auto-decompress transparently. Local `.zip` inputs & lookup tables ([#3986](https://github.com/dathere/qsv/pull/3986)) and compressed **remote** sources — lookup tables and `get`/`dc:` ingests (`.gz`/`.zlib`/`.zst`) ([#3987](https://github.com/dathere/qsv/pull/3987)) — are now detected and decompressed automatically ([#1417](https://github.com/dathere/qsv/issues/1417)).
+- `qsv-tune`: new machine-profiler script that detects your hardware and recommends optimal qsv settings ([#2829](https://github.com/dathere/qsv/issues/2829); [#3985](https://github.com/dathere/qsv/pull/3985)).
+- prebuilt qsv binaries on native targets are now Profile-Guided-Optimization (PGO) optimized for extra performance ([#1448](https://github.com/dathere/qsv/issues/1448); [#3976](https://github.com/dathere/qsv/pull/3976)).
+- benchmarks: added a Python (`py`) benchmark suite mirroring the existing luau benchmarks ([#1351](https://github.com/dathere/qsv/issues/1351); [#4000](https://github.com/dathere/qsv/pull/4000)).
+
 ### Changed
+- `stats` is faster and leaner: ~40% faster unindexed, ~42% faster indexed `--everything`, and ~43% less peak memory ([#3970](https://github.com/dathere/qsv/pull/3970)).
+- `describegpt`: the LLM timeout is now disabled by default when targeting a localhost endpoint, since local models can legitimately take much longer to respond ([#3984](https://github.com/dathere/qsv/pull/3984)).
+- `qsvlite` no longer includes the `describegpt` command, trimming the binary by ~4MB.
+- regenerated shell completions now include directory-module commands ([#3965](https://github.com/dathere/qsv/pull/3965)).
 - special-format conversion failures are now surfaced as errors instead of being silently swallowed. When a detected special-format input (Avro, Parquet, Arrow IPC, JSON, JSONL, or a gzip/zlib/zstd/snappy-compressed CSV/TSV/SSV) fails to convert, qsv previously fell back to reading the original (often binary) bytes as delimited text — emitting garbage with a *success* exit code. This fallback now applies to **all** special formats only when the user explicitly opts in via `QSV_SKIP_FORMAT_CHECK`; otherwise the conversion error is reported and qsv exits non-zero (matching the pre-existing behavior for `.zip`). This surfaced a genuinely unreadable Avro test fixture (regenerated) and two `slice` Decimal-pschema tests that had only ever passed because the error was swallowed ([#3988](https://github.com/dathere/qsv/issues/3988)).
 - zip input handling is now consistent across commands. The command-level "extract all entries" path (`cat`, `sqlp`, `to`, `validate`, `scoresql`) and the reader-level "first tabular entry" path (every other command, via `Config`) now share a single zip module with one selection rule. Entries are returned **tabular-first** (CSV/TSV/TAB/SSV before other supported formats), so a single-input command (`slice`, `tojsonl`, …) and a `Config`-only command (`stats`, `count`, …) pick the *same* first entry from a mixed multi-entry zip — previously they could silently read different entries. A zip with no supported entry now errors clearly instead of failing downstream with a vague message ([#3988](https://github.com/dathere/qsv/issues/3988)).
 
 ### Fixed
 - a remote lookup table whose tabular extension isn't knowable from the URL — a `.zip` (inner entry), or a `ckan://`/`dathere://` source that resolves to an arbitrary data URL — is now cached with the correct extension, so `luau`/`validate`/`template`/`describegpt` infer the right delimiter. Previously the cache file defaulted to `.csv`, so a `.tsv`/`.tab`/`.ssv` inner file was mis-parsed when no explicit delimiter was given; for `ckan://`/`dathere://` the subsequent cache lookup also missed (it only looked for `{name}.csv`), bypassing `cache_age_secs` and re-downloading every call. The downloader now names the cache file from the extension discovered during extraction (resetting back to `.csv` if a source is later refreshed with a csv inner file), and the cache-hit path probes the tabular extensions to find it ([#3988](https://github.com/dathere/qsv/issues/3988)).
 - local compressed `get`/`dc:` ingests (`.gz`/`.zlib`/`.zst`) now stream-decompress with bounded memory instead of reading the whole file into memory, mirroring the remote ingest path and avoiding OOM on large local compressed inputs ([#3988](https://github.com/dathere/qsv/issues/3988)).
+- `describegpt`: the context-file cache key is now collapsed only when the context file is a readable empty file ([#3973](https://github.com/dathere/qsv/pull/3973)).
+- jemalloc page-retention tuning is now gated to Linux only, avoiding unintended allocator behavior on macOS.
+- `util`: `_RJEM_MALLOC_CONF` is now surfaced in `show_env_vars()` output ([#3962](https://github.com/dathere/qsv/pull/3962)).
 
 ---
 

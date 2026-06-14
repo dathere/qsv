@@ -10,77 +10,182 @@ module completions {
   ]
 
   export extern "qsv apply" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
     --batch(-b): string
+    --cache-dir: string
     --comparand(-C): string
     --delimiter(-d): string
     --formatstr(-f): string
+    --fresh
     --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
     --new-column(-c): string
+    --no-cache
     --no-headers(-n)
+    --on-error: string
     --output(-o): string
     --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
     --rename(-r): string
     --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply calcconv" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
     --batch(-b): string
+    --cache-dir: string
     --comparand(-C): string
     --delimiter(-d): string
     --formatstr(-f): string
+    --fresh
     --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
     --new-column(-c): string
+    --no-cache
     --no-headers(-n)
+    --on-error: string
     --output(-o): string
     --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
     --rename(-r): string
     --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply dynfmt" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
     --batch(-b): string
+    --cache-dir: string
     --comparand(-C): string
     --delimiter(-d): string
     --formatstr(-f): string
+    --fresh
     --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
     --new-column(-c): string
+    --no-cache
     --no-headers(-n)
+    --on-error: string
     --output(-o): string
     --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
     --rename(-r): string
     --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply emptyreplace" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
     --batch(-b): string
+    --cache-dir: string
     --comparand(-C): string
     --delimiter(-d): string
     --formatstr(-f): string
+    --fresh
     --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
     --new-column(-c): string
+    --no-cache
     --no-headers(-n)
+    --on-error: string
     --output(-o): string
     --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
     --rename(-r): string
     --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
     --help(-h)                # Print help
   ]
 
   export extern "qsv apply operations" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
     --batch(-b): string
+    --cache-dir: string
     --comparand(-C): string
     --delimiter(-d): string
     --formatstr(-f): string
+    --fresh
     --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
     --new-column(-c): string
+    --no-cache
     --no-headers(-n)
+    --on-error: string
     --output(-o): string
     --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
     --rename(-r): string
     --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
+    --help(-h)                # Print help
+  ]
+
+  export extern "qsv apply summarize" [
+    --addl-props: string
+    --api-key(-k): string
+    --base-url(-u): string
+    --batch(-b): string
+    --cache-dir: string
+    --comparand(-C): string
+    --delimiter(-d): string
+    --formatstr(-f): string
+    --fresh
+    --jobs(-j): string
+    --max-tokens(-t): string
+    --model(-m): string
+    --new-column(-c): string
+    --no-cache
+    --no-headers(-n)
+    --on-error: string
+    --output(-o): string
+    --progressbar(-p)
+    --prompt: string
+    --prompt-file: string
+    --rate-limit: string
+    --rename(-r): string
+    --replacement(-R): string
+    --stats
+    --timeout: string
+    --user-agent: string
     --help(-h)                # Print help
   ]
 
@@ -98,6 +203,9 @@ module completions {
   ]
 
   export extern "qsv apply help operations" [
+  ]
+
+  export extern "qsv apply help summarize" [
   ]
 
   # Print this message or the help of the given subcommand(s)
@@ -262,6 +370,7 @@ module completions {
     --cache-dir: string
     --ckan-api: string
     --ckan-token: string
+    --context-file: string
     --description
     --dictionary
     --disk-cache-dir: string
@@ -314,6 +423,7 @@ module completions {
     --delimiter-left: string
     --delimiter-output: string
     --delimiter-right: string
+    --drop-equal-columns
     --drop-equal-fields
     --jobs(-j): string
     --key(-k): string
@@ -1182,10 +1292,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1201,10 +1314,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1220,10 +1336,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1239,10 +1358,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1258,10 +1380,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1277,10 +1402,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1296,10 +1424,13 @@ module completions {
     --force
     --json
     --name: string
+    --offset: string
     --older-than: string
     --output(-o): string
     --quiet(-q)
+    --random
     --refresh: string
+    --sample: string
     --timeout: string
     --ttl: string
     --verify
@@ -1770,11 +1901,13 @@ module completions {
   ]
 
   export extern "qsv safenames" [
+    --collapse
     --delimiter(-d): string
     --mode: string
     --output(-o): string
     --prefix: string
     --reserved: string
+    --unicode
     --help(-h)                # Print help
   ]
 
@@ -2450,6 +2583,9 @@ module completions {
   ]
 
   export extern "qsv help apply operations" [
+  ]
+
+  export extern "qsv help apply summarize" [
   ]
 
   export extern "qsv help behead" [

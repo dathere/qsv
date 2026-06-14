@@ -34,8 +34,14 @@ _qsv() {
         case $line[1] in
             (apply)
 _arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
 '-d+[]: :_default' \
@@ -44,18 +50,31 @@ _arguments "${_arguments_options[@]}" : \
 '--formatstr=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-R+[]: :_default' \
 '--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'--stats[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 ":: :_qsv__subcmd__apply_commands" \
@@ -70,8 +89,14 @@ _arguments "${_arguments_options[@]}" : \
         case $line[1] in
             (calcconv)
 _arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
 '-d+[]: :_default' \
@@ -80,26 +105,45 @@ _arguments "${_arguments_options[@]}" : \
 '--formatstr=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-R+[]: :_default' \
 '--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'--stats[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (dynfmt)
 _arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
 '-d+[]: :_default' \
@@ -108,26 +152,45 @@ _arguments "${_arguments_options[@]}" : \
 '--formatstr=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-R+[]: :_default' \
 '--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'--stats[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (emptyreplace)
 _arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
 '-d+[]: :_default' \
@@ -136,26 +199,45 @@ _arguments "${_arguments_options[@]}" : \
 '--formatstr=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-R+[]: :_default' \
 '--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'--stats[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
 ;;
 (operations)
 _arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
 '-b+[]: :_default' \
 '--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
 '-C+[]: :_default' \
 '--comparand=[]: :_default' \
 '-d+[]: :_default' \
@@ -164,18 +246,78 @@ _arguments "${_arguments_options[@]}" : \
 '--formatstr=[]: :_default' \
 '-j+[]: :_default' \
 '--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
 '-c+[]: :_default' \
 '--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
 '-r+[]: :_default' \
 '--rename=[]: :_default' \
 '-R+[]: :_default' \
 '--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
 '-n[]' \
 '--no-headers[]' \
 '-p[]' \
 '--progressbar[]' \
+'--stats[]' \
+'-h[Print help]' \
+'--help[Print help]' \
+&& ret=0
+;;
+(summarize)
+_arguments "${_arguments_options[@]}" : \
+'--addl-props=[]: :_default' \
+'-k+[]: :_default' \
+'--api-key=[]: :_default' \
+'-u+[]: :_default' \
+'--base-url=[]: :_default' \
+'-b+[]: :_default' \
+'--batch=[]: :_default' \
+'--cache-dir=[]: :_default' \
+'-C+[]: :_default' \
+'--comparand=[]: :_default' \
+'-d+[]: :_default' \
+'--delimiter=[]: :_default' \
+'-f+[]: :_default' \
+'--formatstr=[]: :_default' \
+'-j+[]: :_default' \
+'--jobs=[]: :_default' \
+'-t+[]: :_default' \
+'--max-tokens=[]: :_default' \
+'-m+[]: :_default' \
+'--model=[]: :_default' \
+'-c+[]: :_default' \
+'--new-column=[]: :_default' \
+'--on-error=[]: :_default' \
+'-o+[]: :_default' \
+'--output=[]: :_default' \
+'--prompt=[]: :_default' \
+'--prompt-file=[]: :_default' \
+'--rate-limit=[]: :_default' \
+'-r+[]: :_default' \
+'--rename=[]: :_default' \
+'-R+[]: :_default' \
+'--replacement=[]: :_default' \
+'--timeout=[]: :_default' \
+'--user-agent=[]: :_default' \
+'--fresh[]' \
+'--no-cache[]' \
+'-n[]' \
+'--no-headers[]' \
+'-p[]' \
+'--progressbar[]' \
+'--stats[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -205,6 +347,10 @@ _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
 (operations)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
+(summarize)
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
@@ -487,6 +633,7 @@ _arguments "${_arguments_options[@]}" : \
 '--cache-dir=[]: :_default' \
 '--ckan-api=[]: :_default' \
 '--ckan-token=[]: :_default' \
+'--context-file=[]: :_default' \
 '--disk-cache-dir=[]: :_default' \
 '--ds-license=[]: :_default' \
 '--ds-source=[]: :_default' \
@@ -558,6 +705,7 @@ _arguments "${_arguments_options[@]}" : \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--sort-columns=[]: :_default' \
+'--drop-equal-columns[]' \
 '--drop-equal-fields[]' \
 '--no-headers-left[]' \
 '--no-headers-output[]' \
@@ -1798,16 +1946,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1829,16 +1980,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1852,16 +2006,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1875,16 +2032,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1898,16 +2058,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1921,16 +2084,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -1944,16 +2110,19 @@ _arguments "${_arguments_options[@]}" : \
 '--cloud-opt=[]: :_default' \
 '--compress=[]: :_default' \
 '--name=[]: :_default' \
+'--offset=[]: :_default' \
 '--older-than=[]: :_default' \
 '-o+[]: :_default' \
 '--output=[]: :_default' \
 '--refresh=[]: :_default' \
+'--sample=[]: :_default' \
 '--timeout=[]: :_default' \
 '--ttl=[]: :_default' \
 '--force[]' \
 '--json[]' \
 '-q[]' \
 '--quiet[]' \
+'--random[]' \
 '--verify[]' \
 '-h[Print help]' \
 '--help[Print help]' \
@@ -2724,6 +2893,8 @@ _arguments "${_arguments_options[@]}" : \
 '--output=[]: :_default' \
 '--prefix=[]: :_default' \
 '--reserved=[]: :_default' \
+'--collapse[]' \
+'--unicode[]' \
 '-h[Print help]' \
 '--help[Print help]' \
 && ret=0
@@ -3803,6 +3974,10 @@ _arguments "${_arguments_options[@]}" : \
 _arguments "${_arguments_options[@]}" : \
 && ret=0
 ;;
+(summarize)
+_arguments "${_arguments_options[@]}" : \
+&& ret=0
+;;
         esac
     ;;
 esac
@@ -4480,6 +4655,7 @@ _qsv__subcmd__apply_commands() {
 'dynfmt:' \
 'emptyreplace:' \
 'operations:' \
+'summarize:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv apply commands' commands "$@"
@@ -4506,6 +4682,7 @@ _qsv__subcmd__apply__subcmd__help_commands() {
 'dynfmt:' \
 'emptyreplace:' \
 'operations:' \
+'summarize:' \
 'help:Print this message or the help of the given subcommand(s)' \
     )
     _describe -t commands 'qsv apply help commands' commands "$@"
@@ -4535,10 +4712,20 @@ _qsv__subcmd__apply__subcmd__help__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply help operations commands' commands "$@"
 }
+(( $+functions[_qsv__subcmd__apply__subcmd__help__subcmd__summarize_commands] )) ||
+_qsv__subcmd__apply__subcmd__help__subcmd__summarize_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv apply help summarize commands' commands "$@"
+}
 (( $+functions[_qsv__subcmd__apply__subcmd__operations_commands] )) ||
 _qsv__subcmd__apply__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv apply operations commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__apply__subcmd__summarize_commands] )) ||
+_qsv__subcmd__apply__subcmd__summarize_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv apply summarize commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__behead_commands] )) ||
 _qsv__subcmd__behead_commands() {
@@ -5127,6 +5314,7 @@ _qsv__subcmd__help__subcmd__apply_commands() {
 'dynfmt:' \
 'emptyreplace:' \
 'operations:' \
+'summarize:' \
     )
     _describe -t commands 'qsv help apply commands' commands "$@"
 }
@@ -5149,6 +5337,11 @@ _qsv__subcmd__help__subcmd__apply__subcmd__emptyreplace_commands() {
 _qsv__subcmd__help__subcmd__apply__subcmd__operations_commands() {
     local commands; commands=()
     _describe -t commands 'qsv help apply operations commands' commands "$@"
+}
+(( $+functions[_qsv__subcmd__help__subcmd__apply__subcmd__summarize_commands] )) ||
+_qsv__subcmd__help__subcmd__apply__subcmd__summarize_commands() {
+    local commands; commands=()
+    _describe -t commands 'qsv help apply summarize commands' commands "$@"
 }
 (( $+functions[_qsv__subcmd__help__subcmd__behead_commands] )) ||
 _qsv__subcmd__help__subcmd__behead_commands() {

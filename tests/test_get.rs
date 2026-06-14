@@ -1643,3 +1643,217 @@ fn get_http_multimember_gz_decompresses() {
 fn get_http_zst_decompresses() {
     check_http_compressed_get("get_http_zst_decompresses", "boston311-100.csv.zst");
 }
+
+// Number of persisted cache entries (one `{keyhash}.json` per entry). Used to
+// prove preview mode creates NO cache entry.
+fn entry_json_count(cache_dir: &Path) -> usize {
+    let entries = cache_dir.join("get").join("entries");
+    std::fs::read_dir(&entries).map_or(0, |rd| {
+        rd.flatten()
+            .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+            .count()
+    })
+}
+
+// issue #654: `get` sniffs each cached blob's CSV dialect/schema during indexing
+// and surfaces it (DELIM column in cache-list; `sniffed` object in --json). A
+// comma source reports `csv`/`,`, a tab source `tsv`/`\t`.
+#[test]
+fn get_sniff_dialect_in_cache_list() {
+    let wrk = Workdir::new("get_sniff_dialect_in_cache_list");
+    wrk.create_from_string("c_src.csv", STATES_CSV);
+    wrk.create_from_string("t_src.csv", "name\tabbr\nAlabama\tAL\nAlaska\tAK\n");
+    let cache_dir = wrk.path("qsvcache");
+
+    for (name, src) in [("c.csv", "c_src.csv"), ("t.csv", "t_src.csv")] {
+        let mut g = wrk.command("get");
+        g.env("QSV_CACHE_DIR", &cache_dir)
+            .args(["--name", name])
+            .arg(src);
+        wrk.assert_success(&mut g);
+    }
+
+    // table form: DELIM column shows csv / tsv
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let table = String::from_utf8_lossy(&wrk.output(&mut list).stdout).to_string();
+    assert!(table.contains("DELIM"), "missing DELIM column:\n{table}");
+    assert!(table.contains("csv"), "csv delimiter not shown:\n{table}");
+    assert!(table.contains("tsv"), "tsv delimiter not shown:\n{table}");
+
+    // json form: the sniffed object carries the detected delimiter + fields
+    let mut json = wrk.command("get");
+    json.env("QSV_CACHE_DIR", &cache_dir)
+        .arg("cache-list")
+        .arg("--json");
+    let js = String::from_utf8_lossy(&wrk.output(&mut json).stdout).to_string();
+    assert!(js.contains("\"sniffed\""), "no sniffed object:\n{js}");
+    assert!(js.contains("\"delimiter\""), "no delimiter field:\n{js}");
+    assert!(js.contains("\"has_header\""), "no has_header field:\n{js}");
+
+    // cache-info reports how many entries carry a sniffed schema
+    let mut info = wrk.command("get");
+    info.env("QSV_CACHE_DIR", &cache_dir).arg("cache-info");
+    let inf = String::from_utf8_lossy(&wrk.output(&mut info).stdout).to_string();
+    assert!(
+        inf.contains("with schema"),
+        "cache-info missing schema line:\n{inf}"
+    );
+}
+
+// issue #654: `--sample N` is a cache-bypassing PREVIEW — it streams the header
+// plus the first N data records to stdout and creates NO cache entry.
+#[test]
+fn get_preview_local_first_n() {
+    let wrk = Workdir::new("get_preview_local_first_n");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--sample", "2"])
+        .arg("src.csv");
+    let out = wrk.output(&mut g);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "expected header + 2 rows:\n{stdout}");
+    assert_eq!(lines[0], "name,abbr");
+    assert_eq!(lines[1], "Alabama,AL");
+    assert_eq!(lines[2], "Alaska,AK");
+
+    // the key invariant: preview created NO cache entry
+    assert_eq!(
+        entry_json_count(&cache_dir),
+        0,
+        "preview must not write a cache entry"
+    );
+}
+
+// `--offset` skips ahead then samples, realigning to a record boundary and
+// re-attaching the sniffed header. `--random` reservoir-samples a local file.
+#[test]
+fn get_preview_local_offset_and_random() {
+    let wrk = Workdir::new("get_preview_local_offset_and_random");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    // offset 0 skips the header line, then emits the sniffed header + 2 rows
+    let mut off = wrk.command("get");
+    off.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--offset", "0", "--sample", "2"])
+        .arg("src.csv");
+    let o = wrk.output(&mut off);
+    assert!(o.status.success());
+    let s = String::from_utf8_lossy(&o.stdout);
+    let lines: Vec<&str> = s.lines().collect();
+    assert_eq!(lines.len(), 3, "offset preview: header + 2 rows:\n{s}");
+    assert_eq!(lines[0], "name,abbr");
+    assert_eq!(lines[1], "Alabama,AL");
+
+    // random: exactly min(sample, rows) data records + header, still no cache
+    let mut rnd = wrk.command("get");
+    rnd.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--sample", "3", "--random"])
+        .arg("src.csv");
+    let r = wrk.output(&mut rnd);
+    assert!(r.status.success());
+    let rs = String::from_utf8_lossy(&r.stdout);
+    assert_eq!(
+        rs.lines().count(),
+        4,
+        "random preview: header + 3 rows:\n{rs}"
+    );
+    assert_eq!(rs.lines().next().unwrap(), "name,abbr");
+    assert_eq!(entry_json_count(&cache_dir), 0, "preview must not cache");
+}
+
+// preview is single-source only.
+#[test]
+fn get_preview_multi_source_rejected() {
+    let wrk = Workdir::new("get_preview_multi_source_rejected");
+    wrk.create_from_string("a.csv", STATES_CSV);
+    wrk.create_from_string("b.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--sample", "2"])
+        .arg("a.csv")
+        .arg("b.csv");
+    wrk.assert_err(&mut g);
+}
+
+// preview over HTTP: first-N streams header + N rows from a remote source and
+// caches nothing.
+#[test]
+fn get_preview_http_first_n() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_preview_http_first_n");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("states.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--sample", "2"])
+        .arg(&url);
+    let out = wrk.output(&mut g);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout.lines().count(), 3, "header + 2 rows:\n{stdout}");
+    assert!(stdout.contains("name,abbr"));
+    assert_eq!(entry_json_count(&cache_dir), 0, "preview must not cache");
+}
+
+// preview --offset over a Range-capable HTTP source.
+#[test]
+fn get_preview_http_offset() {
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_preview_http_offset");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("big.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--offset", "0", "--sample", "2"])
+        .arg(&url);
+    let out = wrk.output(&mut g);
+    assert!(out.status.success());
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(lines.len(), 3, "header + 2 rows:\n{stdout}");
+    assert_eq!(lines[0], "id,name,value");
+    assert_eq!(lines[1], "0,row-0,0");
+    assert_eq!(entry_json_count(&cache_dir), 0, "preview must not cache");
+}
+
+// issue #654: a glob source fetches every matching tabular file. --name is
+// ignored; each file becomes its own dc: entry. A `.tsv` is excluded by `*.csv`.
+#[test]
+fn get_glob_local_expands() {
+    let wrk = Workdir::new("get_glob_local_expands");
+    wrk.create_from_string("one.csv", "a,b\n1,2\n");
+    wrk.create_from_string("two.csv", "a,b\n3,4\n");
+    wrk.create_from_string("skip.tsv", "a\tb\n5\t6\n");
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir).arg("*.csv");
+    wrk.assert_success(&mut g);
+
+    assert_eq!(
+        entry_json_count(&cache_dir),
+        2,
+        "glob *.csv should cache exactly the two CSV files"
+    );
+
+    let mut list = wrk.command("get");
+    list.env("QSV_CACHE_DIR", &cache_dir).arg("cache-list");
+    let table = String::from_utf8_lossy(&wrk.output(&mut list).stdout).to_string();
+    assert!(table.contains("one.csv"), "missing one.csv:\n{table}");
+    assert!(table.contains("two.csv"), "missing two.csv:\n{table}");
+    assert!(
+        !table.contains("skip.tsv"),
+        "tsv should be excluded:\n{table}"
+    );
+}

@@ -12,8 +12,12 @@ the QSV_GET_PART_SIZE and QSV_GET_CONCURRENCY env vars).
 Once cached, a resource can be read by ANY qsv command using the `dc:` prefix,
 e.g. `qsv stats dc:data.csv`. Stale `dc:` entries are auto-refreshed.
 
+A glob (e.g. data/*.csv) or directory source fetches every matching tabular file
+(.csv/.tsv/.tab/.ssv) — supported for local paths and (with the get_cloud feature)
+cloud buckets/prefixes. --name is ignored when a source expands to multiple files.
+
 Supported sources:
-    local file path
+    local file path, directory, or glob (e.g. /data/*.csv)
     http:// or https:// URL
     dathere://<path>          datHere qsv-lookup-tables repo
     ckan://<id>               a CKAN resource by id
@@ -30,12 +34,22 @@ Examples:
         $ qsv get https://example.com/data.csv --name data.csv
         $ qsv stats dc:data.csv
 
+    Peek at a remote CSV WITHOUT caching it (preview mode, streams to stdout):
+        $ qsv get https://example.com/big.csv --sample 10
+        $ qsv get https://example.com/big.csv --offset 500 --sample 10
+        $ qsv get https://example.com/big.csv --sample 20 --random
+
     Seed a CKAN reference table:
         $ qsv get "ckan://covid-vaccinations?" --name vax.csv
+
+    Fetch every matching file via a glob or directory (each is cached separately):
+        $ qsv get '/data/*.csv'
+        $ qsv get /data/
 
     Fetch from cloud object storage (requires the get_cloud feature):
         $ qsv get s3://my-bucket/data.csv --name data.csv
         $ qsv get gs://my-bucket/data.csv --cloud-opt skip_signature=true
+        $ qsv get 's3://my-bucket/exports/*.csv'
 
     Show what's in the cache, then prune old entries:
         $ qsv get cache-list
@@ -74,6 +88,16 @@ get options:
     --compress <algo>      Transparent blob compression: zstd or none.
                            [default: zstd]
     --force                Re-fetch even if a fresh cached copy exists.
+    --sample <n>           PREVIEW: stream the first N data records of <source> to
+                           stdout (or the --output file) WITHOUT caching. No `dc:`
+                           entry is created. The sniffed header row is re-attached.
+                           Single <source> only.
+    --offset <mb>          PREVIEW: skip ~<mb> megabytes (via an HTTP Range request)
+                           before sampling, realigning to the next record boundary.
+                           Implies --sample. Requires a Range-capable source.
+    --random               PREVIEW: random sampling when the source supports Range
+                           requests; otherwise streams and reservoir-samples. Random
+                           sampling is approximate.
     --cloud-opt <kv>       Extra cloud object-store config as a `key=value` pair
                            (repeatable), e.g. region=us-east-1 or
                            skip_signature=true. Overrides the
@@ -106,6 +130,9 @@ use crate::{
     util,
 };
 
+/// Records emitted by a `--offset`/`--random` preview when `--sample` is omitted.
+const DEFAULT_PREVIEW_SAMPLE: u64 = 10;
+
 #[derive(Deserialize)]
 struct Args {
     arg_source:           Vec<String>,
@@ -116,6 +143,9 @@ struct Args {
     flag_refresh:         String,
     flag_compress:        String,
     flag_force:           bool,
+    flag_sample:          Option<u64>,
+    flag_offset:          Option<u64>,
+    flag_random:          bool,
     flag_cloud_opt:       Vec<String>,
     flag_ckan_api:        Option<String>,
     flag_ckan_token:      Option<String>,
@@ -179,10 +209,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         return Ok(());
     }
 
-    // ---- main get form ----
-    let refresh_policy = diskcache::RefreshPolicy::parse(&args.flag_refresh)?;
-    let compression = diskcache::Compression::parse(&args.flag_compress)?;
-
     let ckan_api_url = args
         .flag_ckan_api
         .clone()
@@ -193,9 +219,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         .clone()
         .or_else(|| std::env::var("QSV_CKAN_TOKEN").ok());
 
-    let multiple = args.arg_source.len() > 1;
+    // ---- preview mode (--sample/--offset/--random): peek WITHOUT caching ----
+    if args.flag_sample.is_some() || args.flag_offset.is_some() || args.flag_random {
+        if args.arg_source.len() != 1 {
+            return Err(CliError::Other(
+                "get: preview mode (--sample/--offset/--random) requires exactly one <source>."
+                    .to_string(),
+            ));
+        }
+        let preview = diskcache::PreviewOptions {
+            source:       args.arg_source[0].clone(),
+            sample:       args.flag_sample.unwrap_or(DEFAULT_PREVIEW_SAMPLE),
+            offset_mb:    args.flag_offset,
+            random:       args.flag_random,
+            ckan_api_url: ckan_api_url.clone(),
+            ckan_token:   ckan_token.clone(),
+            timeout_secs: args.flag_timeout,
+            cloud_opts:   args.flag_cloud_opt.clone(),
+        };
+        return diskcache::preview_resource(&preview, args.flag_output.as_deref());
+    }
 
-    for source in &args.arg_source {
+    // ---- main get form ----
+    let refresh_policy = diskcache::RefreshPolicy::parse(&args.flag_refresh)?;
+    let compression = diskcache::Compression::parse(&args.flag_compress)?;
+
+    // Expand any glob/directory sources (local and, with get_cloud, cloud) into
+    // concrete sources; non-glob sources pass through unchanged.
+    let expand_ctx = diskcache::ExpandCtx {
+        cloud_opts: args.flag_cloud_opt.clone(),
+    };
+    let mut sources = Vec::with_capacity(args.arg_source.len());
+    for s in &args.arg_source {
+        sources.extend(diskcache::expand_source(s, &expand_ctx)?);
+    }
+
+    let multiple = sources.len() > 1;
+
+    for source in &sources {
         let opts = diskcache::GetOptions {
             source: source.clone(),
             name: if multiple {
@@ -295,8 +356,10 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool, verify: bool) -> CliR
                 records += e.record_count.unwrap_or(0);
             }
         }
+        let with_schema = entries.iter().filter(|e| e.sniffed.is_some()).count();
         println!("cache directory   : {cache_dir}/get");
         println!("names             : {names}");
+        println!("with schema       : {with_schema}");
         println!("unique blobs      : {blobs}");
         println!("total records     : {records}");
         println!("on disk (comp)    : {comp} bytes");
@@ -310,8 +373,8 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool, verify: bool) -> CliR
     }
 
     println!(
-        "{:<24} {:>10} {:>12} {:>12} {:>4} {:<16} SOURCE",
-        "NAME", "RECORDS", "COMP", "UNCOMP", "IDX", "BLAKE3"
+        "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:<16} SOURCE",
+        "NAME", "RECORDS", "COMP", "UNCOMP", "IDX", "DELIM", "BLAKE3"
     );
     for e in &entries {
         let records = e
@@ -319,12 +382,13 @@ fn run_cache_list(cache_dir: &str, json: bool, info: bool, verify: bool) -> CliR
             .map_or_else(|| "?".to_string(), |c| c.to_string());
         let b3 = &e.blake3[..e.blake3.len().min(16)];
         println!(
-            "{:<24} {:>10} {:>12} {:>12} {:>4} {:<16} {}",
+            "{:<24} {:>10} {:>12} {:>12} {:>4} {:<5} {:<16} {}",
             truncate(&e.logical_name, 24),
             records,
             e.size_compressed,
             e.size_uncompressed,
             if e.indexed { "yes" } else { "no" },
+            delim_label(e.sniffed.as_ref()),
             b3,
             e.source_uri,
         );
@@ -343,6 +407,18 @@ fn truncate(s: &str, max: usize) -> String {
 
 fn plural(n: usize) -> &'static str {
     if n == 1 { "y" } else { "ies" }
+}
+
+/// Short label for a sniffed delimiter, shown in the `cache-list` DELIM column.
+fn delim_label(sniffed: Option<&diskcache::SniffedDialect>) -> &'static str {
+    match sniffed.map(|s| s.delimiter) {
+        Some(',') => "csv",
+        Some('\t') => "tsv",
+        Some(';') => "ssv",
+        Some('|') => "psv",
+        Some(_) => "oth",
+        None => "?",
+    }
 }
 
 /// Parse a `--older-than` value into seconds. Accepts a bare integer (seconds)

@@ -112,8 +112,13 @@ jobs:
             addl-qsvlite-features:
             addl-qsvdp-features:
             addl-rustflags:
-            # native runner - PGO with --minimal training (Windows, see msvc note above)
-            pgo: true
+            # PGO disabled for windows-gnu: the msvc host cross-compiles to the gnu
+            # target, but rustup's stable rust-std for x86_64-pc-windows-gnu does not
+            # ship the profiler runtime, so PGO instrumentation fails to build
+            # (error[E0463]: can't find crate for `profiler_builtins`). Supplying it
+            # would require nightly + -Zbuild-std. Fall back to a normal optimized
+            # build; PGO stays enabled for msvc + linux + macOS targets.
+            pgo: false
             pgo-train-flags: --minimal
             pgo-lto:
           # - os: macos-12

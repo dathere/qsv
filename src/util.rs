@@ -2698,67 +2698,18 @@ pub fn process_input(
             .extension()
             .is_some_and(|ext| ext.eq_ignore_ascii_case("zip"))
         {
-            // if so, extract all files from the zip archive to the temp directory
+            // Extract its usable entries (tabular-first) via the shared zip module
+            // so this command-level "all entries" path and the reader-level
+            // `Config`/`select_zip_entry` "first tabular entry" path agree on what
+            // a zip's entries are. Issue #3988.
             log::info!("Extracting files from zip archive: {}", path.display());
-
-            // Create a subdirectory in the temp directory for this zip file
-            // safety: we know the path has a filename
-            let zip_filename = path
-                .file_name()
-                .unwrap()
-                .to_str()
-                .unwrap()
-                .replace(".zip", "");
-            let zip_extract_dir = tmpdir.path().join(&zip_filename);
-            std::fs::create_dir_all(&zip_extract_dir)?;
-
-            // Open the zip file
-            let zip_file = std::fs::File::open(&path)?;
-            let mut archive = zip::ZipArchive::new(zip_file)?;
-
-            // Extract all files from the zip archive
-            for i in 0..archive.len() {
-                let mut zip_entry = archive.by_index(i)?;
-                let entry_path = zip_entry.name().to_string();
-
-                // Skip directories and common system files
-                if entry_path.ends_with('/')
-                    || !root_dir_common_filter(std::path::Path::new(&entry_path))
-                {
-                    log::info!("  Skipping system file or directory: {entry_path}");
-                    continue;
-                }
-
-                // Reject path-traversal entries (zip-slip). enclosed_name() returns
-                // None if the entry name would escape the extraction root.
-                let Some(safe_name) = zip_entry.enclosed_name() else {
-                    log::warn!("  Skipping zip entry with unsafe path (zip-slip): {entry_path}");
-                    continue;
-                };
-
-                // Create the full path for the extracted file
-                let file_path = zip_extract_dir.join(safe_name);
-
-                // Create parent directories if they don't exist
-                if let Some(parent) = file_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-
-                // Extract the file
-                let mut outfile = std::fs::File::create(&file_path)?;
-                std::io::copy(&mut zip_entry, &mut outfile)?;
-
-                log::info!("  Extracted file: {}", file_path.display());
-
-                // Add the extracted file to the processed input if it's a supported format
-                if is_supported_file(&file_path) {
-                    processed_input.push(file_path);
-                } else {
-                    log::info!("  Skipping unsupported file type: {}", file_path.display());
-                }
-            }
-
-            log::info!("Extracted {} files from zip archive", archive.len());
+            let entries = extract_all_zip_entries(&path, tmpdir)?;
+            log::info!(
+                "Extracted {} usable entries from zip archive {}",
+                entries.len(),
+                path.display()
+            );
+            processed_input.extend(entries);
         } else {
             processed_input.push(path);
         }
@@ -3745,6 +3696,103 @@ pub fn extract_zip_to_temp(
     Ok(out)
 }
 
+/// Extract a zip archive's usable entries into a temp subdirectory and return
+/// their paths, **tabular entries first** (CSV/TSV/TAB/SSV in archive order),
+/// followed by other supported special-format entries (parquet/avro/json/…, in
+/// archive order). Directories, system files (`__MACOSX`, `.DS_Store`, …),
+/// zip-slip entries, and unsupported file types are skipped. Errors with a clear
+/// message if no usable entry remains.
+///
+/// This is the command-level ("extract all entries") counterpart to the
+/// reader-level `select_zip_entry`/`extract_zip_to_temp` (which lazily extracts
+/// only the first tabular entry). Both share the same selection rule — the
+/// tabular extensions in `ZIP_TABULAR_EXTS`, filtered by `root_dir_common_filter`
+/// — so a single-input command that consumes the first returned path selects the
+/// SAME entry the `Config` reader path would, while multi-input commands (`cat`,
+/// `sqlp`, …) still receive every entry. Issue #3988.
+fn extract_all_zip_entries(
+    path: &Path,
+    tmpdir: &tempfile::TempDir,
+) -> Result<Vec<PathBuf>, CliError> {
+    // A per-archive subdirectory keeps each entry's relative path (zips may carry
+    // nested directories) and avoids name collisions across multiple zip inputs.
+    let zip_stem = path
+        .file_name()
+        .and_then(std::ffi::OsStr::to_str)
+        .map_or_else(
+            || "zip".to_string(),
+            |n| {
+                n.strip_suffix(".zip")
+                    .or_else(|| n.strip_suffix(".ZIP"))
+                    .unwrap_or(n)
+                    .to_string()
+            },
+        );
+    let zip_extract_dir = tmpdir.path().join(&zip_stem);
+    std::fs::create_dir_all(&zip_extract_dir)?;
+
+    let mut archive = zip::ZipArchive::new(File::open(path)?)?;
+
+    // `get_special_format` classifies by inspecting the on-disk file, so each
+    // entry must be extracted before it can be classified. Collect tabular and
+    // other-supported entries separately to preserve the tabular-first ordering.
+    let mut tabular = Vec::new();
+    let mut other_supported = Vec::new();
+    for i in 0..archive.len() {
+        let mut zip_entry = archive.by_index(i)?;
+        let entry_name = zip_entry.name().to_string();
+
+        if entry_name.ends_with('/') || !root_dir_common_filter(Path::new(&entry_name)) {
+            log::info!("  Skipping system file or directory: {entry_name}");
+            continue;
+        }
+
+        // Reject path-traversal entries (zip-slip): `enclosed_name()` returns None
+        // when the entry name would escape the extraction root.
+        let Some(safe_name) = zip_entry.enclosed_name() else {
+            log::warn!("  Skipping zip entry with unsafe path (zip-slip): {entry_name}");
+            continue;
+        };
+
+        let file_path = zip_extract_dir.join(safe_name);
+        if let Some(parent) = file_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut outfile = File::create(&file_path)?;
+        std::io::copy(&mut zip_entry, &mut outfile)?;
+        outfile.flush()?;
+        // Release the write handle before classifying (Windows: a reader can't
+        // re-open the path while a write handle is live).
+        drop(outfile);
+
+        let ext = file_path
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        if ZIP_TABULAR_EXTS.contains(&ext.as_str()) {
+            tabular.push(file_path);
+        } else if crate::config::get_special_format(&file_path) != SpecialFormat::Unknown {
+            other_supported.push(file_path);
+        } else {
+            log::info!("  Skipping unsupported file type: {}", file_path.display());
+        }
+    }
+
+    if tabular.is_empty() && other_supported.is_empty() {
+        return fail_clierror!(
+            "zip archive '{}' contains no supported (CSV/TSV/TAB/SSV or special-format) file \
+             entry.",
+            path.display()
+        );
+    }
+
+    // Tabular entries first, so a single-input consumer's first element matches
+    // the reader-level `select_zip_entry` choice (the first CSV/TSV/TAB/SSV entry).
+    tabular.extend(other_supported);
+    Ok(tabular)
+}
+
 /// Converts files in special formats (Parquet, Avro, Arrow IPC, JSONL, JSON, or compressed CSV)
 /// into a standard delimited text file. The output file extension will be:
 /// - .tsv for tab-delimited
@@ -4352,6 +4400,63 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
+
+    #[cfg(test)]
+    fn write_test_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        use std::io::Write as _;
+        let f = std::fs::File::create(path).unwrap();
+        let mut zw = zip::ZipWriter::new(f);
+        let opts: zip::write::SimpleFileOptions = zip::write::SimpleFileOptions::default();
+        for (name, data) in entries {
+            zw.start_file(*name, opts).unwrap();
+            zw.write_all(data).unwrap();
+        }
+        zw.finish().unwrap();
+    }
+
+    #[test]
+    fn extract_all_zip_entries_orders_tabular_first_and_filters() {
+        let src = tempfile::tempdir().unwrap();
+        let zip_path = src.path().join("data.zip");
+        // Archive order deliberately puts a system file, an unsupported file, and
+        // a non-tabular special-format file BEFORE the tabular entries.
+        write_test_zip(
+            &zip_path,
+            &[
+                ("__MACOSX/junk", b"x"),    // system file -> skipped
+                ("notes.txt", b"hello"),    // unsupported -> skipped
+                ("b.json", b"[{\"a\":1}]"), // special-format supported -> "other"
+                ("a.tsv", b"a\tb\n1\t2\n"), // tabular
+                ("c.csv", b"x,y\n3,4\n"),   // tabular
+            ],
+        );
+
+        let work = tempfile::tempdir().unwrap();
+        let got = extract_all_zip_entries(&zip_path, &work).unwrap();
+        let names: Vec<String> = got
+            .iter()
+            .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        // Tabular entries first (in archive order), then other supported entries;
+        // the system file and the unsupported .txt are dropped.
+        assert_eq!(names, vec!["a.tsv", "c.csv", "b.json"]);
+        // And the first element matches what the reader-level select_zip_entry
+        // would pick (the first CSV/TSV/TAB/SSV entry).
+        assert!(got[0].exists());
+    }
+
+    #[test]
+    fn extract_all_zip_entries_errors_when_no_supported_entry() {
+        let src = tempfile::tempdir().unwrap();
+        let zip_path = src.path().join("nope.zip");
+        write_test_zip(&zip_path, &[("readme.txt", b"hi"), ("notes.md", b"yo")]);
+        let work = tempfile::tempdir().unwrap();
+        let err = extract_all_zip_entries(&zip_path, &work).unwrap_err();
+        assert!(
+            err.to_string().contains("no supported"),
+            "unexpected error: {err}"
+        );
+    }
 
     #[cfg(unix)]
     #[test]

@@ -41,6 +41,11 @@
         "description": "The field delimiter for reading CSV data on the right. Must be a single character. (default: ,)"
       },
       {
+        "flag": "--drop-equal-columns",
+        "type": "flag",
+        "description": "Drop entire columns from the diff result that have no differences anywhere. A column is kept if it is a key column, if it differs in any modified row, or if it has a non-empty value in any added or deleted row. Otherwise it is dropped. Can be combined with --drop-equal-fields."
+      },
+      {
         "flag": "--drop-equal-fields",
         "type": "flag",
         "description": "Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped."
@@ -116,6 +121,14 @@
     {
       "description": "Find the difference but replace equal field values with empty string (key fields still appear)",
       "command": "qsv diff --drop-equal-fields left.csv right.csv"
+    },
+    {
+      "description": "Find the difference but drop entire columns that have no differences anywhere (key columns still appear)",
+      "command": "qsv diff --drop-equal-columns left.csv right.csv"
+    },
+    {
+      "description": "Combine both: keep only differing columns, and within them, blank out equal field values",
+      "command": "qsv diff --drop-equal-columns --drop-equal-fields left.csv right.csv"
     },
     {
       "description": "Find the difference but do not output headers in the result",

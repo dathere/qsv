@@ -40,6 +40,12 @@ qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
 # Find the difference but replace equal field values with empty string (key fields still appear)
 qsv diff --drop-equal-fields left.csv right.csv
 
+# Find the difference but drop entire columns that have no differences anywhere (key columns still appear)
+qsv diff --drop-equal-columns left.csv right.csv
+
+# Combine both: keep only differing columns, and within them, blank out equal field values
+qsv diff --drop-equal-columns --drop-equal-fields left.csv right.csv
+
 # Find the difference but do not output headers in the result
 qsv diff --no-headers-output left.csv right.csv
 
@@ -94,6 +100,11 @@ diff options:
     --drop-equal-fields         Drop values of equal fields in modified rows of the CSV
                                 diff result (and replace them with the empty string).
                                 Key field values will not be dropped.
+    --drop-equal-columns        Drop entire columns from the diff result that have no
+                                differences anywhere. A column is kept if it is a key
+                                column, if it differs in any modified row, or if it has
+                                a non-empty value in any added or deleted row. Otherwise
+                                it is dropped. Can be combined with --drop-equal-fields.
     -j, --jobs <arg>            The number of jobs to run in parallel.
                                 When not set, the number of jobs is set to the number
                                 of CPUs detected.
@@ -125,20 +136,21 @@ use crate::{
 
 #[derive(Deserialize)]
 struct Args {
-    arg_input_left:         Option<String>,
-    arg_input_right:        Option<String>,
-    flag_output:            Option<String>,
-    flag_jobs:              Option<usize>,
-    flag_no_headers_left:   bool,
-    flag_no_headers_right:  bool,
-    flag_no_headers_output: bool,
-    flag_delimiter_left:    Option<Delimiter>,
-    flag_delimiter_right:   Option<Delimiter>,
-    flag_delimiter_output:  Option<Delimiter>,
-    flag_key:               Option<String>,
-    flag_sort_columns:      Option<String>,
-    flag_drop_equal_fields: bool,
-    flag_delimiter:         Option<Delimiter>,
+    arg_input_left:          Option<String>,
+    arg_input_right:         Option<String>,
+    flag_output:             Option<String>,
+    flag_jobs:               Option<usize>,
+    flag_no_headers_left:    bool,
+    flag_no_headers_right:   bool,
+    flag_no_headers_output:  bool,
+    flag_delimiter_left:     Option<Delimiter>,
+    flag_delimiter_right:    Option<Delimiter>,
+    flag_delimiter_output:   Option<Delimiter>,
+    flag_key:                Option<String>,
+    flag_sort_columns:       Option<String>,
+    flag_drop_equal_fields:  bool,
+    flag_drop_equal_columns: bool,
+    flag_delimiter:          Option<Delimiter>,
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -211,11 +223,52 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         },
     }
 
+    // When --drop-equal-columns is set, compute which columns to keep with a single
+    // borrow-pass over the (already fully buffered) diff records. A column is kept if
+    // it is a key column, if it differs in any modified row, or if it has a non-empty
+    // value in any added or deleted row.
+    let keep_cols: Option<Vec<usize>> = if args.flag_drop_equal_columns {
+        let num_cols = diff_byte_records.num_columns().unwrap_or(0);
+        let mut keep = vec![false; num_cols];
+        for &k in &primary_key_cols {
+            if k < num_cols {
+                keep[k] = true;
+            }
+        }
+        for dbr in diff_byte_records.iter() {
+            match dbr {
+                DiffByteRecord::Modify { field_indices, .. } => {
+                    for &fi in field_indices {
+                        if fi < num_cols {
+                            keep[fi] = true;
+                        }
+                    }
+                },
+                DiffByteRecord::Add(rec) | DiffByteRecord::Delete(rec) => {
+                    for (i, field) in rec.byte_record().iter().enumerate() {
+                        if i < num_cols && !field.is_empty() {
+                            keep[i] = true;
+                        }
+                    }
+                },
+            }
+        }
+        Some(
+            keep.iter()
+                .enumerate()
+                .filter_map(|(i, &k)| k.then_some(i))
+                .collect(),
+        )
+    } else {
+        None
+    };
+
     let mut csv_diff_writer = CsvDiffWriter::new(
         wtr,
         args.flag_no_headers_output,
         args.flag_drop_equal_fields,
         primary_key_cols,
+        keep_cols,
     );
     Ok(csv_diff_writer.write_diff_byte_records(diff_byte_records)?)
 }
@@ -289,6 +342,9 @@ struct CsvDiffWriter<W: Write> {
     no_headers:        bool,
     drop_equal_fields: bool,
     key_fields:        Vec<usize>,
+    // When Some, only these (sorted) column indices are written to the output.
+    // None means all columns are written (the default).
+    keep_cols:         Option<Vec<usize>>,
 }
 
 impl<W: Write> CsvDiffWriter<W> {
@@ -297,12 +353,46 @@ impl<W: Write> CsvDiffWriter<W> {
         no_headers: bool,
         drop_equal_fields: bool,
         key_fields: impl IntoIterator<Item = usize>,
+        keep_cols: Option<Vec<usize>>,
     ) -> Self {
         Self {
             csv_writer,
             no_headers,
             drop_equal_fields,
             key_fields: key_fields.into_iter().collect(),
+            keep_cols,
+        }
+    }
+
+    /// Project a full-width header `ByteRecord` down to `keep_cols` (or clone it
+    /// unchanged when no columns are being dropped), then write it with the
+    /// `diffresult` prefix column.
+    fn write_projected_header(&mut self, header: &ByteRecord) -> csv::Result<()> {
+        match &self.keep_cols {
+            Some(keep) => {
+                let mut projected = ByteRecord::new();
+                for &c in keep {
+                    projected.push_field(&header[c]);
+                }
+                projected.write_diffresult_header(&mut self.csv_writer)
+            },
+            None => header.write_diffresult_header(&mut self.csv_writer),
+        }
+    }
+
+    /// Write a full-width row (prefix sign at index 0, then one entry per column),
+    /// projecting it down to `keep_cols` when columns are being dropped.
+    fn write_projected_record(&mut self, full_row: &[&[u8]]) -> csv::Result<()> {
+        match &self.keep_cols {
+            Some(keep) => {
+                let mut projected: Vec<&[u8]> = Vec::with_capacity(keep.len() + 1);
+                projected.push(full_row[0]);
+                for &c in keep {
+                    projected.push(full_row[c + 1]);
+                }
+                self.csv_writer.write_record(projected)
+            },
+            None => self.csv_writer.write_record(full_row),
         }
     }
 
@@ -317,12 +407,14 @@ impl<W: Write> CsvDiffWriter<W> {
                     "csv_diff invariant: left/right headers must match"
                 );
                 if !self.no_headers {
-                    lbh.write_diffresult_header(&mut self.csv_writer)?;
+                    let lbh = lbh.clone();
+                    self.write_projected_header(&lbh)?;
                 }
             },
             (Some(bh), None) | (None, Some(bh)) => {
                 if !self.no_headers {
-                    bh.write_diffresult_header(&mut self.csv_writer)?;
+                    let bh = bh.clone();
+                    self.write_projected_header(&bh)?;
                 }
             },
             (None, None) => {
@@ -330,8 +422,8 @@ impl<W: Write> CsvDiffWriter<W> {
                 {
                     let headers_generic = rename_headers_all_generic(num_cols);
                     let mut new_rdr = csv::Reader::from_reader(headers_generic.as_bytes());
-                    let new_headers = new_rdr.byte_headers()?;
-                    new_headers.write_diffresult_header(&mut self.csv_writer)?;
+                    let new_headers = new_rdr.byte_headers()?.clone();
+                    self.write_projected_header(&new_headers)?;
                 }
             },
         }
@@ -360,7 +452,7 @@ impl<W: Write> CsvDiffWriter<W> {
             DiffByteRecord::Add(add) => {
                 let mut vec = vec![add_sign];
                 vec.extend(add.byte_record());
-                self.csv_writer.write_record(vec)
+                self.write_projected_record(&vec)
             },
             DiffByteRecord::Modify {
                 delete,
@@ -379,7 +471,7 @@ impl<W: Write> CsvDiffWriter<W> {
                     tmp
                 };
 
-                self.csv_writer.write_record(vec_del)?;
+                self.write_projected_record(&vec_del)?;
 
                 let vec_add = if self.drop_equal_fields {
                     self.fill_modified_and_drop_equal_fields(
@@ -393,12 +485,12 @@ impl<W: Write> CsvDiffWriter<W> {
                     tmp
                 };
 
-                self.csv_writer.write_record(vec_add)
+                self.write_projected_record(&vec_add)
             },
             DiffByteRecord::Delete(del) => {
                 let mut vec = vec![remove_sign];
                 vec.extend(del.byte_record());
-                self.csv_writer.write_record(vec)
+                self.write_projected_record(&vec)
             },
         }
     }

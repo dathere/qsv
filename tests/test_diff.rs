@@ -802,6 +802,143 @@ diffresult,h1,h2,h3,h4
     assert_eq!(got.as_str(), expected);
 }
 
+#[test]
+fn diff_drop_equal_columns_drops_unchanged_columns() {
+    let wrk = Workdir::new("diff_drop_equal_columns_drops_unchanged_columns");
+
+    let left = vec![
+        svec!["h1", "h2", "h3"],
+        svec!["1", "a", "x"],
+        svec!["2", "b", "y"],
+    ];
+    wrk.create("left.csv", left);
+
+    let right = vec![
+        svec!["h1", "h2", "h3"],
+        svec!["1", "a", "X"],
+        svec!["2", "b", "y"],
+    ];
+    wrk.create("right.csv", right);
+
+    let mut cmd = wrk.command("diff");
+    cmd.args(["left.csv", "right.csv", "--drop-equal-columns"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // h2 is unchanged everywhere, so it is dropped. h1 (key) and h3 (modified) remain.
+    let expected = "\
+diffresult,h1,h3
+-,1,x
++,1,X";
+    assert_eq!(got.as_str(), expected);
+}
+
+#[test]
+fn diff_drop_equal_columns_combined_with_drop_equal_fields() {
+    let wrk = Workdir::new("diff_drop_equal_columns_combined_with_drop_equal_fields");
+
+    let left = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["1", "a", "x", "p"],
+        svec!["2", "b", "y", "q"],
+    ];
+    wrk.create("left.csv", left);
+
+    let right = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["1", "a", "X", "p"],
+        svec!["2", "B", "y", "q"],
+    ];
+    wrk.create("right.csv", right);
+
+    let mut cmd = wrk.command("diff");
+    cmd.args([
+        "left.csv",
+        "right.csv",
+        "--drop-equal-columns",
+        "--drop-equal-fields",
+    ]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // h4 is unchanged everywhere -> dropped. h2 differs in row 2, h3 differs in row 1,
+    // so both columns are kept; within them, equal fields are blanked per modified row.
+    let expected = "\
+diffresult,h1,h2,h3
+-,1,,x
++,1,,X
+-,2,b,
++,2,B,";
+    assert_eq!(got.as_str(), expected);
+}
+
+#[test]
+fn diff_drop_equal_columns_keeps_columns_with_added_or_deleted_data() {
+    let wrk = Workdir::new("diff_drop_equal_columns_keeps_columns_with_added_or_deleted_data");
+
+    let left = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["1", "const", "x", ""],
+        svec!["5", "delconst", "dx", ""],
+    ];
+    wrk.create("left.csv", left);
+
+    let right = vec![
+        svec!["h1", "h2", "h3", "h4"],
+        svec!["1", "const", "X", ""],
+        svec!["2", "addconst", "z", ""],
+    ];
+    wrk.create("right.csv", right);
+
+    let mut cmd = wrk.command("diff");
+    cmd.args(["left.csv", "right.csv", "--drop-equal-columns"]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // h2 is equal in the modified row but has data in the added/deleted rows, so it is
+    // kept. h4 is empty everywhere, so it is dropped.
+    let expected = "\
+diffresult,h1,h2,h3
+-,1,const,x
++,1,const,X
+-,5,delconst,dx
++,2,addconst,z";
+    assert_eq!(got.as_str(), expected);
+}
+
+#[test]
+fn diff_drop_equal_columns_with_no_headers_projects_generic_headers() {
+    let wrk = Workdir::new("diff_drop_equal_columns_with_no_headers_projects_generic_headers");
+
+    let left = vec![svec!["1", "a", "x"], svec!["2", "b", "y"]];
+    wrk.create("left.csv", left);
+
+    let right = vec![svec!["1", "a", "X"], svec!["2", "b", "y"]];
+    wrk.create("right.csv", right);
+
+    let mut cmd = wrk.command("diff");
+    cmd.args([
+        "--no-headers-left",
+        "--no-headers-right",
+        "left.csv",
+        "right.csv",
+        "--drop-equal-columns",
+    ]);
+
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.stdout(&mut cmd);
+    // generic headers are generated, then projected to the kept columns.
+    let expected = "\
+diffresult,_col_1,_col_3
+-,1,x
++,1,X";
+    assert_eq!(got.as_str(), expected);
+}
+
 fn create_file_with_delim(wrk: &Workdir, file_path_new: &str, file_path: &str, delimiter: u8) {
     let mut select_cmd = wrk.command("select");
     select_cmd.args(["1-", file_path]);

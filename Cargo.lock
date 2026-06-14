@@ -6209,6 +6209,7 @@ dependencies = [
  "geosuggest-core",
  "geosuggest-utils",
  "geozero",
+ "glob",
  "governor",
  "grex",
  "gzp",

@@ -198,6 +198,7 @@ fake = { version = "5", features = [
 fast-float2 = "0.2"
 flate2 = { version = "1", optional = true }
 foldhash = "0.2"
+glob = { version = "0.3", optional = true }
 file-format = { version = "0.29", features = ["reader"] }
 filetime = "0.2"
 flexi_logger = { version = "0.31", features = [
@@ -570,7 +571,7 @@ foreach = []
 # Last-Modified conditional revalidation with streaming, ranged (parallel)
 # fetches for large objects. Backs the `dc:` input prefix usable by any qsv
 # command. See `qsv get --help`.
-get = ["zstd", "flate2"]
+get = ["zstd", "flate2", "glob"]
 # get_cloud: adds cloud object-storage sources (s3://, gs://, az://) to `get`,
 # via the object_store crate. Opt-in so a bare `-F get` build stays lean;
 # included in distrib_features/qsvmcp/datapusher_plus (where polars already

@@ -24,8 +24,12 @@ the QSV_GET_PART_SIZE and QSV_GET_CONCURRENCY env vars).
 Once cached, a resource can be read by ANY qsv command using the `dc:` prefix,
 e.g. `qsv stats dc:data.csv`. Stale `dc:` entries are auto-refreshed.
 
+A glob (e.g. data/*.csv) or directory source fetches every matching tabular file
+(.csv/.tsv/.tab/.ssv) — supported for local paths and (with the get_cloud feature)
+cloud buckets/prefixes. --name is ignored when a source expands to multiple files.
+
 Supported sources:  
-local file path
+local file path, directory, or glob (e.g. /data/*.csv)
 http:// or https:// URL
 dathere://<path>          datHere qsv-lookup-tables repo
 ckan://<id>               a CKAN resource by id
@@ -36,6 +40,12 @@ az://<container>/<key>    Azure Blob Storage           (get_cloud feature)
 Cloud credentials are read from the standard AWS_*/AZURE_*/GOOGLE_* environment
 variables (and IAM roles); use --cloud-opt for one-off overrides such as region
 or endpoint. (sftp:// is planned for a later release.)
+
+`--sample` PREVIEW vs the `sample` command: `get --sample N` is a cheap PEEK — it
+streams just the first N rows from the head (stopping early, so a huge remote file
+is barely touched) and caches nothing. It is NOT a statistical sample. For a random,
+representative subset use `qsv sample` instead (which downloads the whole remote
+file first, except for its streaming --bernoulli method).
 
 
 <a name="examples"></a>
@@ -51,9 +61,31 @@ qsv get https://example.com/data.csv --name data.csv
 qsv stats dc:data.csv
 ```
 
+Peek at a remote CSV WITHOUT caching it (preview mode, streams to stdout):  
+```console
+qsv get https://example.com/big.csv --sample 10
+```
+
+```console
+qsv get https://example.com/big.csv --offset 500 --sample 10
+```
+
+```console
+qsv get https://example.com/big.csv --sample 20 --random
+```
+
 Seed a CKAN reference table:  
 ```console
 qsv get "ckan://covid-vaccinations?" --name vax.csv
+```
+
+Fetch every matching file via a glob or directory (each is cached separately):  
+```console
+qsv get '/data/*.csv'
+```
+
+```console
+qsv get /data/
 ```
 
 Fetch from cloud object storage (requires the get_cloud feature):  
@@ -63,6 +95,10 @@ qsv get s3://my-bucket/data.csv --name data.csv
 
 ```console
 qsv get gs://my-bucket/data.csv --cloud-opt skip_signature=true
+```
+
+```console
+qsv get 's3://my-bucket/exports/*.csv'
 ```
 
 Show what's in the cache, then prune old entries:  
@@ -125,6 +161,9 @@ qsv get --help
 | &nbsp;`‑‑refresh`&nbsp; | string | Staleness policy for `dc:` use: on-stale, always or never. Also the value applied by cache-set-policy. | `on-stale` |
 | &nbsp;`‑‑compress`&nbsp; | string | Transparent blob compression: zstd or none. | `zstd` |
 | &nbsp;`‑‑force`&nbsp; | flag | Re-fetch even if a fresh cached copy exists. |  |
+| &nbsp;`‑‑sample`&nbsp; | integer | PREVIEW: stream the first N data records of <source> to stdout (or the --output file) WITHOUT caching. No `dc:` entry is created. The sniffed header row is re-attached. Single <source> only. |  |
+| &nbsp;`‑‑offset`&nbsp; | integer | PREVIEW: skip ~<mb> megabytes (via an HTTP Range request) before sampling, realigning to the next record boundary. Implies --sample. Requires a Range-capable source. |  |
+| &nbsp;`‑‑random`&nbsp; | flag | PREVIEW: random (reservoir) sampling. Streams the full source and parses it from the start, so quoted multi-line records stay intact. Slower than --sample (which only reads the head); use it when you need a uniform sample. |  |
 | &nbsp;`‑‑cloud‑opt`&nbsp; | string | Extra cloud object-store config as a `key=value` pair (repeatable), e.g. region=us-east-1 or skip_signature=true. Overrides the AWS_*/AZURE_*/GOOGLE_* environment. (get_cloud only) |  |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | CKAN Action API base URL. Overrides the QSV_CKAN_API env var. | `https://data.dathere.com/api/3/action` |
 | &nbsp;`‑‑ckan‑token`&nbsp; | string | CKAN API token. Overrides the QSV_CKAN_TOKEN env var. |  |

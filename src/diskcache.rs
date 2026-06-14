@@ -528,6 +528,36 @@ mod rich {
         /// extension (and thus delimiter). None for plain or unknown sources.
         #[serde(default)]
         pub inner_ext:          Option<String>,
+        /// Best-effort CSV dialect/schema sniffed from the cached blob during
+        /// indexing (delimiter, header, field names & types). None for
+        /// non-tabular blobs, when sniffing failed, or for entries cached before
+        /// this field existed (backfilled on next `ensure_indexed`).
+        #[serde(default)]
+        pub sniffed:            Option<SniffedDialect>,
+    }
+
+    /// CSV dialect + schema sniffed from a cached blob, surfaced by
+    /// `cache-list`/`cache-info`. Captured once during `ensure_indexed`.
+    #[derive(Serialize, Deserialize, Clone)]
+    pub struct SniffedDialect {
+        /// Field delimiter (`,` for CSV, `\t` for TSV, `;` for SSV, …).
+        pub delimiter:     char,
+        /// Whether the first row was detected as a header.
+        pub has_header:    bool,
+        /// Number of preamble rows before the tabular data begins.
+        pub preamble_rows: usize,
+        /// Quote character, if any was detected.
+        pub quote:         Option<char>,
+        /// Whether records have a varying number of fields.
+        pub flexible:      bool,
+        /// Whether the sampled content is valid UTF-8.
+        pub is_utf8:       bool,
+        /// Number of fields (columns) detected.
+        pub num_fields:    usize,
+        /// Detected header/field names.
+        pub fields:        Vec<String>,
+        /// Detected per-field types (as strings).
+        pub types:         Vec<String>,
     }
 
     /// The on-disk record: per-entry metadata. The data blob is content-addressed
@@ -1226,13 +1256,57 @@ mod rich {
         }
     }
 
+    /// Max bytes fed to the CSV sniffer. Sniffing the head is enough to detect
+    /// the dialect/schema; reading a whole multi-GB blob would be wasteful.
+    const SNIFF_SAMPLE_BYTES: usize = 1 << 20; // 1 MiB
+
+    /// Best-effort sniff of a CSV blob's dialect + schema from its head. Returns
+    /// None for non-tabular content or on any sniff error — never fails ingest.
+    fn sniff_dialect(body: &[u8]) -> Option<SniffedDialect> {
+        use csv_nose::{SampleSize, Sniffer, metadata::Quote};
+
+        let head = &body[..body.len().min(SNIFF_SAMPLE_BYTES)];
+        let metadata = Sniffer::new()
+            .sample_size(SampleSize::All)
+            .sniff_reader(std::io::Cursor::new(head))
+            .ok()?;
+        let fields: Vec<String> = metadata.fields.iter().map(ToString::to_string).collect();
+        Some(SniffedDialect {
+            delimiter: metadata.dialect.delimiter as char,
+            has_header: metadata.dialect.header.has_header_row,
+            preamble_rows: metadata.dialect.header.num_preamble_rows,
+            quote: match metadata.dialect.quote {
+                Quote::Some(chr) => Some(char::from(chr)),
+                Quote::None => None,
+            },
+            flexible: metadata.dialect.flexible,
+            is_utf8: metadata.dialect.is_utf8,
+            num_fields: fields.len(),
+            fields,
+            types: metadata.types.iter().map(ToString::to_string).collect(),
+        })
+    }
+
     /// Build (and cache) the qsv index for an entry's blob, recording the exact
     /// record count. No-op if already indexed.
     fn ensure_indexed(root: &Path, entry: &mut StoredEntry) -> CliResult<()> {
-        if entry.meta.indexed {
+        // Already fully processed (indexed AND schema sniffed) → nothing to do.
+        if entry.meta.indexed && entry.meta.sniffed.is_some() {
             return Ok(());
         }
         let body = read_blob(root, &entry.meta.blake3, entry.meta.compression)?;
+
+        // Sniff the dialect/schema once from the head (best-effort).
+        if entry.meta.sniffed.is_none() {
+            entry.meta.sniffed = sniff_dialect(&body);
+        }
+
+        // Entry is already indexed but predates the `sniffed` field: persist the
+        // backfilled schema and return without rebuilding the index.
+        if entry.meta.indexed {
+            write_entry(root, entry)?;
+            return Ok(());
+        }
 
         let tmp_dir = std::env::temp_dir().join("qsv-getidx");
         fs::create_dir_all(&tmp_dir)?;
@@ -1329,6 +1403,7 @@ mod rich {
             cloud_identity: Vec::new(),
             ckan_api_url: None,
             inner_ext,
+            sniffed: None,
         };
         let mut entry = StoredEntry { meta };
         write_entry(root, &entry)?;
@@ -1645,6 +1720,7 @@ mod rich {
                         cloud_identity: identity.clone(),
                         ckan_api_url: None,
                         inner_ext,
+                        sniffed: None,
                     },
                 };
                 write_entry(root, &entry)?;
@@ -2011,6 +2087,7 @@ mod rich {
                             None
                         },
                         inner_ext,
+                        sniffed: None,
                     },
                 };
                 write_entry(root, &entry)?;
@@ -2108,6 +2185,631 @@ mod rich {
             ckan_hash,
             resolved.is_ckan,
         )
+    }
+
+    // ---- cache-bypassing CSV preview (`--sample`/`--offset`/`--random`) ----
+
+    /// Bytes sniffed (and used to extract the header) from the start of a source.
+    const PREVIEW_HEAD_BYTES: u64 = 256 * 1024;
+    /// Cap on bytes pulled while accumulating windows for a cloud `--offset`/
+    /// first-N preview, so a tiny `--sample` never drags the whole object.
+    #[cfg(feature = "get_cloud")]
+    const PREVIEW_MAX_FETCH: u64 = 256 * 1024 * 1024;
+
+    /// Options for a cache-bypassing CSV preview. Unlike `GetOptions`, this never
+    /// touches the cache: rows are streamed straight to `--output`/stdout.
+    pub struct PreviewOptions {
+        pub source:       String,
+        pub sample:       u64,
+        pub offset_mb:    Option<u64>,
+        pub random:       bool,
+        pub ckan_api_url: Option<String>,
+        pub ckan_token:   Option<String>,
+        pub timeout_secs: u16,
+        #[cfg_attr(not(feature = "get_cloud"), allow(dead_code))]
+        pub cloud_opts:   Vec<String>,
+    }
+
+    /// Sniff the head buffer for its delimiter and extract the header record,
+    /// returning `(delimiter, header_record)`. Defaults to comma when sniffing
+    /// fails so a preview still emits something usable for an unrecognized source.
+    fn sniff_preview_head(head: &[u8]) -> (u8, Option<csv::ByteRecord>) {
+        // Use the sniffer only for the delimiter. Header detection on a small,
+        // all-string sample is unreliable (csv-nose often reports "no header"
+        // for text-only columns), so — matching qsv's default — a preview always
+        // treats the first row as the header and re-attaches it.
+        let delimiter = sniff_dialect(head).map_or(b',', |s| s.delimiter as u8);
+        let header = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
+            .flexible(true)
+            .has_headers(true)
+            .from_reader(head)
+            .byte_headers()
+            .ok()
+            .cloned();
+        (delimiter, header)
+    }
+
+    /// Open the preview output sink: a file, or stdout for `-`/None.
+    fn preview_writer(output: Option<&str>) -> CliResult<Box<dyn Write>> {
+        let w: Box<dyn Write> = match output {
+            Some(p) if p != "-" => Box::new(BufWriter::new(fs::File::create(p)?)),
+            _ => Box::new(BufWriter::new(std::io::stdout())),
+        };
+        Ok(w)
+    }
+
+    /// Emit a header (explicit, or read from the stream) plus the first `take`
+    /// data records parsed from `data`.
+    fn emit_preview<R: Read>(
+        data: R,
+        delimiter: u8,
+        data_has_header: bool,
+        explicit_header: Option<&csv::ByteRecord>,
+        take: u64,
+        output: Option<&str>,
+    ) -> CliResult<u64> {
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
+            .flexible(true)
+            .has_headers(data_has_header)
+            .from_reader(data);
+        let mut wtr = csv::WriterBuilder::new()
+            .delimiter(delimiter)
+            .from_writer(preview_writer(output)?);
+        if let Some(h) = explicit_header {
+            wtr.write_byte_record(h)?;
+        } else if data_has_header {
+            let h = rdr.byte_headers()?.clone();
+            wtr.write_byte_record(&h)?;
+        }
+        let mut n = 0u64;
+        let mut rec = csv::ByteRecord::new();
+        while n < take && rdr.read_byte_record(&mut rec)? {
+            wtr.write_byte_record(&rec)?;
+            n += 1;
+        }
+        wtr.flush()?;
+        Ok(n)
+    }
+
+    /// Reservoir-sample (Algorithm R) `take` records from a single streaming pass.
+    /// Used for `--random` when the source does not support ranged reads.
+    fn emit_preview_reservoir<R: Read>(
+        data: R,
+        delimiter: u8,
+        data_has_header: bool,
+        take: u64,
+        output: Option<&str>,
+    ) -> CliResult<u64> {
+        use rand::RngExt;
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
+            .flexible(true)
+            .has_headers(data_has_header)
+            .from_reader(data);
+        let header = if data_has_header {
+            Some(rdr.byte_headers()?.clone())
+        } else {
+            None
+        };
+        let mut rng = rand::rng();
+        let mut reservoir: Vec<csv::ByteRecord> = Vec::new();
+        let mut seen = 0u64;
+        let mut rec = csv::ByteRecord::new();
+        while rdr.read_byte_record(&mut rec)? {
+            if (reservoir.len() as u64) < take {
+                reservoir.push(rec.clone());
+            } else if take > 0 {
+                let j = rng.random_range(0..=seen);
+                if j < take {
+                    reservoir[j as usize] = rec.clone();
+                }
+            }
+            seen += 1;
+        }
+        let mut wtr = csv::WriterBuilder::new()
+            .delimiter(delimiter)
+            .from_writer(preview_writer(output)?);
+        if let Some(h) = &header {
+            wtr.write_byte_record(h)?;
+        }
+        for r in &reservoir {
+            wtr.write_byte_record(r)?;
+        }
+        wtr.flush()?;
+        Ok(reservoir.len() as u64)
+    }
+
+    /// Skip the (likely partial) first line of a ranged read so parsing starts on
+    /// a clean record boundary.
+    fn skip_partial_line<R: std::io::BufRead>(r: &mut R) -> CliResult<()> {
+        let mut discard = Vec::new();
+        r.read_until(b'\n', &mut discard)?;
+        Ok(())
+    }
+
+    /// Dispatch a preview to the right backend (mirrors `get_resource`).
+    pub fn preview_resource(opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
+        let resolved = resolve_uri_prefix(&opts.source, opts.ckan_api_url.as_deref());
+        let is_http = resolved.url.to_ascii_lowercase().starts_with("http");
+
+        if !is_http {
+            if is_cloud_scheme(&opts.source) {
+                #[cfg(feature = "get_cloud")]
+                {
+                    return preview_cloud(&opts.source, opts, output);
+                }
+                #[cfg(not(feature = "get_cloud"))]
+                {
+                    return Err(CliError::Other(format!(
+                        "get: cloud source '{}' requires cloud support. Rebuild qsv with \
+                         `--features get_cloud`.",
+                        opts.source
+                    )));
+                }
+            }
+            let local_path = Path::new(&opts.source);
+            if local_path.exists() {
+                return preview_local(local_path, opts, output);
+            }
+            return Err(CliError::Other(format!(
+                "get: unsupported source '{}' for preview. Supported: local file, http(s)://, \
+                 dathere://, ckan://, and (with get_cloud) s3://, gs://, az://.",
+                opts.source
+            )));
+        }
+
+        let client = util::create_reqwest_blocking_client(
+            None,
+            opts.timeout_secs,
+            Some(resolved.url.clone()),
+        )?;
+        let (final_url, auth) = if resolved.is_ckan {
+            let ckan = resolve_ckan_resource(
+                &client,
+                &resolved.url,
+                resolved.ckan_resource_search,
+                opts.ckan_api_url.as_deref(),
+                opts.ckan_token.as_deref(),
+            )
+            .map_err(|e| CliError::Other(format!("get: CKAN resolution failed: {e}")))?;
+            let auth = if ckan.send_auth {
+                opts.ckan_token.clone()
+            } else {
+                None
+            };
+            (ckan.data_url, auth)
+        } else {
+            (resolved.url.clone(), None)
+        };
+        preview_http(&client, &final_url, auth.as_deref(), opts, output)
+    }
+
+    fn preview_local(path: &Path, opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
+        use std::io::{Read, Seek, SeekFrom};
+
+        let mut head = Vec::new();
+        fs::File::open(path)?
+            .take(PREVIEW_HEAD_BYTES)
+            .read_to_end(&mut head)?;
+        let (delim, header) = sniff_preview_head(&head);
+
+        if opts.random {
+            let f = std::io::BufReader::new(fs::File::open(path)?);
+            emit_preview_reservoir(f, delim, true, opts.sample, output)?;
+            return Ok(());
+        }
+        if let Some(mb) = opts.offset_mb {
+            let mut f = fs::File::open(path)?;
+            f.seek(SeekFrom::Start(mb.saturating_mul(1 << 20)))?;
+            let mut br = std::io::BufReader::new(f);
+            skip_partial_line(&mut br)?;
+            emit_preview(br, delim, false, header.as_ref(), opts.sample, output)?;
+            return Ok(());
+        }
+        let f = std::io::BufReader::new(fs::File::open(path)?);
+        emit_preview(f, delim, true, None, opts.sample, output)?;
+        Ok(())
+    }
+
+    fn preview_http(
+        client: &reqwest::blocking::Client,
+        url: &str,
+        auth: Option<&str>,
+        opts: &PreviewOptions,
+        output: Option<&str>,
+    ) -> CliResult<()> {
+        use reqwest::header::{AUTHORIZATION, RANGE};
+
+        let http_get = |range: Option<String>| -> CliResult<reqwest::blocking::Response> {
+            let mut req = client.get(url);
+            if let Some(r) = range {
+                req = req.header(RANGE, r);
+            }
+            if let Some(t) = auth {
+                req = req.header(AUTHORIZATION, t);
+            }
+            Ok(req.send()?.error_for_status()?)
+        };
+
+        // Head probe: doubles as the dialect sniff and the range-support detector.
+        let probe = http_get(Some(format!("bytes=0-{}", PREVIEW_HEAD_BYTES - 1)))?;
+        let supports_range = probe.status() == reqwest::StatusCode::PARTIAL_CONTENT;
+        let mut head = Vec::new();
+        probe.take(PREVIEW_HEAD_BYTES).read_to_end(&mut head)?;
+        let (delim, header) = sniff_preview_head(&head);
+
+        if opts.random {
+            // Random sampling streams the whole body through a reservoir sampler
+            // (parsing from the start, so quoted multi-line records are never
+            // split). Ranged random-offset reads are deliberately NOT used: a
+            // random byte offset can land inside a quoted field, where record
+            // boundaries are indeterminable without parsing from the start.
+            let resp = http_get(None)?;
+            emit_preview_reservoir(
+                std::io::BufReader::new(resp),
+                delim,
+                true,
+                opts.sample,
+                output,
+            )?;
+            return Ok(());
+        }
+
+        if let Some(mb) = opts.offset_mb {
+            if !supports_range {
+                return Err(CliError::Other(
+                    "get: source does not support HTTP Range requests; --offset is unavailable. \
+                     Use --sample without --offset."
+                        .to_string(),
+                ));
+            }
+            let off = mb.saturating_mul(1 << 20);
+            let resp = http_get(Some(format!("bytes={off}-")))?;
+            let mut br = std::io::BufReader::new(resp);
+            skip_partial_line(&mut br)?;
+            emit_preview(br, delim, false, header.as_ref(), opts.sample, output)?;
+            return Ok(());
+        }
+
+        let resp = http_get(None)?;
+        emit_preview(
+            std::io::BufReader::new(resp),
+            delim,
+            true,
+            None,
+            opts.sample,
+            output,
+        )?;
+        Ok(())
+    }
+
+    /// A synchronous `Read` over an `object_store` source that pulls fixed-size
+    /// byte-range windows on demand (bounded memory) and reads to the true end of
+    /// the object — so a CSV parser over it sees only complete records, never one
+    /// truncated by a window boundary. Backs the cloud `--random` reservoir path.
+    #[cfg(feature = "get_cloud")]
+    struct CloudRangeReader<'a> {
+        fetch: &'a dyn Fn(u64, u64) -> CliResult<Vec<u8>>,
+        pos:   u64,
+        total: u64,
+        buf:   Vec<u8>,
+        off:   usize,
+    }
+
+    #[cfg(feature = "get_cloud")]
+    impl std::io::Read for CloudRangeReader<'_> {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            if self.off >= self.buf.len() {
+                if self.pos >= self.total {
+                    return Ok(0);
+                }
+                let end = (self.pos + DEFAULT_PART_SIZE).min(self.total);
+                let chunk = (self.fetch)(self.pos, end)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                self.pos = end;
+                if chunk.is_empty() {
+                    // Defensive: stop rather than loop if the store yields nothing.
+                    self.pos = self.total;
+                    return Ok(0);
+                }
+                self.buf = chunk;
+                self.off = 0;
+            }
+            let n = out.len().min(self.buf.len() - self.off);
+            out[..n].copy_from_slice(&self.buf[self.off..self.off + n]);
+            self.off += n;
+            Ok(n)
+        }
+    }
+
+    #[cfg(feature = "get_cloud")]
+    fn preview_cloud(source: &str, opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
+        use object_store::{GetOptions as OsGetOptions, GetRange, ObjectStore, parse_url_opts};
+        use url::Url;
+
+        let url = Url::parse(source)
+            .map_err(|e| CliError::Other(format!("get: invalid cloud URL '{source}': {e}")))?;
+        let all_opts = cloud_opts_for(&opts.cloud_opts);
+        let (store, path) = parse_url_opts(&url, all_opts).map_err(|e| {
+            CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
+        })?;
+        let rt = tokio::runtime::Runtime::new()?;
+
+        let fetch = |start: u64, end: u64| -> CliResult<Vec<u8>> {
+            rt.block_on(async {
+                let r = store
+                    .get_opts(
+                        &path,
+                        OsGetOptions {
+                            range: Some(GetRange::Bounded(start..end)),
+                            ..OsGetOptions::default()
+                        },
+                    )
+                    .await
+                    .map_err(|e| CliError::Other(format!("get: fetching {source} failed: {e}")))?;
+                let b = r
+                    .bytes()
+                    .await
+                    .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
+                Ok::<_, CliError>(b.to_vec())
+            })
+        };
+
+        // Head probe also yields the total object size.
+        let (head, total) = rt.block_on(async {
+            let r = store
+                .get_opts(
+                    &path,
+                    OsGetOptions {
+                        range: Some(GetRange::Bounded(0..PREVIEW_HEAD_BYTES)),
+                        ..OsGetOptions::default()
+                    },
+                )
+                .await
+                .map_err(|e| CliError::Other(format!("get: fetching {source} failed: {e}")))?;
+            let total = r.meta.size;
+            let b = r
+                .bytes()
+                .await
+                .map_err(|e| CliError::Other(format!("get: reading {source} failed: {e}")))?;
+            Ok::<_, CliError>((b.to_vec(), total))
+        })?;
+        let (delim, header) = sniff_preview_head(&head);
+
+        if opts.random {
+            // Stream the whole object through a reservoir sampler (parsing from
+            // the start, so quoted multi-line records are never split). Memory is
+            // bounded to one byte-range window at a time via CloudRangeReader,
+            // which reads to the true object end so no record is truncated.
+            // Ranged random-offset reads are deliberately NOT used: a random byte
+            // offset can land inside a quoted field, where record boundaries are
+            // indeterminable without parsing from the start.
+            let reader = CloudRangeReader {
+                fetch: &fetch,
+                pos: 0,
+                total,
+                buf: Vec::new(),
+                off: 0,
+            };
+            emit_preview_reservoir(reader, delim, true, opts.sample, output)?;
+            return Ok(());
+        }
+
+        // first-N / offset: accumulate bounded windows until enough lines or EOF.
+        let start = opts.offset_mb.map_or(0, |mb| mb.saturating_mul(1 << 20));
+        let needed_lines = opts.sample + 2;
+        let mut buf = Vec::new();
+        let mut pos = start;
+        while pos < total && (buf.len() as u64) < PREVIEW_MAX_FETCH {
+            let end = (pos + DEFAULT_PART_SIZE).min(total);
+            let chunk = fetch(pos, end)?;
+            if chunk.is_empty() {
+                break;
+            }
+            pos = end;
+            buf.extend_from_slice(&chunk);
+            if (buf.iter().filter(|&&b| b == b'\n').count() as u64) >= needed_lines {
+                break;
+            }
+        }
+
+        if start > 0 {
+            let data = match buf.iter().position(|&b| b == b'\n') {
+                Some(nl) => buf[nl + 1..].to_vec(),
+                None => Vec::new(),
+            };
+            emit_preview(
+                std::io::Cursor::new(data),
+                delim,
+                false,
+                header.as_ref(),
+                opts.sample,
+                output,
+            )?;
+        } else {
+            emit_preview(
+                std::io::Cursor::new(buf),
+                delim,
+                true,
+                None,
+                opts.sample,
+                output,
+            )?;
+        }
+        Ok(())
+    }
+
+    // ---- glob / directory expansion (multi-fetch) ----
+
+    /// Context for `expand_source` (cloud listing needs the same `--cloud-opt`s).
+    pub struct ExpandCtx {
+        #[cfg_attr(not(feature = "get_cloud"), allow(dead_code))]
+        pub cloud_opts: Vec<String>,
+    }
+
+    /// True if `s` ends with a tabular extension we auto-collect from a directory.
+    fn is_tabular_path(s: &str) -> bool {
+        let lower = s.to_ascii_lowercase();
+        [".csv", ".tsv", ".tab", ".ssv"]
+            .iter()
+            .any(|e| lower.ends_with(e))
+    }
+
+    /// True if `s` contains a glob metacharacter (`*`, `?` or `[`).
+    fn has_glob_meta(s: &str) -> bool {
+        s.contains(['*', '?', '['])
+    }
+
+    /// Expand a glob/directory `source` into concrete sources. A non-glob,
+    /// non-directory source returns unchanged (as a one-element vec). Local
+    /// globs/directories and (with `get_cloud`) cloud globs/prefixes expand to
+    /// the matching files/objects; http/ckan/dathere/dc sources pass through.
+    #[cfg_attr(not(feature = "get_cloud"), allow(unused_variables))]
+    pub fn expand_source(source: &str, ctx: &ExpandCtx) -> CliResult<Vec<String>> {
+        if is_cloud_scheme(source) {
+            #[cfg(feature = "get_cloud")]
+            if source.ends_with('/') || has_glob_meta(source) {
+                return expand_cloud(source, ctx);
+            }
+            return Ok(vec![source.to_string()]);
+        }
+        // Only local filesystem paths expand; remote schemes pass through.
+        let lower = source.to_ascii_lowercase();
+        let remote = lower.starts_with("http://")
+            || lower.starts_with("https://")
+            || lower.starts_with("ckan://")
+            || lower.starts_with("dathere://")
+            || lower.starts_with("dc:");
+        if remote {
+            return Ok(vec![source.to_string()]);
+        }
+        let path = Path::new(source);
+        // A literal file that exists takes precedence over glob interpretation,
+        // so a real filename containing glob metacharacters (e.g. `data[2026].csv`,
+        // `a?b.csv`) is still fetched as a single file rather than globbed.
+        if path.is_file() {
+            return Ok(vec![source.to_string()]);
+        }
+        if path.is_dir() {
+            return expand_local_dir(path);
+        }
+        if has_glob_meta(source) {
+            return expand_local_glob(source);
+        }
+        Ok(vec![source.to_string()])
+    }
+
+    fn expand_local_dir(dir: &Path) -> CliResult<Vec<String>> {
+        let mut out = Vec::new();
+        for entry in fs::read_dir(dir)? {
+            let p = entry?.path();
+            if p.is_file() && is_tabular_path(&p.to_string_lossy()) {
+                out.push(p.to_string_lossy().to_string());
+            }
+        }
+        out.sort();
+        if out.is_empty() {
+            return Err(CliError::Other(format!(
+                "get: no tabular files (.csv/.tsv/.tab/.ssv) found in directory '{}'.",
+                dir.display()
+            )));
+        }
+        Ok(out)
+    }
+
+    fn expand_local_glob(pattern: &str) -> CliResult<Vec<String>> {
+        let mut out = Vec::new();
+        let paths = glob::glob(pattern)
+            .map_err(|e| CliError::Other(format!("get: invalid glob '{pattern}': {e}")))?;
+        for p in paths {
+            let p = p.map_err(|e| CliError::Other(format!("get: glob error: {e}")))?;
+            if p.is_file() {
+                out.push(p.to_string_lossy().to_string());
+            }
+        }
+        out.sort();
+        if out.is_empty() {
+            return Err(CliError::Other(format!(
+                "get: no files matched glob '{pattern}'."
+            )));
+        }
+        Ok(out)
+    }
+
+    /// List a cloud bucket/prefix and expand a glob (or trailing-slash directory)
+    /// into concrete `scheme://host/key` object URLs.
+    #[cfg(feature = "get_cloud")]
+    fn expand_cloud(source: &str, ctx: &ExpandCtx) -> CliResult<Vec<String>> {
+        use futures_util::stream::StreamExt;
+        use object_store::{ObjectStore, parse_url_opts, path::Path as OsPath};
+        use url::Url;
+
+        let url = Url::parse(source)
+            .map_err(|e| CliError::Other(format!("get: invalid cloud URL '{source}': {e}")))?;
+        let scheme = url.scheme().to_string();
+        let host = url.host_str().unwrap_or_default().to_string();
+        let base = format!("{scheme}://{host}");
+        let key = url.path().trim_start_matches('/').to_string();
+
+        let all_opts = cloud_opts_for(&ctx.cloud_opts);
+        let (store, _path) = parse_url_opts(&url, all_opts).map_err(|e| {
+            CliError::Other(format!("get: cannot open cloud store for '{source}': {e}"))
+        })?;
+
+        let is_glob = has_glob_meta(&key);
+        let pattern = if is_glob {
+            Some(
+                glob::Pattern::new(&key)
+                    .map_err(|e| CliError::Other(format!("get: invalid glob '{source}': {e}")))?,
+            )
+        } else {
+            None
+        };
+        // List under the literal prefix preceding the first glob metacharacter
+        // (or the whole key for a trailing-slash directory).
+        let literal: String = key
+            .chars()
+            .take_while(|c| !matches!(c, '*' | '?' | '['))
+            .collect();
+        let list_prefix = match literal.rfind('/') {
+            Some(i) => literal[..=i].to_string(),
+            None if is_glob => String::new(),
+            None => literal,
+        };
+
+        let rt = tokio::runtime::Runtime::new()?;
+        let results = rt.block_on(async {
+            let osp = if list_prefix.is_empty() {
+                None
+            } else {
+                Some(OsPath::from(list_prefix.as_str()))
+            };
+            let mut stream = store.list(osp.as_ref());
+            let mut out = Vec::new();
+            while let Some(meta) = stream.next().await {
+                let meta = meta
+                    .map_err(|e| CliError::Other(format!("get: listing {source} failed: {e}")))?;
+                let loc = meta.location.as_ref().to_string();
+                let keep = match &pattern {
+                    Some(p) => p.matches(&loc),
+                    None => is_tabular_path(&loc),
+                };
+                if keep {
+                    out.push(format!("{base}/{loc}"));
+                }
+            }
+            out.sort();
+            Ok::<_, CliError>(out)
+        })?;
+
+        if results.is_empty() {
+            return Err(CliError::Other(format!(
+                "get: no objects matched '{source}'."
+            )));
+        }
+        Ok(results)
     }
 
     /// Resolve a `dc:<name>` input path to a usable (decompressed) CSV file path,
@@ -2392,5 +3094,34 @@ mod rich {
             out.push((e.logical_name, ok));
         }
         Ok(out)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use std::io::Cursor;
+
+        use super::emit_preview_reservoir;
+
+        // The `--random` reservoir path parses the CSV from the start, so a quoted
+        // field containing an embedded newline must survive as ONE intact record
+        // rather than being split (the bug ranged random-offset sampling had).
+        #[test]
+        fn reservoir_preserves_quoted_multiline_record() {
+            let csv = b"h1,h2\n\"a\nb\",c\nd,e\n";
+            let out_path = std::env::temp_dir().join("qsv-reservoir-quoted-test.csv");
+            let out = out_path.to_string_lossy().to_string();
+            // take far exceeds the row count, so the reservoir keeps every row in
+            // order -> deterministic output.
+            emit_preview_reservoir(Cursor::new(csv.as_slice()), b',', true, 100, Some(&out))
+                .unwrap();
+            let got = std::fs::read_to_string(&out_path).unwrap();
+            let _ = std::fs::remove_file(&out_path);
+            assert!(got.contains("h1,h2"), "header missing:\n{got}");
+            assert!(
+                got.contains("\"a\nb\""),
+                "quoted multi-line record was split or corrupted:\n{got:?}"
+            );
+            assert!(got.contains("d,e"), "second data row missing:\n{got}");
+        }
     }
 }

@@ -95,9 +95,10 @@ get options:
     --offset <mb>          PREVIEW: skip ~<mb> megabytes (via an HTTP Range request)
                            before sampling, realigning to the next record boundary.
                            Implies --sample. Requires a Range-capable source.
-    --random               PREVIEW: random sampling when the source supports Range
-                           requests; otherwise streams and reservoir-samples. Random
-                           sampling is approximate.
+    --random               PREVIEW: random (reservoir) sampling. Streams the full
+                           source and parses it from the start, so quoted multi-line
+                           records stay intact. Slower than --sample (which only
+                           reads the head); use it when you need a uniform sample.
     --cloud-opt <kv>       Extra cloud object-store config as a `key=value` pair
                            (repeatable), e.g. region=us-east-1 or
                            skip_signature=true. Overrides the

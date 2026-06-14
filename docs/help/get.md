@@ -157,7 +157,7 @@ qsv get --help
 | &nbsp;`‑‑force`&nbsp; | flag | Re-fetch even if a fresh cached copy exists. |  |
 | &nbsp;`‑‑sample`&nbsp; | integer | PREVIEW: stream the first N data records of <source> to stdout (or the --output file) WITHOUT caching. No `dc:` entry is created. The sniffed header row is re-attached. Single <source> only. |  |
 | &nbsp;`‑‑offset`&nbsp; | integer | PREVIEW: skip ~<mb> megabytes (via an HTTP Range request) before sampling, realigning to the next record boundary. Implies --sample. Requires a Range-capable source. |  |
-| &nbsp;`‑‑random`&nbsp; | flag | PREVIEW: random sampling when the source supports Range requests; otherwise streams and reservoir-samples. Random sampling is approximate. |  |
+| &nbsp;`‑‑random`&nbsp; | flag | PREVIEW: random (reservoir) sampling. Streams the full source and parses it from the start, so quoted multi-line records stay intact. Slower than --sample (which only reads the head); use it when you need a uniform sample. |  |
 | &nbsp;`‑‑cloud‑opt`&nbsp; | string | Extra cloud object-store config as a `key=value` pair (repeatable), e.g. region=us-east-1 or skip_signature=true. Overrides the AWS_*/AZURE_*/GOOGLE_* environment. (get_cloud only) |  |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | CKAN Action API base URL. Overrides the QSV_CKAN_API env var. | `https://data.dathere.com/api/3/action` |
 | &nbsp;`‑‑ckan‑token`&nbsp; | string | CKAN API token. Overrides the QSV_CKAN_TOKEN env var. |  |

@@ -2191,11 +2191,6 @@ mod rich {
 
     /// Bytes sniffed (and used to extract the header) from the start of a source.
     const PREVIEW_HEAD_BYTES: u64 = 256 * 1024;
-    /// Per-probe window for `--random` ranged reads.
-    const PREVIEW_RANDOM_WINDOW: u64 = 128 * 1024;
-    /// Max `--random` probe attempts is `sample * this` (records may straddle
-    /// windows, so allow several tries per wanted record before giving up).
-    const PREVIEW_RANDOM_ATTEMPTS_MULT: u64 = 20;
     /// Cap on bytes pulled while accumulating windows for a cloud `--offset`/
     /// first-N preview, so a tiny `--sample` never drags the whole object.
     #[cfg(feature = "get_cloud")]
@@ -2213,19 +2208,6 @@ mod rich {
         pub timeout_secs: u16,
         #[cfg_attr(not(feature = "get_cloud"), allow(dead_code))]
         pub cloud_opts:   Vec<String>,
-    }
-
-    /// Total object size from a `Content-Range` value ("bytes START-END/TOTAL").
-    /// None when the total is unknown ("*").
-    fn parse_total_from_content_range(cr: &str) -> Option<u64> {
-        let rest = cr.trim().strip_prefix("bytes ")?.trim();
-        let (_, total) = rest.split_once('/')?;
-        let total = total.trim();
-        if total == "*" {
-            None
-        } else {
-            total.parse().ok()
-        }
     }
 
     /// Sniff the head buffer for its delimiter and extract the header record,
@@ -2347,43 +2329,6 @@ mod rich {
         Ok(())
     }
 
-    /// The first COMPLETE record within a random byte window: skip the (partial)
-    /// first line, then let the CSV parser read one record and accept it only if
-    /// the parser found a record boundary strictly before the window end. Using
-    /// the parser (not raw newline scanning) keeps quoted embedded newlines
-    /// intact, and the "boundary before window end" check guarantees the record
-    /// was not truncated by the window edge (`PREVIEW_RANDOM_WINDOW`). Returns
-    /// None when no complete record fits — the caller then re-samples.
-    fn random_window_record(window: &[u8], delimiter: u8) -> CliResult<Option<csv::ByteRecord>> {
-        let Some(nl) = window.iter().position(|&b| b == b'\n') else {
-            return Ok(None);
-        };
-        let rest = &window[nl + 1..];
-        if rest.is_empty() {
-            return Ok(None);
-        }
-        let mut rdr = csv::ReaderBuilder::new()
-            .delimiter(delimiter)
-            .flexible(true)
-            .has_headers(false)
-            .from_reader(rest);
-        let mut rec = csv::ByteRecord::new();
-        // A window may start mid-record, so a parse error is not fatal — just
-        // treat it as "no complete record here" and let the caller re-sample.
-        match rdr.read_byte_record(&mut rec) {
-            Ok(true) => {},
-            Ok(false) | Err(_) => return Ok(None),
-        }
-        // The record is complete only if the parser found its terminator before
-        // consuming the whole window (i.e. there is more data after it). A record
-        // that runs to the window end may have been cut off mid-field — reject it
-        // (conservatively also dropping a record that ends exactly at the edge).
-        if rec.is_empty() || rdr.position().byte() >= rest.len() as u64 {
-            return Ok(None);
-        }
-        Ok(Some(rec))
-    }
-
     /// Dispatch a preview to the right backend (mirrors `get_resource`).
     pub fn preview_resource(opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
         let resolved = resolve_uri_prefix(&opts.source, opts.ckan_api_url.as_deref());
@@ -2475,7 +2420,7 @@ mod rich {
         opts: &PreviewOptions,
         output: Option<&str>,
     ) -> CliResult<()> {
-        use reqwest::header::{AUTHORIZATION, CONTENT_RANGE, RANGE};
+        use reqwest::header::{AUTHORIZATION, RANGE};
 
         let http_get = |range: Option<String>| -> CliResult<reqwest::blocking::Response> {
             let mut req = client.get(url);
@@ -2491,26 +2436,16 @@ mod rich {
         // Head probe: doubles as the dialect sniff and the range-support detector.
         let probe = http_get(Some(format!("bytes=0-{}", PREVIEW_HEAD_BYTES - 1)))?;
         let supports_range = probe.status() == reqwest::StatusCode::PARTIAL_CONTENT;
-        let total = probe
-            .headers()
-            .get(CONTENT_RANGE)
-            .and_then(|v| v.to_str().ok())
-            .and_then(parse_total_from_content_range);
         let mut head = Vec::new();
         probe.take(PREVIEW_HEAD_BYTES).read_to_end(&mut head)?;
         let (delim, header) = sniff_preview_head(&head);
 
         if opts.random {
-            if supports_range && let Some(total) = total {
-                return preview_http_random(
-                    &http_get,
-                    delim,
-                    header.as_ref(),
-                    opts.sample,
-                    total,
-                    output,
-                );
-            }
+            // Random sampling streams the whole body through a reservoir sampler
+            // (parsing from the start, so quoted multi-line records are never
+            // split). Ranged random-offset reads are deliberately NOT used: a
+            // random byte offset can land inside a quoted field, where record
+            // boundaries are indeterminable without parsing from the start.
             let resp = http_get(None)?;
             emit_preview_reservoir(
                 std::io::BufReader::new(resp),
@@ -2550,54 +2485,48 @@ mod rich {
         Ok(())
     }
 
-    /// Approximate uniform-random sampling over a range-capable HTTP source: read
-    /// a small window at random offsets, realign to a record boundary, and take
-    /// the first whole record from each, until `take` records are collected.
-    fn preview_http_random(
-        http_get: &dyn Fn(Option<String>) -> CliResult<reqwest::blocking::Response>,
-        delimiter: u8,
-        header: Option<&csv::ByteRecord>,
-        take: u64,
+    /// A synchronous `Read` over an `object_store` source that pulls fixed-size
+    /// byte-range windows on demand (bounded memory) and reads to the true end of
+    /// the object — so a CSV parser over it sees only complete records, never one
+    /// truncated by a window boundary. Backs the cloud `--random` reservoir path.
+    #[cfg(feature = "get_cloud")]
+    struct CloudRangeReader<'a> {
+        fetch: &'a dyn Fn(u64, u64) -> CliResult<Vec<u8>>,
+        pos:   u64,
         total: u64,
-        output: Option<&str>,
-    ) -> CliResult<()> {
-        use rand::RngExt;
+        buf:   Vec<u8>,
+        off:   usize,
+    }
 
-        let mut rng = rand::rng();
-        let mut wtr = csv::WriterBuilder::new()
-            .delimiter(delimiter)
-            .from_writer(preview_writer(output)?);
-        if let Some(h) = header {
-            wtr.write_byte_record(h)?;
-        }
-        let mut got = 0u64;
-        let mut attempts = 0u64;
-        let max_attempts = take
-            .saturating_mul(PREVIEW_RANDOM_ATTEMPTS_MULT)
-            .max(take + 8);
-        while got < take && attempts < max_attempts {
-            attempts += 1;
-            let span = total.saturating_sub(1).max(1);
-            let off = rng.random_range(0..span);
-            let end = (off + PREVIEW_RANDOM_WINDOW).min(total).saturating_sub(1);
-            let resp = http_get(Some(format!("bytes={off}-{end}")))?;
-            let mut win = Vec::new();
-            resp.take(PREVIEW_RANDOM_WINDOW).read_to_end(&mut win)?;
-            // Emit only a record the CSV parser fully terminates inside the
-            // window, so a row straddling the window boundary is never truncated.
-            if let Some(rec) = random_window_record(&win, delimiter)? {
-                wtr.write_byte_record(&rec)?;
-                got += 1;
+    #[cfg(feature = "get_cloud")]
+    impl std::io::Read for CloudRangeReader<'_> {
+        fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+            if self.off >= self.buf.len() {
+                if self.pos >= self.total {
+                    return Ok(0);
+                }
+                let end = (self.pos + DEFAULT_PART_SIZE).min(self.total);
+                let chunk = (self.fetch)(self.pos, end)
+                    .map_err(|e| std::io::Error::other(e.to_string()))?;
+                self.pos = end;
+                if chunk.is_empty() {
+                    // Defensive: stop rather than loop if the store yields nothing.
+                    self.pos = self.total;
+                    return Ok(0);
+                }
+                self.buf = chunk;
+                self.off = 0;
             }
+            let n = out.len().min(self.buf.len() - self.off);
+            out[..n].copy_from_slice(&self.buf[self.off..self.off + n]);
+            self.off += n;
+            Ok(n)
         }
-        wtr.flush()?;
-        Ok(())
     }
 
     #[cfg(feature = "get_cloud")]
     fn preview_cloud(source: &str, opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
         use object_store::{GetOptions as OsGetOptions, GetRange, ObjectStore, parse_url_opts};
-        use rand::RngExt;
         use url::Url;
 
         let url = Url::parse(source)
@@ -2650,34 +2579,21 @@ mod rich {
         let (delim, header) = sniff_preview_head(&head);
 
         if opts.random {
-            let mut rng = rand::rng();
-            let mut wtr = csv::WriterBuilder::new()
-                .delimiter(delim)
-                .from_writer(preview_writer(output)?);
-            if let Some(h) = &header {
-                wtr.write_byte_record(h)?;
-            }
-            let mut got = 0u64;
-            let mut attempts = 0u64;
-            let max_attempts = opts
-                .sample
-                .saturating_mul(PREVIEW_RANDOM_ATTEMPTS_MULT)
-                .max(opts.sample + 8);
-            while got < opts.sample && attempts < max_attempts {
-                attempts += 1;
-                let span = total.saturating_sub(1).max(1);
-                let off = rng.random_range(0..span);
-                let end = (off + PREVIEW_RANDOM_WINDOW).min(total);
-                let win = fetch(off, end)?;
-                // Emit only a record the CSV parser fully terminates inside the
-                // window, so a row straddling the window boundary is never
-                // truncated.
-                if let Some(rec) = random_window_record(&win, delim)? {
-                    wtr.write_byte_record(&rec)?;
-                    got += 1;
-                }
-            }
-            wtr.flush()?;
+            // Stream the whole object through a reservoir sampler (parsing from
+            // the start, so quoted multi-line records are never split). Memory is
+            // bounded to one byte-range window at a time via CloudRangeReader,
+            // which reads to the true object end so no record is truncated.
+            // Ranged random-offset reads are deliberately NOT used: a random byte
+            // offset can land inside a quoted field, where record boundaries are
+            // indeterminable without parsing from the start.
+            let reader = CloudRangeReader {
+                fetch: &fetch,
+                pos: 0,
+                total,
+                buf: Vec::new(),
+                off: 0,
+            };
+            emit_preview_reservoir(reader, delim, true, opts.sample, output)?;
             return Ok(());
         }
 
@@ -3182,69 +3098,30 @@ mod rich {
 
     #[cfg(test)]
     mod tests {
-        use super::random_window_record;
+        use std::io::Cursor;
 
+        use super::emit_preview_reservoir;
+
+        // The `--random` reservoir path parses the CSV from the start, so a quoted
+        // field containing an embedded newline must survive as ONE intact record
+        // rather than being split (the bug ranged random-offset sampling had).
         #[test]
-        fn random_window_complete_followed_by_more() {
-            // realign drops the partial first line; the next record is terminated
-            // and followed by more data -> accepted.
-            let rec = random_window_record(b"partial-tail\na,b\nc,d\n", b',')
-                .unwrap()
+        fn reservoir_preserves_quoted_multiline_record() {
+            let csv = b"h1,h2\n\"a\nb\",c\nd,e\n";
+            let out_path = std::env::temp_dir().join("qsv-reservoir-quoted-test.csv");
+            let out = out_path.to_string_lossy().to_string();
+            // take far exceeds the row count, so the reservoir keeps every row in
+            // order -> deterministic output.
+            emit_preview_reservoir(Cursor::new(csv.as_slice()), b',', true, 100, Some(&out))
                 .unwrap();
-            assert_eq!(&rec[0], b"a");
-            assert_eq!(&rec[1], b"b");
-        }
-
-        #[test]
-        fn random_window_keeps_quoted_embedded_newline() {
-            // a quoted field with an embedded newline stays ONE record, not split
-            // at the embedded '\n' — the regression this fix targets.
-            let rec = random_window_record(b"tail\n\"x\ny\",z\nmore,data\n", b',')
-                .unwrap()
-                .unwrap();
-            assert_eq!(rec.len(), 2);
-            assert_eq!(&rec[0], b"x\ny");
-            assert_eq!(&rec[1], b"z");
-        }
-
-        #[test]
-        fn random_window_rejects_unterminated_record() {
-            // the record after realign runs to the window end with no terminator
-            // -> possibly truncated -> rejected.
+            let got = std::fs::read_to_string(&out_path).unwrap();
+            let _ = std::fs::remove_file(&out_path);
+            assert!(got.contains("h1,h2"), "header missing:\n{got}");
             assert!(
-                random_window_record(b"tail\na,b,truncated-no-newline", b',')
-                    .unwrap()
-                    .is_none()
+                got.contains("\"a\nb\""),
+                "quoted multi-line record was split or corrupted:\n{got:?}"
             );
-        }
-
-        #[test]
-        fn random_window_rejects_unterminated_quote() {
-            // an open quote at the window edge must not error or emit a partial
-            // row -> rejected.
-            assert!(
-                random_window_record(b"tail\n\"open quote with no close", b',')
-                    .unwrap()
-                    .is_none()
-            );
-        }
-
-        #[test]
-        fn random_window_none_without_newline() {
-            assert!(
-                random_window_record(b"no newline at all", b',')
-                    .unwrap()
-                    .is_none()
-            );
-        }
-
-        #[test]
-        fn random_window_respects_tab_delimiter() {
-            let rec = random_window_record(b"tail\na\tb\tc\nx\ty\tz\n", b'\t')
-                .unwrap()
-                .unwrap();
-            assert_eq!(rec.len(), 3);
-            assert_eq!(&rec[0], b"a");
+            assert!(got.contains("d,e"), "second data row missing:\n{got}");
         }
     }
 }

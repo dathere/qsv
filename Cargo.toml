@@ -394,7 +394,7 @@ tikv-jemallocator = { version = "0.7", optional = true }
 # (conflicting `From<HourBase>` impl) when compiling cookie 0.18.1 (pulled in
 # by reqwest's `cookies` feature) on rustc 1.96. Bump past 0.3.47 only once
 # cookie ships a release compatible with time >= 0.3.48.
-time = { version = "=0.3.47", optional = true }
+time = { version = "=0.3.49", optional = true }
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 unicode-width = { version = "0.2", optional = true }

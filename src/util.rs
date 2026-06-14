@@ -3698,8 +3698,9 @@ pub fn extract_zip_to_temp(
 
 /// Extract a zip archive's usable entries into a temp subdirectory and return
 /// their paths, **tabular entries first** (CSV/TSV/TAB/SSV in archive order),
-/// followed by other supported special-format entries (parquet/avro/json/…, in
-/// archive order). Directories, system files (`__MACOSX`, `.DS_Store`, …),
+/// followed by other supported entries (special formats parquet/avro/json/…, in
+/// archive order — or *any* file when `QSV_SKIP_FORMAT_CHECK` is set, via
+/// `is_supported_file`). Directories, system files (`__MACOSX`, `.DS_Store`, …),
 /// zip-slip entries, and unsupported file types are skipped. Errors with a clear
 /// message if no usable entry remains.
 ///
@@ -3772,7 +3773,10 @@ fn extract_all_zip_entries(
             .unwrap_or_default();
         if ZIP_TABULAR_EXTS.contains(&ext.as_str()) {
             tabular.push(file_path);
-        } else if crate::config::get_special_format(&file_path) != SpecialFormat::Unknown {
+        } else if is_supported_file(&file_path) {
+            // Non-tabular but supported: a special format (parquet/avro/json/…),
+            // or — when `QSV_SKIP_FORMAT_CHECK` is set — any file (the global
+            // escape hatch, honored via `is_supported_file`).
             other_supported.push(file_path);
         } else {
             log::info!("  Skipping unsupported file type: {}", file_path.display());

@@ -41,6 +41,12 @@ Cloud credentials are read from the standard AWS_*/AZURE_*/GOOGLE_* environment
 variables (and IAM roles); use --cloud-opt for one-off overrides such as region
 or endpoint. (sftp:// is planned for a later release.)
 
+`--sample` PREVIEW vs the `sample` command: `get --sample N` is a cheap PEEK — it
+streams just the first N rows from the head (stopping early, so a huge remote file
+is barely touched) and caches nothing. It is NOT a statistical sample. For a random,
+representative subset use `qsv sample` instead (which downloads the whole remote
+file first, except for its streaming --bernoulli method).
+
 
 <a name="examples"></a>
 

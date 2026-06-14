@@ -1290,7 +1290,8 @@ mod rich {
     /// Build (and cache) the qsv index for an entry's blob, recording the exact
     /// record count. No-op if already indexed.
     fn ensure_indexed(root: &Path, entry: &mut StoredEntry) -> CliResult<()> {
-        if entry.meta.indexed {
+        // Already fully processed (indexed AND schema sniffed) → nothing to do.
+        if entry.meta.indexed && entry.meta.sniffed.is_some() {
             return Ok(());
         }
         let body = read_blob(root, &entry.meta.blake3, entry.meta.compression)?;
@@ -1298,6 +1299,13 @@ mod rich {
         // Sniff the dialect/schema once from the head (best-effort).
         if entry.meta.sniffed.is_none() {
             entry.meta.sniffed = sniff_dialect(&body);
+        }
+
+        // Entry is already indexed but predates the `sniffed` field: persist the
+        // backfilled schema and return without rebuilding the index.
+        if entry.meta.indexed {
+            write_entry(root, entry)?;
+            return Ok(());
         }
 
         let tmp_dir = std::env::temp_dir().join("qsv-getidx");
@@ -2339,6 +2347,18 @@ mod rich {
         Ok(())
     }
 
+    /// The first newline-terminated record within a random byte window: skip the
+    /// (partial) first line, then return the next record's bytes ONLY if it is
+    /// bounded by a terminating newline inside the window. Returns None when the
+    /// window holds no complete record, so a row truncated by the window boundary
+    /// (`PREVIEW_RANDOM_WINDOW`) is never emitted.
+    fn first_complete_record(window: &[u8]) -> Option<&[u8]> {
+        let start = window.iter().position(|&b| b == b'\n')? + 1;
+        let rest = &window[start..];
+        let end = rest.iter().position(|&b| b == b'\n')?;
+        Some(&rest[..end])
+    }
+
     /// Dispatch a preview to the right backend (mirrors `get_resource`).
     pub fn preview_resource(opts: &PreviewOptions, output: Option<&str>) -> CliResult<()> {
         let resolved = resolve_uri_prefix(&opts.source, opts.ckan_api_url.as_deref());
@@ -2538,15 +2558,16 @@ mod rich {
             let resp = http_get(Some(format!("bytes={off}-{end}")))?;
             let mut win = Vec::new();
             resp.take(PREVIEW_RANDOM_WINDOW).read_to_end(&mut win)?;
-            // Realign past the first (partial) line, then take one whole record.
-            let Some(nl) = win.iter().position(|&b| b == b'\n') else {
+            // Emit only a record that is fully terminated inside the window, so a
+            // row straddling the window boundary is never written truncated.
+            let Some(record) = first_complete_record(&win) else {
                 continue;
             };
             let mut rdr = csv::ReaderBuilder::new()
                 .delimiter(delimiter)
                 .flexible(true)
                 .has_headers(false)
-                .from_reader(&win[nl + 1..]);
+                .from_reader(record);
             let mut rec = csv::ByteRecord::new();
             if rdr.read_byte_record(&mut rec)? && !rec.is_empty() {
                 wtr.write_byte_record(&rec)?;
@@ -2632,14 +2653,16 @@ mod rich {
                 let off = rng.random_range(0..span);
                 let end = (off + PREVIEW_RANDOM_WINDOW).min(total);
                 let win = fetch(off, end)?;
-                let Some(nl) = win.iter().position(|&b| b == b'\n') else {
+                // Emit only a record fully terminated inside the window, so a row
+                // straddling the window boundary is never written truncated.
+                let Some(record) = first_complete_record(&win) else {
                     continue;
                 };
                 let mut rdr = csv::ReaderBuilder::new()
                     .delimiter(delim)
                     .flexible(true)
                     .has_headers(false)
-                    .from_reader(&win[nl + 1..]);
+                    .from_reader(record);
                 let mut rec = csv::ByteRecord::new();
                 if rdr.read_byte_record(&mut rec)? && !rec.is_empty() {
                     wtr.write_byte_record(&rec)?;
@@ -2739,6 +2762,12 @@ mod rich {
             return Ok(vec![source.to_string()]);
         }
         let path = Path::new(source);
+        // A literal file that exists takes precedence over glob interpretation,
+        // so a real filename containing glob metacharacters (e.g. `data[2026].csv`,
+        // `a?b.csv`) is still fetched as a single file rather than globbed.
+        if path.is_file() {
+            return Ok(vec![source.to_string()]);
+        }
         if path.is_dir() {
             return expand_local_dir(path);
         }

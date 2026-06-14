@@ -1857,3 +1857,22 @@ fn get_glob_local_expands() {
         "tsv should be excluded:\n{table}"
     );
 }
+
+// A literal local file whose NAME contains glob metacharacters must be fetched
+// as a single file, not interpreted as a glob pattern (regression guard).
+#[test]
+fn get_literal_filename_with_glob_metachars() {
+    let wrk = Workdir::new("get_literal_filename_with_glob_metachars");
+    wrk.create_from_string("data[2026].csv", "a,b\n1,2\n3,4\n");
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir).arg("data[2026].csv");
+    wrk.assert_success(&mut g);
+
+    assert_eq!(
+        entry_json_count(&cache_dir),
+        1,
+        "a real file with glob chars in its name should fetch as one file"
+    );
+}

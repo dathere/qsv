@@ -2347,16 +2347,41 @@ mod rich {
         Ok(())
     }
 
-    /// The first newline-terminated record within a random byte window: skip the
-    /// (partial) first line, then return the next record's bytes ONLY if it is
-    /// bounded by a terminating newline inside the window. Returns None when the
-    /// window holds no complete record, so a row truncated by the window boundary
-    /// (`PREVIEW_RANDOM_WINDOW`) is never emitted.
-    fn first_complete_record(window: &[u8]) -> Option<&[u8]> {
-        let start = window.iter().position(|&b| b == b'\n')? + 1;
-        let rest = &window[start..];
-        let end = rest.iter().position(|&b| b == b'\n')?;
-        Some(&rest[..end])
+    /// The first COMPLETE record within a random byte window: skip the (partial)
+    /// first line, then let the CSV parser read one record and accept it only if
+    /// the parser found a record boundary strictly before the window end. Using
+    /// the parser (not raw newline scanning) keeps quoted embedded newlines
+    /// intact, and the "boundary before window end" check guarantees the record
+    /// was not truncated by the window edge (`PREVIEW_RANDOM_WINDOW`). Returns
+    /// None when no complete record fits — the caller then re-samples.
+    fn random_window_record(window: &[u8], delimiter: u8) -> CliResult<Option<csv::ByteRecord>> {
+        let Some(nl) = window.iter().position(|&b| b == b'\n') else {
+            return Ok(None);
+        };
+        let rest = &window[nl + 1..];
+        if rest.is_empty() {
+            return Ok(None);
+        }
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(delimiter)
+            .flexible(true)
+            .has_headers(false)
+            .from_reader(rest);
+        let mut rec = csv::ByteRecord::new();
+        // A window may start mid-record, so a parse error is not fatal — just
+        // treat it as "no complete record here" and let the caller re-sample.
+        match rdr.read_byte_record(&mut rec) {
+            Ok(true) => {},
+            Ok(false) | Err(_) => return Ok(None),
+        }
+        // The record is complete only if the parser found its terminator before
+        // consuming the whole window (i.e. there is more data after it). A record
+        // that runs to the window end may have been cut off mid-field — reject it
+        // (conservatively also dropping a record that ends exactly at the edge).
+        if rec.is_empty() || rdr.position().byte() >= rest.len() as u64 {
+            return Ok(None);
+        }
+        Ok(Some(rec))
     }
 
     /// Dispatch a preview to the right backend (mirrors `get_resource`).
@@ -2558,18 +2583,9 @@ mod rich {
             let resp = http_get(Some(format!("bytes={off}-{end}")))?;
             let mut win = Vec::new();
             resp.take(PREVIEW_RANDOM_WINDOW).read_to_end(&mut win)?;
-            // Emit only a record that is fully terminated inside the window, so a
-            // row straddling the window boundary is never written truncated.
-            let Some(record) = first_complete_record(&win) else {
-                continue;
-            };
-            let mut rdr = csv::ReaderBuilder::new()
-                .delimiter(delimiter)
-                .flexible(true)
-                .has_headers(false)
-                .from_reader(record);
-            let mut rec = csv::ByteRecord::new();
-            if rdr.read_byte_record(&mut rec)? && !rec.is_empty() {
+            // Emit only a record the CSV parser fully terminates inside the
+            // window, so a row straddling the window boundary is never truncated.
+            if let Some(rec) = random_window_record(&win, delimiter)? {
                 wtr.write_byte_record(&rec)?;
                 got += 1;
             }
@@ -2653,18 +2669,10 @@ mod rich {
                 let off = rng.random_range(0..span);
                 let end = (off + PREVIEW_RANDOM_WINDOW).min(total);
                 let win = fetch(off, end)?;
-                // Emit only a record fully terminated inside the window, so a row
-                // straddling the window boundary is never written truncated.
-                let Some(record) = first_complete_record(&win) else {
-                    continue;
-                };
-                let mut rdr = csv::ReaderBuilder::new()
-                    .delimiter(delim)
-                    .flexible(true)
-                    .has_headers(false)
-                    .from_reader(record);
-                let mut rec = csv::ByteRecord::new();
-                if rdr.read_byte_record(&mut rec)? && !rec.is_empty() {
+                // Emit only a record the CSV parser fully terminates inside the
+                // window, so a row straddling the window boundary is never
+                // truncated.
+                if let Some(rec) = random_window_record(&win, delim)? {
                     wtr.write_byte_record(&rec)?;
                     got += 1;
                 }
@@ -3170,5 +3178,73 @@ mod rich {
             out.push((e.logical_name, ok));
         }
         Ok(out)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::random_window_record;
+
+        #[test]
+        fn random_window_complete_followed_by_more() {
+            // realign drops the partial first line; the next record is terminated
+            // and followed by more data -> accepted.
+            let rec = random_window_record(b"partial-tail\na,b\nc,d\n", b',')
+                .unwrap()
+                .unwrap();
+            assert_eq!(&rec[0], b"a");
+            assert_eq!(&rec[1], b"b");
+        }
+
+        #[test]
+        fn random_window_keeps_quoted_embedded_newline() {
+            // a quoted field with an embedded newline stays ONE record, not split
+            // at the embedded '\n' — the regression this fix targets.
+            let rec = random_window_record(b"tail\n\"x\ny\",z\nmore,data\n", b',')
+                .unwrap()
+                .unwrap();
+            assert_eq!(rec.len(), 2);
+            assert_eq!(&rec[0], b"x\ny");
+            assert_eq!(&rec[1], b"z");
+        }
+
+        #[test]
+        fn random_window_rejects_unterminated_record() {
+            // the record after realign runs to the window end with no terminator
+            // -> possibly truncated -> rejected.
+            assert!(
+                random_window_record(b"tail\na,b,truncated-no-newline", b',')
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn random_window_rejects_unterminated_quote() {
+            // an open quote at the window edge must not error or emit a partial
+            // row -> rejected.
+            assert!(
+                random_window_record(b"tail\n\"open quote with no close", b',')
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn random_window_none_without_newline() {
+            assert!(
+                random_window_record(b"no newline at all", b',')
+                    .unwrap()
+                    .is_none()
+            );
+        }
+
+        #[test]
+        fn random_window_respects_tab_delimiter() {
+            let rec = random_window_record(b"tail\na\tb\tc\nx\ty\tz\n", b'\t')
+                .unwrap()
+                .unwrap();
+            assert_eq!(rec.len(), 3);
+            assert_eq!(&rec[0], b"a");
+        }
     }
 }

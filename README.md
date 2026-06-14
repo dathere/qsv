@@ -170,8 +170,8 @@ For Windows, an MSI "Easy installer" for the x86_64 MSVC `qsvp` binary is also a
 For macOS, ["ad-hoc" signatures](https://users.rust-lang.org/t/distributing-cli-apps-on-macos/70223) are used to sign our binaries, so you will need to [set appropriate Gatekeeper security settings](https://support.apple.com/en-us/HT202491) or run the following command to remove the quarantine attribute from qsv before you run it for the first time:
 
 ```bash
-# replace qsv with qsvmcp, qsvlite or qsvdp if you installed those binary variants
-xattr -d com.apple.quarantine qsv
+# replace qsv with qsvmcp, qsvlite, qsvdp, qsvpy* if you installed those binary variants
+sudo xattr -d com.apple.quarantine qsv
 ```
 
 An additional benefit of using the prebuilt binaries is that they have the `self_update` feature enabled, allowing you to quickly update qsv to the latest version with a simple `qsv --update`. For further security, the `self_update` feature only fetches [releases from this GitHub repo](https://github.com/dathere/qsv/releases) and automatically verifies the signature of the downloaded zip archive before installing the update.

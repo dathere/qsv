@@ -62,6 +62,10 @@ jobs:
       shell: bash
       env:
         QSV_KIND: prebuilt-pgo
+        # pin the toolchain for the bare `cargo pgo` invocations in build-pgo.sh;
+        # RUSTUP_TOOLCHAIN beats any leftover per-directory `rustup override` on this
+        # self-hosted runner (a stale, sub-MSRV nightly override broke the 21.1.0 build).
+        RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
         TARGET: ${{ matrix.job.target }}
         DEFAULT_FEATURES: ${{ matrix.job.default-features }}
         RUSTFLAGS: -C target-cpu=native

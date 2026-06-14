@@ -185,10 +185,13 @@ jobs:
     - name: Installing Rust toolchain
       uses: dtolnay/rust-toolchain@master
       with:
+        # NOTE: dtolnay/rust-toolchain does NOT support the actions-rs-style
+        # `profile:`/`override:` inputs (they emit "Unexpected input(s)" warnings
+        # and are ignored). It sets `toolchain` as the rustup DEFAULT, which a
+        # leftover per-directory `rustup override` on a self-hosted runner can
+        # silently win over. The PGO step pins RUSTUP_TOOLCHAIN to guard against that.
         toolchain: ${{ matrix.rust }}
-        profile: minimal
         target: ${{ matrix.job.target }}
-        override: true
     - name: Checkout repository
       uses: actions/checkout@v6
       with:
@@ -213,6 +216,10 @@ jobs:
       shell: bash
       env:
         QSV_KIND: prebuilt-pgo
+        # pin the toolchain for the bare `cargo pgo` invocations in build-pgo.sh;
+        # RUSTUP_TOOLCHAIN beats any leftover per-directory `rustup override` on a
+        # self-hosted runner (which previously forced a stale, sub-MSRV nightly).
+        RUSTUP_TOOLCHAIN: ${{ matrix.rust }}
         TARGET: ${{ matrix.job.target }}
         DEFAULT_FEATURES: ${{ matrix.job.default-features }}
         RUSTFLAGS: ${{ matrix.job.addl-rustflags }}

@@ -838,9 +838,11 @@ fn slice_from_csvzip() {
 #[test]
 fn slice_from_zip_multientry() {
     // testzip.zip has multiple entries (positions.csv, NYC311-5.ssv, buses.csv,
-    // NYC311-5.tsv) plus __MACOSX system files. select_zip_entry skips the
-    // system files and picks the FIRST CSV/TSV/TAB/SSV entry in archive order:
-    // positions.csv (headers: position,title).
+    // NYC311-5.tsv) plus __MACOSX system files. `slice` extracts the zip via
+    // `process_input`, which (like the reader-level `select_zip_entry` path)
+    // skips the system files and returns tabular entries first, so the first
+    // entry is the FIRST CSV/TSV/TAB/SSV entry in archive order: positions.csv
+    // (headers: position,title). Issue #3988.
     let wrk = Workdir::new("slice_from_zip_multientry");
     let test_file = wrk.load_test_file("testzip.zip");
     let mut cmd = wrk.command("slice");

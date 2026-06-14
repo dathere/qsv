@@ -379,6 +379,8 @@ Finally, if its just a regular file, it will be treated as a regular input file.
 #### Limited Extended Input Support
 The `describegpt`, `lens`, `slice` & `tojsonl` commands have limited extended input support (🗃️). They are different in that they only process one file. If provided an `.infile-list` or a compressed `.sz` or `.zip` file, they will only process the first file.
 
+> **Note on `.zip` inputs.** qsv treats a `.zip` archive as a container of **delimited-text** files (CSV/TSV/TAB/SSV). The first such entry (in archive order) is used; commands with full Extended Input Support use _all_ of them. Directory and system entries (`__MACOSX`, `.DS_Store`, …) are skipped, and path-traversal ("zip-slip") entries are rejected. Nesting a **special binary format** (Parquet, Avro, or Arrow) inside a `.zip` is **not** a supported workflow — those formats are already compressed, so zipping them serves no purpose. Provide such files _directly_ instead (qsv reads `.parquet`/`.avro`/`.arrow` natively). See [#3988](https://github.com/dathere/qsv/issues/3988).
+
 ### Automatic Compression/Decompression
 
 qsv supports _automatic compression/decompression_ using the [Snappy frame format](https://github.com/google/snappy/blob/main/framing_format.txt). Snappy was chosen instead of more popular compression formats like gzip because it was designed for [high-performance streaming compression & decompression](https://github.com/google/snappy/tree/main/docs#readme) (up to 2.58 gb/sec compression, 0.89 gb/sec decompression).

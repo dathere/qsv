@@ -3610,6 +3610,12 @@ const ZIP_TABULAR_EXTS: [&str; 4] = ["csv", "tsv", "tab", "ssv"];
 /// 3. Error if no tabular entry exists — including the single-entry case. We do NOT silently treat
 ///    an arbitrary file as CSV, matching the documented "first CSV/TSV/TAB/SSV entry" behavior.
 ///
+/// By design, a `.zip` is treated as a container of delimited text. A **special
+/// binary format** (Parquet/Avro/Arrow) nested inside a `.zip` is intentionally
+/// NOT selectable here — those formats are already compressed, so zipping them is
+/// not an expected workflow; provide such files directly instead. (Issue #3988 —
+/// "nested special formats": won't-support, documented in README.)
+///
 /// Generic over `Read + Seek` so it serves both file-backed archives
 /// (`extract_zip_to_temp`) and in-memory `Cursor`-backed ones (`diskcache`).
 pub fn select_zip_entry<R: Read + std::io::Seek>(

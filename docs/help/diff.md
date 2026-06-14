@@ -86,6 +86,18 @@ qsv diff -k 0,1 --sort-columns 0,1 left.csv right.csv
 qsv diff --drop-equal-fields left.csv right.csv
 ```
 
+> Find the difference but drop entire columns that have no differences anywhere (key columns still appear)
+
+```console
+qsv diff --drop-equal-columns left.csv right.csv
+```
+
+> Combine both: keep only differing columns, and within them, blank out equal field values
+
+```console
+qsv diff --drop-equal-columns --drop-equal-fields left.csv right.csv
+```
+
 > Find the difference but do not output headers in the result
 
 ```console
@@ -115,7 +127,7 @@ qsv diff --help
 
 ## Diff Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑no‑headers‑left`&nbsp; | flag | When set, the first row will be considered as part of the left CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
 | &nbsp;`‑‑no‑headers‑right`&nbsp; | flag | When set, the first row will be considered as part of the right CSV to diff. (When not set, the first row is the header row and will be skipped during the diff. It will always appear in the output.) |  |
@@ -126,6 +138,7 @@ qsv diff --help
 | &nbsp;`‑k,`<br>`‑‑key`&nbsp; | string | The column indices that uniquely identify a record as a comma separated list of 0-based indices, e.g. 0,1,2 or column names, e.g. name,age. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. (default: 0) |  |
 | &nbsp;`‑‑sort‑columns`&nbsp; | string | The column indices by which the diff result should be sorted as a comma separated list of indices, e.g. 0,1,2 or column names, e.g. name,age. Records in the diff result that are marked as "modified" ("delete" and "add" records that have the same key, but have different content) will always be kept together in the sorted diff result and so won't be sorted independently from each other. Note that when selecting columns by name, only the left CSV's headers are used to match the column names and it is assumed that the right CSV has the same selected column names in the same order as the left CSV. |  |
 | &nbsp;`‑‑drop‑equal‑fields`&nbsp; | flag | Drop values of equal fields in modified rows of the CSV diff result (and replace them with the empty string). Key field values will not be dropped. |  |
+| &nbsp;`‑‑drop‑equal‑columns`&nbsp; | flag | Drop entire columns from the diff result that have no differences anywhere. A column is kept if it is a key column, if it differs in any modified row, or if it has a non-empty value in any added or deleted row. Otherwise it is dropped. Can be combined with --drop-equal-fields. |  |
 | &nbsp;`‑j,`<br>`‑‑jobs`&nbsp; | integer | The number of jobs to run in parallel. When not set, the number of jobs is set to the number of CPUs detected. |  |
 
 <a name="common-options"></a>

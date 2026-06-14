@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=8.0.0
+bm_version=9.0.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -51,7 +51,7 @@ bm_version=8.0.0
 # e.g. you compiled a tuned version of qsv with different features and/or CPU optimizations enabled
 # qsv_bin=../target/release/qsvlite
 # qsv_bin=../target/debug/qsv
-qsv_bin=qsv
+qsv_bin=qsvpy313
 # the path to the qsv binary that we dogfood to run the benchmarks
 # we use several optional features when dogfooding qsv (apply, luau & to)
 # and the user may be benchmarking a qsv binary variant that doesn't have these features enabled
@@ -142,6 +142,18 @@ if [[ "$benchmarker_version" != *"to;"* ]]; then
     echo "as benchmark_data.xlsx does not exist."
     exit 1
   fi
+fi
+
+# check if the qsv_bin being benchmarked has the python feature enabled.
+# Unlike the checks above, this is a SOFT check - the python feature is not
+# compiled into the regular prebuilt qsv binaries (only the qsvpyNNN flavors),
+# so we just skip the py benchmarks when it's absent instead of erroring out.
+has_python=0
+if [[ "$raw_version" == *"python-"* ]]; then
+  has_python=1
+else
+  echo "NOTE: $qsv_bin does not have the python feature enabled - skipping py benchmarks."
+  echo "      Use a python-enabled binary (e.g. qsvpy313) to benchmark the py command."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -635,6 +647,15 @@ run luau_script_debug env QSV_LOG_LEVEL=debug bash -c \'"$qsv_bin" luau map turn
 run luau_script_colidx "$qsv_bin" luau map turnaround_time --colindex "file:turnaround_time.luau" "$data"
 run luau_script_no_globals "$qsv_bin" luau map turnaround_time --no-globals "file:turnaround_time.luau" "$data"
 run luau_script_no_globals_colidx "$qsv_bin" luau map turnaround_time --no-globals --colindex "file:turnaround_time.luau" "$data"
+# py benchmarks mirror the luau ones above so the Luau-vs-Python interpreter
+# performance gap is readily apparent (qsv issue #1351). They only run when the
+# qsv_bin has the python feature (e.g. the qsvpyNNN flavors); see has_python above.
+if [[ "$has_python" -eq 1 ]]; then
+  run py_filter "$qsv_bin py filter \"col['Location'] == ''\" $data"
+  run py_dateformat "$qsv_bin py map dow --helper dt_format_py.py \"qsv_uh.dtformat(col['Created Date'])\" $data"
+  run py_script "$qsv_bin py map turnaround_time --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
+  run py_script_batchall "$qsv_bin py map turnaround_time --batch 0 --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
+fi
 run --index moarstats_index "$qsv_bin" moarstats "$data"
 run --index moarstats_advanced_index "$qsv_bin" moarstats --advanced "$data"
 run --index moarstats_bivariate_index "$qsv_bin" moarstats --bivariate "$data"

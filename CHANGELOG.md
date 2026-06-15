@@ -8,7 +8,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [21.1.0] - 2026-06-14
+## [21.1.0] - 2026-06-14 ⚡ The "Leaner & Faster" Release 🗜️
+
+A performance-and-polish release on top of 21.0.0's FAIRification headliners. `stats` gets dramatically faster and lighter, prebuilt binaries are now PGO-optimized, compressed inputs "just work" — and a handful of commands (`get`, `apply`, `diff`, `safenames`, `describegpt`) pick up convenient new capabilities. No MSRV or Polars bump — existing pipelines are unaffected.
+
+### Highlights
+
+- **`stats` is meaningfully faster and leaner.** ~40% faster unindexed, ~42% faster indexed `--everything`, and ~43% less peak memory ([#3970](https://github.com/dathere/qsv/pull/3970)).
+- **Transparent auto-decompression — local *and* remote.** `.zip` inputs and lookup tables, plus compressed remote sources (`.gz`/`.zlib`/`.zst`) for lookup tables and `get`/`dc:` ingests, are now detected and decompressed automatically — no pre-processing step ([#1417](https://github.com/dathere/qsv/issues/1417); [#3986](https://github.com/dathere/qsv/pull/3986), [#3987](https://github.com/dathere/qsv/pull/3987)).
+- **PGO-optimized prebuilt binaries.** Native-target release binaries now ship Profile-Guided-Optimization-tuned for extra performance out of the box ([#1448](https://github.com/dathere/qsv/issues/1448); [#3976](https://github.com/dathere/qsv/pull/3976)).
+- **`qsv-tune` machine profiler.** A new script that detects your hardware and recommends optimal qsv settings ([#2829](https://github.com/dathere/qsv/issues/2829); [#3985](https://github.com/dathere/qsv/pull/3985)).
+- **`get` gets CSV/TSV-aware.** Delimiter `sniff`ing, a sampling preview, and glob-pattern expansion for batch fetches ([#654](https://github.com/dathere/qsv/issues/654); [#3999](https://github.com/dathere/qsv/pull/3999)).
+- **`apply summarize`.** A new subcommand that condenses text using OpenAI-compatible LLMs ([#2691](https://github.com/dathere/qsv/issues/2691); [#3974](https://github.com/dathere/qsv/pull/3974)).
+- **`safenames` safer modes.** New `s`/`S` modes plus `--collapse` and `--unicode` flags for finer header-sanitization control ([#1921](https://github.com/dathere/qsv/issues/1921); [#3975](https://github.com/dathere/qsv/pull/3975)).
+
+Detailed MCP Server and Cowork Plugin changes are documented in the [MCP Server/Cowork Plugin CHANGELOG](https://github.com/dathere/qsv/blob/master/.claude/skills/CHANGELOG.md).
+
+---
 
 ### Added
 - `get`: CSV/TSV-aware ingest features — delimiter `sniff`ing, a sampling preview, and glob-pattern expansion for batch fetches ([#654](https://github.com/dathere/qsv/issues/654); [#3999](https://github.com/dathere/qsv/pull/3999)).
@@ -35,6 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `describegpt`: the context-file cache key is now collapsed only when the context file is a readable empty file ([#3973](https://github.com/dathere/qsv/pull/3973)).
 - jemalloc page-retention tuning is now gated to Linux only, avoiding unintended allocator behavior on macOS.
 - `util`: `_RJEM_MALLOC_CONF` is now surfaced in `show_env_vars()` output ([#3962](https://github.com/dathere/qsv/pull/3962)).
+
+---
+
+**Full Changelog**: https://github.com/dathere/qsv/compare/21.0.0...21.1.0
 
 ---
 

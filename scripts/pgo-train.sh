@@ -148,6 +148,12 @@ t dedup "$data"
 t sort "$data"
 t cat rows "$data" "$data"
 t behead "$data"
+t fixlengths "$data"
+t replace "[0-9]" "X" "$data"
+t extdedup "$data" pgo_train_extdedup.csv
+t extdedup "$data" --select 1-5
+t extsort "$data" pgo_train_extsort.csv
+t extsort "$data" --select 1-5
 
 # ---- feature-gated paths (skipped automatically on reduced binaries) --------
 t apply operations lower 2 "$data"
@@ -155,11 +161,16 @@ t schema "$data" --stdout
 t tojsonl "$data"
 t snappy compress "$data" --output pgo_train.snappy
 t validate "$data"
+t blake3 "$data"
+t luau map newcol "1 + 1" "$data"
+t profile "$data"
+t synthesize "$data" -n 1000 --seed 42 -o pgo_train_synth.csv
 
 if [[ "$minimal" -eq 0 ]]; then
   # heavier paths that need the real dataset and the full-feature build
   t searchset <(printf "homeless\npark\nNoise\n") "$data"
   t to xlsx pgo_train.xlsx "$data"
+  t excel pgo_train.xlsx
   # polars-backed paths - the biggest PGO win
   t sqlp "$data" "select * from _t_1 limit 1000"
   t sqlp "$data" "select \"Borough\", count(*) from _t_1 group by \"Borough\""
@@ -167,6 +178,9 @@ if [[ "$minimal" -eq 0 ]]; then
     t joinp "Community Board" "$data" community_board communityboards.csv
   fi
   t luau map newcol "1 + 1" "$data"
+  # geocode auto-downloads the Geonames index on first run (network required)
+  t geocode suggest City --new-column geocoded_city "$data"
+  t geocode reverse Location --new-column geocoded_location "$data"
 fi
 
 echo ""

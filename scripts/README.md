@@ -26,6 +26,17 @@ so it be can run on hardware and workloads that reflect your requirements/enviro
 
 See [benchmarks.sh](benchmarks.sh) for more details.
 
+> [!NOTE]
+> **Two binaries are benchmarked.** All commands run against the PGO-optimized prebuilt
+> `qsv` (`qsv_bin`), except the `py_*` benchmarks, which run against a python-enabled
+> `qsvpyNNN` flavor (`qsv_py_bin`, defaults to `qsvpy313`) since the `python` feature is
+> not compiled into the regular prebuilt qsv. The py benchmarks are skipped if no
+> python-enabled binary is found. Because of this, the Luau-vs-Python comparison
+> (qsv issue #1351) is not strictly binary-for-binary: Luau runs on the PGO-optimized
+> binary while Python runs on the non-PGO `qsvpyNNN` flavor. The comparison still reflects
+> the interpreter-overhead gap it was designed to show, as PGO has little effect on the
+> interpreter hot loops.
+
 ## misc/docopt-wordlist.bash - optional qsv tab completion support
 qsv's command-line options are quite extensive. Thankfully, since it uses [docopt](http://docopt.org/) for CLI processing,
 we can take advantage of [docopt.rs' tab completion support](https://github.com/docopt/docopt.rs#tab-completion-support) to make it

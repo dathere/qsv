@@ -42,16 +42,23 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.0.0
+bm_version=9.1.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
 
 # the path to the qsv binary, change this if you're not using the prebuilt binaries
 # e.g. you compiled a tuned version of qsv with different features and/or CPU optimizations enabled
+# The prebuilt release `qsv` is PGO-optimized (see .github/workflows/publish.yml), so we
+# default to it for the bulk of the benchmarks.
 # qsv_bin=../target/release/qsvlite
 # qsv_bin=../target/debug/qsv
-qsv_bin=qsvpy313
+qsv_bin=qsv
+# the path to the python-enabled qsv binary, used ONLY for the py benchmarks.
+# The python feature is NOT compiled into the regular prebuilt (PGO-optimized) qsv;
+# only the qsvpyNNN flavors have it. The py benchmarks are skipped if this binary is
+# missing or was built without the python feature (see has_python below).
+qsv_py_bin=qsvpy313
 # the path to the qsv binary that we dogfood to run the benchmarks
 # we use several optional features when dogfooding qsv (apply, luau & to)
 # and the user may be benchmarking a qsv binary variant that doesn't have these features enabled
@@ -108,6 +115,7 @@ if [[ "$arg_pat" == "help" ]]; then
   echo "  benchmarking: $raw_version"
   echo "  dogfooding: $benchmarker_version"
   echo "  qsv binary: $qsv_bin"
+  echo "  qsv python binary: $qsv_py_bin (py benchmarks only)"
   echo "  qsv benchmarker binary: $qsv_benchmarker_bin"
   echo "  benchmark data: $data"
   echo "  benchmark data url: $benchmark_data_url"
@@ -144,16 +152,22 @@ if [[ "$benchmarker_version" != *"to;"* ]]; then
   fi
 fi
 
-# check if the qsv_bin being benchmarked has the python feature enabled.
-# Unlike the checks above, this is a SOFT check - the python feature is not
-# compiled into the regular prebuilt qsv binaries (only the qsvpyNNN flavors),
-# so we just skip the py benchmarks when it's absent instead of erroring out.
+# check if the python-enabled qsv binary ($qsv_py_bin) is available and has the python
+# feature. Unlike the checks above, this is a SOFT check - the python feature is not
+# compiled into the regular prebuilt (PGO-optimized) qsv binaries (only the qsvpyNNN
+# flavors), so we just skip the py benchmarks when it's absent instead of erroring out.
+# The py benchmarks run with $qsv_py_bin while everything else uses the PGO-optimized
+# $qsv_bin.
 has_python=0
-if [[ "$raw_version" == *"python-"* ]]; then
-  has_python=1
-else
-  echo "NOTE: $qsv_bin does not have the python feature enabled - skipping py benchmarks."
-  echo "      Use a python-enabled binary (e.g. qsvpy313) to benchmark the py command."
+if command -v "$qsv_py_bin" &>/dev/null; then
+  py_raw_version=$("$qsv_py_bin" --version)
+  if [[ "$py_raw_version" == *"python-"* ]]; then
+    has_python=1
+  fi
+fi
+if [[ "$has_python" -eq 0 ]]; then
+  echo "NOTE: $qsv_py_bin not found or lacks the python feature - skipping py benchmarks."
+  echo "      Install a python-enabled binary (e.g. qsvpy313) to benchmark the py command."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -648,13 +662,14 @@ run luau_script_colidx "$qsv_bin" luau map turnaround_time --colindex "file:turn
 run luau_script_no_globals "$qsv_bin" luau map turnaround_time --no-globals "file:turnaround_time.luau" "$data"
 run luau_script_no_globals_colidx "$qsv_bin" luau map turnaround_time --no-globals --colindex "file:turnaround_time.luau" "$data"
 # py benchmarks mirror the luau ones above so the Luau-vs-Python interpreter
-# performance gap is readily apparent (qsv issue #1351). They only run when the
-# qsv_bin has the python feature (e.g. the qsvpyNNN flavors); see has_python above.
+# performance gap is readily apparent (qsv issue #1351). They run with the python-enabled
+# $qsv_py_bin (e.g. the qsvpyNNN flavors) instead of the PGO-optimized $qsv_bin, and only
+# when that binary has the python feature; see has_python above.
 if [[ "$has_python" -eq 1 ]]; then
-  run py_filter "$qsv_bin py filter \"col['Location'] == ''\" $data"
-  run py_dateformat "$qsv_bin py map dow --helper dt_format_py.py \"qsv_uh.dtformat(col['Created Date'])\" $data"
-  run py_script "$qsv_bin py map turnaround_time --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
-  run py_script_batchall "$qsv_bin py map turnaround_time --batch 0 --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
+  run py_filter "$qsv_py_bin py filter \"col['Location'] == ''\" $data"
+  run py_dateformat "$qsv_py_bin py map dow --helper dt_format_py.py \"qsv_uh.dtformat(col['Created Date'])\" $data"
+  run py_script "$qsv_py_bin py map turnaround_time --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
+  run py_script_batchall "$qsv_py_bin py map turnaround_time --batch 0 --helper turnaround_time_py.py \"qsv_uh.turnaround(col['Created Date'], col['Closed Date'])\" $data"
 fi
 run --index moarstats_index "$qsv_bin" moarstats "$data"
 run --index moarstats_advanced_index "$qsv_bin" moarstats --advanced "$data"

@@ -617,8 +617,8 @@ For issues or questions:
 
 ---
 
-**Updated**: 2026-06-07
-**Version**: 21.0.0
+**Updated**: 2026-06-14
+**Version**: 21.1.0
 **Tools**: 23 tools at startup (10 core + 13 commonly-used; +1 app-only when MCP Apps enabled), all 54 discoverable via `qsv_search_tools`
 **Skills**: 54 qsv commands
 **Status**: Production Ready

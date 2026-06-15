@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [21.1.0] - 2026-06-14
+
+Companion release to qsv 21.1.0 ("Leaner & Faster"). The MCP server tracks the qsv binary version per the policy adopted in 20.0.0. A performance-and-polish release: no new MCP skills, no MSRV or Polars bump — existing pipelines are unaffected.
+
+### Changed
+- **Minimum qsv version raised to 21.1.0** — single-sourced in `manifest.json` (`_meta.com.dathere.qsv.minimum_qsv_version`); `src/config.ts` and `scripts/cowork-setup.cjs` read it dynamically at runtime. Required because the regenerated skills advertise 21.1.0-only flags.
+- **Skill JSONs regenerated from qsv 21.1.0 USAGE text.** Skill count unchanged at 54 (no new top-level commands). Materially updated skills:
+  - **`qsv-diff`** — new `--drop-equal-columns` flag (drop columns with no differences anywhere; combinable with `--drop-equal-fields`), plus examples ([#2000](https://github.com/dathere/qsv/issues/2000); [#3998](https://github.com/dathere/qsv/pull/3998)).
+  - **`qsv-safenames`** — new "safer" `s`/`S` modes plus `--collapse` and `--unicode` flags for finer header-sanitization control ([#1921](https://github.com/dathere/qsv/issues/1921); [#3975](https://github.com/dathere/qsv/pull/3975)).
+  - **`qsv-describegpt`** — new `--context-file` option to enrich prompts with additional dataset context ([#3969](https://github.com/dathere/qsv/issues/3969); [#3972](https://github.com/dathere/qsv/pull/3972)).
+  - **`qsv-stats`** — description refreshed for the faster, leaner stats engine (~40% faster unindexed, ~42% faster indexed `--everything`, ~43% less peak memory) ([#3970](https://github.com/dathere/qsv/pull/3970)).
+  - **`qsv-sample`** — minor description/flag refinements.
+  - All other skill JSONs carry a version-stamp bump to 21.1.0.
+
+### Notes
+- **Transparent auto-decompression now benefits MCP/Cowork users.** qsv 21.1.0 auto-detects and decompresses `.zip` inputs and lookup tables (local) plus compressed remote sources (`.gz`/`.zlib`/`.zst`) for lookup tables and `get`/`dc:` ingests — no pre-processing step ([#1417](https://github.com/dathere/qsv/issues/1417)). `get`/`fetch` remain intentionally NOT exposed as MCP skills.
+
 ## [21.0.0] - 2026-06-07
 
 Companion release to qsv 21.0.0. The MCP server tracks the qsv binary version per the policy adopted in 20.0.0.

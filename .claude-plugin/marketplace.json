@@ -6,14 +6,14 @@
   },
   "metadata": {
     "description": "Blazingly fast data wrangling plugins for Claude Code — 54 skill-based commands for CSV, TSV, Excel, JSONL, and Parquet files",
-    "version": "21.0.0"
+    "version": "21.1.0"
   },
   "plugins": [
     {
       "name": "qsv-data-wrangling",
       "source": "./.claude/skills",
       "description": "Blazingly fast tabular data wrangling with 54 qsv skill-based commands for CSV, TSV, Excel, JSONL, and Parquet files",
-      "version": "21.0.0",
+      "version": "21.1.0",
       "author": {
         "name": "datHere, Inc.",
         "email": "qsv@dathere.com",

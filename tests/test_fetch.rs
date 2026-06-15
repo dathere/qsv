@@ -567,6 +567,7 @@ fn fetch_jaq_multiple_file() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetch_custom_header() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -629,6 +630,7 @@ fn fetch_custom_invalid_user_agent_error() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetch_custom_user_agent() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -651,6 +653,7 @@ fn fetch_custom_user_agent() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetch_user_agent() {
     let wrk = Workdir::new("fetch_user_agent");
     wrk.create(
@@ -760,6 +763,7 @@ fn fetchpost_custom_invalid_user_agent_error() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_custom_user_agent() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1055,6 +1059,7 @@ fn fetch_complex_url_template() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_simple_test() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1132,6 +1137,7 @@ fn fetchpost_simple_test() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_simple_diskcache() {
     let wrk = Workdir::new("fetchpost_diskcache");
     wrk.create(
@@ -1271,6 +1277,7 @@ fn fetchpost_simple_diskcache() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_compress_test() {
     let wrk = Workdir::new("fetch");
     wrk.create(
@@ -1376,6 +1383,7 @@ fn fetchpost_jaqfile_doesnotexist_error() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_literalurl_test() {
     let wrk = Workdir::new("fetch_literalurl_test");
     wrk.create(
@@ -1507,6 +1515,7 @@ fn fetchpost_simple_report() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_payload_template() {
     let wrk = Workdir::new("fetchpost_tpl");
     wrk.create(
@@ -1573,6 +1582,7 @@ fn fetchpost_payload_template() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_payload_template_with_globals() {
     let wrk = Workdir::new("fetchpost_tpl");
     wrk.create(
@@ -1651,6 +1661,7 @@ fn fetchpost_payload_template_with_globals() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_payload_template_with_report() {
     let wrk = Workdir::new("fetchpost_tpl_report");
     wrk.create(
@@ -1722,6 +1733,7 @@ fn fetchpost_payload_template_with_report() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_with_headers() {
     let wrk = Workdir::new("fetchpost_headers");
     wrk.create(
@@ -1793,6 +1805,7 @@ fn fetchpost_disk_cache() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn fetchpost_content_type() {
     let wrk = Workdir::new("fetchpost_content_type");
     wrk.create(
@@ -1861,6 +1874,7 @@ fn fetchpost_content_type() {
 }
 
 #[test]
+#[ignore = "flaky: depends on httpbin.org external service"]
 fn test_fetchpost_column_list_globals() {
     let wrk = Workdir::new("fetchpost");
     wrk.create_from_string(

@@ -97,10 +97,10 @@ $ qsv fetch URL --new-column CityState --jaq '[ ."places"[0]."place name",."plac
 
 data_with_CityState.csv
 ```csv
-URL, CityState,
-https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
-https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
-https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
+URL,CityState
+https://api.zippopotam.us/us/90210,"[""Beverly Hills"",""CA""]"
+https://api.zippopotam.us/us/94105,"[""San Francisco"",""CA""]"
+https://api.zippopotam.us/us/92802,"[""Anaheim"",""CA""]"
 ```
 
 # As you can see, entering jaq selectors on the command line is error prone and can quickly become cumbersome.

@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [21.1.0] - 2026-06-14 ⚡ The "Leaner & Faster" Release 🗜️
 
 A performance-and-polish release on top of 21.0.0's FAIRification headliners. `stats` gets dramatically faster and lighter, prebuilt binaries are now PGO-optimized, compressed inputs "just work" — and a handful of commands (`get`, `apply`, `diff`, `safenames`, `describegpt`) pick up convenient new capabilities. No MSRV or Polars bump — existing pipelines are unaffected.
+The [Fable 5](https://www.anthropic.com/news/claude-fable-5-mythos-5)-powered [stats performance refactoring](https://github.com/dathere/qsv/commit/660720c729eabeac4f8032d572b3adadb1a43ada) combined with PGO-optimization made the `stats_everything_index` [benchmark](https://qsv.dathere.com/benchmarks) twice as fast (1.96x faster to be exact) - compiling 48 statistical measures for the 1m-row, 520mb, 41-column NYC 311 sample in just 0.563 seconds vs 1.106 seconds in the previous version!
 
 ### Highlights
 

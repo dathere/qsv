@@ -31,10 +31,12 @@ The following "smart" commands (🪄) use the stats cache (`stats.csv.data.jsonl
 *   **`moarstats`**: Reads `.stats.csv` files to add extended statistics.
 *   **`scoresql`**: Analyzes SQL queries against stats, moarstats, and frequency caches to produce performance scores with optimization suggestions.
 *   **`pragmastat`**: Reads the stats JSONL cache directly to auto-filter non-numeric columns and support Date/DateTime columns.
+*   **`synthesize`**: Uses the stats cache to model each column's distribution when generating statistically-faithful synthetic CSVs.
 
 ## 3. Dependency on `frequency` (created via `qsv frequency`)
 *   **`schema`**: Uses frequency distributions internally to identify "low cardinality" columns and automatically build `enum` constraints for the generated JSON Schema.
 *   **`describegpt`**: Uses frequency distributions to provide data distribution context to the LLM. It can read an existing frequency file via the `--freq-options "file:<path>"` option.
+*   **`synthesize`**: Uses frequency distributions to reproduce realistic value distributions in the generated synthetic CSVs.
 
 ## 4. Dependency on `schema` (created via `qsv schema`)
 *   **`validate`**: Primarily depends on a `.schema.json` file (produced by `schema`) to validate CSV records.

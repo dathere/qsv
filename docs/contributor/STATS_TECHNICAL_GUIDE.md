@@ -118,7 +118,7 @@ fn get_sum<T: std::ops::Add<Output = T> + Default + Copy>(values: &[T]) -> T {
 }
 ```
 
-**In stats.rs**: The `compute()` function uses generics: `fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>` where `I` is any iterator over CSV records.
+**In stats.rs**: The `compute()` function is generic over the reader: `fn compute<R: std::io::Read>(&self, sel: &Selection, rdr: &mut csv::Reader<R>, limit: usize, expected_rows: usize, weight_col_idx: Option<usize>) -> Vec<Stats>` where `R` is any `std::io::Read` source.
 
 ### 5. **Iterators and the Iterator Trait**
 ```rust
@@ -386,7 +386,7 @@ struct Stats {
     sum: Option<TypedSum>,           // Numeric sum
     online: Option<OnlineStats>,     // Mean/variance
     online_len: Option<OnlineStats>, // String length stats
-    modes: Option<Unsorted<Vec<u8>>>, // For mode computation
+    modes: Option<Frequencies<Vec<u8>>>, // For mode/cardinality computation
     unsorted_stats: Option<Unsorted<f64>>, // For median/quartiles
     minmax: Option<TypedMinMax>,     // Min/max values
 }
@@ -442,7 +442,9 @@ fn sequential_stats(&self, whitelist: &str) -> CliResult<(csv::ByteRecord, Vec<S
     init_date_inference(self.flag_infer_dates, &headers, whitelist)?;
     
     // Single thread processes all records
-    let stats = self.compute(&sel, rdr.byte_records());
+    // compute() takes the reader directly (plus a row limit, expected row count,
+    // and the optional weight column index), not an iterator of records.
+    let stats = self.compute(&sel, &mut rdr, limit, expected_rows, weight_col_idx);
     Ok((headers, stats))
 }
 ```
@@ -487,7 +489,7 @@ fn parallel_stats(&self, whitelist: &str, idx_count: u64) -> CliResult<...> {
             // 2. Seeks to its chunk's start (using index)
             // 3. Processes chunk_size records
             // 4. Sends results back via channel
-            let stats = args.compute(&sel, it);
+            let stats = args.compute(&sel, &mut chunk_rdr, limit, chunk_size, weight_col_idx);
             send.send(stats).unwrap();
         });
     }
@@ -534,10 +536,14 @@ The `compute()` function is marked `#[inline]` and uses unsafe to avoid bounds c
 
 ```rust
 #[inline]
-fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
-where
-    I: Iterator<Item = csv::Result<csv::ByteRecord>>,
-{
+fn compute<R: std::io::Read>(
+    &self,
+    sel: &Selection,
+    rdr: &mut csv::Reader<R>,
+    limit: usize,
+    expected_rows: usize,
+    weight_col_idx: Option<usize>,
+) -> Vec<Stats> {
     // Pre-computation: cache flags in local variables (register allocation)
     let infer_date_flags = INFER_DATE_FLAGS.get().unwrap();
     let infer_boolean = self.flag_infer_boolean;
@@ -774,16 +780,20 @@ let (headers, stats) = match rconfig.indexed()? {
 }?;
 ```
 
-### 3. **Core Computation: `fn compute<I>()` **
+### 3. **Core Computation: `fn compute<R: Read>()` **
 
 This is the innermost loop, processing each record:
 
 ```rust
 #[inline]
-fn compute<I>(&self, sel: &Selection, it: I, weight_col_idx: Option<usize>) -> Vec<Stats>
-where
-    I: Iterator<Item = csv::Result<csv::ByteRecord>>,
-{
+fn compute<R: std::io::Read>(
+    &self,
+    sel: &Selection,
+    rdr: &mut csv::Reader<R>,
+    limit: usize,
+    expected_rows: usize,
+    weight_col_idx: Option<usize>,
+) -> Vec<Stats> {
     let sel_len = sel.len();
     let mut stats = self.new_stats(sel_len);
     

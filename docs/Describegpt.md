@@ -133,55 +133,25 @@ When working with a Local LLM (i.e. if `--base-url` or `QSV_LLM_BASE_URL` contai
 
 You can also specify your API key directly in your CLI using the `--api-key` option.
 
-Note that if you already have `QSV_LLM_APIKEY` set as an environment variable and it is not empty, this environment variable will override your given flag.
+Note that the precedence is: CLI flag > environment variable > error. If you pass `--api-key`, it overrides
+the `QSV_LLM_APIKEY` environment variable. Pass `--api-key NONE` to suppress the API key entirely.
 
-## `--json`
+## `--format <format>`
 
-You can use the `--json` option to expect JSON output. This is useful for piping the output to other commands for example.
+Use the `--format` option to set the output format. Supported values are `Markdown` (the default), `TSV`,
+`JSON`, `TOON`, `JSONSchema`, and `SemanticMd`.
 
-Note that **the `--json` option does not indicate to your prompt that you want to generate JSON output based on your dataset**. It instead ensures the command output is in JSON format. You must specify this within your prompts, such as adding the phrase "in JSON format" to your prompt.
+- `Markdown` - human-readable Markdown (default).
+- `TSV` - tab-separated values.
+- `JSON` - JSON output, useful for piping to other commands.
+- `TOON` - a compact, human-readable encoding of the JSON data model, optimized for LLM prompts.
+- `JSONSchema` - emits the Data Dictionary as a JSON Schema (draft 2020-12). Requires the dictionary
+  inference phase. See `--allow-extra-cols` and `--strict-dates` for JSONSchema-specific behavior.
+- `SemanticMd` - emits the Data Dictionary as a Semantic Markdown document. Implies `--infer-content-type`
+  and also requires the dictionary inference phase. See `--ds-source`, `--ds-updated`, and `--ds-license`.
 
-If the prompt output is not in valid JSON format but the `--json` option is specified, the command will generate a default error JSON output printed to `stdout`, such as the following:
-
-```json
-{
-    "option": {
-        "error": "Invalid JSON output for option."
-    }
-}
-```
-
-You may often see this error when `--max-tokens` is set too low and therefore the output is incomplete.
-
-The invalid output will be printed in `stderr`.
-
-Note that `--json` may not be used alongside `--jsonl`, nor may they both be set to true in a prompt file at the same time. This will result in an error.
-
-## `--jsonl`
-
-Similar to `--json`, you can use the `--jsonl` option to expect [JSON Lines](https://jsonlines.org/) output.
-
-If you use `--output` with `--jsonl`, the output will be written to a new file if it doesn't exist and any lines after the first will be appended to the file. If the file already exists, the output will be appended to the file. Each inference option (`--dictionary`, `--description`, `--tags`) will be written to a new line in the file.
-
-If you use `--prompt-file` with `--jsonl`, the prompt name and timestamp will also be included in the JSONL output for each inference option.
-
-Note that **the `--jsonl` option does not indicate to your prompt that you want to generate JSONL output based on your dataset**. It instead ensures the command output is in JSONL format. You must specify in your prompt to make a completion in JSON format, such as adding the phrase "in JSON format" to your prompt, and this will then be parsed into JSONL format by `describegpt`.
-
-If the prompt output is not in valid JSON format but the `--jsonl` option is specified, the command will generate a default error JSON output printed to `stdout`, such as the following:
-
-```json
-{
-    "option": {
-        "error": "Invalid JSON output for option."
-    }
-}
-```
-
-You may often see this error when `--max-tokens` is set too low and therefore the output is incomplete.
-
-The invalid output will be printed in `stderr`.
-
-Note that `--jsonl` may not be used alongside `--json`, nor may they both be set to true in a prompt file at the same time. This will result in an error.
+Note that `--format` only controls the structure of the command's output. It does **not** instruct the LLM
+to generate a particular content shape - that is driven by your prompts.
 
 ## `--max-tokens <value>`
 
@@ -189,7 +159,7 @@ Note that `--jsonl` may not be used alongside `--json`, nor may they both be set
 
 Input tokens may include the output of `qsv stats` and `qsv frequency` from your dataset, which can be large based on your dataset's size. Therefore we use `gpt-oss-20b` as the default model for `describegpt` as it has a maximum token limit of 131,072.
 
-It is highly recommended to set the `--max-tokens` option to set the maximum number of tokens in the completion output. Your output may be truncated if you set this value too low or you may receive errors depending on your options. The default is set to `2000` as a safety measure.
+It is highly recommended to set the `--max-tokens` option to set the maximum number of tokens in the completion output. Your output may be truncated if you set this value too low or you may receive errors depending on your options. The default is set to `10000` as a safety measure.
 
 When running a Local LLM (detected if the `base_url` contains localhost), the max token limit is automatically disabled. Your completions are only limited by the LLM model you're using.
 
@@ -210,8 +180,6 @@ If you do not specify a prompt file, default prompts will be used.
 | `dictionary_prompt`      | The prompt for the `--dictionary` option.                                                   |
 | `description_prompt`     | The prompt for the `--description` option.                                                  |
 | `tags_prompt`            | The prompt for the `--tags` option.                                                         |
-| `json`                   | Whether or not the output should be in JSON format (refer to [`--json`](#json) section).    |
-| `jsonl`                  | Whether or not the output should be in JSONL format (refer to [`--jsonl`](#jsonl) section). |
 | `base_url`               | The URL of the LLM API. When it contains "localhost", automatically sets `tokens` to 0.     |
 | `model`                  | The LLM model to use.                                                                       |
 | `timeout`                | The timeout in seconds to use when waiting for LLM prompt completions.                      |
@@ -223,16 +191,20 @@ If you do not specify a prompt file, default prompts will be used.
 
 All fields must be present in your prompt file. If you do not want to use a certain prompt, you can set it to an empty string.
 
-Within your prompts, you can use the following variables:.
+Within your prompts, you can use the following MiniJinja variables (use `{{ variable }}` syntax).
 These are replaced in the prompt sent to the LLM with their respective values at run-time:
 
--   `{STATS}` - summary stats generated by qsv stats
--   `{FREQUENCY}` - frequency distribution generated by qsv frequency
--   `{DICTIONARY}` - replaced by the Data Dictionary that was inferred by the LLM using Stats & Frequency
--   `{JSON_ADD}` - inserts ` (in JSON format)`. Note the leading space.
--   `{INPUT_TABLE_NAME}` - sentinel value that is replaced by the name of the input file
--   `{GENERATED_BY_SIGNATURE}` - replaced with model name and current timestamp
--   `{DUCKDB_VERSION}` - DuckDB version (up to the minor version)
+-   `{{ stats }}` - summary stats generated by qsv stats (CSV format)
+-   `{{ frequency }}` - frequency distribution generated by qsv frequency (CSV format)
+-   `{{ dictionary }}` - the Data Dictionary that was inferred by the LLM using Stats & Frequency (JSON format)
+-   `{{ json_add }}` - inserts ` (in JSON format)` when JSON output is requested. Note the leading space.
+-   `{{ input_table_name }}` - replaced by the name of the input file
+-   `{{ generated_by_signature }}` - replaced with model name and current timestamp
+-   `{{ duckdb_version }}` - DuckDB version (up to the minor version)
+-   `{{ context }}` - additional, user-supplied context provided via `--context-file`. Empty when not set,
+    so guard usage with `{% if context %}`.
+
+See the header of `resources/describegpt_defaults.toml` for the full list of available template variables.
 
 
 See `resources/describegpt_defaults.toml` for the default values.

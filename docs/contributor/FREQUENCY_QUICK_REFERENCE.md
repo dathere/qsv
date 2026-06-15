@@ -10,7 +10,7 @@ The `frequency` command produces exact frequency distribution tables that:
 - **Handle data normalization** with trimming, case folding, NULL handling, and whitespace visualization options
 
 ## File Location
-`src/cmd/frequency.rs` (~4,287 lines)
+`src/cmd/frequency.rs` (~4,361 lines)
 
 ## Key Entry Points
 
@@ -105,7 +105,7 @@ cargo test test_frequency::prop_frequency_indexed
 - Implementation: `src/cmd/frequency.rs`
 - Tests: `tests/test_frequency.rs`
 - Stats cache producer: `src/cmd/stats.rs`
-- Indexing behavior overview: `docs/PROJECT_TECHNICAL_OVERVIEW.md`
+- Indexing behavior overview: `docs/contributor/PROJECT_TECHNICAL_OVERVIEW.md`
 
 ## Quick Debugging Tips
 

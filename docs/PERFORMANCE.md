@@ -208,7 +208,7 @@ There are a number of commands/modes however (denoted by the "exploding head" em
 
 > NOTE: Though not as flexible, `dedup` and `sort` have corresponding "external" versions - `extdedup` and `extsort` respectively, that use external memory (i.e. disk) to process arbitrarily large CSVs.
 
-In addition, `frequency`, `schema` and `tojsonl` - though they do not load the entire file into memory, uses additional memory proportional to the cardinality (number of unique values) of each column compared to other "streaming" commands (denoted by the "persevering face" emoji - 😣).
+In addition, `frequency`, `implode`, `join`, `schema` and `tojsonl` - though they do not load the entire file into memory, uses additional memory proportional to the cardinality (number of unique values) of each column compared to other "streaming" commands (denoted by the "persevering face" emoji - 😣).
 
 For very large files, this can be a problem, as qsv will run out of memory and panic.
 To prevent this, qsv has two memory check heuristics when running "non-streaming" commands:
@@ -271,16 +271,16 @@ The `--version` option shows a lot of information about qsv. It displays:
 
 ```bash
 $ qsv --version
-qsv 20.0.0-jemalloc-apply;fetch;foreach;geocode;Luau 0.716;magika;to;polars-0.53.0:py-1.40.1:1e9a63b;self_update-16-16;51.20 GiB-0 B-47.73 GiB-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.95;macOS 26.5-Darwin 25.5.0;Apple M4 Max-16) prebuilt
+qsv 21.1.0-jemalloc-apply;fetch;foreach;geocode;Luau 0.724;magika;to;polars-0.54.4:py-1.40.1:1e9a63b;self_update-16-16;51.20 GiB-0 B-47.73 GiB-64.00 GiB (aarch64-apple-darwin compiled with Rust 1.96;macOS 26.5-Darwin 25.5.0;Apple M4 Max-16) prebuilt
 ```
 
-Shows that I'm running qsv version 20.0.0, with the `jemalloc` allocator (instead of `standard` or `mimalloc`), and I have:
+The above is a representative snapshot. It shows that I'm running qsv version 21.1.0, with the `jemalloc` allocator (instead of `standard` or `mimalloc`), and I have:
 - the `apply`, `fetch`, `foreach`, `geocode`, `luau`, `magika`, `to`, `polars` and `self_update` features enabled,
-- the exact version of the embedded Luau interpreter (Luau 0.716),
-- Polars with its version and Python bindings metadata (polars-0.53.0:py-1.40.1:1e9a63b),
+- the exact version of the embedded Luau interpreter (Luau 0.724),
+- Polars with its version and Python bindings metadata (polars-0.54.4:py-1.40.1:1e9a63b),
 - qsv will use 16 logical processors out of 16 detected when running multithreaded commands.
 - a maximum input file size of 51.20 GiB for "non-streaming" commands (see [Memory Management](https://github.com/dathere/qsv#memory-management) for more info), 0 B of free swap memory, 47.73 GiB of available memory (this value fluctuates based on system load at the time) and 64.00 GiB of total memory.
-- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.95. It also shows the OS version (macOS 26.5-Darwin 25.5.0) and CPU (Apple M4 Max). The binary is a `prebuilt` release.
+- the qsv binary was built to target the aarch64-apple-darwin platform (Apple Silicon), compiled using Rust 1.96. It also shows the OS version (macOS 26.5-Darwin 25.5.0) and CPU (Apple M4 Max). The binary is a `prebuilt` release.
 
 ## Caching
 qsv employs several caching strategies to improve performance:

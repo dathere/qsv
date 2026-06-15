@@ -319,7 +319,7 @@ cargo test test_frequency::prop_frequency_indexed -- --ignored
   ```
 
 ### Debugging Tips
-- Use `RUST_LOG=debug` alongside ad-hoc `log::debug!` statements when developing new features. Remember to guard them or compile to dev builds only.
+- Use `QSV_LOG_LEVEL=debug` alongside ad-hoc `log::debug!` statements when developing new features. Remember to guard them or compile to dev builds only.
 - For performance regressions, record a profiling session using `samply` or `perf` and inspect hot spots in `ftables_unweighted`/`ftables_weighted_internal` and `counts`.
 - When adding new unsafe code, document invariants with `safety:` comments and consider writing targeted tests that exercise boundary conditions (empty columns, single-row datasets, high cardinality).
 

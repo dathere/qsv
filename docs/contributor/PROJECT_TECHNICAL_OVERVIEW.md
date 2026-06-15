@@ -112,7 +112,7 @@ See details: “How stats decides if a file is indexed” in `docs/STATS_TECHNIC
 ### Error and logging conventions
 - Errors flow via `CliResult<T>` and `CliError` (see `clitypes.rs`).
 - User-facing errors are surfaced clearly; IO/CSV issues are categorized; broken pipe handled specially.
-- Logging is set up in `util::init_logger()`; `RUST_LOG` controls verbosity.
+- Logging is set up in `util::init_logger()`; `QSV_LOG_LEVEL` controls verbosity.
 
 ---
 

@@ -2,7 +2,7 @@
 
 Validates CSV against [JSON Schema](https://json-schema.org/), or just against [RFC 4180](https://www.loc.gov/preservation/digital/formats/fdd/fdd000323.shtml).
 
-Uses [Stranger6667/jsonschema-rs](https://github.com/Stranger6667/jsonschema-rs) as validation engine, and supports JSON Schema Draft 4, 6, 7, 2019-09, and 2020-12.
+Uses [Stranger6667/jsonschema-rs](https://github.com/Stranger6667/jsonschema-rs) as validation engine, and supports JSON Schema Draft 2020-12.
 
 ## Usage Examples
 
@@ -95,13 +95,18 @@ $ wc -l adur-public-toilets.csv*
    16 adur-public-toilets.csv
     3 adur-public-toilets.csv.invalid
    14 adur-public-toilets.csv.valid
-    2 adur-public-toilets.csv.validation-errors.jsonl
+    5 adur-public-toilets.csv.validation-errors.tsv
 ```
 
-adur-public-toilets.csv.validation-errors.jsonl shows 2 rows failed validation, with 4 rules violated.
+adur-public-toilets.csv.validation-errors.tsv is a tab-separated report with a `row_number`, `field`, and
+`error` column. Here it shows 2 rows failed validation, with 4 rules violated (the example below is
+illustrative):
 ```
-{"valid":false,"errors":[{"keywordLocation":"/properties/ExtractDate/type","instanceLocation":"/ExtractDate","absoluteKeywordLocation":"https://example.com/properties/ExtractDate/type","error":"null is not of type \"string\""},{"keywordLocation":"/properties/OrganisationLabel/type","instanceLocation":"/OrganisationLabel","absoluteKeywordLocation":"https://example.com/properties/OrganisationLabel/type","error":"null is not of type \"string\""}],"row_index":1}
-{"valid":false,"errors":[{"keywordLocation":"/properties/CoordinateReferenceSystem/pattern","instanceLocation":"/CoordinateReferenceSystem","absoluteKeywordLocation":"https://example.com/properties/CoordinateReferenceSystem/pattern","error":"\"OSGB3\" does not match \"(WGS84|OSGB36)\""},{"keywordLocation":"/properties/Category/pattern","instanceLocation":"/Category","absoluteKeywordLocation":"https://example.com/properties/Category/pattern","error":"\"Mens\" does not match \"(Female|Male|Female and Male|Unisex|Male urinal|Children only|None)\""}],"row_index":3}
+row_number	field	error
+1	ExtractDate	null is not of type "string"
+1	OrganisationLabel	null is not of type "string"
+3	CoordinateReferenceSystem	"OSGB3" does not match "(WGS84|OSGB36)"
+3	Category	"Mens" does not match "(Female|Male|Female and Male|Unisex|Male urinal|Children only|None)"
 ```
 
 

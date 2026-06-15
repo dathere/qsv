@@ -47,6 +47,8 @@ qsv is designed to handle large files efficiently, but some operations need to l
 
 **Memory-intensive commands (marked with 😣):**
 - `frequency`
+- `implode`
+- `join`
 - `schema`
 - `tojsonl`
 

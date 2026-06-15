@@ -9,7 +9,7 @@ The `index` command builds random-access sidecar files (`.csv.idx`) so other com
 - **Avoid stdin/snappy pitfalls** by limiting operation to regular, seekable CSV files
 
 ## File Location
-`src/cmd/index.rs` (~77 lines)
+`src/cmd/index.rs` (~79 lines)
 
 ## Key Entry Points
 
@@ -83,7 +83,7 @@ cargo test test_index::index_autoindex_threshold_reached
 - Technical deep dive: `INDEX_TECHNICAL_GUIDE.md`
 - Auto-index internals: `src/config.rs` (`autoindex_file`, `index_files`, `indexed`)
 - Utility helpers: `src/util.rs` (`idx_path`, file metadata helpers)
-- Usage docs: `docs/PROJECT_TECHNICAL_OVERVIEW.md` indexing section
+- Usage docs: `docs/contributor/PROJECT_TECHNICAL_OVERVIEW.md` indexing section
 
 ## Quick Debugging Tips
 
@@ -95,7 +95,7 @@ cargo test test_index::index_autoindex_threshold_reached
 ./target/release/qsv index -o /tmp/data.idx data.csv
 
 # Inspect whether qsv thinks a file is indexed (debug logging)
-RUST_LOG=debug ./target/release/qsv stats data.csv
+QSV_LOG_LEVEL=debug ./target/release/qsv stats data.csv
 
 # Force rebuild by touching CSV then running an indexed command
 touch data.csv

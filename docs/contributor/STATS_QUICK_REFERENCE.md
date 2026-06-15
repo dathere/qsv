@@ -10,7 +10,7 @@ The `stats` command in qsv is a high-performance CSV statistics engine that:
 - **Computes up to 48 summary statistics** per column (beyond the `field`/`type` identifiers)
 
 ## File Location
-`src/cmd/stats.rs` (~5,638 lines)
+`src/cmd/stats.rs` (~6,052 lines)
 
 ## Key Entry Points
 
@@ -53,7 +53,7 @@ struct Stats {
     nullcount: u64,              // NULL value count
     sum: Option<TypedSum>,       // Numeric sum (with overflow detection)
     online: Option<OnlineStats>, // Mean/stddev (Welford's algorithm)
-    modes: Option<Unsorted<Vec<u8>>>, // For mode computation
+    modes: Option<Frequencies<Vec<u8>>>, // For mode/cardinality computation
     unsorted_stats: Option<Unsorted<f64>>, // For median/quartiles
     minmax: Option<TypedMinMax>, // Min/max values
     // ... 40+ more fields for different statistics
@@ -108,7 +108,7 @@ For each cell value, tries in order:
 
 Creates three files for `input.csv`:
 - `input.stats.csv` - Statistics in CSV format
-- `input.stats.csv.jsonl` - Metadata (args, timestamp, duration)
+- `input.stats.csv.json` - Metadata (args, timestamp, duration)
 - `input.stats.csv.data.jsonl` - Statistics in JSONL format (optional)
 
 Reuses cache if:
@@ -175,7 +175,7 @@ Bob,25,87.2" | ./target/release/qsv stats
 - Full technical guide: `STATS_TECHNICAL_GUIDE.md` (this repo)
 - qsv wiki: https://github.com/dathere/qsv/wiki
 - stats command docs: `/docs/PERFORMANCE.md`
-- Test cases: `/tests/test_stats.rs` (~7,066 lines)
+- Test cases: `/tests/test_stats.rs` (~7,396 lines)
 
 ## Quick Debugging
 
@@ -200,11 +200,11 @@ cat file.stats.csv.data.jsonl | jq . | head
 
 | File | Purpose |
 |------|---------|
-| `src/cmd/stats.rs` | Main implementation (~5,638 lines) |
+| `src/cmd/stats.rs` | Main implementation (~6,052 lines) |
 | `src/config.rs` | CSV reader configuration |
 | `src/select.rs` | Column selection logic |
 | `src/util.rs` | Utility functions |
-| `tests/test_stats.rs` | Comprehensive test suite (~7,066 lines) |
+| `tests/test_stats.rs` | Comprehensive test suite (~7,396 lines) |
 | `Cargo.toml` | Dependencies (see `stats` and `csv` crates) |
 
 ---

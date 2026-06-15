@@ -105,7 +105,7 @@ The core of `run` is straightforward:
    ```rust
    let mut wtr = io::BufWriter::with_capacity(DEFAULT_WTR_BUFFER_CAPACITY, fs::File::create(pidx)?);
    ```
-   The default buffer (currently 16 MiB) matches the buffering strategy used by other writers.
+   The default buffer (currently 512 KiB) matches the buffering strategy used by other writers.
 
 5. **Index creation**:
    ```rust
@@ -120,8 +120,8 @@ The core of `run` is straightforward:
 
 While `index.rs` only builds indexes, the broader lifecycle is governed by `Config`:
 
-- **`Config::autoindex_file()`** (lines ~594-619): silently creates an index when either `QSV_AUTOINDEX_SIZE` is set and the CSV size meets the threshold or when stale indexes are detected.
-- **`Config::index_files()`** (lines ~627-715): central check used by other commands to determine if an index exists, auto-create one, and refresh stale indexes by comparing modification times.
+- **`Config::autoindex_file()`** (lines ~722-753): silently creates an index when either `QSV_AUTOINDEX_SIZE` is set and the CSV size meets the threshold or when stale indexes are detected.
+- **`Config::index_files()`** (lines ~755-853): central check used by other commands to determine if an index exists, auto-create one, and refresh stale indexes by comparing modification times.
 - **`Config::indexed()`**: wraps `index_files()` and opens an `Indexed<fs::File, fs::File>` handle used by workloads that support parallel iteration.
 
 Environment knobs:
@@ -211,13 +211,13 @@ ls -lh data.csv.idx
 
 # Confirm indexed command sees index
 touch data.csv
-RUST_LOG=debug ./target/release/qsv stats data.csv
+QSV_LOG_LEVEL=debug ./target/release/qsv stats data.csv
 
 # Force auto-index by environment threshold
 QSV_AUTOINDEX_SIZE=100 ./target/release/qsv slice -i 10 data.csv
 ```
 
-Enable logging (`RUST_LOG=info` or `debug`) to observe messages like `index stale... autoindexing...` emitted from `Config::index_files`.
+Enable logging (`QSV_LOG_LEVEL=info` or `debug`) to observe messages like `index stale... autoindexing...` emitted from `Config::index_files`.
 
 ---
 

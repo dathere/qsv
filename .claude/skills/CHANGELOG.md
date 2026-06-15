@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [21.1.0] - 2026-06-14
 
-Companion release to qsv 21.1.0 ("Leaner & Faster"). The MCP server tracks the qsv binary version per the policy adopted in 20.0.0. A performance-and-polish release: no new MCP skills, no MSRV or Polars bump — existing pipelines are unaffected.
+Companion release to qsv 21.1.0 ("Leaner & Faster"). The MCP server tracks the qsv binary version per the policy adopted in 20.0.0. A performance-and-polish release: no new MCP skills and no MSRV or Polars bump. The minimum qsv binary is raised to 21.1.0, so update your qsv binary first; existing pipelines are otherwise unaffected.
 
 ### Changed
 - **Minimum qsv version raised to 21.1.0** — single-sourced in `manifest.json` (`_meta.com.dathere.qsv.minimum_qsv_version`); `src/config.ts` and `scripts/cowork-setup.cjs` read it dynamically at runtime. Required because the regenerated skills advertise 21.1.0-only flags.

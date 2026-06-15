@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.1.0
+bm_version=9.1.1
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -168,6 +168,17 @@ fi
 if [[ "$has_python" -eq 0 ]]; then
   echo "NOTE: $qsv_py_bin not found or lacks the python feature - skipping py benchmarks."
   echo "      Install a python-enabled binary (e.g. qsvpy313) to benchmark the py command."
+else
+  # The py_* results are recorded under $qsv_bin's version metadata, so the py binary's
+  # base version must match $qsv_bin's or the Python rows would be misattributed to the
+  # wrong qsv release. Skip the py benchmarks (rather than mislabel them) on a mismatch.
+  qsv_base_version=$(echo "$raw_version" | cut -d' ' -f2 | cut -d'-' -f1)
+  py_base_version=$(echo "$py_raw_version" | cut -d' ' -f2 | cut -d'-' -f1)
+  if [[ "$qsv_base_version" != "$py_base_version" ]]; then
+    has_python=0
+    echo "NOTE: $qsv_py_bin version ($py_base_version) differs from $qsv_bin version ($qsv_base_version)"
+    echo "      - skipping py benchmarks to avoid misattributing results to the wrong version."
+  fi
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS

@@ -9,8 +9,10 @@ values from an API's JSON response using the jq JSON Query Language.
 * When `--jaq` is not used and `--new-column` is not set, the output is a JSONL file - one minified JSON
   response per line, not a CSV.
 * When `--new-column` is set, the output is a CSV with the fetched/parsed value in the new column.
-* A jaq selector that returns multiple values (or an array) is serialized as a JSON array string,
-  e.g. `["Beverly Hills","CA"]`.
+* A jaq selector that returns a single array value is serialized as a JSON array string,
+  e.g. `[ ."a", ."b" ]` yields `["Beverly Hills","CA"]`. A selector that returns a *stream*
+  of multiple values (e.g. `."a", ."b"` without the enclosing brackets) instead joins the
+  values with `, `.
 * On error, the cell is left blank unless `--store-error` is set, in which case the error message is stored.
 
 ## Usage Examples
@@ -45,10 +47,10 @@ $ qsv fetch URL --new-column CityState \
 __data_with_CityState.csv__
 
 ```csv
-URL, CityState
-https://api.zippopotam.us/us/90210, "[\"Beverly Hills\",\"CA\"]"
-https://api.zippopotam.us/us/94105, "[\"San Francisco\",\"CA\"]"
-https://api.zippopotam.us/us/92802, "[\"Anaheim\",\"CA\"]"
+URL,CityState
+https://api.zippopotam.us/us/90210,"[""Beverly Hills"",""CA""]"
+https://api.zippopotam.us/us/94105,"[""San Francisco"",""CA""]"
+https://api.zippopotam.us/us/92802,"[""Anaheim"",""CA""]"
 ```
 
 ### Load a jaq selector from a file

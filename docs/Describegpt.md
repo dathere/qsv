@@ -176,6 +176,7 @@ If you do not specify a prompt file, default prompts will be used.
 | `author`                 | Your name.                                                                                  |
 | `version`                | The version of your prompt file.                                                            |
 | `tokens`                 | The maximum number of tokens in the completion output.                                      |
+| `format`                 | Output format: `Markdown`, `TSV`, `JSON`, `TOON`, `JSONSchema`, or `SemanticMd` (default `markdown`). The `--format` CLI flag takes precedence over this field. |
 | `system_prompt`          | Overall guidance prompt to the LLM.                                                         |
 | `dictionary_prompt`      | The prompt for the `--dictionary` option.                                                   |
 | `description_prompt`     | The prompt for the `--description` option.                                                  |

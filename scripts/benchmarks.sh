@@ -23,9 +23,9 @@
 #
 # Make sure you're using a release-optimized `qsv`.
 # If you can't use the prebuilt binaries at https://github.com/dathere/qsv/releases/latest,
-# build it to have at least the apply, geocode, luau, to and polars features enabled:
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,to,polars` or
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,to,polars`
+# build it to have at least the apply, geocode, luau, synthesize, to and polars features enabled:
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,synthesize,to,polars` or
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,synthesize,to,polars`
 #
 # This shell script has been tested on Linux and macOS. It should work on other Unix-like systems,
 # but will NOT run on native Windows. If you're on Windows, you can run it using Cygwin or WSL
@@ -36,13 +36,13 @@
 #
 # And of course, it dogfoods `qsv` as well to prepare the benchmark data, fetch the rowcount,
 # and to parse and format the benchmark results. :)
-# It uses the following commands: apply, cat, count, luau, sample, schema, select, snappy, sort, tojsonl
-# and to xlsx. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
+# It uses the following commands: apply, cat, count, luau, sample, schema, search, select, snappy, sort,
+# tojsonl and to xlsx. It's a good example of how qsv can be used to automate data preparation & analysis tasks.
 
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.1.1
+bm_version=9.2.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -179,6 +179,18 @@ else
     echo "NOTE: $qsv_py_bin version ($py_base_version) differs from $qsv_bin version ($qsv_base_version)"
     echo "      - skipping py benchmarks to avoid misattributing results to the wrong version."
   fi
+fi
+
+# check if $qsv_bin has the synthesize command. Like the python check above, this is a SOFT
+# check - synthesize is feature-gated and is NOT compiled into every build (including some
+# prebuilt binaries), so we skip the synthesize benchmark when it's absent instead of
+# letting the full run record a failure for it.
+has_synthesize=0
+if "$qsv_bin" synthesize --help &>/dev/null; then
+  has_synthesize=1
+else
+  echo "NOTE: $qsv_bin does not have the synthesize feature - skipping the synthesize benchmark."
+  echo "      Build with the synthesize feature enabled to benchmark the synthesize command."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -379,6 +391,8 @@ if [[ "$arg_pat" == "reset" ]]; then
   rm -f "$datazip"
   rm -f "$filestem".*
   rm -f communityboards.csv
+  rm -f geo_data.csv
+  rm -f ods_data.csv
   rm -f data_to_exclude.csv
   rm -f data_unsorted.csv
   rm -f data_sorted.csv
@@ -488,6 +502,24 @@ if [ ! -r benchmark_data.snappy ]; then
   "$qsv_benchmarker_bin" snappy compress "$data" --output benchmark_data.snappy
 fi
 
+# geoconvert errors out on rows with empty coordinates, so prepare a filtered file with
+# only rows that have BOTH a non-empty Latitude and Longitude (search '.' matches any
+# non-empty field). Used by the geoconvert benchmark.
+if [ ! -r geo_data.csv ]; then
+  echo "   geo_data.csv..."
+  "$qsv_benchmarker_bin" search -s Latitude '.' "$data" |
+    "$qsv_benchmarker_bin" search -s Longitude '.' -o geo_data.csv
+fi
+
+# `to ods` writes the whole sheet as a single content.xml entry inside the ODS zip
+# archive. The full 1M-row dataset overflows the 4GB ZIP (non-ZIP64) limit, which the
+# underlying spreadsheet-ods crate does not handle, so we benchmark `to ods` on a
+# 500k-row subset that stays comfortably under the limit. Used by the to_ods benchmark.
+if [ ! -r ods_data.csv ]; then
+  echo "   ods_data.csv..."
+  "$qsv_benchmarker_bin" slice -l 500000 "$data" -o ods_data.csv
+fi
+
 if [ ! -r searchset_patterns.txt ]; then
   echo "   searchset_patterns.txt..."
   printf "homeless\npark\nNoise\n" >searchset_patterns.txt
@@ -570,6 +602,9 @@ run apply_op_similarity "$qsv_bin apply operations lower,simdln Agency --compara
 run apply_op_similarity_batchall "$qsv_bin apply operations lower,simdln Agency --comparand brooklyn --batch 0 --new-column Agency_sim-brooklyn_score $data"
 run behead "$qsv_bin" behead "$data"
 run behead_flexible "$qsv_bin" behead --flexible "$data"
+run blake3 "$qsv_bin" blake3 "$data"
+run blake3_j1 "$qsv_bin" blake3 -j 1 "$data"
+run blake3_no_mmap "$qsv_bin" blake3 --no-mmap "$data"
 run cat_columns "$qsv_bin" cat columns "$data" data_unsorted.csv
 run cat_rows "$qsv_bin" cat rows "$data" data_unsorted.csv
 run cat_rows_flexible "$qsv_bin" cat rows --flexible "$data" data_unsorted.csv
@@ -649,9 +684,15 @@ run geocode_suggest "$qsv_bin" geocode suggest City --new-column geocoded_city "
 run geocode_suggest_batchall "$qsv_bin" geocode suggest City --new-column geocoded_city --batch 0 "$data"
 run geocode_reverse "$qsv_bin" geocode reverse Location --new-column geocoded_location "$data"
 run geocode_reverse_batchall "$qsv_bin" geocode reverse Location --new-column geocoded_location --batch 0 "$data"
+run geoconvert_csv2geojsonl "$qsv_bin" geoconvert geo_data.csv csv geojsonl -y Latitude -x Longitude
+run headers "$qsv_bin" headers "$data"
+run headers_justnames "$qsv_bin" headers --just-names "$data"
+run headers_justcount "$qsv_bin" headers --just-count "$data"
+run implode "$qsv_bin" implode -k \'Community Board\' -v \'Complaint Type\' "-" "$data"
 run index "$qsv_bin" index "$data"
 run input "$qsv_bin" input "$data"
 run json "$qsv_bin" json benchmark_data.json
+run json_jaq "$qsv_bin" json "--jaq 'map(select(.Borough == \"BROOKLYN\"))'" benchmark_data.json
 run join "$qsv_bin" join \'Community Board\' "$data" community_board communityboards.csv
 run join_casei "$qsv_bin" join \'Community Board\' "$data" community_board --ignore-case communityboards.csv
 run joinp "$qsv_bin" joinp \'Community Board\' "$data" community_board communityboards.csv
@@ -692,6 +733,13 @@ run partition "$qsv_bin" partition \'Community Board\' partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
 run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \"Complaint Type\" --try-parsedates "$data"
+# pragmastat appends ps_* columns to the stats cache and refuses to recompute them on
+# subsequent runs unless --force is given. Without --force, only the first hyperfine run
+# does real work and the rest error out on the existing cache, so we always pass --force
+# to measure the actual computation on every run.
+run pragmastat "$qsv_bin" pragmastat --force "$data"
+run pragmastat_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' "$data"
+run --index pragmastat_index "$qsv_bin" pragmastat --force "$data"
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
@@ -721,6 +769,7 @@ run --index sample_25pct_index "$qsv_bin" sample 0.25 "$data"
 run --index sample_25pct_seeded_index "$qsv_bin" sample 0.25 --seed 42 "$data"
 run schema "$qsv_bin" schema --force "$data"
 run --index schema_index "$qsv_bin" schema "$data"
+run scoresql "$qsv_bin" scoresql "$data" '"select Borough, count(*) from _t_1 group by Borough"'
 run search "$qsv_bin" search -s \'Agency Name\' "'(?i)us'" "$data"
 run search_unicode "$qsv_bin" search --unicode -s \'Agency Name\' "'(?i)us'" "$data"
 run search_file "$qsv_bin" search "'(?i)us'" "$data"
@@ -746,6 +795,8 @@ run --index slice_last_1k_json_index "$qsv_bin" slice -s 1000 -l 1000 --json "$d
 run snappy_compress "$qsv_bin" snappy compress "$data" --output benchmark_data.snappy
 run snappy_decompress "$qsv_bin" snappy decompress benchmark_data.snappy
 run snappy_validate "$qsv_bin" snappy validate benchmark_data.snappy
+run snappy_check "$qsv_bin" snappy check benchmark_data.snappy
+run sniff "$qsv_bin" sniff "$data"
 run sort "$qsv_bin" sort -s \'Incident Zip\' "$data"
 run sort_random_seeded "$qsv_bin" sort --random --seed 42 "$data"
 run sort_random_seeded_faster "$qsv_bin" sort --random --rng faster --seed 42 "$data"
@@ -796,17 +847,24 @@ run --index stats_everything_index_j1 "$qsv_bin" stats "$data" --force --everyth
 run --index stats_everything_index_j1_with_cache "$qsv_bin" stats "$data" --everything -j 1 --cache-threshold 1
 run --index stats_everything_sorted_index "$qsv_bin" stats data_sorted.csv --force --everything
 run --index stats_everything_sorted_index_with_cache "$qsv_bin" stats data_sorted.csv --everything --cache-threshold 1
+if [[ "$has_synthesize" -eq 1 ]]; then
+  run synthesize "$qsv_bin" synthesize --seed 42 -n 1000 "$data"
+fi
 run table "$qsv_bin" table "$data"
 run template "$qsv_bin" template --template-file template.tpl "$data" >/dev/null
 run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-lookup.tpl "$data" >/dev/null
 run to_xlsx "$qsv_bin" to xlsx benchmark_work.xlsx "$data"
 run to_sqlite "$qsv_bin" to sqlite benchmark_work.db "$data";rm benchmark_work.db
 run to_datapackage "$qsv_bin" to datapackage benchmark_work.json "$data"
+# to_ods uses a 500k-row subset (ods_data.csv); the full dataset overflows the ODS 4GB
+# ZIP limit. See the ods_data.csv prep step above.
+run to_ods "$qsv_bin" to ods benchmark_work.ods ods_data.csv;rm benchmark_work.ods
 run tojsonl "$qsv_bin" tojsonl "$data"
 run tojsonl_batchall "$qsv_bin" tojsonl --batch 0 "$data"
 run tojsonl_j1 "$qsv_bin" tojsonl -j 1 "$data"
 run tojsonl_trim "$qsv_bin" tojsonl --trim "$data"
 run tojsonl_trim_j1 "$qsv_bin" tojsonl --trim -j 1 "$data"
+run tojsonl_no_boolean "$qsv_bin" tojsonl --no-boolean "$data"
 run --index tojsonl_index "$qsv_bin" tojsonl "$data"
 run --index tojsonl_index_j1 "$qsv_bin" tojsonl --jobs 1 "$data"
 run transpose "$qsv_bin" transpose "$data"

@@ -31,7 +31,7 @@ To check if your qsv build will have the option to self-update, run `qsv --versi
 ## Special Features for building qsv binary variants:
 
 * `feature_capable` - enable to build `qsv` binary variant which is feature-capable. Also used by `qsvmcp`. (mutually exclusive with `lite` and `datapusher_plus`)
-  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,feature_capable,foreach,geocode,geoconnex,get,get_cloud,luau,magika,mcp,polars,profile,synthesize,to,self_update,ui).
+  * `all_features` - shortcut to build `qsv` binary variant with all features enabled (apply,fetch,foreach,geocode,geoconnex,get,get_cloud,luau,magika,mcp,polars,profile,synthesize,to,self_update,ui).
 
 * `qsvmcp` - enable to build `qsvmcp` binary variant - optimized for [MCP](https://modelcontextprotocol.io/) server use with geocode, get, get_cloud, mcp, polars, profile, self_update, synthesize, and to features. Shares `src/main.rs` with `qsv`. (mutually exclusive with `lite` and `datapusher_plus`)
 * `lite` - enable to build `qsvlite` binary variant with all features disabled. (mutually exclusive with `feature_capable` and `datapusher_plus`)

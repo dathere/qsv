@@ -23,9 +23,9 @@
 #
 # Make sure you're using a release-optimized `qsv`.
 # If you can't use the prebuilt binaries at https://github.com/dathere/qsv/releases/latest,
-# build it to have at least the apply, geocode, luau, to and polars features enabled:
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,to,polars` or
-# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,to,polars`
+# build it to have at least the apply, geocode, luau, synthesize, to and polars features enabled:
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo build --release --locked -F feature_capable,apply,geocode,luau,synthesize,to,polars` or
+# `CARGO_BUILD_RUSTFLAGS='-C target-cpu=native' cargo install --locked qsv -F feature_capable,apply,geocode,luau,synthesize,to,polars`
 #
 # This shell script has been tested on Linux and macOS. It should work on other Unix-like systems,
 # but will NOT run on native Windows. If you're on Windows, you can run it using Cygwin or WSL
@@ -179,6 +179,18 @@ else
     echo "NOTE: $qsv_py_bin version ($py_base_version) differs from $qsv_bin version ($qsv_base_version)"
     echo "      - skipping py benchmarks to avoid misattributing results to the wrong version."
   fi
+fi
+
+# check if $qsv_bin has the synthesize command. Like the python check above, this is a SOFT
+# check - synthesize is feature-gated and is NOT compiled into every build (including some
+# prebuilt binaries), so we skip the synthesize benchmark when it's absent instead of
+# letting the full run record a failure for it.
+has_synthesize=0
+if "$qsv_bin" synthesize --help &>/dev/null; then
+  has_synthesize=1
+else
+  echo "NOTE: $qsv_bin does not have the synthesize feature - skipping the synthesize benchmark."
+  echo "      Build with the synthesize feature enabled to benchmark the synthesize command."
 fi
 
 # set sevenz_bin to "7z" on Linux/Cygwin and "7zz" on macOS
@@ -721,9 +733,13 @@ run partition "$qsv_bin" partition \'Community Board\' partitioned "$data"
 run pivotp_basic "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" "$data"
 run pivotp_smart "$qsv_bin" pivotp "Agency" --index "Borough" --values \"Complaint Type\" --agg smart "$data"
 run pivotp_dates "$qsv_bin" pivotp \"Created Date\" --index "Borough" --values \"Complaint Type\" --try-parsedates "$data"
-run pragmastat "$qsv_bin" pragmastat "$data"
-run pragmastat_twosample "$qsv_bin" pragmastat --twosample -s \'Latitude,Longitude\' "$data"
-run --index pragmastat_index "$qsv_bin" pragmastat "$data"
+# pragmastat appends ps_* columns to the stats cache and refuses to recompute them on
+# subsequent runs unless --force is given. Without --force, only the first hyperfine run
+# does real work and the rest error out on the existing cache, so we always pass --force
+# to measure the actual computation on every run.
+run pragmastat "$qsv_bin" pragmastat --force "$data"
+run pragmastat_twosample "$qsv_bin" pragmastat --twosample --force -s \'Latitude,Longitude\' "$data"
+run --index pragmastat_index "$qsv_bin" pragmastat --force "$data"
 run pseudo "$qsv_bin" pseudo \'Unique Key\' "$data"
 run pseudo_formatstr "$qsv_bin" pseudo \'Unique Key\' --formatstr 'ID-{}' --increment 5 "$data"
 run rename "$qsv_bin" rename \'unique_key,created_date,closed_date,agency,agency_name,complaint_type,descriptor,loctype,zip,addr1,street,xstreet1,xstreet2,inter1,inter2,addrtype,city,landmark,facility_type,status,due_date,res_desc,res_act_date,comm_board,bbl,boro,xcoord,ycoord,opendata_type,parkname,parkboro,vehtype,taxi_boro,taxi_loc,bridge_hwy_name,bridge_hwy_dir,ramp,bridge_hwy_seg,lat,long,loc\' "$data"
@@ -831,7 +847,9 @@ run --index stats_everything_index_j1 "$qsv_bin" stats "$data" --force --everyth
 run --index stats_everything_index_j1_with_cache "$qsv_bin" stats "$data" --everything -j 1 --cache-threshold 1
 run --index stats_everything_sorted_index "$qsv_bin" stats data_sorted.csv --force --everything
 run --index stats_everything_sorted_index_with_cache "$qsv_bin" stats data_sorted.csv --everything --cache-threshold 1
-run synthesize "$qsv_bin" synthesize --seed 42 -n 1000 "$data"
+if [[ "$has_synthesize" -eq 1 ]]; then
+  run synthesize "$qsv_bin" synthesize --seed 42 -n 1000 "$data"
+fi
 run table "$qsv_bin" table "$data"
 run template "$qsv_bin" template --template-file template.tpl "$data" >/dev/null
 run template_lookup_outdir "$qsv_bin" template --template-file template-with-cb-lookup.tpl "$data" >/dev/null

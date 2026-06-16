@@ -425,3 +425,173 @@ fn sortcheck_simple_all_json_progressbar() {
     );
     wrk.assert_err(&mut cmd);
 }
+
+// ---------------------------------------------------------------------------
+// stats-cache awareness (issue #2116)
+//
+// These tests build a stats cache, then TAMPER its `sort_order` field so the
+// cache's answer differs from a genuine scan. That lets us prove the cache was
+// consulted (short-circuit fired) vs. a full scan happened (fell through).
+// ---------------------------------------------------------------------------
+
+fn build_stats_cache(wrk: &Workdir, csv: &str) {
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg(csv).arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+}
+
+fn tamper_sort_order(wrk: &Workdir, stem: &str, field: &str, new_order: &str) {
+    let path = wrk.path(&format!("{stem}.stats.csv.data.jsonl"));
+    let contents = std::fs::read_to_string(&path).unwrap();
+    let mut lines = Vec::new();
+    let mut found = false;
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
+        if v.get("field").and_then(serde_json::Value::as_str) == Some(field) {
+            v["sort_order"] = serde_json::Value::String(new_order.to_string());
+            found = true;
+        }
+        lines.push(serde_json::to_string(&v).unwrap());
+    }
+    assert!(found, "field {field} not found in stats cache");
+    std::fs::write(&path, lines.join("\n")).unwrap();
+}
+
+// genuinely unsorted single String column; the cache (after tamper) claims it
+// is Ascending, so a short-circuit returns "sorted" (exit 0) without scanning.
+#[test]
+fn sortcheck_statscache_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "name"]).arg("in.csv");
+    // cache says Ascending -> reported sorted even though the file isn't
+    wrk.assert_success(&mut cmd);
+}
+
+// QSV_STATSCACHE_MODE=none disables the short-circuit -> full scan -> not sorted.
+#[test]
+fn sortcheck_statscache_optout_none() {
+    let wrk = Workdir::new("sortcheck_statscache_optout_none");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.env("QSV_STATSCACHE_MODE", "none")
+        .args(["--select", "name"])
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// --ignore-case has no matching cache semantics -> must NOT short-circuit.
+#[test]
+fn sortcheck_statscache_ignorecase_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_ignorecase_no_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.arg("--ignore-case")
+        .args(["--select", "name"])
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// a per-column cache can't prove multi-column order -> must NOT short-circuit.
+#[test]
+fn sortcheck_statscache_multicolumn_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_multicolumn_no_shortcircuit");
+    wrk.create_from_string("in.csv", "c1,c2\nb,2\na,1\nc,3\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "c1", "Ascending");
+    tamper_sort_order(&wrk, "in", "c2", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "c1,c2"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// a column with nulls is excluded from the cache's sort_order computation, so
+// even a tampered "Ascending" must NOT short-circuit (nullcount gate).
+#[test]
+fn sortcheck_statscache_nullcount_guard() {
+    let wrk = Workdir::new("sortcheck_statscache_nullcount_guard");
+    wrk.create_from_string("in.csv", "id,name\n1,banana\n2,\n3,apple\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "name"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// --json always does a full scan for exact counts, ignoring the cache. The
+// tampered cache says Ascending but the scan correctly reports sorted:false.
+#[test]
+fn sortcheck_statscache_json_full_scan() {
+    let wrk = Workdir::new("sortcheck_statscache_json_full_scan");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.arg("--json").args(["--select", "name"]).arg("in.csv");
+
+    let output = cmd.output().unwrap();
+    let got = std::str::from_utf8(&output.stdout).unwrap_or_default();
+    assert!(
+        got.contains("\"sorted\":false"),
+        "expected full-scan json sorted:false, got: {got}"
+    );
+}
+
+// genuinely sorted single column with a valid (untampered) cache -> sorted.
+#[test]
+fn sortcheck_statscache_valid_positive() {
+    let wrk = Workdir::new("sortcheck_statscache_valid_positive");
+    wrk.create_from_string("in.csv", "name\napple\nbanana\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "name"]).arg("in.csv");
+    wrk.assert_success(&mut cmd);
+}
+
+// the cache was built WITH headers; a --no-headers run must not reuse it (the
+// recorded args metadata mismatches), so it falls through to a full scan.
+#[test]
+fn sortcheck_statscache_options_mismatch_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_options_mismatch_no_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    // --no-headers makes "name" a data row; the column is not ascending
+    cmd.arg("--no-headers")
+        .args(["--select", "1"])
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// fail closed when the companion args metadata (<input>.stats.csv.json) is missing.
+#[test]
+fn sortcheck_statscache_missing_metadata_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_missing_metadata_no_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    std::fs::remove_file(wrk.path("in.stats.csv.json")).unwrap();
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "name"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}

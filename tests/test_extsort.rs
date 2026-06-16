@@ -183,3 +183,163 @@ fn extsort_csvmode_crlf_no_headers() {
     ];
     assert_eq!(got, expected);
 }
+
+// ---------------------------------------------------------------------------
+// stats-cache awareness (issue #2116)
+//
+// Build a stats cache, TAMPER its `sort_order`, then prove the CSV-mode
+// short-circuit either fires (passthrough of the unsorted input) or correctly
+// falls through (real external sort).
+// ---------------------------------------------------------------------------
+
+fn build_stats_cache(wrk: &Workdir, csv: &str) {
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg(csv).arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+}
+
+fn build_index(wrk: &Workdir, csv: &str) {
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg(csv);
+    wrk.assert_success(&mut idx_cmd);
+}
+
+fn tamper_sort_order(wrk: &Workdir, stem: &str, field: &str, new_order: &str) {
+    let path = wrk.path(&format!("{stem}.stats.csv.data.jsonl"));
+    let contents = std::fs::read_to_string(&path).unwrap();
+    let mut lines = Vec::new();
+    let mut found = false;
+    for line in contents.lines() {
+        if line.trim().is_empty() {
+            continue;
+        }
+        let mut v: serde_json::Value = serde_json::from_str(line).unwrap();
+        if v.get("field").and_then(serde_json::Value::as_str) == Some(field) {
+            v["sort_order"] = serde_json::Value::String(new_order.to_string());
+            found = true;
+        }
+        lines.push(serde_json::to_string(&v).unwrap());
+    }
+    assert!(found, "field {field} not found in stats cache");
+    std::fs::write(&path, lines.join("\n")).unwrap();
+}
+
+// unsorted ASCII single column; tampered cache says Ascending -> passthrough
+// (output preserves the unsorted input order, proving the sort was skipped).
+#[test]
+fn extsort_statscache_passthrough() {
+    let wrk = Workdir::new("extsort_statscache_passthrough").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.args(["--select", "name"]).arg("in.csv").arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "name\nbanana\napple\ncherry\n");
+}
+
+// QSV_STATSCACHE_MODE=none disables the short-circuit -> real external sort.
+#[test]
+fn extsort_statscache_optout_none() {
+    let wrk = Workdir::new("extsort_statscache_optout_none").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.env("QSV_STATSCACHE_MODE", "none")
+        .args(["--select", "name"])
+        .arg("in.csv")
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "name\napple\nbanana\ncherry\n");
+}
+
+// a non-ASCII column can't be safely short-circuited (extsort uses lossy UTF-8),
+// so even a tampered "Ascending" must fall through to a real sort.
+#[test]
+fn extsort_statscache_is_ascii_guard() {
+    let wrk = Workdir::new("extsort_statscache_is_ascii_guard").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\nz\u{00fc}rich\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.args(["--select", "name"]).arg("in.csv").arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "name\napple\nbanana\nz\u{00fc}rich\n");
+}
+
+// --reverse is never short-circuited (its anti-stable duplicate-key tie-break
+// can't be reproduced by a passthrough), so even a cached "Descending" must fall
+// through to a real reverse external sort.
+#[test]
+fn extsort_statscache_reverse_no_shortcircuit() {
+    let wrk = Workdir::new("extsort_statscache_reverse_no_shortcircuit").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Descending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.arg("--reverse")
+        .args(["--select", "name"])
+        .arg("in.csv")
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    // real reverse sort (descending lex), NOT the unsorted input passthrough
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "name\ncherry\nbanana\napple\n");
+}
+
+// the cache is only valid for the parser options it was generated with: a cache
+// built with headers must not be used by a --no-headers run (args metadata guard).
+#[test]
+fn extsort_statscache_options_mismatch_no_shortcircuit() {
+    let wrk = Workdir::new("extsort_statscache_options_mismatch_no_shortcircuit").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv"); // generated WITH headers
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.arg("--no-headers")
+        .args(["--select", "1"])
+        .arg("in.csv")
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    // metadata flag_no_headers=false != --no-headers -> fail closed -> real sort
+    // (the "name" header is now data and sorts after banana/apple/cherry)
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "apple\nbanana\ncherry\nname\n");
+}
+
+// multi-column selection can't be proven by a per-column cache -> real sort.
+#[test]
+fn extsort_statscache_multicolumn_no_shortcircuit() {
+    let wrk = Workdir::new("extsort_statscache_multicolumn_no_shortcircuit").flexible(true);
+    wrk.create_from_string("in.csv", "c1,c2\nb,2\na,1\nc,3\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "c1", "Ascending");
+    tamper_sort_order(&wrk, "in", "c2", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.args(["--select", "c1,c2"]).arg("in.csv").arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "c1,c2\na,1\nb,2\nc,3\n");
+}

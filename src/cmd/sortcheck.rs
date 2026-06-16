@@ -22,6 +22,12 @@ precedence over --ignore-case (matching `sort` and `dedup` semantics).
 Simply put, sortcheck allows you to make informed choices on how to compose pipelines that
 require sorted data.
 
+STATS-CACHE AWARE: when checking a single column with the default lexicographic or --numeric
+comparison and a valid stats cache exists (see `qsv stats --stats-jsonl`), sortcheck answers
+"is it sorted?" instantly from the cached sort order instead of scanning the file. This applies
+only to the exit-code path; --json/--pretty-json always do a full scan for exact counts.
+Disable with QSV_STATSCACHE_MODE=none.
+
 Returns exit code 0 if a CSV is sorted, and exit code 1 otherwise.
 
 Examples:
@@ -159,6 +165,30 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     let headers = rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
+
+    // stats-cache short-circuit (issue #2116). sortcheck only verifies ascending order,
+    // so only a cached "Ascending" for the single selected column proves the file sorted.
+    // --json/--pretty-json need exact record/dupe/break counts, so they always do the full
+    // scan. Only plain Lex/Numeric comparators match the cache's semantics. Disable with
+    // QSV_STATSCACHE_MODE=none.
+    if !(args.flag_json || args.flag_pretty_json)
+        && matches!(compare_mode, ComparisonMode::Lex | ComparisonMode::Numeric)
+        && let Some(stats) = util::get_stats_records_readonly(
+            args.arg_input.as_deref(),
+            args.flag_no_headers,
+            args.flag_delimiter,
+        )
+        && util::stats_cache_proves_ascending(
+            &sel,
+            &stats,
+            matches!(compare_mode, ComparisonMode::Numeric),
+            false,
+        )
+    {
+        // proven sorted ascending from the cache; exit 0 without scanning
+        return Ok(());
+    }
+
     let record_count;
 
     // prep progress bar

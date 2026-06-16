@@ -3310,6 +3310,217 @@ pub fn get_stats_records(
     Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
+/// Opportunistically load an EXISTING, CURRENT stats cache sidecar
+/// (`<input>.stats.csv.data.jsonl`) WITHOUT ever spawning a `qsv stats`
+/// subprocess. Used by stats-cache-aware commands (e.g. `extsort`, `sortcheck`)
+/// to short-circuit work when the cache already proves a column's sort order.
+///
+/// Returns `None` (never an error) when the cache is absent, stale, disabled via
+/// `QSV_STATSCACHE_MODE=none`, the input is stdin / a special format, or any
+/// IO/parse problem occurs. Unlike [`get_stats_records`], it NEVER regenerates
+/// the cache.
+#[allow(clippy::missing_panics_doc)]
+pub fn get_stats_records_readonly(
+    input_path: Option<&str>,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> Option<Vec<StatsData>> {
+    // honor the stats-cache opt-out (same mechanism as frequency/schema/profile)
+    let env_mode = env::var("QSV_STATSCACHE_MODE")
+        .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
+        .to_ascii_lowercase();
+    if env_mode == "none" {
+        return None;
+    }
+
+    let input_path_raw = input_path?;
+    // reject stdin and special formats (snappy/zip/parquet/etc.) - the stats
+    // cache is keyed/located by a concrete CSV/TSV path
+    if input_path_raw == "-"
+        || get_special_format(Path::new(input_path_raw)) != SpecialFormat::Unknown
+    {
+        return None;
+    }
+
+    // resolve a `dc:<name>` disk-cache handle (the `get` command's cache) to its
+    // materialized CSV path, mirroring get_stats_records
+    #[cfg(feature = "get")]
+    let input_path_owned: String = if let Some(dc_name) = input_path_raw.strip_prefix("dc:") {
+        crate::diskcache::resolve_dc_path(dc_name)
+            .ok()?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        input_path_raw.to_string()
+    };
+    #[cfg(not(feature = "get"))]
+    let input_path_owned: String = input_path_raw.to_string();
+
+    let canonical_input_path = Path::new(&input_path_owned).canonicalize().ok()?;
+    let statsdata_path = canonical_input_path.with_extension("stats.csv.data.jsonl");
+
+    // the cache sidecar must exist AND be newer than the input file
+    let statsdata_metadata = std::fs::metadata(&statsdata_path).ok()?;
+    let input_metadata = std::fs::metadata(&input_path_owned).ok()?;
+    let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
+    let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+    if statsdata_mtime <= input_mtime {
+        return None;
+    }
+
+    // Validate the companion args metadata (<input>.stats.csv.json). The JSONL
+    // sidecar's sort_order / column-mapping is only valid for the parser options it
+    // was generated with: a cache built with a different --no-headers, delimiter, or
+    // a column --select can pass the mtime/count checks yet describe a different
+    // logical CSV. Fail closed if the metadata is missing, unreadable, or mismatched.
+    let metadata_path = canonical_input_path.with_extension("stats.csv.json");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metadata_path).ok()?).ok()?;
+
+    // only a full-file stats cache can be trusted for positional column mapping
+    // (a `--select`ed cache may drop or reorder columns relative to the header)
+    if metadata.get("flag_select").and_then(|v| v.as_str()) != Some("<All>") {
+        return None;
+    }
+    // --no-headers determines whether the header row is part of the data that
+    // sort_order was computed over, so it must match the consuming command
+    if metadata
+        .get("flag_no_headers")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        != no_headers
+    {
+        return None;
+    }
+    // the effective delimiter must match. Both the cache and the command resolve an
+    // unset delimiter from the same file path, so compare resolved bytes: an explicit
+    // recorded/passed delimiter is a single ASCII byte, otherwise the extension default.
+    let ext_delim = {
+        let (_, d, _) = get_delim_by_extension(Path::new(&input_path_owned), b',');
+        d
+    };
+    let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.as_bytes()[0],
+        _ => ext_delim,
+    };
+    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
+    if cache_delim != cmd_delim {
+        return None;
+    }
+
+    // get the input header count so we can detect a truncated/corrupt cache
+    let rconfig = Config::new(Some(&input_path_owned))
+        .delimiter(delimiter)
+        .no_headers_flag(no_headers);
+    let header_count = rconfig.reader().ok()?.byte_headers().ok()?.len();
+
+    // parse the jsonl sidecar - one StatsData record per line, in header order
+    let statsdatajson_rdr = BufReader::with_capacity(
+        DEFAULT_RDR_BUFFER_CAPACITY,
+        File::open(&statsdata_path).ok()?,
+    );
+    let mut csv_stats: Vec<StatsData> = Vec::with_capacity(header_count);
+    for line in statsdatajson_rdr.lines() {
+        let curr_line = line.ok()?;
+        if curr_line.trim().is_empty() {
+            continue;
+        }
+        // Parse leniently via serde_json::Value rather than strictly into StatsData:
+        // an opportunistic cache may have been produced by a lean `stats --stats-jsonl`
+        // run that omits non-Option fields like `cardinality`, which would make a strict
+        // StatsData deserialize fail. We only need a handful of fields to decide a sort
+        // short-circuit, so we extract just those (defaulting the rest).
+        let v: serde_json::Value = serde_json::from_slice(curr_line.as_bytes()).ok()?;
+        let stats = StatsData {
+            field: v
+                .get("field")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            r#type: v.get("type").and_then(|x| x.as_str())?.to_string(),
+            is_ascii: v
+                .get("is_ascii")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            sort_order: v
+                .get("sort_order")
+                .and_then(|x| x.as_str())
+                .map(ToString::to_string),
+            // nullcount is a base streaming stat always present; fail closed if absent
+            nullcount: v.get("nullcount").and_then(serde_json::Value::as_u64)?,
+            ..Default::default()
+        };
+        csv_stats.push(stats);
+    }
+
+    if csv_stats.is_empty() || csv_stats.len() != header_count {
+        return None;
+    }
+    Some(csv_stats)
+}
+
+/// Does the stats cache *prove* the single selected column is already in
+/// **ascending** order under the requested comparator semantics? Returns `false`
+/// when not provably so (the caller must then fall back to the full operation,
+/// which is always correct).
+///
+/// Only the ascending case is decided here. Descending (`--reverse`) is
+/// deliberately not short-circuited: `extsort --reverse` reverses the full
+/// `sort_key|position` key, so equal selected keys are emitted in reverse input
+/// order (an anti-stable tie-break) that a straight passthrough cannot reproduce.
+/// Ascending, by contrast, breaks ties by ascending position == input order,
+/// which passthrough preserves exactly.
+///
+/// The cache's `sort_order` is computed using each column's inferred type
+/// (String -> byte-lexicographic; Integer/Float -> numeric; Date/DateTime ->
+/// chronological). A short-circuit is only safe when the caller's comparator
+/// semantics exactly match the cache's per-column semantics, so ALL of the
+/// following must hold:
+/// - exactly one selected column (per-column order can't prove multi-column order)
+/// - `nullcount == 0` (empty cells are excluded from `sort_order` but sort as Less)
+/// - `sort_order` is present (all-null columns have none)
+/// - type matches the requested comparator (and ASCII when `for_extsort`)
+/// - the cached order is `Ascending`
+///
+/// `requested_numeric`: caller wants numeric comparison (vs. byte-lexicographic).
+/// `for_extsort`: additionally require the column to be ASCII - extsort CSV mode
+///   concatenates fields via lossy UTF-8, so only ASCII guarantees byte order
+///   equals String order.
+#[must_use]
+pub fn stats_cache_proves_ascending(
+    sel: &[usize],
+    stats: &[StatsData],
+    requested_numeric: bool,
+    for_extsort: bool,
+) -> bool {
+    // a per-column cache can only prove single-column order
+    if sel.len() != 1 {
+        return false;
+    }
+    let Some(s) = stats.get(sel[0]) else {
+        return false;
+    };
+
+    // empty/NULL cells are excluded from the cache's sort_order computation, but
+    // the real comparators sort them as Less - so any nulls void the proof
+    if s.nullcount != 0 {
+        return false;
+    }
+
+    // all-null columns have no sort_order
+    if s.sort_order.as_deref() != Some("Ascending") {
+        return false;
+    }
+
+    // the cache's comparison semantics are type-dependent; they must match what
+    // the caller will actually do
+    if requested_numeric {
+        matches!(s.r#type.as_str(), "Integer" | "Float")
+    } else {
+        s.r#type == "String" && (!for_extsort || s.is_ascii)
+    }
+}
+
 /// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a writer.
 pub fn csv_to_delimited_writer<W: Write>(
     input_csv: &str,
@@ -4422,6 +4633,77 @@ mod tests {
             zw.write_all(data).unwrap();
         }
         zw.finish().unwrap();
+    }
+
+    fn sd(r#type: &str, sort_order: Option<&str>, nullcount: u64, is_ascii: bool) -> StatsData {
+        StatsData {
+            r#type: r#type.to_string(),
+            sort_order: sort_order.map(ToString::to_string),
+            nullcount,
+            is_ascii,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn proves_ascending_string_lex() {
+        let stats = vec![sd("String", Some("Ascending"), 0, true)];
+        // default lexicographic, ascending -> hit
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, false));
+        // extsort variant (ASCII) -> hit
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, true));
+        // numeric requested on a String column -> miss
+        assert!(!stats_cache_proves_ascending(&[0], &stats, true, false));
+    }
+
+    #[test]
+    fn proves_ascending_descending_never() {
+        // a Descending cache is never an ascending proof (--reverse is not
+        // short-circuited regardless of direction)
+        let stats = vec![sd("String", Some("Descending"), 0, true)];
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, true));
+    }
+
+    #[test]
+    fn proves_ascending_numeric() {
+        for typ in ["Integer", "Float"] {
+            let stats = vec![sd(typ, Some("Ascending"), 0, true)];
+            assert!(stats_cache_proves_ascending(&[0], &stats, true, false));
+            // lexicographic requested on a numeric column -> miss
+            assert!(!stats_cache_proves_ascending(&[0], &stats, false, false));
+        }
+    }
+
+    #[test]
+    fn proves_ascending_extsort_non_ascii() {
+        // ascending String but not ASCII: safe for plain lex, NOT for extsort
+        let stats = vec![sd("String", Some("Ascending"), 0, false)];
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, true));
+    }
+
+    #[test]
+    fn proves_ascending_guards() {
+        let asc = sd("String", Some("Ascending"), 0, true);
+        // multi-column selection -> never
+        let stats = vec![asc.clone(), asc.clone()];
+        assert!(!stats_cache_proves_ascending(&[0, 1], &stats, false, false));
+        // out-of-bounds index -> never
+        assert!(!stats_cache_proves_ascending(&[5], &stats, false, false));
+        // nullcount != 0 -> never
+        let nulls = vec![sd("String", Some("Ascending"), 1, true)];
+        assert!(!stats_cache_proves_ascending(&[0], &nulls, false, false));
+        // Unsorted -> never
+        let unsorted = vec![sd("String", Some("Unsorted"), 0, true)];
+        assert!(!stats_cache_proves_ascending(&[0], &unsorted, false, false));
+        // missing sort_order -> never
+        let none = vec![sd("String", None, 0, true)];
+        assert!(!stats_cache_proves_ascending(&[0], &none, false, false));
+        // Date typed -> never (no matching comparator)
+        let date = vec![sd("Date", Some("Ascending"), 0, true)];
+        assert!(!stats_cache_proves_ascending(&[0], &date, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &date, true, false));
     }
 
     #[test]

@@ -1151,10 +1151,7 @@ mod rich {
             return out;
         };
         for de in rd.flatten() {
-            if fs::read_to_string(de.path())
-                .map(|s| parse_alias(&s).0 == keyhash)
-                .unwrap_or(false)
-            {
+            if fs::read_to_string(de.path()).is_ok_and(|s| parse_alias(&s).0 == keyhash) {
                 out.push(de.path());
             }
         }

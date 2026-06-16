@@ -832,10 +832,7 @@ fn bbox_from_context(state: &minijinja::State) -> Result<BBoxCoords, Error> {
 
     // Fall back to inferred LAT/LON fields
     let dpp = state.lookup("dpp").unwrap_or(Value::UNDEFINED);
-    let no_lat_lon = dpp
-        .get_attr("NO_LAT_LON_FIELDS")
-        .ok()
-        .is_some_and(|v| v.is_true());
+    let no_lat_lon = dpp.get_attr("NO_LAT_LON_FIELDS").is_ok_and(|v| v.is_true());
     if no_lat_lon {
         return Err(value_err("No latitude or longitude fields found"));
     }

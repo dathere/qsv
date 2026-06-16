@@ -34,6 +34,12 @@ precedence over --ignore-case (matching `sort` and `dedup` semantics).
 Simply put, sortcheck allows you to make informed choices on how to compose pipelines that
 require sorted data.
 
+STATS-CACHE AWARE: when checking a single column with the default lexicographic or --numeric
+comparison and a valid stats cache exists (see `qsv stats --stats-jsonl`), sortcheck answers
+"is it sorted?" instantly from the cached sort order instead of scanning the file. This applies
+only to the exit-code path; --json/--pretty-json always do a full scan for exact counts.
+Disable with QSV_STATSCACHE_MODE=none.
+
 Returns exit code 0 if a CSV is sorted, and exit code 1 otherwise.
 
 

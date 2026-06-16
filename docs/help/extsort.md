@@ -18,6 +18,12 @@ This command has TWO modes of operation.
 * CSV MODE
 when --select is set, it sorts based on the given column/s. Requires an index.
 See `qsv select --help` for select syntax details.
+
+STATS-CACHE AWARE: in CSV MODE, when a single ASCII column is selected and a valid
+stats cache exists (see `qsv stats --stats-jsonl`), extsort uses the cached sort
+order to detect if the column is already sorted in the requested direction and, if
+so, streams the input through unchanged - skipping the external sort entirely.
+Disable with QSV_STATSCACHE_MODE=none.
 * LINE MODE
 when --select is NOT set, it sorts any input text file (not just CSVs) on a
 line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers,

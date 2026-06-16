@@ -3310,6 +3310,186 @@ pub fn get_stats_records(
     Ok((csv_fields.iter().take(csv_stats.len()).collect(), csv_stats))
 }
 
+/// Opportunistically load an EXISTING, CURRENT stats cache sidecar
+/// (`<input>.stats.csv.data.jsonl`) WITHOUT ever spawning a `qsv stats`
+/// subprocess. Used by stats-cache-aware commands (e.g. `extsort`, `sortcheck`)
+/// to short-circuit work when the cache already proves a column's sort order.
+///
+/// Returns `None` (never an error) when the cache is absent, stale, disabled via
+/// `QSV_STATSCACHE_MODE=none`, the input is stdin / a special format, or any
+/// IO/parse problem occurs. Unlike [`get_stats_records`], it NEVER regenerates
+/// the cache.
+#[allow(clippy::missing_panics_doc)]
+pub fn get_stats_records_readonly(
+    input_path: Option<&str>,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> Option<Vec<StatsData>> {
+    // honor the stats-cache opt-out (same mechanism as frequency/schema/profile)
+    let env_mode = env::var("QSV_STATSCACHE_MODE")
+        .unwrap_or_else(|_| DEFAULT_STATSCACHE_MODE.to_string())
+        .to_ascii_lowercase();
+    if env_mode == "none" {
+        return None;
+    }
+
+    let input_path_raw = input_path?;
+    // reject stdin and special formats (snappy/zip/parquet/etc.) - the stats
+    // cache is keyed/located by a concrete CSV/TSV path
+    if input_path_raw == "-"
+        || get_special_format(Path::new(input_path_raw)) != SpecialFormat::Unknown
+    {
+        return None;
+    }
+
+    // resolve a `dc:<name>` disk-cache handle (the `get` command's cache) to its
+    // materialized CSV path, mirroring get_stats_records
+    #[cfg(feature = "get")]
+    let input_path_owned: String = if let Some(dc_name) = input_path_raw.strip_prefix("dc:") {
+        crate::diskcache::resolve_dc_path(dc_name)
+            .ok()?
+            .to_string_lossy()
+            .into_owned()
+    } else {
+        input_path_raw.to_string()
+    };
+    #[cfg(not(feature = "get"))]
+    let input_path_owned: String = input_path_raw.to_string();
+
+    let canonical_input_path = Path::new(&input_path_owned).canonicalize().ok()?;
+    let statsdata_path = canonical_input_path.with_extension("stats.csv.data.jsonl");
+
+    // the cache sidecar must exist AND be newer than the input file
+    let statsdata_metadata = std::fs::metadata(&statsdata_path).ok()?;
+    let input_metadata = std::fs::metadata(&input_path_owned).ok()?;
+    let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
+    let input_mtime = FileTime::from_last_modification_time(&input_metadata);
+    if statsdata_mtime <= input_mtime {
+        return None;
+    }
+
+    // get the input header count so we can detect a truncated/corrupt cache
+    let rconfig = Config::new(Some(&input_path_owned))
+        .delimiter(delimiter)
+        .no_headers_flag(no_headers);
+    let header_count = rconfig.reader().ok()?.byte_headers().ok()?.len();
+
+    // parse the jsonl sidecar - one StatsData record per line, in header order
+    let statsdatajson_rdr = BufReader::with_capacity(
+        DEFAULT_RDR_BUFFER_CAPACITY,
+        File::open(&statsdata_path).ok()?,
+    );
+    let mut csv_stats: Vec<StatsData> = Vec::with_capacity(header_count);
+    for line in statsdatajson_rdr.lines() {
+        let curr_line = line.ok()?;
+        if curr_line.trim().is_empty() {
+            continue;
+        }
+        // Parse leniently via serde_json::Value rather than strictly into StatsData:
+        // an opportunistic cache may have been produced by a lean `stats --stats-jsonl`
+        // run that omits non-Option fields like `cardinality`, which would make a strict
+        // StatsData deserialize fail. We only need a handful of fields to decide a sort
+        // short-circuit, so we extract just those (defaulting the rest).
+        let v: serde_json::Value = serde_json::from_slice(curr_line.as_bytes()).ok()?;
+        let stats = StatsData {
+            field: v
+                .get("field")
+                .and_then(|x| x.as_str())
+                .unwrap_or_default()
+                .to_string(),
+            r#type: v.get("type").and_then(|x| x.as_str())?.to_string(),
+            is_ascii: v
+                .get("is_ascii")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false),
+            sort_order: v
+                .get("sort_order")
+                .and_then(|x| x.as_str())
+                .map(ToString::to_string),
+            // nullcount is a base streaming stat always present; fail closed if absent
+            nullcount: v.get("nullcount").and_then(serde_json::Value::as_u64)?,
+            ..Default::default()
+        };
+        csv_stats.push(stats);
+    }
+
+    if csv_stats.is_empty() || csv_stats.len() != header_count {
+        return None;
+    }
+    Some(csv_stats)
+}
+
+/// The result of [`sort_short_circuit`]: the order the input is provably already in.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum SortShortCircuit {
+    /// the file is provably already in ascending order on the selected column
+    AlreadyAscending,
+    /// the file is provably already in descending order on the selected column
+    AlreadyDescending,
+}
+
+/// Decide whether a single-column sort/check can be satisfied directly from the
+/// stats cache `sort_order` statistic. Returns `None` when not *provably*
+/// short-circuitable (the caller must then fall back to the full operation,
+/// which is always correct).
+///
+/// The cache's `sort_order` is computed using each column's inferred type
+/// (String -> byte-lexicographic; Integer/Float -> numeric; Date/DateTime ->
+/// chronological). A short-circuit is only safe when the caller's comparator
+/// semantics exactly match the cache's per-column semantics, so ALL of the
+/// following must hold:
+/// - exactly one selected column (per-column order can't prove multi-column order)
+/// - `nullcount == 0` (empty cells are excluded from `sort_order` but sort as Less)
+/// - `sort_order` is present (all-null columns have none)
+/// - type matches the requested comparator (and ASCII when `for_extsort`)
+/// - the cached direction matches the requested direction
+///
+/// `requested_numeric`: caller wants numeric comparison (vs. byte-lexicographic).
+/// `reverse`: caller wants descending order.
+/// `for_extsort`: additionally require the column to be ASCII - extsort CSV mode
+///   concatenates fields via lossy UTF-8, so only ASCII guarantees byte order
+///   equals String order.
+#[must_use]
+pub fn sort_short_circuit(
+    sel: &[usize],
+    stats: &[StatsData],
+    requested_numeric: bool,
+    reverse: bool,
+    for_extsort: bool,
+) -> Option<SortShortCircuit> {
+    // a per-column cache can only prove single-column order
+    if sel.len() != 1 {
+        return None;
+    }
+    let s = stats.get(sel[0])?;
+
+    // empty/NULL cells are excluded from the cache's sort_order computation, but
+    // the real comparators sort them as Less - so any nulls void the proof
+    if s.nullcount != 0 {
+        return None;
+    }
+
+    // all-null columns have no sort_order
+    let order = s.sort_order.as_deref()?;
+
+    // the cache's comparison semantics are type-dependent; they must match what
+    // the caller will actually do
+    let semantics_match = if requested_numeric {
+        matches!(s.r#type.as_str(), "Integer" | "Float")
+    } else {
+        s.r#type == "String" && (!for_extsort || s.is_ascii)
+    };
+    if !semantics_match {
+        return None;
+    }
+
+    match (order, reverse) {
+        ("Ascending", false) => Some(SortShortCircuit::AlreadyAscending),
+        ("Descending", true) => Some(SortShortCircuit::AlreadyDescending),
+        _ => None,
+    }
+}
+
 /// Reads a CSV file (comma-delimited) and writes it with a different delimiter to a writer.
 pub fn csv_to_delimited_writer<W: Write>(
     input_csv: &str,
@@ -4422,6 +4602,99 @@ mod tests {
             zw.write_all(data).unwrap();
         }
         zw.finish().unwrap();
+    }
+
+    fn sd(r#type: &str, sort_order: Option<&str>, nullcount: u64, is_ascii: bool) -> StatsData {
+        StatsData {
+            r#type: r#type.to_string(),
+            sort_order: sort_order.map(ToString::to_string),
+            nullcount,
+            is_ascii,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn sort_short_circuit_string_lex() {
+        let stats = vec![sd("String", Some("Ascending"), 0, true)];
+        // default lexicographic, ascending -> hit
+        assert_eq!(
+            sort_short_circuit(&[0], &stats, false, false, false),
+            Some(SortShortCircuit::AlreadyAscending)
+        );
+        // extsort variant (ASCII) -> hit
+        assert_eq!(
+            sort_short_circuit(&[0], &stats, false, false, true),
+            Some(SortShortCircuit::AlreadyAscending)
+        );
+        // ascending cache but reverse requested -> miss
+        assert_eq!(sort_short_circuit(&[0], &stats, false, true, false), None);
+        // numeric requested on a String column -> miss
+        assert_eq!(sort_short_circuit(&[0], &stats, true, false, false), None);
+    }
+
+    #[test]
+    fn sort_short_circuit_descending_reverse() {
+        let stats = vec![sd("String", Some("Descending"), 0, true)];
+        assert_eq!(
+            sort_short_circuit(&[0], &stats, false, true, false),
+            Some(SortShortCircuit::AlreadyDescending)
+        );
+        // descending cache but ascending requested -> miss
+        assert_eq!(sort_short_circuit(&[0], &stats, false, false, false), None);
+    }
+
+    #[test]
+    fn sort_short_circuit_numeric() {
+        for typ in ["Integer", "Float"] {
+            let stats = vec![sd(typ, Some("Ascending"), 0, true)];
+            assert_eq!(
+                sort_short_circuit(&[0], &stats, true, false, false),
+                Some(SortShortCircuit::AlreadyAscending)
+            );
+            // lexicographic requested on a numeric column -> miss
+            assert_eq!(sort_short_circuit(&[0], &stats, false, false, false), None);
+        }
+    }
+
+    #[test]
+    fn sort_short_circuit_extsort_non_ascii() {
+        // ascending String but not ASCII: safe for plain lex, NOT for extsort
+        let stats = vec![sd("String", Some("Ascending"), 0, false)];
+        assert_eq!(
+            sort_short_circuit(&[0], &stats, false, false, false),
+            Some(SortShortCircuit::AlreadyAscending)
+        );
+        assert_eq!(sort_short_circuit(&[0], &stats, false, false, true), None);
+    }
+
+    #[test]
+    fn sort_short_circuit_guards() {
+        let asc = sd("String", Some("Ascending"), 0, true);
+        // multi-column selection -> never
+        let stats = vec![asc.clone(), asc.clone()];
+        assert_eq!(
+            sort_short_circuit(&[0, 1], &stats, false, false, false),
+            None
+        );
+        // out-of-bounds index -> None
+        assert_eq!(sort_short_circuit(&[5], &stats, false, false, false), None);
+        // nullcount != 0 -> never
+        let nulls = vec![sd("String", Some("Ascending"), 1, true)];
+        assert_eq!(sort_short_circuit(&[0], &nulls, false, false, false), None);
+        // Unsorted -> never
+        let unsorted = vec![sd("String", Some("Unsorted"), 0, true)];
+        assert_eq!(
+            sort_short_circuit(&[0], &unsorted, false, false, false),
+            None
+        );
+        // missing sort_order -> never
+        let none = vec![sd("String", None, 0, true)];
+        assert_eq!(sort_short_circuit(&[0], &none, false, false, false), None);
+        // Date typed -> never (no matching comparator)
+        let date = vec![sd("Date", Some("Ascending"), 0, true)];
+        assert_eq!(sort_short_circuit(&[0], &date, false, false, false), None);
+        assert_eq!(sort_short_circuit(&[0], &date, true, false, false), None);
     }
 
     #[test]

@@ -6,6 +6,12 @@ This command has TWO modes of operation.
  * CSV MODE
    when --select is set, it sorts based on the given column/s. Requires an index.
    See `qsv select --help` for select syntax details.
+
+   STATS-CACHE AWARE: in CSV MODE, when a single ASCII column is selected and a valid
+   stats cache exists (see `qsv stats --stats-jsonl`), extsort uses the cached sort
+   order to detect if the column is already sorted in the requested direction and, if
+   so, streams the input through unchanged - skipping the external sort entirely.
+   Disable with QSV_STATSCACHE_MODE=none.
  * LINE MODE
    when --select is NOT set, it sorts any input text file (not just CSVs) on a
    line-by-line basis. If sorting a non-CSV file, be sure to set --no-headers, 
@@ -149,6 +155,28 @@ fn sort_csv(
 
     let headers = input_rdr.byte_headers()?.clone();
     let sel = rconfig.selection(&headers)?;
+
+    // stats-cache short-circuit (issue #2116). extsort CSV mode is byte-lexicographic
+    // only, so we pass requested_numeric=false and for_extsort=true (the ASCII guard).
+    // If a valid stats cache proves the single selected column is already sorted in the
+    // requested direction, stream the input straight through instead of doing the full
+    // external merge sort. Disable with QSV_STATSCACHE_MODE=none.
+    if let Some(stats) = util::get_stats_records_readonly(
+        args.arg_input.as_deref(),
+        args.flag_no_headers,
+        args.flag_delimiter,
+    ) && util::sort_short_circuit(&sel, &stats, false, args.flag_reverse, true).is_some()
+    {
+        let mut wtr = Config::new(args.arg_output.as_ref()).writer()?;
+        if !args.flag_no_headers {
+            wtr.write_byte_record(&headers)?;
+        }
+        let mut rec = csv::ByteRecord::new();
+        while input_rdr.read_byte_record(&mut rec)? {
+            wtr.write_byte_record(&rec)?;
+        }
+        return Ok(wtr.flush()?);
+    }
 
     let mut sort_key = String::with_capacity(20);
     let mut curr_row = csv::ByteRecord::new();

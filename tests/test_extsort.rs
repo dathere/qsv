@@ -280,10 +280,12 @@ fn extsort_statscache_is_ascii_guard() {
     assert_eq!(dos2unix(&got), "name\napple\nbanana\nz\u{00fc}rich\n");
 }
 
-// --reverse short-circuits on a cached "Descending" -> passthrough.
+// --reverse is never short-circuited (its anti-stable duplicate-key tie-break
+// can't be reproduced by a passthrough), so even a cached "Descending" must fall
+// through to a real reverse external sort.
 #[test]
-fn extsort_statscache_reverse_passthrough() {
-    let wrk = Workdir::new("extsort_statscache_reverse_passthrough").flexible(true);
+fn extsort_statscache_reverse_no_shortcircuit() {
+    let wrk = Workdir::new("extsort_statscache_reverse_no_shortcircuit").flexible(true);
     wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
     build_stats_cache(&wrk, "in.csv");
     tamper_sort_order(&wrk, "in", "name", "Descending");
@@ -296,8 +298,32 @@ fn extsort_statscache_reverse_passthrough() {
         .arg("out.csv");
     wrk.assert_success(&mut cmd);
 
+    // real reverse sort (descending lex), NOT the unsorted input passthrough
     let got: String = wrk.from_str(&wrk.path("out.csv"));
-    assert_eq!(dos2unix(&got), "name\nbanana\napple\ncherry\n");
+    assert_eq!(dos2unix(&got), "name\ncherry\nbanana\napple\n");
+}
+
+// the cache is only valid for the parser options it was generated with: a cache
+// built with headers must not be used by a --no-headers run (args metadata guard).
+#[test]
+fn extsort_statscache_options_mismatch_no_shortcircuit() {
+    let wrk = Workdir::new("extsort_statscache_options_mismatch_no_shortcircuit").flexible(true);
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv"); // generated WITH headers
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    build_index(&wrk, "in.csv");
+
+    let mut cmd = wrk.command("extsort");
+    cmd.arg("--no-headers")
+        .args(["--select", "1"])
+        .arg("in.csv")
+        .arg("out.csv");
+    wrk.assert_success(&mut cmd);
+
+    // metadata flag_no_headers=false != --no-headers -> fail closed -> real sort
+    // (the "name" header is now data and sorts after banana/apple/cherry)
+    let got: String = wrk.from_str(&wrk.path("out.csv"));
+    assert_eq!(dos2unix(&got), "apple\nbanana\ncherry\nname\n");
 }
 
 // multi-column selection can't be proven by a per-column cache -> real sort.

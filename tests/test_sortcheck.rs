@@ -564,3 +564,34 @@ fn sortcheck_statscache_valid_positive() {
     cmd.args(["--select", "name"]).arg("in.csv");
     wrk.assert_success(&mut cmd);
 }
+
+// the cache was built WITH headers; a --no-headers run must not reuse it (the
+// recorded args metadata mismatches), so it falls through to a full scan.
+#[test]
+fn sortcheck_statscache_options_mismatch_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_options_mismatch_no_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+
+    let mut cmd = wrk.command("sortcheck");
+    // --no-headers makes "name" a data row; the column is not ascending
+    cmd.arg("--no-headers")
+        .args(["--select", "1"])
+        .arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}
+
+// fail closed when the companion args metadata (<input>.stats.csv.json) is missing.
+#[test]
+fn sortcheck_statscache_missing_metadata_no_shortcircuit() {
+    let wrk = Workdir::new("sortcheck_statscache_missing_metadata_no_shortcircuit");
+    wrk.create_from_string("in.csv", "name\nbanana\napple\ncherry\n");
+    build_stats_cache(&wrk, "in.csv");
+    tamper_sort_order(&wrk, "in", "name", "Ascending");
+    std::fs::remove_file(wrk.path("in.stats.csv.json")).unwrap();
+
+    let mut cmd = wrk.command("sortcheck");
+    cmd.args(["--select", "name"]).arg("in.csv");
+    wrk.assert_err(&mut cmd);
+}

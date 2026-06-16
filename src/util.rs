@@ -3368,6 +3368,46 @@ pub fn get_stats_records_readonly(
         return None;
     }
 
+    // Validate the companion args metadata (<input>.stats.csv.json). The JSONL
+    // sidecar's sort_order / column-mapping is only valid for the parser options it
+    // was generated with: a cache built with a different --no-headers, delimiter, or
+    // a column --select can pass the mtime/count checks yet describe a different
+    // logical CSV. Fail closed if the metadata is missing, unreadable, or mismatched.
+    let metadata_path = canonical_input_path.with_extension("stats.csv.json");
+    let metadata: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(&metadata_path).ok()?).ok()?;
+
+    // only a full-file stats cache can be trusted for positional column mapping
+    // (a `--select`ed cache may drop or reorder columns relative to the header)
+    if metadata.get("flag_select").and_then(|v| v.as_str()) != Some("<All>") {
+        return None;
+    }
+    // --no-headers determines whether the header row is part of the data that
+    // sort_order was computed over, so it must match the consuming command
+    if metadata
+        .get("flag_no_headers")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        != no_headers
+    {
+        return None;
+    }
+    // the effective delimiter must match. Both the cache and the command resolve an
+    // unset delimiter from the same file path, so compare resolved bytes: an explicit
+    // recorded/passed delimiter is a single ASCII byte, otherwise the extension default.
+    let ext_delim = {
+        let (_, d, _) = get_delim_by_extension(Path::new(&input_path_owned), b',');
+        d
+    };
+    let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.as_bytes()[0],
+        _ => ext_delim,
+    };
+    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
+    if cache_delim != cmd_delim {
+        return None;
+    }
+
     // get the input header count so we can detect a truncated/corrupt cache
     let rconfig = Config::new(Some(&input_path_owned))
         .delimiter(delimiter)
@@ -3419,19 +3459,17 @@ pub fn get_stats_records_readonly(
     Some(csv_stats)
 }
 
-/// The result of [`sort_short_circuit`]: the order the input is provably already in.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum SortShortCircuit {
-    /// the file is provably already in ascending order on the selected column
-    AlreadyAscending,
-    /// the file is provably already in descending order on the selected column
-    AlreadyDescending,
-}
-
-/// Decide whether a single-column sort/check can be satisfied directly from the
-/// stats cache `sort_order` statistic. Returns `None` when not *provably*
-/// short-circuitable (the caller must then fall back to the full operation,
+/// Does the stats cache *prove* the single selected column is already in
+/// **ascending** order under the requested comparator semantics? Returns `false`
+/// when not provably so (the caller must then fall back to the full operation,
 /// which is always correct).
+///
+/// Only the ascending case is decided here. Descending (`--reverse`) is
+/// deliberately not short-circuited: `extsort --reverse` reverses the full
+/// `sort_key|position` key, so equal selected keys are emitted in reverse input
+/// order (an anti-stable tie-break) that a straight passthrough cannot reproduce.
+/// Ascending, by contrast, breaks ties by ascending position == input order,
+/// which passthrough preserves exactly.
 ///
 /// The cache's `sort_order` is computed using each column's inferred type
 /// (String -> byte-lexicographic; Integer/Float -> numeric; Date/DateTime ->
@@ -3442,51 +3480,44 @@ pub enum SortShortCircuit {
 /// - `nullcount == 0` (empty cells are excluded from `sort_order` but sort as Less)
 /// - `sort_order` is present (all-null columns have none)
 /// - type matches the requested comparator (and ASCII when `for_extsort`)
-/// - the cached direction matches the requested direction
+/// - the cached order is `Ascending`
 ///
 /// `requested_numeric`: caller wants numeric comparison (vs. byte-lexicographic).
-/// `reverse`: caller wants descending order.
 /// `for_extsort`: additionally require the column to be ASCII - extsort CSV mode
 ///   concatenates fields via lossy UTF-8, so only ASCII guarantees byte order
 ///   equals String order.
 #[must_use]
-pub fn sort_short_circuit(
+pub fn stats_cache_proves_ascending(
     sel: &[usize],
     stats: &[StatsData],
     requested_numeric: bool,
-    reverse: bool,
     for_extsort: bool,
-) -> Option<SortShortCircuit> {
+) -> bool {
     // a per-column cache can only prove single-column order
     if sel.len() != 1 {
-        return None;
+        return false;
     }
-    let s = stats.get(sel[0])?;
+    let Some(s) = stats.get(sel[0]) else {
+        return false;
+    };
 
     // empty/NULL cells are excluded from the cache's sort_order computation, but
     // the real comparators sort them as Less - so any nulls void the proof
     if s.nullcount != 0 {
-        return None;
+        return false;
     }
 
     // all-null columns have no sort_order
-    let order = s.sort_order.as_deref()?;
+    if s.sort_order.as_deref() != Some("Ascending") {
+        return false;
+    }
 
     // the cache's comparison semantics are type-dependent; they must match what
     // the caller will actually do
-    let semantics_match = if requested_numeric {
+    if requested_numeric {
         matches!(s.r#type.as_str(), "Integer" | "Float")
     } else {
         s.r#type == "String" && (!for_extsort || s.is_ascii)
-    };
-    if !semantics_match {
-        return None;
-    }
-
-    match (order, reverse) {
-        ("Ascending", false) => Some(SortShortCircuit::AlreadyAscending),
-        ("Descending", true) => Some(SortShortCircuit::AlreadyDescending),
-        _ => None,
     }
 }
 
@@ -4615,86 +4646,64 @@ mod tests {
     }
 
     #[test]
-    fn sort_short_circuit_string_lex() {
+    fn proves_ascending_string_lex() {
         let stats = vec![sd("String", Some("Ascending"), 0, true)];
         // default lexicographic, ascending -> hit
-        assert_eq!(
-            sort_short_circuit(&[0], &stats, false, false, false),
-            Some(SortShortCircuit::AlreadyAscending)
-        );
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, false));
         // extsort variant (ASCII) -> hit
-        assert_eq!(
-            sort_short_circuit(&[0], &stats, false, false, true),
-            Some(SortShortCircuit::AlreadyAscending)
-        );
-        // ascending cache but reverse requested -> miss
-        assert_eq!(sort_short_circuit(&[0], &stats, false, true, false), None);
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, true));
         // numeric requested on a String column -> miss
-        assert_eq!(sort_short_circuit(&[0], &stats, true, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0], &stats, true, false));
     }
 
     #[test]
-    fn sort_short_circuit_descending_reverse() {
+    fn proves_ascending_descending_never() {
+        // a Descending cache is never an ascending proof (--reverse is not
+        // short-circuited regardless of direction)
         let stats = vec![sd("String", Some("Descending"), 0, true)];
-        assert_eq!(
-            sort_short_circuit(&[0], &stats, false, true, false),
-            Some(SortShortCircuit::AlreadyDescending)
-        );
-        // descending cache but ascending requested -> miss
-        assert_eq!(sort_short_circuit(&[0], &stats, false, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, true));
     }
 
     #[test]
-    fn sort_short_circuit_numeric() {
+    fn proves_ascending_numeric() {
         for typ in ["Integer", "Float"] {
             let stats = vec![sd(typ, Some("Ascending"), 0, true)];
-            assert_eq!(
-                sort_short_circuit(&[0], &stats, true, false, false),
-                Some(SortShortCircuit::AlreadyAscending)
-            );
+            assert!(stats_cache_proves_ascending(&[0], &stats, true, false));
             // lexicographic requested on a numeric column -> miss
-            assert_eq!(sort_short_circuit(&[0], &stats, false, false, false), None);
+            assert!(!stats_cache_proves_ascending(&[0], &stats, false, false));
         }
     }
 
     #[test]
-    fn sort_short_circuit_extsort_non_ascii() {
+    fn proves_ascending_extsort_non_ascii() {
         // ascending String but not ASCII: safe for plain lex, NOT for extsort
         let stats = vec![sd("String", Some("Ascending"), 0, false)];
-        assert_eq!(
-            sort_short_circuit(&[0], &stats, false, false, false),
-            Some(SortShortCircuit::AlreadyAscending)
-        );
-        assert_eq!(sort_short_circuit(&[0], &stats, false, false, true), None);
+        assert!(stats_cache_proves_ascending(&[0], &stats, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &stats, false, true));
     }
 
     #[test]
-    fn sort_short_circuit_guards() {
+    fn proves_ascending_guards() {
         let asc = sd("String", Some("Ascending"), 0, true);
         // multi-column selection -> never
         let stats = vec![asc.clone(), asc.clone()];
-        assert_eq!(
-            sort_short_circuit(&[0, 1], &stats, false, false, false),
-            None
-        );
-        // out-of-bounds index -> None
-        assert_eq!(sort_short_circuit(&[5], &stats, false, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0, 1], &stats, false, false));
+        // out-of-bounds index -> never
+        assert!(!stats_cache_proves_ascending(&[5], &stats, false, false));
         // nullcount != 0 -> never
         let nulls = vec![sd("String", Some("Ascending"), 1, true)];
-        assert_eq!(sort_short_circuit(&[0], &nulls, false, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0], &nulls, false, false));
         // Unsorted -> never
         let unsorted = vec![sd("String", Some("Unsorted"), 0, true)];
-        assert_eq!(
-            sort_short_circuit(&[0], &unsorted, false, false, false),
-            None
-        );
+        assert!(!stats_cache_proves_ascending(&[0], &unsorted, false, false));
         // missing sort_order -> never
         let none = vec![sd("String", None, 0, true)];
-        assert_eq!(sort_short_circuit(&[0], &none, false, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0], &none, false, false));
         // Date typed -> never (no matching comparator)
         let date = vec![sd("Date", Some("Ascending"), 0, true)];
-        assert_eq!(sort_short_circuit(&[0], &date, false, false, false), None);
-        assert_eq!(sort_short_circuit(&[0], &date, true, false, false), None);
+        assert!(!stats_cache_proves_ascending(&[0], &date, false, false));
+        assert!(!stats_cache_proves_ascending(&[0], &date, true, false));
     }
 
     #[test]

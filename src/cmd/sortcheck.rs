@@ -178,13 +178,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_no_headers,
             args.flag_delimiter,
         )
-        && util::sort_short_circuit(
+        && util::stats_cache_proves_ascending(
             &sel,
             &stats,
             matches!(compare_mode, ComparisonMode::Numeric),
             false,
-            false,
-        ) == Some(util::SortShortCircuit::AlreadyAscending)
+        )
     {
         // proven sorted ascending from the cache; exit 0 without scanning
         return Ok(());

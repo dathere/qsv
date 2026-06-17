@@ -331,6 +331,129 @@ fn json_nested() {
 
 #[test]
 #[serial]
+// nested objects are flattened with a `.` separator into `parent.child` columns
+fn json_nested_object() {
+    let wrk = Workdir::new("json_nested_object");
+    wrk.create_from_string(
+        "data.json",
+        r#"[{"name":"apple","details":{"color":"red","qty":5}},{"name":"banana","details":{"color":"yellow","qty":3}}]"#,
+    );
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["name", "details.color", "details.qty"],
+        svec!["apple", "red", "5"],
+        svec!["banana", "yellow", "3"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+// nested arrays are flattened using the element index as the key segment (`tags.0`, `tags.1`)
+fn json_nested_array() {
+    let wrk = Workdir::new("json_nested_array");
+    wrk.create_from_string(
+        "data.json",
+        r#"[{"name":"apple","tags":["fruit","red"]},{"name":"kiwi","tags":["fruit","green"]}]"#,
+    );
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["name", "tags.0", "tags.1"],
+        svec!["apple", "fruit", "red"],
+        svec!["kiwi", "fruit", "green"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+// keys missing from some objects become empty fields, and keys not in the first object are
+// appended as additional columns in the order they are first encountered
+fn json_heterogeneous_missing_keys() {
+    let wrk = Workdir::new("json_heterogeneous_missing_keys");
+    wrk.create_from_string(
+        "data.json",
+        r#"[{"fruit":"apple","cost":1.75,"price":2.50},{"fruit":"mangosteen","price":5.00},{"fruit":"starapple","rating":9,"price":4.50}]"#,
+    );
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["fruit", "cost", "price", "rating"],
+        svec!["apple", "1.75", "2.5", ""],
+        svec!["mangosteen", "", "5.0", ""],
+        svec!["starapple", "", "4.5", "9"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+// JSON null values are written as empty CSV fields
+fn json_null_value_empty_field() {
+    let wrk = Workdir::new("json_null_value_empty_field");
+    wrk.create_from_string("data.json", r#"[{"a":1,"b":null},{"a":2,"b":3}]"#);
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a", "b"], svec!["1", ""], svec!["2", "3"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
+// a genuinely-nested key (a.b) colliding with a literal "a.b" key is reported as an error
+fn json_flatten_key_collision() {
+    let wrk = Workdir::new("json_flatten_key_collision");
+    wrk.create_from_string("data.json", r#"[{"a":{"b":1}},{"a.b":2}]"#);
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(
+        got.contains("Flattening Key Collision error"),
+        "unexpected stderr: {got}"
+    );
+}
+
+#[test]
+#[serial]
+// a key that literally contains the (former) internal separator char (U+241D) must be preserved
+// verbatim, not corrupted into a `.`-separated key (regression guard for the structural flattener)
+fn json_literal_separator_char_preserved() {
+    let wrk = Workdir::new("json_literal_separator_char_preserved");
+    // the key is `a␝b` (U+241D between a and b); it must NOT become `a.b`
+    wrk.create_from_string("data.json", "[{\"a\u{241D}b\":1,\"c\":2}]");
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a\u{241D}b", "c"], svec!["1", "2"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
 fn json_empty_keys_with_jaq() {
     let wrk = Workdir::new("json_empty_keys_with_jaq");
     let json_data = serde_json::json!({

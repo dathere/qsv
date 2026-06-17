@@ -147,13 +147,17 @@ Common options:
     -o, --output <file>    Write output to <file> instead of stdout.
 "#;
 
-use std::{env, io::Read};
+use std::{
+    collections::HashMap,
+    env,
+    io::{Read, Write},
+};
 
 use jaq_core::{Compiler, Ctx, Vars, data, load, unwrap_valr};
 use jaq_json::{Num, Val};
-use json_objects_to_csv::{Json2Csv, flatten_json_object::Flattener};
 use log::warn;
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::{CliError, CliResult, config, select::SelectColumns, util};
 
@@ -163,27 +167,6 @@ struct Args {
     flag_jaq:    Option<String>,
     flag_select: Option<SelectColumns>,
     flag_output: Option<String>,
-}
-
-impl From<json_objects_to_csv::Error> for CliError {
-    fn from(err: json_objects_to_csv::Error) -> Self {
-        match err {
-            json_objects_to_csv::Error::Flattening(err) => {
-                CliError::Other(format!("Flattening error: {err}"))
-            },
-            json_objects_to_csv::Error::FlattenedKeysCollision => {
-                CliError::Other(format!("Flattening Key Collision error: {err}"))
-            },
-            json_objects_to_csv::Error::WrittingCSV(err) => {
-                CliError::Other(format!("Writing CSV error: {err}"))
-            },
-            json_objects_to_csv::Error::ParsingJson(err) => {
-                CliError::Other(format!("Parsing JSON error: {err}"))
-            },
-            json_objects_to_csv::Error::InputOutput(err) => CliError::Io(err),
-            json_objects_to_csv::Error::IntoFile(err) => CliError::Io(err.into()),
-        }
-    }
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
@@ -370,17 +353,15 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             None => std::slice::from_ref(&value),
         };
 
-        let flattener = Flattener::new();
         let intermediate_csv_writer = csv::WriterBuilder::new()
             .has_headers(true)
             .from_path(intermediate_csv.clone())?;
-        Json2Csv::new(flattener)
-            .preserve_key_order(true)
-            .convert_from_array(values, intermediate_csv_writer)?;
+        json_objects_to_csv(values, intermediate_csv_writer)?;
     }
 
     // STEP 2: select the columns to use in the final output
-    // Read the intermediate CSV to get the actual headers (which are sorted alphabetically)
+    // Read the intermediate CSV to get the actual headers (which, since we preserve key order,
+    // appear in the order the keys were first encountered in the JSON data)
     let sel_rconfig = config::Config::new(Some(intermediate_csv).as_ref()).no_headers(false);
     let mut intermediate_csv_rdr = sel_rconfig.reader()?;
     let byteheaders = intermediate_csv_rdr.byte_headers()?;
@@ -427,6 +408,133 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     Ok(final_csv_wtr.flush()?)
+}
+
+/// User-facing key separator for flattened nested keys (e.g. `parent.child`, `arr.0`).
+const FLATTEN_SEP: &str = ".";
+
+/// Flatten a JSON `Value` into `out` as `(path_segments, leaf_value)` pairs, in document order,
+/// mirroring the default behavior of the (now-removed, unmaintained) `json-objects-to-csv` /
+/// `flatten-json-object` crates:
+/// - each nesting level contributes one path segment (an object key, or an array index),
+/// - empty objects and arrays are dropped (they contribute no leaf),
+/// - empty-string keys and JSON `null` values are preserved,
+/// - the top-level value must be an object.
+///
+/// Keeping the path as a `Vec<String>` of raw segments (rather than a pre-joined string with a
+/// magic separator) lets a later join with `FLATTEN_SEP` produce the display header while still
+/// distinguishing structurally-different paths that happen to join to the same header (e.g. a
+/// genuinely nested `a`→`b` vs. a literal key `"a.b"`), with no risk of corrupting keys that
+/// literally contain the separator.
+fn flatten_json_value(
+    current: &Value,
+    path: &mut Vec<String>,
+    depth: u32,
+    out: &mut Vec<(Vec<String>, Value)>,
+) -> CliResult<()> {
+    if depth == 0 && !current.is_object() {
+        return fail_clierror!("Flattening error: top-level JSON value must be an object");
+    }
+
+    if let Some(obj) = current.as_object() {
+        // empty objects are not preserved (nothing to iterate)
+        for (k, v) in obj {
+            path.push(k.clone());
+            flatten_json_value(v, path, depth + 1, out)?;
+            path.pop();
+        }
+    } else if let Some(arr) = current.as_array() {
+        // empty arrays are not preserved (nothing to iterate)
+        for (i, v) in arr.iter().enumerate() {
+            path.push(i.to_string());
+            flatten_json_value(v, path, depth + 1, out)?;
+            path.pop();
+        }
+    } else {
+        out.push((path.clone(), current.clone()));
+    }
+    Ok(())
+}
+
+/// Convert a slice of JSON `Value`s (each expected to be an object) into CSV, writing to
+/// `csv_writer`. Each object becomes one CSV row; the header row is the union of all flattened
+/// keys, in the order they are first encountered (key order is preserved). Missing keys are
+/// written as empty fields, and `null`/empty values become empty fields.
+///
+/// This is a focused reimplementation of the parts of the unmaintained `json-objects-to-csv`
+/// crate that qsv relied on, so we no longer depend on it (see issue #3523). qsv builds
+/// `serde_json` with the `preserve_order` feature, so object keys are already in insertion order.
+fn json_objects_to_csv<W: Write>(
+    objects: &[Value],
+    mut csv_writer: csv::Writer<W>,
+) -> CliResult<()> {
+    if objects.is_empty() {
+        return Ok(());
+    }
+
+    // First pass: collect the header union in first-seen order, mapping each display header to the
+    // structural path that produced it. If a second, structurally-different path normalizes to an
+    // already-seen header, that's a collision (e.g. nested `a`→`b` vs. a literal `"a.b"` key).
+    let mut headers: Vec<String> = Vec::new();
+    let mut header_paths: HashMap<String, Vec<String>> = HashMap::new();
+    let mut leaves: Vec<(Vec<String>, Value)> = Vec::new();
+    let mut path: Vec<String> = Vec::new();
+    for obj in objects {
+        leaves.clear();
+        path.clear();
+        flatten_json_value(obj, &mut path, 0, &mut leaves)?;
+        for (segments, _) in &leaves {
+            let header = segments.join(FLATTEN_SEP);
+            match header_paths.get(&header) {
+                Some(existing) if existing != segments => {
+                    return fail_clierror!(
+                        "Flattening Key Collision error: two different JSON keys collide after \
+                         flattening to '{header}'"
+                    );
+                },
+                Some(_) => {},
+                None => {
+                    header_paths.insert(header.clone(), segments.clone());
+                    headers.push(header);
+                },
+            }
+        }
+    }
+
+    // nothing to write if no headers were produced (e.g. all-empty objects)
+    if headers.is_empty() {
+        return Ok(());
+    }
+
+    csv_writer.write_record(&headers)?;
+
+    // Second pass: write one CSV row per object.
+    let mut record: Vec<String> = Vec::with_capacity(headers.len());
+    let mut row: HashMap<String, Value> = HashMap::new();
+    for obj in objects {
+        leaves.clear();
+        path.clear();
+        flatten_json_value(obj, &mut path, 0, &mut leaves)?;
+
+        row.clear();
+        for (segments, val) in leaves.drain(..) {
+            row.insert(segments.join(FLATTEN_SEP), val);
+        }
+
+        record.clear();
+        for header in &headers {
+            match row.get(header) {
+                Some(Value::String(s)) => record.push(s.clone()),
+                Some(v @ (Value::Bool(_) | Value::Number(_))) => record.push(v.to_string()),
+                // Null, plus any empty Array/Object that slipped through, become empty fields.
+                _ => record.push(String::new()),
+            }
+        }
+        csv_writer.write_record(&record)?;
+    }
+
+    csv_writer.flush()?;
+    Ok(())
 }
 
 /// Convert a jaq `Val` to a `serde_json::Value` without going through Display.

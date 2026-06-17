@@ -223,7 +223,7 @@ human-panic = "2"
 iana-time-zone = "0.1"
 indexmap = { version = "2.13", features = ["serde"] }
 indicatif = "0.18"
-itertools = "0.14"
+itertools = "0.15"
 itoa = "1"
 jaq-core = "3"
 jaq-json = { version = "2", features = ["serde"] }

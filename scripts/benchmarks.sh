@@ -141,6 +141,13 @@ if [[ "$benchmarker_version" != *"Luau"* ]]; then
   exit 1
 fi
 
+# check if the benchmarker_bin has the polars feature enabled
+if [[ "$benchmarker_version" != *"polars"* ]]; then
+  echo "ERROR: $qsv_benchmarker_bin does not have the polars feature enabled."
+  echo "The qsv sqlp command is needed to compute the delta & rank columns in the benchmark results."
+  exit 1
+fi
+
 # check if the benchmarker_bin has the to feature enabled
 if [[ "$benchmarker_version" != *"to;"* ]]; then
   # check if benchmark_data.xlsx exists
@@ -1031,7 +1038,9 @@ mv results/results_work.csv results/benchmark_results.csv
 # accrue. "user" is a reserved word in Polars SQL, so it is quoted as b."user". Base columns are
 # listed explicitly (not b.*) so re-runs whose input already has delta/rank drop them and
 # recompute cleanly, without duplicating columns.
-"$qsv_bin" sqlp results/benchmark_results.csv -q "
+# We dogfood the benchmarker binary (not the binary under test) for sqlp, since the binary
+# under test may be a variant without the polars feature (e.g. qsvlite).
+"$qsv_benchmarker_bin" sqlp results/benchmark_results.csv -q "
 with per_version as (
   select name, version, tstamp, mean,
          row_number() over (partition by name, version order by tstamp desc) as rn
@@ -1054,7 +1063,7 @@ mv results/results_work.csv results/benchmark_results.csv
 
 # re-derive latest_results.csv from the enriched archive so it too carries delta & rank
 # (total_mean was already captured above, so overwriting latest_results.csv here is safe)
-"$qsv_bin" sqlp results/benchmark_results.csv \
+"$qsv_benchmarker_bin" sqlp results/benchmark_results.csv \
   -q "select * from _t_1 where version = '$version' and tstamp = '$now'" \
   -o results/results_work.csv
 "$qsv_bin" sort --select version,tstamp,name results/results_work.csv \

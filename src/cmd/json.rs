@@ -148,7 +148,7 @@ Common options:
 "#;
 
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     env,
     io::{Read, Write},
 };
@@ -410,27 +410,27 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     Ok(final_csv_wtr.flush()?)
 }
 
-/// Internal key separator used while flattening. It is the Unicode "group separator"
-/// control character (U+241D), chosen because it is extremely unlikely to appear in real input.
-/// Flattening with this separator (instead of the user-facing `.`) lets us detect collisions
-/// between genuinely-nested keys and keys that already literally contain a `.` (e.g.
-/// `{"a": {"b": 1}, "a.b": 2}`) before the separators are normalized back to `.`.
-const FLATTEN_INTERNAL_SEP: char = '\u{241D}';
 /// User-facing key separator for flattened nested keys (e.g. `parent.child`, `arr.0`).
 const FLATTEN_SEP: &str = ".";
 
-/// Flatten a JSON `Value` into `out`, mirroring the default behavior of the (now-removed,
-/// unmaintained) `json-objects-to-csv` / `flatten-json-object` crates:
-/// - nested object/array keys are joined with `FLATTEN_INTERNAL_SEP`,
-/// - array elements use their index as the key segment (`arr.0`, `arr.1`, ...),
-/// - empty objects and arrays are dropped,
+/// Flatten a JSON `Value` into `out` as `(path_segments, leaf_value)` pairs, in document order,
+/// mirroring the default behavior of the (now-removed, unmaintained) `json-objects-to-csv` /
+/// `flatten-json-object` crates:
+/// - each nesting level contributes one path segment (an object key, or an array index),
+/// - empty objects and arrays are dropped (they contribute no leaf),
 /// - empty-string keys and JSON `null` values are preserved,
 /// - the top-level value must be an object.
+///
+/// Keeping the path as a `Vec<String>` of raw segments (rather than a pre-joined string with a
+/// magic separator) lets a later join with `FLATTEN_SEP` produce the display header while still
+/// distinguishing structurally-different paths that happen to join to the same header (e.g. a
+/// genuinely nested `a`→`b` vs. a literal key `"a.b"`), with no risk of corrupting keys that
+/// literally contain the separator.
 fn flatten_json_value(
     current: &Value,
-    parent_key: String,
+    path: &mut Vec<String>,
     depth: u32,
-    out: &mut serde_json::Map<String, Value>,
+    out: &mut Vec<(Vec<String>, Value)>,
 ) -> CliResult<()> {
     if depth == 0 && !current.is_object() {
         return fail_clierror!("Flattening error: top-level JSON value must be an object");
@@ -439,31 +439,21 @@ fn flatten_json_value(
     if let Some(obj) = current.as_object() {
         // empty objects are not preserved (nothing to iterate)
         for (k, v) in obj {
-            let child_key = if depth > 0 {
-                format!("{parent_key}{FLATTEN_INTERNAL_SEP}{k}")
-            } else {
-                k.clone()
-            };
-            flatten_json_value(v, child_key, depth + 1, out)?;
+            path.push(k.clone());
+            flatten_json_value(v, path, depth + 1, out)?;
+            path.pop();
         }
     } else if let Some(arr) = current.as_array() {
         // empty arrays are not preserved (nothing to iterate)
         for (i, v) in arr.iter().enumerate() {
-            let child_key = format!("{parent_key}{FLATTEN_INTERNAL_SEP}{i}");
-            flatten_json_value(v, child_key, depth + 1, out)?;
+            path.push(i.to_string());
+            flatten_json_value(v, path, depth + 1, out)?;
+            path.pop();
         }
     } else {
-        if out.contains_key(&parent_key) {
-            return fail_clierror!("Flattening error: key '{parent_key}' would be overwritten");
-        }
-        out.insert(parent_key, current.clone());
+        out.push((path.clone(), current.clone()));
     }
     Ok(())
-}
-
-/// Normalize an internally-flattened key back to the user-facing `.` separator.
-fn transform_flattened_key(key: &str) -> String {
-    key.replace(FLATTEN_INTERNAL_SEP, FLATTEN_SEP)
 }
 
 /// Convert a slice of JSON `Value`s (each expected to be an object) into CSV, writing to
@@ -482,21 +472,31 @@ fn json_objects_to_csv<W: Write>(
         return Ok(());
     }
 
-    // First pass: collect the header union in first-seen order, and detect collisions that
-    // would occur when the internal separator is normalized back to `.` (e.g. a genuinely
-    // nested `a.b` key colliding with a literal "a.b" key).
+    // First pass: collect the header union in first-seen order, mapping each display header to the
+    // structural path that produced it. If a second, structurally-different path normalizes to an
+    // already-seen header, that's a collision (e.g. nested `a`→`b` vs. a literal `"a.b"` key).
     let mut headers: Vec<String> = Vec::new();
-    let mut seen_headers: HashSet<String> = HashSet::new();
-    let mut orig_keys: HashSet<String> = HashSet::new();
-    let mut flat = serde_json::Map::new();
+    let mut header_paths: HashMap<String, Vec<String>> = HashMap::new();
+    let mut leaves: Vec<(Vec<String>, Value)> = Vec::new();
+    let mut path: Vec<String> = Vec::new();
     for obj in objects {
-        flat.clear();
-        flatten_json_value(obj, String::new(), 0, &mut flat)?;
-        for orig_key in flat.keys() {
-            orig_keys.insert(orig_key.clone());
-            let header = transform_flattened_key(orig_key);
-            if seen_headers.insert(header.clone()) {
-                headers.push(header);
+        leaves.clear();
+        path.clear();
+        flatten_json_value(obj, &mut path, 0, &mut leaves)?;
+        for (segments, _) in &leaves {
+            let header = segments.join(FLATTEN_SEP);
+            match header_paths.get(&header) {
+                Some(existing) if existing != segments => {
+                    return fail_clierror!(
+                        "Flattening Key Collision error: two different JSON keys collide after \
+                         flattening to '{header}'"
+                    );
+                },
+                Some(_) => {},
+                None => {
+                    header_paths.insert(header.clone(), segments.clone());
+                    headers.push(header);
+                },
             }
         }
     }
@@ -505,30 +505,25 @@ fn json_objects_to_csv<W: Write>(
     if headers.is_empty() {
         return Ok(());
     }
-    // if two distinct flattened keys normalize to the same header, it's a collision
-    if headers.len() != orig_keys.len() {
-        return fail_clierror!(
-            "Flattening Key Collision error: two different JSON keys collide after flattening"
-        );
-    }
 
     csv_writer.write_record(&headers)?;
 
     // Second pass: write one CSV row per object.
     let mut record: Vec<String> = Vec::with_capacity(headers.len());
-    let mut transformed: serde_json::Map<String, Value> = serde_json::Map::new();
+    let mut row: HashMap<String, Value> = HashMap::new();
     for obj in objects {
-        flat.clear();
-        flatten_json_value(obj, String::new(), 0, &mut flat)?;
+        leaves.clear();
+        path.clear();
+        flatten_json_value(obj, &mut path, 0, &mut leaves)?;
 
-        transformed.clear();
-        for (orig_key, val) in &flat {
-            transformed.insert(transform_flattened_key(orig_key), val.clone());
+        row.clear();
+        for (segments, val) in leaves.drain(..) {
+            row.insert(segments.join(FLATTEN_SEP), val);
         }
 
         record.clear();
         for header in &headers {
-            match transformed.get(header) {
+            match row.get(header) {
                 Some(Value::String(s)) => record.push(s.clone()),
                 Some(v @ (Value::Bool(_) | Value::Number(_))) => record.push(v.to_string()),
                 // Null, plus any empty Array/Object that slipped through, become empty fields.

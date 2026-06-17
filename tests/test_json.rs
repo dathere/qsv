@@ -436,6 +436,24 @@ fn json_flatten_key_collision() {
 
 #[test]
 #[serial]
+// a key that literally contains the (former) internal separator char (U+241D) must be preserved
+// verbatim, not corrupted into a `.`-separated key (regression guard for the structural flattener)
+fn json_literal_separator_char_preserved() {
+    let wrk = Workdir::new("json_literal_separator_char_preserved");
+    // the key is `a␝b` (U+241D between a and b); it must NOT become `a.b`
+    wrk.create_from_string("data.json", "[{\"a\u{241D}b\":1,\"c\":2}]");
+    let mut cmd = wrk.command("json");
+    cmd.arg("data.json");
+
+    wrk.assert_success(&mut cmd);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![svec!["a\u{241D}b", "c"], svec!["1", "2"]];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[serial]
 fn json_empty_keys_with_jaq() {
     let wrk = Workdir::new("json_empty_keys_with_jaq");
     let json_data = serde_json::json!({

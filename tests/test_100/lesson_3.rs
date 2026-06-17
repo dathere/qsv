@@ -6,7 +6,6 @@ use crate::workdir::Workdir;
 // Task 1
 #[test]
 #[cfg(not(feature = "datapusher_plus"))]
-// #[ignore = "ignore this test for now as it's flaky coz of json_objects_to_csv crate issues"]
 fn flowers_json_to_csv() {
     let wrk = Workdir::new("flowers_json_to_csv");
     let flowers_json_file = wrk.load_test_file("flowers.json");
@@ -32,7 +31,6 @@ fn flowers_json_to_csv() {
 // Task 2
 #[test]
 #[cfg(not(feature = "datapusher_plus"))]
-// #[ignore = "ignore this test for now as it's flaky coz of json_objects_to_csv crate issues"]
 fn flowers_nested_json_to_csv() {
     let wrk = Workdir::new("flowers_nested_json_to_csv");
     let flowers_nested_json_file = wrk.load_test_file("flowers_nested.json");
@@ -57,7 +55,6 @@ fn flowers_nested_json_to_csv() {
 // Task 3
 #[test]
 #[cfg(not(feature = "datapusher_plus"))]
-// #[ignore = "ignore this test for now as it's flaky coz of json_objects_to_csv crate issues"]
 fn buses_csv_to_json() {
     let wrk = Workdir::new("buses_csv_to_json");
     let buses_csv_file = wrk.load_test_file("buses.csv");

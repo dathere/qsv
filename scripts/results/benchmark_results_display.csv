@@ -1,4 +1,4 @@
-version,tstamp,name,mean,recs_per_sec,delta,rank,stddev,median,user,system,min,max
+version,tstamp,name,mean,recs_per_sec,delta (%),rank,stddev,median,user,system,min,max
 21.1.0,2026-06-15-06,apply_calcconv,2.008,498008,4.76,52,0.385,1.907,3.134,0.178,1.684,2.434
 21.1.0,2026-06-15-06,apply_dynfmt,1.992,502008,16.12,47,0.008,1.995,6.847,0.125,1.983,1.999
 21.1.0,2026-06-15-06,apply_emptyreplace,1.546,646831,18.51,33,0.002,1.547,2.049,0.142,1.544,1.548

@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.2.0
+bm_version=9.3.0
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -1019,13 +1019,54 @@ total_mean=$(<total_mean.txt)
   -o results/results_work.csv
 mv results/results_work.csv results/benchmark_results.csv
 
+# ---------------------------------------
+# Add delta & rank columns over the full historical archive by dogfooding qsv sqlp.
+#   delta = percent FASTER than this benchmark's previous version (the most recent earlier
+#           version, by tstamp; same-version re-runs are collapsed to their latest run).
+#           Positive = faster, negative = regression. Empty when there is no earlier version.
+#   rank  = speed rank of this run among ALL runs of the same benchmark (1 = fastest),
+#           ranked by mean ascending.
+# We recompute over the whole archive on every run - this is self-healing: it backfills the
+# columns for pre-existing historical rows the first time, and keeps ranks correct as new runs
+# accrue. "user" is a reserved word in Polars SQL, so it is quoted as b."user". Base columns are
+# listed explicitly (not b.*) so re-runs whose input already has delta/rank drop them and
+# recompute cleanly, without duplicating columns.
+"$qsv_bin" sqlp results/benchmark_results.csv -q "
+with per_version as (
+  select name, version, tstamp, mean,
+         row_number() over (partition by name, version order by tstamp desc) as rn
+  from _t_1
+),
+with_prev as (
+  select name, version,
+         lag(mean) over (partition by name order by tstamp asc) as prev_mean
+  from per_version where rn = 1
+)
+select b.version, b.tstamp, b.name, b.mean, b.stddev, b.median,
+       b.\"user\", b.system, b.min, b.max, b.recs_per_sec,
+       round(((wp.prev_mean - b.mean) / wp.prev_mean) * 100, 2) as delta,
+       rank() over (partition by b.name order by b.mean asc) as rank
+from _t_1 b
+left join with_prev wp on b.name = wp.name and b.version = wp.version
+order by b.tstamp desc, b.name asc
+" -o results/results_work.csv
+mv results/results_work.csv results/benchmark_results.csv
+
+# re-derive latest_results.csv from the enriched archive so it too carries delta & rank
+# (total_mean was already captured above, so overwriting latest_results.csv here is safe)
+"$qsv_bin" sqlp results/benchmark_results.csv \
+  -q "select * from _t_1 where version = '$version' and tstamp = '$now'" \
+  -o results/results_work.csv
+"$qsv_bin" sort --select version,tstamp,name results/results_work.csv \
+  -o results/latest_results.csv
+
 # make "display" versions of the results
 # i.e. number of decimal places is reduced to 3, and column order is changed so it's easier to read
 # with recs_per_sec moved from the back after mean followed by the rest of the stats columns
 
 # first - for benchmark_results_display.csv, move the recs_per_sec column after the
 # mean column using the `qsv select` command
-"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,stddev,median,user,system,min,max \
+"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,delta,rank,stddev,median,user,system,min,max \
   results/benchmark_results.csv -o results/benchmark_results_display.csv
 
 # then, round the stats columns to 3 decimal places using the `qsv apply operations round` command
@@ -1035,7 +1076,7 @@ mv results/results_work.csv results/benchmark_results.csv
 mv results/results_work.csv results/benchmark_results_display.csv
 
 # do the same for latest_results_display.csv
-"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,stddev,median,user,system,min,max \
+"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,delta,rank,stddev,median,user,system,min,max \
   results/latest_results.csv -o results/latest_results_display.csv
 "$qsv_benchmarker_bin" apply operations round mean,stddev,median,user,system,min,max \
   results/latest_results_display.csv -o results/results_work.csv

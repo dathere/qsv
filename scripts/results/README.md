@@ -8,3 +8,5 @@ The benchmarks were performed on a million row, 41 column, 520 MB sample of NYC'
 Each benchmark is executed five times using hyperfine v1.18.0. Two warmup runs followed by three benchmark runs.
 
 Records per second is calculated by dividing the number of records (1M) by the mean of the three benchmark runs. All other measurements are in seconds.
+
+The `delta` column shows how much *faster* a benchmark is versus its previous qsv version, as a percentage of the previous version's mean run time (positive = faster, negative = a regression). It is empty when there is no earlier version to compare against. The `rank` column is the speed rank of a run among all recorded runs of the same benchmark (`1` = the fastest run ever recorded), ranked by mean run time.

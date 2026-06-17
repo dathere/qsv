@@ -1053,7 +1053,7 @@ with_prev as (
 )
 select b.version, b.tstamp, b.name, b.mean, b.stddev, b.median,
        b.\"user\", b.system, b.min, b.max, b.recs_per_sec,
-       round(((wp.prev_mean - b.mean) / wp.prev_mean) * 100, 2) as delta,
+       round(((wp.prev_mean - b.mean) / wp.prev_mean) * 100, 2) as \"delta (%)\",
        rank() over (partition by b.name order by b.mean asc) as rank
 from _t_1 b
 left join with_prev wp on b.name = wp.name and b.version = wp.version
@@ -1075,7 +1075,7 @@ mv results/results_work.csv results/benchmark_results.csv
 
 # first - for benchmark_results_display.csv, move the recs_per_sec column after the
 # mean column using the `qsv select` command
-"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,delta,rank,stddev,median,user,system,min,max \
+"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,stddev,median,user,system,min,max' \
   results/benchmark_results.csv -o results/benchmark_results_display.csv
 
 # then, round the stats columns to 3 decimal places using the `qsv apply operations round` command
@@ -1085,7 +1085,7 @@ mv results/results_work.csv results/benchmark_results.csv
 mv results/results_work.csv results/benchmark_results_display.csv
 
 # do the same for latest_results_display.csv
-"$qsv_bin" select version,tstamp,name,mean,recs_per_sec,delta,rank,stddev,median,user,system,min,max \
+"$qsv_bin" select 'version,tstamp,name,mean,recs_per_sec,"delta (%)",rank,stddev,median,user,system,min,max' \
   results/latest_results.csv -o results/latest_results_display.csv
 "$qsv_benchmarker_bin" apply operations round mean,stddev,median,user,system,min,max \
   results/latest_results_display.csv -o results/results_work.csv

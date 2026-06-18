@@ -282,16 +282,23 @@ fn chart_kind(args: &Args) -> Chart {
     }
 }
 
-/// A reader bundle: the configured reader plus the resolved header record.
+/// A reader bundle: the configured reader, the resolved header record, and the *effective*
+/// no-headers flag (which also honors the `QSV_NO_HEADERS` / `QSV_TOGGLE_HEADERS` env vars,
+/// so selection and labeling stay consistent with how the reader treats the first row).
 fn reader_and_headers(
     args: &Args,
-) -> CliResult<(csv::Reader<Box<dyn std::io::Read + Send>>, csv::ByteRecord)> {
+) -> CliResult<(
+    csv::Reader<Box<dyn std::io::Read + Send>>,
+    csv::ByteRecord,
+    bool,
+)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
+    let no_headers = rconfig.no_headers;
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();
-    Ok((rdr, headers))
+    Ok((rdr, headers, no_headers))
 }
 
 /// Resolve a required single-column selector to its column index.
@@ -336,8 +343,7 @@ struct XyData {
 }
 
 fn read_xy(args: &Args) -> CliResult<XyData> {
-    let (mut rdr, headers) = reader_and_headers(args)?;
-    let nh = args.flag_no_headers;
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
     let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
     let series_idx = match args.flag_series.as_ref() {
@@ -392,6 +398,12 @@ fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, 
             Some(agg) if matches!(kind, Chart::Bar | Chart::Line) => aggregate(xs, ys, agg),
             _ => (xs, ys),
         };
+        // line charts connect points in order, so sort numeric x ascending
+        let (xs, ys) = if matches!(kind, Chart::Line) {
+            sort_line_xy(xs, ys)
+        } else {
+            (xs, ys)
+        };
         match kind {
             Chart::Bar => {
                 let mut t = Bar::new(xs, ys);
@@ -439,8 +451,7 @@ fn scatter_trace(name: &str, xs: Vec<String>, ys: Vec<f64>, mode: Mode) -> Box<d
 }
 
 fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
-    let (mut rdr, headers) = reader_and_headers(args)?;
-    let nh = args.flag_no_headers;
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
 
     let mut values: Vec<f64> = Vec::new();
@@ -463,8 +474,7 @@ fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
 }
 
 fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)> {
-    let (mut rdr, headers) = reader_and_headers(args)?;
-    let nh = args.flag_no_headers;
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
     let group_idx = match args.flag_x.as_ref() {
         Some(s) => Some(resolve_one(Some(s), &headers, nh, "x")?),
@@ -628,14 +638,19 @@ fn parse_agg(agg: Option<&str>) -> CliResult<Option<Agg>> {
     }
 }
 
-/// Aggregate y values by x category, preserving sorted category order.
+/// Aggregate y values by x category, preserving first-seen (input) order so that
+/// downstream numeric ordering is not lost to lexicographic sorting (e.g. 1, 10, 2).
 fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>) {
-    let mut acc: BTreeMap<String, (f64, f64)> = BTreeMap::new(); // x -> (running, count)
+    let mut order: Vec<String> = Vec::new();
+    let mut acc: HashMap<String, (f64, f64)> = HashMap::new(); // x -> (running, count)
     for (x, y) in xs.into_iter().zip(ys) {
-        let e = acc.entry(x).or_insert(match agg {
-            Agg::Min => (f64::INFINITY, 0.0),
-            Agg::Max => (f64::NEG_INFINITY, 0.0),
-            _ => (0.0, 0.0),
+        let e = acc.entry(x.clone()).or_insert_with(|| {
+            order.push(x);
+            match agg {
+                Agg::Min => (f64::INFINITY, 0.0),
+                Agg::Max => (f64::NEG_INFINITY, 0.0),
+                _ => (0.0, 0.0),
+            }
         });
         e.1 += 1.0;
         match agg {
@@ -645,9 +660,10 @@ fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>)
             Agg::Max => e.0 = e.0.max(y),
         }
     }
-    let mut out_x = Vec::with_capacity(acc.len());
-    let mut out_y = Vec::with_capacity(acc.len());
-    for (x, (running, count)) in acc {
+    let mut out_x = Vec::with_capacity(order.len());
+    let mut out_y = Vec::with_capacity(order.len());
+    for x in order {
+        let (running, count) = acc[&x];
         out_x.push(x);
         out_y.push(match agg {
             Agg::Sum | Agg::Min | Agg::Max => running,
@@ -660,6 +676,28 @@ fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>)
             },
             Agg::Count => count,
         });
+    }
+    (out_x, out_y)
+}
+
+/// For line charts, order points by their x value so the connecting line is drawn in the
+/// correct sequence: numeric x is sorted numerically (fixing 1, 10, 2), while categorical x
+/// preserves input order.
+fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
+    if xs.is_empty() || !xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
+        return (xs, ys);
+    }
+    let mut pairs: Vec<(f64, String, f64)> = xs
+        .into_iter()
+        .zip(ys)
+        .map(|(x, y)| (x.trim().parse::<f64>().unwrap_or(f64::NAN), x, y))
+        .collect();
+    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let mut out_x = Vec::with_capacity(pairs.len());
+    let mut out_y = Vec::with_capacity(pairs.len());
+    for (_, x, y) in pairs {
+        out_x.push(x);
+        out_y.push(y);
     }
     (out_x, out_y)
 }
@@ -701,22 +739,41 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
     }
 
     if matches!(ty, "Integer" | "Float") {
+        // near-unique integers are almost certainly IDs/keys - not meaningful to chart
+        if ty == "Integer" && near_unique {
+            return None;
+        }
+        // low-cardinality numeric (codes/ratings) -> frequency bar, NOT a box plot
+        if low_cardinality {
+            return Some(PanelKind::FreqBar { idx });
+        }
         // continuous numeric -> box plot from precomputed quartiles
         if let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3)
             && s.cardinality > 1
         {
+            // Tukey inner fences are computed thresholds, not observed values, so plotting
+            // them directly as whisker endpoints can extend whiskers beyond the real data.
+            // Clamp each whisker to the actual data range (min/max) so it never misrepresents.
+            let min = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+            let max = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+            let lower = match (s.lower_inner_fence, min) {
+                (Some(fence), Some(m)) => Some(fence.max(m)),
+                (None, Some(m)) => Some(m),
+                (fence, None) => fence,
+            };
+            let upper = match (s.upper_inner_fence, max) {
+                (Some(fence), Some(m)) => Some(fence.min(m)),
+                (None, Some(m)) => Some(m),
+                (fence, None) => fence,
+            };
             return Some(PanelKind::BoxStats {
                 q1,
                 median,
                 q3,
-                lower: s.lower_inner_fence,
-                upper: s.upper_inner_fence,
+                lower,
+                upper,
                 mean: s.mean,
             });
-        }
-        // low-cardinality numeric (e.g. codes/ratings) -> frequency bar
-        if low_cardinality {
-            return Some(PanelKind::FreqBar { idx });
         }
         return None;
     }
@@ -951,5 +1008,122 @@ fn set_subplot_title(layout: Layout, pos: usize, title: &str) -> Layout {
         7 => layout.x_axis7(axis),
         8 => layout.x_axis8(axis),
         _ => layout,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stat(ty: &str, cardinality: u64, uniqueness: Option<f64>) -> crate::cmd::stats::StatsData {
+        crate::cmd::stats::StatsData {
+            r#type: ty.to_string(),
+            cardinality,
+            uniqueness_ratio: uniqueness,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn classify_null_skipped() {
+        assert!(classify(0, &stat("NULL", 0, None)).is_none());
+    }
+
+    #[test]
+    fn classify_boolean_is_bar() {
+        assert!(matches!(
+            classify(0, &stat("Boolean", 2, Some(0.001))),
+            Some(PanelKind::FreqBar { idx: 0 })
+        ));
+    }
+
+    #[test]
+    fn classify_near_unique_integer_id_skipped() {
+        // a sequential id column (Integer, ~100% unique) is not meaningful to chart
+        assert!(classify(0, &stat("Integer", 1000, Some(1.0))).is_none());
+    }
+
+    #[test]
+    fn classify_low_card_numeric_is_bar_not_box() {
+        // a 1-5 rating has quartiles but should be a frequency bar, not a box plot
+        let mut s = stat("Integer", 5, Some(0.05));
+        s.q1 = Some(2.0);
+        s.q2_median = Some(3.0);
+        s.q3 = Some(4.0);
+        assert!(matches!(
+            classify(2, &s),
+            Some(PanelKind::FreqBar { idx: 2 })
+        ));
+    }
+
+    #[test]
+    fn classify_continuous_float_is_box() {
+        // a near-unique continuous float (e.g. measurements) is a box plot, not skipped
+        let mut s = stat("Float", 500, Some(0.99));
+        s.q1 = Some(1.0);
+        s.q2_median = Some(2.0);
+        s.q3 = Some(3.0);
+        s.min = Some("0.5".to_string());
+        s.max = Some("3.5".to_string());
+        assert!(matches!(classify(1, &s), Some(PanelKind::BoxStats { .. })));
+    }
+
+    #[test]
+    fn classify_low_card_string_is_bar() {
+        assert!(matches!(
+            classify(0, &stat("String", 3, Some(0.1))),
+            Some(PanelKind::FreqBar { idx: 0 })
+        ));
+    }
+
+    #[test]
+    fn classify_high_card_string_skipped() {
+        assert!(classify(0, &stat("String", 9999, Some(0.99))).is_none());
+    }
+
+    #[test]
+    fn box_whiskers_clamped_to_data_range() {
+        // Tukey fences fall outside the observed data; whiskers must clamp to [min, max].
+        let mut s = stat("Float", 100, Some(0.8));
+        s.q1 = Some(10.0);
+        s.q2_median = Some(15.0);
+        s.q3 = Some(20.0);
+        s.lower_inner_fence = Some(-5.0); // below the actual min
+        s.upper_inner_fence = Some(40.0); // above the actual max
+        s.min = Some("8.0".to_string());
+        s.max = Some("25.0".to_string());
+        match classify(0, &s) {
+            Some(PanelKind::BoxStats { lower, upper, .. }) => {
+                assert_eq!(lower, Some(8.0)); // clamped up to the actual min
+                assert_eq!(upper, Some(25.0)); // clamped down to the actual max
+            },
+            _ => panic!("expected BoxStats"),
+        }
+    }
+
+    #[test]
+    fn aggregate_preserves_input_order() {
+        // first-seen order is preserved (not lexicographic 1, 10, 2)
+        let xs = vec!["1".to_string(), "10".to_string(), "2".to_string()];
+        let ys = vec![1.0, 2.0, 3.0];
+        let (out_x, _out_y) = aggregate(xs, ys, Agg::Sum);
+        assert_eq!(out_x, vec!["1", "10", "2"]);
+    }
+
+    #[test]
+    fn sort_line_xy_orders_numeric_x() {
+        let xs = vec!["1".to_string(), "10".to_string(), "2".to_string()];
+        let ys = vec![1.0, 2.0, 3.0];
+        let (out_x, out_y) = sort_line_xy(xs, ys);
+        assert_eq!(out_x, vec!["1", "2", "10"]);
+        assert_eq!(out_y, vec![1.0, 3.0, 2.0]);
+    }
+
+    #[test]
+    fn sort_line_xy_preserves_categorical_order() {
+        let xs = vec!["b".to_string(), "a".to_string(), "c".to_string()];
+        let ys = vec![1.0, 2.0, 3.0];
+        let (out_x, _) = sort_line_xy(xs, ys);
+        assert_eq!(out_x, vec!["b", "a", "c"]);
     }
 }

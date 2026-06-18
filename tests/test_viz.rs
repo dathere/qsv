@@ -97,15 +97,19 @@ fn viz_smart_dashboard() {
     let wrk = Workdir::new("viz_smart_dashboard");
     // a mix of: near-unique id (skipped), continuous numeric (box), categorical (bar),
     // boolean (bar)
+    // id   -> near-unique Integer (skipped)
+    // age  -> continuous Integer, cardinality 50 over 100 rows (box plot)
+    // city -> low-cardinality String (frequency bar)
+    // active -> boolean (frequency bar)
     let mut rows = String::from("id,age,city,active\n");
-    for i in 1..=40 {
+    for i in 1..=100 {
         let city = match i % 3 {
             0 => "NYC",
             1 => "LA",
             _ => "SF",
         };
         let active = if i % 2 == 0 { "true" } else { "false" };
-        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 40));
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
     }
     wrk.create_from_string("people.csv", &rows);
 
@@ -125,9 +129,10 @@ fn viz_smart_dashboard() {
 #[test]
 fn viz_smart_caps_charts() {
     let wrk = Workdir::new("viz_smart_caps_charts");
+    // four low-cardinality categorical columns (all chartable as frequency bars)
     wrk.create_from_string(
         "d.csv",
-        "a,b,c,cat\n1,2,3,x\n4,5,6,y\n7,8,9,x\n10,11,12,z\n",
+        "c1,c2,c3,c4\na,x,p,m\nb,y,q,n\na,x,p,m\nb,y,q,n\na,x,p,m\nb,y,q,n\n",
     );
 
     let out_html = wrk.path("d.html").to_string_lossy().to_string();
@@ -135,7 +140,7 @@ fn viz_smart_caps_charts() {
     cmd.args(["smart", "d.csv", "--max-charts", "2", "-o", &out_html]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
-    // the skip notice is emitted to stderr
+    // capped at 2 of the 4 eligible columns; the skip notice is emitted to stderr
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("viz smart: charting 2 column(s)"));
 }

@@ -153,9 +153,15 @@ const PAPER_BG: &str = "#FFFFFF";
 const GRID_COLOR: &str = "#ECECEC";
 const AXIS_LINE: &str = "#BCC4CE";
 
-/// Top of the subplot band in paper coordinates; the strip above (GRID_TOP..1.0 plus the
-/// top margin) is reserved for the dashboard title.
-const GRID_TOP: f64 = 0.95;
+/// Dashboard plot margins (pixels). Kept as named constants because the title-band math
+/// below needs the plot-area height (total height minus these margins).
+const TOP_MARGIN_PX: usize = 80;
+const BOTTOM_MARGIN_PX: usize = 60;
+
+/// Pixels reserved at the top of the plot area for each top-row panel's title. Kept fixed
+/// in *pixels* (not as a paper fraction) so a short, few-row dashboard doesn't shrink the
+/// band to where the panel title overlaps the dashboard title.
+const TITLE_BAND_PX: usize = 34;
 
 #[derive(Deserialize)]
 struct Args {
@@ -962,6 +968,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
     // and (c) place each column's name as a title *above* its panel.
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     let rows = panels.len().div_ceil(cols);
+    let grid_top = smart_grid_top(rows);
 
     // dashboard title: the user's --title, else the dataset's file name
     let title_text = args.flag_title.clone().unwrap_or_else(|| {
@@ -976,7 +983,14 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
     let mut layout = Layout::new()
         .show_legend(false)
         .height(rows * ROW_HEIGHT_PX)
-        .margin(Margin::new().top(80).bottom(60).left(60).right(40).pad(4))
+        .margin(
+            Margin::new()
+                .top(TOP_MARGIN_PX)
+                .bottom(BOTTOM_MARGIN_PX)
+                .left(60)
+                .right(40)
+                .pad(4),
+        )
         .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
         .paper_background_color(PAPER_BG)
         .plot_background_color(PAPER_BG);
@@ -1052,7 +1066,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         plot.add_trace(trace);
 
         // position this subplot's styled axes and add its title above the cell
-        let geom = subplot_geometry(n, rows, cols, GRID_TOP);
+        let geom = subplot_geometry(n, rows, cols, grid_top);
         layout = place_subplot_axes(
             layout,
             pos,
@@ -1132,6 +1146,18 @@ fn axis_ref(prefix: char, pos: usize) -> String {
     } else {
         format!("{prefix}{pos}")
     }
+}
+
+/// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
+/// is a fixed ~`TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
+/// height) so the top row's panel titles always clear the dashboard title, even for a
+/// short one- or two-row dashboard. Clamped so the band is neither vanishing nor more than
+/// half the area.
+fn smart_grid_top(rows: usize) -> f64 {
+    let plot_area_h = (rows * ROW_HEIGHT_PX)
+        .saturating_sub(TOP_MARGIN_PX + BOTTOM_MARGIN_PX)
+        .max(1);
+    (1.0 - (TITLE_BAND_PX as f64 / plot_area_h as f64)).clamp(0.5, 0.985)
 }
 
 /// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
@@ -1376,5 +1402,23 @@ mod tests {
         let left = subplot_geometry(0, rows, cols, top);
         let right = subplot_geometry(1, rows, cols, top);
         assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
+    }
+
+    #[test]
+    fn smart_grid_top_reserves_pixel_title_band() {
+        // A short one-row dashboard must still reserve a real, pixel-sized band above the
+        // panels for their titles, so they don't overlap the dashboard title.
+        let one_row_area = (ROW_HEIGHT_PX - (TOP_MARGIN_PX + BOTTOM_MARGIN_PX)) as f64;
+        let band_px = (1.0 - smart_grid_top(1)) * one_row_area;
+        assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
+
+        // the top-row panel title stays inside the plot area (below the reserved strip)
+        let g = subplot_geometry(0, 1, 1, smart_grid_top(1));
+        assert!(g.title_y < 1.0);
+
+        // a taller dashboard needs a *smaller* fraction for the same pixel band
+        assert!(smart_grid_top(1) < smart_grid_top(4));
+        // and the band never exceeds the clamp
+        assert!(smart_grid_top(8) <= 0.985 + 1e-9);
     }
 }

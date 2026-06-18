@@ -2272,9 +2272,9 @@ checksum = "d0881ea181b1df73ff77ffaaf9c7544ecc11e82fba9b5f27b262a3c73a332555"
 
 [[package]]
 name = "dynfmt2"
-version = "0.3.0"
+version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3bde0c22c83ae33ace665d8b1637cb50ef68500d3b9007e87106a636c99cc46b"
+checksum = "09998b0beea830e10e71d9a2df6afc2bf8cc19b25bc7e69db6a301e827d96c85"
 dependencies = [
  "erased-serde",
  "regex",

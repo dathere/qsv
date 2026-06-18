@@ -6,6 +6,12 @@ fn clean_absent_from_qsvlite_list() {
     let wrk = Workdir::new("clean_absent_from_qsvlite_list");
     let mut cmd = wrk.command("--list");
     let out = wrk.output(&mut cmd);
+    // assert success first, so a failing command with empty output can't pass vacuously
+    assert!(
+        out.status.success(),
+        "qsvlite --list failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let combined = format!(
         "{}{}",
         String::from_utf8_lossy(&out.stdout),

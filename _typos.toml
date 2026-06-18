@@ -41,4 +41,5 @@ extend-exclude = [
     "docs/describegpt/*",
     "docs/whirlwind_tour.md",
     "*.py",
+    "test_clean.rs",
 ]

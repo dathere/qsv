@@ -8,6 +8,8 @@ pub mod behead;
 pub mod blake3;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod cat;
+#[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+pub mod clean;
 #[cfg(feature = "clipboard")]
 pub mod clipboard;
 #[cfg(feature = "color")]

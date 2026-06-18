@@ -91,6 +91,9 @@ fn main() -> QsvExitCode {
 
     enabled_commands.push_str("    cat         Concatenate by row or column\n");
 
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    enabled_commands.push_str("    clean       Remove qsv-generated cache files\n");
+
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     enabled_commands
         .push_str("    clipboard   Provide input from clipboard or output to clipboard\n");
@@ -419,6 +422,8 @@ enum Command {
     #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
     Blake3,
     Cat,
+    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    Clean,
     #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
     Clipboard,
     #[cfg(all(feature = "color", feature = "feature_capable"))]
@@ -537,6 +542,8 @@ impl Command {
             #[cfg(all(feature = "apply", feature = "feature_capable"))]
             Command::Apply => cmd::apply::run(argv),
             Command::Cat => cmd::cat::run(argv),
+            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+            Command::Clean => cmd::clean::run(argv),
             #[cfg(all(feature = "clipboard", feature = "feature_capable"))]
             Command::Clipboard => cmd::clipboard::run(argv),
             #[cfg(all(feature = "color", feature = "feature_capable"))]

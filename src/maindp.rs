@@ -98,6 +98,7 @@ fn build_command_list() -> String {
     enabled_commands.push_str(
         "    applydp     Apply series of transformations to a column
     blake3      Compute BLAKE3 cryptographic hashes of files
+    clean       Remove qsv-generated cache files
     count       Count records
     datefmt     Format date/datetime strings
     describegpt Infer extended metadata or chat with your data using a LLM
@@ -306,6 +307,7 @@ fn main() -> QsvExitCode {
 enum Command {
     ApplyDP,
     Blake3,
+    Clean,
     Count,
     Datefmt,
     Dedup,
@@ -374,6 +376,7 @@ impl Command {
         match self {
             Command::ApplyDP => cmd::applydp::run(argv),
             Command::Blake3 => cmd::blake3::run(argv),
+            Command::Clean => cmd::clean::run(argv),
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),

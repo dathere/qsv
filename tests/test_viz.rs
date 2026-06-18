@@ -284,6 +284,40 @@ fn viz_heatmap_correlation() {
 }
 
 #[test]
+fn viz_heatmap_correlation_constant_column() {
+    // a zero-variance (constant) column has an undefined correlation: it must serialize as
+    // null (a heatmap gap), never a fabricated 0.0 or 1.0. Column `b` is constant; a vs c is a
+    // perfect negative correlation.
+    let wrk = Workdir::new("viz_heatmap_correlation_constant_column");
+    wrk.create_from_string("c.csv", "a,b,c\n1,5,9\n2,5,8\n3,5,7\n4,5,6\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "c.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"heatmap""#));
+    // the constant column yields null cells, and a vs c is exactly -1
+    assert!(html.contains("null"));
+    assert!(html.contains("-1.0"));
+}
+
+#[test]
+fn viz_heatmap_correlation_insufficient_rows_errors() {
+    // fewer than 2 rows where all selected numeric columns are present => cannot correlate
+    let wrk = Workdir::new("viz_heatmap_correlation_insufficient_rows_errors");
+    wrk.create_from_string("one.csv", "a,b\n1,2\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "one.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("at least 2 rows"));
+}
+
+#[test]
 fn viz_heatmap_pivot() {
     let wrk = Workdir::new("viz_heatmap_pivot");
     wrk.create_from_string(

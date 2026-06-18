@@ -729,15 +729,18 @@ fn resolve_many(
     Ok(selection.iter().copied().collect())
 }
 
-/// Read the given candidate columns, keep those that are numeric (a majority of non-empty
-/// cells parse as f64), and return their labels plus listwise-complete value vectors (rows
-/// where any kept column is non-numeric/empty are dropped). Shared by the correlation
-/// heatmap, the radar chart, and the `viz smart` correlation panel.
+/// From an already-open reader, keep the candidate columns that are numeric (a majority of
+/// non-empty cells parse as f64), and return their labels plus listwise-complete value vectors
+/// (rows where any kept column is non-numeric/empty are dropped). Takes the reader + headers
+/// from the caller (rather than opening its own) so the input is read exactly once — opening a
+/// second time would consume/corrupt a streamed stdin. Shared by the standalone correlation
+/// heatmap and the `viz smart` correlation panel.
 fn read_numeric_columns(
-    args: &Args,
+    rdr: &mut csv::Reader<Box<dyn std::io::Read + Send>>,
+    headers: &csv::ByteRecord,
+    nh: bool,
     candidates: &[usize],
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
-    let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
@@ -765,7 +768,7 @@ fn read_numeric_columns(
     }
     let labels: Vec<String> = keep
         .iter()
-        .map(|&k| col_label(&headers, candidates[k], nh))
+        .map(|&k| col_label(headers, candidates[k], nh))
         .collect();
     let n_rows = raw[0].len();
     let kept: Vec<&Vec<Option<f64>>> = keep.iter().map(|&k| &raw[k]).collect();
@@ -781,38 +784,44 @@ fn read_numeric_columns(
     Ok((labels, columns))
 }
 
-/// Pearson correlation of two equal-length numeric slices via one-pass sums. Returns 0.0
-/// for fewer than two points or zero variance.
+/// Pearson correlation of two equal-length numeric slices via a numerically stable, centered
+/// two-pass algorithm (raw-sums formulas suffer catastrophic cancellation for large values
+/// with small variance). Returns `NaN` when the correlation is undefined — fewer than two
+/// points, or zero variance in either input — so callers can render it as a gap rather than a
+/// fabricated 0.0. The result is clamped to [-1, 1] to absorb floating-point overshoot.
 fn pearson(x: &[f64], y: &[f64]) -> f64 {
     let len = x.len().min(y.len());
-    let n = len as f64;
     if len < 2 {
-        return 0.0;
+        return f64::NAN;
     }
-    let (mut sx, mut sy, mut sxy, mut sx2, mut sy2) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    let n = len as f64;
+    let mean_x = x[..len].iter().sum::<f64>() / n;
+    let mean_y = y[..len].iter().sum::<f64>() / n;
+    let (mut cov, mut var_x, mut var_y) = (0.0, 0.0, 0.0);
     for k in 0..len {
-        let (xi, yi) = (x[k], y[k]);
-        sx += xi;
-        sy += yi;
-        sxy += xi * yi;
-        sx2 += xi * xi;
-        sy2 += yi * yi;
+        let dx = x[k] - mean_x;
+        let dy = y[k] - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
     }
-    let num = n * sxy - sx * sy;
-    let den = ((n * sx2 - sx * sx) * (n * sy2 - sy * sy)).sqrt();
-    if den.abs() < f64::EPSILON {
-        0.0
+    let den = (var_x * var_y).sqrt();
+    if den == 0.0 || !den.is_finite() {
+        f64::NAN
     } else {
-        num / den
+        (cov / den).clamp(-1.0, 1.0)
     }
 }
 
-/// Pearson correlation matrix for equal-length numeric columns: NxN symmetric, 1.0 diagonal.
+/// Pearson correlation matrix for equal-length numeric columns: NxN symmetric. The diagonal
+/// is computed from `pearson` (rather than hard-coded to 1.0) so a degenerate column — zero
+/// variance or too few observations — surfaces as `NaN` instead of a fabricated 1.0. Cells for
+/// undefined correlations are likewise `NaN` (serialized to `null` → rendered as a heatmap gap).
 fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let n = columns.len();
-    let mut m = vec![vec![0.0; n]; n];
+    let mut m = vec![vec![f64::NAN; n]; n];
     for i in 0..n {
-        m[i][i] = 1.0;
+        m[i][i] = pearson(&columns[i], &columns[i]);
         for j in (i + 1)..n {
             let r = pearson(&columns[i], &columns[j]);
             m[i][j] = r;
@@ -920,17 +929,24 @@ fn build_heatmap(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Opti
 fn build_heatmap_correlation(
     args: &Args,
 ) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
-    let (_rdr, headers, nh) = reader_and_headers(args)?;
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let candidates: Vec<usize> = match args.flag_cols.as_ref() {
         Some(s) => resolve_many(Some(s), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
-    let (labels, columns) = read_numeric_columns(args, &candidates)?;
+    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
     if labels.len() < 2 {
         return fail_clierror!(
             "A correlation heatmap needs at least 2 numeric columns (found {}). Use --cols to \
              select them.",
             labels.len()
+        );
+    }
+    let n_obs = columns.first().map_or(0, Vec::len);
+    if n_obs < 2 {
+        return fail_clierror!(
+            "A correlation heatmap needs at least 2 rows where all selected numeric columns are \
+             present (found {n_obs})."
         );
     }
     let matrix = pearson_matrix(&columns);
@@ -1556,8 +1572,10 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         .map(|(i, _)| i)
         .collect();
     if numeric_indices.len() >= 2 {
-        let (labels, columns) = read_numeric_columns(args, &numeric_indices)?;
-        if labels.len() >= 2 {
+        let (mut rdr, headers, nh) = reader_and_headers(args)?;
+        let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices)?;
+        // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
+        if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
             let matrix = pearson_matrix(&columns);
             panels.insert(
                 0,
@@ -1770,6 +1788,10 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         {
             for (i, row_vals) in matrix.iter().enumerate() {
                 for (j, &r) in row_vals.iter().enumerate() {
+                    // undefined correlations render as heatmap gaps; don't label them
+                    if !r.is_finite() {
+                        continue;
+                    }
                     let text_color = if r.abs() >= 0.5 { "#FFFFFF" } else { INK };
                     annotations.push(
                         Annotation::new()

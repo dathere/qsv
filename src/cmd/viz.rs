@@ -786,9 +786,12 @@ fn read_numeric_columns(
 
 /// Pearson correlation of two equal-length numeric slices via a numerically stable, centered
 /// two-pass algorithm (raw-sums formulas suffer catastrophic cancellation for large values
-/// with small variance). Returns `NaN` when the correlation is undefined — fewer than two
-/// points, or zero variance in either input — so callers can render it as a gap rather than a
-/// fabricated 0.0. The result is clamped to [-1, 1] to absorb floating-point overshoot.
+/// with small variance). The denominator is `var_x.sqrt() * var_y.sqrt()` rather than
+/// `(var_x * var_y).sqrt()` so it stays finite for large-but-valid variances (the product
+/// would overflow to infinity and spuriously yield `NaN`). Returns `NaN` when the correlation
+/// is undefined — fewer than two points, or zero variance in either input — so callers can
+/// render it as a gap rather than a fabricated 0.0. The result is clamped to [-1, 1] to absorb
+/// floating-point overshoot.
 fn pearson(x: &[f64], y: &[f64]) -> f64 {
     let len = x.len().min(y.len());
     if len < 2 {
@@ -805,7 +808,7 @@ fn pearson(x: &[f64], y: &[f64]) -> f64 {
         var_x += dx * dx;
         var_y += dy * dy;
     }
-    let den = (var_x * var_y).sqrt();
+    let den = var_x.sqrt() * var_y.sqrt();
     if den == 0.0 || !den.is_finite() {
         f64::NAN
     } else {

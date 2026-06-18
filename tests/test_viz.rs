@@ -298,9 +298,47 @@ fn viz_heatmap_correlation_constant_column() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"heatmap""#));
-    // the constant column yields null cells, and a vs c is exactly -1
-    assert!(html.contains("null"));
-    assert!(html.contains("-1.0"));
+
+    // verify the actual correlation matrix, not just that "null"/"-1.0" appear somewhere
+    // (e.g. "-1.0" is also the configured zmin). Columns are [a, b, c]; b is constant.
+    let z = extract_z_matrix(&html);
+    assert_eq!(z.len(), 3);
+    assert!(z.iter().all(|row| row.len() == 3));
+    // the constant column b (index 1) has undefined correlation everywhere — its entire row
+    // AND column are null, including its own diagonal (no fabricated 1.0)
+    assert!(z[1].iter().all(Option::is_none), "row b should be all null");
+    assert!(
+        z.iter().all(|row| row[1].is_none()),
+        "col b should be all null"
+    );
+    // a and c are perfectly anti-correlated; diagonals are 1, a vs c is -1 (within FP tolerance)
+    assert!((z[0][0].unwrap() - 1.0).abs() < 1e-9);
+    assert!((z[2][2].unwrap() - 1.0).abs() < 1e-9);
+    assert!((z[0][2].unwrap() + 1.0).abs() < 1e-9);
+    assert!((z[2][0].unwrap() + 1.0).abs() < 1e-9);
+}
+
+/// Extract the heatmap trace's `z` matrix from the embedded plotly JSON in the HTML output,
+/// matching the balanced brackets after `"z":`. `null` cells parse to `None`.
+fn extract_z_matrix(html: &str) -> Vec<Vec<Option<f64>>> {
+    let start = html.find(r#""z":["#).expect("z array present") + 4;
+    let bytes = html.as_bytes();
+    let mut depth = 0_i32;
+    let mut end = start;
+    for (i, &b) in bytes[start..].iter().enumerate() {
+        match b {
+            b'[' => depth += 1,
+            b']' => {
+                depth -= 1;
+                if depth == 0 {
+                    end = start + i + 1;
+                    break;
+                }
+            },
+            _ => {},
+        }
+    }
+    serde_json::from_str(&html[start..end]).expect("valid z matrix json")
 }
 
 #[test]

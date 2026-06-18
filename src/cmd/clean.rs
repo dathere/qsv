@@ -241,7 +241,7 @@ fn consider_anchor(path: &Path, sel: &Selected, stale: bool, victims: &mut Vec<(
     {
         handle_stats(path, &full, stale, victims);
     } else if sel.frequency && full.ends_with(".freq.csv.data.jsonl") {
-        handle_frequency(path, &full, stale, victims);
+        handle_frequency(path, stale, victims);
     } else if sel.schema && full.ends_with(".pschema.json") {
         handle_pschema(path, &full, stale, victims);
     } else if sel.schema && full.ends_with(".schema.json") {
@@ -319,7 +319,7 @@ fn handle_stats(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf
     }
 }
 
-fn handle_frequency(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf, u64)>) {
+fn handle_frequency(path: &Path, stale: bool, victims: &mut Vec<(PathBuf, u64)>) {
     let Some(line) = read_first_line(path) else {
         return;
     };
@@ -330,15 +330,19 @@ fn handle_frequency(path: &Path, full: &str, stale: bool, victims: &mut Vec<(Pat
     if json_str(&v, "qsv_version").is_none() || json_str(&v, "arg_input").is_none() {
         return;
     }
-    // derive the source from the cache's OWN location/stem rather than the recorded
-    // arg_input: the cache is always written beside the canonical source, so this is
-    // robust to symlinked inputs (arg_input keeps the symlink name) and to relative
-    // paths / directory moves. avoids falsely deleting a fresh cache as "orphaned".
-    let source = full
-        .strip_suffix(".freq.csv.data.jsonl")
-        .and_then(|base| find_tabular_sibling(Path::new(base)));
-    if stale && !stale_or_orphaned(path, source.as_deref()) {
-        return;
+    if stale {
+        // resolve the EXACT recorded source (symlink-resolved, with its real
+        // extension) as a sibling of the cache — robust to cwd, symlinks and
+        // directory moves. legacy caches predating canonical_input_path can't be
+        // resolved reliably, so we KEEP them (conservative) rather than risk
+        // deleting a fresh cache as falsely "orphaned".
+        let Some(canonical) = json_str(&v, "canonical_input_path") else {
+            return;
+        };
+        let source = sibling_source(path, canonical);
+        if !stale_or_orphaned(path, source.as_deref()) {
+            return;
+        }
     }
     push_if_exists(victims, path.to_path_buf());
 }

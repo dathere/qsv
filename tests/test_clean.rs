@@ -314,6 +314,31 @@ fn clean_stale_relative_path_from_other_cwd() {
     assert!(wrk.path("data.freq.csv.data.jsonl").exists());
 }
 
+// regression: a legacy frequency cache (no canonical_input_path in metadata)
+// can't have its source resolved reliably, so clean --stale conservatively KEEPS
+// it rather than risk deleting a fresh cache based on a guessed source.
+#[test]
+fn clean_stale_keeps_legacy_frequency_cache() {
+    use filetime::{FileTime, set_file_mtime};
+
+    let wrk = Workdir::new("clean_stale_keeps_legacy_frequency_cache");
+    wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
+
+    // a legacy cache: valid qsv metadata but WITHOUT canonical_input_path
+    let meta = r#"{"arg_input":"data.csv","flag_high_card_threshold":0,"flag_high_card_pct":0,"flag_no_nulls":false,"flag_no_headers":false,"flag_delimiter":",","record_count":1,"column_count":2,"date_generated":"2020-01-01T00:00:00Z","qsv_version":"0.0.0","selection_signature":""}"#;
+    wrk.create_from_string("data.freq.csv.data.jsonl", &format!("{meta}\n"));
+
+    // make the source NEWER so a naive staleness check would delete the cache
+    let future = FileTime::from_unix_time(FileTime::now().unix_seconds() + 3600, 0);
+    set_file_mtime(wrk.path("data.csv"), future).unwrap();
+
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--stale", "--force"]);
+    wrk.assert_success(&mut cmd);
+
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+}
+
 #[test]
 fn clean_single_file_input() {
     let wrk = Workdir::new("clean_single_file_input");

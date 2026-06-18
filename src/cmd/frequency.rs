@@ -440,6 +440,14 @@ struct FrequencyCacheMetadata {
     /// `try_output_from_cache`.
     #[serde(default)]
     selection_signature:      String,
+    /// Canonical (symlink-resolved, absolute) path of the source CSV at the time
+    /// the cache was generated. Lets tooling (e.g. `qsv clean --stale`) resolve the
+    /// exact source — including its real extension — instead of guessing from the
+    /// cache stem. `#[serde(default)]` keeps pre-existing caches (without this
+    /// field) readable; an empty value means "unknown source" and callers should
+    /// treat such legacy caches conservatively.
+    #[serde(default)]
+    canonical_input_path:     String,
 }
 
 // FrequencyEntry, FrequencyField and FrequencyOutput are
@@ -1751,6 +1759,12 @@ impl Args {
             date_generated:           chrono::Utc::now().to_rfc3339(),
             qsv_version:              env!("CARGO_PKG_VERSION").to_string(),
             selection_signature:      Self::selection_signature(headers),
+            canonical_input_path:     self
+                .arg_input
+                .as_ref()
+                .and_then(|p| fs::canonicalize(p).ok())
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default(),
         };
         let num_cache_columns = entries.len();
 

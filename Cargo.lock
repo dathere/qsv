@@ -1060,9 +1060,9 @@ checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
 
 [[package]]
 name = "borsh"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cfd1e3f8955a5d7de9fab72fc8373fade9fb8a703968cb200ae3dc6cf08e185a"
+checksum = "2f3f6da4992df95bbcd9af42a6c7dcb994498fc9048230405f3b36ff7cd3f145"
 dependencies = [
  "borsh-derive",
  "bytes",
@@ -1071,9 +1071,9 @@ dependencies = [
 
 [[package]]
 name = "borsh-derive"
-version = "1.6.1"
+version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bfcfdc083699101d5a7965e49925975f2f55060f94f9a05e7187be95d530ca59"
+checksum = "3ae8fb4fb5740e4b2c4884ff95f5f32f5e8479db1e8fd8eb49ddbe09eb09bb7c"
 dependencies = [
  "once_cell",
  "proc-macro-crate",
@@ -1753,8 +1753,7 @@ dependencies = [
 [[package]]
 name = "cpc"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1af078cb1471206c0ebd2d1b076da014af35dcbe4c631d7e9c8926d51cea467a"
+source = "git+https://github.com/jqnatividad/cpc?branch=upstream-migrate-fastnum-0.7.5#1d6969605242b764f002b7b4c618314767f2ff03"
 dependencies = [
  "console_error_panic_hook",
  "fastnum",
@@ -2748,12 +2747,13 @@ checksum = "dd2e7510819d6fbf51a5545c8f922716ecfb14df168a3242f7d33e0239efe6a1"
 
 [[package]]
 name = "fastnum"
-version = "0.2.10"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4451747a4f0b0237f73f79227f7842926ba640e774d46b70b86eebb8c60e5af"
+checksum = "020d1b59a944bc239d79903fbac2eda2365138b44890c27979562f6592059dcd"
 dependencies = [
- "autocfg",
  "bnum",
+ "num-integer",
+ "num-traits",
 ]
 
 [[package]]
@@ -7933,7 +7933,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.4.15",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

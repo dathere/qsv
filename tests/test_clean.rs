@@ -339,6 +339,57 @@ fn clean_stale_keeps_legacy_frequency_cache() {
     assert!(wrk.path("data.freq.csv.data.jsonl").exists());
 }
 
+// regression: a fresh frequency cache whose source has an UPPERCASE extension
+// must be resolved via canonical_input_path (not a lowercase-only stem guess) and
+// kept under --stale.
+#[test]
+fn clean_stale_keeps_uppercase_extension_cache() {
+    let wrk = Workdir::new("clean_stale_keeps_uppercase_extension_cache");
+    wrk.create("data.CSV", vec![svec!["h1", "h2"], svec!["a", "1"]]);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--frequency-jsonl", "data.CSV"]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--stale", "--force"]);
+    wrk.assert_success(&mut cmd);
+
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+}
+
+// regression: when two sources share a cache stem (data.tsv built the cache while
+// data.csv also exists), staleness must use the ACTUAL source (data.tsv via
+// canonical_input_path), not the first same-stem sibling. Here data.csv is made
+// newer than the cache while data.tsv is unchanged — a stem guess would wrongly
+// delete the fresh cache.
+#[test]
+fn clean_stale_same_stem_uses_correct_source() {
+    use filetime::{FileTime, set_file_mtime};
+
+    let wrk = Workdir::new("clean_stale_same_stem_uses_correct_source");
+    wrk.create_with_delim("data.tsv", vec![svec!["h1", "h2"], svec!["a", "1"]], b'\t');
+    wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
+
+    // build the cache from data.tsv
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--frequency-jsonl", "data.tsv"]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+
+    // make the OTHER same-stem file newer than the cache; the real source is not
+    let future = FileTime::from_unix_time(FileTime::now().unix_seconds() + 3600, 0);
+    set_file_mtime(wrk.path("data.csv"), future).unwrap();
+
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--stale", "--force"]);
+    wrk.assert_success(&mut cmd);
+
+    // canonical_input_path points at data.tsv (unchanged) -> fresh -> kept
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+}
+
 #[test]
 fn clean_single_file_input() {
     let wrk = Workdir::new("clean_single_file_input");

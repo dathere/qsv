@@ -266,20 +266,21 @@ fn handle_index(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf
         return;
     };
     let size = md.len();
-    // a csv-index (RandomAccessSimple) is a sequence of u64 offsets: non-zero
-    // and a multiple of 8. cheap magic check to avoid nuking unrelated .idx files
-    if size == 0 || !size.is_multiple_of(8) {
-        return;
-    }
     let Some(base) = full.strip_suffix(".idx") else {
         return;
     };
     let src = PathBuf::from(base);
+    let src_exists = src.is_file();
+    // structurally verify this really is a qsv csv-index for `src` before we ever
+    // delete it, so we never nuke an unrelated user .idx file (see looks_like_csv_index)
+    if !looks_like_csv_index(path, size, src_exists.then_some(src.as_path())) {
+        return;
+    }
     if stale {
         if stale_or_orphaned(path, Some(&src)) {
             victims.push((path.to_path_buf(), size));
         }
-    } else if src.is_file() {
+    } else if src_exists {
         victims.push((path.to_path_buf(), size));
     }
 }
@@ -299,9 +300,12 @@ fn handle_stats(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf
     if json_str(&v, "qsv_version").is_none() {
         return;
     }
+    // resolve the recorded source as a sibling of the cache (caches are always
+    // written next to their source) so staleness is correct regardless of the
+    // cwd clean is run from, or the directory having been moved since generation.
     let source = json_str(&v, "canonical_input_path")
         .or_else(|| json_str(&v, "arg_input"))
-        .map(PathBuf::from);
+        .and_then(|recorded| sibling_source(path, recorded));
 
     if stale && !stale_or_orphaned(path, source.as_deref()) {
         return;
@@ -329,8 +333,11 @@ fn handle_frequency(path: &Path, stale: bool, victims: &mut Vec<(PathBuf, u64)>)
     let Some(src) = json_str(&v, "arg_input") else {
         return;
     };
-    let source = PathBuf::from(src);
-    if stale && !stale_or_orphaned(path, Some(&source)) {
+    // arg_input is stored verbatim (often relative). resolve it as a sibling of
+    // the cache so `clean --stale` from another cwd doesn't see a fresh cache as
+    // orphaned and wrongly delete it.
+    let source = sibling_source(path, src);
+    if stale && !stale_or_orphaned(path, source.as_deref()) {
         return;
     }
     push_if_exists(victims, path.to_path_buf());
@@ -416,6 +423,61 @@ fn handle_validate(path: &Path, full: &str, stale: bool, victims: &mut Vec<(Path
 }
 
 // ---- helpers -----------------------------------------------------------------
+
+/// Structurally verify `path` is a qsv csv-index (`csv_index::RandomAccessSimple`)
+/// for `source`, not just any nonzero 8-byte-aligned file. The format is a run of
+/// big-endian u64 record offsets followed by a trailing u64 record count, so:
+///   * size is a non-zero multiple of 8 with at least two entries (16 bytes),
+///   * the first offset is 0 (the first record starts at the top of the CSV),
+///   * the trailing count equals `entries - 1`, and
+///   * the last record offset is within the source CSV (when the source exists).
+///
+/// Only the first/last/second-to-last u64s are read, so this stays cheap even for
+/// multi-hundred-MB indexes.
+fn looks_like_csv_index(path: &Path, size: u64, source: Option<&Path>) -> bool {
+    if size < 16 || !size.is_multiple_of(8) {
+        return false;
+    }
+    let entries = size / 8;
+    let Ok(mut f) = fs::File::open(path) else {
+        return false;
+    };
+    // first offset must be 0
+    if read_u64_at(&mut f, 0) != Some(0) {
+        return false;
+    }
+    // trailing u64 is the record count, which must equal entries - 1
+    if read_u64_at(&mut f, size - 8) != Some(entries - 1) {
+        return false;
+    }
+    // the last record offset must fall within the source CSV, when we have it
+    if let Some(src) = source
+        && let Ok(md) = fs::metadata(src)
+    {
+        match read_u64_at(&mut f, size - 16) {
+            Some(last_offset) if last_offset <= md.len() => {},
+            _ => return false,
+        }
+    }
+    true
+}
+
+fn read_u64_at(f: &mut fs::File, pos: u64) -> Option<u64> {
+    use std::io::{Read, Seek, SeekFrom};
+    f.seek(SeekFrom::Start(pos)).ok()?;
+    let mut buf = [0u8; 8];
+    f.read_exact(&mut buf).ok()?;
+    Some(u64::from_be_bytes(buf))
+}
+
+/// Resolve a source path recorded in cache metadata as a sibling of the cache.
+/// Caches are always written next to their source, so the source basename joined
+/// to the cache's directory is correct regardless of the cwd `clean` runs from or
+/// whether the directory was moved since the cache was generated.
+fn sibling_source(anchor: &Path, recorded: &str) -> Option<PathBuf> {
+    let name = Path::new(recorded).file_name()?;
+    Some(anchor.parent().unwrap_or_else(|| Path::new(".")).join(name))
+}
 
 /// The candidate artifact anchor paths for a given source file (single-file mode).
 fn candidate_anchors(src: &Path) -> Vec<PathBuf> {

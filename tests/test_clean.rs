@@ -217,6 +217,52 @@ fn clean_optin_categories_gated() {
     assert!(!wrk.path("data.stats.bivariate.csv").exists());
 }
 
+// regression: a user .idx file that is not a real qsv csv-index must not be
+// deleted, even when it is 8-byte aligned and has a same-named sibling.
+#[test]
+fn clean_preserves_non_index_idx_file() {
+    let wrk = Workdir::new("clean_preserves_non_index_idx_file");
+    // a sibling so the strip-".idx" source exists
+    wrk.create_from_string("mydata", "not a csv index source\n");
+    // 16 bytes (8-aligned) whose first u64 is nonzero -> not a csv-index
+    std::fs::write(wrk.path("mydata.idx"), [1u8; 16]).unwrap();
+
+    let mut cmd = wrk.command("clean");
+    cmd.arg("--force");
+    wrk.assert_success(&mut cmd);
+
+    assert!(wrk.path("mydata.idx").exists());
+}
+
+// regression: a fresh cache created with a relative arg_input must NOT be deleted
+// by `clean --stale` run from a different cwd (the source must resolve as a
+// sibling of the cache, not relative to the cwd).
+#[test]
+fn clean_stale_relative_path_from_other_cwd() {
+    let wrk = Workdir::new("clean_stale_relative_path_from_other_cwd");
+    wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
+
+    // create the frequency cache with a relative arg_input ("data.csv")
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--frequency-jsonl", "data.csv"]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+
+    // run clean --stale from a DIFFERENT directory, targeting the workdir abs path
+    let subdir = wrk.path("elsewhere");
+    std::fs::create_dir_all(&subdir).unwrap();
+    let workdir_abs = wrk.path(".");
+
+    let mut cmd = wrk.command("clean");
+    cmd.current_dir(&subdir);
+    cmd.args(["--stale", "--force"]);
+    cmd.arg(&workdir_abs);
+    wrk.assert_success(&mut cmd);
+
+    // the cache is fresh, not orphaned -> must be preserved
+    assert!(wrk.path("data.freq.csv.data.jsonl").exists());
+}
+
 #[test]
 fn clean_single_file_input() {
     let wrk = Workdir::new("clean_single_file_input");

@@ -24,6 +24,7 @@ static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 static COMMAND_LIST: &str = r#"
     behead      Drop header from CSV file
     cat         Concatenate by row or column
+    clean       Remove qsv-generated cache files
     count       Count records
     datefmt     Format date/datetime columns
     dedup       Remove redundant rows
@@ -238,6 +239,7 @@ fn main() -> QsvExitCode {
 enum Command {
     Behead,
     Cat,
+    Clean,
     Count,
     Datefmt,
     Dedup,
@@ -306,6 +308,7 @@ impl Command {
         match self {
             Command::Behead => cmd::behead::run(argv),
             Command::Cat => cmd::cat::run(argv),
+            Command::Clean => cmd::clean::run(argv),
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),

@@ -240,3 +240,223 @@ fn viz_static_png_export() {
     // PNG magic number
     assert_eq!(&bytes[..4], b"\x89PNG");
 }
+
+#[test]
+fn viz_pie() {
+    let wrk = Workdir::new("viz_pie");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    // count occurrences of each Fruit label, rendered as a donut
+    cmd.args(["pie", "fruits.csv", "--x", "Fruit", "--donut"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"pie""#));
+    assert!(html.contains(r#""hole":0.4"#));
+    assert!(html.contains("apple"));
+}
+
+#[test]
+fn viz_heatmap_correlation() {
+    let wrk = Workdir::new("viz_heatmap_correlation");
+    // three numeric columns with repetition (low uniqueness, not ID-like)
+    let mut rows = String::from("a,b,c\n");
+    for i in 0..40 {
+        let a = i % 7;
+        let b = (i % 7) * 2; // perfectly correlated with a
+        let c = (i % 5) + 1;
+        rows.push_str(&format!("{a},{b},{c}\n"));
+    }
+    wrk.create_from_string("nums.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "nums.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"heatmap""#));
+    // correlation heatmaps are fixed to the [-1, 1] diverging scale
+    assert!(html.contains(r#""zmin":-1.0"#));
+    assert!(html.contains(r#""zmax":1.0"#));
+}
+
+#[test]
+fn viz_heatmap_pivot() {
+    let wrk = Workdir::new("viz_heatmap_pivot");
+    wrk.create_from_string(
+        "sales.csv",
+        "region,product,amount\nEast,Widget,100\nWest,Widget,150\nEast,Gadget,80\nWest,Gadget,90\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "heatmap",
+        "sales.csv",
+        "--x",
+        "region",
+        "--y",
+        "product",
+        "--z",
+        "amount",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"heatmap""#));
+    assert!(html.contains("Widget"));
+}
+
+#[test]
+fn viz_candlestick() {
+    let wrk = Workdir::new("viz_candlestick");
+    wrk.create_from_string(
+        "prices.csv",
+        "date,open,high,low,close\n2024-01-01,10,12,9,11\n2024-01-02,11,13,10,12\n2024-01-03,12,\
+         14,11,13\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "candlestick",
+        "prices.csv",
+        "--x",
+        "date",
+        "--ohlc-open",
+        "open",
+        "--high",
+        "high",
+        "--low",
+        "low",
+        "--close",
+        "close",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"candlestick""#));
+}
+
+#[test]
+fn viz_ohlc() {
+    let wrk = Workdir::new("viz_ohlc");
+    wrk.create_from_string(
+        "prices.csv",
+        "date,open,high,low,close\n2024-01-01,10,12,9,11\n2024-01-02,11,13,10,12\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "ohlc",
+        "prices.csv",
+        "--x",
+        "date",
+        "--ohlc-open",
+        "open",
+        "--high",
+        "high",
+        "--low",
+        "low",
+        "--close",
+        "close",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"ohlc""#));
+}
+
+#[test]
+fn viz_sankey() {
+    let wrk = Workdir::new("viz_sankey");
+    // two rows share the same East->Widget flow; they must aggregate into one link
+    wrk.create_from_string(
+        "flows.csv",
+        "from,to,weight\nEast,Widget,5\nEast,Widget,3\nWest,Gadget,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "sankey",
+        "flows.csv",
+        "--source",
+        "from",
+        "--target",
+        "to",
+        "--value",
+        "weight",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"sankey""#));
+    // East->Widget (5+3=8) and West->Gadget (4): exactly two aggregated links
+    assert!(html.contains(r#""value":[8.0,4.0]"#));
+}
+
+#[test]
+fn viz_radar() {
+    let wrk = Workdir::new("viz_radar");
+    wrk.create_from_string(
+        "teams.csv",
+        "team,speed,power,range\nAlpha,80,70,60\nBeta,60,85,75\nAlpha,82,72,64\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "radar",
+        "teams.csv",
+        "--cols",
+        "speed,power,range",
+        "--series",
+        "team",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scatterpolar""#));
+    assert!(html.contains(r#""fill":"toself""#));
+    assert!(html.contains("Alpha"));
+}
+
+#[test]
+fn viz_smart_correlation_panel() {
+    let wrk = Workdir::new("viz_smart_correlation_panel");
+    // two continuous-but-repeating numeric columns (not near-unique) plus a categorical one,
+    // so `viz smart` adds a correlation heatmap panel alongside the frequency bar
+    let mut rows = String::from("metric_a,metric_b,city\n");
+    for i in 0..60 {
+        let a = i % 9;
+        let b = (i % 9) + (i % 3);
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{a},{b},{city}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the correlation panel is a heatmap drawn into the subplot grid
+    assert!(html.contains(r#""type":"heatmap""#));
+    // polish: a clean hovertemplate (drops plotly's default "trace 0") ...
+    assert!(html.contains("hovertemplate"));
+    // ... in-cell r value labels as annotations (metric_a vs metric_a is a perfect 1.00) ...
+    assert!(html.contains(r#""text":"1.00""#));
+    // ... and a widened left margin (> the default 60) so long y tick labels aren't clipped.
+    // "metric_a" is 8 chars => 8*7 + 24 = 80px.
+    assert!(html.contains(r#""l":80"#));
+}

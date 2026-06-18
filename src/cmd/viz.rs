@@ -77,8 +77,10 @@ smart options:
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
     --y-title <s>          Y-axis title. (defaults to the y column name)
-    --width <n>            Image width in pixels (static export). [default: 1000]
-    --height <n>           Image height in pixels (static export). [default: 600]
+    --width <n>            Image width in pixels for static export. Default 1000;
+                           for `smart`, auto-scaled to the grid's column count.
+    --height <n>           Image height in pixels for static export. Default 600;
+                           for `smart`, auto-scaled to the number of panel rows.
     --scale <f>            Image scale factor (static export). [default: 1.0]
     --open                 Open the generated chart in the default browser/viewer.
 
@@ -99,9 +101,9 @@ use std::{
 };
 
 use plotly::{
-    Bar, BoxPlot, Histogram, Plot, Scatter, Trace,
-    common::{Mode, Title},
-    layout::{Axis, GridPattern, Layout, LayoutGrid},
+    Bar, BoxPlot, Configuration, Histogram, Plot, Scatter, Trace,
+    common::{Anchor, Font, Marker, Mode, TextPosition, Title},
+    layout::{Annotation, Axis, Layout, Margin},
 };
 use serde::Deserialize;
 
@@ -119,6 +121,51 @@ const MAX_SUBPLOTS: usize = 8;
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
+
+/// Max bars in a single-series `viz bar` chart that still get value labels; beyond this the
+/// labels would overlap, so they're omitted.
+const LABEL_MAX_BARS: usize = 40;
+
+/// Vertical space (in pixels) allotted to each row of subplots in the `viz smart`
+/// dashboard. The total plot height scales with the number of rows so panels stay
+/// readable instead of being crammed into plotly's ~450px default.
+const ROW_HEIGHT_PX: usize = 320;
+
+/// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
+/// smart` static image export width.
+const SMART_COL_WIDTH_PX: usize = 500;
+
+/// Fallback static-export image dimensions (pixels) when --width/--height are not given
+/// and no auto-scaling applies (i.e. the non-`smart` chart types).
+const DEFAULT_IMG_WIDTH: usize = 1000;
+const DEFAULT_IMG_HEIGHT: usize = 600;
+
+/// Soft qualitative palette (Vega/Tableau-10) for coloring dashboard panels — distinct
+/// but harmonious, and friendlier than plotly's saturated defaults.
+const PALETTE: [&str; 8] = [
+    "#4C78A8", "#F58518", "#54A24B", "#E45756", "#72B7B2", "#EECA3B", "#B279A2", "#FF9DA6",
+];
+
+/// Shared UI font stack and "ink" color for all dashboard text.
+const FONT_FAMILY: &str = "Helvetica Neue, Helvetica, Arial, sans-serif";
+const INK: &str = "#2A3F5F";
+const PAPER_BG: &str = "#FFFFFF";
+const GRID_COLOR: &str = "#ECECEC";
+const AXIS_LINE: &str = "#BCC4CE";
+
+/// Dashboard plot margins (pixels). Kept as named constants because the title-band math
+/// below needs the plot-area height (total height minus these margins).
+const TOP_MARGIN_PX: usize = 80;
+const BOTTOM_MARGIN_PX: usize = 60;
+
+/// Pixels reserved above the top row of panels for their titles, and the gap (in pixels)
+/// between a cell's top edge and its title. Both are kept in *pixels* (converted to paper
+/// fractions via the plot-area height) so neither the band nor the offset scales with the
+/// dashboard height — otherwise a tall dashboard's title would drift past `y=1` and overlap
+/// the dashboard title. The band must comfortably exceed `TITLE_OFFSET_PX` plus the title's
+/// rendered glyph height (~17px for the 13px font).
+const TITLE_BAND_PX: usize = 32;
+const TITLE_OFFSET_PX: usize = 6;
 
 #[derive(Deserialize)]
 struct Args {
@@ -140,11 +187,11 @@ struct Args {
     flag_title:      Option<String>,
     flag_x_title:    Option<String>,
     flag_y_title:    Option<String>,
-    // width/height/scale only affect static image export (the viz_static feature)
-    #[cfg_attr(not(feature = "viz_static"), allow(dead_code))]
-    flag_width:      usize,
-    #[cfg_attr(not(feature = "viz_static"), allow(dead_code))]
-    flag_height:     usize,
+    // width/height/scale only affect static image export (the viz_static feature). width
+    // and height are optional: when unset, `viz smart` derives them from its grid shape and
+    // other charts fall back to the defaults below.
+    flag_width:      Option<usize>,
+    flag_height:     Option<usize>,
     #[cfg_attr(not(feature = "viz_static"), allow(dead_code))]
     flag_scale:      f64,
     flag_open:       bool,
@@ -217,13 +264,31 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
-    let plot = if args.cmd_smart {
-        build_smart(&args)?
+    let (mut plot, smart_dims) = if args.cmd_smart {
+        let (plot, dims) = build_smart(&args)?;
+        (plot, Some(dims))
     } else {
-        build_plot(&args)?
+        (build_plot(&args)?, None)
     };
 
-    output_plot(&plot, &args, out_format)
+    // make the interactive HTML re-fit its width to the window/container on resize; this
+    // is ignored by static image export (which sizes via --width/--height).
+    plot.set_configuration(Configuration::new().responsive(true));
+
+    // resolve static-export dimensions: an explicit --width/--height always wins, else the
+    // `smart` auto-scaled size, else the fixed fallback.
+    let (smart_w, smart_h) = smart_dims.unzip();
+    let img_width = args.flag_width.or(smart_w).unwrap_or(DEFAULT_IMG_WIDTH);
+    let img_height = args.flag_height.or(smart_h).unwrap_or(DEFAULT_IMG_HEIGHT);
+
+    output_plot(
+        &plot,
+        &args,
+        out_format,
+        img_width,
+        img_height,
+        args.flag_scale,
+    )
 }
 
 /// Build a `Plot` for the requested chart subcommand.
@@ -392,6 +457,9 @@ fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, 
     let data = read_xy(args)?;
     let agg = parse_agg(args.flag_agg.as_deref())?;
 
+    // value labels only make sense for a single-series bar chart with a modest bar count
+    let single_series = data.groups.len() == 1;
+
     let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(data.groups.len());
     for (name, xs, ys) in data.groups {
         let (xs, ys) = match agg {
@@ -406,9 +474,19 @@ fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, 
         };
         match kind {
             Chart::Bar => {
+                let show_labels = single_series && ys.len() <= LABEL_MAX_BARS;
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
                     t = t.name(name);
+                }
+                if show_labels {
+                    // SI-formatted value labels above each bar ("258k", "1.05M");
+                    // clip_on_axis(false) keeps the tallest bar's label from being clipped
+                    t = t
+                        .text_template("%{y:.3s}")
+                        .text_position(TextPosition::Outside)
+                        .text_font(Font::new().size(10))
+                        .clip_on_axis(false);
                 }
                 traces.push(t);
             },
@@ -526,11 +604,18 @@ fn build_layout(
     layout
 }
 
-fn output_plot(plot: &Plot, args: &Args, fmt: OutFormat) -> CliResult<()> {
+fn output_plot(
+    plot: &Plot,
+    args: &Args,
+    fmt: OutFormat,
+    width: usize,
+    height: usize,
+    scale: f64,
+) -> CliResult<()> {
     if matches!(fmt, OutFormat::Html) {
         output_html(plot, args)
     } else {
-        output_image(plot, args, fmt)
+        output_image(plot, args, fmt, width, height, scale)
     }
 }
 
@@ -553,7 +638,14 @@ fn output_html(plot: &Plot, args: &Args) -> CliResult<()> {
 
 // image formats (only reachable with the viz_static feature; guarded in run())
 #[cfg(feature = "viz_static")]
-fn output_image(plot: &Plot, args: &Args, fmt: OutFormat) -> CliResult<()> {
+fn output_image(
+    plot: &Plot,
+    args: &Args,
+    fmt: OutFormat,
+    width: usize,
+    height: usize,
+    scale: f64,
+) -> CliResult<()> {
     use plotly::ImageFormat;
     let path = args
         .flag_output
@@ -567,19 +659,13 @@ fn output_image(plot: &Plot, args: &Args, fmt: OutFormat) -> CliResult<()> {
         OutFormat::Pdf => ImageFormat::PDF,
         OutFormat::Html => unreachable!(),
     };
-    plot.write_image(
-        path,
-        image_format,
-        args.flag_width,
-        args.flag_height,
-        args.flag_scale,
-    )
-    .map_err(|e| {
-        crate::CliError::Other(format!(
-            "Static image export failed: {e}. A Chromium or Firefox browser must be installed and \
-             available for plotly's webdriver-based export."
-        ))
-    })?;
+    plot.write_image(path, image_format, width, height, scale)
+        .map_err(|e| {
+            crate::CliError::Other(format!(
+                "Static image export failed: {e}. A Chromium or Firefox browser must be installed \
+                 and available for plotly's webdriver-based export."
+            ))
+        })?;
     if args.flag_open {
         open_path(path)?;
     }
@@ -588,7 +674,14 @@ fn output_image(plot: &Plot, args: &Args, fmt: OutFormat) -> CliResult<()> {
 
 #[cfg(not(feature = "viz_static"))]
 #[allow(clippy::unnecessary_wraps)]
-fn output_image(_plot: &Plot, _args: &Args, _fmt: OutFormat) -> CliResult<()> {
+fn output_image(
+    _plot: &Plot,
+    _args: &Args,
+    _fmt: OutFormat,
+    _width: usize,
+    _height: usize,
+    _scale: f64,
+) -> CliResult<()> {
     unreachable!("image export is rejected in run() without the viz_static feature");
 }
 
@@ -780,7 +873,9 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
-fn build_smart(args: &Args) -> CliResult<Plot> {
+/// Returns the plot plus its preferred static-export dimensions `(width, height)` in pixels
+/// (scaled to the grid shape), used when --width/--height aren't given.
+fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
     let Some(input) = args.arg_input.clone() else {
         return fail_incorrectusage_clierror!(
             "`viz smart` requires a file input (it derives charts from the dataset's statistics)."
@@ -871,25 +966,63 @@ fn build_smart(args: &Args) -> CliResult<Plot> {
         count_values(args, &bar_indices, top_n)?
     };
 
-    // assemble the subplot-grid dashboard
+    // assemble the dashboard as a grid of subplots. We lay out each cell's axes with
+    // explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot
+    // height with the row count, (b) reserve a band at the top for the dashboard title,
+    // and (c) place each column's name as a title *above* its panel.
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     let rows = panels.len().div_ceil(cols);
+    let grid_top = smart_grid_top(rows);
+    let title_offset = smart_title_offset(rows);
+
+    // dashboard title: the user's --title, else the dataset's file name
+    let title_text = args.flag_title.clone().unwrap_or_else(|| {
+        let dataset = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
+            .file_name()
+            .and_then(|s| s.to_str())
+            .unwrap_or("data");
+        format!("{dataset} \u{2014} data overview")
+    });
 
     let mut plot = Plot::new();
-    let mut layout = Layout::new().show_legend(false).grid(
-        LayoutGrid::new()
-            .rows(rows)
-            .columns(cols)
-            .pattern(GridPattern::Independent),
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(rows * ROW_HEIGHT_PX)
+        .margin(
+            Margin::new()
+                .top(TOP_MARGIN_PX)
+                .bottom(BOTTOM_MARGIN_PX)
+                .left(60)
+                .right(40)
+                .pad(4),
+        )
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+        .paper_background_color(PAPER_BG)
+        .plot_background_color(PAPER_BG);
+
+    // annotations: the dashboard title (in the reserved top strip) plus one title per panel
+    let mut annotations: Vec<Annotation> = Vec::with_capacity(panels.len() + 1);
+    annotations.push(
+        Annotation::new()
+            .text(title_text)
+            .x(0.5)
+            .y(1.0)
+            .x_ref("paper")
+            .y_ref("paper")
+            .x_anchor(Anchor::Center)
+            .y_anchor(Anchor::Bottom)
+            .show_arrow(false)
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(20)),
     );
-    if let Some(t) = &args.flag_title {
-        layout = layout.title(Title::with_text(t));
-    }
 
     for (n, panel) in panels.iter().enumerate() {
         let pos = n + 1;
         let xref = axis_ref('x', pos);
         let yref = axis_ref('y', pos);
+        let color = PALETTE[n % PALETTE.len()];
+        let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
+        // tallest bar value, used to give bar panels headroom for outside value labels
+        let mut bar_max: Option<f64> = None;
         let trace: Box<dyn Trace> = match &panel.kind {
             PanelKind::BoxStats {
                 q1,
@@ -904,8 +1037,9 @@ fn build_smart(args: &Args) -> CliResult<Plot> {
                     .q1(vec![*q1])
                     .median(vec![*median])
                     .q3(vec![*q3])
-                    .x_axis(xref)
-                    .y_axis(yref);
+                    .marker(Marker::new().color(color))
+                    .x_axis(xref.clone())
+                    .y_axis(yref.clone());
                 if let Some(l) = lower {
                     b = b.lower_fence(vec![*l]);
                 }
@@ -921,18 +1055,50 @@ fn build_smart(args: &Args) -> CliResult<Plot> {
                 let counts = freq.get(idx).cloned().unwrap_or_default();
                 let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
                 let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
+                bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
                 Bar::new(xs, ys)
                     .name(panel.name.clone())
-                    .x_axis(xref)
-                    .y_axis(yref)
+                    .marker(Marker::new().color(color))
+                    // value labels above each bar, SI-formatted ("258k", "1.05M") to match
+                    // the axis ticks
+                    .text_template("%{y:.3s}")
+                    .text_position(TextPosition::Outside)
+                    .text_font(Font::new().family(FONT_FAMILY).color(INK).size(9))
+                    .x_axis(xref.clone())
+                    .y_axis(yref.clone())
             },
         };
         plot.add_trace(trace);
-        layout = set_subplot_title(layout, pos, &panel.name);
+
+        // position this subplot's styled axes and add its title above the cell
+        let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
+        layout = place_subplot_axes(
+            layout,
+            pos,
+            styled_x_axis(is_box),
+            styled_y_axis(bar_max),
+            geom.x_domain,
+            geom.y_domain,
+            &xref,
+            &yref,
+        );
+        annotations.push(
+            Annotation::new()
+                .text(panel.name.clone())
+                .x(geom.title_x)
+                .y(geom.title_y)
+                .x_ref("paper")
+                .y_ref("paper")
+                .x_anchor(Anchor::Center)
+                .y_anchor(Anchor::Bottom)
+                .show_arrow(false)
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(13)),
+        );
     }
+    layout = layout.annotations(annotations);
 
     plot.set_layout(layout);
-    Ok(plot)
+    Ok((plot, (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX)))
 }
 
 /// Count value occurrences for the given column indices in a single pass, returning the
@@ -987,19 +1153,136 @@ fn axis_ref(prefix: char, pos: usize) -> String {
     }
 }
 
-/// Set the x-axis title (the column name) for subplot `pos`. Typed Layout axis fields
-/// only exist up to 8, which matches MAX_SUBPLOTS.
-fn set_subplot_title(layout: Layout, pos: usize, title: &str) -> Layout {
-    let axis = Axis::new().title(Title::with_text(title.to_string()));
+/// Plot-area height (pixels) of a `rows`-row dashboard: total height minus the top/bottom
+/// margins. Floored at 1 to avoid division by zero.
+fn smart_plot_area_h(rows: usize) -> f64 {
+    (rows * ROW_HEIGHT_PX)
+        .saturating_sub(TOP_MARGIN_PX + BOTTOM_MARGIN_PX)
+        .max(1) as f64
+}
+
+/// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
+/// reserves a fixed `TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
+/// height) for the top row's panel titles, so they always clear the dashboard title — for
+/// both short (one-row) and tall (eight-row) dashboards. Capped at half the area.
+fn smart_grid_top(rows: usize) -> f64 {
+    let band = (TITLE_BAND_PX as f64 / smart_plot_area_h(rows)).min(0.5);
+    1.0 - band
+}
+
+/// Paper-fraction gap between a cell's top and its title, fixed at `TITLE_OFFSET_PX` pixels
+/// so it doesn't scale with dashboard height (which would consume the reserved band).
+fn smart_title_offset(rows: usize) -> f64 {
+    (TITLE_OFFSET_PX as f64 / smart_plot_area_h(rows)).min(0.05)
+}
+
+/// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
+struct SubplotGeometry {
+    x_domain: Vec<f64>,
+    y_domain: Vec<f64>,
+    title_x:  f64,
+    title_y:  f64,
+}
+
+/// Compute the paper-space domains for subplot `n` (0-based) in a `rows`×`cols` grid that
+/// occupies the vertical band `0.0..=top` (the strip above `top` is left for the dashboard
+/// title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a paper
+/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom with fixed
+/// gaps; the vertical gap leaves room for each panel's title and the row below it's tick
+/// labels.
+fn subplot_geometry(
+    n: usize,
+    rows: usize,
+    cols: usize,
+    top: f64,
+    title_offset: f64,
+) -> SubplotGeometry {
+    const HGAP: f64 = 0.08;
+    const VGAP: f64 = 0.09;
+
+    let cols_f = cols as f64;
+    let rows_f = rows as f64;
+    let cell_w = (1.0 - HGAP * (cols_f - 1.0)) / cols_f;
+    let cell_h = (top - VGAP * (rows_f - 1.0)) / rows_f;
+
+    let col = (n % cols) as f64;
+    let row = (n / cols) as f64; // row 0 is the top of the band
+
+    let x0 = col * (cell_w + HGAP);
+    let x1 = x0 + cell_w;
+    let y1 = top - row * (cell_h + VGAP); // top edge of the cell
+    let y0 = y1 - cell_h;
+
+    SubplotGeometry {
+        x_domain: vec![x0, x1],
+        y_domain: vec![y0, y1],
+        title_x:  (x0 + x1) / 2.0,
+        title_y:  (y1 + title_offset).min(1.0),
+    }
+}
+
+/// A styled x-axis for a dashboard panel: no vertical gridlines, a light baseline, and
+/// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
+/// meaningless, so its labels and baseline are hidden.
+fn styled_x_axis(is_box: bool) -> Axis {
+    let mut a = Axis::new()
+        .show_grid(false)
+        .zero_line(false)
+        .show_line(true)
+        .line_color(AXIS_LINE)
+        .tick_color(AXIS_LINE)
+        .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+    if is_box {
+        a = a.show_tick_labels(false).show_line(false);
+    }
+    a
+}
+
+/// A styled y-axis for a dashboard panel: light horizontal gridlines only, small ticks.
+/// When `headroom_max` is given (bar panels), the range is fixed to `0..=max*1.15` so the
+/// tallest bar's outside value label has room and isn't clipped at the cell top.
+fn styled_y_axis(headroom_max: Option<f64>) -> Axis {
+    let mut a = Axis::new()
+        .show_grid(true)
+        .grid_color(GRID_COLOR)
+        .grid_width(1)
+        .zero_line(false)
+        .show_line(false)
+        .tick_color(AXIS_LINE)
+        .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+    if let Some(m) = headroom_max
+        && m > 0.0
+    {
+        a = a.range(vec![0.0, m * 1.15]);
+    }
+    a
+}
+
+/// Place subplot `pos`'s prebuilt axis pair: stamp on the cell's domains + cross anchors
+/// and assign them to the typed Layout axis fields (which only exist up to 8, matching
+/// MAX_SUBPLOTS).
+fn place_subplot_axes(
+    layout: Layout,
+    pos: usize,
+    x_axis: Axis,
+    y_axis: Axis,
+    x_domain: Vec<f64>,
+    y_domain: Vec<f64>,
+    xref: &str,
+    yref: &str,
+) -> Layout {
+    // x-axis anchors to its paired y-axis and vice versa.
+    let x = x_axis.domain(&x_domain).anchor(yref);
+    let y = y_axis.domain(&y_domain).anchor(xref);
     match pos {
-        1 => layout.x_axis(axis),
-        2 => layout.x_axis2(axis),
-        3 => layout.x_axis3(axis),
-        4 => layout.x_axis4(axis),
-        5 => layout.x_axis5(axis),
-        6 => layout.x_axis6(axis),
-        7 => layout.x_axis7(axis),
-        8 => layout.x_axis8(axis),
+        1 => layout.x_axis(x).y_axis(y),
+        2 => layout.x_axis2(x).y_axis2(y),
+        3 => layout.x_axis3(x).y_axis3(y),
+        4 => layout.x_axis4(x).y_axis4(y),
+        5 => layout.x_axis5(x).y_axis5(y),
+        6 => layout.x_axis6(x).y_axis6(y),
+        7 => layout.x_axis7(x).y_axis7(y),
+        8 => layout.x_axis8(x).y_axis8(y),
         _ => layout,
     }
 }
@@ -1119,5 +1402,51 @@ mod tests {
         let ys = vec![1.0, 2.0, 3.0];
         let (out_x, _) = sort_line_xy(xs, ys);
         assert_eq!(out_x, vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn subplot_geometry_cells_are_within_bounds_and_titled_above() {
+        // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
+        let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
+        for n in 0..4 {
+            let g = subplot_geometry(n, rows, cols, top, offset);
+            // domains stay inside the paper area
+            assert!(g.x_domain[0] >= 0.0 && g.x_domain[1] <= 1.0 + 1e-9);
+            assert!(g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9);
+            // each title is horizontally centered on its cell and sits at/above the cell top
+            assert!((g.title_x - (g.x_domain[0] + g.x_domain[1]) / 2.0).abs() < 1e-9);
+            assert!(g.title_y >= g.y_domain[1] - 1e-9);
+        }
+        // top row is higher on the page than the bottom row
+        let upper = subplot_geometry(0, rows, cols, top, offset);
+        let lower = subplot_geometry(2, rows, cols, top, offset);
+        assert!(upper.y_domain[0] > lower.y_domain[1]);
+        // the two columns don't overlap horizontally
+        let left = subplot_geometry(0, rows, cols, top, offset);
+        let right = subplot_geometry(1, rows, cols, top, offset);
+        assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
+    }
+
+    #[test]
+    fn smart_title_band_fits_every_row_count() {
+        // For every dashboard size up to the 8-panel max (including a tall single-column
+        // 8-row layout), the top-row panel title — offset above the cell plus its rendered
+        // glyph height — must stay at/below y=1 so it never overlaps the dashboard title.
+        const GLYPH_PX: f64 = 20.0; // generous estimate of the 13px title's rendered height
+        for rows in 1..=MAX_SUBPLOTS {
+            let area = smart_plot_area_h(rows);
+            let g = subplot_geometry(0, rows, 1, smart_grid_top(rows), smart_title_offset(rows));
+            let title_top = g.title_y + GLYPH_PX / area;
+            assert!(
+                title_top <= 1.0 + 1e-9,
+                "rows={rows}: title_top={title_top} crosses y=1 (would overlap dashboard title)"
+            );
+            // the title still sits above its own cell
+            assert!(g.title_y >= g.y_domain[1] - 1e-9);
+        }
+
+        // the reserved band is a real pixel size even for a short one-row dashboard
+        let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
+        assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
     }
 }

@@ -751,21 +751,14 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         if let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3)
             && s.cardinality > 1
         {
-            // Tukey inner fences are computed thresholds, not observed values, so plotting
-            // them directly as whisker endpoints can extend whiskers beyond the real data.
-            // Clamp each whisker to the actual data range (min/max) so it never misrepresents.
-            let min = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
-            let max = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
-            let lower = match (s.lower_inner_fence, min) {
-                (Some(fence), Some(m)) => Some(fence.max(m)),
-                (None, Some(m)) => Some(m),
-                (fence, None) => fence,
-            };
-            let upper = match (s.upper_inner_fence, max) {
-                (Some(fence), Some(m)) => Some(fence.min(m)),
-                (None, Some(m)) => Some(m),
-                (fence, None) => fence,
-            };
+            // Use the actual observed min/max as the whisker endpoints. We intentionally do
+            // NOT use the Tukey inner fences: a fence is a computed threshold (Q1-1.5*IQR /
+            // Q3+1.5*IQR) that need not coincide with any value in the dataset, so plotting
+            // it as a whisker endpoint would fabricate a data point. min/max ARE observed
+            // values, and since this is a precomputed box (no raw points / outlier markers),
+            // min-to-max whiskers honestly convey the column's full range without re-scanning.
+            let lower = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+            let upper = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
             return Some(PanelKind::BoxStats {
                 q1,
                 median,
@@ -1082,20 +1075,21 @@ mod tests {
     }
 
     #[test]
-    fn box_whiskers_clamped_to_data_range() {
-        // Tukey fences fall outside the observed data; whiskers must clamp to [min, max].
+    fn box_whiskers_use_observed_min_max_not_fences() {
+        // Whiskers must be the observed min/max, never the Tukey fences - even when a fence
+        // falls INSIDE the data range (a fence value need not exist in the dataset).
         let mut s = stat("Float", 100, Some(0.8));
         s.q1 = Some(10.0);
         s.q2_median = Some(15.0);
         s.q3 = Some(20.0);
-        s.lower_inner_fence = Some(-5.0); // below the actual min
-        s.upper_inner_fence = Some(40.0); // above the actual max
+        s.lower_inner_fence = Some(12.0); // inside [8, 25] - must be ignored
+        s.upper_inner_fence = Some(22.0); // inside [8, 25] - must be ignored
         s.min = Some("8.0".to_string());
         s.max = Some("25.0".to_string());
         match classify(0, &s) {
             Some(PanelKind::BoxStats { lower, upper, .. }) => {
-                assert_eq!(lower, Some(8.0)); // clamped up to the actual min
-                assert_eq!(upper, Some(25.0)); // clamped down to the actual max
+                assert_eq!(lower, Some(8.0)); // observed minimum
+                assert_eq!(upper, Some(25.0)); // observed maximum
             },
             _ => panic!("expected BoxStats"),
         }

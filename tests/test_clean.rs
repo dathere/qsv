@@ -125,9 +125,11 @@ fn clean_stale_keeps_fresh_removes_stale() {
     assert!(wrk.path("data.csv").exists());
 }
 
+// An orphaned index (source deleted) cannot be fully validated against its source,
+// so clean conservatively KEEPS it rather than risk deleting an unrelated file.
 #[test]
-fn clean_stale_removes_orphaned_index() {
-    let wrk = Workdir::new("clean_stale_removes_orphaned_index");
+fn clean_stale_keeps_orphaned_index() {
+    let wrk = Workdir::new("clean_stale_keeps_orphaned_index");
     wrk.create("data.csv", vec![svec!["h1", "h2"], svec!["a", "1"]]);
 
     let mut cmd = wrk.command("index");
@@ -142,7 +144,56 @@ fn clean_stale_removes_orphaned_index() {
     cmd.args(["--stale", "--force"]);
     wrk.assert_success(&mut cmd);
 
-    assert!(!wrk.path("data.csv.idx").exists());
+    // orphaned index is preserved (can't validate offset bounds without the source)
+    assert!(wrk.path("data.csv.idx").exists());
+}
+
+// regression: an .idx with valid first/last entries but a malformed INTERMEDIATE
+// offset (out of order / out of bounds) must not pass validation and be deleted.
+#[test]
+fn clean_preserves_index_with_bad_intermediate_offset() {
+    let wrk = Workdir::new("clean_preserves_index_with_bad_intermediate_offset");
+    wrk.create_from_string("data.csv", "h1,h2\na,1\n");
+
+    // 4 big-endian u64 entries: offsets [0, 5, 3] then trailing count 3.
+    // first==0 and count==entries-1 hold, but offsets are NOT monotonic (5 > 3).
+    let mut bytes = Vec::new();
+    for v in [0u64, 5, 3, 3] {
+        bytes.extend_from_slice(&v.to_be_bytes());
+    }
+    std::fs::write(wrk.path("data.csv.idx"), &bytes).unwrap();
+
+    let mut cmd = wrk.command("clean");
+    cmd.arg("--force");
+    wrk.assert_success(&mut cmd);
+
+    assert!(wrk.path("data.csv.idx").exists());
+}
+
+// regression: a frequency cache built through a symlink is stored beside the
+// canonical target (metadata keeps the symlink name). clean --stale must resolve
+// the source from the cache's own stem and NOT delete the fresh cache.
+#[cfg(unix)]
+#[test]
+fn clean_stale_symlinked_frequency_input() {
+    let wrk = Workdir::new("clean_stale_symlinked_frequency_input");
+    std::fs::create_dir_all(wrk.path("target")).unwrap();
+    wrk.create_from_string("target/data.csv", "h1,h2\na,1\n");
+    std::os::unix::fs::symlink(wrk.path("target/data.csv"), wrk.path("link.csv")).unwrap();
+
+    // build the frequency cache via the symlink; it lands beside the canonical target
+    let mut cmd = wrk.command("frequency");
+    cmd.args(["--frequency-jsonl", "link.csv"]);
+    wrk.assert_success(&mut cmd);
+    assert!(wrk.path("target/data.freq.csv.data.jsonl").exists());
+
+    // clean --stale the target dir; the cache is fresh -> must be preserved
+    let mut cmd = wrk.command("clean");
+    cmd.args(["--stale", "--force"]);
+    cmd.arg(wrk.path("target"));
+    wrk.assert_success(&mut cmd);
+
+    assert!(wrk.path("target/data.freq.csv.data.jsonl").exists());
 }
 
 #[test]

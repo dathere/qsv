@@ -66,7 +66,7 @@ Common options:
 
 use std::{
     fs,
-    io::{BufRead, BufReader},
+    io::{BufRead, BufReader, Read},
     path::{Path, PathBuf},
 };
 
@@ -241,7 +241,7 @@ fn consider_anchor(path: &Path, sel: &Selected, stale: bool, victims: &mut Vec<(
     {
         handle_stats(path, &full, stale, victims);
     } else if sel.frequency && full.ends_with(".freq.csv.data.jsonl") {
-        handle_frequency(path, stale, victims);
+        handle_frequency(path, &full, stale, victims);
     } else if sel.schema && full.ends_with(".pschema.json") {
         handle_pschema(path, &full, stale, victims);
     } else if sel.schema && full.ends_with(".schema.json") {
@@ -270,17 +270,16 @@ fn handle_index(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf
         return;
     };
     let src = PathBuf::from(base);
-    let src_exists = src.is_file();
-    // structurally verify this really is a qsv csv-index for `src` before we ever
-    // delete it, so we never nuke an unrelated user .idx file (see looks_like_csv_index)
-    if !looks_like_csv_index(path, size, src_exists.then_some(src.as_path())) {
+    // require the source to exist so the index can be FULLY validated against it
+    // (offset ordering AND bounds). we never delete an orphaned .idx, whose
+    // provenance can't be fully verified without its source.
+    if !src.is_file() {
         return;
     }
-    if stale {
-        if stale_or_orphaned(path, Some(&src)) {
-            victims.push((path.to_path_buf(), size));
-        }
-    } else if src_exists {
+    if !looks_like_csv_index(path, size, &src) {
+        return;
+    }
+    if !stale || stale_or_orphaned(path, Some(&src)) {
         victims.push((path.to_path_buf(), size));
     }
 }
@@ -320,23 +319,24 @@ fn handle_stats(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf
     }
 }
 
-fn handle_frequency(path: &Path, stale: bool, victims: &mut Vec<(PathBuf, u64)>) {
+fn handle_frequency(path: &Path, full: &str, stale: bool, victims: &mut Vec<(PathBuf, u64)>) {
     let Some(line) = read_first_line(path) else {
         return;
     };
     let Ok(v) = serde_json::from_str::<Value>(&line) else {
         return;
     };
-    if json_str(&v, "qsv_version").is_none() {
+    // provenance: a qsv frequency cache carries its version & input in metadata
+    if json_str(&v, "qsv_version").is_none() || json_str(&v, "arg_input").is_none() {
         return;
     }
-    let Some(src) = json_str(&v, "arg_input") else {
-        return;
-    };
-    // arg_input is stored verbatim (often relative). resolve it as a sibling of
-    // the cache so `clean --stale` from another cwd doesn't see a fresh cache as
-    // orphaned and wrongly delete it.
-    let source = sibling_source(path, src);
+    // derive the source from the cache's OWN location/stem rather than the recorded
+    // arg_input: the cache is always written beside the canonical source, so this is
+    // robust to symlinked inputs (arg_input keeps the symlink name) and to relative
+    // paths / directory moves. avoids falsely deleting a fresh cache as "orphaned".
+    let source = full
+        .strip_suffix(".freq.csv.data.jsonl")
+        .and_then(|base| find_tabular_sibling(Path::new(base)));
     if stale && !stale_or_orphaned(path, source.as_deref()) {
         return;
     }
@@ -429,45 +429,43 @@ fn handle_validate(path: &Path, full: &str, stale: bool, victims: &mut Vec<(Path
 /// big-endian u64 record offsets followed by a trailing u64 record count, so:
 ///   * size is a non-zero multiple of 8 with at least two entries (16 bytes),
 ///   * the first offset is 0 (the first record starts at the top of the CSV),
-///   * the trailing count equals `entries - 1`, and
-///   * the last record offset is within the source CSV (when the source exists).
+///   * EVERY offset is monotonically non-decreasing and within the source CSV, and
+///   * the trailing count equals the number of offsets (`entries - 1`).
 ///
-/// Only the first/last/second-to-last u64s are read, so this stays cheap even for
-/// multi-hundred-MB indexes.
-fn looks_like_csv_index(path: &Path, size: u64, source: Option<&Path>) -> bool {
+/// All offsets are streamed through a buffered reader in a single pass, so an index
+/// with a malformed intermediate offset is rejected while staying cheap for large
+/// indexes.
+fn looks_like_csv_index(path: &Path, size: u64, source: &Path) -> bool {
     if size < 16 || !size.is_multiple_of(8) {
         return false;
     }
     let entries = size / 8;
-    let Ok(mut f) = fs::File::open(path) else {
+    let n_offsets = entries - 1; // last entry is the trailing record count
+    let Ok(source_len) = fs::metadata(source).map(|m| m.len()) else {
         return false;
     };
-    // first offset must be 0
-    if read_u64_at(&mut f, 0) != Some(0) {
+    let Ok(f) = fs::File::open(path) else {
         return false;
-    }
-    // trailing u64 is the record count, which must equal entries - 1
-    if read_u64_at(&mut f, size - 8) != Some(entries - 1) {
-        return false;
-    }
-    // the last record offset must fall within the source CSV, when we have it
-    if let Some(src) = source
-        && let Ok(md) = fs::metadata(src)
-    {
-        match read_u64_at(&mut f, size - 16) {
-            Some(last_offset) if last_offset <= md.len() => {},
-            _ => return false,
-        }
-    }
-    true
-}
-
-fn read_u64_at(f: &mut fs::File, pos: u64) -> Option<u64> {
-    use std::io::{Read, Seek, SeekFrom};
-    f.seek(SeekFrom::Start(pos)).ok()?;
+    };
+    let mut rdr = BufReader::new(f);
     let mut buf = [0u8; 8];
-    f.read_exact(&mut buf).ok()?;
-    Some(u64::from_be_bytes(buf))
+    let mut prev = 0_u64;
+    for i in 0..n_offsets {
+        if rdr.read_exact(&mut buf).is_err() {
+            return false;
+        }
+        let offset = u64::from_be_bytes(buf);
+        // first offset is 0; offsets are non-decreasing and within the source CSV
+        if (i == 0 && offset != 0) || offset < prev || offset > source_len {
+            return false;
+        }
+        prev = offset;
+    }
+    // trailing u64 is the record count, which must equal the number of offsets
+    if rdr.read_exact(&mut buf).is_err() {
+        return false;
+    }
+    u64::from_be_bytes(buf) == n_offsets
 }
 
 /// Resolve a source path recorded in cache metadata as a sibling of the cache.

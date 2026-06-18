@@ -1230,6 +1230,8 @@ pub fn generate_mcp_skills() -> CliResult<()> {
     // - prompt: interactive prompt builder (requires terminal)
     // - scoresql: not available in qsvmcp
     // - snappy: compression utility not needed for AI agents
+    // - viz: produces chart/dashboard file artifacts (HTML/PNG/...) better consumed as a file than
+    //   chat output; reconsider after MCP gains file-resource handling (same rationale as profile)
     //
     // This list targets commands available in the qsvmcp binary variant.
     let commands = vec![

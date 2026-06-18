@@ -270,9 +270,17 @@ object_store = { version = "0.13", default-features = false, features = [
     "gcp",
 ], optional = true }
 odht = "0.3"
+# opener: open the generated chart/dashboard in the OS default app (browser for
+# HTML, image viewer for PNG/SVG/...) for `qsv viz --open`. See the `viz` feature.
+opener = { version = "0.7", optional = true }
 # ort is needed by magika for ONNX runtime; download-binaries fetches prebuilt binaries
 ort = { version = "2.0.0-rc.12", default-features = false, features = ["download-binaries", "tls-rustls"], optional = true }
 phf = { version = "0.13", features = ["macros"] }
+# plotly backs the `viz` command (charts + auto-dashboard). default-features=false
+# keeps the base `viz` build lean; `plotly_embed_js` (via the `viz` feature) makes the
+# HTML self-contained, and `static_export_default` (via `viz_static`) adds PNG/SVG/PDF
+# export through a webdriver-managed headless browser. NO polars dependency. See #302.
+plotly = { version = "0.14.1", default-features = false, optional = true }
 pragmastat = "12.1"
 polars = { version = "0.54.4", features = [
     "asof_join",
@@ -535,9 +543,10 @@ distrib_features = [
     "profile",
     "synthesize",
     "to",
+    "viz_static",
 ]
 all_features = ["distrib_features", "magika", "self_update", "ui"]
-qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to"]
+qsvmcp = ["feature_capable", "geocode", "get", "get_cloud", "mcp", "polars", "profile", "self_update", "synthesize", "to", "viz_static"]
 apply = [
     "base62",
     "base64-simd",
@@ -607,6 +616,15 @@ profile = ["dep:sha2", "polars", "yaml_serde"]
 geoconnex = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
 to = ["csvs_convert"]
+# viz: generate charts (bar/line/scatter/histogram/box) and an auto-dashboard
+# (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
+# interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`
+# reuses qsv's in-process stats + frequency caches. See `qsv viz --help` and #302.
+viz = ["dep:plotly", "dep:opener", "plotly/plotly_embed_js"]
+# viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
+# which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a
+# browser at runtime; keep out of big-endian / headless-only publish targets.
+viz_static = ["viz", "plotly/static_export_default"]
 lens = ["csvlens"]
 lite = []
 datapusher_plus = ["geocode", "get", "get_cloud", "polars", "profile", "self_update"]

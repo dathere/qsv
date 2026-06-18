@@ -697,6 +697,10 @@ pub fn version() -> String {
     }
     #[cfg(all(feature = "to", not(feature = "lite")))]
     enabled_features.push_str("to;");
+    #[cfg(all(feature = "viz", not(feature = "lite")))]
+    enabled_features.push_str("viz;");
+    #[cfg(all(feature = "viz_static", not(feature = "lite")))]
+    enabled_features.push_str("viz_static;");
     #[allow(clippy::const_is_empty)]
     #[cfg(all(feature = "polars", not(feature = "lite")))]
     if QSV_POLARS_REV.is_empty() {

@@ -251,6 +251,9 @@ fn main() -> QsvExitCode {
         "    transpose   Transpose rows/columns of CSV data
     validate    Validate CSV data for RFC4180-compliance or with JSON Schema",
     );
+    #[cfg(all(feature = "viz", feature = "feature_capable"))]
+    enabled_commands
+        .push_str("\n    viz         Generate charts & dashboards from CSV data using plotly");
     let num_commands = enabled_commands.split('\n').count();
 
     let now = Instant::now();
@@ -515,6 +518,8 @@ enum Command {
     To,
     Tojsonl,
     Validate,
+    #[cfg(all(feature = "viz", feature = "feature_capable"))]
+    Viz,
 }
 
 impl Command {
@@ -639,6 +644,8 @@ impl Command {
             Command::To => cmd::to::run(argv),
             Command::Tojsonl => cmd::tojsonl::run(argv),
             Command::Validate => cmd::validate::run(argv),
+            #[cfg(all(feature = "viz", feature = "feature_capable"))]
+            Command::Viz => cmd::viz::run(argv),
         }
     }
 }

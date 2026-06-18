@@ -135,3 +135,5 @@ pub mod tojsonl;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod transpose;
 pub mod validate;
+#[cfg(all(feature = "viz", feature = "feature_capable"))]
+pub mod viz;

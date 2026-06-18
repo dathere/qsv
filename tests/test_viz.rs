@@ -22,6 +22,9 @@ fn viz_bar_html_to_stdout() {
     assert!(html.contains("Plotly.newPlot"));
     assert!(html.contains(r#""type":"bar""#));
     assert!(html.contains("apple"));
+    // single-series bar charts get SI-formatted value labels above each bar
+    assert!(html.contains(r#""texttemplate":"%{y:.3s}""#));
+    assert!(html.contains(r#""textposition":"outside""#));
 }
 
 #[test]
@@ -119,9 +122,13 @@ fn viz_smart_dashboard() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // a subplot grid dashboard with at least one box (continuous) and one bar (categorical)
-    assert!(html.contains(r#""grid":{"#));
-    assert!(html.contains(r#""pattern":"independent""#));
+    // a multi-panel dashboard: explicit row-scaled height, per-cell axis domains, and a
+    // title annotation above each panel, with at least one box (continuous) and one bar
+    // (categorical)
+    assert!(html.contains(r#""height":"#));
+    assert!(html.contains(r#""annotations":["#));
+    assert!(html.contains(r#""xaxis2":{"#));
+    assert!(html.contains(r#""domain":["#));
     assert!(html.contains(r#""type":"box""#));
     assert!(html.contains(r#""type":"bar""#));
 }

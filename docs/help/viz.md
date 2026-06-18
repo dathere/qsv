@@ -125,8 +125,8 @@ qsv viz --help
 | &nbsp;`‑‑title`&nbsp; | string | Chart title. |  |
 | &nbsp;`‑‑x‑title`&nbsp; | string | X-axis title. (defaults to the x column name) |  |
 | &nbsp;`‑‑y‑title`&nbsp; | string | Y-axis title. (defaults to the y column name) |  |
-| &nbsp;`‑‑width`&nbsp; | integer | Image width in pixels (static export). | `1000` |
-| &nbsp;`‑‑height`&nbsp; | integer | Image height in pixels (static export). | `600` |
+| &nbsp;`‑‑width`&nbsp; | integer | Image width in pixels for static export. Default 1000; for `smart`, auto-scaled to the grid's column count. |  |
+| &nbsp;`‑‑height`&nbsp; | integer | Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows. |  |
 | &nbsp;`‑‑scale`&nbsp; | float | Image scale factor (static export). | `1.0` |
 | &nbsp;`‑‑open`&nbsp; | flag | Open the generated chart in the default browser/viewer. |  |
 

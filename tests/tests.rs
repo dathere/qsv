@@ -159,6 +159,8 @@ mod test_tojsonl;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_transpose;
 mod test_validate;
+#[cfg(feature = "viz")]
+mod test_viz;
 
 fn qcheck<T: Testable>(p: T) {
     // safety: we are in single-threaded code.

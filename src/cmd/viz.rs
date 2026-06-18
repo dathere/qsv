@@ -158,10 +158,14 @@ const AXIS_LINE: &str = "#BCC4CE";
 const TOP_MARGIN_PX: usize = 80;
 const BOTTOM_MARGIN_PX: usize = 60;
 
-/// Pixels reserved at the top of the plot area for each top-row panel's title. Kept fixed
-/// in *pixels* (not as a paper fraction) so a short, few-row dashboard doesn't shrink the
-/// band to where the panel title overlaps the dashboard title.
-const TITLE_BAND_PX: usize = 34;
+/// Pixels reserved above the top row of panels for their titles, and the gap (in pixels)
+/// between a cell's top edge and its title. Both are kept in *pixels* (converted to paper
+/// fractions via the plot-area height) so neither the band nor the offset scales with the
+/// dashboard height — otherwise a tall dashboard's title would drift past `y=1` and overlap
+/// the dashboard title. The band must comfortably exceed `TITLE_OFFSET_PX` plus the title's
+/// rendered glyph height (~17px for the 13px font).
+const TITLE_BAND_PX: usize = 32;
+const TITLE_OFFSET_PX: usize = 6;
 
 #[derive(Deserialize)]
 struct Args {
@@ -969,6 +973,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     let rows = panels.len().div_ceil(cols);
     let grid_top = smart_grid_top(rows);
+    let title_offset = smart_title_offset(rows);
 
     // dashboard title: the user's --title, else the dataset's file name
     let title_text = args.flag_title.clone().unwrap_or_else(|| {
@@ -1066,7 +1071,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         plot.add_trace(trace);
 
         // position this subplot's styled axes and add its title above the cell
-        let geom = subplot_geometry(n, rows, cols, grid_top);
+        let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
         layout = place_subplot_axes(
             layout,
             pos,
@@ -1148,16 +1153,27 @@ fn axis_ref(prefix: char, pos: usize) -> String {
     }
 }
 
-/// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
-/// is a fixed ~`TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
-/// height) so the top row's panel titles always clear the dashboard title, even for a
-/// short one- or two-row dashboard. Clamped so the band is neither vanishing nor more than
-/// half the area.
-fn smart_grid_top(rows: usize) -> f64 {
-    let plot_area_h = (rows * ROW_HEIGHT_PX)
+/// Plot-area height (pixels) of a `rows`-row dashboard: total height minus the top/bottom
+/// margins. Floored at 1 to avoid division by zero.
+fn smart_plot_area_h(rows: usize) -> f64 {
+    (rows * ROW_HEIGHT_PX)
         .saturating_sub(TOP_MARGIN_PX + BOTTOM_MARGIN_PX)
-        .max(1);
-    (1.0 - (TITLE_BAND_PX as f64 / plot_area_h as f64)).clamp(0.5, 0.985)
+        .max(1) as f64
+}
+
+/// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
+/// reserves a fixed `TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
+/// height) for the top row's panel titles, so they always clear the dashboard title — for
+/// both short (one-row) and tall (eight-row) dashboards. Capped at half the area.
+fn smart_grid_top(rows: usize) -> f64 {
+    let band = (TITLE_BAND_PX as f64 / smart_plot_area_h(rows)).min(0.5);
+    1.0 - band
+}
+
+/// Paper-fraction gap between a cell's top and its title, fixed at `TITLE_OFFSET_PX` pixels
+/// so it doesn't scale with dashboard height (which would consume the reserved band).
+fn smart_title_offset(rows: usize) -> f64 {
+    (TITLE_OFFSET_PX as f64 / smart_plot_area_h(rows)).min(0.05)
 }
 
 /// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
@@ -1170,10 +1186,17 @@ struct SubplotGeometry {
 
 /// Compute the paper-space domains for subplot `n` (0-based) in a `rows`×`cols` grid that
 /// occupies the vertical band `0.0..=top` (the strip above `top` is left for the dashboard
-/// title), plus the (x, y) anchor for the panel's own title (centered just above the cell).
-/// Cells are laid out left-to-right, top-to-bottom with fixed gaps; the vertical gap leaves
-/// room for each panel's title and the row below it's tick labels.
-fn subplot_geometry(n: usize, rows: usize, cols: usize, top: f64) -> SubplotGeometry {
+/// title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a paper
+/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom with fixed
+/// gaps; the vertical gap leaves room for each panel's title and the row below it's tick
+/// labels.
+fn subplot_geometry(
+    n: usize,
+    rows: usize,
+    cols: usize,
+    top: f64,
+    title_offset: f64,
+) -> SubplotGeometry {
     const HGAP: f64 = 0.08;
     const VGAP: f64 = 0.09;
 
@@ -1194,7 +1217,7 @@ fn subplot_geometry(n: usize, rows: usize, cols: usize, top: f64) -> SubplotGeom
         x_domain: vec![x0, x1],
         y_domain: vec![y0, y1],
         title_x:  (x0 + x1) / 2.0,
-        title_y:  (y1 + 0.012).min(1.0),
+        title_y:  (y1 + title_offset).min(1.0),
     }
 }
 
@@ -1384,9 +1407,9 @@ mod tests {
     #[test]
     fn subplot_geometry_cells_are_within_bounds_and_titled_above() {
         // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
-        let (rows, cols, top) = (2, 2, 1.0);
+        let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
         for n in 0..4 {
-            let g = subplot_geometry(n, rows, cols, top);
+            let g = subplot_geometry(n, rows, cols, top, offset);
             // domains stay inside the paper area
             assert!(g.x_domain[0] >= 0.0 && g.x_domain[1] <= 1.0 + 1e-9);
             assert!(g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9);
@@ -1395,30 +1418,35 @@ mod tests {
             assert!(g.title_y >= g.y_domain[1] - 1e-9);
         }
         // top row is higher on the page than the bottom row
-        let upper = subplot_geometry(0, rows, cols, top);
-        let lower = subplot_geometry(2, rows, cols, top);
+        let upper = subplot_geometry(0, rows, cols, top, offset);
+        let lower = subplot_geometry(2, rows, cols, top, offset);
         assert!(upper.y_domain[0] > lower.y_domain[1]);
         // the two columns don't overlap horizontally
-        let left = subplot_geometry(0, rows, cols, top);
-        let right = subplot_geometry(1, rows, cols, top);
+        let left = subplot_geometry(0, rows, cols, top, offset);
+        let right = subplot_geometry(1, rows, cols, top, offset);
         assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
     }
 
     #[test]
-    fn smart_grid_top_reserves_pixel_title_band() {
-        // A short one-row dashboard must still reserve a real, pixel-sized band above the
-        // panels for their titles, so they don't overlap the dashboard title.
-        let one_row_area = (ROW_HEIGHT_PX - (TOP_MARGIN_PX + BOTTOM_MARGIN_PX)) as f64;
-        let band_px = (1.0 - smart_grid_top(1)) * one_row_area;
+    fn smart_title_band_fits_every_row_count() {
+        // For every dashboard size up to the 8-panel max (including a tall single-column
+        // 8-row layout), the top-row panel title — offset above the cell plus its rendered
+        // glyph height — must stay at/below y=1 so it never overlaps the dashboard title.
+        const GLYPH_PX: f64 = 20.0; // generous estimate of the 13px title's rendered height
+        for rows in 1..=MAX_SUBPLOTS {
+            let area = smart_plot_area_h(rows);
+            let g = subplot_geometry(0, rows, 1, smart_grid_top(rows), smart_title_offset(rows));
+            let title_top = g.title_y + GLYPH_PX / area;
+            assert!(
+                title_top <= 1.0 + 1e-9,
+                "rows={rows}: title_top={title_top} crosses y=1 (would overlap dashboard title)"
+            );
+            // the title still sits above its own cell
+            assert!(g.title_y >= g.y_domain[1] - 1e-9);
+        }
+
+        // the reserved band is a real pixel size even for a short one-row dashboard
+        let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
-
-        // the top-row panel title stays inside the plot area (below the reserved strip)
-        let g = subplot_geometry(0, 1, 1, smart_grid_top(1));
-        assert!(g.title_y < 1.0);
-
-        // a taller dashboard needs a *smaller* fraction for the same pixel band
-        assert!(smart_grid_top(1) < smart_grid_top(4));
-        // and the band never exceeds the clamp
-        assert!(smart_grid_top(8) <= 0.985 + 1e-9);
     }
 }

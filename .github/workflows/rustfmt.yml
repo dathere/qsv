@@ -26,10 +26,6 @@ jobs:
         rustup default nightly
         rustup component add rustfmt
         rustup update
+    # actions-rs/cargo is archived/Node20-deprecated (qsv #4002), so invoke cargo directly.
     - name: Check formatting
-      uses: actions-rs/cargo@v1
-      with:
-        command: fmt
-        toolchain: nightly
-        use-cross: false
-        args: -- --check
+      run: cargo +nightly fmt -- --check

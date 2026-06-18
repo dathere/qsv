@@ -123,9 +123,7 @@ jobs:
       uses: dtolnay/rust-toolchain@master
       with:
         toolchain: ${{ matrix.rust }}
-        profile: minimal
         target: ${{ matrix.job.target }}
-        override: true
     - name: Checkout repository
       uses: actions/checkout@v6
       with:
@@ -141,30 +139,24 @@ jobs:
       #   RUSTFLAGS: --emit=asm
       env:
         RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
+      # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
+      shell: bash
+      run: cargo +${{ matrix.rust }} build --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvlite --features=lite,self_update --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
+      # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
+      shell: bash
+      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvlite --features=lite,self_update --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp
       env:
         RUSTFLAGS: --emit=asm
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
+      # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
+      shell: bash
+      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |

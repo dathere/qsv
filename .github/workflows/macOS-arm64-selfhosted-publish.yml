@@ -78,22 +78,18 @@ jobs:
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm -C target-cpu=native
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
+      # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
+      shell: bash
+      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     # qsvdp (datapusher_plus) is a Linux deployment helper — not built/shipped for macOS.
     - name: Build qsvmcp
       env:
         RUSTFLAGS: --emit=asm -C target-cpu=native
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvmcp --features=qsvmcp --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo directly.
+      # `+${{ matrix.rust }}` pins the toolchain vs a stale per-directory rustup override on self-hosted runners.
+      shell: bash
+      run: cargo +${{ matrix.rust }} build --release --locked --bin qsvmcp --features=qsvmcp --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
@@ -115,12 +111,13 @@ jobs:
       run: |
         cargo install zipsign
     - name: Fetch zipsign private key
-      uses: mobiledevops/secret-to-file-action@v1
-      with:
-        base64-encoded-secret: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
-        filename: "qsvpriv.key"
-        is-executable: false
-        working-directory: "."
+      # replaces mobiledevops/secret-to-file-action (Node20-deprecated, qsv #4002):
+      # decode the base64 secret to qsvpriv.key. bash shell + `base64 -d` work on all
+      # runners (incl. Windows git-bash, macOS/BSD). Secret passed via env, not inlined.
+      shell: bash
+      env:
+        ZIPSIGN_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+      run: printf '%s' "$ZIPSIGN_KEY" | base64 -d > qsvpriv.key
     - name: zipsign binary
       run: |
         zipsign sign zip qsv-${{ needs.analyze-tags.outputs.previous-tag }}-${{ matrix.job.target }}.zip qsvpriv.key

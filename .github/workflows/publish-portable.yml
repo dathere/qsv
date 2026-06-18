@@ -157,26 +157,30 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
+    # actions-rs/cargo (archived/Node20-deprecated, qsv #4002) auto-installed `cross` when
+    # use-cross was true; invoking cargo/cross directly means we must install cross ourselves
+    # for the cross-compiled target(s) (currently aarch64-unknown-linux-gnu).
+    - name: Install cross
+      if: ${{ matrix.job.use-cross == true }}
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cross
     - name: Build qsv
       # env:
       #   RUSTFLAGS: --emit=asm
       env:
         RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo/cross directly.
+      # Pick cross for use-cross targets (see Install cross above); +${{ matrix.rust }} pins the toolchain.
+      shell: bash
+      run: ${{ matrix.job.use-cross == true && 'cross' || 'cargo' }} +${{ matrix.rust }} build --profile ${{ contains(matrix.job.addl-build-args, 'luau') && 'release-luau' || 'release' }} --locked --bin qsv --target ${{ matrix.job.target }} ${{ matrix.job.addl-build-args }},feature_capable ${{ matrix.job.default-features }}
     - name: Build qsvlite
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo/cross directly.
+      # Pick cross for use-cross targets (see Install cross above); +${{ matrix.rust }} pins the toolchain.
+      shell: bash
+      run: ${{ matrix.job.use-cross == true && 'cross' || 'cargo' }} +${{ matrix.rust }} build --release --locked --bin qsvlite --features=lite,self_update,${{ matrix.job.addl-qsvlite-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvdp
       # qsvdp (datapusher_plus) is a Linux deployment helper, so only build it for x86_64
       # Linux. Skip aarch64-unknown-linux-gnu (its Polars fat-LTO link exhausts the runner)
@@ -184,22 +188,18 @@ jobs:
       if: ${{ matrix.job.target != 'aarch64-unknown-linux-gnu' && matrix.job.os-name == 'linux' }}
       env:
         RUSTFLAGS: --emit=asm ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo/cross directly.
+      # Pick cross for use-cross targets (see Install cross above); +${{ matrix.rust }} pins the toolchain.
+      shell: bash
+      run: ${{ matrix.job.use-cross == true && 'cross' || 'cargo' }} +${{ matrix.rust }} build --release --locked --bin qsvdp --features=datapusher_plus,${{ matrix.job.addl-qsvdp-features }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Build qsvmcp
       if: ${{ matrix.job.target != 'x86_64-unknown-linux-musl' && matrix.job.target != 'aarch64-unknown-linux-gnu' }}
       env:
         RUSTFLAGS: ${{ matrix.job.addl-rustflags }}
-      uses: actions-rs/cargo@v1
-      with:
-        command: build
-        use-cross: ${{ matrix.job.use-cross }}
-        toolchain: ${{ matrix.rust }}
-        args: --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
+      # actions-rs/cargo is archived/Node20-deprecated (qsv #4002); invoke cargo/cross directly.
+      # Pick cross for use-cross targets (see Install cross above); +${{ matrix.rust }} pins the toolchain.
+      shell: bash
+      run: ${{ matrix.job.use-cross == true && 'cross' || 'cargo' }} +${{ matrix.rust }} build --release --locked --bin qsvmcp ${{ matrix.job.addl-qsvlite-features != '' && format('--features=qsvmcp,{0}', matrix.job.addl-qsvlite-features) || '--features=qsvmcp' }} --target ${{ matrix.job.target }} ${{ matrix.job.default-features }}
     - name: Copy binaries to working dir
       shell: bash
       run: |
@@ -225,12 +225,13 @@ jobs:
       run: |
         cargo install zipsign
     - name: Fetch zipsign private key
-      uses: mobiledevops/secret-to-file-action@v1
-      with:
-        base64-encoded-secret: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
-        filename: "qsvpriv.key"
-        is-executable: false
-        working-directory: "."
+      # replaces mobiledevops/secret-to-file-action (Node20-deprecated, qsv #4002):
+      # decode the base64 secret to qsvpriv.key. bash shell + `base64 -d` work on all
+      # runners (incl. Windows git-bash, macOS/BSD). Secret passed via env, not inlined.
+      shell: bash
+      env:
+        ZIPSIGN_KEY: ${{ secrets.QSV_ZIPSIGN_PRIV_KEY }}
+      run: printf '%s' "$ZIPSIGN_KEY" | base64 -d > qsvpriv.key
     - name: Download latest release zip
       uses: robinraju/release-downloader@v1.13
       with:

@@ -11,18 +11,28 @@ Interactive HTML is written to stdout when --output is not given; image formats 
 require --output. Use --open to view the result in your default browser/viewer.
 
 Chart types (subcommands):
-    smart      Auto-dashboard. Picks an appropriate chart per column from the
-               dataset's statistics & frequency distribution (no --x/--y needed).
-    bar        Bar chart.        --x = category column, --y = value column.
-    line       Line chart.       --x = x column, --y = y column.
-    scatter    Scatter plot.     --x = x column, --y = y column.
-    histogram  Distribution.     --x = numeric column to bin.
-    box        Box plot.         --y = value column, optional --x = group column.
+    smart       Auto-dashboard. Picks an appropriate chart per column from the
+                dataset's statistics & frequency distribution (no --x/--y needed).
+    bar         Bar chart.        --x = category column, --y = value column.
+    line        Line chart.       --x = x column, --y = y column.
+    scatter     Scatter plot.     --x = x column, --y = y column.
+    histogram   Distribution.     --x = numeric column to bin.
+    box         Box plot.         --y = value column, optional --x = group column.
+    pie         Proportions.      --x = label column, optional --y = value column.
+    heatmap     Color grid. Correlation matrix of numeric columns (default; an
+                optional column subset via --cols), or a category x category pivot
+                with --x/--y/--z.
+    candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
+    ohlc        Financial OHLC bars (same inputs as candlestick).
+    sankey      Flow diagram.     --source, --target, optional --value column.
+    radar       Polar/radar chart of numeric --cols, optional --series per trace.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed
 quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
-frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. The
+frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
+dataset has two or more continuous numeric columns, a correlation heatmap panel is added
+(this one panel does a single extra data pass to compute Pearson correlations). The
 first run computes & caches stats; subsequent runs are fast.
 
 Examples:
@@ -47,22 +57,59 @@ Examples:
   # Box plot of a value column grouped by a category, exported to PNG (needs viz_static)
   qsv viz box data.csv --y measurement --x group -o box.png
 
+  # Pie chart of category proportions (counts), as a donut
+  qsv viz pie data.csv --x category --donut -o pie.html
+
+  # Correlation heatmap over all numeric columns
+  qsv viz heatmap data.csv -o corr.html
+
+  # Heatmap pivot: average value per (region x product)
+  qsv viz heatmap sales.csv --x region --y product --z amount -o pivot.html
+
+  # Candlestick chart from a date column and OHLC price columns
+  qsv viz candlestick prices.csv --x date --ohlc-open open --high high --low low --close close -o ohlc.html
+
+  # Sankey flow diagram of source -> target weighted by value
+  qsv viz sankey flows.csv --source from --target to --value weight -o sankey.html
+
+  # Radar chart comparing numeric metrics, one trace per team
+  qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 
 Usage:
-    qsv viz smart     [options] <input>
-    qsv viz bar       [options] <input>
-    qsv viz line      [options] <input>
-    qsv viz scatter   [options] <input>
-    qsv viz histogram [options] <input>
-    qsv viz box       [options] <input>
+    qsv viz smart       [options] <input>
+    qsv viz bar         [options] <input>
+    qsv viz line        [options] <input>
+    qsv viz scatter     [options] <input>
+    qsv viz histogram   [options] <input>
+    qsv viz box         [options] <input>
+    qsv viz pie         [options] <input>
+    qsv viz heatmap     [options] <input>
+    qsv viz candlestick [options] <input>
+    qsv viz ohlc        [options] <input>
+    qsv viz sankey      [options] <input>
+    qsv viz radar       [options] <input>
     qsv viz --help
 
 viz options:
     -x, --x <col>          Column for the x-axis / category / bin / group.
     -y, --y <col>          Column for the y-axis / value.
+    -z, --z <col>          Value column for a heatmap pivot (with --x and --y).
+    --cols <cols>          Columns to use. For heatmap: numeric columns for the
+                           correlation matrix (default: all numeric). For radar:
+                           the numeric axes to plot.
     --series <col>         Column to split into multiple series (one trace per
-                           distinct value). Applies to bar/line/scatter.
+                           distinct value). Applies to bar/line/scatter/radar.
+    --donut                Render a pie chart as a donut (with a center hole).
+    --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
+    --high <col>           High-price column for candlestick/ohlc charts.
+    --low <col>            Low-price column for candlestick/ohlc charts.
+    --close <col>          Close-price column for candlestick/ohlc charts.
+    --source <col>         Source node column for a sankey diagram.
+    --target <col>         Target node column for a sankey diagram.
+    --value <col>          Flow value column for a sankey diagram. When omitted,
+                           each row counts as a flow of 1.
     --bins <n>             Number of bins for the histogram. (default: auto)
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
@@ -101,9 +148,13 @@ use std::{
 };
 
 use plotly::{
-    Bar, BoxPlot, Configuration, Histogram, Plot, Scatter, Trace,
-    common::{Anchor, Font, Marker, Mode, TextPosition, Title},
+    Bar, BoxPlot, Candlestick, Configuration, HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter,
+    ScatterPolar, Trace,
+    common::{
+        Anchor, ColorScale, ColorScalePalette, Fill, Font, Marker, Mode, TextPosition, Title,
+    },
     layout::{Annotation, Axis, Layout, Margin},
+    sankey::{Link, Node},
 };
 use serde::Deserialize;
 
@@ -167,6 +218,18 @@ const BOTTOM_MARGIN_PX: usize = 60;
 const TITLE_BAND_PX: usize = 32;
 const TITLE_OFFSET_PX: usize = 6;
 
+/// Default dashboard left margin (pixels), widened when a correlation-heatmap panel is present
+/// so its (long) numeric-column tick labels aren't clipped.
+const DEFAULT_LEFT_MARGIN_PX: usize = 60;
+
+/// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
+/// the dashboard's left margin, so its axis tick labels are truncated to this many characters
+/// and the left margin is widened (≈ this many pixels per character) to fit them. In-cell `r`
+/// value labels are only drawn when the matrix is small enough to stay legible in one cell.
+const CORR_LABEL_MAX_CHARS: usize = 16;
+const CORR_LABEL_PX_PER_CHAR: usize = 7;
+const CORR_INCELL_MAX_N: usize = 8;
+
 #[derive(Deserialize)]
 struct Args {
     cmd_smart:       bool,
@@ -175,10 +238,29 @@ struct Args {
     cmd_scatter:     bool,
     cmd_histogram:   bool,
     cmd_box:         bool,
+    cmd_pie:         bool,
+    cmd_heatmap:     bool,
+    cmd_candlestick: bool,
+    cmd_ohlc:        bool,
+    cmd_sankey:      bool,
+    cmd_radar:       bool,
     arg_input:       Option<String>,
     flag_x:          Option<SelectColumns>,
     flag_y:          Option<SelectColumns>,
+    flag_z:          Option<SelectColumns>,
+    flag_cols:       Option<SelectColumns>,
     flag_series:     Option<SelectColumns>,
+    flag_donut:      bool,
+    // candlestick / ohlc columns (--open is already taken by the browser-open flag below,
+    // so the open-price column is selected with --ohlc-open)
+    flag_ohlc_open:  Option<SelectColumns>,
+    flag_high:       Option<SelectColumns>,
+    flag_low:        Option<SelectColumns>,
+    flag_close:      Option<SelectColumns>,
+    // sankey columns
+    flag_source:     Option<SelectColumns>,
+    flag_target:     Option<SelectColumns>,
+    flag_value:      Option<SelectColumns>,
     flag_bins:       Option<usize>,
     flag_agg:        Option<String>,
     flag_max_charts: usize,
@@ -307,6 +389,31 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
             plot.add_trace(trace);
             (x_label, Some(y_label))
         },
+        // pie / sankey / radar are not cartesian, so they get no x/y axis titles
+        Chart::Pie => {
+            plot.add_trace(build_pie(args)?);
+            (None, None)
+        },
+        Chart::Sankey => {
+            plot.add_trace(build_sankey(args)?);
+            (None, None)
+        },
+        Chart::Radar => {
+            for trace in build_radar(args)? {
+                plot.add_trace(trace);
+            }
+            (None, None)
+        },
+        Chart::Heatmap => {
+            let (trace, x_label, y_label) = build_heatmap(args)?;
+            plot.add_trace(trace);
+            (x_label, y_label)
+        },
+        kind @ (Chart::Candlestick | Chart::Ohlc) => {
+            let (trace, x_label, y_label) = build_candlestick(args, matches!(kind, Chart::Ohlc))?;
+            plot.add_trace(trace);
+            (Some(x_label), Some(y_label))
+        },
         // bar / line / scatter all consume (x, y) pairs, optionally split by --series
         kind => {
             let (traces, x_label, y_label) = build_xy_traces(args, kind)?;
@@ -329,6 +436,12 @@ enum Chart {
     Scatter,
     Histogram,
     Box,
+    Pie,
+    Heatmap,
+    Candlestick,
+    Ohlc,
+    Sankey,
+    Radar,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -342,6 +455,18 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Histogram
     } else if args.cmd_box {
         Chart::Box
+    } else if args.cmd_pie {
+        Chart::Pie
+    } else if args.cmd_heatmap {
+        Chart::Heatmap
+    } else if args.cmd_candlestick {
+        Chart::Candlestick
+    } else if args.cmd_ohlc {
+        Chart::Ohlc
+    } else if args.cmd_sankey {
+        Chart::Sankey
+    } else if args.cmd_radar {
+        Chart::Radar
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -585,6 +710,507 @@ fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)>
     Ok((trace, y_label, x_label))
 }
 
+/// Resolve a required multi-column selector to its column indices (one or more).
+fn resolve_many(
+    sel: Option<&SelectColumns>,
+    headers: &csv::ByteRecord,
+    no_headers: bool,
+    flag: &str,
+) -> CliResult<Vec<usize>> {
+    let Some(sel) = sel else {
+        return fail_incorrectusage_clierror!("--{flag} is required for this chart type.");
+    };
+    let selection = sel
+        .selection(headers, !no_headers)
+        .map_err(crate::CliError::Other)?;
+    if selection.is_empty() {
+        return fail_incorrectusage_clierror!("--{flag} selected no columns.");
+    }
+    Ok(selection.iter().copied().collect())
+}
+
+/// From an already-open reader, keep the candidate columns that are numeric (a majority of
+/// non-empty cells parse as f64), and return their labels plus listwise-complete value vectors
+/// (rows where any kept column is non-numeric/empty are dropped). Takes the reader + headers
+/// from the caller (rather than opening its own) so the input is read exactly once — opening a
+/// second time would consume/corrupt a streamed stdin. Shared by the standalone correlation
+/// heatmap and the `viz smart` correlation panel.
+fn read_numeric_columns(
+    rdr: &mut csv::Reader<Box<dyn std::io::Read + Send>>,
+    headers: &csv::ByteRecord,
+    nh: bool,
+    candidates: &[usize],
+) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+    let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
+    let mut nonempty = vec![0_usize; candidates.len()];
+    let mut parsed = vec![0_usize; candidates.len()];
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        for (k, &idx) in candidates.iter().enumerate() {
+            let cell = record.get(idx);
+            let is_nonempty = cell.is_some_and(|c| !c.iter().all(u8::is_ascii_whitespace));
+            let v = parse_f64(cell);
+            if is_nonempty {
+                nonempty[k] += 1;
+                if v.is_some() {
+                    parsed[k] += 1;
+                }
+            }
+            raw[k].push(v);
+        }
+    }
+    // keep majority-numeric columns (drops text/ID/date columns from an all-columns default)
+    let keep: Vec<usize> = (0..candidates.len())
+        .filter(|&k| nonempty[k] > 0 && parsed[k] * 2 >= nonempty[k])
+        .collect();
+    if keep.is_empty() {
+        return Ok((Vec::new(), Vec::new()));
+    }
+    let labels: Vec<String> = keep
+        .iter()
+        .map(|&k| col_label(headers, candidates[k], nh))
+        .collect();
+    let n_rows = raw[0].len();
+    let kept: Vec<&Vec<Option<f64>>> = keep.iter().map(|&k| &raw[k]).collect();
+    let mut columns: Vec<Vec<f64>> = vec![Vec::new(); kept.len()];
+    // transpose the kept columns, dropping any row where a kept column is non-numeric/empty
+    for r in 0..n_rows {
+        if kept.iter().all(|col| col[r].is_some()) {
+            for (out, col) in columns.iter_mut().zip(&kept) {
+                out.push(col[r].expect("checked is_some above"));
+            }
+        }
+    }
+    Ok((labels, columns))
+}
+
+/// Pearson correlation of two equal-length numeric slices via a numerically stable, centered
+/// two-pass algorithm (raw-sums formulas suffer catastrophic cancellation for large values
+/// with small variance). The denominator is `var_x.sqrt() * var_y.sqrt()` rather than
+/// `(var_x * var_y).sqrt()` so it stays finite for large-but-valid variances (the product
+/// would overflow to infinity and spuriously yield `NaN`). Returns `NaN` when the correlation
+/// is undefined — fewer than two points, or zero variance in either input — so callers can
+/// render it as a gap rather than a fabricated 0.0. The result is clamped to [-1, 1] to absorb
+/// floating-point overshoot.
+fn pearson(x: &[f64], y: &[f64]) -> f64 {
+    let len = x.len().min(y.len());
+    if len < 2 {
+        return f64::NAN;
+    }
+    let n = len as f64;
+    let mean_x = x[..len].iter().sum::<f64>() / n;
+    let mean_y = y[..len].iter().sum::<f64>() / n;
+    let (mut cov, mut var_x, mut var_y) = (0.0, 0.0, 0.0);
+    for k in 0..len {
+        let dx = x[k] - mean_x;
+        let dy = y[k] - mean_y;
+        cov += dx * dy;
+        var_x += dx * dx;
+        var_y += dy * dy;
+    }
+    let den = var_x.sqrt() * var_y.sqrt();
+    if den == 0.0 || !den.is_finite() {
+        f64::NAN
+    } else {
+        (cov / den).clamp(-1.0, 1.0)
+    }
+}
+
+/// Pearson correlation matrix for equal-length numeric columns: NxN symmetric. The diagonal
+/// is computed from `pearson` (rather than hard-coded to 1.0) so a degenerate column — zero
+/// variance or too few observations — surfaces as `NaN` instead of a fabricated 1.0. Cells for
+/// undefined correlations are likewise `NaN` (serialized to `null` → rendered as a heatmap gap).
+fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
+    let n = columns.len();
+    let mut m = vec![vec![f64::NAN; n]; n];
+    for i in 0..n {
+        m[i][i] = pearson(&columns[i], &columns[i]);
+        for j in (i + 1)..n {
+            let r = pearson(&columns[i], &columns[j]);
+            m[i][j] = r;
+            m[j][i] = r;
+        }
+    }
+    m
+}
+
+/// A diverging (RdBu) correlation heatmap trace fixed to the [-1, 1] scale. `axes` assigns
+/// the subplot axis refs when used as a `viz smart` panel (None for the standalone chart).
+/// A `hovertemplate` (and trace name) gives a clean `y vs x: r` tooltip instead of plotly's
+/// default "trace 0".
+fn corr_heatmap_trace(
+    labels: Vec<String>,
+    matrix: Vec<Vec<f64>>,
+    axes: Option<(String, String)>,
+    show_scale: bool,
+) -> Box<dyn Trace> {
+    let mut h = HeatMap::new(labels.clone(), labels, matrix)
+        .color_scale(ColorScale::Palette(ColorScalePalette::RdBu))
+        .zmin(-1.0)
+        .zmax(1.0)
+        .zmid(0.0)
+        .show_scale(show_scale)
+        .name("correlation")
+        .hover_template("%{y} \u{2194} %{x}<br>r = %{z:.3f}<extra></extra>");
+    if let Some((x, y)) = axes {
+        h = h.x_axis(x).y_axis(y);
+    }
+    h
+}
+
+/// Truncate a label to at most `max` characters (Unicode-aware), appending an ellipsis when
+/// shortened. Used for `viz smart` correlation-heatmap axis ticks so long numeric-column names
+/// don't clip against the dashboard's left margin (full names remain visible on hover).
+fn truncate_label(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    let keep = max.saturating_sub(1);
+    let mut out: String = s.chars().take(keep).collect();
+    out.push('\u{2026}');
+    out
+}
+
+/// Pie chart of label proportions: sums --y per --x label, or counts label occurrences when
+/// --y is omitted.
+fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let label_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let value_idx = match args.flag_y.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "y")?),
+        None => None,
+    };
+
+    let mut order: Vec<String> = Vec::new();
+    let mut acc: HashMap<String, f64> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let label = cell_to_string(record.get(label_idx));
+        if label.is_empty() {
+            continue;
+        }
+        let inc = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        if let Some(v) = acc.get_mut(&label) {
+            *v += inc;
+        } else {
+            order.push(label.clone());
+            acc.insert(label, inc);
+        }
+    }
+    if order.is_empty() {
+        return fail_clierror!("No data found for the pie chart.");
+    }
+    let values: Vec<f64> = order.iter().map(|l| acc[l]).collect();
+    let mut pie = Pie::new(values).labels(order).text_info("label+percent");
+    if args.flag_donut {
+        pie = pie.hole(0.4);
+    }
+    Ok(pie)
+}
+
+/// Heatmap: a correlation matrix of numeric columns (default), or a category x category
+/// pivot when --x, --y and --z are all given.
+fn build_heatmap(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
+    if args.flag_x.is_some() && args.flag_y.is_some() && args.flag_z.is_some() {
+        return build_heatmap_pivot(args);
+    }
+    if args.flag_z.is_some() {
+        return fail_incorrectusage_clierror!(
+            "heatmap pivot mode needs --x, --y and --z together. Omit --z for a correlation \
+             heatmap."
+        );
+    }
+    build_heatmap_correlation(args)
+}
+
+fn build_heatmap_correlation(
+    args: &Args,
+) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let candidates: Vec<usize> = match args.flag_cols.as_ref() {
+        Some(s) => resolve_many(Some(s), &headers, nh, "cols")?,
+        None => (0..headers.len()).collect(),
+    };
+    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
+    if labels.len() < 2 {
+        return fail_clierror!(
+            "A correlation heatmap needs at least 2 numeric columns (found {}). Use --cols to \
+             select them.",
+            labels.len()
+        );
+    }
+    let n_obs = columns.first().map_or(0, Vec::len);
+    if n_obs < 2 {
+        return fail_clierror!(
+            "A correlation heatmap needs at least 2 rows where all selected numeric columns are \
+             present (found {n_obs})."
+        );
+    }
+    let matrix = pearson_matrix(&columns);
+    Ok((corr_heatmap_trace(labels, matrix, None, true), None, None))
+}
+
+fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let z_idx = resolve_one(args.flag_z.as_ref(), &headers, nh, "z")?;
+
+    let mut x_cats: Vec<String> = Vec::new();
+    let mut x_pos: HashMap<String, usize> = HashMap::new();
+    let mut y_cats: Vec<String> = Vec::new();
+    let mut y_pos: HashMap<String, usize> = HashMap::new();
+    // (y, x) -> (sum, count) so duplicate cells are averaged
+    let mut cells: HashMap<(usize, usize), (f64, f64)> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(z) = parse_f64(record.get(z_idx)) else {
+            continue;
+        };
+        let xv = cell_to_string(record.get(x_idx));
+        let yv = cell_to_string(record.get(y_idx));
+        let xi = *x_pos.entry(xv.clone()).or_insert_with(|| {
+            x_cats.push(xv);
+            x_cats.len() - 1
+        });
+        let yi = *y_pos.entry(yv.clone()).or_insert_with(|| {
+            y_cats.push(yv);
+            y_cats.len() - 1
+        });
+        let e = cells.entry((yi, xi)).or_insert((0.0, 0.0));
+        e.0 += z;
+        e.1 += 1.0;
+    }
+    if x_cats.is_empty() || y_cats.is_empty() {
+        return fail_clierror!("No data found for the heatmap pivot (is --z numeric?).");
+    }
+    // z matrix indexed [y][x]; missing cells are NaN (serialized as null -> rendered as a gap)
+    let mut z: Vec<Vec<f64>> = vec![vec![f64::NAN; x_cats.len()]; y_cats.len()];
+    for ((yi, xi), (sum, cnt)) in cells {
+        if cnt > 0.0 {
+            z[yi][xi] = sum / cnt;
+        }
+    }
+    let x_label = col_label(&headers, x_idx, nh);
+    let y_label = col_label(&headers, y_idx, nh);
+    let trace = HeatMap::new(x_cats, y_cats, z)
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis));
+    Ok((trace, Some(x_label), Some(y_label)))
+}
+
+/// Candlestick (or OHLC bar) chart from a date/x column and four numeric price columns.
+fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, String, String)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let o_idx = resolve_one(args.flag_ohlc_open.as_ref(), &headers, nh, "ohlc-open")?;
+    let h_idx = resolve_one(args.flag_high.as_ref(), &headers, nh, "high")?;
+    let l_idx = resolve_one(args.flag_low.as_ref(), &headers, nh, "low")?;
+    let c_idx = resolve_one(args.flag_close.as_ref(), &headers, nh, "close")?;
+
+    let (mut xs, mut open, mut high, mut low, mut close) =
+        (Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new());
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(ov), Some(hv), Some(lv), Some(cv)) = (
+            parse_f64(record.get(o_idx)),
+            parse_f64(record.get(h_idx)),
+            parse_f64(record.get(l_idx)),
+            parse_f64(record.get(c_idx)),
+        ) else {
+            continue;
+        };
+        // x is passed through as a string; plotly auto-detects ISO dates client-side and
+        // renders anything else as a category (no Rust-side date parsing).
+        xs.push(cell_to_string(record.get(x_idx)));
+        open.push(ov);
+        high.push(hv);
+        low.push(lv);
+        close.push(cv);
+    }
+    if xs.is_empty() {
+        return fail_clierror!(
+            "No complete rows found (need numeric --ohlc-open/--high/--low/--close)."
+        );
+    }
+    let x_label = col_label(&headers, x_idx, nh);
+    let trace: Box<dyn Trace> = if ohlc {
+        Ohlc::new(xs, open, high, low, close)
+    } else {
+        Candlestick::new(xs, open, high, low, close)
+    };
+    Ok((trace, x_label, "price".to_string()))
+}
+
+/// Sankey flow diagram. Builds a unified node index across source & target labels and
+/// aggregates duplicate source->target pairs into a single weighted link.
+fn build_sankey(args: &Args) -> CliResult<Box<dyn Trace>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let s_idx = resolve_one(args.flag_source.as_ref(), &headers, nh, "source")?;
+    let t_idx = resolve_one(args.flag_target.as_ref(), &headers, nh, "target")?;
+    let v_idx = match args.flag_value.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+        None => None,
+    };
+
+    let mut node_labels: Vec<String> = Vec::new();
+    let mut node_pos: HashMap<String, usize> = HashMap::new();
+    let mut links: HashMap<(usize, usize), f64> = HashMap::new();
+    let mut link_order: Vec<(usize, usize)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let s = cell_to_string(record.get(s_idx));
+        let t = cell_to_string(record.get(t_idx));
+        if s.is_empty() || t.is_empty() {
+            continue;
+        }
+        let val = match v_idx {
+            Some(i) => parse_f64(record.get(i)).unwrap_or(0.0),
+            None => 1.0,
+        };
+        let si = *node_pos.entry(s.clone()).or_insert_with(|| {
+            node_labels.push(s);
+            node_labels.len() - 1
+        });
+        let ti = *node_pos.entry(t.clone()).or_insert_with(|| {
+            node_labels.push(t);
+            node_labels.len() - 1
+        });
+        links
+            .entry((si, ti))
+            .and_modify(|w| *w += val)
+            .or_insert_with(|| {
+                link_order.push((si, ti));
+                val
+            });
+    }
+    if link_order.is_empty() {
+        return fail_clierror!(
+            "No flows found for the sankey diagram (need --source and --target)."
+        );
+    }
+
+    let label_refs: Vec<&str> = node_labels.iter().map(String::as_str).collect();
+    let node = Node::new().label(label_refs).pad(15).thickness(20);
+    let (mut sources, mut targets, mut values) = (Vec::new(), Vec::new(), Vec::new());
+    for &(si, ti) in &link_order {
+        sources.push(si);
+        targets.push(ti);
+        values.push(links[&(si, ti)]);
+    }
+    let link = Link::new().source(sources).target(targets).value(values);
+    Ok(Sankey::new().node(node).link(link))
+}
+
+/// Radar (polar) chart of numeric --cols. Each axis is min-max normalized to 0..1 across all
+/// rows (axes typically differ in scale); --series produces one polygon per distinct value,
+/// each the per-axis mean of its rows.
+fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let axis_idx = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
+    if axis_idx.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "radar needs at least 2 columns via --cols (got {}).",
+            axis_idx.len()
+        );
+    }
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let axis_labels: Vec<String> = axis_idx
+        .iter()
+        .map(|&i| col_label(&headers, i, nh))
+        .collect();
+
+    let mut order: Vec<String> = Vec::new();
+    let mut grouped: HashMap<String, Vec<Vec<f64>>> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let mut vals = Vec::with_capacity(axis_idx.len());
+        let mut complete = true;
+        for &i in &axis_idx {
+            match parse_f64(record.get(i)) {
+                Some(v) => vals.push(v),
+                None => {
+                    complete = false;
+                    break;
+                },
+            }
+        }
+        if !complete {
+            continue;
+        }
+        let series = match series_idx {
+            Some(i) => cell_to_string(record.get(i)),
+            None => String::new(),
+        };
+        grouped
+            .entry(series.clone())
+            .or_insert_with(|| {
+                order.push(series);
+                Vec::new()
+            })
+            .push(vals);
+    }
+    if order.is_empty() {
+        return fail_clierror!("No numeric rows found for the radar chart.");
+    }
+
+    let n_axes = axis_idx.len();
+    let mut mins = vec![f64::INFINITY; n_axes];
+    let mut maxs = vec![f64::NEG_INFINITY; n_axes];
+    for rows in grouped.values() {
+        for row in rows {
+            for a in 0..n_axes {
+                mins[a] = mins[a].min(row[a]);
+                maxs[a] = maxs[a].max(row[a]);
+            }
+        }
+    }
+    let normalize = |a: usize, v: f64| -> f64 {
+        let (lo, hi) = (mins[a], maxs[a]);
+        if (hi - lo).abs() < f64::EPSILON {
+            0.5
+        } else {
+            (v - lo) / (hi - lo)
+        }
+    };
+
+    // close the polygon by repeating the first axis at the end
+    let mut theta_closed = axis_labels.clone();
+    theta_closed.push(axis_labels[0].clone());
+
+    let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(order.len());
+    for series in order {
+        let rows = &grouped[&series];
+        let mut means = vec![0.0; n_axes];
+        for row in rows {
+            for a in 0..n_axes {
+                means[a] += row[a];
+            }
+        }
+        for m in &mut means {
+            *m /= rows.len() as f64;
+        }
+        let mut r: Vec<f64> = (0..n_axes).map(|a| normalize(a, means[a])).collect();
+        r.push(r[0]);
+        let mut t = ScatterPolar::new(theta_closed.clone(), r)
+            .mode(Mode::Lines)
+            .fill(Fill::ToSelf);
+        if !series.is_empty() {
+            t = t.name(series);
+        }
+        traces.push(t);
+    }
+    Ok(traces)
+}
+
 fn build_layout(
     args: &Args,
     default_x: Option<String>,
@@ -815,6 +1441,12 @@ enum PanelKind {
     },
     /// Frequency bar chart; `idx` is the source column index.
     FreqBar { idx: usize },
+    /// Pearson correlation heatmap over the dataset's numeric columns. Carries precomputed
+    /// data (labels + matrix) so the render loop stays a pure assembly step.
+    CorrHeatmap {
+        labels: Vec<String>,
+        matrix: Vec<Vec<f64>>,
+    },
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -929,6 +1561,35 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         }
     }
 
+    // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
+    // the one panel that re-scans the data (a single extra pass), since Pearson correlations
+    // are not in the stats cache; it's prepended so it survives the panel cap below.
+    let numeric_indices: Vec<usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.cardinality > 1
+                && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if numeric_indices.len() >= 2 {
+        let (mut rdr, headers, nh) = reader_and_headers(args)?;
+        let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices)?;
+        // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
+        if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
+            let matrix = pearson_matrix(&columns);
+            panels.insert(
+                0,
+                Panel {
+                    name: "Correlation".to_string(),
+                    kind: PanelKind::CorrHeatmap { labels, matrix },
+                },
+            );
+        }
+    }
+
     // cap to the typed-axis subplot limit
     let max_panels = args.flag_max_charts.clamp(1, MAX_SUBPLOTS);
     if panels.len() > max_panels {
@@ -956,7 +1617,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         .iter()
         .filter_map(|p| match p.kind {
             PanelKind::FreqBar { idx } => Some(idx),
-            PanelKind::BoxStats { .. } => None,
+            PanelKind::BoxStats { .. } | PanelKind::CorrHeatmap { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -984,6 +1645,23 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         format!("{dataset} \u{2014} data overview")
     });
 
+    // widen the left margin when a correlation panel is present so its (long) numeric-column
+    // tick labels — truncated to CORR_LABEL_MAX_CHARS — aren't clipped against the page edge.
+    let left_margin = panels
+        .iter()
+        .find_map(|p| match &p.kind {
+            PanelKind::CorrHeatmap { labels, .. } => Some(labels),
+            PanelKind::BoxStats { .. } | PanelKind::FreqBar { .. } => None,
+        })
+        .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
+            let longest = labels
+                .iter()
+                .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
+                .max()
+                .unwrap_or(0);
+            (longest * CORR_LABEL_PX_PER_CHAR + 24).max(DEFAULT_LEFT_MARGIN_PX)
+        });
+
     let mut plot = Plot::new();
     let mut layout = Layout::new()
         .show_legend(false)
@@ -992,7 +1670,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
             Margin::new()
                 .top(TOP_MARGIN_PX)
                 .bottom(BOTTOM_MARGIN_PX)
-                .left(60)
+                .left(left_margin)
                 .right(40)
                 .pad(4),
         )
@@ -1067,6 +1745,15 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
                     .x_axis(xref.clone())
                     .y_axis(yref.clone())
             },
+            PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
+                labels
+                    .iter()
+                    .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
+                    .collect(),
+                matrix.clone(),
+                Some((xref.clone(), yref.clone())),
+                false,
+            ),
         };
         plot.add_trace(trace);
 
@@ -1094,6 +1781,36 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
                 .show_arrow(false)
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(13)),
         );
+
+        // in-cell `r` value labels for the correlation panel, drawn only when the matrix is
+        // small enough to stay legible in one dashboard cell. Category axes index annotations
+        // by serial number (0-based), and the text flips to white on the dark high-|r| cells
+        // for contrast against the RdBu scale.
+        if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
+            && matrix.len() <= CORR_INCELL_MAX_N
+        {
+            for (i, row_vals) in matrix.iter().enumerate() {
+                for (j, &r) in row_vals.iter().enumerate() {
+                    // undefined correlations render as heatmap gaps; don't label them
+                    if !r.is_finite() {
+                        continue;
+                    }
+                    let text_color = if r.abs() >= 0.5 { "#FFFFFF" } else { INK };
+                    annotations.push(
+                        Annotation::new()
+                            .text(format!("{r:.2}"))
+                            .x(j as f64)
+                            .y(i as f64)
+                            .x_ref(xref.clone())
+                            .y_ref(yref.clone())
+                            .x_anchor(Anchor::Center)
+                            .y_anchor(Anchor::Middle)
+                            .show_arrow(false)
+                            .font(Font::new().family(FONT_FAMILY).color(text_color).size(9)),
+                    );
+                }
+            }
+        }
     }
     layout = layout.annotations(annotations);
 

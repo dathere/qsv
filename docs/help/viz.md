@@ -23,18 +23,28 @@ Interactive HTML is written to stdout when --output is not given; image formats 
 require --output. Use --open to view the result in your default browser/viewer.
 
 Chart types (subcommands):  
-smart      Auto-dashboard. Picks an appropriate chart per column from the
+smart       Auto-dashboard. Picks an appropriate chart per column from the
 dataset's statistics & frequency distribution (no --x/--y needed).
-bar        Bar chart.        --x = category column, --y = value column.
-line       Line chart.       --x = x column, --y = y column.
-scatter    Scatter plot.     --x = x column, --y = y column.
-histogram  Distribution.     --x = numeric column to bin.
-box        Box plot.         --y = value column, optional --x = group column.
+bar         Bar chart.        --x = category column, --y = value column.
+line        Line chart.       --x = x column, --y = y column.
+scatter     Scatter plot.     --x = x column, --y = y column.
+histogram   Distribution.     --x = numeric column to bin.
+box         Box plot.         --y = value column, optional --x = group column.
+pie         Proportions.      --x = label column, optional --y = value column.
+heatmap     Color grid. Correlation matrix of numeric columns (default; an
+optional column subset via --cols), or a category x category pivot
+with --x/--y/--z.
+candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
+ohlc        Financial OHLC bars (same inputs as candlestick).
+sankey      Flow diagram.     --source, --target, optional --value column.
+radar       Polar/radar chart of numeric --cols, optional --series per trace.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed
 quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
-frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. The
+frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
+dataset has two or more continuous numeric columns, a correlation heatmap panel is added
+(this one panel does a single extra data pass to compute Pearson correlations). The
 first run computes & caches stats; subsequent runs are fast.
 
 
@@ -84,6 +94,42 @@ qsv viz histogram data.csv --x value --bins 30 -o hist.html
 qsv viz box data.csv --y measurement --x group -o box.png
 ```
 
+> Pie chart of category proportions (counts), as a donut
+
+```console
+qsv viz pie data.csv --x category --donut -o pie.html
+```
+
+> Correlation heatmap over all numeric columns
+
+```console
+qsv viz heatmap data.csv -o corr.html
+```
+
+> Heatmap pivot: average value per (region x product)
+
+```console
+qsv viz heatmap sales.csv --x region --y product --z amount -o pivot.html
+```
+
+> Candlestick chart from a date column and OHLC price columns
+
+```console
+qsv viz candlestick prices.csv --x date --ohlc-open open --high high --low low --close close -o ohlc.html
+```
+
+> Sankey flow diagram of source -> target weighted by value
+
+```console
+qsv viz sankey flows.csv --source from --target to --value weight -o sankey.html
+```
+
+> Radar chart comparing numeric metrics, one trace per team
+
+```console
+qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 
@@ -92,12 +138,18 @@ For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/
 ## Usage [↩](#nav)
 
 ```console
-qsv viz smart     [options] <input>
-qsv viz bar       [options] <input>
-qsv viz line      [options] <input>
-qsv viz scatter   [options] <input>
-qsv viz histogram [options] <input>
-qsv viz box       [options] <input>
+qsv viz smart       [options] <input>
+qsv viz bar         [options] <input>
+qsv viz line        [options] <input>
+qsv viz scatter     [options] <input>
+qsv viz histogram   [options] <input>
+qsv viz box         [options] <input>
+qsv viz pie         [options] <input>
+qsv viz heatmap     [options] <input>
+qsv viz candlestick [options] <input>
+qsv viz ohlc        [options] <input>
+qsv viz sankey      [options] <input>
+qsv viz radar       [options] <input>
 qsv viz --help
 ```
 
@@ -109,7 +161,17 @@ qsv viz --help
 |--------|------|-------------|--------|
 | &nbsp;`‑x,`<br>`‑‑x`&nbsp; | string | Column for the x-axis / category / bin / group. |  |
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
-| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar/line/scatter. |  |
+| &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | Value column for a heatmap pivot (with --x and --y). |  |
+| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. |  |
+| &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar/line/scatter/radar. |  |
+| &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
+| &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |
+| &nbsp;`‑‑high`&nbsp; | string | High-price column for candlestick/ohlc charts. |  |
+| &nbsp;`‑‑low`&nbsp; | string | Low-price column for candlestick/ohlc charts. |  |
+| &nbsp;`‑‑close`&nbsp; | string | Close-price column for candlestick/ohlc charts. |  |
+| &nbsp;`‑‑source`&nbsp; | string | Source node column for a sankey diagram. |  |
+| &nbsp;`‑‑target`&nbsp; | string | Target node column for a sankey diagram. |  |
+| &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins for the histogram. (default: auto) |  |
 | &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. |  |
 

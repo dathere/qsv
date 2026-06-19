@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- `viz`: new chart subcommands `pie`, `heatmap` (correlation matrix or category×category pivot), `candlestick`/`ohlc`, `sankey`, and `radar` (polar). `viz smart` now adds a correlation-heatmap panel when the dataset has 2+ numeric columns ([#302](https://github.com/dathere/qsv/issues/302)).
+
 ---
 
 ## [21.1.0] - 2026-06-14 ⚡ The "Leaner & Faster" Release 🗜️

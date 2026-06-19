@@ -70,6 +70,102 @@ fn viz_scatter() {
 }
 
 #[test]
+fn viz_scatter_bubble_size() {
+    let wrk = Workdir::new("viz_scatter_bubble_size");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "fruits.csv",
+        "--x",
+        "Qty",
+        "--y",
+        "Price",
+        "--size",
+        "Qty",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scatter""#));
+    // --size rescales the raw values into a readable pixel range, so the marker carries a
+    // per-point size array (not a scalar)
+    assert!(html.contains(r#""marker":{"size":["#));
+}
+
+#[test]
+fn viz_scatter_color_scale() {
+    let wrk = Workdir::new("viz_scatter_color_scale");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "fruits.csv",
+        "--x",
+        "Qty",
+        "--y",
+        "Price",
+        "--color",
+        "Price",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // --color maps a numeric column onto a continuous colorscale with a colorbar
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    assert!(html.contains(r#""showscale":true"#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"Price"#));
+}
+
+#[test]
+fn viz_scatter_color_size_with_series_errors() {
+    let wrk = Workdir::new("viz_scatter_color_size_with_series_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "fruits.csv",
+        "--x",
+        "Qty",
+        "--y",
+        "Price",
+        "--size",
+        "Qty",
+        "--series",
+        "Fruit",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("cannot be combined with --series"));
+}
+
+#[test]
+fn viz_color_size_non_scatter_errors() {
+    let wrk = Workdir::new("viz_color_size_non_scatter_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "fruits.csv",
+        "--x",
+        "Fruit",
+        "--y",
+        "Price",
+        "--color",
+        "Price",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("only apply to `viz scatter`"));
+}
+
+#[test]
 fn viz_histogram() {
     let wrk = Workdir::new("viz_histogram");
     fruits(&wrk);

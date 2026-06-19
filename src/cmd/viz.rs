@@ -1018,7 +1018,9 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
     let mut out_x = Vec::with_capacity(cap);
     let mut out_y = Vec::with_capacity(cap);
     for i in 0..cap {
-        let idx = i * n / cap; // evenly spaced indices across [0, n)
+        // endpoint-inclusive: first sample is index 0, last is index n-1, so a chronologically
+        // sorted series (e.g. a time-series panel) keeps both its earliest and latest observation
+        let idx = if cap == 1 { 0 } else { i * (n - 1) / (cap - 1) };
         out_x.push(xs[idx].clone());
         out_y.push(ys[idx].clone());
     }
@@ -1029,17 +1031,20 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
 /// plotly's whole-world view centered at (0, 0). Longitude is handled with antimeridian wrap so a
 /// cluster straddling the 180° line (e.g. 179 and -179) frames as the small arc across the date
 /// line rather than spanning almost the whole globe and centering near 0.
-fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
-    // trim a small fraction off each end so a handful of outlier coordinates can't dominate the
-    // framing (which would pull the center off the bulk of the data and force a zoomed-out view)
+///
+/// `trim_frac` is the fraction trimmed off each end of the lat/lon distributions before framing,
+/// so a few outlier coordinates can't dominate the center/zoom. `viz smart`'s auto panel passes
+/// `MAP_FRAME_TRIM_FRAC`; the standalone `viz map` command passes `0.0` to frame the full extent
+/// of every valid coordinate (its edge points are intentional, not noise).
+fn map_center_zoom(lats: &[f64], lons: &[f64], trim_frac: f64) -> (Center, u8) {
     let mut sorted_lats = lats.to_vec();
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let min_lat = sorted_quantile(&sorted_lats, MAP_FRAME_TRIM_FRAC);
-    let max_lat = sorted_quantile(&sorted_lats, 1.0 - MAP_FRAME_TRIM_FRAC);
+    let min_lat = sorted_quantile(&sorted_lats, trim_frac);
+    let max_lat = sorted_quantile(&sorted_lats, 1.0 - trim_frac);
     let lat_center = (min_lat + max_lat) / 2.0;
     let lat_span = max_lat - min_lat;
 
-    let (lon_center, lon_span) = lon_center_and_span(lons);
+    let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let center = Center::new(lat_center, lon_center);
 
     // the larger of the two degree-spans drives the zoom; halving the visible span ≈ +1 zoom.
@@ -1056,9 +1061,10 @@ fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
 /// Antimeridian-aware longitude center + span. The data occupies all of the 360° circle except
 /// its single largest empty gap; the cluster is the complementary arc, so the span is
 /// `360 - largest_gap` and the center is that arc's midpoint, normalized to [-180, 180]. When the
-/// largest gap is the wrap between max and min (the common, non-crossing case), this reduces to an
-/// outlier-trimmed midpoint and span (the same robust framing the latitude axis uses).
-fn lon_center_and_span(lons: &[f64]) -> (f64, f64) {
+/// largest gap is the wrap between max and min (the common, non-crossing case), this reduces to a
+/// `trim_frac`-trimmed midpoint and span (the same robust framing the latitude axis uses; pass
+/// `0.0` for the plain full-extent `(min+max)/2` midpoint and `max-min` span).
+fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
     let mut sorted: Vec<f64> = lons.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len();
@@ -1075,9 +1081,10 @@ fn lon_center_and_span(lons: &[f64]) -> (f64, f64) {
     // the wrap gap closes the circle from the easternmost point back to the westernmost
     let wrap_gap = (sorted[0] + 360.0) - sorted[n - 1];
     if wrap_gap >= max_gap {
-        // data doesn't cross the antimeridian: outlier-trimmed bounding-box midpoint and span
-        let lo = sorted_quantile(&sorted, MAP_FRAME_TRIM_FRAC);
-        let hi = sorted_quantile(&sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
+        // data doesn't cross the antimeridian: trimmed (or full-extent when trim_frac == 0)
+        // bounding-box midpoint and span
+        let lo = sorted_quantile(&sorted, trim_frac);
+        let hi = sorted_quantile(&sorted, 1.0 - trim_frac);
         ((lo + hi) / 2.0, hi - lo)
     } else {
         // data crosses the antimeridian: the cluster runs from sorted[gap_idx + 1] eastward,
@@ -1238,7 +1245,8 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
         );
     }
 
-    let (center, zoom) = map_center_zoom(&lats, &lons);
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional
+    let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
 
     let mut plot = Plot::new();
     if args.flag_density {
@@ -2875,7 +2883,8 @@ fn smart_inline_panel_plot(
         density,
     } = &panel.kind
     {
-        let (center, zoom) = map_center_zoom(lats, lons);
+        // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
+        let (center, zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
         let mut plot = Plot::new();
         if *density {
             // many points overplot into a solid mass as markers, so aggregate into a heatmap
@@ -3411,13 +3420,13 @@ mod tests {
         // a tight cluster around (40, -75) centers there and zooms in
         let lats = [39.9, 40.1, 40.0];
         let lons = [-75.1, -74.9, -75.0];
-        let (center, zoom) = map_center_zoom(&lats, &lons);
+        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
         let v = serde_json::to_value(&center).unwrap();
         assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
         assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
         // small span -> high zoom; large span -> low zoom. Use a genuinely wide (non-wrapping)
         // longitude range so this exercises the plain bounding-box path, not antimeridian wrap.
-        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-80.0, 80.0]);
+        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-80.0, 80.0], 0.0);
         assert!(
             zoom > world_zoom,
             "tight cluster should zoom in more than world"
@@ -3427,7 +3436,7 @@ mod tests {
     #[test]
     fn map_center_zoom_single_point() {
         // a zero-span (single point) dataset gets a sensible non-extreme zoom
-        let (_, zoom) = map_center_zoom(&[51.5], &[-0.12]);
+        let (_, zoom) = map_center_zoom(&[51.5], &[-0.12], 0.0);
         assert!((1..=16).contains(&zoom));
     }
 
@@ -3437,7 +3446,7 @@ mod tests {
         // centers near the date line and zooms in rather than framing the whole globe at lon 0.
         let lats = [18.0, 16.0];
         let lons = [179.0, -179.0];
-        let (center, zoom) = map_center_zoom(&lats, &lons);
+        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
         let lon = serde_json::to_value(&center).unwrap()["lon"]
             .as_f64()
             .unwrap();
@@ -3454,7 +3463,7 @@ mod tests {
     #[test]
     fn lon_center_and_span_non_wrapping() {
         // ordinary western-hemisphere cluster: plain midpoint + span, no wrap
-        let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0]);
+        let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0], 0.0);
         assert!((center - (-75.0)).abs() < 1e-9);
         assert!((span - 0.2).abs() < 1e-9);
     }
@@ -3479,8 +3488,13 @@ mod tests {
         assert_eq!(dy.len(), 100);
         // row alignment is preserved (ys == 2*xs throughout)
         assert!(dx.iter().zip(&dy).all(|(x, y)| (y - x * 2.0).abs() < 1e-9));
-        // evenly spaced from the start, so the first element is retained
+        // endpoint-inclusive: both the first AND the last observation are retained, so a
+        // chronologically sorted time-series keeps its latest point
         assert_eq!(dx[0], 0.0);
+        assert_eq!(*dx.last().unwrap(), 999.0);
+        assert_eq!(*dy.last().unwrap(), 1998.0);
+        // single-element cap doesn't divide by zero and returns the first point
+        assert_eq!(downsample_pair(&xs, &ys, 1), (vec![0.0], vec![0.0]));
         // already within cap -> returned unchanged
         let (sx, sy) = downsample_pair(&xs[..50], &ys[..50], 100);
         assert_eq!(sx.len(), 50);
@@ -3489,10 +3503,9 @@ mod tests {
         assert_eq!(downsample_pair(&xs, &ys, 0).0.len(), 1000);
     }
 
-    #[test]
-    fn map_center_zoom_ignores_outliers() {
-        // 200 points tightly clustered around NYC plus a handful of far-west bad coordinates.
-        // robust (percentile-trimmed) framing must center on the cluster, not the outliers.
+    /// A tight NYC cluster plus a handful of far-west bad coordinates, used to contrast the
+    /// trimmed (`viz smart`) framing against the full-extent (`viz map`) framing.
+    fn nyc_cluster_with_outliers() -> (Vec<f64>, Vec<f64>) {
         let mut lats = vec![40.7_f64; 200];
         let mut lons = vec![-73.95_f64; 200];
         // jitter so the cluster has a small but non-zero span
@@ -3505,14 +3518,38 @@ mod tests {
             lats.push(40.5);
             lons.push(-77.5);
         }
-        let (center, _zoom) = map_center_zoom(&lats, &lons);
-        let v = serde_json::to_value(&center).unwrap();
-        let lon = v["lon"].as_f64().unwrap();
+        (lats, lons)
+    }
+
+    #[test]
+    fn map_center_zoom_trimmed_ignores_outliers() {
+        // robust (percentile-trimmed) framing must center on the cluster, not the outliers.
+        let (lats, lons) = nyc_cluster_with_outliers();
+        let (center, _zoom) = map_center_zoom(&lats, &lons, MAP_FRAME_TRIM_FRAC);
+        let lon = serde_json::to_value(&center).unwrap()["lon"]
+            .as_f64()
+            .unwrap();
         // raw min/max midpoint would be ~(-73.95 + -77.5)/2 = -75.7 (in Pennsylvania); the trimmed
         // framing must stay over the NYC cluster instead.
         assert!(
             lon > -74.3,
-            "outliers should not pull the center west of NYC, got lon {lon}"
+            "trimmed framing should not be pulled west of NYC, got lon {lon}"
+        );
+    }
+
+    #[test]
+    fn map_center_zoom_full_extent_includes_outliers() {
+        // standalone `viz map` passes trim_frac == 0.0, so every coordinate frames the view; the
+        // far-west outliers pull the center toward the raw midpoint (regression guard for the fix
+        // that kept the trimming scoped to `viz smart`).
+        let (lats, lons) = nyc_cluster_with_outliers();
+        let (center, _zoom) = map_center_zoom(&lats, &lons, 0.0);
+        let lon = serde_json::to_value(&center).unwrap()["lon"]
+            .as_f64()
+            .unwrap();
+        assert!(
+            lon < -75.0,
+            "full-extent framing must include the western outliers, got lon {lon}"
         );
     }
 }

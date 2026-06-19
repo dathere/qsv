@@ -115,9 +115,15 @@ viz options:
                            repeats. One of: sum, mean, count, min, max.
 
 smart options:
-    --max-charts <n>       Maximum number of panels in the dashboard. Capped at 8
-                           (plotly's typed subplot-axis limit); extra eligible
-                           columns are reported but not drawn. [default: 8]
+    --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
+                           means auto: draw as many panels as the data warrants. For
+                           HTML that's every eligible column (up to 64); for static
+                           image export (png/svg/pdf/...) it's 8. Up to 8 panels render
+                           as one subplot grid (plotly's typed subplot-axis limit);
+                           HTML beyond 8 switches to an inline-div grid of independent
+                           plots. Set a positive <n> to cap the panel count instead.
+                           Eligible columns beyond the cap are reported but not drawn.
+                           [default: 0]
     --grid-cols <n>        Number of columns in the dashboard grid. [default: 2]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
 
@@ -166,8 +172,13 @@ use crate::{
 };
 
 /// Plotly's `Layout` exposes typed axis fields only up to x_axis8/y_axis8, which caps a
-/// typed subplot grid at 8 panels.
+/// single-`Plot` typed subplot grid at 8 panels. HTML dashboards that need more panels are
+/// rendered as an inline-div grid of independent plots instead (see `render_smart_inline`).
 const MAX_SUBPLOTS: usize = 8;
+
+/// Hard ceiling on panels for the inline-div HTML dashboard (used when `--max-charts` exceeds
+/// `MAX_SUBPLOTS` and the output is HTML). Bounds the page size for very wide datasets.
+const MAX_PANELS_INLINE: usize = 64;
 
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
@@ -347,10 +358,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
 
     let (mut plot, smart_dims) = if args.cmd_smart {
-        let (plot, dims) = build_smart(&args)?;
-        (plot, Some(dims))
+        match build_smart(&args, out_format)? {
+            // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
+            // single-`Plot` output path entirely.
+            SmartRender::Inline(html) => return output_inline_html(&html, &args),
+            SmartRender::Grid { plot, dims } => (plot, Some(dims)),
+        }
     } else {
-        (build_plot(&args)?, None)
+        (Box::new(build_plot(&args)?), None)
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -371,6 +386,51 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         img_height,
         args.flag_scale,
     )
+}
+
+/// The two ways `viz smart` can render: a single-`Plot` typed subplot grid (up to
+/// `MAX_SUBPLOTS` panels; the only form that supports static image export), or a
+/// self-contained inline-div HTML page (for >8-panel HTML dashboards).
+enum SmartRender {
+    // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
+    Grid {
+        plot: Box<Plot>,
+        dims: (usize, usize),
+    },
+    Inline(String),
+}
+
+/// Write a pre-assembled inline-div dashboard HTML string to `--output` (or stdout), honoring
+/// `--open`. When `--open` is set without `--output`, the HTML is also written to a securely
+/// created temporary file which is then opened — mirroring plotly's own `Plot::show()` for the
+/// single-`Plot` path.
+fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
+    match args.flag_output.as_deref() {
+        Some(path) => {
+            std::fs::write(path, html)?;
+            if args.flag_open {
+                open_path(path)?;
+            }
+        },
+        None => {
+            std::io::stdout().write_all(html.as_bytes())?;
+            if args.flag_open {
+                // Create the temp file via tempfile (random name, O_EXCL) to avoid a symlink
+                // attack on a predictable path, then persist it so the browser can read it
+                // after qsv exits (a NamedTempFile would otherwise delete on drop).
+                let mut tmp = tempfile::Builder::new()
+                    .prefix("qsv-viz-smart-")
+                    .suffix(".html")
+                    .tempfile()?;
+                tmp.write_all(html.as_bytes())?;
+                let (_file, path) = tmp.keep().map_err(|e| {
+                    crate::CliError::Other(format!("Could not persist temp dashboard file: {e}"))
+                })?;
+                open_path(&path.to_string_lossy())?;
+            }
+        },
+    }
+    Ok(())
 }
 
 /// Build a `Plot` for the requested chart subcommand.
@@ -1311,8 +1371,11 @@ fn output_image(
     unreachable!("image export is rejected in run() without the viz_static feature");
 }
 
+/// Open `path` in the user's default application, honoring the `BROWSER` environment variable
+/// when set (via `opener::open_browser`).
 fn open_path(path: &str) -> CliResult<()> {
-    opener::open(path).map_err(|e| crate::CliError::Other(format!("Could not open '{path}': {e}")))
+    opener::open_browser(path)
+        .map_err(|e| crate::CliError::Other(format!("Could not open '{path}': {e}")))
 }
 
 // ----- small helpers -----
@@ -1505,9 +1568,9 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
-/// Returns the plot plus its preferred static-export dimensions `(width, height)` in pixels
-/// (scaled to the grid shape), used when --width/--height aren't given.
-fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
+/// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
+/// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
+fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let Some(input) = args.arg_input.clone() else {
         return fail_incorrectusage_clierror!(
             "`viz smart` requires a file input (it derives charts from the dataset's statistics)."
@@ -1590,8 +1653,43 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         }
     }
 
-    // cap to the typed-axis subplot limit
-    let max_panels = args.flag_max_charts.clamp(1, MAX_SUBPLOTS);
+    // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
+    // (the only form that supports static image export). For HTML output, more than that
+    // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
+    // multiple plots, so it stays capped at MAX_SUBPLOTS (with a warning if more were eligible).
+    //
+    // `--max-charts 0` (the default) means "auto": fit as many panels as the data warrants —
+    // every eligible column for HTML (bounded by MAX_PANELS_INLINE), or MAX_SUBPLOTS for image
+    // export. An explicit `--max-charts N` caps the panel count to N instead.
+    let is_html = matches!(out_format, OutFormat::Html);
+    let eligible = panels.len();
+    let requested = if args.flag_max_charts == 0 {
+        if is_html {
+            MAX_PANELS_INLINE
+        } else {
+            MAX_SUBPLOTS
+        }
+    } else {
+        args.flag_max_charts
+    };
+    let want = requested.min(eligible);
+    let inline = is_html && want > MAX_SUBPLOTS;
+
+    let max_panels = if inline {
+        requested.min(MAX_PANELS_INLINE)
+    } else {
+        requested.min(MAX_SUBPLOTS)
+    };
+
+    // for image export, flag when the 8-panel limit (not an explicit smaller --max-charts) is
+    // what's dropping panels, pointing users to HTML for the full picture.
+    if out_format.is_image() && eligible > MAX_SUBPLOTS && max_panels == MAX_SUBPLOTS {
+        eprintln!(
+            "viz smart: static image export is limited to {MAX_SUBPLOTS} panels; output an .html \
+             file to render up to {MAX_PANELS_INLINE} panels."
+        );
+    }
+
     if panels.len() > max_panels {
         for p in panels.drain(max_panels..) {
             skipped.push(p.name);
@@ -1627,15 +1725,6 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         count_values(args, &bar_indices, top_n)?
     };
 
-    // assemble the dashboard as a grid of subplots. We lay out each cell's axes with
-    // explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot
-    // height with the row count, (b) reserve a band at the top for the dashboard title,
-    // and (c) place each column's name as a title *above* its panel.
-    let cols = args.flag_grid_cols.clamp(1, panels.len());
-    let rows = panels.len().div_ceil(cols);
-    let grid_top = smart_grid_top(rows);
-    let title_offset = smart_title_offset(rows);
-
     // dashboard title: the user's --title, else the dataset's file name
     let title_text = args.flag_title.clone().unwrap_or_else(|| {
         let dataset = std::path::Path::new(args.arg_input.as_deref().unwrap_or("data"))
@@ -1644,6 +1733,106 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
             .unwrap_or("data");
         format!("{dataset} \u{2014} data overview")
     });
+
+    if inline {
+        Ok(SmartRender::Inline(render_smart_inline(
+            args,
+            &panels,
+            &freq,
+            &title_text,
+        )))
+    } else {
+        render_smart_grid(args, &panels, &freq, &title_text)
+    }
+}
+
+/// Build the plotly trace for one smart-dashboard panel. `axes` carries the subplot axis refs
+/// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
+/// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
+/// to add vertical headroom for the outside value labels).
+fn panel_trace(
+    panel: &Panel,
+    color: &'static str,
+    freq: &HashMap<usize, Vec<(String, u64)>>,
+    axes: Option<(String, String)>,
+) -> (Box<dyn Trace>, Option<f64>) {
+    let mut bar_max: Option<f64> = None;
+    let trace: Box<dyn Trace> = match &panel.kind {
+        PanelKind::BoxStats {
+            q1,
+            median,
+            q3,
+            lower,
+            upper,
+            mean,
+        } => {
+            let mut b = BoxPlot::new(Vec::<f64>::new())
+                .name(panel.name.clone())
+                .q1(vec![*q1])
+                .median(vec![*median])
+                .q3(vec![*q3])
+                .marker(Marker::new().color(color));
+            if let Some((x, y)) = &axes {
+                b = b.x_axis(x.clone()).y_axis(y.clone());
+            }
+            if let Some(l) = lower {
+                b = b.lower_fence(vec![*l]);
+            }
+            if let Some(u) = upper {
+                b = b.upper_fence(vec![*u]);
+            }
+            if let Some(m) = mean {
+                b = b.mean(vec![*m]);
+            }
+            b
+        },
+        PanelKind::FreqBar { idx } => {
+            let counts = freq.get(idx).cloned().unwrap_or_default();
+            let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
+            let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
+            bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
+            let mut bar = Bar::new(xs, ys)
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color))
+                // value labels above each bar, SI-formatted ("258k", "1.05M") to match
+                // the axis ticks
+                .text_template("%{y:.3s}")
+                .text_position(TextPosition::Outside)
+                .text_font(Font::new().family(FONT_FAMILY).color(INK).size(9));
+            if let Some((x, y)) = &axes {
+                bar = bar.x_axis(x.clone()).y_axis(y.clone());
+            }
+            bar
+        },
+        PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
+            labels
+                .iter()
+                .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
+                .collect(),
+            matrix.clone(),
+            axes.clone(),
+            // standalone (inline) panels show the colorbar; grid panels use in-cell labels
+            axes.is_none(),
+        ),
+    };
+    (trace, bar_max)
+}
+
+/// Render the dashboard as a single `Plot` with a typed subplot grid (≤ `MAX_SUBPLOTS` panels).
+/// This is the only form that supports static image export. We lay out each cell's axes with
+/// explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot height with
+/// the row count, (b) reserve a band at the top for the dashboard title, and (c) place each
+/// column's name as a title *above* its panel.
+fn render_smart_grid(
+    args: &Args,
+    panels: &[Panel],
+    freq: &HashMap<usize, Vec<(String, u64)>>,
+    title_text: &str,
+) -> CliResult<SmartRender> {
+    let cols = args.flag_grid_cols.clamp(1, panels.len());
+    let rows = panels.len().div_ceil(cols);
+    let grid_top = smart_grid_top(rows);
+    let title_offset = smart_title_offset(rows);
 
     // widen the left margin when a correlation panel is present so its (long) numeric-column
     // tick labels — truncated to CORR_LABEL_MAX_CHARS — aren't clipped against the page edge.
@@ -1699,62 +1888,7 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];
         let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
-        // tallest bar value, used to give bar panels headroom for outside value labels
-        let mut bar_max: Option<f64> = None;
-        let trace: Box<dyn Trace> = match &panel.kind {
-            PanelKind::BoxStats {
-                q1,
-                median,
-                q3,
-                lower,
-                upper,
-                mean,
-            } => {
-                let mut b = BoxPlot::new(Vec::<f64>::new())
-                    .name(panel.name.clone())
-                    .q1(vec![*q1])
-                    .median(vec![*median])
-                    .q3(vec![*q3])
-                    .marker(Marker::new().color(color))
-                    .x_axis(xref.clone())
-                    .y_axis(yref.clone());
-                if let Some(l) = lower {
-                    b = b.lower_fence(vec![*l]);
-                }
-                if let Some(u) = upper {
-                    b = b.upper_fence(vec![*u]);
-                }
-                if let Some(m) = mean {
-                    b = b.mean(vec![*m]);
-                }
-                b
-            },
-            PanelKind::FreqBar { idx } => {
-                let counts = freq.get(idx).cloned().unwrap_or_default();
-                let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
-                let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
-                bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
-                Bar::new(xs, ys)
-                    .name(panel.name.clone())
-                    .marker(Marker::new().color(color))
-                    // value labels above each bar, SI-formatted ("258k", "1.05M") to match
-                    // the axis ticks
-                    .text_template("%{y:.3s}")
-                    .text_position(TextPosition::Outside)
-                    .text_font(Font::new().family(FONT_FAMILY).color(INK).size(9))
-                    .x_axis(xref.clone())
-                    .y_axis(yref.clone())
-            },
-            PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
-                labels
-                    .iter()
-                    .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
-                    .collect(),
-                matrix.clone(),
-                Some((xref.clone(), yref.clone())),
-                false,
-            ),
-        };
+        let (trace, bar_max) = panel_trace(panel, color, freq, Some((xref.clone(), yref.clone())));
         plot.add_trace(trace);
 
         // position this subplot's styled axes and add its title above the cell
@@ -1789,33 +1923,136 @@ fn build_smart(args: &Args) -> CliResult<(Plot, (usize, usize))> {
         if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
             && matrix.len() <= CORR_INCELL_MAX_N
         {
-            for (i, row_vals) in matrix.iter().enumerate() {
-                for (j, &r) in row_vals.iter().enumerate() {
-                    // undefined correlations render as heatmap gaps; don't label them
-                    if !r.is_finite() {
-                        continue;
-                    }
-                    let text_color = if r.abs() >= 0.5 { "#FFFFFF" } else { INK };
-                    annotations.push(
-                        Annotation::new()
-                            .text(format!("{r:.2}"))
-                            .x(j as f64)
-                            .y(i as f64)
-                            .x_ref(xref.clone())
-                            .y_ref(yref.clone())
-                            .x_anchor(Anchor::Center)
-                            .y_anchor(Anchor::Middle)
-                            .show_arrow(false)
-                            .font(Font::new().family(FONT_FAMILY).color(text_color).size(9)),
-                    );
-                }
+            for ann in corr_incell_annotations(matrix, &xref, &yref) {
+                annotations.push(ann);
             }
         }
     }
     layout = layout.annotations(annotations);
 
     plot.set_layout(layout);
-    Ok((plot, (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX)))
+    Ok(SmartRender::Grid {
+        plot: Box::new(plot),
+        dims: (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX),
+    })
+}
+
+/// In-cell `r` value annotations for a correlation matrix, referenced to the given axes (use
+/// "x"/"y" for a standalone plot). Undefined correlations (heatmap gaps) get no label; the text
+/// flips to white on dark high-|r| cells for contrast against the RdBu scale.
+fn corr_incell_annotations(matrix: &[Vec<f64>], xref: &str, yref: &str) -> Vec<Annotation> {
+    let mut out = Vec::new();
+    for (i, row_vals) in matrix.iter().enumerate() {
+        for (j, &r) in row_vals.iter().enumerate() {
+            if !r.is_finite() {
+                continue;
+            }
+            let text_color = if r.abs() >= 0.5 { "#FFFFFF" } else { INK };
+            out.push(
+                Annotation::new()
+                    .text(format!("{r:.2}"))
+                    .x(j as f64)
+                    .y(i as f64)
+                    .x_ref(xref)
+                    .y_ref(yref)
+                    .x_anchor(Anchor::Center)
+                    .y_anchor(Anchor::Middle)
+                    .show_arrow(false)
+                    .font(Font::new().family(FONT_FAMILY).color(text_color).size(9)),
+            );
+        }
+    }
+    out
+}
+
+/// Build a standalone themed `Plot` for one panel, used as a cell in the inline-div dashboard.
+fn smart_inline_panel_plot(
+    panel: &Panel,
+    color: &'static str,
+    freq: &HashMap<usize, Vec<(String, u64)>>,
+) -> Plot {
+    let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
+    let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
+    let (trace, bar_max) = panel_trace(panel, color, freq, None);
+
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+
+    // correlation cells need extra left room for tick labels and right room for the colorbar
+    let (left, right) = if is_corr { (110, 90) } else { (60, 30) };
+    let mut layout = Layout::new()
+        .show_legend(false)
+        .height(ROW_HEIGHT_PX)
+        .title(Title::with_text(panel.name.clone()))
+        .margin(
+            Margin::new()
+                .top(48)
+                .bottom(60)
+                .left(left)
+                .right(right)
+                .pad(4),
+        )
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+        .paper_background_color(PAPER_BG)
+        .plot_background_color(PAPER_BG)
+        .x_axis(styled_x_axis(is_box))
+        .y_axis(styled_y_axis(bar_max));
+
+    if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
+        && matrix.len() <= CORR_INCELL_MAX_N
+    {
+        layout = layout.annotations(corr_incell_annotations(matrix, "x", "y"));
+    }
+
+    plot.set_layout(layout);
+    plot.set_configuration(Configuration::new().responsive(true));
+    plot
+}
+
+/// Assemble the dashboard as a self-contained HTML page: a responsive CSS grid of independent
+/// plotly plots, one per panel. This sidesteps plotly's 8-axis typed-subplot limit so HTML
+/// dashboards can show many more panels than the single-`Plot` grid. The plotly.js bundle is
+/// embedded once in `<head>` (via `Plot::offline_js_sources`); each panel is emitted as an
+/// inline `<div>` + `<script>` that draws into the shared global `Plotly`.
+fn render_smart_inline(
+    args: &Args,
+    panels: &[Panel],
+    freq: &HashMap<usize, Vec<(String, u64)>>,
+    title_text: &str,
+) -> String {
+    let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
+
+    let mut cells = String::new();
+    for (n, panel) in panels.iter().enumerate() {
+        let color = PALETTE[n % PALETTE.len()];
+        let plot = smart_inline_panel_plot(panel, color, freq);
+        let div_id = format!("qsv-viz-panel-{n}");
+        cells.push_str("    <div class=\"qsv-viz-cell\">\n");
+        cells.push_str(&plot.to_inline_html(Some(&div_id)));
+        cells.push_str("\n    </div>\n");
+    }
+
+    let js = Plot::offline_js_sources();
+    let title = html_escape(title_text);
+    format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
+         name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
+         />\n<title>{title}</title>\n{js}\n<style>\n  body {{ font-family: {FONT_FAMILY}; color: \
+         {INK}; background: {PAPER_BG}; margin: 0; padding: 16px; }}\n  h1.qsv-viz-title {{ \
+         font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
+         .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
+         gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n</style>\n</head>\n<body>\n<h1 \
+         class=\"qsv-viz-title\">{title}</h1>\n<div \
+         class=\"qsv-viz-grid\">\n{cells}</div>\n</body>\n</html>\n"
+    )
+}
+
+/// Minimal HTML-escaping for text interpolated into the inline dashboard page.
+fn html_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
 }
 
 /// Count value occurrences for the given column indices in a single pass, returning the

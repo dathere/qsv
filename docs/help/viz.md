@@ -181,7 +181,7 @@ qsv viz --help
 
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
-| &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the dashboard. Capped at 8 (plotly's typed subplot-axis limit); extra eligible columns are reported but not drawn. | `8` |
+| &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the dashboard. 0 (the default) means auto: draw as many panels as the data warrants. For HTML that's every eligible column (up to 64); for static image export (png/svg/pdf/...) it's 8. Up to 8 panels render as one subplot grid (plotly's typed subplot-axis limit); HTML beyond 8 switches to an inline-div grid of independent plots. Set a positive <n> to cap the panel count instead. Eligible columns beyond the cap are reported but not drawn. | `0` |
 | &nbsp;`‑‑grid‑cols`&nbsp; | integer | Number of columns in the dashboard grid. | `2` |
 | &nbsp;`‑‑limit`&nbsp; | integer | Top-N categories per frequency bar chart. | `10` |
 | &nbsp;`‑‑title`&nbsp; | string | Chart title. |  |

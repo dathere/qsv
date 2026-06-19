@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - `viz`: new chart subcommands `pie`, `heatmap` (correlation matrix or category×category pivot), `candlestick`/`ohlc`, `sankey`, and `radar` (polar). `viz smart` now adds a correlation-heatmap panel when the dataset has 2+ numeric columns ([#302](https://github.com/dathere/qsv/issues/302)).
 
+### Changed
+- `viz smart`: HTML dashboards now auto-fit the data. `--max-charts` defaults to `0` (auto), drawing every eligible column for HTML output (up to 64) and 8 for static image export. Up to 8 panels render as a single subplot grid (plotly's typed subplot-axis limit); HTML beyond 8 switches to an inline-div grid of independent plots. Set a positive `--max-charts N` to cap the count ([#302](https://github.com/dathere/qsv/issues/302)).
+
 ---
 
 ## [21.1.0] - 2026-06-14 ⚡ The "Leaner & Faster" Release 🗜️

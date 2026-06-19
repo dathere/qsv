@@ -32,7 +32,9 @@ frequency caches: continuous numeric columns become box plots (drawn from precom
 quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
 frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
 dataset has two or more continuous numeric columns, a correlation heatmap panel is added
-(this one panel does a single extra data pass to compute Pearson correlations). When the
+(this one panel does a single extra data pass to compute Pearson correlations), and if the
+most strongly correlated pair is at least moderately correlated, a scatter of that pair is
+added next to it. When the
 dataset has a date/datetime column (auto-detected via stats date inference) plus a
 continuous numeric column, a time-series line panel of that column over time is added too.
 The first run computes & caches stats; subsequent runs are fast.
@@ -207,6 +209,11 @@ const MAX_PANELS_INLINE: usize = 64;
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
+
+/// Minimum absolute Pearson correlation for `viz smart` to add a scatter panel of the most
+/// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
+/// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
+const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
 
 /// Max bars in a single-series `viz bar` chart that still get value labels; beyond this the
 /// labels would overlap, so they're omitted.
@@ -1076,6 +1083,25 @@ fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     m
 }
 
+/// Index pair (i, j) with the largest absolute Pearson correlation in the off-diagonal of a
+/// symmetric matrix, returned with its signed r. Skips NaN cells (undefined correlations, e.g.
+/// a constant column). Returns None when the matrix has fewer than two columns or every
+/// off-diagonal cell is NaN.
+fn strongest_pair(matrix: &[Vec<f64>]) -> Option<(usize, usize, f64)> {
+    let mut best: Option<(usize, usize, f64)> = None;
+    for (i, row) in matrix.iter().enumerate() {
+        for (j, &r) in row.iter().enumerate().skip(i + 1) {
+            if r.is_nan() {
+                continue;
+            }
+            if best.is_none_or(|(_, _, b)| r.abs() > b.abs()) {
+                best = Some((i, j, r));
+            }
+        }
+    }
+    best
+}
+
 /// A diverging (RdBu) correlation heatmap trace fixed to the [-1, 1] scale. `axes` assigns
 /// the subplot axis refs when used as a `viz smart` panel (None for the standalone chart).
 /// A `hovertemplate` (and trace name) gives a clean `y vs x: r` tooltip instead of plotly's
@@ -1719,6 +1745,9 @@ enum PanelKind {
         labels: Vec<String>,
         matrix: Vec<Vec<f64>>,
     },
+    /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
+    /// heatmap. Carries the two columns' precomputed, row-aligned values.
+    ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -1953,6 +1982,18 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
         if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
             let matrix = pearson_matrix(&columns);
+            // a scatter of the most strongly correlated pair drills into the heatmap's
+            // headline relationship. Reuses the columns already read for the matrix (no extra
+            // data pass) and is only added when that pair is at least moderately correlated.
+            let scatter_panel = strongest_pair(&matrix).and_then(|(i, j, r)| {
+                (r.abs() >= SCATTER_PAIR_MIN_ABS_R).then(|| Panel {
+                    name: format!("{} vs {} (r={r:.2})", labels[i], labels[j]),
+                    kind: PanelKind::ScatterPair {
+                        xs: columns[i].clone(),
+                        ys: columns[j].clone(),
+                    },
+                })
+            });
             panels.insert(
                 0,
                 Panel {
@@ -1960,6 +2001,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     kind: PanelKind::CorrHeatmap { labels, matrix },
                 },
             );
+            // place the drill-down scatter right after the heatmap
+            if let Some(panel) = scatter_panel {
+                panels.insert(1, panel);
+            }
         }
     }
 
@@ -2039,7 +2084,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             PanelKind::FreqBar { idx } => Some(idx),
             PanelKind::BoxStats { .. }
             | PanelKind::CorrHeatmap { .. }
-            | PanelKind::TimeSeries { .. } => None,
+            | PanelKind::TimeSeries { .. }
+            | PanelKind::ScatterPair { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -2138,6 +2184,16 @@ fn panel_trace(
             }
             t
         },
+        PanelKind::ScatterPair { xs, ys } => {
+            let mut t = Scatter::new(xs.clone(), ys.clone())
+                .mode(Mode::Markers)
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color));
+            if let Some((x, y)) = &axes {
+                t = t.x_axis(x.clone()).y_axis(y.clone());
+            }
+            t
+        },
         PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
             labels
                 .iter()
@@ -2176,7 +2232,8 @@ fn render_smart_grid(
             PanelKind::CorrHeatmap { labels, .. } => Some(labels),
             PanelKind::BoxStats { .. }
             | PanelKind::FreqBar { .. }
-            | PanelKind::TimeSeries { .. } => None,
+            | PanelKind::TimeSeries { .. }
+            | PanelKind::ScatterPair { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
             let longest = labels
@@ -2672,6 +2729,25 @@ mod tests {
             },
             _ => panic!("expected BoxStats"),
         }
+    }
+
+    #[test]
+    fn strongest_pair_picks_max_abs_r_and_skips_nan() {
+        // off-diagonal magnitudes: |(0,1)|=0.2, |(0,2)|=0.9, (1,2)=NaN (skipped).
+        // strongest by |r| is the (0,2) pair, returned with its signed r.
+        let m = vec![
+            vec![1.0, 0.2, -0.9],
+            vec![0.2, 1.0, f64::NAN],
+            vec![-0.9, f64::NAN, 1.0],
+        ];
+        assert_eq!(strongest_pair(&m), Some((0, 2, -0.9)));
+
+        // every off-diagonal cell undefined => no pair
+        let all_nan = vec![vec![f64::NAN, f64::NAN], vec![f64::NAN, f64::NAN]];
+        assert_eq!(strongest_pair(&all_nan), None);
+
+        // fewer than two columns => no pair
+        assert_eq!(strongest_pair(&[vec![1.0]]), None);
     }
 
     #[test]

@@ -772,6 +772,61 @@ fn viz_smart_correlation_panel() {
 }
 
 #[test]
+fn viz_smart_scatter_pair_panel() {
+    let wrk = Workdir::new("viz_smart_scatter_pair_panel");
+    // two strongly-correlated, non-near-unique numeric columns => `viz smart` adds a
+    // correlation heatmap AND a drill-down scatter of the strongest pair.
+    let mut rows = String::from("metric_a,metric_b,city\n");
+    for i in 0..60 {
+        let a = i % 10;
+        let b = a * 2 + (i % 2); // essentially perfectly correlated with metric_a
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{a},{b},{city}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"heatmap""#));
+    // a scatter trace whose panel title names the pair and its (rounded) r value
+    assert!(html.contains(r#""type":"scatter""#));
+    assert!(html.contains("metric_a vs metric_b (r="));
+}
+
+#[test]
+fn viz_smart_no_scatter_pair_when_weakly_correlated() {
+    let wrk = Workdir::new("viz_smart_no_scatter_pair_when_weakly_correlated");
+    // metric_a and metric_b are the two "digits" of i, so over 60 rows they enumerate the full
+    // 10x6 grid exactly once => independent (r == 0). The correlation heatmap still appears, but
+    // the weak pair is below the threshold, so NO drill-down scatter is added.
+    let mut rows = String::from("metric_a,metric_b\n");
+    for i in 0..60 {
+        let a = i % 10;
+        let b = i / 10;
+        rows.push_str(&format!("{a},{b}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"heatmap""#)); // correlation panel present
+    assert!(!html.contains(r#""type":"scatter""#)); // but no drill-down scatter
+    assert!(!html.contains(" vs metric_")); // and no scatter-pair title
+}
+
+#[test]
 fn viz_smart_timeseries_panel() {
     let wrk = Workdir::new("viz_smart_timeseries_panel");
     // a date column + a continuous (high-cardinality) numeric column => `viz smart` adds a

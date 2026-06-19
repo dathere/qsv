@@ -1,0 +1,14 @@
+source,target,sessions
+Landing Page,Search,4200
+Landing Page,Category Browse,3100
+Landing Page,Bounce,2700
+Search,Product Page,3500
+Search,Bounce,700
+Category Browse,Product Page,2600
+Category Browse,Bounce,500
+Product Page,Add to Cart,2900
+Product Page,Bounce,3200
+Add to Cart,Checkout,1800
+Add to Cart,Abandon,1100
+Checkout,Purchase,1500
+Checkout,Abandon,300

@@ -69,3 +69,6 @@ scripts/benchmark_data.*
 # Tracked initially in PR #3908; dropped from git after #3910 merged
 # so the running status doc stays local to each contributor's tree.
 profile*-handoff.md
+
+# Python bytecode from examples/viz/gen_gallery.py (the viz gallery generator)
+examples/viz/__pycache__/

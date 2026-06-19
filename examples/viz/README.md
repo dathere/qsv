@@ -43,10 +43,11 @@ as `text/plain`, so a browser won't render it):
 `viz smart` auto-profiles the dataset (from qsv's stats cache) and picks a panel
 per column: a **correlation heatmap** over the numeric columns, **box plots** for
 continuous numerics, and **frequency bars** for low-cardinality categoricals,
-booleans, and ratings. When the data has a date/datetime column (auto-detected
-via stats date inference) plus a continuous numeric column, a **time-series
-trend** panel of that column over time is added too. ID-like and
-high-cardinality text columns are skipped.
+booleans, and ratings. When the numeric columns have a strongly correlated pair,
+a **scatter** of that pair is added next to the heatmap as a drill-down. When the
+data has a date/datetime column (auto-detected via stats date inference) plus a
+continuous numeric column, a **time-series trend** panel of that column over time
+is added too. ID-like and high-cardinality text columns are skipped.
 
 ```bash
 # 12 panels from sales_sample.csv (>8, so it renders as an inline-div grid)
@@ -88,6 +89,9 @@ qsv viz pie sales_sample.csv --x product_category --y revenue --donut -o pie.htm
 
 # heatmap (correlation) — Pearson matrix over all numeric columns
 qsv viz heatmap sales_sample.csv -o heatmap_corr.html
+
+# scatter (correlated pair) — the strongest pair from the matrix; viz smart auto-adds this
+qsv viz scatter sales_sample.csv --x discount_pct --y profit_margin_pct -o corr_pair.html
 
 # heatmap (pivot) — region x category grid of revenue (give --x, --y and --z)
 qsv viz heatmap sales_sample.csv --x region --y product_category --z revenue -o heatmap_pivot.html

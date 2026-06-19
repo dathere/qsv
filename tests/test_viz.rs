@@ -188,6 +188,39 @@ fn viz_smart_inline_many_panels() {
     assert!(html.contains("<!doctype html>"));
 }
 
+// `--open` on a >8-panel smart dashboard with NO --output must succeed: it writes the inline
+// HTML to stdout AND opens a temp copy (it must not bail with a usage error after writing
+// stdout, the pre-fix regression). `BROWSER=true` neutralizes the actual launch so the test is
+// CI-safe; gated to unix since `true` is the harmless no-op opener there.
+#[cfg(unix)]
+#[test]
+fn viz_smart_inline_open_no_output() {
+    let wrk = Workdir::new("viz_smart_inline_open_no_output");
+    let headers: Vec<String> = (0..10).map(|c| format!("c{c}")).collect();
+    let mut rows = headers.join(",");
+    rows.push('\n');
+    for r in 0..30 {
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.env("BROWSER", "true")
+        .args(["smart", "wide.csv", "--open"]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "viz smart --open without --output should succeed; stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // the inline dashboard HTML is still written to stdout
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains(r#"class="qsv-viz-grid""#));
+    assert!(stdout.contains("Plotly.newPlot"));
+}
+
 #[test]
 fn viz_missing_y_errors() {
     let wrk = Workdir::new("viz_missing_y_errors");

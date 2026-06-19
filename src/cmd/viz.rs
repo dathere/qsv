@@ -401,21 +401,25 @@ enum SmartRender {
 }
 
 /// Write a pre-assembled inline-div dashboard HTML string to `--output` (or stdout), honoring
-/// `--open`.
+/// `--open`. When `--open` is set without `--output`, the HTML is also written to a temporary
+/// file which is then opened — mirroring plotly's own `Plot::show()` for the single-`Plot` path.
 fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
     match args.flag_output.as_deref() {
-        Some(path) => std::fs::write(path, html)?,
-        None => std::io::stdout().write_all(html.as_bytes())?,
-    }
-    if args.flag_open {
-        match args.flag_output.as_deref() {
-            Some(path) => open_path(path)?,
-            None => {
-                return fail_incorrectusage_clierror!(
-                    "`--open` for a >8-panel `viz smart` dashboard requires an --output file."
-                );
-            },
-        }
+        Some(path) => {
+            std::fs::write(path, html)?;
+            if args.flag_open {
+                open_path(path)?;
+            }
+        },
+        None => {
+            std::io::stdout().write_all(html.as_bytes())?;
+            if args.flag_open {
+                let mut tmp = std::env::temp_dir();
+                tmp.push(format!("qsv-viz-smart-{}.html", std::process::id()));
+                std::fs::write(&tmp, html)?;
+                open_path(&tmp.to_string_lossy())?;
+            }
+        },
     }
     Ok(())
 }
@@ -1358,8 +1362,11 @@ fn output_image(
     unreachable!("image export is rejected in run() without the viz_static feature");
 }
 
+/// Open `path` in the user's default application, honoring the `BROWSER` environment variable
+/// when set (via `opener::open_browser`).
 fn open_path(path: &str) -> CliResult<()> {
-    opener::open(path).map_err(|e| crate::CliError::Other(format!("Could not open '{path}': {e}")))
+    opener::open_browser(path)
+        .map_err(|e| crate::CliError::Other(format!("Could not open '{path}': {e}")))
 }
 
 // ----- small helpers -----

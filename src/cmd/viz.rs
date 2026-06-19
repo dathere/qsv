@@ -970,27 +970,67 @@ fn parse_map_style(name: &str) -> CliResult<(MapboxStyle, bool)> {
     Ok(resolved)
 }
 
-/// Compute a map center (midpoint of the lat/lon bounding box) and a zoom level that frames the
-/// data, so the basemap doesn't default to plotly's whole-world view centered at (0, 0).
+/// Compute a map center and a zoom level that frames the data, so the basemap doesn't default to
+/// plotly's whole-world view centered at (0, 0). Longitude is handled with antimeridian wrap so a
+/// cluster straddling the 180° line (e.g. 179 and -179) frames as the small arc across the date
+/// line rather than spanning almost the whole globe and centering near 0.
 fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
-    let minmax = |vs: &[f64]| {
-        vs.iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
-                (lo.min(v), hi.max(v))
-            })
-    };
-    let (min_lat, max_lat) = minmax(lats);
-    let (min_lon, max_lon) = minmax(lons);
-    let center = Center::new((min_lat + max_lat) / 2.0, (min_lon + max_lon) / 2.0);
+    let (min_lat, max_lat) = lats
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+            (lo.min(v), hi.max(v))
+        });
+    let lat_center = (min_lat + max_lat) / 2.0;
+    let lat_span = max_lat - min_lat;
+
+    let (lon_center, lon_span) = lon_center_and_span(lons);
+    let center = Center::new(lat_center, lon_center);
+
     // the larger of the two degree-spans drives the zoom; halving the visible span ≈ +1 zoom.
     // single-point (zero span) datasets get a sensible street-level zoom.
-    let span = (max_lat - min_lat).max(max_lon - min_lon);
+    let span = lat_span.max(lon_span);
     let zoom = if span <= 0.0 {
         10
     } else {
         ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
     };
     (center, zoom)
+}
+
+/// Antimeridian-aware longitude center + span. The data occupies all of the 360° circle except
+/// its single largest empty gap; the cluster is the complementary arc, so the span is
+/// `360 - largest_gap` and the center is that arc's midpoint, normalized to [-180, 180]. When the
+/// largest gap is the wrap between max and min (the common, non-crossing case), this reduces to
+/// the plain `(min+max)/2` midpoint and `max-min` span.
+fn lon_center_and_span(lons: &[f64]) -> (f64, f64) {
+    let mut sorted: Vec<f64> = lons.to_vec();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let n = sorted.len();
+    // largest gap between adjacent longitudes (the empty wedge the data does NOT cover)
+    let mut max_gap = 0.0_f64;
+    let mut gap_idx = 0; // gap lies between sorted[gap_idx] and sorted[gap_idx + 1]
+    for i in 0..n.saturating_sub(1) {
+        let gap = sorted[i + 1] - sorted[i];
+        if gap > max_gap {
+            max_gap = gap;
+            gap_idx = i;
+        }
+    }
+    // the wrap gap closes the circle from the easternmost point back to the westernmost
+    let wrap_gap = (sorted[0] + 360.0) - sorted[n - 1];
+    if wrap_gap >= max_gap {
+        // data doesn't cross the antimeridian: plain bounding-box midpoint and span
+        ((sorted[0] + sorted[n - 1]) / 2.0, sorted[n - 1] - sorted[0])
+    } else {
+        // data crosses the antimeridian: the cluster runs from sorted[gap_idx + 1] eastward,
+        // wrapping past 180, to sorted[gap_idx] (+360 to keep the arc contiguous)
+        let span = 360.0 - max_gap;
+        let mut center = (sorted[gap_idx + 1] + sorted[gap_idx] + 360.0) / 2.0;
+        if center > 180.0 {
+            center -= 360.0;
+        }
+        (center, span)
+    }
 }
 
 /// Build a markers-mode `ScatterMapbox` point trace with the given marker (and optional per-point
@@ -1175,7 +1215,9 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
     }
 
     let mut mapbox = Mapbox::new().style(style).center(center).zoom(zoom);
-    if let Some(token) = args.flag_mapbox_token.clone() {
+    // only embed the token when the resolved style actually needs it — otherwise it would leak
+    // into stdout / saved HTML for token-free styles (e.g. the default open-street-map)
+    if needs_token && let Some(token) = args.flag_mapbox_token.clone() {
         mapbox = mapbox.access_token(token);
     }
     let mut layout = Layout::new()
@@ -3286,8 +3328,9 @@ mod tests {
         let v = serde_json::to_value(&center).unwrap();
         assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
         assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
-        // small span -> high zoom; large span -> low zoom
-        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-170.0, 160.0]);
+        // small span -> high zoom; large span -> low zoom. Use a genuinely wide (non-wrapping)
+        // longitude range so this exercises the plain bounding-box path, not antimeridian wrap.
+        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-80.0, 80.0]);
         assert!(
             zoom > world_zoom,
             "tight cluster should zoom in more than world"
@@ -3299,5 +3342,33 @@ mod tests {
         // a zero-span (single point) dataset gets a sensible non-extreme zoom
         let (_, zoom) = map_center_zoom(&[51.5], &[-0.12]);
         assert!((1..=16).contains(&zoom));
+    }
+
+    #[test]
+    fn map_center_zoom_handles_antimeridian() {
+        // a tight cluster straddling the 180° line (179 and -179) is ~2° wide, not ~358°, so it
+        // centers near the date line and zooms in rather than framing the whole globe at lon 0.
+        let lats = [18.0, 16.0];
+        let lons = [179.0, -179.0];
+        let (center, zoom) = map_center_zoom(&lats, &lons);
+        let lon = serde_json::to_value(&center).unwrap()["lon"]
+            .as_f64()
+            .unwrap();
+        assert!(
+            lon.abs() > 170.0,
+            "center lon should be near 180, got {lon}"
+        );
+        assert!(
+            zoom >= 5,
+            "tight antimeridian cluster should zoom in, got {zoom}"
+        );
+    }
+
+    #[test]
+    fn lon_center_and_span_non_wrapping() {
+        // ordinary western-hemisphere cluster: plain midpoint + span, no wrap
+        let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0]);
+        assert!((center - (-75.0)).abs() < 1e-9);
+        assert!((span - 0.2).abs() < 1e-9);
     }
 }

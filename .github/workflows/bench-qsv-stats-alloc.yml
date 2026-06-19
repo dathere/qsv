@@ -39,7 +39,7 @@ jobs:
       HYPERFINE_VERSION: "1.18.0"
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - name: Install build & bench deps
         run: |

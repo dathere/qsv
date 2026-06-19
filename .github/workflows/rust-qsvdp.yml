@@ -35,7 +35,7 @@ jobs:
         haskell: true
         large-packages: false
         swap-storage: true
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - name: apt-get update Ubuntu, libwayland-dev
       run: |
         sudo apt-get update

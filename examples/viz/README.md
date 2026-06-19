@@ -37,6 +37,7 @@ as `text/plain`, so a browser won't render it):
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
+| `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto map panel), `map` (points & density) |
 
 ## The smart dashboard
 
@@ -47,7 +48,9 @@ booleans, and ratings. When the numeric columns have a strongly correlated pair,
 a **scatter** of that pair is added next to the heatmap as a drill-down. When the
 data has a date/datetime column (auto-detected via stats date inference) plus a
 continuous numeric column, a **time-series trend** panel of that column over time
-is added too. ID-like and high-cardinality text columns are skipped.
+is added too. When a latitude/longitude column pair is detected, a **geographic
+map** panel leads the dashboard. ID-like and high-cardinality text columns are
+skipped.
 
 ```bash
 # 12 panels from sales_sample.csv (>8, so it renders as an inline-div grid)
@@ -58,6 +61,9 @@ qsv viz smart sales_sample.csv --max-charts 6 --grid-cols 3 --limit 5 -o dashboa
 
 # stock_prices has a date column, so the dashboard leads with a time-series trend
 qsv viz smart stock_prices.csv -o stocks_dashboard.html
+
+# quakes has lat/lon, so the dashboard leads with a geographic map panel
+qsv viz smart quakes.csv -o quakes_dashboard.html
 ```
 
 ## Individual chart types
@@ -107,6 +113,12 @@ qsv viz sankey web_flows.csv --source source --target target --value sessions -o
 
 # radar — multi-axis brand comparison (one polygon per --series value, per-axis mean)
 qsv viz radar product_ratings.csv --cols battery,camera,performance,display,value,design --series brand -o radar.html
+
+# map — point map on token-free OpenStreetMap tiles; color by magnitude, size by depth
+qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth_km -o map.html
+
+# map (density) — DensityMapbox heatmap of the same points, on a light Carto basemap
+qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o map_density.html
 ```
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means

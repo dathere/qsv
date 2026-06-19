@@ -1,0 +1,41 @@
+place,lat,lon,magnitude,depth_km,region
+Tokyo JP,35.68,139.69,5.2,30,Asia
+Osaka JP,34.69,135.50,4.6,22,Asia
+Manila PH,14.60,120.98,5.8,40,Asia
+Jakarta ID,-6.21,106.85,5.0,25,Asia
+Kathmandu NP,27.71,85.32,6.3,15,Asia
+Tehran IR,35.69,51.39,4.9,18,Asia
+Istanbul TR,41.01,28.98,5.4,12,Asia
+Lima PE,-12.04,-77.04,6.1,45,Americas
+Santiago CL,-33.45,-70.66,6.8,60,Americas
+Mexico City MX,19.43,-99.13,5.6,50,Americas
+Anchorage US,61.22,-149.90,4.8,20,Americas
+Los Angeles US,34.05,-118.24,4.3,10,Americas
+San Francisco US,37.77,-122.42,4.7,14,Americas
+Quito EC,-0.18,-78.47,5.1,33,Americas
+Bogota CO,4.71,-74.07,4.4,28,Americas
+Port-au-Prince HT,18.59,-72.31,6.5,13,Americas
+Wellington NZ,-41.29,174.78,5.5,12,Oceania
+Christchurch NZ,-43.53,172.64,6.0,9,Oceania
+Suva FJ,-18.12,178.44,5.9,55,Oceania
+Port Moresby PG,-9.44,147.18,6.2,42,Oceania
+Reykjavik IS,64.13,-21.90,3.9,8,Europe
+Athens GR,37.98,23.73,4.2,15,Europe
+Naples IT,40.85,14.27,4.0,11,Europe
+Bucharest RO,44.43,26.10,5.3,35,Europe
+Lisbon PT,38.72,-9.14,4.5,24,Europe
+Zagreb HR,45.81,15.98,4.1,7,Europe
+Skopje MK,41.99,21.43,4.6,9,Europe
+Algiers DZ,36.75,3.06,5.0,16,Africa
+Rabat MA,34.02,-6.83,4.3,19,Africa
+Addis Ababa ET,9.03,38.74,4.8,21,Africa
+Nairobi KE,-1.29,36.82,4.0,26,Africa
+Cape Town ZA,-33.92,18.42,3.7,6,Africa
+Antananarivo MG,-18.88,47.51,4.4,17,Africa
+Taipei TW,25.03,121.57,5.7,38,Asia
+Hualien TW,23.99,121.60,6.4,28,Asia
+Kobe JP,34.69,135.20,5.1,16,Asia
+Padang ID,-0.95,100.35,6.6,34,Asia
+Concepcion CL,-36.83,-73.05,6.9,48,Americas
+Valdivia CL,-39.81,-73.25,6.2,44,Americas
+Mendoza AR,-32.89,-68.84,5.0,52,Americas

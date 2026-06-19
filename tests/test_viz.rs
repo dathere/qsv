@@ -882,3 +882,239 @@ fn viz_smart_timeseries_dmy_dates() {
         r#""x":["2021-01-11","2021-02-07","2021-03-09","2021-04-02","2021-05-03","2021-06-05","2021-07-08","2021-08-06"]"#
     ));
 }
+
+fn quakes(wrk: &Workdir) {
+    wrk.create_from_string(
+        "quakes.csv",
+        "place,lat,lon,magnitude,depth_km,region\nTokyo,35.68,139.69,5.2,30,Asia\nLima,-12.04,-77.\
+         04,6.1,45,Americas\nAnchorage,61.22,-149.90,4.8,20,Americas\nWellington,-41.29,174.78,5.\
+         5,12,Oceania\nReykjavik,64.13,-21.90,3.9,8,Europe\nSantiago,-33.45,-70.66,6.8,60,\
+         Americas\nJakarta,-6.21,106.85,5.0,25,Asia\nAthens,37.98,23.73,4.2,15,Europe\n",
+    );
+}
+
+#[test]
+fn viz_map_basic() {
+    let wrk = Workdir::new("viz_map_basic");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["map", "quakes.csv", "--lat", "lat", "--lon", "lon"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a token-free ScatterMapbox point map on OpenStreetMap tiles
+    assert!(html.contains("Plotly.newPlot"));
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains("open-street-map"));
+    // auto-centered/zoomed mapbox layout
+    assert!(html.contains(r#""center""#));
+    assert!(html.contains(r#""zoom""#));
+}
+
+#[test]
+fn viz_map_color_scale() {
+    let wrk = Workdir::new("viz_map_color_scale");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--color",
+        "magnitude",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    assert!(html.contains(r#""showscale":true"#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"magnitude"#));
+}
+
+#[test]
+fn viz_map_bubble_size() {
+    let wrk = Workdir::new("viz_map_bubble_size");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--size",
+        "depth_km",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""marker":{"size":["#));
+}
+
+#[test]
+fn viz_map_density() {
+    let wrk = Workdir::new("viz_map_density");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--density",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"densitymapbox""#));
+}
+
+#[test]
+fn viz_map_style_carto() {
+    let wrk = Workdir::new("viz_map_style_carto");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--style",
+        "carto-positron",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("carto-positron"));
+}
+
+#[test]
+fn viz_map_series_traces() {
+    let wrk = Workdir::new("viz_map_series_traces");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--series",
+        "region",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // one ScatterMapbox trace per region, named by category
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""name":"Asia""#));
+    assert!(html.contains(r#""name":"Americas""#));
+}
+
+#[test]
+fn viz_map_mapbox_style_needs_token_errors() {
+    let wrk = Workdir::new("viz_map_mapbox_style_needs_token_errors");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--style",
+        "satellite",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("requires --mapbox-token"));
+}
+
+#[test]
+fn viz_map_unknown_style_errors() {
+    let wrk = Workdir::new("viz_map_unknown_style_errors");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--style",
+        "bogus",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("Unknown --style"));
+}
+
+#[test]
+fn viz_map_density_with_series_errors() {
+    let wrk = Workdir::new("viz_map_density_with_series_errors");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--density",
+        "--series",
+        "region",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("cannot be combined with --series"));
+}
+
+#[test]
+fn viz_smart_with_coords_has_map_panel() {
+    let wrk = Workdir::new("viz_smart_with_coords_has_map_panel");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // smart auto-detects the lat/lon pair and adds a map panel; a map forces the inline
+    // (self-contained HTML page) render path
+    assert!(html.contains("<!doctype html>"));
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains("open-street-map"));
+}

@@ -26,6 +26,8 @@ Chart types (subcommands):
     ohlc        Financial OHLC bars (same inputs as candlestick).
     sankey      Flow diagram.     --source, --target, optional --value column.
     radar       Polar/radar chart of numeric --cols, optional --series per trace.
+    map         Geographic point map (or --density heatmap) on tile basemaps.
+                Pick the coordinate columns with the lat/lon options below.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed
@@ -85,6 +87,12 @@ Examples:
   # Radar chart comparing numeric metrics, one trace per team
   qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 
+  # Point map of earthquakes, marker color by magnitude and size by depth
+  qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map.html
+
+  # Density heatmap of the same points, on a light Carto basemap
+  qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 
 Usage:
@@ -100,6 +108,7 @@ Usage:
     qsv viz ohlc        [options] <input>
     qsv viz sankey      [options] <input>
     qsv viz radar       [options] <input>
+    qsv viz map         [options] <input>
     qsv viz --help
 
 viz options:
@@ -111,13 +120,15 @@ viz options:
                            the numeric axes to plot.
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar/line/scatter/radar.
-    --color <col>          For scatter: a numeric column to encode as marker color
+    --color <col>          For scatter/map: a numeric column to encode as marker color
                            (a continuous colorscale with a colorbar). For categorical
                            coloring, use the --series option instead. Cannot be
-                           combined with --series.
-    --size <col>           For scatter: a numeric column to encode as marker size,
+                           combined with --series. In density mode, this column is the
+                           heatmap weight.
+    --size <col>           For scatter/map: a numeric column to encode as marker size,
                            producing a bubble chart (values are rescaled to a readable
-                           pixel range). Cannot be combined with --series.
+                           pixel range). Cannot be combined with --series. In density
+                           mode, this column is the heatmap weight.
     --donut                Render a pie chart as a donut (with a center hole).
     --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
     --high <col>           High-price column for candlestick/ohlc charts.
@@ -137,6 +148,22 @@ viz options:
                            outliers, the default), all (every point, jittered),
                            suspected (mark suspected outliers), none (no points).
                            [default: outliers]
+
+map options:
+    --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
+    --lon <col>            Longitude column for a map (decimal degrees, -180 to 180).
+    --text <col>           Column whose value labels each point on hover.
+    --density              Render a density heatmap (DensityMapbox) instead of points.
+                           Weighted by the --color or --size column when given, else by
+                           a uniform weight. Cannot be combined with --series.
+    --style <name>         Map basemap style. Token-free styles: open-street-map (the
+                           default), carto-positron, carto-darkmatter, stamen-terrain,
+                           stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted
+                           styles (basic, streets, outdoors, light, dark, satellite,
+                           satellite-streets) require --mapbox-token.
+                           [default: open-street-map]
+    --mapbox-token <tok>   Mapbox access token, required only for the mapbox-hosted
+                           basemap styles listed above.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -178,14 +205,14 @@ use std::{
 };
 
 use plotly::{
-    Bar, BoxPlot, Candlestick, Configuration, HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter,
-    ScatterPolar, Trace,
+    Bar, BoxPlot, Candlestick, Configuration, DensityMapbox, HeatMap, Histogram, Ohlc, Pie, Plot,
+    Sankey, Scatter, ScatterMapbox, ScatterPolar, Trace,
     box_plot::{BoxPoints, QuartileMethod},
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Line, Marker, Mode,
         TextPosition, Title,
     },
-    layout::{Annotation, Axis, AxisType, Layout, Margin},
+    layout::{Annotation, Axis, AxisType, Center, Layout, Mapbox, MapboxStyle, Margin},
     sankey::{Link, Node},
 };
 use serde::Deserialize;
@@ -280,59 +307,67 @@ const CORR_INCELL_MAX_N: usize = 8;
 
 #[derive(Deserialize)]
 struct Args {
-    cmd_smart:       bool,
-    cmd_bar:         bool,
-    cmd_line:        bool,
-    cmd_scatter:     bool,
-    cmd_histogram:   bool,
-    cmd_box:         bool,
-    cmd_pie:         bool,
-    cmd_heatmap:     bool,
-    cmd_candlestick: bool,
-    cmd_ohlc:        bool,
-    cmd_sankey:      bool,
-    cmd_radar:       bool,
-    arg_input:       Option<String>,
-    flag_x:          Option<SelectColumns>,
-    flag_y:          Option<SelectColumns>,
-    flag_z:          Option<SelectColumns>,
-    flag_cols:       Option<SelectColumns>,
-    flag_series:     Option<SelectColumns>,
-    flag_donut:      bool,
+    cmd_smart:         bool,
+    cmd_bar:           bool,
+    cmd_line:          bool,
+    cmd_scatter:       bool,
+    cmd_histogram:     bool,
+    cmd_box:           bool,
+    cmd_pie:           bool,
+    cmd_heatmap:       bool,
+    cmd_candlestick:   bool,
+    cmd_ohlc:          bool,
+    cmd_sankey:        bool,
+    cmd_radar:         bool,
+    cmd_map:           bool,
+    arg_input:         Option<String>,
+    flag_x:            Option<SelectColumns>,
+    flag_y:            Option<SelectColumns>,
+    flag_z:            Option<SelectColumns>,
+    flag_cols:         Option<SelectColumns>,
+    flag_series:       Option<SelectColumns>,
+    flag_donut:        bool,
     // scatter encodings: map a numeric column to per-point marker color (continuous
     // colorscale) and/or marker size (bubble chart). Mutually exclusive with --series.
-    flag_color:      Option<SelectColumns>,
-    flag_size:       Option<SelectColumns>,
+    flag_color:        Option<SelectColumns>,
+    flag_size:         Option<SelectColumns>,
     // candlestick / ohlc columns (--open is already taken by the browser-open flag below,
     // so the open-price column is selected with --ohlc-open)
-    flag_ohlc_open:  Option<SelectColumns>,
-    flag_high:       Option<SelectColumns>,
-    flag_low:        Option<SelectColumns>,
-    flag_close:      Option<SelectColumns>,
+    flag_ohlc_open:    Option<SelectColumns>,
+    flag_high:         Option<SelectColumns>,
+    flag_low:          Option<SelectColumns>,
+    flag_close:        Option<SelectColumns>,
     // sankey columns
-    flag_source:     Option<SelectColumns>,
-    flag_target:     Option<SelectColumns>,
-    flag_value:      Option<SelectColumns>,
-    flag_bins:       Option<usize>,
-    flag_agg:        Option<String>,
-    flag_box_points: Option<String>,
-    flag_max_charts: usize,
-    flag_grid_cols:  usize,
-    flag_limit:      usize,
-    flag_title:      Option<String>,
-    flag_x_title:    Option<String>,
-    flag_y_title:    Option<String>,
+    flag_source:       Option<SelectColumns>,
+    flag_target:       Option<SelectColumns>,
+    flag_value:        Option<SelectColumns>,
+    // map columns/options
+    flag_lat:          Option<SelectColumns>,
+    flag_lon:          Option<SelectColumns>,
+    flag_text:         Option<SelectColumns>,
+    flag_density:      bool,
+    flag_style:        Option<String>,
+    flag_mapbox_token: Option<String>,
+    flag_bins:         Option<usize>,
+    flag_agg:          Option<String>,
+    flag_box_points:   Option<String>,
+    flag_max_charts:   usize,
+    flag_grid_cols:    usize,
+    flag_limit:        usize,
+    flag_title:        Option<String>,
+    flag_x_title:      Option<String>,
+    flag_y_title:      Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
     // and height are optional: when unset, `viz smart` derives them from its grid shape and
     // other charts fall back to the defaults below.
-    flag_width:      Option<usize>,
-    flag_height:     Option<usize>,
+    flag_width:        Option<usize>,
+    flag_height:       Option<usize>,
     #[cfg_attr(not(feature = "viz_static"), allow(dead_code))]
-    flag_scale:      f64,
-    flag_open:       bool,
-    flag_output:     Option<String>,
-    flag_delimiter:  Option<Delimiter>,
-    flag_no_headers: bool,
+    flag_scale:        f64,
+    flag_open:         bool,
+    flag_output:       Option<String>,
+    flag_delimiter:    Option<Delimiter>,
+    flag_no_headers:   bool,
 }
 
 /// The chart image format, derived from the --output extension.
@@ -477,11 +512,13 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 
 /// Build a `Plot` for the requested chart subcommand.
 fn build_plot(args: &Args) -> CliResult<Plot> {
-    // --color/--size are per-point marker encodings that only apply to scatter, and need a
-    // single trace, so they can't be combined with --series (which splits into traces).
+    // --color/--size are per-point marker encodings that apply to scatter and map only, and
+    // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
-        if !matches!(chart_kind(args), Chart::Scatter) {
-            return fail_incorrectusage_clierror!("--color/--size only apply to `viz scatter`.");
+        if !matches!(chart_kind(args), Chart::Scatter | Chart::Map) {
+            return fail_incorrectusage_clierror!(
+                "--color/--size only apply to `viz scatter` and `viz map`."
+            );
         }
         if args.flag_series.is_some() {
             return fail_incorrectusage_clierror!(
@@ -490,6 +527,12 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
                  single series."
             );
         }
+    }
+
+    // maps use a `mapbox` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
+    // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
+    if matches!(chart_kind(args), Chart::Map) {
+        return build_map_plot(args);
     }
 
     let mut plot = Plot::new();
@@ -564,6 +607,7 @@ enum Chart {
     Ohlc,
     Sankey,
     Radar,
+    Map,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -589,6 +633,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Sankey
     } else if args.cmd_radar {
         Chart::Radar
+    } else if args.cmd_map {
+        Chart::Map
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -887,6 +933,259 @@ fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
             (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
         })
         .collect()
+}
+
+/// Radius (pixels) of each point's influence in a `--density` heatmap. A moderate default that
+/// reads as a smooth surface for city-to-continent scales without over-blurring dense clusters.
+const MAP_DENSITY_RADIUS_PX: u8 = 20;
+
+/// Resolve a `--style` name to its plotly `MapboxStyle` plus whether it is a Mapbox-hosted style
+/// (which needs an access token). The token-free styles render from public OSM/Carto/Stamen tile
+/// servers; the rest are served by Mapbox and require `--mapbox-token`.
+fn parse_map_style(name: &str) -> CliResult<(MapboxStyle, bool)> {
+    let resolved = match name.to_ascii_lowercase().as_str() {
+        "open-street-map" | "osm" => (MapboxStyle::OpenStreetMap, false),
+        "carto-positron" => (MapboxStyle::CartoPositron, false),
+        "carto-darkmatter" => (MapboxStyle::CartoDarkMatter, false),
+        "stamen-terrain" => (MapboxStyle::StamenTerrain, false),
+        "stamen-toner" => (MapboxStyle::StamenToner, false),
+        "stamen-watercolor" => (MapboxStyle::StamenWatercolor, false),
+        "white-bg" => (MapboxStyle::WhiteBg, false),
+        "basic" => (MapboxStyle::Basic, true),
+        "streets" => (MapboxStyle::Streets, true),
+        "outdoors" => (MapboxStyle::Outdoors, true),
+        "light" => (MapboxStyle::Light, true),
+        "dark" => (MapboxStyle::Dark, true),
+        "satellite" => (MapboxStyle::Satellite, true),
+        "satellite-streets" => (MapboxStyle::SatelliteStreets, true),
+        other => {
+            return fail_incorrectusage_clierror!(
+                "Unknown --style '{other}'. Token-free styles: open-street-map, carto-positron, \
+                 carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. \
+                 Mapbox-hosted (need --mapbox-token): basic, streets, outdoors, light, dark, \
+                 satellite, satellite-streets."
+            );
+        },
+    };
+    Ok(resolved)
+}
+
+/// Compute a map center (midpoint of the lat/lon bounding box) and a zoom level that frames the
+/// data, so the basemap doesn't default to plotly's whole-world view centered at (0, 0).
+fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
+    let minmax = |vs: &[f64]| {
+        vs.iter()
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+                (lo.min(v), hi.max(v))
+            })
+    };
+    let (min_lat, max_lat) = minmax(lats);
+    let (min_lon, max_lon) = minmax(lons);
+    let center = Center::new((min_lat + max_lat) / 2.0, (min_lon + max_lon) / 2.0);
+    // the larger of the two degree-spans drives the zoom; halving the visible span ≈ +1 zoom.
+    // single-point (zero span) datasets get a sensible street-level zoom.
+    let span = (max_lat - min_lat).max(max_lon - min_lon);
+    let zoom = if span <= 0.0 {
+        10
+    } else {
+        ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
+    };
+    (center, zoom)
+}
+
+/// Build a markers-mode `ScatterMapbox` point trace with the given marker (and optional per-point
+/// hover text), mirroring `scatter_with_marker` for the cartesian scatter path.
+fn scatter_mapbox_with_marker(
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+    marker: Marker,
+    text: Option<Vec<String>>,
+) -> Box<dyn Trace> {
+    let mut t = ScatterMapbox::new(lats, lons)
+        .mode(Mode::Markers)
+        .marker(marker);
+    if let Some(text) = text {
+        t = t.text_array(text);
+    }
+    t
+}
+
+/// Split row-aligned coordinates into one `ScatterMapbox` trace per `--series` category,
+/// preserving first-seen category order. `texts` is applied as per-point hover text when present.
+fn map_series_traces(
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+    series: Vec<String>,
+    texts: Vec<String>,
+) -> Vec<Box<dyn Trace>> {
+    let has_text = texts.len() == lats.len();
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: BTreeMap<String, (Vec<f64>, Vec<f64>, Vec<String>)> = BTreeMap::new();
+    for i in 0..lats.len() {
+        let name = series[i].clone();
+        let entry = groups.entry(name.clone()).or_insert_with(|| {
+            order.push(name);
+            (Vec::new(), Vec::new(), Vec::new())
+        });
+        entry.0.push(lats[i]);
+        entry.1.push(lons[i]);
+        if has_text {
+            entry.2.push(texts[i].clone());
+        }
+    }
+    order
+        .into_iter()
+        .map(|name| {
+            let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
+            let mut t = ScatterMapbox::new(la, lo).mode(Mode::Markers).name(name);
+            if !tx.is_empty() {
+                t = t.text_array(tx);
+            }
+            let trace: Box<dyn Trace> = t;
+            trace
+        })
+        .collect()
+}
+
+/// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
+/// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
+/// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
+fn build_map_plot(args: &Args) -> CliResult<Plot> {
+    let style_name = args.flag_style.as_deref().unwrap_or("open-street-map");
+    let (style, needs_token) = parse_map_style(style_name)?;
+    if needs_token && args.flag_mapbox_token.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--style '{style_name}' is a Mapbox-hosted style that requires --mapbox-token. Use a \
+             token-free style (e.g. open-street-map, carto-positron) or pass --mapbox-token."
+        );
+    }
+
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+    let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+    let color_idx = match args.flag_color.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "color")?),
+        None => None,
+    };
+    let size_idx = match args.flag_size.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "size")?),
+        None => None,
+    };
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let text_idx = match args.flag_text.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "text")?),
+        None => None,
+    };
+
+    if args.flag_density && series_idx.is_some() {
+        return fail_incorrectusage_clierror!(
+            "--density renders a single heatmap layer and cannot be combined with --series."
+        );
+    }
+
+    // accumulate row-aligned columns. A row is kept only when lat/lon are valid coordinates AND
+    // every requested encoding column has a numeric value, so all per-point arrays stay aligned.
+    let mut lats: Vec<f64> = Vec::new();
+    let mut lons: Vec<f64> = Vec::new();
+    let mut colors: Vec<f64> = Vec::new();
+    let mut sizes: Vec<f64> = Vec::new();
+    let mut series: Vec<String> = Vec::new();
+    let mut texts: Vec<String> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+            continue;
+        }
+        let color = match color_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        let size = match size_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        lats.push(lat);
+        lons.push(lon);
+        if let Some(v) = color {
+            colors.push(v);
+        }
+        if let Some(v) = size {
+            sizes.push(v);
+        }
+        if let Some(i) = series_idx {
+            series.push(cell_to_string(record.get(i)));
+        }
+        if let Some(i) = text_idx {
+            texts.push(cell_to_string(record.get(i)));
+        }
+    }
+    if lats.is_empty() {
+        return fail_clierror!(
+            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        );
+    }
+
+    let (center, zoom) = map_center_zoom(&lats, &lons);
+
+    let mut plot = Plot::new();
+    if args.flag_density {
+        // density weight: the --color or --size column when given, else a uniform 1.0
+        let z = if !colors.is_empty() {
+            colors
+        } else if !sizes.is_empty() {
+            sizes
+        } else {
+            vec![1.0_f64; lats.len()]
+        };
+        plot.add_trace(DensityMapbox::new(lats, lons, z).radius(MAP_DENSITY_RADIUS_PX));
+    } else if series_idx.is_some() {
+        for trace in map_series_traces(lats, lons, series, texts) {
+            plot.add_trace(trace);
+        }
+    } else {
+        let mut marker = Marker::new();
+        if !sizes.is_empty() {
+            marker = marker.size_array(scale_bubble_sizes(&sizes));
+        }
+        if !colors.is_empty() {
+            let color_label = col_label(&headers, color_idx.unwrap(), nh);
+            marker = marker
+                .color_array(colors)
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title(color_label));
+        }
+        let text = (!texts.is_empty()).then_some(texts);
+        plot.add_trace(scatter_mapbox_with_marker(lats, lons, marker, text));
+    }
+
+    let mut mapbox = Mapbox::new().style(style).center(center).zoom(zoom);
+    if let Some(token) = args.flag_mapbox_token.clone() {
+        mapbox = mapbox.access_token(token);
+    }
+    let mut layout = Layout::new()
+        .mapbox(mapbox)
+        .show_legend(series_idx.is_some());
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(layout);
+    Ok(plot)
 }
 
 fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
@@ -1748,6 +2047,10 @@ enum PanelKind {
     /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
     /// heatmap. Carries the two columns' precomputed, row-aligned values.
     ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
+    /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
+    /// precomputed, row-aligned coordinates. Mapbox subplots don't compose with the typed x/y
+    /// subplot grid, so a dashboard containing this panel always renders via the inline path.
+    Map { lats: Vec<f64>, lons: Vec<f64> },
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -1906,6 +2209,57 @@ fn build_timeseries_panel(
     }))
 }
 
+/// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
+/// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
+/// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
+/// columns aren't numeric, or no row has valid coordinates. Name detection needs headers, so this
+/// is a no-op under `--no-headers`.
+fn build_map_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+) -> CliResult<Option<Panel>> {
+    let find = |names: &[&str]| {
+        stats
+            .iter()
+            .enumerate()
+            .find(|(_, s)| {
+                matches!(s.r#type.as_str(), "Integer" | "Float")
+                    && names.contains(&s.field.to_ascii_lowercase().as_str())
+            })
+            .map(|(i, _)| i)
+    };
+    let (Some(lat_idx), Some(lon_idx)) = (
+        find(&["lat", "latitude"]),
+        find(&["lon", "long", "lng", "longitude"]),
+    ) else {
+        return Ok(None);
+    };
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut lats: Vec<f64> = Vec::new();
+    let mut lons: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
+            lats.push(lat);
+            lons.push(lon);
+        }
+    }
+    if lats.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(Panel {
+        name: "Map".to_string(),
+        kind: PanelKind::Map { lats, lons },
+    }))
+}
+
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
 /// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
 /// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
@@ -2020,6 +2374,13 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         panels.insert(0, panel);
     }
 
+    // prepend a geographic map panel when a latitude/longitude column pair is detected. Like the
+    // correlation and time-series panels it does one extra data pass and is prepended so it
+    // survives the panel cap; it leads the dashboard as a geographic overview.
+    if let Some(panel) = build_map_panel(args, &stats)? {
+        panels.insert(0, panel);
+    }
+
     // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
     // (the only form that supports static image export). For HTML output, more than that
     // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
@@ -2029,6 +2390,24 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // every eligible column for HTML (bounded by MAX_PANELS_INLINE), or MAX_SUBPLOTS for image
     // export. An explicit `--max-charts N` caps the panel count to N instead.
     let is_html = matches!(out_format, OutFormat::Html);
+
+    // mapbox subplots can't live in the typed subplot grid that static image export requires, so
+    // for image export drop any map panel (with a note); for HTML, a map forces the inline path.
+    if out_format.is_image()
+        && panels
+            .iter()
+            .any(|p| matches!(p.kind, PanelKind::Map { .. }))
+    {
+        panels.retain(|p| !matches!(p.kind, PanelKind::Map { .. }));
+        eprintln!(
+            "viz smart: map panels are HTML-only (mapbox can't be exported in the subplot grid); \
+             the map was skipped for image export."
+        );
+    }
+    let has_map = panels
+        .iter()
+        .any(|p| matches!(p.kind, PanelKind::Map { .. }));
+
     let eligible = panels.len();
     let requested = if args.flag_max_charts == 0 {
         if is_html {
@@ -2040,7 +2419,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         args.flag_max_charts
     };
     let want = requested.min(eligible);
-    let inline = is_html && want > MAX_SUBPLOTS;
+    let inline = is_html && (want > MAX_SUBPLOTS || has_map);
 
     let max_panels = if inline {
         requested.min(MAX_PANELS_INLINE)
@@ -2085,7 +2464,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             PanelKind::BoxStats { .. }
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::TimeSeries { .. }
-            | PanelKind::ScatterPair { .. } => None,
+            | PanelKind::ScatterPair { .. }
+            | PanelKind::Map { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -2204,6 +2584,11 @@ fn panel_trace(
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
         ),
+        // map panels use a mapbox layout that can't share the cartesian subplot grid, so they
+        // are rendered entirely by `smart_inline_panel_plot` and never reach this assembler.
+        PanelKind::Map { .. } => {
+            unreachable!("map panels are rendered via the inline path, not panel_trace")
+        },
     };
     (trace, bar_max)
 }
@@ -2233,7 +2618,8 @@ fn render_smart_grid(
             PanelKind::BoxStats { .. }
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
-            | PanelKind::ScatterPair { .. } => None,
+            | PanelKind::ScatterPair { .. }
+            | PanelKind::Map { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
             let longest = labels
@@ -2365,6 +2751,34 @@ fn smart_inline_panel_plot(
     color: &'static str,
     freq: &HashMap<usize, Vec<(String, u64)>>,
 ) -> Plot {
+    // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
+    // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
+    if let PanelKind::Map { lats, lons } = &panel.kind {
+        let (center, zoom) = map_center_zoom(lats, lons);
+        let mut plot = Plot::new();
+        plot.add_trace(
+            ScatterMapbox::new(lats.clone(), lons.clone())
+                .mode(Mode::Markers)
+                .marker(Marker::new().color(color)),
+        );
+        let layout = Layout::new()
+            .show_legend(false)
+            .height(ROW_HEIGHT_PX)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .mapbox(
+                Mapbox::new()
+                    .style(MapboxStyle::OpenStreetMap)
+                    .center(center)
+                    .zoom(zoom),
+            );
+        plot.set_layout(layout);
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
     let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
@@ -2820,5 +3234,70 @@ mod tests {
         // the reserved band is a real pixel size even for a short one-row dashboard
         let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
+    }
+
+    #[test]
+    fn parse_map_style_token_free_and_aliases() {
+        // token-free styles resolve without requiring a token
+        for name in [
+            "open-street-map",
+            "osm",
+            "carto-positron",
+            "carto-darkmatter",
+            "stamen-terrain",
+            "stamen-toner",
+            "stamen-watercolor",
+            "white-bg",
+        ] {
+            let (_, needs_token) = parse_map_style(name).unwrap();
+            assert!(!needs_token, "{name} should be token-free");
+        }
+        // matching is case-insensitive
+        assert!(parse_map_style("Carto-Positron").is_ok());
+    }
+
+    #[test]
+    fn parse_map_style_mapbox_hosted_needs_token() {
+        for name in [
+            "basic",
+            "streets",
+            "outdoors",
+            "light",
+            "dark",
+            "satellite",
+            "satellite-streets",
+        ] {
+            let (_, needs_token) = parse_map_style(name).unwrap();
+            assert!(needs_token, "{name} should require a token");
+        }
+    }
+
+    #[test]
+    fn parse_map_style_unknown_errors() {
+        assert!(parse_map_style("not-a-style").is_err());
+    }
+
+    #[test]
+    fn map_center_zoom_centers_on_bounding_box() {
+        // a tight cluster around (40, -75) centers there and zooms in
+        let lats = [39.9, 40.1, 40.0];
+        let lons = [-75.1, -74.9, -75.0];
+        let (center, zoom) = map_center_zoom(&lats, &lons);
+        let v = serde_json::to_value(&center).unwrap();
+        assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
+        assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
+        // small span -> high zoom; large span -> low zoom
+        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-170.0, 160.0]);
+        assert!(
+            zoom > world_zoom,
+            "tight cluster should zoom in more than world"
+        );
+    }
+
+    #[test]
+    fn map_center_zoom_single_point() {
+        // a zero-span (single point) dataset gets a sensible non-extreme zoom
+        let (_, zoom) = map_center_zoom(&[51.5], &[-0.12]);
+        assert!((1..=16).contains(&zoom));
     }
 }

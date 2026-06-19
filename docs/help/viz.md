@@ -94,6 +94,12 @@ qsv viz histogram data.csv --x value --bins 30 -o hist.html
 qsv viz box data.csv --y measurement --x group -o box.png
 ```
 
+> Box plot with every sample point overlaid (jittered) instead of just the outliers
+
+```console
+qsv viz box data.csv --y measurement --box-points all -o box.html
+```
+
 > Pie chart of category proportions (counts), as a donut
 
 ```console
@@ -174,6 +180,7 @@ qsv viz --help
 | &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins for the histogram. (default: auto) |  |
 | &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. |  |
+| &nbsp;`‑‑box‑points`&nbsp; | string | For box plots, which sample points to draw alongside the box. Explicit `viz box` reads the raw values, so plotly renders true Tukey whiskers (1.5*IQR) and the points beyond the fences are the outliers. One of: outliers (only the outliers, the default), all (every point, jittered), suspected (mark suspected outliers), none (no points). | `outliers` |
 
 <a name="smart-options"></a>
 

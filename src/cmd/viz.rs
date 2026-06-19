@@ -57,6 +57,9 @@ Examples:
   # Box plot of a value column grouped by a category, exported to PNG (needs viz_static)
   qsv viz box data.csv --y measurement --x group -o box.png
 
+  # Box plot with every sample point overlaid (jittered) instead of just the outliers
+  qsv viz box data.csv --y measurement --box-points all -o box.html
+
   # Pie chart of category proportions (counts), as a donut
   qsv viz pie data.csv --x category --donut -o pie.html
 
@@ -113,6 +116,13 @@ viz options:
     --bins <n>             Number of bins for the histogram. (default: auto)
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
+    --box-points <mode>    For box plots, which sample points to draw alongside the
+                           box. Explicit `viz box` reads the raw values, so plotly
+                           renders true Tukey whiskers (1.5*IQR) and the points beyond
+                           the fences are the outliers. One of: outliers (only the
+                           outliers, the default), all (every point, jittered),
+                           suspected (mark suspected outliers), none (no points).
+                           [default: outliers]
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -156,6 +166,7 @@ use std::{
 use plotly::{
     Bar, BoxPlot, Candlestick, Configuration, HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter,
     ScatterPolar, Trace,
+    box_plot::{BoxPoints, QuartileMethod},
     common::{
         Anchor, ColorScale, ColorScalePalette, Fill, Font, Marker, Mode, TextPosition, Title,
     },
@@ -274,6 +285,7 @@ struct Args {
     flag_value:      Option<SelectColumns>,
     flag_bins:       Option<usize>,
     flag_agg:        Option<String>,
+    flag_box_points: Option<String>,
     flag_max_charts: usize,
     flag_grid_cols:  usize,
     flag_limit:      usize,
@@ -760,12 +772,25 @@ fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)>
         return fail_clierror!("No numeric values found in the --y column for the box plot.");
     }
 
+    // Unlike `viz smart` (which draws boxes from precomputed quartiles with observed
+    // min/max whiskers, since the stats cache has no per-row data), explicit `viz box`
+    // reads the raw values, so plotly can render true Tukey whiskers (extending to the
+    // most extreme point within 1.5*IQR of the quartiles) and plot the points beyond
+    // those fences as individual outliers. `QuartileMethod::Linear` is the standard
+    // (linear-interpolation) quartile definition Tukey fences are built on.
+    let box_points = parse_box_points(args.flag_box_points.as_deref())?;
+
     let y_label = col_label(&headers, y_idx, nh);
     let x_label = group_idx.map(|i| col_label(&headers, i, nh));
     let trace: Box<dyn Trace> = if group_idx.is_some() {
         BoxPlot::new_xy(groups, ys)
+            .quartile_method(QuartileMethod::Linear)
+            .box_points(box_points)
     } else {
-        BoxPlot::new(ys).name(y_label.clone())
+        BoxPlot::new(ys)
+            .name(y_label.clone())
+            .quartile_method(QuartileMethod::Linear)
+            .box_points(box_points)
     };
     Ok((trace, y_label, x_label))
 }
@@ -1414,6 +1439,25 @@ fn parse_agg(agg: Option<&str>) -> CliResult<Option<Agg>> {
             other => {
                 fail_incorrectusage_clierror!(
                     "Unknown --agg '{other}'. Use sum, mean, count, min, or max."
+                )
+            },
+        },
+    }
+}
+
+/// Parse the `--box-points` flag controlling which sample points are drawn alongside a
+/// box plot. Defaults to `outliers` (only the points beyond the Tukey 1.5*IQR fences).
+fn parse_box_points(points: Option<&str>) -> CliResult<BoxPoints> {
+    match points {
+        None => Ok(BoxPoints::Outliers),
+        Some(s) => match s.to_ascii_lowercase().as_str() {
+            "outliers" => Ok(BoxPoints::Outliers),
+            "all" => Ok(BoxPoints::All),
+            "suspected" | "suspectedoutliers" => Ok(BoxPoints::SuspectedOutliers),
+            "none" | "false" => Ok(BoxPoints::False),
+            other => {
+                fail_incorrectusage_clierror!(
+                    "Unknown --box-points '{other}'. Use outliers, all, suspected, or none."
                 )
             },
         },

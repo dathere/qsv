@@ -153,6 +153,42 @@ fn viz_smart_caps_charts() {
 }
 
 #[test]
+fn viz_smart_inline_many_panels() {
+    let wrk = Workdir::new("viz_smart_inline_many_panels");
+    // 10 low-cardinality categorical columns -> 10 frequency-bar panels, more than the
+    // typed-subplot limit of 8. With the default auto `--max-charts` (0), an HTML dashboard
+    // draws every eligible column, switching to the inline-div grid renderer.
+    let headers: Vec<String> = (0..10).map(|c| format!("c{c}")).collect();
+    let mut rows = headers.join(",");
+    rows.push('\n');
+    for r in 0..30 {
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    // no --max-charts: rely on the auto default to draw all 10 eligible panels
+    cmd.args(["smart", "wide.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("wide.html").unwrap();
+    // inline-div grid markers (not the single-Plot subplot grid)
+    assert!(html.contains(r#"class="qsv-viz-grid""#));
+    assert!(html.contains(r#"class="qsv-viz-cell""#));
+    // one independent plot per panel; with 10 panels there must be >8 newPlot calls
+    let newplots = html.matches("Plotly.newPlot").count();
+    assert!(
+        newplots > 8,
+        "expected more than 8 inline plots, found {newplots}"
+    );
+    // the plotly.js bundle is embedded once in <head>, before the first panel div
+    assert!(html.contains("<!doctype html>"));
+}
+
+#[test]
 fn viz_missing_y_errors() {
     let wrk = Workdir::new("viz_missing_y_errors");
     fruits(&wrk);

@@ -90,6 +90,9 @@ qsv viz pie sales_sample.csv --x product_category --y revenue --donut -o pie.htm
 # heatmap (correlation) — Pearson matrix over all numeric columns
 qsv viz heatmap sales_sample.csv -o heatmap_corr.html
 
+# scatter (correlated pair) — the strongest pair from the matrix; viz smart auto-adds this
+qsv viz scatter sales_sample.csv --x discount_pct --y profit_margin_pct -o corr_pair.html
+
 # heatmap (pivot) — region x category grid of revenue (give --x, --y and --z)
 qsv viz heatmap sales_sample.csv --x region --y product_category --z revenue -o heatmap_pivot.html
 

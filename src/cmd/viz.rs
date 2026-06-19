@@ -1789,6 +1789,7 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
 fn build_timeseries_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
+    prefer_dmy: bool,
 ) -> CliResult<Option<Panel>> {
     use qsv_dateparser::parse_with_preference;
 
@@ -1832,7 +1833,8 @@ fn build_timeseries_panel(
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
 
     // collect (timestamp_ms, formatted_date, y), skipping rows missing either field. dates are
-    // parsed without a dmy preference, matching the stats inference used to type the column.
+    // parsed with the same DMY preference stats used to infer the column, so DMY-formatted
+    // dates (e.g. with QSV_PREFER_DMY set) sort and render correctly.
     let mut points: Vec<(i64, String, f64)> = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
@@ -1849,7 +1851,7 @@ fn build_timeseries_panel(
         if text.is_empty() {
             continue;
         }
-        let Ok(dt) = parse_with_preference(text, false) else {
+        let Ok(dt) = parse_with_preference(text, prefer_dmy) else {
             continue;
         };
         let label = if is_datetime {
@@ -1964,7 +1966,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // prepend a time-series trend panel when the data has a date/datetime column and a
     // continuous numeric column. Like the correlation panel, it does one extra data pass and
     // is prepended so it survives the panel cap.
-    if let Some(panel) = build_timeseries_panel(args, &stats)? {
+    // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
+    // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so the
+    // effective preference is the env flag. Parse dates the same way here so DMY-formatted dates
+    // are ordered correctly rather than misparsed/dropped.
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+    if let Some(panel) = build_timeseries_panel(args, &stats, prefer_dmy)? {
         panels.insert(0, panel);
     }
 

@@ -799,3 +799,32 @@ fn viz_smart_timeseries_panel() {
     // ... titled "<numeric> over <date>"; revenue is the continuous numeric column chosen as y
     assert!(html.contains("revenue over txn_date"));
 }
+
+#[test]
+fn viz_smart_timeseries_dmy_dates() {
+    let wrk = Workdir::new("viz_smart_timeseries_dmy_dates");
+    // DMY-formatted dates (day > 12, so MDY parsing would fail) + QSV_PREFER_DMY. stats infers
+    // these as dates with the DMY preference; the time-series builder must use the SAME
+    // preference, else every date fails to parse, the rows drop, and no panel is produced.
+    let mut rows = String::from("sale_date,revenue,region\n");
+    for i in 0..8 {
+        let day = 13 + i; // 13..20, all > 12 => unambiguously DMY
+        let month = i + 1; // 1..8
+        let revenue = 1000 + i * 37;
+        let region = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{day:02}/{month:02}/2021,{revenue},{region}\n"));
+    }
+    wrk.create_from_string("sales.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the time-series panel is present => the DMY dates parsed correctly under QSV_PREFER_DMY
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains(r#""type":"date""#));
+    assert!(html.contains("revenue over sale_date"));
+}

@@ -342,6 +342,31 @@ fn extract_z_matrix(html: &str) -> Vec<Vec<Option<f64>>> {
 }
 
 #[test]
+fn viz_heatmap_correlation_large_values() {
+    // regression: large-but-valid variances must not overflow the Pearson denominator. With
+    // the old `(var_x * var_y).sqrt()` these identical columns overflowed to infinity and
+    // yielded NaN/null; the fix `var_x.sqrt() * var_y.sqrt()` stays finite -> perfect 1.0.
+    let wrk = Workdir::new("viz_heatmap_correlation_large_values");
+    wrk.create_from_string("big.csv", "a,b\n0,0\n1e100,1e100\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "big.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    let z = extract_z_matrix(&html);
+    assert_eq!(z.len(), 2);
+    // every cell (incl. the a-vs-b off-diagonal) is a finite, perfect correlation, not null
+    assert!(
+        z.iter()
+            .flatten()
+            .all(|c| c.is_some_and(|v| (v - 1.0).abs() < 1e-9)),
+        "expected all 1.0 correlations, got {z:?}"
+    );
+}
+
+#[test]
 fn viz_heatmap_correlation_insufficient_rows_errors() {
     // fewer than 2 rows where all selected numeric columns are present => cannot correlate
     let wrk = Workdir::new("viz_heatmap_correlation_insufficient_rows_errors");

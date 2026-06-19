@@ -1,0 +1,501 @@
+order_id,region,product_category,payment_method,in_stock,satisfaction,units_sold,unit_price,revenue,shipping_cost,discount_pct,profit_margin_pct,customer_id
+100001,North,Electronics,PayPal,False,2,37,284,10200,13,0.03,0.32,cust-3b8f37f8a88b
+100002,North,Books,Debit Card,True,5,42,219,8500,14,0.08,0.28,cust-c24101a9e71f
+100003,South,Sports,Cash,True,2,46,57,2500,21,0.03,0.34,cust-43b79a8dca03
+100004,North,Sports,Cash,True,4,59,45,2200,25,0.19,0.19,cust-5c94dc98d2c1
+100005,South,Sports,Credit Card,False,2,47,124,4100,14,0.3,0.1,cust-5d65d58842de
+100006,South,Home,PayPal,False,3,53,41,1700,22,0.21,0.2,cust-765629d4beef
+100007,West,Home,Debit Card,True,1,40,166,5700,16,0.14,0.26,cust-e0599132b63e
+100008,East,Clothing,Cash,True,4,56,78,4000,22,0.09,0.29,cust-bf3c434308bc
+100009,West,Books,Cash,True,2,32,29,600,13,0.3,0.11,cust-6c12ae340454
+100010,North,Toys,Cash,True,4,48,275,12000,16,0.09,0.27,cust-b881ae270da7
+100011,North,Sports,PayPal,True,3,54,237,12800,23,0.0,0.35,cust-8026f8cda88b
+100012,South,Books,Credit Card,True,3,11,264,2300,6,0.21,0.2,cust-f4188a14be62
+100013,North,Books,PayPal,True,1,73,162,10900,28,0.08,0.29,cust-15ed14296c07
+100014,West,Electronics,Debit Card,False,4,63,286,16900,23,0.06,0.3,cust-3638f6e07cc0
+100015,South,Sports,PayPal,True,3,19,66,1100,8,0.09,0.28,cust-3ae88dcdcd03
+100016,South,Electronics,Credit Card,True,1,41,122,4900,18,0.02,0.34,cust-3ced839fbc50
+100017,East,Sports,Cash,False,2,33,300,8200,10,0.17,0.22,cust-182530beb45f
+100018,North,Sports,Cash,True,4,8,244,1400,5,0.3,0.11,cust-1931a56c0941
+100019,North,Toys,PayPal,True,1,40,234,8900,17,0.05,0.31,cust-ec5bdfde4fbf
+100020,North,Toys,Credit Card,False,5,58,12,500,26,0.34,0.07,cust-680a2a935d62
+100021,West,Toys,Debit Card,True,1,40,204,7400,16,0.09,0.28,cust-b2536c4a37ea
+100022,West,Clothing,Debit Card,True,1,20,282,5500,8,0.02,0.34,cust-80ba7a0ecfea
+100023,South,Electronics,Credit Card,True,1,17,125,1800,6,0.14,0.25,cust-983294340a03
+100024,North,Books,Credit Card,True,5,31,294,7500,13,0.18,0.2,cust-506eb758588d
+100025,South,Home,Cash,False,3,1,42,0,1,0.0,0.34,cust-12c119985f15
+100026,South,Books,PayPal,False,3,24,40,700,9,0.31,0.11,cust-8b10d5704f32
+100027,East,Books,Credit Card,True,5,31,73,2100,15,0.09,0.29,cust-45b827cb6f2a
+100028,East,Books,Debit Card,True,2,21,140,2400,8,0.18,0.23,cust-17a00d01280f
+100029,West,Home,Credit Card,False,2,30,231,5600,11,0.19,0.2,cust-f1ee13432e61
+100030,South,Books,Credit Card,True,5,41,287,11200,17,0.05,0.32,cust-eedee623a689
+100031,North,Home,Debit Card,True,1,26,213,3700,12,0.34,0.08,cust-dd563c9ad14c
+100032,South,Clothing,Cash,False,3,1,215,200,2,0.28,0.11,cust-28c1444d610b
+100033,North,Toys,Credit Card,True,2,52,184,8500,24,0.11,0.26,cust-a8f7060edf5b
+100034,South,Toys,PayPal,True,1,27,147,3500,9,0.12,0.25,cust-8945d7fa2d8d
+100035,East,Electronics,Credit Card,True,3,60,140,8300,27,0.01,0.33,cust-504dc9535b63
+100036,West,Books,Credit Card,True,5,30,102,2800,12,0.09,0.28,cust-ce77ecf27e76
+100037,South,Home,Cash,False,3,21,68,1100,7,0.25,0.15,cust-5380688c7015
+100038,West,Sports,PayPal,True,2,54,220,9100,20,0.23,0.18,cust-9d922c8d0e44
+100039,East,Toys,Credit Card,True,2,18,169,2600,8,0.16,0.22,cust-cb327922bac2
+100040,South,Sports,Credit Card,True,5,44,176,7500,19,0.03,0.32,cust-39824f77a665
+100041,South,Clothing,Credit Card,False,4,16,238,3200,5,0.15,0.23,cust-624cb24445a7
+100042,West,Toys,Debit Card,False,1,31,59,1300,13,0.27,0.15,cust-8498b227462c
+100043,West,Electronics,Debit Card,True,1,8,276,1400,4,0.35,0.05,cust-714ce4347d51
+100044,West,Books,Cash,True,4,15,235,3200,6,0.09,0.29,cust-c715c40c5d91
+100045,West,Sports,Debit Card,True,1,37,176,5800,14,0.11,0.26,cust-620e3b33f3d8
+100046,South,Sports,Debit Card,False,4,37,174,5200,14,0.19,0.2,cust-63b46b8e869f
+100047,North,Books,Cash,True,3,34,219,6000,15,0.19,0.2,cust-3875e5d6f6e6
+100048,West,Clothing,PayPal,True,1,7,204,1300,2,0.12,0.24,cust-d72b2a405f12
+100049,West,Clothing,Credit Card,True,5,36,224,7700,14,0.05,0.31,cust-53cd610cf373
+100050,South,Toys,PayPal,True,4,41,147,4500,17,0.26,0.14,cust-786614f7ce8d
+100051,North,Sports,Credit Card,True,3,41,25,800,17,0.26,0.15,cust-9f0f05379ff6
+100052,South,Clothing,Debit Card,True,1,36,293,7100,13,0.33,0.09,cust-2af45e6fea07
+100053,North,Clothing,PayPal,False,1,61,197,10300,24,0.14,0.24,cust-d4a0b0cc1b3b
+100054,South,Electronics,PayPal,True,5,33,66,1600,13,0.28,0.12,cust-6daa8861fe18
+100055,East,Electronics,PayPal,False,4,43,190,6400,17,0.22,0.18,cust-2d176f7c15ea
+100056,East,Books,Cash,True,5,15,142,1900,6,0.11,0.29,cust-e1b24767d76c
+100057,West,Clothing,Cash,True,4,29,171,4700,13,0.06,0.31,cust-479757207246
+100058,East,Books,Credit Card,True,2,71,48,3100,27,0.08,0.29,cust-b0cb3d85de89
+100059,West,Sports,Cash,True,1,50,129,5700,21,0.11,0.25,cust-580087ea7ff5
+100060,West,Sports,PayPal,True,4,30,143,3800,12,0.11,0.28,cust-1e9b50c7c006
+100061,South,Clothing,Debit Card,True,3,32,273,6900,9,0.21,0.2,cust-3a3c4bd6cee6
+100062,East,Clothing,PayPal,False,5,35,69,2200,16,0.1,0.27,cust-f1afb289f224
+100063,South,Sports,Cash,False,1,21,230,4300,8,0.12,0.26,cust-7a4cdc99e04c
+100064,North,Electronics,Cash,True,5,37,32,1100,16,0.05,0.29,cust-fe7115ce6a66
+100065,South,Electronics,Cash,True,5,43,235,6900,19,0.32,0.09,cust-4e2d6dc7cac7
+100066,North,Books,Credit Card,True,2,62,113,6400,26,0.09,0.28,cust-13378d4f5d27
+100067,South,Electronics,Cash,True,5,35,152,4000,14,0.25,0.15,cust-3bc1aff8754d
+100068,East,Sports,Debit Card,True,5,21,120,1900,11,0.23,0.16,cust-0f441247ea4e
+100069,South,Home,PayPal,True,4,29,144,3400,9,0.18,0.2,cust-e3b10a3450fc
+100070,West,Sports,PayPal,True,1,40,51,1900,15,0.08,0.27,cust-f366964db03f
+100071,North,Sports,PayPal,True,2,14,147,1900,6,0.06,0.29,cust-f8147de1bdfe
+100072,North,Toys,PayPal,True,3,26,58,1100,9,0.3,0.12,cust-a99f49c8a43f
+100073,West,Books,Credit Card,True,3,39,211,5800,16,0.3,0.11,cust-8ae7de8ede0b
+100074,West,Toys,Credit Card,False,3,39,260,7900,16,0.22,0.17,cust-218a8c99a894
+100075,East,Toys,Cash,False,5,48,164,6400,17,0.19,0.19,cust-d766fe049059
+100076,North,Toys,Credit Card,True,2,37,260,6400,14,0.33,0.1,cust-d5b06a5d932b
+100077,West,Toys,Debit Card,True,2,9,265,1800,6,0.26,0.14,cust-ca3dc5ce099c
+100078,West,Home,PayPal,True,3,45,157,5000,16,0.29,0.11,cust-260add81b7f5
+100079,West,Books,Cash,True,5,41,169,4900,15,0.3,0.12,cust-3bca620a60ac
+100080,West,Electronics,PayPal,True,4,38,202,5000,16,0.35,0.06,cust-7ecd26f05fcf
+100081,North,Clothing,PayPal,True,4,72,12,600,31,0.25,0.14,cust-13272784378f
+100082,West,Home,PayPal,True,4,54,46,1700,23,0.3,0.09,cust-f44261484bb3
+100083,East,Sports,Cash,True,1,30,152,3000,11,0.35,0.07,cust-c2a71933918c
+100084,North,Toys,Debit Card,True,1,20,28,500,9,0.11,0.27,cust-25446e417d47
+100085,South,Books,Cash,True,2,43,200,6700,18,0.22,0.18,cust-3b7024a35cf2
+100086,West,Sports,PayPal,True,1,79,243,13100,31,0.32,0.09,cust-f1fa711533f3
+100087,East,Books,PayPal,True,4,32,159,4700,11,0.07,0.29,cust-61a13cb98350
+100088,East,Books,PayPal,True,3,53,16,600,21,0.34,0.07,cust-dd7590e0b95f
+100089,North,Books,Cash,True,3,42,185,7100,16,0.08,0.29,cust-b88ec16d83ed
+100090,South,Sports,Credit Card,True,1,52,163,6100,22,0.28,0.13,cust-171221a4344f
+100091,East,Home,Cash,False,2,48,192,7500,16,0.19,0.21,cust-e9ff41c8ca8c
+100092,West,Home,PayPal,True,4,22,43,900,12,0.05,0.31,cust-aca5b966442a
+100093,West,Books,PayPal,False,4,62,237,12800,25,0.13,0.25,cust-d289618ae305
+100094,East,Electronics,Debit Card,True,5,25,292,6500,8,0.11,0.25,cust-d2e8a2a9d4d8
+100095,West,Sports,PayPal,True,1,67,160,7000,30,0.35,0.08,cust-22ba899ca782
+100096,West,Toys,PayPal,True,5,48,219,8300,19,0.21,0.16,cust-1959a7a8f636
+100097,West,Books,Cash,True,3,56,232,10900,23,0.16,0.22,cust-af88fb1e143b
+100098,East,Books,PayPal,False,3,57,102,3800,25,0.34,0.07,cust-a9ab1777e8cb
+100099,South,Sports,Credit Card,False,3,40,294,10900,17,0.07,0.3,cust-3748961d33ba
+100100,South,Home,Debit Card,True,5,19,6,100,12,0.1,0.27,cust-402a8a4b8f7c
+100101,South,Electronics,Credit Card,False,3,43,170,7200,16,0.01,0.34,cust-86ad6bc4123e
+100102,North,Sports,Credit Card,True,3,49,267,10300,19,0.21,0.18,cust-0b199d77a45e
+100103,East,Toys,Credit Card,False,4,50,60,2500,19,0.17,0.22,cust-527514aeaf5c
+100104,South,Electronics,Debit Card,True,5,36,285,7700,13,0.25,0.16,cust-74264b7e6b3c
+100105,West,Electronics,Credit Card,True,5,37,236,6000,14,0.31,0.09,cust-6a7e66132e69
+100106,North,Home,Cash,True,3,57,196,7500,22,0.33,0.08,cust-d4ef175a81ec
+100107,North,Electronics,Cash,False,3,48,292,11200,17,0.2,0.19,cust-aa53dfa4bb9f
+100108,West,Sports,Credit Card,True,5,23,164,3300,8,0.12,0.25,cust-7b70a81fdec3
+100109,South,Electronics,PayPal,True,3,50,120,4300,21,0.28,0.14,cust-9f29d1846c39
+100110,North,Books,PayPal,False,3,1,163,100,0,0.32,0.1,cust-90fa24ac2130
+100111,West,Electronics,Debit Card,True,1,58,197,9700,24,0.15,0.22,cust-530ab8ba8368
+100112,North,Electronics,Debit Card,False,5,54,30,1200,21,0.24,0.17,cust-9b697c54535f
+100113,West,Toys,PayPal,False,5,54,150,6200,23,0.24,0.15,cust-0ba04ef492c1
+100114,South,Toys,Credit Card,False,3,27,113,2200,11,0.27,0.13,cust-01fa1eb74b56
+100115,West,Sports,Cash,False,4,27,291,5600,11,0.29,0.12,cust-bdf6dc9c96de
+100116,North,Toys,Credit Card,True,1,33,165,4400,11,0.2,0.18,cust-4a1d6aedfdc7
+100117,North,Toys,Credit Card,True,2,47,190,8700,17,0.03,0.33,cust-668396c044d0
+100118,North,Toys,PayPal,True,2,28,175,3600,13,0.27,0.14,cust-828c87d5b7be
+100119,South,Home,PayPal,True,2,40,106,4000,17,0.06,0.31,cust-2d59134a5a2f
+100120,West,Toys,Cash,True,5,64,170,7600,25,0.3,0.11,cust-780b117b355b
+100121,West,Sports,PayPal,True,5,60,163,8200,25,0.16,0.23,cust-13a4497de16d
+100122,North,Books,Cash,True,5,44,26,1000,18,0.16,0.21,cust-9ae1524f93ff
+100123,West,Books,Debit Card,True,4,70,180,8300,30,0.34,0.09,cust-3f6c0a0537f0
+100124,West,Toys,Debit Card,True,3,53,203,9300,20,0.14,0.25,cust-a181ca0ac6ac
+100125,East,Electronics,PayPal,False,4,33,81,2400,16,0.12,0.25,cust-4f6b598ddaec
+100126,West,Clothing,Credit Card,True,4,35,173,4400,13,0.28,0.11,cust-ff46bd20563b
+100127,North,Sports,Cash,True,1,32,114,3200,14,0.12,0.25,cust-2337fffe77c8
+100128,South,Electronics,PayPal,True,1,28,264,5400,13,0.27,0.12,cust-a97409a9d1c1
+100129,East,Books,Debit Card,True,2,57,89,3800,25,0.25,0.16,cust-3cceb836c448
+100130,West,Books,PayPal,True,4,44,124,4400,17,0.19,0.21,cust-e76a78116802
+100131,South,Home,Cash,True,3,43,219,6200,15,0.34,0.09,cust-df7d236e1608
+100132,East,Electronics,Cash,True,5,10,57,400,3,0.25,0.15,cust-c35b1578d709
+100133,South,Home,Cash,True,2,43,118,3600,17,0.29,0.14,cust-0da26a36af18
+100134,West,Books,PayPal,False,1,12,196,2200,5,0.08,0.29,cust-a663b6f6dbf1
+100135,East,Clothing,Debit Card,False,4,36,245,7400,14,0.16,0.23,cust-373541843b03
+100136,South,Books,Cash,False,3,40,126,4500,17,0.11,0.27,cust-9f70cb3cf8ca
+100137,West,Electronics,Credit Card,True,4,37,268,7900,15,0.2,0.19,cust-9d640066853d
+100138,East,Clothing,Cash,False,1,25,273,4500,12,0.34,0.08,cust-c95281e03a5e
+100139,North,Toys,Cash,False,4,53,13,600,21,0.12,0.26,cust-a0d5a837fe68
+100140,North,Books,PayPal,False,3,45,284,11200,16,0.12,0.24,cust-76f1af475b49
+100141,West,Sports,Debit Card,True,1,30,23,600,8,0.1,0.28,cust-50ca0aba590e
+100142,East,Books,Cash,True,5,43,247,9700,17,0.09,0.27,cust-dcb55b62a8df
+100143,North,Sports,PayPal,True,3,23,230,3700,10,0.31,0.08,cust-b12b7f072cb9
+100144,West,Home,PayPal,True,4,71,45,2700,29,0.15,0.23,cust-523a4b3446bc
+100145,North,Electronics,PayPal,True,3,13,90,900,6,0.24,0.16,cust-e95fdebac186
+100146,East,Books,Cash,True,1,44,43,1500,16,0.23,0.17,cust-adedbff9507d
+100147,South,Electronics,Debit Card,True,4,46,192,7700,19,0.13,0.25,cust-add72747b93c
+100148,West,Home,PayPal,True,1,38,298,10800,14,0.05,0.32,cust-3fe64758367b
+100149,North,Electronics,Debit Card,True,4,47,138,4900,18,0.25,0.15,cust-ea9eb1a8b71f
+100150,West,Clothing,Credit Card,False,1,64,236,14200,24,0.06,0.27,cust-ae92cf7dcb43
+100151,East,Sports,PayPal,True,5,3,85,200,0,0.25,0.16,cust-5c8acb2fafa3
+100152,South,Electronics,Debit Card,True,2,28,257,7100,10,0.01,0.34,cust-fba6cdbcc653
+100153,South,Books,Credit Card,False,4,68,274,16000,27,0.14,0.23,cust-f8ed20156a72
+100154,East,Sports,Credit Card,True,5,52,181,9000,22,0.04,0.31,cust-2e9596792482
+100155,South,Toys,Credit Card,True,5,46,170,5200,19,0.33,0.09,cust-e51984d67c4f
+100156,East,Electronics,PayPal,False,5,83,145,11600,33,0.04,0.33,cust-a41780a8a23d
+100157,South,Books,Debit Card,False,5,35,293,10200,12,0.01,0.34,cust-a436f2d3f761
+100158,East,Sports,Debit Card,True,4,34,20,600,13,0.17,0.21,cust-4d56f4e7069a
+100159,West,Clothing,Cash,True,1,36,217,6500,14,0.17,0.22,cust-dc8a5005680f
+100160,East,Sports,PayPal,True,2,63,194,10000,26,0.18,0.21,cust-44791f5d988f
+100161,West,Clothing,Debit Card,False,3,73,219,14500,28,0.09,0.28,cust-ef0a53d2d56d
+100162,East,Clothing,Debit Card,True,5,32,244,6500,13,0.17,0.22,cust-64abf1fac6e7
+100163,West,Clothing,Debit Card,True,1,59,245,13000,24,0.1,0.27,cust-e1e822498f66
+100164,East,Sports,PayPal,True,3,40,28,1000,15,0.14,0.24,cust-49e18da00495
+100165,North,Toys,Cash,True,3,51,65,3100,19,0.05,0.32,cust-56cefc9e1dcb
+100166,East,Clothing,Debit Card,True,4,49,261,12700,22,0.01,0.35,cust-7947cdd0b4d4
+100167,West,Clothing,Debit Card,True,5,32,158,4000,14,0.21,0.17,cust-b56f7d66971e
+100168,East,Toys,Credit Card,True,1,39,218,6800,16,0.2,0.17,cust-a117b023a0ea
+100169,North,Books,Cash,True,5,14,250,3300,4,0.06,0.29,cust-6154d756ba9c
+100170,South,Sports,Debit Card,False,1,21,102,2100,8,0.01,0.35,cust-3432b0c4a01c
+100171,West,Books,Cash,True,1,34,292,8800,12,0.11,0.26,cust-f4e950521700
+100172,South,Toys,PayPal,True,3,21,252,4900,8,0.07,0.31,cust-f1053990e2c9
+100173,East,Home,Debit Card,True,4,33,145,4300,14,0.1,0.26,cust-faebe5508ea2
+100174,West,Home,Debit Card,True,3,29,45,1100,11,0.12,0.26,cust-36c77aa4f052
+100175,South,Books,PayPal,True,3,56,127,6500,24,0.08,0.28,cust-3b9ba35055e4
+100176,North,Electronics,Cash,True,4,20,56,900,11,0.24,0.18,cust-edd9fa585b27
+100177,South,Toys,Cash,True,2,40,151,4700,15,0.23,0.17,cust-3b7292fa675f
+100178,North,Clothing,Cash,True,2,35,23,500,13,0.35,0.08,cust-bfbeefc59738
+100179,East,Electronics,Credit Card,True,5,80,150,10100,35,0.16,0.21,cust-f045e3a68a70
+100180,South,Books,Cash,True,1,22,174,3600,8,0.06,0.3,cust-039b2faabe0b
+100181,East,Home,Debit Card,False,4,50,49,2100,18,0.14,0.26,cust-52d77a3a6e96
+100182,South,Electronics,PayPal,True,4,68,141,6400,26,0.33,0.1,cust-42f502ed73ce
+100183,East,Sports,Debit Card,False,1,29,262,5200,12,0.32,0.11,cust-1e0eb0b6dedf
+100184,East,Home,Debit Card,False,2,20,249,4700,8,0.05,0.3,cust-b3b26a74dbb7
+100185,West,Books,Debit Card,True,5,45,233,8600,18,0.18,0.19,cust-0fcf1cb9b73a
+100186,South,Books,Debit Card,False,5,70,231,15500,29,0.04,0.33,cust-e61d1747f387
+100187,West,Electronics,Cash,False,4,34,241,6200,14,0.24,0.16,cust-d10341241bb4
+100188,North,Sports,Debit Card,True,1,43,221,8400,22,0.12,0.27,cust-e4ebef40d162
+100189,North,Toys,Credit Card,True,2,43,220,8200,15,0.13,0.25,cust-e821eac80da1
+100190,West,Toys,Credit Card,True,5,27,73,1500,10,0.23,0.17,cust-649f8989c5ab
+100191,South,Sports,Debit Card,True,1,59,283,14200,23,0.15,0.22,cust-589d75eb89c2
+100192,South,Home,Debit Card,True,1,48,21,700,17,0.28,0.13,cust-e398e23ddfaa
+100193,North,Clothing,Debit Card,False,5,63,29,1700,26,0.09,0.29,cust-379e8a2db2e6
+100194,North,Clothing,PayPal,False,5,45,168,6000,18,0.2,0.17,cust-4d403ca5be29
+100195,South,Sports,Debit Card,True,3,80,94,5900,33,0.22,0.16,cust-582bf8e8035b
+100196,West,Books,PayPal,True,4,49,81,3600,20,0.1,0.28,cust-d96e3db0174e
+100197,South,Home,Debit Card,True,1,1,290,200,-1,0.19,0.19,cust-a58e548c1d84
+100198,North,Toys,PayPal,False,2,48,31,1400,18,0.09,0.27,cust-12a1dfa59722
+100199,South,Books,Debit Card,True,3,27,113,2000,14,0.33,0.09,cust-c11bffe3f366
+100200,West,Clothing,Debit Card,True,2,37,287,9500,14,0.11,0.27,cust-5bf8a6129a1c
+100201,East,Home,PayPal,True,4,8,245,1400,4,0.27,0.13,cust-69f7501ba851
+100202,North,Books,Debit Card,True,1,50,138,5600,18,0.19,0.19,cust-27044b91b8cb
+100203,South,Home,Debit Card,True,2,13,177,2100,5,0.09,0.29,cust-bd56a4461663
+100204,West,Toys,Debit Card,True,3,1,91,100,-1,0.05,0.31,cust-8ac9e3ad64d4
+100205,North,Books,Credit Card,True,1,65,8,400,25,0.14,0.24,cust-26a9b509109b
+100206,North,Clothing,Cash,True,5,29,252,5600,13,0.23,0.17,cust-0308694d7b00
+100207,North,Books,PayPal,True,3,72,225,11700,29,0.28,0.13,cust-863e18a806ef
+100208,South,Clothing,Debit Card,True,3,35,186,5900,13,0.09,0.28,cust-758067f1698c
+100209,South,Sports,Debit Card,True,1,19,21,400,5,0.03,0.32,cust-a3010e5d8c6a
+100210,North,Sports,Debit Card,False,4,55,174,7700,22,0.2,0.19,cust-eb4d873570a2
+100211,North,Clothing,Debit Card,True,5,34,43,1100,14,0.24,0.16,cust-086ca879d8f8
+100212,South,Home,Credit Card,True,5,62,78,3600,24,0.26,0.13,cust-4c9d13b22cec
+100213,South,Books,Debit Card,True,4,30,201,4500,10,0.26,0.16,cust-1413b962c8a7
+100214,East,Electronics,Credit Card,True,1,81,179,11500,31,0.21,0.17,cust-c607f80b2cea
+100215,East,Electronics,PayPal,True,4,23,197,3900,9,0.15,0.22,cust-c5ac15f00cb4
+100216,East,Clothing,Credit Card,False,2,16,199,2400,5,0.25,0.14,cust-5c565111d31d
+100217,North,Electronics,Credit Card,True,4,30,72,2100,13,0.03,0.31,cust-6875832f52c4
+100218,North,Electronics,Credit Card,True,1,49,171,5900,21,0.3,0.11,cust-15aec777a07f
+100219,South,Books,Debit Card,True,2,49,257,12000,21,0.05,0.31,cust-7bf64cbc9044
+100220,North,Home,PayPal,True,4,52,105,4600,21,0.16,0.22,cust-550c654c11d9
+100221,West,Home,Cash,True,5,50,107,4400,21,0.17,0.22,cust-4a9c51b30182
+100222,West,Books,Debit Card,True,3,56,206,10000,23,0.13,0.24,cust-8baeff4cc10f
+100223,South,Sports,Credit Card,True,4,51,154,5600,20,0.29,0.14,cust-68bdcb881c32
+100224,West,Clothing,PayPal,False,2,54,221,8600,26,0.28,0.14,cust-950d7aaf2001
+100225,West,Books,Cash,True,3,30,48,1400,9,0.04,0.32,cust-a5a12a9528c3
+100226,North,Books,Cash,True,3,66,225,14300,27,0.04,0.32,cust-84cfbf31c29f
+100227,South,Toys,PayPal,True,5,36,17,500,14,0.17,0.21,cust-1db615fa9483
+100228,South,Home,PayPal,True,2,78,271,17500,30,0.17,0.22,cust-73d3b25f13df
+100229,East,Electronics,PayPal,False,1,56,60,2600,23,0.24,0.17,cust-84183e711433
+100230,South,Books,Debit Card,True,4,84,241,18600,33,0.08,0.29,cust-a845a3f66c61
+100231,West,Toys,Credit Card,True,2,21,7,100,9,0.25,0.15,cust-cbc7cf08ea54
+100232,North,Books,Credit Card,True,5,68,100,5900,27,0.13,0.25,cust-dcd5abb316a7
+100233,West,Books,PayPal,True,5,33,185,4300,14,0.3,0.1,cust-ccf4b4bba73f
+100234,East,Books,Credit Card,True,3,17,65,1000,8,0.08,0.29,cust-82c5243012da
+100235,West,Toys,Debit Card,True,4,50,93,3800,22,0.19,0.19,cust-d78c508850d3
+100236,West,Books,Credit Card,True,1,40,253,9600,18,0.05,0.29,cust-a72f816462cb
+100237,West,Toys,Cash,True,4,32,20,500,13,0.28,0.13,cust-89a0398f569b
+100238,East,Clothing,Cash,True,4,44,286,10300,17,0.18,0.2,cust-d2c28b0901ab
+100239,East,Books,Credit Card,True,4,1,57,0,-1,0.26,0.14,cust-ffd2dff389aa
+100240,North,Toys,PayPal,True,1,28,229,4500,13,0.3,0.12,cust-cf8a35ba9357
+100241,East,Sports,Cash,False,2,47,35,1300,16,0.2,0.18,cust-52da2b1ac76c
+100242,East,Home,PayPal,True,5,35,53,1800,14,0.05,0.3,cust-fe130f2d5c15
+100243,East,Sports,Debit Card,True,2,40,131,3800,18,0.27,0.13,cust-a1e593d228d4
+100244,East,Sports,Cash,True,1,21,52,900,8,0.14,0.22,cust-5e7be097dedb
+100245,West,Toys,PayPal,True,1,37,188,4900,13,0.3,0.11,cust-6dfdf7d7465d
+100246,South,Toys,PayPal,True,3,22,177,3200,11,0.19,0.21,cust-57ffc9ce44bd
+100247,North,Electronics,Credit Card,True,4,81,85,5900,33,0.15,0.26,cust-fee533cb202e
+100248,South,Sports,PayPal,False,3,40,52,1600,16,0.23,0.18,cust-a61fe75f745a
+100249,South,Electronics,Cash,True,2,32,53,1700,13,0.0,0.34,cust-84fa39e7a4f1
+100250,West,Electronics,Credit Card,True,1,41,221,6900,15,0.24,0.16,cust-bb1316de66c9
+100251,North,Electronics,PayPal,True,3,60,73,3400,26,0.22,0.17,cust-022b9033da65
+100252,South,Toys,PayPal,True,2,33,215,5500,12,0.22,0.18,cust-19b8e5871d89
+100253,South,Electronics,Cash,True,4,36,146,4000,15,0.23,0.17,cust-9b8bb89f3a92
+100254,East,Sports,Credit Card,True,3,64,110,5800,23,0.18,0.21,cust-a56b4ba8a4ca
+100255,North,Clothing,Cash,True,2,15,275,2800,6,0.31,0.11,cust-21c951045a16
+100256,West,Books,Cash,True,2,41,246,6800,16,0.33,0.08,cust-03871149d096
+100257,East,Clothing,Credit Card,True,4,14,261,2700,6,0.27,0.13,cust-895ca3fa4069
+100258,South,Home,Credit Card,True,5,48,109,3500,20,0.34,0.09,cust-a2619620bee6
+100259,North,Home,Cash,True,2,47,227,10200,19,0.04,0.32,cust-bddfaa8430f8
+100260,South,Electronics,Credit Card,True,1,36,88,2600,13,0.17,0.22,cust-b884d28fcf68
+100261,East,Clothing,PayPal,False,3,39,20,700,15,0.12,0.24,cust-b65a4350ab06
+100262,North,Toys,Cash,True,1,49,260,8900,20,0.3,0.12,cust-1a57c5f8e2f8
+100263,North,Clothing,Credit Card,False,1,40,201,5500,18,0.32,0.1,cust-8d88090d9655
+100264,West,Clothing,PayPal,False,3,81,143,8200,32,0.29,0.12,cust-e6e5ac5f12ef
+100265,North,Clothing,Debit Card,True,1,46,243,7800,18,0.3,0.11,cust-8d97161d5c87
+100266,West,Electronics,PayPal,False,5,24,160,2800,10,0.26,0.15,cust-7e4cf8cbab4c
+100267,South,Sports,Debit Card,False,4,62,9,400,25,0.33,0.1,cust-bcf2d95874c2
+100268,East,Electronics,Debit Card,True,2,40,219,7300,21,0.17,0.23,cust-47a2b62edb49
+100269,North,Electronics,Debit Card,True,5,7,239,1100,4,0.34,0.08,cust-a320222df6a4
+100270,West,Electronics,Credit Card,True,2,44,126,5000,20,0.1,0.25,cust-b36264988bde
+100271,East,Home,Cash,True,1,49,60,2800,19,0.05,0.32,cust-1ee8681134e2
+100272,East,Clothing,Cash,True,3,57,66,3600,23,0.03,0.32,cust-b266b46788bd
+100273,North,Clothing,PayPal,False,2,57,30,1300,23,0.24,0.16,cust-f3bc07f4fee5
+100274,West,Toys,Debit Card,False,1,90,76,6600,38,0.04,0.32,cust-217638e7e019
+100275,South,Toys,PayPal,True,1,27,43,1100,10,0.01,0.36,cust-cf2e7184b713
+100276,South,Electronics,PayPal,False,4,55,30,1600,20,0.06,0.29,cust-7f02651ea252
+100277,North,Toys,Cash,False,2,52,233,8400,20,0.31,0.12,cust-a5b43eebc04a
+100278,East,Toys,Cash,True,4,45,36,1600,17,0.03,0.33,cust-e278a484e035
+100279,South,Sports,Credit Card,True,3,8,181,1000,4,0.32,0.08,cust-06ac2e0869c1
+100280,East,Books,Debit Card,False,3,39,34,1000,14,0.28,0.13,cust-ffe695804c2a
+100281,South,Clothing,Credit Card,False,2,36,33,900,17,0.27,0.15,cust-cc21fb8fe8c4
+100282,West,Home,Debit Card,False,5,32,167,3800,12,0.28,0.11,cust-b41507388ba4
+100283,East,Books,Debit Card,True,2,57,257,11900,20,0.19,0.2,cust-3b8d0e61065f
+100284,South,Electronics,Cash,False,5,44,108,3400,17,0.28,0.13,cust-d823cd6bb03b
+100285,East,Electronics,Credit Card,False,2,45,191,5700,15,0.34,0.06,cust-96056545c030
+100286,North,Home,PayPal,True,2,70,228,11500,30,0.28,0.12,cust-b5092c988bca
+100287,East,Clothing,Debit Card,True,3,60,298,15400,26,0.14,0.26,cust-2e9c084a3c4b
+100288,East,Books,Debit Card,True,1,38,259,9300,15,0.05,0.3,cust-51cbfb7d3ba1
+100289,South,Sports,Credit Card,True,3,26,132,2600,11,0.24,0.15,cust-0053b86d066b
+100290,North,Toys,Cash,True,2,65,216,11700,25,0.17,0.22,cust-d42c19f738cb
+100291,West,Books,Debit Card,False,1,41,15,500,16,0.11,0.27,cust-e34f2b8c03bf
+100292,West,Clothing,Credit Card,True,1,37,178,5200,13,0.21,0.17,cust-6e6b07ef2ba8
+100293,South,Books,Cash,False,1,16,214,2600,10,0.24,0.16,cust-a91c43e8644b
+100294,East,Home,Debit Card,False,4,11,297,2600,4,0.19,0.2,cust-6d7700fa0eb4
+100295,North,Home,Cash,False,1,46,46,1800,20,0.17,0.23,cust-7d35788fd0cd
+100296,East,Electronics,Cash,False,4,60,194,10800,26,0.07,0.3,cust-39eb436e3c49
+100297,East,Books,Credit Card,False,1,54,282,13100,22,0.14,0.24,cust-d73e0f9ca17b
+100298,West,Books,Cash,True,4,27,298,5600,10,0.31,0.1,cust-da9be71c681a
+100299,North,Books,Debit Card,False,4,64,113,5200,29,0.28,0.13,cust-aee1fcffe9e3
+100300,West,Clothing,Debit Card,True,3,53,168,6100,22,0.32,0.09,cust-8e6d635a775d
+100301,West,Books,PayPal,True,5,4,272,800,2,0.27,0.14,cust-9682910c4cb7
+100302,North,Electronics,Credit Card,True,5,46,181,5700,18,0.31,0.12,cust-9be492701d60
+100303,West,Electronics,Debit Card,True,2,19,210,4000,6,0.01,0.35,cust-0c9e3cd1ff3f
+100304,West,Home,PayPal,False,3,29,164,4300,9,0.1,0.27,cust-f8f51924c644
+100305,South,Clothing,PayPal,True,4,42,218,7200,15,0.21,0.19,cust-d2efe9d6bb7e
+100306,West,Sports,Cash,True,3,50,33,1400,21,0.18,0.21,cust-674481bd55d5
+100307,South,Books,Credit Card,False,2,47,238,11000,18,0.02,0.33,cust-d2d15e4c4fd1
+100308,West,Books,Cash,True,1,49,20,900,18,0.08,0.29,cust-ded7f5e4a9c1
+100309,West,Books,PayPal,True,3,39,150,5800,13,0.01,0.36,cust-f704c7a2f280
+100310,South,Clothing,Debit Card,True,3,50,214,8800,23,0.18,0.19,cust-0247aea4a441
+100311,West,Clothing,Debit Card,True,1,44,161,5300,20,0.25,0.15,cust-6060e53e5f4c
+100312,East,Toys,PayPal,False,3,26,271,5000,10,0.29,0.12,cust-ffda82f29004
+100313,East,Books,PayPal,True,1,23,146,2600,9,0.22,0.18,cust-f3c2b60a3dcc
+100314,East,Clothing,Debit Card,True,2,29,34,700,12,0.28,0.11,cust-51d0a91883fc
+100315,South,Sports,Credit Card,True,3,38,203,5700,17,0.26,0.11,cust-309ed0e656e5
+100316,East,Sports,Debit Card,True,4,10,188,1500,6,0.18,0.19,cust-8ee9e061f65f
+100317,South,Home,Credit Card,True,3,36,98,2400,13,0.33,0.1,cust-5af338e59b27
+100318,South,Sports,PayPal,True,3,24,195,4300,9,0.09,0.3,cust-0dbd787515b9
+100319,North,Toys,Debit Card,True,4,21,82,1600,8,0.05,0.31,cust-e49191c46efc
+100320,West,Clothing,PayPal,True,2,57,46,2200,22,0.17,0.21,cust-0ed9a26e865b
+100321,North,Toys,PayPal,False,2,30,50,1400,12,0.05,0.3,cust-f71f6dd49c96
+100322,West,Toys,Credit Card,False,2,47,196,6200,21,0.33,0.08,cust-30c987f1d48c
+100323,North,Sports,Credit Card,True,2,45,164,7000,21,0.05,0.3,cust-10b62ac1d5ca
+100324,North,Home,PayPal,True,5,56,273,13500,26,0.12,0.23,cust-ff0257bd56c9
+100325,West,Home,Debit Card,False,4,52,72,3500,21,0.07,0.31,cust-5dd81f878b32
+100326,North,Toys,PayPal,True,5,42,29,1000,17,0.21,0.18,cust-050dd60bf603
+100327,North,Sports,Credit Card,True,4,49,83,3800,20,0.07,0.29,cust-a9626bbe3b5a
+100328,North,Sports,PayPal,True,2,37,219,5800,17,0.29,0.13,cust-485f1e23da4b
+100329,North,Electronics,Cash,False,2,45,108,4200,15,0.13,0.24,cust-7f118c52d271
+100330,South,Sports,Cash,True,1,45,11,400,20,0.24,0.15,cust-7e7dab450578
+100331,South,Electronics,Credit Card,True,1,61,238,9400,23,0.35,0.07,cust-d02c198d13a4
+100332,South,Electronics,PayPal,True,3,59,223,9700,26,0.26,0.15,cust-02790bbf6334
+100333,South,Sports,Debit Card,True,4,53,52,2400,21,0.13,0.24,cust-f6596676cc75
+100334,West,Home,Cash,True,4,47,220,8000,19,0.23,0.16,cust-b9f6b2383056
+100335,North,Clothing,Credit Card,True,5,16,229,3400,7,0.06,0.3,cust-dcd10760801f
+100336,South,Toys,Cash,False,4,51,230,11500,20,0.02,0.34,cust-de4bb45e9463
+100337,South,Sports,PayPal,True,5,61,132,6700,26,0.17,0.21,cust-d6ca260e37cc
+100338,North,Electronics,Debit Card,True,4,17,258,3100,8,0.3,0.12,cust-54b53dab1614
+100339,East,Electronics,Debit Card,True,4,29,240,5800,12,0.16,0.22,cust-72737f9ad277
+100340,East,Electronics,Cash,True,1,36,57,1800,16,0.14,0.24,cust-1744d36ec1bd
+100341,East,Books,Debit Card,True,4,56,32,1300,22,0.29,0.12,cust-9ea8c47566bf
+100342,West,Sports,PayPal,True,1,26,54,1000,11,0.27,0.14,cust-a237d4734534
+100343,East,Books,PayPal,True,1,56,214,11500,21,0.04,0.31,cust-da29ee22a70b
+100344,West,Clothing,Cash,True,2,32,178,5500,10,0.04,0.33,cust-ac11d6642fe8
+100345,North,Toys,Cash,True,5,54,276,11000,23,0.26,0.13,cust-7ba195ca788d
+100346,South,Sports,Debit Card,True,2,33,58,1600,11,0.14,0.23,cust-e1a2810d5c57
+100347,West,Toys,Debit Card,True,3,59,73,4100,23,0.05,0.29,cust-4c858325bd9e
+100348,East,Sports,Debit Card,False,5,17,153,2000,8,0.24,0.16,cust-a66cb5dc8a9a
+100349,South,Books,PayPal,True,3,17,218,2800,6,0.24,0.17,cust-d8e8e0a25901
+100350,West,Electronics,Credit Card,False,2,26,32,600,11,0.23,0.18,cust-fbc829330fc4
+100351,East,Sports,PayPal,False,1,34,282,9500,12,0.01,0.34,cust-acefde3790fb
+100352,South,Sports,Cash,False,3,32,29,600,10,0.32,0.11,cust-af65f9cf8499
+100353,East,Books,Credit Card,False,3,50,231,8200,23,0.29,0.13,cust-5e24a5cb3c6e
+100354,South,Sports,Debit Card,True,2,25,43,1000,11,0.07,0.3,cust-0a676090103c
+100355,West,Home,PayPal,False,5,41,243,7500,16,0.25,0.15,cust-98cd5297e1ad
+100356,North,Sports,PayPal,True,5,48,286,11900,19,0.13,0.24,cust-f4fd384f6e3b
+100357,South,Books,Credit Card,True,2,20,52,900,9,0.12,0.26,cust-5c5d54c0c6c2
+100358,East,Clothing,Cash,True,1,22,63,1100,6,0.23,0.17,cust-eb299d1b83df
+100359,South,Electronics,PayPal,True,1,23,149,3400,10,0.01,0.32,cust-cd8583a9c235
+100360,West,Toys,Credit Card,True,2,36,169,5000,15,0.18,0.2,cust-c5f8f4ce8477
+100361,North,Sports,Credit Card,False,2,52,58,2800,20,0.07,0.3,cust-c673bdcac10f
+100362,West,Sports,Credit Card,True,2,7,17,100,2,0.16,0.23,cust-2d900de4833e
+100363,East,Books,Credit Card,True,2,55,235,10100,21,0.22,0.17,cust-1e49ac5d4e57
+100364,North,Sports,Credit Card,True,5,41,28,900,19,0.25,0.16,cust-4a321b2bb2ec
+100365,East,Books,Credit Card,True,4,15,20,200,8,0.17,0.21,cust-cbf9641816b7
+100366,East,Sports,Debit Card,True,3,37,10,300,14,0.19,0.2,cust-929d0149a2af
+100367,West,Books,Credit Card,True,3,49,267,12400,23,0.05,0.32,cust-31bf40b3af7c
+100368,North,Clothing,Credit Card,True,5,62,241,11500,27,0.23,0.17,cust-1923402d105b
+100369,South,Sports,Cash,True,3,58,56,2900,25,0.1,0.28,cust-735d7c6166df
+100370,East,Books,PayPal,True,2,45,294,10600,19,0.2,0.17,cust-013c2b2bf58c
+100371,East,Clothing,Debit Card,True,4,37,174,4400,16,0.31,0.09,cust-7caa4e336644
+100372,North,Clothing,Credit Card,True,2,43,280,11200,17,0.07,0.28,cust-134dba388c8f
+100373,North,Books,Credit Card,True,5,20,23,400,9,0.19,0.16,cust-a76678dbcde3
+100374,South,Home,Cash,False,5,22,153,3200,8,0.05,0.31,cust-808e5d264b1b
+100375,North,Sports,Debit Card,True,5,27,76,1700,8,0.16,0.23,cust-df48a8cf4f62
+100376,South,Sports,Cash,True,1,79,117,6700,32,0.27,0.14,cust-0af53be8a5df
+100377,South,Books,PayPal,True,4,43,170,7000,17,0.04,0.33,cust-d5ba4603c9ee
+100378,East,Books,Debit Card,True,4,34,192,5200,14,0.21,0.18,cust-60574067f790
+100379,South,Books,Cash,True,3,19,8,100,8,0.18,0.21,cust-83b813bc0dc6
+100380,East,Clothing,Debit Card,False,3,48,65,2400,18,0.23,0.17,cust-7b441d03c3d5
+100381,West,Toys,Debit Card,True,4,45,298,10600,18,0.21,0.19,cust-9280e40b50e4
+100382,South,Electronics,Debit Card,True,2,56,269,9900,21,0.34,0.07,cust-e0e504c44853
+100383,East,Electronics,Debit Card,True,4,47,215,8000,18,0.21,0.19,cust-9f8a2e8ff5a8
+100384,East,Clothing,PayPal,True,5,7,40,300,2,0.08,0.29,cust-85d033cd1d56
+100385,West,Clothing,Credit Card,False,5,10,277,2300,2,0.18,0.21,cust-e6e8215d3b1f
+100386,North,Sports,Cash,True,3,53,27,1100,18,0.24,0.17,cust-ca207b6c7129
+100387,West,Home,Credit Card,True,3,27,47,1100,11,0.1,0.28,cust-01663063ae7f
+100388,North,Books,Credit Card,True,4,27,110,2300,10,0.24,0.17,cust-6d13279f91ab
+100389,East,Home,Cash,True,5,35,109,3300,16,0.14,0.24,cust-8f205ec646eb
+100390,West,Home,PayPal,True,4,19,75,1000,6,0.3,0.1,cust-c87972540ab7
+100391,South,Electronics,Debit Card,True,3,47,31,1400,17,0.06,0.3,cust-d2c0175194d7
+100392,South,Toys,Cash,False,3,39,118,4000,14,0.13,0.24,cust-fc04ee415f16
+100393,West,Books,PayPal,True,5,69,94,5100,29,0.22,0.17,cust-ee46a829907c
+100394,East,Clothing,Credit Card,True,5,44,269,9000,16,0.24,0.15,cust-3d3f5c17ebb5
+100395,North,Clothing,Credit Card,True,4,29,107,2500,13,0.18,0.21,cust-8cb217151c03
+100396,East,Sports,PayPal,True,3,33,120,3100,14,0.21,0.2,cust-0130932d1648
+100397,East,Clothing,Cash,True,5,53,64,2400,22,0.28,0.15,cust-cb1bd02a6cbb
+100398,East,Sports,Cash,True,5,30,252,5500,12,0.27,0.11,cust-ae7c75771730
+100399,West,Books,Credit Card,True,3,63,117,5600,26,0.24,0.16,cust-5a64f49816ad
+100400,North,Sports,PayPal,False,1,55,209,8700,22,0.24,0.15,cust-2db1ee6ffbea
+100401,West,Home,PayPal,False,5,34,102,2900,17,0.17,0.22,cust-43f1df6c0d60
+100402,South,Clothing,Debit Card,True,5,67,187,11900,29,0.05,0.32,cust-f4adad0205f5
+100403,West,Books,Credit Card,True,5,73,195,11100,28,0.22,0.14,cust-9313e5a1c6e4
+100404,East,Toys,Debit Card,True,5,42,148,5300,17,0.14,0.23,cust-cc9c86969901
+100405,West,Toys,Credit Card,True,4,59,239,9300,22,0.34,0.07,cust-0227b0701a53
+100406,North,Sports,Debit Card,True,1,21,171,3100,9,0.13,0.24,cust-3cb5434a130e
+100407,East,Toys,PayPal,True,4,23,195,3900,10,0.13,0.24,cust-21929247e851
+100408,South,Electronics,PayPal,True,5,51,226,8100,21,0.3,0.13,cust-2648bd1116ee
+100409,West,Electronics,Debit Card,True,2,75,269,16300,30,0.19,0.19,cust-8fe8403fd582
+100410,North,Toys,Credit Card,True,1,59,115,4900,22,0.28,0.13,cust-be9d7329af6e
+100411,East,Home,PayPal,True,5,52,15,700,20,0.14,0.23,cust-32ee9b0707e5
+100412,South,Home,PayPal,True,5,61,254,11300,24,0.27,0.14,cust-49599d1911a5
+100413,West,Sports,Debit Card,True,3,18,212,2700,8,0.3,0.12,cust-50403a6c7da6
+100414,East,Sports,PayPal,True,5,44,207,8300,15,0.09,0.28,cust-bf765cf85eeb
+100415,West,Toys,Debit Card,False,1,49,133,4400,20,0.33,0.08,cust-65a42abaa4f9
+100416,North,Electronics,Credit Card,True,4,32,285,8900,13,0.02,0.32,cust-154ffefac198
+100417,North,Home,Debit Card,False,4,35,150,4400,15,0.16,0.23,cust-07502bacf712
+100418,North,Sports,PayPal,True,3,55,248,11500,24,0.16,0.21,cust-71e18c6d768e
+100419,South,Sports,Debit Card,True,4,22,293,5500,7,0.15,0.22,cust-58e0e8af301f
+100420,West,Books,Debit Card,True,4,22,162,3100,9,0.13,0.25,cust-85f800060d5a
+100421,South,Home,PayPal,True,1,32,249,7200,11,0.1,0.27,cust-3b3098d53cf5
+100422,North,Books,PayPal,False,5,7,228,1400,4,0.14,0.25,cust-d41363c4e76d
+100423,West,Clothing,PayPal,False,2,7,144,900,3,0.1,0.27,cust-302069b41194
+100424,North,Clothing,Debit Card,True,4,7,236,1500,2,0.1,0.27,cust-26f304f718c8
+100425,North,Books,Credit Card,False,1,38,229,6500,16,0.25,0.15,cust-37997e5b3ac9
+100426,East,Toys,PayPal,True,4,50,195,8200,20,0.16,0.21,cust-c025d7f2a678
+100427,South,Electronics,PayPal,True,1,29,133,2700,11,0.29,0.12,cust-b6f5c4a531cd
+100428,South,Toys,Cash,False,1,31,106,2800,13,0.16,0.21,cust-355cfb6bf1dc
+100429,West,Toys,PayPal,True,2,36,286,8400,14,0.18,0.21,cust-5c4432df8d45
+100430,North,Sports,Debit Card,True,2,65,227,13100,27,0.11,0.27,cust-65531ea15b0f
+100431,South,Electronics,Credit Card,True,4,36,50,1600,14,0.09,0.26,cust-ee4c56a2d49d
+100432,North,Electronics,PayPal,True,5,40,59,2300,16,0.04,0.35,cust-a507c9df301e
+100433,East,Toys,Debit Card,False,4,33,25,700,14,0.17,0.21,cust-7d76b271115b
+100434,South,Books,Debit Card,True,3,45,244,9900,20,0.1,0.25,cust-290c8df50b01
+100435,North,Books,Debit Card,True,3,20,264,4600,8,0.13,0.25,cust-5d34db592a19
+100436,South,Home,Credit Card,True,5,43,203,8100,16,0.07,0.28,cust-9cf0277529a2
+100437,East,Home,Cash,True,1,61,27,1200,26,0.29,0.13,cust-1b6733bb7382
+100438,West,Clothing,Credit Card,False,4,66,255,13800,26,0.18,0.2,cust-38815dc96097
+100439,North,Electronics,Debit Card,True,1,14,189,2100,6,0.2,0.2,cust-cb535e7b4866
+100440,North,Books,PayPal,True,1,32,160,5000,13,0.03,0.34,cust-b9a419e9e3a4
+100441,South,Books,Cash,False,5,27,96,2100,9,0.2,0.17,cust-a37cc42b266b
+100442,East,Sports,Cash,True,4,29,58,1600,12,0.06,0.31,cust-a85456673e49
+100443,South,Books,Cash,True,3,1,195,200,-1,0.14,0.23,cust-9bc052cdadef
+100444,South,Books,Debit Card,True,5,14,135,1600,2,0.13,0.25,cust-b9ef000cd21a
+100445,North,Home,Credit Card,True,3,90,114,7200,36,0.3,0.13,cust-d284b0916fb7
+100446,East,Books,Debit Card,False,4,44,187,7800,17,0.05,0.33,cust-3ba53ff69f41
+100447,East,Home,Credit Card,True,5,65,171,8000,25,0.28,0.13,cust-b3edb0894de4
+100448,North,Books,PayPal,False,5,69,200,13400,30,0.03,0.33,cust-e13a5911f42e
+100449,West,Toys,Credit Card,True,2,39,10,300,13,0.22,0.17,cust-0a8a863dfcd6
+100450,East,Books,Debit Card,True,2,35,83,2800,14,0.02,0.32,cust-c0ba7213e7cc
+100451,North,Clothing,Cash,True,4,49,248,9700,21,0.2,0.2,cust-660515c7bc83
+100452,West,Sports,Debit Card,True,4,45,291,12200,16,0.07,0.3,cust-9db18fa8ae34
+100453,South,Clothing,Credit Card,True,4,21,50,1000,11,0.04,0.31,cust-521b30c3ef8a
+100454,East,Books,Credit Card,True,2,48,184,6900,21,0.22,0.17,cust-70c225545c1a
+100455,North,Clothing,Debit Card,True,2,41,62,1900,13,0.26,0.14,cust-de6625ce2a21
+100456,East,Electronics,PayPal,True,1,65,161,8800,27,0.16,0.22,cust-363d89bab9c8
+100457,South,Books,PayPal,True,5,38,14,500,14,0.13,0.26,cust-2b9a4165964c
+100458,North,Home,Debit Card,True,5,27,143,3800,11,0.02,0.33,cust-a90e637e3f94
+100459,East,Sports,PayPal,True,1,30,202,5600,15,0.08,0.27,cust-e764197fa0fd
+100460,East,Toys,Credit Card,False,5,73,239,14000,29,0.2,0.19,cust-8787ec19e4eb
+100461,East,Home,Cash,True,2,67,186,9700,27,0.22,0.18,cust-469f80520405
+100462,North,Sports,PayPal,True,1,89,289,17200,36,0.33,0.1,cust-a82c6491982b
+100463,South,Electronics,Cash,True,5,59,218,11800,22,0.08,0.3,cust-9af9e8e46b31
+100464,East,Toys,Debit Card,False,2,79,282,16900,32,0.24,0.16,cust-b483b043a39a
+100465,South,Toys,Debit Card,True,5,53,290,12400,21,0.19,0.2,cust-e12fd6eaf269
+100466,South,Sports,Credit Card,True,4,28,215,5400,11,0.11,0.24,cust-eee9a3086e48
+100467,East,Clothing,Debit Card,False,2,90,141,10000,37,0.21,0.17,cust-aff73b1d12cf
+100468,North,Home,Credit Card,True,4,24,73,1400,8,0.18,0.2,cust-2f195fbbcda5
+100469,West,Toys,Cash,False,2,42,12,300,18,0.32,0.1,cust-fcfdabdce0da
+100470,South,Clothing,Credit Card,False,4,36,255,7000,17,0.24,0.14,cust-67a56d744a0b
+100471,North,Books,Cash,True,4,17,279,3900,5,0.18,0.22,cust-1bfc85494255
+100472,West,Toys,Credit Card,True,2,17,270,3700,7,0.19,0.2,cust-8420632c817e
+100473,North,Clothing,PayPal,True,3,42,90,3200,16,0.15,0.23,cust-e75784581f73
+100474,South,Toys,Cash,False,5,36,62,2100,12,0.06,0.29,cust-22a38be15610
+100475,West,Toys,PayPal,True,2,3,108,200,2,0.31,0.11,cust-e83ba6091ad0
+100476,South,Sports,Credit Card,False,4,48,190,8800,19,0.03,0.31,cust-82fcf9a62522
+100477,South,Toys,Cash,False,2,59,81,4500,23,0.06,0.31,cust-6b690d22af35
+100478,East,Home,Cash,True,2,64,65,2900,26,0.31,0.1,cust-40cbc3f0fac3
+100479,North,Toys,Cash,True,5,48,257,11300,17,0.08,0.28,cust-711e68ffae17
+100480,North,Books,Credit Card,False,5,29,147,3300,9,0.22,0.17,cust-2f510c85f154
+100481,South,Electronics,PayPal,False,1,22,157,3000,6,0.12,0.26,cust-2da1fe656dcc
+100482,South,Sports,PayPal,True,5,44,298,9400,18,0.28,0.14,cust-5c3594372280
+100483,North,Electronics,PayPal,True,4,52,286,14600,19,0.02,0.33,cust-4640dc0228af
+100484,East,Books,Cash,True,2,41,34,1300,16,0.04,0.3,cust-1671fcb86f9e
+100485,West,Sports,PayPal,True,3,38,186,4800,17,0.32,0.09,cust-a1c1baabd9f2
+100486,West,Toys,Debit Card,True,2,26,153,2600,11,0.34,0.08,cust-cbf6a01e31f5
+100487,North,Sports,Debit Card,True,4,26,291,5400,11,0.28,0.13,cust-4818b0a4f557
+100488,East,Electronics,PayPal,True,5,65,170,8100,27,0.27,0.14,cust-b97265637d1f
+100489,North,Clothing,Debit Card,True,3,58,247,10300,22,0.28,0.12,cust-75eba090360d
+100490,East,Toys,Cash,True,1,23,271,5600,9,0.1,0.26,cust-04ca892fca69
+100491,South,Books,PayPal,True,3,49,20,900,20,0.12,0.25,cust-922b2a7cf9e9
+100492,West,Clothing,Credit Card,True,3,55,166,6800,22,0.25,0.15,cust-3cd6e0864418
+100493,East,Toys,PayPal,False,3,47,24,800,20,0.27,0.14,cust-cc8c0662200c
+100494,West,Books,Debit Card,False,4,29,273,7000,10,0.11,0.28,cust-d277192703a7
+100495,South,Clothing,Credit Card,True,5,51,27,1000,21,0.24,0.15,cust-e3a177852ddb
+100496,North,Electronics,PayPal,False,3,35,112,3500,14,0.11,0.27,cust-c5d551b3ccf5
+100497,West,Sports,Credit Card,True,2,39,291,9300,16,0.18,0.21,cust-456351883a26
+100498,South,Sports,PayPal,True,2,56,41,2000,24,0.11,0.25,cust-214c0cfc6420
+100499,North,Toys,Credit Card,False,1,55,233,10000,23,0.22,0.17,cust-c226b680873b
+100500,North,Toys,Debit Card,False,4,70,54,3200,27,0.16,0.21,cust-787577243aa3

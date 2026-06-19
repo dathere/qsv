@@ -96,6 +96,49 @@ fn viz_box_grouped() {
 }
 
 #[test]
+fn viz_box_tukey_outliers_default() {
+    let wrk = Workdir::new("viz_box_tukey_outliers_default");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["box", "fruits.csv", "--y", "Price"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"box""#));
+    // explicit `viz box` reads raw data, so it draws true Tukey whiskers (linear
+    // quartile method) and shows the points beyond the 1.5*IQR fences as outliers
+    assert!(html.contains(r#""boxpoints":"outliers""#));
+    assert!(html.contains(r#""quartilemethod":"linear""#));
+}
+
+#[test]
+fn viz_box_points_all() {
+    let wrk = Workdir::new("viz_box_points_all");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["box", "fruits.csv", "--y", "Price", "--box-points", "all"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""boxpoints":"all""#));
+}
+
+#[test]
+fn viz_box_points_invalid_errors() {
+    let wrk = Workdir::new("viz_box_points_invalid_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["box", "fruits.csv", "--y", "Price", "--box-points", "bogus"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("Unknown --box-points"));
+}
+
+#[test]
 fn viz_smart_dashboard() {
     let wrk = Workdir::new("viz_smart_dashboard");
     // a mix of: near-unique id (skipped), continuous numeric (box), categorical (bar),

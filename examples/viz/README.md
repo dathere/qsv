@@ -52,6 +52,16 @@ is added too. When a latitude/longitude column pair is detected, a **geographic
 map** panel leads the dashboard. ID-like and high-cardinality text columns are
 skipped.
 
+On large datasets `viz smart` keeps the page light and interactive: each
+data-heavy panel (map, time-series, correlated-pair scatter) is uniformly
+downsampled to at most 50,000 points, and the map view is framed to the bulk of
+the coordinates (a 2.5% trim on each axis) so a few stray geocodes can't zoom it
+out to nothing. The map panel also adapts to volume — at ~20,000+ mappable rows
+it renders as a **density heatmap** (individual markers would overplot into a
+solid blob), and below that as semi-transparent point markers. (These caps apply
+only to the `smart` dashboard; the standalone chart commands below plot every
+row and frame the full extent.)
+
 ```bash
 # 12 panels from sales_sample.csv (>8, so it renders as an inline-div grid)
 qsv viz smart sales_sample.csv -o dashboard.html

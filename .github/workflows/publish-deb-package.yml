@@ -25,7 +25,7 @@ jobs:
 
     steps:
       - name: Checkout qsv repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           # Fetch full history + tags so `git describe --tags` works as a
           # fallback when the workflow is dispatched without an explicit
@@ -161,7 +161,7 @@ jobs:
           gpg --list-secret-keys "${GPG_SIGNING_EMAIL}"
 
       - name: Checkout qsv-deb-releases
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           repository: ${{ env.RELEASES_REPO }}
           token: ${{ secrets.RELEASES_REPO_TOKEN }}

@@ -458,7 +458,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #
-# Polars upstream (rev fcb2a4e+) patches object_store to this fork to add the
+# Polars upstream (rev 05b86b4+) patches object_store to this fork to add the
 # `with_dns_resolver` method (CachingResolver) used in polars-io's cloud client
 # (crates/polars-io/src/cloud/options.rs::get_client_options). A dependency's
 # [patch] section is IGNORED by Cargo — only the top-level workspace's patches
@@ -511,9 +511,9 @@ object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch 
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=fcb2a4e
+# QSV_POLARS_REV=05b86b4
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "fcb2a4e", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "05b86b4", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

@@ -246,6 +246,29 @@ const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
 /// labels would overlap, so they're omitted.
 const LABEL_MAX_BARS: usize = 40;
 
+/// `viz smart` caps how many data points it embeds in a single panel (map, time-series, and
+/// correlated-pair scatter). Beyond this, the points are uniformly downsampled. The motivating
+/// case: a 1M-row dataset's map embedded 745K opaque markers — an unreadable blob, a ~25 MB
+/// payload, and a browser that froze on the first pan/zoom. Uniform stride sampling preserves the
+/// overall shape/distribution of the data.
+const MAX_SMART_POINTS: usize = 50_000;
+
+/// At or above this many mappable rows, `viz smart` draws its map panel as a density heatmap
+/// (DensityMapbox) rather than individual markers, which overplot into a solid mass at scale.
+const MAP_DENSITY_MIN_POINTS: usize = 20_000;
+
+/// Marker opacity for the `viz smart` map panel when it's drawn as discrete points (i.e. fewer
+/// than `MAP_DENSITY_MIN_POINTS` rows). Mild transparency reveals overlapping points instead of a
+/// flat blob.
+const MAP_POINT_OPACITY: f64 = 0.4;
+
+/// Fraction trimmed from each end of the latitude/longitude distributions when framing a map, so a
+/// few outlier coordinates (bad geocodes, sentinel values) can't blow up the center/zoom and push
+/// the bulk of the data off-screen. 2.5% off each end — only the initial view is trimmed; every
+/// point is still plotted, so a slightly tight default frame just means panning out to see the
+/// long tail.
+const MAP_FRAME_TRIM_FRAC: f64 = 0.025;
+
 /// Marker diameter (pixels) the smallest and largest `--size` values map to in a bubble
 /// scatter. Raw size values are linearly rescaled into this range so the plot stays
 /// readable regardless of the column's magnitude.
@@ -939,6 +962,11 @@ fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
 /// reads as a smooth surface for city-to-continent scales without over-blurring dense clusters.
 const MAP_DENSITY_RADIUS_PX: u8 = 20;
 
+/// Density radius for the `viz smart` auto map panel. Smaller than the standalone `viz map`
+/// default because the dashboard panel is small: a large radius saturates the whole built-up area
+/// into one flat blob, hiding the internal hotspots a smaller radius reveals.
+const MAP_SMART_DENSITY_RADIUS_PX: u8 = 8;
+
 /// Resolve a `--style` name to its plotly `MapboxStyle` plus whether it is a Mapbox-hosted style
 /// (which needs an access token). The token-free styles render from public OSM/Carto/Stamen tile
 /// servers; the rest are served by Mapbox and require `--mapbox-token`.
@@ -970,16 +998,44 @@ fn parse_map_style(name: &str) -> CliResult<(MapboxStyle, bool)> {
     Ok(resolved)
 }
 
+/// Value at quantile `q` (0.0..=1.0) of an already-sorted slice, via nearest-rank. Empty → 0.0.
+fn sorted_quantile(sorted: &[f64], q: f64) -> f64 {
+    if sorted.is_empty() {
+        return 0.0;
+    }
+    let idx = (((sorted.len() - 1) as f64) * q).round() as usize;
+    sorted[idx.min(sorted.len() - 1)]
+}
+
+/// Uniformly downsample two row-aligned vectors to at most `cap` elements via evenly spaced stride
+/// sampling, preserving the overall distribution/shape. Returns clones unchanged when already
+/// within `cap` (or when `cap == 0`).
+fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X>, Vec<Y>) {
+    let n = xs.len();
+    if cap == 0 || n <= cap {
+        return (xs.to_vec(), ys.to_vec());
+    }
+    let mut out_x = Vec::with_capacity(cap);
+    let mut out_y = Vec::with_capacity(cap);
+    for i in 0..cap {
+        let idx = i * n / cap; // evenly spaced indices across [0, n)
+        out_x.push(xs[idx].clone());
+        out_y.push(ys[idx].clone());
+    }
+    (out_x, out_y)
+}
+
 /// Compute a map center and a zoom level that frames the data, so the basemap doesn't default to
 /// plotly's whole-world view centered at (0, 0). Longitude is handled with antimeridian wrap so a
 /// cluster straddling the 180° line (e.g. 179 and -179) frames as the small arc across the date
 /// line rather than spanning almost the whole globe and centering near 0.
 fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
-    let (min_lat, max_lat) = lats
-        .iter()
-        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
-            (lo.min(v), hi.max(v))
-        });
+    // trim a small fraction off each end so a handful of outlier coordinates can't dominate the
+    // framing (which would pull the center off the bulk of the data and force a zoomed-out view)
+    let mut sorted_lats = lats.to_vec();
+    sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let min_lat = sorted_quantile(&sorted_lats, MAP_FRAME_TRIM_FRAC);
+    let max_lat = sorted_quantile(&sorted_lats, 1.0 - MAP_FRAME_TRIM_FRAC);
     let lat_center = (min_lat + max_lat) / 2.0;
     let lat_span = max_lat - min_lat;
 
@@ -1000,8 +1056,8 @@ fn map_center_zoom(lats: &[f64], lons: &[f64]) -> (Center, u8) {
 /// Antimeridian-aware longitude center + span. The data occupies all of the 360° circle except
 /// its single largest empty gap; the cluster is the complementary arc, so the span is
 /// `360 - largest_gap` and the center is that arc's midpoint, normalized to [-180, 180]. When the
-/// largest gap is the wrap between max and min (the common, non-crossing case), this reduces to
-/// the plain `(min+max)/2` midpoint and `max-min` span.
+/// largest gap is the wrap between max and min (the common, non-crossing case), this reduces to an
+/// outlier-trimmed midpoint and span (the same robust framing the latitude axis uses).
 fn lon_center_and_span(lons: &[f64]) -> (f64, f64) {
     let mut sorted: Vec<f64> = lons.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -1019,8 +1075,10 @@ fn lon_center_and_span(lons: &[f64]) -> (f64, f64) {
     // the wrap gap closes the circle from the easternmost point back to the westernmost
     let wrap_gap = (sorted[0] + 360.0) - sorted[n - 1];
     if wrap_gap >= max_gap {
-        // data doesn't cross the antimeridian: plain bounding-box midpoint and span
-        ((sorted[0] + sorted[n - 1]) / 2.0, sorted[n - 1] - sorted[0])
+        // data doesn't cross the antimeridian: outlier-trimmed bounding-box midpoint and span
+        let lo = sorted_quantile(&sorted, MAP_FRAME_TRIM_FRAC);
+        let hi = sorted_quantile(&sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
+        ((lo + hi) / 2.0, hi - lo)
     } else {
         // data crosses the antimeridian: the cluster runs from sorted[gap_idx + 1] eastward,
         // wrapping past 180, to sorted[gap_idx] (+360 to keep the arc contiguous)
@@ -2090,9 +2148,15 @@ enum PanelKind {
     /// heatmap. Carries the two columns' precomputed, row-aligned values.
     ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
     /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
-    /// precomputed, row-aligned coordinates. Mapbox subplots don't compose with the typed x/y
-    /// subplot grid, so a dashboard containing this panel always renders via the inline path.
-    Map { lats: Vec<f64>, lons: Vec<f64> },
+    /// precomputed, row-aligned coordinates (already downsampled to `MAX_SMART_POINTS`). `density`
+    /// requests a heatmap render instead of discrete markers when the source had many rows. Mapbox
+    /// subplots don't compose with the typed x/y subplot grid, so a dashboard containing this panel
+    /// always renders via the inline path.
+    Map {
+        lats:    Vec<f64>,
+        lons:    Vec<f64>,
+        density: bool,
+    },
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -2243,8 +2307,10 @@ fn build_timeseries_panel(
 
     let y_label = col_label(&headers, y_idx, nh);
     let date_label = col_label(&headers, date_idx, nh);
-    let xs = points.iter().map(|p| p.1.clone()).collect();
-    let ys = points.iter().map(|p| p.2).collect();
+    // points are chronologically sorted, so stride downsampling preserves the trend's shape
+    let xs_full: Vec<String> = points.iter().map(|p| p.1.clone()).collect();
+    let ys_full: Vec<f64> = points.iter().map(|p| p.2).collect();
+    let (xs, ys) = downsample_pair(&xs_full, &ys_full, MAX_SMART_POINTS);
     Ok(Some(Panel {
         name: format!("{y_label} over {date_label}"),
         kind: PanelKind::TimeSeries { y_label, xs, ys },
@@ -2296,9 +2362,17 @@ fn build_map_panel(
     if lats.is_empty() {
         return Ok(None);
     }
+    // decide density vs. markers from the full row count, then cap the embedded points so a huge
+    // dataset doesn't bloat the HTML or freeze the browser on pan/zoom
+    let density = lats.len() >= MAP_DENSITY_MIN_POINTS;
+    let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
     Ok(Some(Panel {
         name: "Map".to_string(),
-        kind: PanelKind::Map { lats, lons },
+        kind: PanelKind::Map {
+            lats,
+            lons,
+            density,
+        },
     }))
 }
 
@@ -2382,12 +2456,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             // headline relationship. Reuses the columns already read for the matrix (no extra
             // data pass) and is only added when that pair is at least moderately correlated.
             let scatter_panel = strongest_pair(&matrix).and_then(|(i, j, r)| {
-                (r.abs() >= SCATTER_PAIR_MIN_ABS_R).then(|| Panel {
-                    name: format!("{} vs {} (r={r:.2})", labels[i], labels[j]),
-                    kind: PanelKind::ScatterPair {
-                        xs: columns[i].clone(),
-                        ys: columns[j].clone(),
-                    },
+                (r.abs() >= SCATTER_PAIR_MIN_ABS_R).then(|| {
+                    let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
+                    Panel {
+                        name: format!("{} vs {} (r={r:.2})", labels[i], labels[j]),
+                        kind: PanelKind::ScatterPair { xs, ys },
+                    }
                 })
             });
             panels.insert(
@@ -2795,14 +2869,27 @@ fn smart_inline_panel_plot(
 ) -> Plot {
     // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
     // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
-    if let PanelKind::Map { lats, lons } = &panel.kind {
+    if let PanelKind::Map {
+        lats,
+        lons,
+        density,
+    } = &panel.kind
+    {
         let (center, zoom) = map_center_zoom(lats, lons);
         let mut plot = Plot::new();
-        plot.add_trace(
-            ScatterMapbox::new(lats.clone(), lons.clone())
-                .mode(Mode::Markers)
-                .marker(Marker::new().color(color)),
-        );
+        if *density {
+            // many points overplot into a solid mass as markers, so aggregate into a heatmap
+            plot.add_trace(
+                DensityMapbox::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
+                    .radius(MAP_SMART_DENSITY_RADIUS_PX),
+            );
+        } else {
+            plot.add_trace(
+                ScatterMapbox::new(lats.clone(), lons.clone())
+                    .mode(Mode::Markers)
+                    .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+            );
+        }
         let layout = Layout::new()
             .show_legend(false)
             .height(ROW_HEIGHT_PX)
@@ -3370,5 +3457,62 @@ mod tests {
         let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0]);
         assert!((center - (-75.0)).abs() < 1e-9);
         assert!((span - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn sorted_quantile_nearest_rank() {
+        let s: Vec<f64> = (0..=100).map(f64::from).collect(); // 0..=100
+        assert_eq!(sorted_quantile(&s, 0.0), 0.0);
+        assert_eq!(sorted_quantile(&s, 1.0), 100.0);
+        assert_eq!(sorted_quantile(&s, 0.5), 50.0);
+        assert_eq!(sorted_quantile(&s, 0.01), 1.0);
+        assert_eq!(sorted_quantile(&s, 0.99), 99.0);
+        assert_eq!(sorted_quantile(&[], 0.5), 0.0); // empty -> 0.0
+    }
+
+    #[test]
+    fn downsample_pair_caps_and_preserves_shape() {
+        let xs: Vec<f64> = (0..1000).map(f64::from).collect();
+        let ys: Vec<f64> = xs.iter().map(|v| v * 2.0).collect();
+        let (dx, dy) = downsample_pair(&xs, &ys, 100);
+        assert_eq!(dx.len(), 100);
+        assert_eq!(dy.len(), 100);
+        // row alignment is preserved (ys == 2*xs throughout)
+        assert!(dx.iter().zip(&dy).all(|(x, y)| (y - x * 2.0).abs() < 1e-9));
+        // evenly spaced from the start, so the first element is retained
+        assert_eq!(dx[0], 0.0);
+        // already within cap -> returned unchanged
+        let (sx, sy) = downsample_pair(&xs[..50], &ys[..50], 100);
+        assert_eq!(sx.len(), 50);
+        assert_eq!(sy.len(), 50);
+        // cap == 0 -> unchanged (no divide-by-zero)
+        assert_eq!(downsample_pair(&xs, &ys, 0).0.len(), 1000);
+    }
+
+    #[test]
+    fn map_center_zoom_ignores_outliers() {
+        // 200 points tightly clustered around NYC plus a handful of far-west bad coordinates.
+        // robust (percentile-trimmed) framing must center on the cluster, not the outliers.
+        let mut lats = vec![40.7_f64; 200];
+        let mut lons = vec![-73.95_f64; 200];
+        // jitter so the cluster has a small but non-zero span
+        for (i, (la, lo)) in lats.iter_mut().zip(lons.iter_mut()).enumerate() {
+            *la += (i % 10) as f64 * 0.005;
+            *lo += (i % 10) as f64 * 0.005;
+        }
+        // ~2.5% outliers dragging the raw bounding box out to Pennsylvania
+        for _ in 0..5 {
+            lats.push(40.5);
+            lons.push(-77.5);
+        }
+        let (center, _zoom) = map_center_zoom(&lats, &lons);
+        let v = serde_json::to_value(&center).unwrap();
+        let lon = v["lon"].as_f64().unwrap();
+        // raw min/max midpoint would be ~(-73.95 + -77.5)/2 = -75.7 (in Pennsylvania); the trimmed
+        // framing must stay over the NYC cluster instead.
+        assert!(
+            lon > -74.3,
+            "outliers should not pull the center west of NYC, got lon {lon}"
+        );
     }
 }

@@ -356,14 +356,19 @@ fn viz_heatmap_correlation_large_values() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     let z = extract_z_matrix(&html);
-    assert_eq!(z.len(), 2);
-    // every cell (incl. the a-vs-b off-diagonal) is a finite, perfect correlation, not null
+    // assert the exact 2x2 shape so the cell checks below aren't vacuously true on empty rows
+    assert_eq!(z.len(), 2, "expected 2 rows, got {z:?}");
     assert!(
-        z.iter()
-            .flatten()
-            .all(|c| c.is_some_and(|v| (v - 1.0).abs() < 1e-9)),
-        "expected all 1.0 correlations, got {z:?}"
+        z.iter().all(|row| row.len() == 2),
+        "expected 2x2, got {z:?}"
     );
+    // every cell (incl. the a-vs-b off-diagonal) is a finite, perfect correlation, not null
+    for (r, row) in z.iter().enumerate() {
+        for (c, cell) in row.iter().enumerate() {
+            let v = cell.unwrap_or_else(|| panic!("z[{r}][{c}] is null, expected 1.0; got {z:?}"));
+            assert!((v - 1.0).abs() < 1e-9, "z[{r}][{c}] = {v}, expected 1.0");
+        }
+    }
 }
 
 #[test]

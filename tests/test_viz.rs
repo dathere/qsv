@@ -803,18 +803,14 @@ fn viz_smart_timeseries_panel() {
 #[test]
 fn viz_smart_timeseries_dmy_dates() {
     let wrk = Workdir::new("viz_smart_timeseries_dmy_dates");
-    // DMY-formatted dates (day > 12, so MDY parsing would fail) + QSV_PREFER_DMY. stats infers
-    // these as dates with the DMY preference; the time-series builder must use the SAME
-    // preference, else every date fails to parse, the rows drop, and no panel is produced.
-    let mut rows = String::from("sale_date,revenue,region\n");
-    for i in 0..8 {
-        let day = 13 + i; // 13..20, all > 12 => unambiguously DMY
-        let month = i + 1; // 1..8
-        let revenue = 1000 + i * 37;
-        let region = if i % 2 == 0 { "east" } else { "west" };
-        rows.push_str(&format!("{day:02}/{month:02}/2021,{revenue},{region}\n"));
-    }
-    wrk.create_from_string("sales.csv", &rows);
+    // AMBIGUOUS DMY dates (day AND month both <= 12, so each parses to a *different valid date*
+    // under DMY vs MDY) in deliberately non-chronological input order, plus QSV_PREFER_DMY.
+    // stats infers these as dates with the DMY preference; the time-series builder must use the
+    // SAME preference, else the dates are parsed as MDY -> different values AND a different sort
+    // order. Asserting the exact rendered x-axis (ISO, chronologically sorted) catches that.
+    let rows = "sale_date,revenue\n07/02/2021,1500\n03/05/2021,1200\n11/01/2021,1000\n06/08/2021,\
+                1700\n02/04/2021,1100\n09/03/2021,1300\n05/06/2021,1600\n08/07/2021,1400\n";
+    wrk.create_from_string("sales.csv", rows);
 
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
@@ -823,8 +819,11 @@ fn viz_smart_timeseries_dmy_dates() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // the time-series panel is present => the DMY dates parsed correctly under QSV_PREFER_DMY
     assert!(html.contains(r#""mode":"lines""#));
-    assert!(html.contains(r#""type":"date""#));
     assert!(html.contains("revenue over sale_date"));
+    // x-axis dates parsed as DMY (e.g. 11/01 -> 2021-01-11, not 2021-11-01) and sorted
+    // chronologically. Under the buggy MDY parse this array would have different values/order.
+    assert!(html.contains(
+        r#""x":["2021-01-11","2021-02-07","2021-03-09","2021-04-02","2021-05-03","2021-06-05","2021-07-08","2021-08-06"]"#
+    ));
 }

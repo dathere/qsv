@@ -221,7 +221,7 @@ gzp = { version = "2", default-features = false, features = ["snappy_default"] }
 hostname-validator = "1.1"
 human-panic = "2"
 iana-time-zone = "0.1"
-indexmap = { version = "2.13", features = ["serde"] }
+indexmap = { version = "2.14", features = ["serde"] }
 indicatif = "0.18"
 itertools = "0.15"
 itoa = "1"
@@ -445,7 +445,7 @@ cpc = { git = "https://github.com/jqnatividad/cpc", branch = "upstream-migrate-f
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_tui-input_crossterm_n_lock_file" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
-csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats_with_qsv-stats", optional = true }
+csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats-redux", optional = true }
 
 # use latest upstream now that our PR has been merged while awaiting a new release
 self_update = { git = "https://github.com/jaemk/self_update", rev = "cad8bb9" }
@@ -458,7 +458,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #
-# Polars upstream (rev f1dd3b8+) patches object_store to this fork to add the
+# Polars upstream (rev fcb2a4e+) patches object_store to this fork to add the
 # `with_dns_resolver` method (CachingResolver) used in polars-io's cloud client
 # (crates/polars-io/src/cloud/options.rs::get_client_options). A dependency's
 # [patch] section is IGNORED by Cargo — only the top-level workspace's patches
@@ -511,9 +511,9 @@ object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch 
 #     (e.g. py-1.19.0:52ea381 to indicate that we are Python Polars 1.19.0,
 #      and the commit hash 52ea381)
 # ================================
-# QSV_POLARS_REV=f1dd3b8
+# QSV_POLARS_REV=fcb2a4e
 # polars = { git = "https://github.com/pola-rs/polars", tag = "py-1.41.2", optional = true }
-polars = { git = "https://github.com/pola-rs/polars", rev = "f1dd3b8", optional = true }
+polars = { git = "https://github.com/pola-rs/polars", rev = "fcb2a4e", optional = true }
 
 # Apache DataSketches (t-digest, HLL, Frequent Items) — upstream C++ does not
 # support big-endian targets, so we exclude the crate on big-endian builds.

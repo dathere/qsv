@@ -2020,8 +2020,8 @@ dependencies = [
 
 [[package]]
 name = "csvs_convert"
-version = "0.13.1"
-source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats_with_qsv-stats#dfd65e209b7a9e012a104fbbf80b611597e1df7a"
+version = "0.13.2"
+source = "git+https://github.com/jqnatividad/csvs_convert?branch=replace-streaming-stats-redux#e4a38ba17d740965bf5850702b20761e84fe855f"
 dependencies = [
  "chrono",
  "counter",
@@ -2037,6 +2037,7 @@ dependencies = [
  "postgres",
  "qsv-stats",
  "rand 0.10.1",
+ "rayon",
  "regex",
  "rusqlite",
  "rust_xlsxwriter",
@@ -5884,7 +5885,7 @@ dependencies = [
 [[package]]
 name = "polars"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "getrandom 0.2.17",
  "getrandom 0.4.3",
@@ -5907,7 +5908,7 @@ dependencies = [
 [[package]]
 name = "polars-arrow"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "atoi_simd 0.18.1",
  "avro-schema",
@@ -5952,7 +5953,7 @@ dependencies = [
 [[package]]
 name = "polars-async"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "atomic-waker",
  "crossbeam-channel",
@@ -5971,7 +5972,7 @@ dependencies = [
 [[package]]
 name = "polars-buffer"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bytemuck",
  "either",
@@ -5983,7 +5984,7 @@ dependencies = [
 [[package]]
 name = "polars-compute"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "atoi_simd 0.18.1",
  "bytemuck",
@@ -6009,7 +6010,7 @@ dependencies = [
 [[package]]
 name = "polars-config"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "polars-error",
  "serde",
@@ -6018,7 +6019,7 @@ dependencies = [
 [[package]]
 name = "polars-core"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "boxcar",
@@ -6058,7 +6059,7 @@ dependencies = [
 [[package]]
 name = "polars-dtype"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "boxcar",
  "hashbrown 0.17.1",
@@ -6072,7 +6073,7 @@ dependencies = [
 [[package]]
 name = "polars-error"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "avro-schema",
  "object_store",
@@ -6086,7 +6087,7 @@ dependencies = [
 [[package]]
 name = "polars-expr"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "hashbrown 0.17.1",
@@ -6112,7 +6113,7 @@ dependencies = [
 [[package]]
 name = "polars-io"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "async-trait",
  "atoi_simd 0.18.1",
@@ -6162,7 +6163,7 @@ dependencies = [
 [[package]]
 name = "polars-json"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "chrono",
  "chrono-tz",
@@ -6183,7 +6184,7 @@ dependencies = [
 [[package]]
 name = "polars-lazy"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "chrono",
@@ -6210,7 +6211,7 @@ dependencies = [
 [[package]]
 name = "polars-mem-engine"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "memmap2",
  "polars-arrow",
@@ -6230,7 +6231,7 @@ dependencies = [
 [[package]]
 name = "polars-ooc"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "async-trait",
  "boxcar",
@@ -6249,7 +6250,7 @@ dependencies = [
 [[package]]
 name = "polars-ops"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "argminmax",
  "base64 0.22.1",
@@ -6287,7 +6288,7 @@ dependencies = [
 [[package]]
 name = "polars-parquet"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "async-stream",
  "base64 0.22.1",
@@ -6327,7 +6328,7 @@ dependencies = [
 [[package]]
 name = "polars-plan"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "blake3",
@@ -6370,7 +6371,7 @@ dependencies = [
 [[package]]
 name = "polars-row"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "bytemuck",
@@ -6385,7 +6386,7 @@ dependencies = [
 [[package]]
 name = "polars-schema"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "indexmap 2.14.0",
  "polars-error",
@@ -6397,7 +6398,7 @@ dependencies = [
 [[package]]
 name = "polars-sql"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "bitflags 2.13.0",
  "hex",
@@ -6416,7 +6417,7 @@ dependencies = [
 [[package]]
 name = "polars-stream"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "async-channel",
  "async-trait",
@@ -6459,7 +6460,7 @@ dependencies = [
 [[package]]
 name = "polars-time"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "atoi_simd 0.18.1",
  "bytemuck",
@@ -6482,7 +6483,7 @@ dependencies = [
 [[package]]
 name = "polars-utils"
 version = "0.54.4"
-source = "git+https://github.com/pola-rs/polars?rev=f1dd3b8#f1dd3b8c57150706b80e1c14685557a3a6bb7612"
+source = "git+https://github.com/pola-rs/polars?rev=fcb2a4e#fcb2a4e012ac836d4ace03d5f897560f1acf121e"
 dependencies = [
  "argminmax",
  "bincode",
@@ -7276,14 +7277,15 @@ dependencies = [
 
 [[package]]
 name = "ratatui"
-version = "0.30.1"
+version = "0.30.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1695748e3a735b34968c887ceea5a380b43545903868ae8f5b666593100f6b68"
+checksum = "3274ba0a2c5e1bcad2a2005d20f4dc59dad26b2eb0940fb094500dba4099d57d"
 dependencies = [
  "instability",
  "ratatui-core",
  "ratatui-crossterm",
  "ratatui-macros",
+ "ratatui-termina",
  "ratatui-termwiz",
  "ratatui-widgets",
  "serde",
@@ -7291,15 +7293,14 @@ dependencies = [
 
 [[package]]
 name = "ratatui-core"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42d3603f354bba8c595fa47860e60142d7372b7210c27044c6a7d0e1a4336b44"
+checksum = "cbb175c433c8e28a809d1f5773a2ae96e68c0ce40db865cbab1020bf33ae479c"
 dependencies = [
  "bitflags 2.13.0",
  "compact_str",
  "critical-section",
  "hashbrown 0.17.1",
- "indoc",
  "itertools 0.14.0",
  "kasuari",
  "lru",
@@ -7314,9 +7315,9 @@ dependencies = [
 
 [[package]]
 name = "ratatui-crossterm"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2b2867bedcbd6a690ca4f8672a687b730ec07660c79844517b084311b529980c"
+checksum = "567584a3b0e6a8203c23de40b4861497266725eb5363dbfd18a1edd603cca9f0"
 dependencies = [
  "cfg-if",
  "crossterm",
@@ -7326,19 +7327,30 @@ dependencies = [
 
 [[package]]
 name = "ratatui-macros"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "80fac59720679490d89d200df411faa249be728681adcabed3d047ae72c48f1d"
+checksum = "ed7dc68daa7498a43e4d68e0eb078427e10c38fbcfbb1e42d955f1fa2140d814"
 dependencies = [
  "ratatui-core",
  "ratatui-widgets",
 ]
 
 [[package]]
-name = "ratatui-termwiz"
-version = "0.1.1"
+name = "ratatui-termina"
+version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "386b8ff8f74ed749509391c56d549761a2fcdb408e1f42e467286bcb7dac8967"
+checksum = "c0bf912d9e66f057a759d92e386a280ea886b352ab757d6ac4d653c7ed2c43c2"
+dependencies = [
+ "instability",
+ "ratatui-core",
+ "termina",
+]
+
+[[package]]
+name = "ratatui-termwiz"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "faf03e0380b7744054d6cb74224fe3adf062a029754933f575ca1e3b4c2ce977"
 dependencies = [
  "ratatui-core",
  "termwiz",
@@ -7346,9 +7358,9 @@ dependencies = [
 
 [[package]]
 name = "ratatui-widgets"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7ef4f17dd7ac3abf5adc2b920a03c61eee4bfe6a88fa5191936895525371d79c"
+checksum = "66e3d19bcc9130ca376277d93b60767ff121ace3be06f5f95f81dd68956407d1"
 dependencies = [
  "bitflags 2.13.0",
  "hashbrown 0.17.1",
@@ -8974,6 +8986,19 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "termina"
+version = "0.3.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9048a889effe34a5cddee0af7f53285198b16dca3be510858d38dfdb3e62a04e"
+dependencies = [
+ "bitflags 2.13.0",
+ "parking_lot",
+ "rustix 1.1.4",
+ "signal-hook 0.3.18",
  "windows-sys 0.61.2",
 ]
 

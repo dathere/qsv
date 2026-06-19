@@ -51,6 +51,9 @@ Examples:
   # Scatter plot with a separate series (trace) per category
   qsv viz scatter data.csv --x age --y income --series gender -o scatter.html
 
+  # Bubble scatter: marker size by population, marker color by a numeric score
+  qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o bubble.html
+
   # Histogram of a numeric column with 30 bins
   qsv viz histogram data.csv --x value --bins 30 -o hist.html
 
@@ -104,6 +107,13 @@ viz options:
                            the numeric axes to plot.
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar/line/scatter/radar.
+    --color <col>          For scatter: a numeric column to encode as marker color
+                           (a continuous colorscale with a colorbar). For categorical
+                           coloring, use the --series option instead. Cannot be
+                           combined with --series.
+    --size <col>           For scatter: a numeric column to encode as marker size,
+                           producing a bubble chart (values are rescaled to a readable
+                           pixel range). Cannot be combined with --series.
     --donut                Render a pie chart as a donut (with a center hole).
     --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
     --high <col>           High-price column for candlestick/ohlc charts.
@@ -168,7 +178,8 @@ use plotly::{
     ScatterPolar, Trace,
     box_plot::{BoxPoints, QuartileMethod},
     common::{
-        Anchor, ColorScale, ColorScalePalette, Fill, Font, Marker, Mode, TextPosition, Title,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Marker, Mode, TextPosition,
+        Title,
     },
     layout::{Annotation, Axis, Layout, Margin},
     sankey::{Link, Node},
@@ -198,6 +209,12 @@ const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 /// Max bars in a single-series `viz bar` chart that still get value labels; beyond this the
 /// labels would overlap, so they're omitted.
 const LABEL_MAX_BARS: usize = 40;
+
+/// Marker diameter (pixels) the smallest and largest `--size` values map to in a bubble
+/// scatter. Raw size values are linearly rescaled into this range so the plot stays
+/// readable regardless of the column's magnitude.
+const BUBBLE_MIN_PX: f64 = 6.0;
+const BUBBLE_MAX_PX: f64 = 40.0;
 
 /// Vertical space (in pixels) allotted to each row of subplots in the `viz smart`
 /// dashboard. The total plot height scales with the number of rows so panels stay
@@ -273,6 +290,10 @@ struct Args {
     flag_cols:       Option<SelectColumns>,
     flag_series:     Option<SelectColumns>,
     flag_donut:      bool,
+    // scatter encodings: map a numeric column to per-point marker color (continuous
+    // colorscale) and/or marker size (bubble chart). Mutually exclusive with --series.
+    flag_color:      Option<SelectColumns>,
+    flag_size:       Option<SelectColumns>,
     // candlestick / ohlc columns (--open is already taken by the browser-open flag below,
     // so the open-price column is selected with --ohlc-open)
     flag_ohlc_open:  Option<SelectColumns>,
@@ -447,6 +468,21 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 
 /// Build a `Plot` for the requested chart subcommand.
 fn build_plot(args: &Args) -> CliResult<Plot> {
+    // --color/--size are per-point marker encodings that only apply to scatter, and need a
+    // single trace, so they can't be combined with --series (which splits into traces).
+    if encoded_scatter(args) {
+        if !matches!(chart_kind(args), Chart::Scatter) {
+            return fail_incorrectusage_clierror!("--color/--size only apply to `viz scatter`.");
+        }
+        if args.flag_series.is_some() {
+            return fail_incorrectusage_clierror!(
+                "--color/--size cannot be combined with --series. Use --series to split into \
+                 colored traces by category, or --color/--size to encode numeric columns onto a \
+                 single series."
+            );
+        }
+    }
+
     let mut plot = Plot::new();
 
     // default axis titles, derived from the selected column names
@@ -488,7 +524,12 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
         },
         // bar / line / scatter all consume (x, y) pairs, optionally split by --series
         kind => {
-            let (traces, x_label, y_label) = build_xy_traces(args, kind)?;
+            let (traces, x_label, y_label) =
+                if matches!(kind, Chart::Scatter) && encoded_scatter(args) {
+                    build_scatter_encoded(args)?
+                } else {
+                    build_xy_traces(args, kind)?
+                };
             for trace in traces {
                 plot.add_trace(trace);
             }
@@ -723,6 +764,120 @@ fn scatter_trace(name: &str, xs: Vec<String>, ys: Vec<f64>, mode: Mode) -> Box<d
         }
         t
     }
+}
+
+/// True when the user requested a per-point marker encoding (--color and/or --size).
+fn encoded_scatter(args: &Args) -> bool {
+    args.flag_color.is_some() || args.flag_size.is_some()
+}
+
+/// Build a single scatter trace that encodes numeric columns onto marker color (continuous
+/// colorscale + colorbar) and/or marker size (bubble chart). Rows missing a numeric value
+/// for y or any requested encoding are skipped.
+fn build_scatter_encoded(args: &Args) -> CliResult<(Vec<Box<dyn Trace>>, String, String)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let color_idx = match args.flag_color.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "color")?),
+        None => None,
+    };
+    let size_idx = match args.flag_size.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "size")?),
+        None => None,
+    };
+
+    let mut xs: Vec<String> = Vec::new();
+    let mut ys: Vec<f64> = Vec::new();
+    let mut colors: Vec<f64> = Vec::new();
+    let mut sizes: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(y) = parse_f64(record.get(y_idx)) else {
+            continue;
+        };
+        // a point is only plottable if every requested encoding has a numeric value
+        let color = match color_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        let size = match size_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        xs.push(cell_to_string(record.get(x_idx)));
+        ys.push(y);
+        if let Some(v) = color {
+            colors.push(v);
+        }
+        if let Some(v) = size {
+            sizes.push(v);
+        }
+    }
+    if ys.is_empty() {
+        return fail_clierror!(
+            "No plottable rows found (are --y and the --color/--size columns numeric?)."
+        );
+    }
+
+    let mut marker = Marker::new();
+    if !sizes.is_empty() {
+        marker = marker.size_array(scale_bubble_sizes(&sizes));
+    }
+    if !colors.is_empty() {
+        let color_label = col_label(&headers, color_idx.unwrap(), nh);
+        marker = marker
+            .color_array(colors)
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title(color_label));
+    }
+
+    let trace = scatter_with_marker(xs, ys, marker);
+    Ok((
+        vec![trace],
+        col_label(&headers, x_idx, nh),
+        col_label(&headers, y_idx, nh),
+    ))
+}
+
+/// Build a markers-mode Scatter with the given marker, using a numeric x-axis when every x
+/// value parses as a number (otherwise a categorical x-axis), mirroring `scatter_trace`.
+fn scatter_with_marker(xs: Vec<String>, ys: Vec<f64>, marker: Marker) -> Box<dyn Trace> {
+    if !xs.is_empty() && xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
+        let xn: Vec<f64> = xs
+            .iter()
+            .map(|s| s.trim().parse::<f64>().unwrap_or(f64::NAN))
+            .collect();
+        Scatter::new(xn, ys).mode(Mode::Markers).marker(marker)
+    } else {
+        Scatter::new(xs, ys).mode(Mode::Markers).marker(marker)
+    }
+}
+
+/// Linearly rescale raw `--size` values into the [`BUBBLE_MIN_PX`, `BUBBLE_MAX_PX`] pixel
+/// range so bubbles stay readable regardless of the column's magnitude. When all values are
+/// equal, every bubble gets the midpoint size.
+fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
+    let (min, max) = values
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+            (lo.min(v), hi.max(v))
+        });
+    let span = max - min;
+    values
+        .iter()
+        .map(|&v| {
+            let t = if span > 0.0 { (v - min) / span } else { 0.5 };
+            (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
+        })
+        .collect()
 }
 
 fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {

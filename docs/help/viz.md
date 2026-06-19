@@ -82,6 +82,12 @@ qsv viz bar sales.csv --x region --y amount --agg sum -o sales.html
 qsv viz scatter data.csv --x age --y income --series gender -o scatter.html
 ```
 
+> Bubble scatter: marker size by population, marker color by a numeric score
+
+```console
+qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o bubble.html
+```
+
 > Histogram of a numeric column with 30 bins
 
 ```console
@@ -170,6 +176,8 @@ qsv viz --help
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | Value column for a heatmap pivot (with --x and --y). |  |
 | &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. |  |
 | &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar/line/scatter/radar. |  |
+| &nbsp;`‑‑color`&nbsp; | string | For scatter: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. |  |
+| &nbsp;`‑‑size`&nbsp; | string | For scatter: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. |  |
 | &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
 | &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |
 | &nbsp;`‑‑high`&nbsp; | string | High-price column for candlestick/ohlc charts. |  |

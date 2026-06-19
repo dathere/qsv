@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -38,6 +38,8 @@ candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/-
 ohlc        Financial OHLC bars (same inputs as candlestick).
 sankey      Flow diagram.     --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
+map         Geographic point map (or --density heatmap) on tile basemaps.
+Pick the coordinate columns with the lat/lon options below.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed
@@ -146,6 +148,18 @@ qsv viz sankey flows.csv --source from --target to --value weight -o sankey.html
 qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html
 ```
 
+> Point map of earthquakes, marker color by magnitude and size by depth
+
+```console
+qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map.html
+```
+
+> Density heatmap of the same points, on a light Carto basemap
+
+```console
+qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 
@@ -166,6 +180,7 @@ qsv viz candlestick [options] <input>
 qsv viz ohlc        [options] <input>
 qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
+qsv viz map         [options] <input>
 qsv viz --help
 ```
 
@@ -180,8 +195,8 @@ qsv viz --help
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | Value column for a heatmap pivot (with --x and --y). |  |
 | &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. |  |
 | &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar/line/scatter/radar. |  |
-| &nbsp;`‑‑color`&nbsp; | string | For scatter: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. |  |
-| &nbsp;`‑‑size`&nbsp; | string | For scatter: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. |  |
+| &nbsp;`‑‑color`&nbsp; | string | For scatter/map: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In density mode, this column is the heatmap weight. |  |
+| &nbsp;`‑‑size`&nbsp; | string | For scatter/map: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. In density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑donut`&nbsp; | flag | Render a pie chart as a donut (with a center hole). |  |
 | &nbsp;`‑‑ohlc‑open`&nbsp; | string | Open-price column for candlestick/ohlc charts. |  |
 | &nbsp;`‑‑high`&nbsp; | string | High-price column for candlestick/ohlc charts. |  |
@@ -193,6 +208,19 @@ qsv viz --help
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins for the histogram. (default: auto) |  |
 | &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. |  |
 | &nbsp;`‑‑box‑points`&nbsp; | string | For box plots, which sample points to draw alongside the box. Explicit `viz box` reads the raw values, so plotly renders true Tukey whiskers (1.5*IQR) and the points beyond the fences are the outliers. One of: outliers (only the outliers, the default), all (every point, jittered), suspected (mark suspected outliers), none (no points). | `outliers` |
+
+<a name="map-options"></a>
+
+## Map Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑lat`&nbsp; | string | Latitude column for a map (decimal degrees, -90 to 90). |  |
+| &nbsp;`‑‑lon`&nbsp; | string | Longitude column for a map (decimal degrees, -180 to 180). |  |
+| &nbsp;`‑‑text`&nbsp; | string | Column whose value labels each point on hover. |  |
+| &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMapbox) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
+| &nbsp;`‑‑style`&nbsp; | string | Map basemap style. Token-free styles: open-street-map (the default), carto-positron, carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted styles (basic, streets, outdoors, light, dark, satellite, satellite-streets) require --mapbox-token. | `open-street-map` |
+| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Mapbox access token, required only for the mapbox-hosted basemap styles listed above. |  |
 
 <a name="smart-options"></a>
 

@@ -1,6 +1,6 @@
 # viz
 
-> Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar) and an auto-dashboard (`viz smart`) from CSV data using [plotly](https://plotly.com). `viz smart` "automagically" picks an appropriate chart per column from the dataset's statistics & frequency distributions (box plots for continuous columns from precomputed quartiles; frequency bars for low-cardinality/boolean columns; a correlation heatmap when there are 2+ eligible continuous numeric columns). Outputs self-contained, interactive HTML (works offline) - or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature - and can `--open` the result in your browser.
+> Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using [plotly](https://plotly.com). `viz smart` "automagically" picks an appropriate chart per column from the dataset's statistics & frequency distributions (box plots for continuous columns from precomputed quartiles; frequency bars for low-cardinality/boolean columns; a correlation heatmap when there are 2+ eligible continuous numeric columns; a map panel when a lat/lon column pair is detected). Outputs self-contained, interactive HTML (charts work offline; map basemaps fetch their tiles over the network unless the `white-bg` style is used) - or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature - and can `--open` the result in your browser.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
@@ -14,9 +14,10 @@
 Generate charts from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
-so the output works offline). With a qsv build that includes the `viz_static` feature,
-charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this requires a
-Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
+so charts work offline; map basemaps fetch their tiles over the network at view time
+unless the `white-bg` style is used). With a qsv build that includes the `viz_static`
+feature, charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this
+requires a Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always

@@ -2,9 +2,10 @@ static USAGE: &str = r#"
 Generate charts from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
-so the output works offline). With a qsv build that includes the `viz_static` feature,
-charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this requires a
-Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
+so charts work offline; map basemaps fetch their tiles over the network at view time
+unless the `white-bg` style is used). With a qsv build that includes the `viz_static`
+feature, charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this
+requires a Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always

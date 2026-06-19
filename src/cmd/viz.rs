@@ -401,8 +401,9 @@ enum SmartRender {
 }
 
 /// Write a pre-assembled inline-div dashboard HTML string to `--output` (or stdout), honoring
-/// `--open`. When `--open` is set without `--output`, the HTML is also written to a temporary
-/// file which is then opened — mirroring plotly's own `Plot::show()` for the single-`Plot` path.
+/// `--open`. When `--open` is set without `--output`, the HTML is also written to a securely
+/// created temporary file which is then opened — mirroring plotly's own `Plot::show()` for the
+/// single-`Plot` path.
 fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
     match args.flag_output.as_deref() {
         Some(path) => {
@@ -414,10 +415,18 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
         None => {
             std::io::stdout().write_all(html.as_bytes())?;
             if args.flag_open {
-                let mut tmp = std::env::temp_dir();
-                tmp.push(format!("qsv-viz-smart-{}.html", std::process::id()));
-                std::fs::write(&tmp, html)?;
-                open_path(&tmp.to_string_lossy())?;
+                // Create the temp file via tempfile (random name, O_EXCL) to avoid a symlink
+                // attack on a predictable path, then persist it so the browser can read it
+                // after qsv exits (a NamedTempFile would otherwise delete on drop).
+                let mut tmp = tempfile::Builder::new()
+                    .prefix("qsv-viz-smart-")
+                    .suffix(".html")
+                    .tempfile()?;
+                tmp.write_all(html.as_bytes())?;
+                let (_file, path) = tmp.keep().map_err(|e| {
+                    crate::CliError::Other(format!("Could not persist temp dashboard file: {e}"))
+                })?;
+                open_path(&path.to_string_lossy())?;
             }
         },
     }

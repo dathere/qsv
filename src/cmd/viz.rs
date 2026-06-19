@@ -109,8 +109,8 @@ viz options:
                            distinct value). Applies to bar/line/scatter/radar.
     --color <col>          For scatter: a numeric column to encode as marker color
                            (a continuous colorscale with a colorbar). For categorical
-                           coloring, use --series instead. Cannot be combined with
-                           --series.
+                           coloring, use the --series option instead. Cannot be
+                           combined with --series.
     --size <col>           For scatter: a numeric column to encode as marker size,
                            producing a bubble chart (values are rescaled to a readable
                            pixel range). Cannot be combined with --series.

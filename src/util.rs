@@ -3153,6 +3153,16 @@ pub fn get_stats_records(
 
         let input = stats_args.arg_input.unwrap_or_else(|| "-".to_string());
 
+        // for the date-inferring modes (Schema/ProfileSchema), default an unspecified
+        // whitelist to "sniff" so date/datetime columns are auto-detected rather than left as
+        // strings. An explicit caller value (e.g. `qsv schema --dates-whitelist`, profile's
+        // preset, viz's "sniff") still wins.
+        let dates_whitelist = if stats_args.flag_dates_whitelist.is_empty() {
+            "sniff"
+        } else {
+            stats_args.flag_dates_whitelist.as_str()
+        };
+
         // we do rustfmt::skip here as it was breaking the stats cmdline along strange
         // boundaries, causing CI errors.
         // This is because we're using tab characters (/t) to separate args to fix #2294,
@@ -3164,8 +3174,7 @@ pub fn get_stats_records(
                 format!(
                     "stats\t{input}\t--round\t4\t--cardinality\
                     \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
-                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
-                    dates_whitelist = stats_args.flag_dates_whitelist
+                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}"
                 )
             },
             StatsMode::ProfileSchema => {
@@ -3177,8 +3186,7 @@ pub fn get_stats_records(
                     "stats\t{input}\t--round\t4\t--cardinality\
                     \t--quartiles\t--mode\
                     \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
-                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}",
-                    dates_whitelist = stats_args.flag_dates_whitelist
+                    \t--stats-jsonl\t--force\t--output\t{tempfile_path}"
                 )
             },
             StatsMode::Frequency => {

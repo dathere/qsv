@@ -770,3 +770,60 @@ fn viz_smart_correlation_panel() {
     // "metric_a" is 8 chars => 8*7 + 24 = 80px.
     assert!(html.contains(r#""l":80"#));
 }
+
+#[test]
+fn viz_smart_timeseries_panel() {
+    let wrk = Workdir::new("viz_smart_timeseries_panel");
+    // a date column + a continuous (high-cardinality) numeric column => `viz smart` adds a
+    // time-series line panel of the numeric column over the date. A low-card categorical
+    // column becomes a frequency bar.
+    let mut rows = String::from("txn_date,revenue,region\n");
+    for i in 0..40 {
+        let day = (i % 28) + 1;
+        let month = (i / 28) + 1;
+        let revenue = 1000 + i * 13;
+        let region = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("2021-{month:02}-{day:02},{revenue},{region}\n"));
+    }
+    wrk.create_from_string("sales.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a line trace drawn on a date-typed x-axis ...
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains(r#""type":"date""#));
+    // ... titled "<numeric> over <date>"; revenue is the continuous numeric column chosen as y
+    assert!(html.contains("revenue over txn_date"));
+}
+
+#[test]
+fn viz_smart_timeseries_dmy_dates() {
+    let wrk = Workdir::new("viz_smart_timeseries_dmy_dates");
+    // AMBIGUOUS DMY dates (day AND month both <= 12, so each parses to a *different valid date*
+    // under DMY vs MDY) in deliberately non-chronological input order, plus QSV_PREFER_DMY.
+    // stats infers these as dates with the DMY preference; the time-series builder must use the
+    // SAME preference, else the dates are parsed as MDY -> different values AND a different sort
+    // order. Asserting the exact rendered x-axis (ISO, chronologically sorted) catches that.
+    let rows = "sale_date,revenue\n07/02/2021,1500\n03/05/2021,1200\n11/01/2021,1000\n06/08/2021,\
+                1700\n02/04/2021,1100\n09/03/2021,1300\n05/06/2021,1600\n08/07/2021,1400\n";
+    wrk.create_from_string("sales.csv", rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_PREFER_DMY", "1");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains("revenue over sale_date"));
+    // x-axis dates parsed as DMY (e.g. 11/01 -> 2021-01-11, not 2021-11-01) and sorted
+    // chronologically. Under the buggy MDY parse this array would have different values/order.
+    assert!(html.contains(
+        r#""x":["2021-01-11","2021-02-07","2021-03-09","2021-04-02","2021-05-03","2021-06-05","2021-07-08","2021-08-06"]"#
+    ));
+}

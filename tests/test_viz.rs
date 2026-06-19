@@ -770,3 +770,32 @@ fn viz_smart_correlation_panel() {
     // "metric_a" is 8 chars => 8*7 + 24 = 80px.
     assert!(html.contains(r#""l":80"#));
 }
+
+#[test]
+fn viz_smart_timeseries_panel() {
+    let wrk = Workdir::new("viz_smart_timeseries_panel");
+    // a date column + a continuous (high-cardinality) numeric column => `viz smart` adds a
+    // time-series line panel of the numeric column over the date. A low-card categorical
+    // column becomes a frequency bar.
+    let mut rows = String::from("txn_date,revenue,region\n");
+    for i in 0..40 {
+        let day = (i % 28) + 1;
+        let month = (i / 28) + 1;
+        let revenue = 1000 + i * 13;
+        let region = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("2021-{month:02}-{day:02},{revenue},{region}\n"));
+    }
+    wrk.create_from_string("sales.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a line trace drawn on a date-typed x-axis ...
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains(r#""type":"date""#));
+    // ... titled "<numeric> over <date>"; revenue is the continuous numeric column chosen as y
+    assert!(html.contains("revenue over txn_date"));
+}

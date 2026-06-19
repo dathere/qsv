@@ -44,8 +44,10 @@ frequency caches: continuous numeric columns become box plots (drawn from precom
 quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
 frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
 dataset has two or more continuous numeric columns, a correlation heatmap panel is added
-(this one panel does a single extra data pass to compute Pearson correlations). The
-first run computes & caches stats; subsequent runs are fast.
+(this one panel does a single extra data pass to compute Pearson correlations). When the
+dataset has a date/datetime column (auto-detected via stats date inference) plus a
+continuous numeric column, a time-series line panel of that column over time is added too.
+The first run computes & caches stats; subsequent runs are fast.
 
 
 <a name="examples"></a>

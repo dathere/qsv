@@ -32,8 +32,10 @@ frequency caches: continuous numeric columns become box plots (drawn from precom
 quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
 frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
 dataset has two or more continuous numeric columns, a correlation heatmap panel is added
-(this one panel does a single extra data pass to compute Pearson correlations). The
-first run computes & caches stats; subsequent runs are fast.
+(this one panel does a single extra data pass to compute Pearson correlations). When the
+dataset has a date/datetime column (auto-detected via stats date inference) plus a
+continuous numeric column, a time-series line panel of that column over time is added too.
+The first run computes & caches stats; subsequent runs are fast.
 
 Examples:
   # Auto-dashboard for a dataset, opened in the browser
@@ -178,10 +180,10 @@ use plotly::{
     ScatterPolar, Trace,
     box_plot::{BoxPoints, QuartileMethod},
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Marker, Mode, TextPosition,
-        Title,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Line, Marker, Mode,
+        TextPosition, Title,
     },
-    layout::{Annotation, Axis, Layout, Margin},
+    layout::{Annotation, Axis, AxisType, Layout, Margin},
     sankey::{Link, Node},
 };
 use serde::Deserialize;
@@ -1703,6 +1705,14 @@ enum PanelKind {
     },
     /// Frequency bar chart; `idx` is the source column index.
     FreqBar { idx: usize },
+    /// Line chart of a numeric column over a date/datetime column, sorted chronologically.
+    /// Carries the precomputed (already date-sorted) x date strings and y values so the render
+    /// loop stays a pure assembly step.
+    TimeSeries {
+        y_label: String,
+        xs:      Vec<String>,
+        ys:      Vec<f64>,
+    },
     /// Pearson correlation heatmap over the dataset's numeric columns. Carries precomputed
     /// data (labels + matrix) so the render loop stays a pure assembly step.
     CorrHeatmap {
@@ -1766,6 +1776,105 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
     }
 }
 
+/// Build a time-series trend panel when the dataset has a date/datetime column and a
+/// continuous numeric column: that numeric column plotted as a line over the first
+/// date/datetime column, with rows sorted chronologically.
+///
+/// `viz smart` computes stats with `--infer-dates --dates-whitelist sniff` (see
+/// `util::get_stats_records`, `StatsMode::ProfileSchema`), so date/datetime columns that
+/// `qsv sniff` identifies are typed confidently rather than reported as plain strings. Like
+/// the correlation panel, this does one extra data pass (timestamps are not in the stats
+/// cache). Returns None when there is no date column, no continuous numeric column, or fewer
+/// than two parseable (date, value) pairs.
+fn build_timeseries_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+) -> CliResult<Option<Panel>> {
+    use qsv_dateparser::parse_with_preference;
+
+    // first date/datetime column (stats emits "Date" / "DateTime" once dates are inferred)
+    let Some((date_idx, is_datetime)) =
+        stats
+            .iter()
+            .enumerate()
+            .find_map(|(i, s)| match s.r#type.as_str() {
+                "Date" => Some((i, false)),
+                "DateTime" => Some((i, true)),
+                _ => None,
+            })
+    else {
+        return Ok(None);
+    };
+
+    // y-axis: the first continuous numeric column (high-cardinality or near-unique, i.e. NOT a
+    // low-cardinality categorical), preferring a Float over an Integer. Near-unique columns are
+    // deliberately allowed here — a measurement like revenue or temperature is often near-unique
+    // yet makes the most meaningful trend — unlike the box/correlation panels, which treat
+    // near-unique integers as ID-like and skip them.
+    let continuous_numeric = |s: &crate::cmd::stats::StatsData| {
+        if !matches!(s.r#type.as_str(), "Integer" | "Float") || s.cardinality <= 1 {
+            return false;
+        }
+        let near_unique = s.uniqueness_ratio.is_some_and(|r| r > 0.95);
+        let low_cardinality = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
+        !low_cardinality
+    };
+    let Some(y_idx) = stats
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| continuous_numeric(s))
+        .min_by_key(|(_, s)| usize::from(s.r#type != "Float"))
+        .map(|(i, _)| i)
+    else {
+        return Ok(None);
+    };
+
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+
+    // collect (timestamp_ms, formatted_date, y), skipping rows missing either field. dates are
+    // parsed without a dmy preference, matching the stats inference used to type the column.
+    let mut points: Vec<(i64, String, f64)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(y) = parse_f64(record.get(y_idx)) else {
+            continue;
+        };
+        let Some(raw) = record.get(date_idx) else {
+            continue;
+        };
+        let Ok(text) = std::str::from_utf8(raw) else {
+            continue;
+        };
+        let text = text.trim();
+        if text.is_empty() {
+            continue;
+        }
+        let Ok(dt) = parse_with_preference(text, false) else {
+            continue;
+        };
+        let label = if is_datetime {
+            dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+        } else {
+            dt.format("%Y-%m-%d").to_string()
+        };
+        points.push((dt.timestamp_millis(), label, y));
+    }
+    // a line needs at least two points
+    if points.len() < 2 {
+        return Ok(None);
+    }
+    points.sort_by_key(|p| p.0);
+
+    let y_label = col_label(&headers, y_idx, nh);
+    let date_label = col_label(&headers, date_idx, nh);
+    let xs = points.iter().map(|p| p.1.clone()).collect();
+    let ys = points.iter().map(|p| p.2).collect();
+    Ok(Some(Panel {
+        name: format!("{y_label} over {date_label}"),
+        kind: PanelKind::TimeSeries { y_label, xs, ys },
+    }))
+}
+
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
 /// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
 /// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
@@ -1787,7 +1896,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         flag_strict_dates:    false,
         flag_strict_formats:  false,
         flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
-        flag_dates_whitelist: "all".to_string(),
+        flag_dates_whitelist: "sniff".to_string(),
         flag_prefer_dmy:      false,
         flag_force:           false,
         flag_stdout:          false,
@@ -1852,6 +1961,13 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         }
     }
 
+    // prepend a time-series trend panel when the data has a date/datetime column and a
+    // continuous numeric column. Like the correlation panel, it does one extra data pass and
+    // is prepended so it survives the panel cap.
+    if let Some(panel) = build_timeseries_panel(args, &stats)? {
+        panels.insert(0, panel);
+    }
+
     // decide the rendering path. Up to MAX_SUBPLOTS panels always use the typed subplot grid
     // (the only form that supports static image export). For HTML output, more than that
     // switches to an inline-div grid (up to MAX_PANELS_INLINE). Image export can't assemble
@@ -1914,7 +2030,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         .iter()
         .filter_map(|p| match p.kind {
             PanelKind::FreqBar { idx } => Some(idx),
-            PanelKind::BoxStats { .. } | PanelKind::CorrHeatmap { .. } => None,
+            PanelKind::BoxStats { .. }
+            | PanelKind::CorrHeatmap { .. }
+            | PanelKind::TimeSeries { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -2003,6 +2121,16 @@ fn panel_trace(
             }
             bar
         },
+        PanelKind::TimeSeries { y_label, xs, ys } => {
+            let mut t = Scatter::new(xs.clone(), ys.clone())
+                .mode(Mode::Lines)
+                .name(y_label.clone())
+                .line(Line::new().color(color));
+            if let Some((x, y)) = &axes {
+                t = t.x_axis(x.clone()).y_axis(y.clone());
+            }
+            t
+        },
         PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
             labels
                 .iter()
@@ -2039,7 +2167,9 @@ fn render_smart_grid(
         .iter()
         .find_map(|p| match &p.kind {
             PanelKind::CorrHeatmap { labels, .. } => Some(labels),
-            PanelKind::BoxStats { .. } | PanelKind::FreqBar { .. } => None,
+            PanelKind::BoxStats { .. }
+            | PanelKind::FreqBar { .. }
+            | PanelKind::TimeSeries { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
             let longest = labels
@@ -2087,6 +2217,7 @@ fn render_smart_grid(
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];
         let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
+        let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
         let (trace, bar_max) = panel_trace(panel, color, freq, Some((xref.clone(), yref.clone())));
         plot.add_trace(trace);
 
@@ -2095,7 +2226,7 @@ fn render_smart_grid(
         layout = place_subplot_axes(
             layout,
             pos,
-            styled_x_axis(is_box),
+            styled_x_axis(is_box, is_date),
             styled_y_axis(bar_max),
             geom.x_domain,
             geom.y_domain,
@@ -2172,6 +2303,7 @@ fn smart_inline_panel_plot(
 ) -> Plot {
     let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
+    let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let (trace, bar_max) = panel_trace(panel, color, freq, None);
 
     let mut plot = Plot::new();
@@ -2194,7 +2326,7 @@ fn smart_inline_panel_plot(
         .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
         .paper_background_color(PAPER_BG)
         .plot_background_color(PAPER_BG)
-        .x_axis(styled_x_axis(is_box))
+        .x_axis(styled_x_axis(is_box, is_date))
         .y_axis(styled_y_axis(bar_max));
 
     if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
@@ -2376,8 +2508,9 @@ fn subplot_geometry(
 
 /// A styled x-axis for a dashboard panel: no vertical gridlines, a light baseline, and
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
-/// meaningless, so its labels and baseline are hidden.
-fn styled_x_axis(is_box: bool) -> Axis {
+/// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
+/// the axis is typed as a date axis so plotly spaces ticks chronologically.
+fn styled_x_axis(is_box: bool, is_date: bool) -> Axis {
     let mut a = Axis::new()
         .show_grid(false)
         .zero_line(false)
@@ -2387,6 +2520,9 @@ fn styled_x_axis(is_box: bool) -> Axis {
         .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
     if is_box {
         a = a.show_tick_labels(false).show_line(false);
+    }
+    if is_date {
+        a = a.type_(AxisType::Date);
     }
     a
 }

@@ -438,9 +438,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use our patched fork of cpc to bump dependencies until our PR is merged
-cpc = { git = "https://github.com/jqnatividad/cpc", branch = "upstream-migrate-fastnum-0.7.5" }
-
 # use our patched fork of csvlens to bump dependencies until our PR is merged
 csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_tui-input_crossterm_n_lock_file" }
 

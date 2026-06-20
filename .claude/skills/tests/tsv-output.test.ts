@@ -390,6 +390,48 @@ test(
   },
 );
 
+test(
+  "viz rejects a non-HTML --output (HTML-only over MCP)",
+  { skip: !QSV_AVAILABLE },
+  async () => {
+    const testDir = await createTestDir("qsv-viz-html-only");
+    const loader = new SkillLoader();
+    const executor = new SkillExecutor();
+
+    try {
+      await loader.loadAll();
+
+      const csvPath = await createTestCSV(
+        testDir,
+        "test.csv",
+        "id,category\n1,A\n2,B\n3,A\n",
+      );
+
+      // Static image export (.png) must be rejected before viz runs, so MCP
+      // callers can't trigger the browser/webdriver-backed static-export path.
+      const result = await handleToolCall(
+        "qsv_viz",
+        {
+          input_file: csvPath,
+          subcommand: "smart",
+          output: join(testDir, "chart.png"),
+        },
+        executor,
+        loader,
+      );
+
+      assert.ok(result.isError, "viz with .png output should error");
+      const text = result.content?.[0]?.text ?? "";
+      assert.ok(
+        /HTML-only/i.test(text) && /\.html/i.test(text),
+        `Error should explain HTML-only restriction, got: ${text}`,
+      );
+    } finally {
+      await cleanupTestDir(testDir);
+    }
+  },
+);
+
 // ============================================================================
 // Binary format guard tests (isBinaryOutputFormat helper)
 // ============================================================================

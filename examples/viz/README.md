@@ -35,11 +35,11 @@ as `text/plain`, so a browser won't render it):
 
 | File | Shape | Used by |
 |------|-------|---------|
-| `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble), `histogram`, `box`, `pie`, `heatmap` |
+| `sales_sample.csv` | 500 e-commerce orders: categoricals, a boolean, a rating, several correlated numerics, an ID and a high-cardinality text column | `smart`, `bar`, `line`, `scatter` (incl. bubble & 3D), `histogram`, `box`, `pie`, `heatmap`, `contour` |
 | `stock_prices.csv` | 90 trading days of `date,open,high,low,close,volume` | `smart` (time-series), `candlestick`, `ohlc`, `line` |
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
-| `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto map panel), `map` (points & density) |
+| `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
 
@@ -48,17 +48,28 @@ as `text/plain`, so a browser won't render it):
 `viz smart` auto-profiles the dataset (from qsv's stats cache) and picks a panel
 per column: a **correlation heatmap** over the numeric columns, **box plots** for
 continuous numerics, and **frequency bars** for low-cardinality categoricals,
-booleans, and ratings. When the numeric columns have a strongly correlated pair,
-a **scatter** of that pair is added next to the heatmap as a drill-down. When the
-data has a date/datetime column (auto-detected via stats date inference) plus a
-continuous numeric column, a **time-series trend** panel of that column over time
-is added too. When a latitude/longitude column pair is detected, a **geographic
-map** panel leads the dashboard. ID-like and high-cardinality text columns are
-skipped.
+booleans, and ratings. The box plots overlay sample points based on the dataset
+size — every point for small data, just the Tukey outliers for medium data, and
+none for large data (where the box stays a fast cache-only quartile summary);
+pass `--box-points <outliers|all|suspected|none>` to force a mode. When the
+numeric columns have a strongly correlated pair,
+a **scatter** of that pair is added next to the heatmap as a drill-down — or, for
+large datasets where a scatter would overplot, a **2D density contour** of the
+pair instead. With three or more numeric columns, a **3D scatter** of the
+strongest-correlation triple is added as well. When the data has a date/datetime
+column (auto-detected via stats date inference) plus a continuous numeric column,
+a **time-series trend** panel of that column over time is added too. When a
+latitude/longitude column pair is detected, a **geographic map** panel leads the
+dashboard — drawn on mapbox tiles for local extents, or as an offline
+**projection world-overview** (ScatterGeo, no tiles or token) when the
+coordinates span a continental/global area. ID-like and high-cardinality text
+columns are skipped.
 
 On large datasets `viz smart` keeps the page light and interactive: each
-data-heavy panel (map, time-series, correlated-pair scatter) is uniformly
-downsampled to at most 50,000 points, and the map view is framed to the bulk of
+data-heavy panel (map, time-series, correlated-pair scatter, 3D scatter) is
+uniformly downsampled to at most 50,000 points (the correlated-pair density
+contour instead embeds only a fixed bin grid, so it stays compact at any row
+count), and the map view is framed to the bulk of
 the coordinates (a 2.5% trim on each axis) so a few stray geocodes can't zoom it
 out to nothing. The map panel also adapts to volume — at ~20,000+ mappable rows
 it renders as a **density heatmap** (individual markers would overplot into a
@@ -131,6 +142,9 @@ qsv viz scatter sales_sample.csv --x units_sold --y revenue -o scatter.html
 # scatter (bubble) — encode numeric columns as marker size & color (continuous colorscale)
 qsv viz scatter sales_sample.csv --x units_sold --y revenue --size shipping_cost --color profit_margin_pct -o bubble.html
 
+# scatter3d — three numeric columns in 3D; marker color by a fourth
+qsv viz scatter3d sales_sample.csv --x units_sold --y revenue --z shipping_cost --color profit_margin_pct -o scatter3d.html
+
 # histogram — distribution of unit price
 qsv viz histogram sales_sample.csv --x unit_price -o histogram.html
 
@@ -148,6 +162,9 @@ qsv viz heatmap sales_sample.csv -o heatmap_corr.html
 
 # scatter (correlated pair) — the strongest pair from the matrix; viz smart auto-adds this
 qsv viz scatter sales_sample.csv --x discount_pct --y profit_margin_pct -o corr_pair.html
+
+# contour — 2D density of two numeric columns (binned); viz smart uses this for big data
+qsv viz contour sales_sample.csv --x units_sold --y revenue --bins 20 -o contour.html
 
 # heatmap (pivot) — region x category grid of revenue (give --x, --y and --z)
 qsv viz heatmap sales_sample.csv --x region --y product_category --z revenue -o heatmap_pivot.html
@@ -169,6 +186,9 @@ qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth_km -o 
 
 # map (density) — DensityMapbox heatmap of the same points, on a light Carto basemap
 qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o map_density.html
+
+# geo — offline projection map (no tiles/token); viz smart auto-uses this for global coordinates
+qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
 ```
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means

@@ -17,18 +17,24 @@ Chart types (subcommands):
     bar         Bar chart.        --x = category column, --y = value column.
     line        Line chart.       --x = x column, --y = y column.
     scatter     Scatter plot.     --x = x column, --y = y column.
+    scatter3d   3D scatter plot.  --x, --y, --z = three numeric columns.
     histogram   Distribution.     --x = numeric column to bin.
     box         Box plot.         --y = value column, optional --x = group column.
     pie         Proportions.      --x = label column, optional --y = value column.
     heatmap     Color grid. Correlation matrix of numeric columns (default; an
                 optional column subset via --cols), or a category x category pivot
                 with --x/--y/--z.
+    contour     2D density contour of two numeric columns (--x and --y), binned
+                into a grid (--bins controls the grid resolution).
     candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
     ohlc        Financial OHLC bars (same inputs as candlestick).
     sankey      Flow diagram.     --source, --target, optional --value column.
     radar       Polar/radar chart of numeric --cols, optional --series per trace.
     map         Geographic point map (or --density heatmap) on tile basemaps.
                 Pick the coordinate columns with the lat/lon options below.
+    geo         Geographic point map on a projection basemap (coastlines/land/
+                countries; no tiles, no token). Uses the same lat/lon options
+                as `map`, plus --projection. Good for global/country-scale data.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed
@@ -94,6 +100,15 @@ Examples:
   # Density heatmap of the same points, on a light Carto basemap
   qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html
 
+  # 3D scatter of three numeric columns, colored by a fourth
+  qsv viz scatter3d data.csv --x length --y width --z height --color weight -o scatter3d.html
+
+  # 2D density contour of two numeric columns with a 40x40 grid
+  qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html
+
+  # Projection map of earthquakes (token-free), marker color by magnitude
+  qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 
 Usage:
@@ -101,15 +116,18 @@ Usage:
     qsv viz bar         [options] <input>
     qsv viz line        [options] <input>
     qsv viz scatter     [options] <input>
+    qsv viz scatter3d   [options] <input>
     qsv viz histogram   [options] <input>
     qsv viz box         [options] <input>
     qsv viz pie         [options] <input>
     qsv viz heatmap     [options] <input>
+    qsv viz contour     [options] <input>
     qsv viz candlestick [options] <input>
     qsv viz ohlc        [options] <input>
     qsv viz sankey      [options] <input>
     qsv viz radar       [options] <input>
     qsv viz map         [options] <input>
+    qsv viz geo         [options] <input>
     qsv viz --help
 
 viz options:
@@ -142,13 +160,16 @@ viz options:
     --bins <n>             Number of bins for the histogram. (default: auto)
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
-    --box-points <mode>    For box plots, which sample points to draw alongside the
-                           box. Explicit `viz box` reads the raw values, so plotly
-                           renders true Tukey whiskers (1.5*IQR) and the points beyond
-                           the fences are the outliers. One of: outliers (only the
-                           outliers, the default), all (every point, jittered),
-                           suspected (mark suspected outliers), none (no points).
-                           [default: outliers]
+    --box-points <mode>    Which sample points to draw alongside a box. Reading the
+                           raw values lets plotly render true Tukey whiskers (1.5*IQR)
+                           with the points beyond the fences as outliers. One of:
+                           outliers (only the outliers), all (every point, jittered),
+                           suspected (mark suspected outliers), none (no points, but
+                           still real Tukey whiskers). For `viz box` the default is
+                           outliers. For `viz smart` this flag is OPT-IN: without it,
+                           box panels are drawn from the precomputed quartiles (no data
+                           re-scan, observed min/max whiskers); passing it makes smart
+                           do one extra batched pass to overlay the points.
 
 map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
@@ -165,6 +186,14 @@ map options:
                            [default: open-street-map]
     --mapbox-token <tok>   Mapbox access token, required only for the mapbox-hosted
                            basemap styles listed above.
+
+geo options:
+    --projection <name>    Map projection for `viz geo`. One of: natural-earth (the
+                           default), mercator, orthographic, equirectangular,
+                           albers-usa, robinson, winkel-tripel, mollweide, hammer,
+                           azimuthal-equal-area. `viz geo` also reuses the lat, lon,
+                           text, color, size and series options from `map`.
+                           [default: natural-earth]
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -216,14 +245,18 @@ use std::{
 };
 
 use plotly::{
-    Bar, BoxPlot, Candlestick, Configuration, DensityMapbox, HeatMap, Histogram, Ohlc, Pie, Plot,
-    Sankey, Scatter, ScatterMapbox, ScatterPolar, Trace,
+    Bar, BoxPlot, Candlestick, Configuration, Contour, DensityMapbox, HeatMap, Histogram, Ohlc,
+    Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox, ScatterPolar, Trace,
     box_plot::{BoxPoints, QuartileMethod},
+    color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Line, Marker, Mode,
         TextPosition, Title,
     },
-    layout::{Annotation, Axis, AxisType, Center, Layout, Mapbox, MapboxStyle, Margin},
+    layout::{
+        Annotation, Axis, AxisType, Center, Layout, LayoutGeo, LayoutScene, Mapbox, MapboxStyle,
+        Margin, Projection, ProjectionType,
+    },
     sankey::{Link, Node},
 };
 use serde::Deserialize;
@@ -252,6 +285,30 @@ const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 /// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
+
+/// At or above this many complete rows, `viz smart` draws the strongest-correlated numeric pair as
+/// a 2D density contour instead of a scatter: past this point a scatter overplots into a solid
+/// mass, while a binned contour embeds only a fixed grid (so it's both more readable and far
+/// smaller).
+const SMART_CONTOUR_MIN_POINTS: usize = 5_000;
+
+/// Bin resolution (per axis) for `viz smart`'s correlated-pair density contour panel.
+const SMART_CONTOUR_BINS: usize = 30;
+
+/// `viz smart` row-count thresholds for the default (no explicit `--box-points`) box-overlay
+/// heuristic: at or below ALL, every sample point is overlaid on a box; at or below OUTLIERS, only
+/// the Tukey outliers; above that, no points are drawn and the box stays a cache-only quartile
+/// summary (overlaying tens of thousands of points is an unreadable smear, and skipping them avoids
+/// the extra data pass).
+const SMART_BOX_ALL_MAX: u64 = 1_000;
+const SMART_BOX_OUTLIERS_MAX: u64 = 10_000;
+
+/// `viz smart` renders its geographic panel as a `ScatterGeo` projection world-overview (offline,
+/// no tiles) instead of a zoomed mapbox tile map when the coordinates span at least this many
+/// degrees of longitude OR latitude — i.e. continental/global data, where a whole-world projection
+/// gives better context than tiles framed to a wide bounding box. Local extents keep the tile map.
+const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
+const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
 
 /// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose moarstats
 /// `bimodality_coefficient` reaches this is treated as bimodal/multimodal, so `viz smart` draws
@@ -357,15 +414,18 @@ struct Args {
     cmd_bar:           bool,
     cmd_line:          bool,
     cmd_scatter:       bool,
+    cmd_scatter3d:     bool,
     cmd_histogram:     bool,
     cmd_box:           bool,
     cmd_pie:           bool,
     cmd_heatmap:       bool,
+    cmd_contour:       bool,
     cmd_candlestick:   bool,
     cmd_ohlc:          bool,
     cmd_sankey:        bool,
     cmd_radar:         bool,
     cmd_map:           bool,
+    cmd_geo:           bool,
     arg_input:         Option<String>,
     flag_x:            Option<SelectColumns>,
     flag_y:            Option<SelectColumns>,
@@ -394,6 +454,7 @@ struct Args {
     flag_density:      bool,
     flag_style:        Option<String>,
     flag_mapbox_token: Option<String>,
+    flag_projection:   Option<String>,
     flag_bins:         Option<usize>,
     flag_agg:          Option<String>,
     flag_box_points:   Option<String>,
@@ -562,9 +623,13 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
-        if !matches!(chart_kind(args), Chart::Scatter | Chart::Map) {
+        if !matches!(
+            chart_kind(args),
+            Chart::Scatter | Chart::Scatter3D | Chart::Map | Chart::Geo
+        ) {
             return fail_incorrectusage_clierror!(
-                "--color/--size only apply to `viz scatter` and `viz map`."
+                "--color/--size only apply to `viz scatter`, `viz scatter3d`, `viz map` and `viz \
+                 geo`."
             );
         }
         if args.flag_series.is_some() {
@@ -580,6 +645,15 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
     // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
     if matches!(chart_kind(args), Chart::Map) {
         return build_map_plot(args);
+    }
+
+    // `geo` uses a `geo` layout (projection basemap) and `scatter3d` a `scene` layout (3D
+    // axes); neither is cartesian, so each owns its whole `Plot` like the map above.
+    if matches!(chart_kind(args), Chart::Geo) {
+        return build_geo_plot(args);
+    }
+    if matches!(chart_kind(args), Chart::Scatter3D) {
+        return build_scatter3d_plot(args);
     }
 
     let mut plot = Plot::new();
@@ -616,6 +690,11 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
             plot.add_trace(trace);
             (x_label, y_label)
         },
+        Chart::Contour => {
+            let (trace, x_label, y_label) = build_contour(args)?;
+            plot.add_trace(trace);
+            (Some(x_label), Some(y_label))
+        },
         kind @ (Chart::Candlestick | Chart::Ohlc) => {
             let (trace, x_label, y_label) = build_candlestick(args, matches!(kind, Chart::Ohlc))?;
             plot.add_trace(trace);
@@ -646,15 +725,18 @@ enum Chart {
     Bar,
     Line,
     Scatter,
+    Scatter3D,
     Histogram,
     Box,
     Pie,
     Heatmap,
+    Contour,
     Candlestick,
     Ohlc,
     Sankey,
     Radar,
     Map,
+    Geo,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -664,6 +746,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Line
     } else if args.cmd_scatter {
         Chart::Scatter
+    } else if args.cmd_scatter3d {
+        Chart::Scatter3D
     } else if args.cmd_histogram {
         Chart::Histogram
     } else if args.cmd_box {
@@ -672,6 +756,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Pie
     } else if args.cmd_heatmap {
         Chart::Heatmap
+    } else if args.cmd_contour {
+        Chart::Contour
     } else if args.cmd_candlestick {
         Chart::Candlestick
     } else if args.cmd_ohlc {
@@ -682,6 +768,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Radar
     } else if args.cmd_map {
         Chart::Map
+    } else if args.cmd_geo {
+        Chart::Geo
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -1111,14 +1199,23 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
         let hi = sorted_quantile(&sorted, 1.0 - trim_frac);
         ((lo + hi) / 2.0, hi - lo)
     } else {
-        // data crosses the antimeridian: the cluster runs from sorted[gap_idx + 1] eastward,
-        // wrapping past 180, to sorted[gap_idx] (+360 to keep the arc contiguous)
-        let span = 360.0 - max_gap;
-        let mut center = (sorted[gap_idx + 1] + sorted[gap_idx] + 360.0) / 2.0;
+        // data crosses the antimeridian: unwrap the cluster into a contiguous ascending longitude
+        // range — the arc east of the gap (sorted[gap_idx + 1..]), then the points west of it
+        // shifted +360 — and apply the same quantile trimming as the non-crossing branch, so a lone
+        // far in-range outlier can't inflate the span. The cluster runs from sorted[gap_idx + 1]
+        // eastward, wrapping past 180, to sorted[gap_idx] (+360 keeps the arc contiguous). With
+        // trim_frac == 0 this reduces exactly to the full `360 - max_gap` span and the arc-midpoint
+        // center.
+        let mut unwrapped: Vec<f64> = Vec::with_capacity(n);
+        unwrapped.extend_from_slice(&sorted[gap_idx + 1..]);
+        unwrapped.extend(sorted[..=gap_idx].iter().map(|v| v + 360.0));
+        let lo = sorted_quantile(&unwrapped, trim_frac);
+        let hi = sorted_quantile(&unwrapped, 1.0 - trim_frac);
+        let mut center = (lo + hi) / 2.0;
         if center > 180.0 {
             center -= 360.0;
         }
-        (center, span)
+        (center, hi - lo)
     }
 }
 
@@ -1313,6 +1410,352 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
     let mut layout = Layout::new()
         .mapbox(mapbox)
         .show_legend(series_idx.is_some());
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(layout);
+    Ok(plot)
+}
+
+/// Parse a `--projection` name into a plotly geo `ProjectionType`. A curated, token-free subset
+/// of plotly's projections; names are case-insensitive and accept spaces or underscores.
+fn parse_projection(name: &str) -> CliResult<ProjectionType> {
+    let normalized = name.to_ascii_lowercase().replace([' ', '_'], "-");
+    let projection = match normalized.as_str() {
+        "natural-earth" => ProjectionType::NaturalEarth,
+        "mercator" => ProjectionType::Mercator,
+        "orthographic" => ProjectionType::Orthographic,
+        "equirectangular" => ProjectionType::Equirectangular,
+        "albers-usa" => ProjectionType::AlbersUsa,
+        "robinson" => ProjectionType::Robinson,
+        "winkel-tripel" => ProjectionType::WinkelTripel,
+        "mollweide" => ProjectionType::Mollweide,
+        "hammer" => ProjectionType::Hammer,
+        "azimuthal-equal-area" => ProjectionType::AzimuthalEqualArea,
+        _ => {
+            return fail_incorrectusage_clierror!(
+                "Unknown --projection '{name}'. One of: natural-earth, mercator, orthographic, \
+                 equirectangular, albers-usa, robinson, winkel-tripel, mollweide, hammer, \
+                 azimuthal-equal-area."
+            );
+        },
+    };
+    Ok(projection)
+}
+
+/// Build a markers-mode `ScatterGeo` point trace with the given marker (and optional per-point
+/// hover text), mirroring `scatter_mapbox_with_marker` for the projection-basemap path.
+fn scatter_geo_with_marker(
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+    marker: Marker,
+    text: Option<Vec<String>>,
+) -> Box<dyn Trace> {
+    let mut t = ScatterGeo::new(lats, lons)
+        .mode(Mode::Markers)
+        .marker(marker);
+    if let Some(text) = text {
+        t = t.text_array(text);
+    }
+    t
+}
+
+/// Split row-aligned coordinates into one `ScatterGeo` trace per `--series` category, preserving
+/// first-seen category order. `texts` is applied as per-point hover text when present.
+fn geo_series_traces(
+    lats: Vec<f64>,
+    lons: Vec<f64>,
+    series: Vec<String>,
+    texts: Vec<String>,
+) -> Vec<Box<dyn Trace>> {
+    let has_text = texts.len() == lats.len();
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: BTreeMap<String, (Vec<f64>, Vec<f64>, Vec<String>)> = BTreeMap::new();
+    for i in 0..lats.len() {
+        let name = series[i].clone();
+        let entry = groups.entry(name.clone()).or_insert_with(|| {
+            order.push(name);
+            (Vec::new(), Vec::new(), Vec::new())
+        });
+        entry.0.push(lats[i]);
+        entry.1.push(lons[i]);
+        if has_text {
+            entry.2.push(texts[i].clone());
+        }
+    }
+    order
+        .into_iter()
+        .map(|name| {
+            let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
+            let mut t = ScatterGeo::new(la, lo).mode(Mode::Markers).name(name);
+            if !tx.is_empty() {
+                t = t.text_array(tx);
+            }
+            let trace: Box<dyn Trace> = t;
+            trace
+        })
+        .collect()
+}
+
+/// Build the complete `Plot` for `viz geo`: a `ScatterGeo` point map on a projection basemap
+/// (coastlines/land/countries, no tiles or token), with optional `--color`/`--size` marker
+/// encodings or `--series` per-category traces. Mirrors `build_map_plot` minus the tile basemap.
+fn build_geo_plot(args: &Args) -> CliResult<Plot> {
+    let projection = parse_projection(args.flag_projection.as_deref().unwrap_or("natural-earth"))?;
+
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+    let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+    let color_idx = match args.flag_color.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "color")?),
+        None => None,
+    };
+    let size_idx = match args.flag_size.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "size")?),
+        None => None,
+    };
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let text_idx = match args.flag_text.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "text")?),
+        None => None,
+    };
+
+    // accumulate row-aligned columns; a row is kept only when lat/lon are valid coordinates AND
+    // every requested encoding column has a numeric value, so all per-point arrays stay aligned.
+    let mut lats: Vec<f64> = Vec::new();
+    let mut lons: Vec<f64> = Vec::new();
+    let mut colors: Vec<f64> = Vec::new();
+    let mut sizes: Vec<f64> = Vec::new();
+    let mut series: Vec<String> = Vec::new();
+    let mut texts: Vec<String> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+            continue;
+        }
+        let color = match color_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        let size = match size_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        lats.push(lat);
+        lons.push(lon);
+        if let Some(v) = color {
+            colors.push(v);
+        }
+        if let Some(v) = size {
+            sizes.push(v);
+        }
+        if let Some(i) = series_idx {
+            series.push(cell_to_string(record.get(i)));
+        }
+        if let Some(i) = text_idx {
+            texts.push(cell_to_string(record.get(i)));
+        }
+    }
+    if lats.is_empty() {
+        return fail_clierror!(
+            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        );
+    }
+
+    let mut plot = Plot::new();
+    if series_idx.is_some() {
+        for trace in geo_series_traces(lats, lons, series, texts) {
+            plot.add_trace(trace);
+        }
+    } else {
+        let mut marker = Marker::new();
+        if !sizes.is_empty() {
+            marker = marker.size_array(scale_bubble_sizes(&sizes));
+        }
+        if !colors.is_empty() {
+            let color_label = col_label(&headers, color_idx.unwrap(), nh);
+            marker = marker
+                .color_array(colors)
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title(color_label));
+        }
+        let text = (!texts.is_empty()).then_some(texts);
+        plot.add_trace(scatter_geo_with_marker(lats, lons, marker, text));
+    }
+
+    let geo = LayoutGeo::new()
+        .projection(Projection::new().projection_type(projection))
+        .showland(true)
+        .landcolor(NamedColor::LightGray)
+        .showocean(true)
+        .oceancolor(NamedColor::LightBlue)
+        .showlakes(true)
+        .lakecolor(NamedColor::LightBlue)
+        .showcountries(true);
+    let mut layout = Layout::new().geo(geo).show_legend(series_idx.is_some());
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(layout);
+    Ok(plot)
+}
+
+/// Split row-aligned (x, y, z) numeric triples into one `Scatter3D` trace per `--series` category,
+/// preserving first-seen category order.
+fn scatter3d_series_traces(
+    xs: Vec<f64>,
+    ys: Vec<f64>,
+    zs: Vec<f64>,
+    series: Vec<String>,
+) -> Vec<Box<dyn Trace>> {
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: BTreeMap<String, (Vec<f64>, Vec<f64>, Vec<f64>)> = BTreeMap::new();
+    for i in 0..xs.len() {
+        let name = series[i].clone();
+        let entry = groups.entry(name.clone()).or_insert_with(|| {
+            order.push(name);
+            (Vec::new(), Vec::new(), Vec::new())
+        });
+        entry.0.push(xs[i]);
+        entry.1.push(ys[i]);
+        entry.2.push(zs[i]);
+    }
+    order
+        .into_iter()
+        .map(|name| {
+            let (a, b, c) = groups.remove(&name).unwrap_or_default();
+            let trace: Box<dyn Trace> = Scatter3D::new(a, b, c).mode(Mode::Markers).name(name);
+            trace
+        })
+        .collect()
+}
+
+/// Build the complete `Plot` for `viz scatter3d`: a `Scatter3D` markers trace over three numeric
+/// columns (--x/--y/--z), with optional `--color`/`--size` marker encodings or `--series` traces.
+/// Uses a 3D `scene` layout (not cartesian axes), so it owns its whole `Plot`.
+fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let z_idx = resolve_one(args.flag_z.as_ref(), &headers, nh, "z")?;
+    let color_idx = match args.flag_color.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "color")?),
+        None => None,
+    };
+    let size_idx = match args.flag_size.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "size")?),
+        None => None,
+    };
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+
+    // a row is kept only when x/y/z and every requested encoding parse as numbers, so all
+    // per-point arrays stay aligned.
+    let mut xs: Vec<f64> = Vec::new();
+    let mut ys: Vec<f64> = Vec::new();
+    let mut zs: Vec<f64> = Vec::new();
+    let mut colors: Vec<f64> = Vec::new();
+    let mut sizes: Vec<f64> = Vec::new();
+    let mut series: Vec<String> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(x), Some(y), Some(z)) = (
+            parse_f64(record.get(x_idx)),
+            parse_f64(record.get(y_idx)),
+            parse_f64(record.get(z_idx)),
+        ) else {
+            continue;
+        };
+        let color = match color_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        let size = match size_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => Some(v),
+                None => continue,
+            },
+            None => None,
+        };
+        xs.push(x);
+        ys.push(y);
+        zs.push(z);
+        if let Some(v) = color {
+            colors.push(v);
+        }
+        if let Some(v) = size {
+            sizes.push(v);
+        }
+        if let Some(i) = series_idx {
+            series.push(cell_to_string(record.get(i)));
+        }
+    }
+    if xs.is_empty() {
+        return fail_clierror!(
+            "No plottable rows found (are --x/--y/--z and the --color/--size columns numeric?)."
+        );
+    }
+
+    let mut plot = Plot::new();
+    if series_idx.is_some() {
+        for trace in scatter3d_series_traces(xs, ys, zs, series) {
+            plot.add_trace(trace);
+        }
+    } else {
+        let mut marker = Marker::new();
+        if !sizes.is_empty() {
+            marker = marker.size_array(scale_bubble_sizes(&sizes));
+        }
+        if !colors.is_empty() {
+            let color_label = col_label(&headers, color_idx.unwrap(), nh);
+            marker = marker
+                .color_array(colors)
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title(color_label));
+        }
+        plot.add_trace(
+            Scatter3D::new(xs, ys, zs)
+                .mode(Mode::Markers)
+                .marker(marker),
+        );
+    }
+
+    let x_title = args
+        .flag_x_title
+        .clone()
+        .unwrap_or_else(|| col_label(&headers, x_idx, nh));
+    let y_title = args
+        .flag_y_title
+        .clone()
+        .unwrap_or_else(|| col_label(&headers, y_idx, nh));
+    let z_title = col_label(&headers, z_idx, nh);
+    let scene = LayoutScene::new()
+        .x_axis(Axis::new().title(Title::with_text(x_title)))
+        .y_axis(Axis::new().title(Title::with_text(y_title)))
+        .z_axis(Axis::new().title(Title::with_text(z_title)));
+    let mut layout = Layout::new().scene(scene).show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
@@ -1703,6 +2146,72 @@ fn build_heatmap_pivot(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>
     Ok((trace, Some(x_label), Some(y_label)))
 }
 
+/// Bin two row-aligned numeric vectors into a `bins` x `bins` grid of point counts, returning the
+/// per-axis bin-center coordinates and the `z[yi][xi]` count matrix. Shared by `viz contour` and
+/// `viz smart`'s correlated-pair density panel.
+fn bin_2d(xs: &[f64], ys: &[f64], bins: usize) -> (Vec<f64>, Vec<f64>, Vec<Vec<f64>>) {
+    let x_min = xs.iter().copied().fold(f64::INFINITY, f64::min);
+    let x_max = xs.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    let y_min = ys.iter().copied().fold(f64::INFINITY, f64::min);
+    let y_max = ys.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    // guard against a degenerate (single-value) axis so the bin math never divides by zero
+    let x_span = if x_max > x_min { x_max - x_min } else { 1.0 };
+    let y_span = if y_max > y_min { y_max - y_min } else { 1.0 };
+
+    // z[yi][xi] = number of points falling in that cell
+    let mut z = vec![vec![0.0_f64; bins]; bins];
+    for (&x, &y) in xs.iter().zip(ys.iter()) {
+        let xi = (((x - x_min) / x_span) * bins as f64) as usize;
+        let yi = (((y - y_min) / y_span) * bins as f64) as usize;
+        z[yi.min(bins - 1)][xi.min(bins - 1)] += 1.0;
+    }
+
+    // bin-center coordinates for the axes
+    let x_centers: Vec<f64> = (0..bins)
+        .map(|i| x_min + (i as f64 + 0.5) * x_span / bins as f64)
+        .collect();
+    let y_centers: Vec<f64> = (0..bins)
+        .map(|i| y_min + (i as f64 + 0.5) * y_span / bins as f64)
+        .collect();
+    (x_centers, y_centers, z)
+}
+
+/// Build a `Contour` trace: the 2D density of two numeric columns (--x and --y), binned into a
+/// `--bins` x `--bins` grid of point counts. Unlike `heatmap` (categorical/correlation), this
+/// shows the smooth joint distribution of two continuous variables.
+fn build_contour(args: &Args) -> CliResult<(Box<dyn Trace>, String, String)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+
+    let mut xs: Vec<f64> = Vec::new();
+    let mut ys: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(x), Some(y)) = (parse_f64(record.get(x_idx)), parse_f64(record.get(y_idx)))
+        else {
+            continue;
+        };
+        xs.push(x);
+        ys.push(y);
+    }
+    if xs.is_empty() {
+        return fail_clierror!("No rows with numeric --x and --y values found for the contour.");
+    }
+
+    // grid resolution: --bins per axis (clamped to a sane range), else a default
+    let bins = args.flag_bins.unwrap_or(20).clamp(2, 200);
+    let (x_centers, y_centers, z) = bin_2d(&xs, &ys, bins);
+
+    let trace = Contour::new(x_centers, y_centers, z)
+        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis));
+    Ok((
+        trace,
+        col_label(&headers, x_idx, nh),
+        col_label(&headers, y_idx, nh),
+    ))
+}
+
 /// Candlestick (or OHLC bar) chart from a date/x column and four numeric price columns.
 fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, String, String)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
@@ -2078,6 +2587,29 @@ fn parse_box_points(points: Option<&str>) -> CliResult<BoxPoints> {
     }
 }
 
+/// Resolve the box-overlay mode for a `viz smart` box panel. An explicit user `--box-points` mode
+/// always wins (an explicit `none` means "no overlay" — keep the cheap cache-only quartile box, so
+/// this returns `None`). Without an explicit mode, a size-based heuristic on the dataset row count
+/// picks the mode: all points for small data, just outliers for medium, and none for large data
+/// (returning `None` so no raw-values pass is done and the box stays a cache-only summary).
+/// A `None` return means "don't build a raw box for this column".
+fn smart_box_points(explicit: Option<&BoxPoints>, nrows: u64) -> Option<BoxPoints> {
+    if let Some(mode) = explicit {
+        return if matches!(mode, BoxPoints::False) {
+            None
+        } else {
+            Some(mode.clone())
+        };
+    }
+    if nrows <= SMART_BOX_ALL_MAX {
+        Some(BoxPoints::All)
+    } else if nrows <= SMART_BOX_OUTLIERS_MAX {
+        Some(BoxPoints::Outliers)
+    } else {
+        None
+    }
+}
+
 /// Aggregate y values by x category, preserving first-seen (input) order so that
 /// downstream numeric ordering is not lost to lexicographic sorting (e.g. 1, 10, 2).
 fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>) {
@@ -2160,6 +2692,11 @@ enum PanelKind {
         upper:  Option<f64>,
         mean:   Option<f64>,
     },
+    /// Box plot drawn from the raw column values (via `--box-points`, or the size-based heuristic),
+    /// so plotly can render true Tukey whiskers and overlay the sample points. `idx` is the source
+    /// column index; the (downsampled) values are gathered in the same batched pass as `Histogram`
+    /// and looked up by `idx` at render time. `points` is this panel's resolved overlay mode.
+    BoxRaw { idx: usize, points: BoxPoints },
     /// Frequency bar chart; `idx` is the source column index.
     FreqBar { idx: usize },
     /// Line chart of a numeric column over a date/datetime column, sorted chronologically.
@@ -2179,6 +2716,25 @@ enum PanelKind {
     /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
     /// heatmap. Carries the two columns' precomputed, row-aligned values.
     ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
+    /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
+    /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
+    /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
+    ContourPair {
+        x: Vec<f64>,
+        y: Vec<f64>,
+        z: Vec<Vec<f64>>,
+    },
+    /// 3D scatter of the three numeric columns that form the strongest-correlation triple — a
+    /// spatial drill-down for the correlation heatmap. Carries the three columns' precomputed,
+    /// row-aligned values plus their axis labels. Like `Map`, a 3D `scene` doesn't compose with the
+    /// typed x/y subplot grid, so a dashboard containing this panel always renders via the inline
+    /// path.
+    Scatter3D {
+        xs:     Vec<f64>,
+        ys:     Vec<f64>,
+        zs:     Vec<f64>,
+        labels: (String, String, String),
+    },
     /// Histogram of a continuous numeric column, chosen INSTEAD of a box plot when moarstats
     /// flagged the column as bimodal/multimodal (a box plot would hide the multiple peaks).
     /// `idx` is the source column index; the (downsampled) values are gathered in a single
@@ -2194,6 +2750,11 @@ enum PanelKind {
         lons:    Vec<f64>,
         density: bool,
     },
+    /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
+    /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
+    /// continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the typed x/y
+    /// grid, so a dashboard containing this panel always renders via the inline path.
+    Geo { lats: Vec<f64>, lons: Vec<f64> },
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -2465,15 +3026,34 @@ fn build_map_panel(
     // decide density vs. markers from the full row count, then cap the embedded points so a huge
     // dataset doesn't bloat the HTML or freeze the browser on pan/zoom
     let density = lats.len() >= MAP_DENSITY_MIN_POINTS;
+
+    // continental/global extents render as an offline `ScatterGeo` projection world-overview
+    // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
+    // Use the same robust framing semantics as the map view (computed on the full in-range set,
+    // before downsampling): an antimeridian-aware, trimmed longitude span and a trimmed latitude
+    // span, so a cluster straddling +/-180 or a single far in-range outlier doesn't misclassify a
+    // local dataset as global.
+    let (_, lon_span) = lon_center_and_span(&lons, MAP_FRAME_TRIM_FRAC);
+    let mut lats_sorted = lats.clone();
+    lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lat_span = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC)
+        - sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
+    let global = lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG;
+
     let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
+    let kind = if global {
+        PanelKind::Geo { lats, lons }
+    } else {
+        PanelKind::Map {
+            lats,
+            lons,
+            density,
+        }
+    };
     Ok(Some((
         Panel {
             name: "Map".to_string(),
-            kind: PanelKind::Map {
-                lats,
-                lons,
-                density,
-            },
+            kind,
         },
         (lat_idx, lon_idx),
     )))
@@ -2604,6 +3184,21 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
 
+    // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
+    // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw box
+    // (one extra batched pass, below) so plotly can draw true Tukey whiskers and the sample points.
+    // The overlay mode is the user's explicit `--box-points` when given, otherwise a size-based
+    // heuristic decides per the dataset's row count (see `smart_box_points`). The row count is
+    // pulled once from the stats/index cache, and only when the first box panel actually needs it.
+    let explicit_box_points: Option<BoxPoints> = match args.flag_box_points.as_deref() {
+        Some(s) => Some(parse_box_points(Some(s))?),
+        None => None,
+    };
+    let count_conf = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut nrows: Option<u64> = None;
+
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
@@ -2617,14 +3212,26 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             s.field.clone()
         };
         match classify(idx, s) {
-            Some(kind) => {
+            Some(mut kind) => {
+                // a cache-only quartile box becomes a raw box (with an overlay mode) when the
+                // explicit flag or the size heuristic calls for points; large datasets keep the
+                // cheap cache-only box (the heuristic returns None) to avoid the extra pass.
+                if matches!(kind, PanelKind::BoxStats { .. }) {
+                    let n =
+                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+                    if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n) {
+                        kind = PanelKind::BoxRaw { idx, points };
+                    }
+                }
                 // for box panels, append moarstats shape hints (skew direction, outlier share)
                 // to the panel title when those extended stats are present. Cache-only, no cost;
                 // without moarstats the hint is None and the title is unchanged.
                 let name = match &kind {
-                    PanelKind::BoxStats { .. } => match box_shape_hint(s) {
-                        Some(hint) => format!("{name} {hint}"),
-                        None => name,
+                    PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } => {
+                        match box_shape_hint(s) {
+                            Some(hint) => format!("{name} {hint}"),
+                            None => name,
+                        }
                     },
                     _ => name,
                 };
@@ -2654,18 +3261,65 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
         if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
             let matrix = pearson_matrix(&columns);
-            // a scatter of the most strongly correlated pair drills into the heatmap's
-            // headline relationship. Reuses the columns already read for the matrix (no extra
-            // data pass) and is only added when that pair is at least moderately correlated.
-            let scatter_panel = strongest_pair(&matrix).and_then(|(i, j, r)| {
-                (r.abs() >= SCATTER_PAIR_MIN_ABS_R).then(|| {
+            // the most strongly correlated pair drills into the heatmap's headline relationship,
+            // but only when it's at least moderately correlated (else it's a noise cloud). All the
+            // drill-downs below reuse the columns already read for the matrix (no extra data pass).
+            let pair =
+                strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
+
+            // pair drill-down beside the heatmap: a 2D density contour for large datasets (a
+            // scatter would overplot into a solid mass, and the contour embeds only a fixed grid),
+            // or a scatter otherwise.
+            let pair_panel = pair.map(|(i, j, r)| {
+                let name = format!("{} vs {} (r={r:.2})", labels[i], labels[j]);
+                if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                    let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
+                    Panel {
+                        name,
+                        kind: PanelKind::ContourPair { x, y, z },
+                    }
+                } else {
                     let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
                     Panel {
-                        name: format!("{} vs {} (r={r:.2})", labels[i], labels[j]),
+                        name,
                         kind: PanelKind::ScatterPair { xs, ys },
                     }
-                })
+                }
             });
+
+            // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest-correlation
+            // triple — the strongest pair plus the third column most correlated with that pair.
+            // A 3D scene can't share the typed x/y subplot grid, so it's built ONLY for HTML output
+            // (which uses the inline render path, like the map panel). Static image export goes
+            // through the typed grid, where a 3D panel would hit `panel_trace`'s unreachable arm.
+            let scatter3d_panel = pair
+                .filter(|_| columns.len() >= 3 && !out_format.is_image())
+                .and_then(|(i, j, _)| {
+                    let third =
+                        (0..columns.len())
+                            .filter(|&k| k != i && k != j)
+                            .max_by(|&a, &b| {
+                                let sa = matrix[i][a].abs() + matrix[j][a].abs();
+                                let sb = matrix[i][b].abs() + matrix[j][b].abs();
+                                sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+                            });
+                    third.map(|k| {
+                        // both downsamples share (n, cap) so they pick the same row indices ->
+                        // aligned
+                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
+                        let (_, zs) = downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
+                        Panel {
+                            name: format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                            kind: PanelKind::Scatter3D {
+                                xs,
+                                ys,
+                                zs,
+                                labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
+                            },
+                        }
+                    })
+                });
+
             panels.insert(
                 0,
                 Panel {
@@ -2673,9 +3327,14 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     kind: PanelKind::CorrHeatmap { labels, matrix },
                 },
             );
-            // place the drill-down scatter right after the heatmap
-            if let Some(panel) = scatter_panel {
-                panels.insert(1, panel);
+            // place the drill-down panels right after the heatmap
+            let mut at = 1;
+            if let Some(panel) = pair_panel {
+                panels.insert(at, panel);
+                at += 1;
+            }
+            if let Some(panel) = scatter3d_panel {
+                panels.insert(at, panel);
             }
         }
     }
@@ -2708,10 +3367,15 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // export. An explicit `--max-charts N` caps the panel count to N instead.
     let is_html = matches!(out_format, OutFormat::Html);
 
-    // a map (HTML-only, never built for image export above) forces the inline render path
-    let has_map = panels
-        .iter()
-        .any(|p| matches!(p.kind, PanelKind::Map { .. }));
+    // non-cartesian panels (mapbox map, geo projection, or 3D scatter) can't share the typed x/y
+    // subplot grid, so any of them forces the inline render path. All are HTML-only (never built
+    // for image export above).
+    let has_noncartesian = panels.iter().any(|p| {
+        matches!(
+            p.kind,
+            PanelKind::Map { .. } | PanelKind::Geo { .. } | PanelKind::Scatter3D { .. }
+        )
+    });
 
     let eligible = panels.len();
     let requested = if args.flag_max_charts == 0 {
@@ -2724,7 +3388,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         args.flag_max_charts
     };
     let want = requested.min(eligible);
-    let inline = is_html && (want > MAX_SUBPLOTS || has_map);
+    let inline = is_html && (want > MAX_SUBPLOTS || has_noncartesian);
 
     let max_panels = if inline {
         requested.min(MAX_PANELS_INLINE)
@@ -2767,11 +3431,15 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         .filter_map(|p| match p.kind {
             PanelKind::FreqBar { idx } => Some(idx),
             PanelKind::BoxStats { .. }
+            | PanelKind::BoxRaw { .. }
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::ContourPair { .. }
+            | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
-            | PanelKind::Map { .. } => None,
+            | PanelKind::Map { .. }
+            | PanelKind::Geo { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -2786,20 +3454,20 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         }
     };
 
-    // gather raw values for any histogram panels (moarstats-flagged bimodal columns) in a single
-    // batched pass — the only smart panel that needs raw data, taken only when at least one
-    // bimodal column was found.
-    let hist_indices: Vec<usize> = panels
+    // gather raw values for the panels that need them — histogram panels (moarstats-flagged
+    // bimodal columns) and opt-in raw box panels (`--box-points`) — in a single batched pass.
+    // Taken only when at least one such panel exists.
+    let raw_indices: Vec<usize> = panels
         .iter()
         .filter_map(|p| match p.kind {
-            PanelKind::Histogram { idx } => Some(idx),
+            PanelKind::Histogram { idx } | PanelKind::BoxRaw { idx, .. } => Some(idx),
             _ => None,
         })
         .collect();
-    let hist = if hist_indices.is_empty() {
+    let raw_values = if raw_indices.is_empty() {
         HashMap::new()
     } else {
-        collect_numeric_values(args, &hist_indices)?
+        collect_numeric_values(args, &raw_indices)?
     };
 
     // dashboard title: the user's --title, else the dataset's file name
@@ -2816,11 +3484,11 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             args,
             &panels,
             &freq,
-            &hist,
+            &raw_values,
             &title_text,
         )))
     } else {
-        render_smart_grid(args, &panels, &freq, &hist, &title_text)
+        render_smart_grid(args, &panels, &freq, &raw_values, &title_text)
     }
 }
 
@@ -2862,6 +3530,20 @@ fn panel_trace(
             }
             if let Some(m) = mean {
                 b = b.mean(vec![*m]);
+            }
+            b
+        },
+        PanelKind::BoxRaw { idx, points } => {
+            // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
+            // the values and overlays the sample points per this panel's chosen --box-points mode
+            let values = hist.get(idx).cloned().unwrap_or_default();
+            let mut b = BoxPlot::new(values)
+                .name(panel.name.clone())
+                .quartile_method(QuartileMethod::Linear)
+                .box_points(points.clone())
+                .marker(Marker::new().color(color));
+            if let Some((x, y)) = &axes {
+                b = b.x_axis(x.clone()).y_axis(y.clone());
             }
             b
         },
@@ -2913,6 +3595,16 @@ fn panel_trace(
             }
             t
         },
+        PanelKind::ContourPair { x, y, z } => {
+            // standalone (inline) panels show the colorbar; grid cells hide it to avoid clutter
+            let mut c = Contour::new(x.clone(), y.clone(), z.clone())
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(axes.is_none());
+            if let Some((xa, ya)) = &axes {
+                c = c.x_axis(xa.as_str()).y_axis(ya.as_str());
+            }
+            c
+        },
         PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
             labels
                 .iter()
@@ -2923,10 +3615,11 @@ fn panel_trace(
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
         ),
-        // map panels use a mapbox layout that can't share the cartesian subplot grid, so they
-        // are rendered entirely by `smart_inline_panel_plot` and never reach this assembler.
-        PanelKind::Map { .. } => {
-            unreachable!("map panels are rendered via the inline path, not panel_trace")
+        // map / geo / 3D panels use a non-cartesian layout (mapbox, geo projection, or 3D scene)
+        // that can't share the typed x/y subplot grid, so they are rendered entirely by
+        // `smart_inline_panel_plot` and never reach this assembler.
+        PanelKind::Map { .. } | PanelKind::Geo { .. } | PanelKind::Scatter3D { .. } => {
+            unreachable!("map/geo/3D panels are rendered via the inline path, not panel_trace")
         },
     };
     (trace, bar_max)
@@ -2956,11 +3649,15 @@ fn render_smart_grid(
         .find_map(|p| match &p.kind {
             PanelKind::CorrHeatmap { labels, .. } => Some(labels),
             PanelKind::BoxStats { .. }
+            | PanelKind::BoxRaw { .. }
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::ContourPair { .. }
+            | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
-            | PanelKind::Map { .. } => None,
+            | PanelKind::Map { .. }
+            | PanelKind::Geo { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
             let longest = labels
@@ -3007,7 +3704,10 @@ fn render_smart_grid(
         let xref = axis_ref('x', pos);
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];
-        let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
+        let is_box = matches!(
+            panel.kind,
+            PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. }
+        );
         let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
         let (trace, bar_max) =
             panel_trace(panel, color, freq, hist, Some((xref.clone(), yref.clone())));
@@ -3136,7 +3836,68 @@ fn smart_inline_panel_plot(
         return plot;
     }
 
-    let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
+    // geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
+    // x/y axes, so they're assembled here like the mapbox map panel above.
+    if let PanelKind::Geo { lats, lons } = &panel.kind {
+        let mut plot = Plot::new();
+        plot.add_trace(
+            ScatterGeo::new(lats.clone(), lons.clone())
+                .mode(Mode::Markers)
+                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+        );
+        let geo = LayoutGeo::new()
+            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+            .showland(true)
+            .landcolor(NamedColor::LightGray)
+            .showocean(true)
+            .oceancolor(NamedColor::LightBlue)
+            .showlakes(true)
+            .lakecolor(NamedColor::LightBlue)
+            .showcountries(true);
+        let layout = Layout::new()
+            .show_legend(false)
+            .height(ROW_HEIGHT_PX)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .geo(geo);
+        plot.set_layout(layout);
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // 3D scatter panels use a `scene` (3D) layout instead of cartesian x/y axes, so they're
+    // assembled here as well.
+    if let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind {
+        let (x_label, y_label, z_label) = labels;
+        let mut plot = Plot::new();
+        plot.add_trace(
+            Scatter3D::new(xs.clone(), ys.clone(), zs.clone())
+                .mode(Mode::Markers)
+                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+        );
+        let scene = LayoutScene::new()
+            .x_axis(Axis::new().title(Title::with_text(x_label.clone())))
+            .y_axis(Axis::new().title(Title::with_text(y_label.clone())))
+            .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
+        let layout = Layout::new()
+            .show_legend(false)
+            .height(ROW_HEIGHT_PX)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .scene(scene);
+        plot.set_layout(layout);
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    let is_box = matches!(
+        panel.kind,
+        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. }
+    );
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
     let (trace, bar_max) = panel_trace(panel, color, freq, hist, None);
@@ -3839,6 +4600,29 @@ mod tests {
         let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0], 0.0);
         assert!((center - (-75.0)).abs() < 1e-9);
         assert!((span - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lon_center_and_span_crossing_trims_outlier() {
+        // a tight cluster straddling +/-180 plus one far in-range longitude outlier (80). The
+        // crossing branch must trim like the non-crossing one: untrimmed, the unwrapped span runs
+        // from the outlier (~80) to the cluster (~182) and reads as global; trimming the outlier
+        // away keeps the span local.
+        let mut lons = vec![80.0_f64]; // single far outlier
+        for k in 0..100 {
+            lons.push(178.0 + (k % 2) as f64); // 178 / 179
+            lons.push(-179.0 + (k % 2) as f64); // -179 / -178
+        }
+        let (_, untrimmed) = lon_center_and_span(&lons, 0.0);
+        let (_, trimmed) = lon_center_and_span(&lons, MAP_FRAME_TRIM_FRAC);
+        assert!(
+            untrimmed >= 90.0,
+            "untrimmed crossing span should include the outlier, got {untrimmed}"
+        );
+        assert!(
+            trimmed < 10.0,
+            "trimmed crossing span should exclude the outlier, got {trimmed}"
+        );
     }
 
     #[test]

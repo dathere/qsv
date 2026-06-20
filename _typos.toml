@@ -26,6 +26,7 @@ unparseable   = "unparseable"
 mis           = "mis"
 nd            = "nd"
 Pn            = "Pn"
+tripel        = "tripel"
 
 [files]
 extend-exclude = [

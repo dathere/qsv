@@ -3020,13 +3020,16 @@ fn build_map_panel(
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
     // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
-    // Compute the spans before downsampling, on the full in-range coordinate set.
-    let span = |v: &[f64]| {
-        v.iter().copied().fold(f64::NEG_INFINITY, f64::max)
-            - v.iter().copied().fold(f64::INFINITY, f64::min)
-    };
-    let global =
-        span(&lons) >= SMART_GEO_MIN_LON_SPAN_DEG || span(&lats) >= SMART_GEO_MIN_LAT_SPAN_DEG;
+    // Use the same robust framing semantics as the map view (computed on the full in-range set,
+    // before downsampling): an antimeridian-aware, trimmed longitude span and a trimmed latitude
+    // span, so a cluster straddling +/-180 or a single far in-range outlier doesn't misclassify a
+    // local dataset as global.
+    let (_, lon_span) = lon_center_and_span(&lons, MAP_FRAME_TRIM_FRAC);
+    let mut lats_sorted = lats.clone();
+    lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lat_span = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC)
+        - sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
+    let global = lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG;
 
     let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
     let kind = if global {
@@ -3277,30 +3280,36 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
 
             // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest-correlation
             // triple — the strongest pair plus the third column most correlated with that pair.
-            // A 3D scene forces the inline (HTML) render path, like the map panel.
-            let scatter3d_panel = pair.filter(|_| columns.len() >= 3).and_then(|(i, j, _)| {
-                let third = (0..columns.len())
-                    .filter(|&k| k != i && k != j)
-                    .max_by(|&a, &b| {
-                        let sa = matrix[i][a].abs() + matrix[j][a].abs();
-                        let sb = matrix[i][b].abs() + matrix[j][b].abs();
-                        sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
-                    });
-                third.map(|k| {
-                    // both downsamples share (n, cap) so they pick the same row indices -> aligned
-                    let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
-                    let (_, zs) = downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
-                    Panel {
-                        name: format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
-                        kind: PanelKind::Scatter3D {
-                            xs,
-                            ys,
-                            zs,
-                            labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
-                        },
-                    }
-                })
-            });
+            // A 3D scene can't share the typed x/y subplot grid, so it's built ONLY for HTML output
+            // (which uses the inline render path, like the map panel). Static image export goes
+            // through the typed grid, where a 3D panel would hit `panel_trace`'s unreachable arm.
+            let scatter3d_panel = pair
+                .filter(|_| columns.len() >= 3 && !out_format.is_image())
+                .and_then(|(i, j, _)| {
+                    let third =
+                        (0..columns.len())
+                            .filter(|&k| k != i && k != j)
+                            .max_by(|&a, &b| {
+                                let sa = matrix[i][a].abs() + matrix[j][a].abs();
+                                let sb = matrix[i][b].abs() + matrix[j][b].abs();
+                                sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
+                            });
+                    third.map(|k| {
+                        // both downsamples share (n, cap) so they pick the same row indices ->
+                        // aligned
+                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
+                        let (_, zs) = downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
+                        Panel {
+                            name: format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                            kind: PanelKind::Scatter3D {
+                                xs,
+                                ys,
+                                zs,
+                                labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
+                            },
+                        }
+                    })
+                });
 
             panels.insert(
                 0,

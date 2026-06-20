@@ -671,6 +671,40 @@ fn viz_static_map_coords_charted_on_image_export() {
     );
 }
 
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_three_numeric_no_scatter3d_panic() {
+    // 3+ strongly-correlated numeric columns would add a smart Scatter3D panel; a 3D scene can't
+    // render in the typed subplot grid used for image export, so it must be excluded rather than
+    // panicking on `panel_trace`'s unreachable arm.
+    let wrk = Workdir::new("viz_static_three_numeric_no_scatter3d_panic");
+    let mut rows = String::from("a,b,c,city\n");
+    for i in 0..120 {
+        let a = i % 10;
+        let b = a * 2 + (i % 2);
+        let c = a * 3 - (i % 3);
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{a},{b},{c},{city}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_svg]);
+    wrk.assert_success(&mut cmd);
+
+    let svg = wrk.read_to_string("dash.svg").unwrap();
+    assert!(
+        svg.contains("<svg") || svg.contains("<?xml"),
+        "image export with 3+ numeric columns should render (no 3D panel) instead of panicking"
+    );
+}
+
 #[test]
 fn viz_pie() {
     let wrk = Workdir::new("viz_pie");
@@ -1472,6 +1506,33 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(html.contains("<!doctype html>"));
     assert!(html.contains(r#""type":"scattergeo""#));
     assert!(!html.contains(r#""type":"scattermapbox""#));
+}
+
+#[test]
+fn viz_smart_antimeridian_cluster_stays_local_map() {
+    // A tight cluster straddling the +/-180 antimeridian has a small TRUE longitude span but a huge
+    // raw max-min span. The global/local test must use the antimeridian-aware span, so this stays a
+    // local mapbox tile map rather than being misclassified as a world ScatterGeo overview.
+    let wrk = Workdir::new("viz_smart_antimeridian_cluster_stays_local_map");
+    let lons = [177.0_f64, 178.0, 179.0, -179.0, -178.0];
+    let mut rows = String::from("lat,lon,grp\n");
+    for i in 0..60 {
+        let lat = -17.0 + (i % 5) as f64 * 0.1;
+        let lon = lons[i % lons.len()];
+        let grp = if i % 2 == 0 { "a" } else { "b" };
+        rows.push_str(&format!("{lat:.3},{lon:.3},{grp}\n"));
+    }
+    wrk.create_from_string("fiji.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fiji.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // local extent (true span ~5 deg) => mapbox tile map, NOT a world projection overview
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(!html.contains(r#""type":"scattergeo""#));
 }
 
 #[test]

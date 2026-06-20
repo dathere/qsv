@@ -1350,6 +1350,39 @@ fn viz_smart_map_coords_not_charted_as_distributions() {
     );
 }
 
+#[test]
+fn viz_smart_named_coords_without_valid_range_still_charted() {
+    // Edge case: columns named lat/lon are numeric but have NO in-range coordinate, so no map panel
+    // renders. The exclusion must NOT hide them then — they should be charted as normal numeric
+    // distributions rather than vanishing from the dashboard entirely.
+    let wrk = Workdir::new("viz_smart_named_coords_without_valid_range_still_charted");
+    // float values well outside [-90,90] / [-180,180] -> build_map_panel finds no valid coords
+    let mut rows = String::from("lat,lon\n");
+    for i in 0..60 {
+        rows.push_str(&format!(
+            "{:.2},{:.2}\n",
+            100.0 + i as f64 * 0.5,
+            200.0 + i as f64 * 0.5
+        ));
+    }
+    wrk.create_from_string("notgeo.csv", &rows);
+
+    let out_html = wrk.path("notgeo.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "notgeo.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("notgeo.html").unwrap();
+    assert!(
+        !html.contains(r#""type":"scattermapbox""#),
+        "no map should render for out-of-range coords"
+    );
+    assert!(
+        html.contains(r#""type":"box""#),
+        "out-of-range lat/lon should still be charted as distributions, not hidden; html: {html}"
+    );
+}
+
 /// Tamper with a frequency JSONL cache by replacing the first occurrence of
 /// `old_count` with `new_count`. Used to prove `viz smart` reads the cache.
 fn tamper_freq_cache(path: &std::path::Path, old_count: u64, new_count: u64) {

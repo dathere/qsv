@@ -2431,12 +2431,14 @@ fn latlon_indices(stats: &[crate::cmd::stats::StatsData]) -> Option<(usize, usiz
 /// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
 /// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
 /// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
-/// columns aren't numeric, or no row has valid coordinates. Name detection needs headers, so this
-/// is a no-op under `--no-headers`.
+/// columns aren't numeric, or no row has valid coordinates. On success returns the panel together
+/// with the (lat, lon) column indices it consumed, so the caller can exclude exactly those columns
+/// from the other panels — and only when a map is actually rendered. Name detection needs headers,
+/// so this is a no-op under `--no-headers`.
 fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
-) -> CliResult<Option<Panel>> {
+) -> CliResult<Option<(Panel, (usize, usize))>> {
     let Some((lat_idx, lon_idx)) = latlon_indices(stats) else {
         return Ok(None);
     };
@@ -2464,14 +2466,17 @@ fn build_map_panel(
     // dataset doesn't bloat the HTML or freeze the browser on pan/zoom
     let density = lats.len() >= MAP_DENSITY_MIN_POINTS;
     let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
-    Ok(Some(Panel {
-        name: "Map".to_string(),
-        kind: PanelKind::Map {
-            lats,
-            lons,
-            density,
+    Ok(Some((
+        Panel {
+            name: "Map".to_string(),
+            kind: PanelKind::Map {
+                lats,
+                lons,
+                density,
+            },
         },
-    }))
+        (lat_idx, lon_idx),
+    )))
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
@@ -2572,10 +2577,15 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
-    // columns recognized as the map's lat/lon pair are charted on the map panel only — exclude
-    // them from per-column distribution panels, the correlation matrix, and the time-series y so a
-    // map dashboard doesn't redundantly box/histogram its coordinates or plot e.g. latitude vs time
-    let map_cols = latlon_indices(&stats);
+    // Build the geographic map panel up front (one data pass) so we can learn which lat/lon columns
+    // it ACTUALLY consumed. Those columns are charted on the map only — excluded from per-column
+    // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
+    // redundantly box/histogram its coordinates or plot e.g. latitude vs time. Excluding only the
+    // columns of a rendered map matters: if lat/lon are named+numeric but have no in-range value,
+    // build_map_panel returns None, map_cols stays None, and those columns are charted normally
+    // (rather than vanishing from the dashboard entirely).
+    let map_panel = build_map_panel(args, &stats)?;
+    let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
 
     // classify each column into a dashboard panel
@@ -2666,10 +2676,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         panels.insert(0, panel);
     }
 
-    // prepend a geographic map panel when a latitude/longitude column pair is detected. Like the
-    // correlation and time-series panels it does one extra data pass and is prepended so it
-    // survives the panel cap; it leads the dashboard as a geographic overview.
-    if let Some(panel) = build_map_panel(args, &stats)? {
+    // prepend the geographic map panel (built up front, above) so it leads the dashboard as a
+    // geographic overview and survives the panel cap.
+    if let Some((panel, _)) = map_panel {
         panels.insert(0, panel);
     }
 

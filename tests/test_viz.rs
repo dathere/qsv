@@ -1252,3 +1252,95 @@ fn viz_smart_stale_frequency_cache_fallback() {
         "stale cache must be ignored; recomputed bars should not show the tampered count"
     );
 }
+
+// A frequency cache with duplicate column names is ambiguous for a name-keyed
+// reader (last column shadows the earlier one), so `viz smart` must reject it
+// and recompute — the tampered (cached) count must NOT surface.
+#[test]
+fn viz_smart_duplicate_headers_frequency_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_duplicate_headers_frequency_cache_fallback");
+    // two columns both named "color"
+    wrk.create_from_string("people.csv", "color,color\nred,x\nblue,y\nred,x\ngreen,z\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "duplicate-header cache is ambiguous and must be ignored; bars should be recomputed"
+    );
+}
+
+// `viz smart --no-headers` reads the whole file in original order, while a
+// frequency cache built with the same (default, full) selection keys columns
+// positionally. Those line up, so the cache IS reused — the tampered count
+// surfaces. Guards that the no-headers selection-signature check does not
+// over-reject a legitimate full-selection cache.
+#[test]
+fn viz_smart_no_headers_frequency_cache_used() {
+    let wrk = Workdir::new("viz_smart_no_headers_frequency_cache_used");
+    // headerless: two low-cardinality categorical columns
+    wrk.create_from_string("people.csv", "red,x\nblue,y\nred,x\ngreen,z\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        html.contains("987654"),
+        "full-selection no-headers cache should be reused (tampered count expected)"
+    );
+}
+
+// A frequency cache built with a reordered `--no-headers --select` keys columns
+// positionally within that selection. `viz smart --no-headers` reads columns in
+// original order, so the cache's selection signature won't match and the cache
+// must be rejected — the tampered count must NOT surface (no silent mis-mapping).
+#[test]
+fn viz_smart_no_headers_reordered_select_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_reordered_select_cache_rejected");
+    wrk.create_from_string("people.csv", "red,x\nblue,y\nred,x\ngreen,z\n");
+
+    // cache built over a reordered selection (col 2 then col 1)
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .args(["--select", "2,1"])
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "reordered-select no-headers cache must be rejected to avoid mis-mapping columns"
+    );
+}

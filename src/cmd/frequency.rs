@@ -467,9 +467,16 @@ pub(crate) struct FreqCacheView {
 /// when the cache is absent, stale (older than the source), or was generated
 /// with options incompatible with `(no_nulls, no_headers, delimiter)`.
 ///
-/// Unlike `Args::read_frequency_cache`, this does NO `--select`/selection
-/// validation — it returns the full set of cached columns and the caller looks
-/// up the ones it needs by name.
+/// Unlike `Args::read_frequency_cache`, this does NO `--select` filtering — it
+/// returns the full set of cached columns and the caller looks up the ones it
+/// needs by name. It DOES, however, reject caches that would be ambiguous for a
+/// whole-file, name-keyed reader:
+/// - In `--no-headers` mode, cache columns are keyed positionally within the selection that built
+///   them, so a cache made with a non-identity `--select` (or with a legacy empty signature) would
+///   alias the wrong columns. The cache's selection signature is validated against the full input
+///   in original order.
+/// - Duplicate column names (in headed mode) would silently shadow each other in the returned map,
+///   so such caches are refused.
 pub(crate) fn read_frequency_cache_view(
     path: &std::path::Path,
     no_nulls: bool,
@@ -510,6 +517,30 @@ pub(crate) fn read_frequency_cache_view(
         return None;
     }
 
+    // In `--no-headers` mode the cache keys columns positionally within the
+    // selection that produced it ("1", "2", ...). A caller reading the whole
+    // file in original order would mis-map those keys if the cache was built
+    // with a reordered/subset `--select`. Validate the recorded selection
+    // signature against the full input header record (original order); a legacy
+    // empty signature is treated as a mismatch and rejected. (Headed caches are
+    // keyed by name, so they self-protect and need no signature check.)
+    if no_headers {
+        let path_str = path.to_string_lossy().into_owned();
+        let rconfig = Config::new(Some(&path_str))
+            .delimiter(delimiter)
+            .no_headers_flag(true);
+        let mut rdr = rconfig.reader().ok()?;
+        let full_headers = rdr.byte_headers().ok()?.clone();
+        let expected_sig = Args::selection_signature(&full_headers);
+        if metadata.selection_signature.is_empty() || metadata.selection_signature != expected_sig {
+            log::info!(
+                "Frequency cache selection differs from the full input (--no-headers); \
+                 recomputing."
+            );
+            return None;
+        }
+    }
+
     let mut columns: std::collections::HashMap<String, Vec<(String, u64)>> =
         std::collections::HashMap::new();
     for line in lines {
@@ -535,7 +566,15 @@ pub(crate) fn read_frequency_cache_view(
             .filter(|f| !f.value.is_empty())
             .map(|f| (f.value, f.count))
             .collect();
-        columns.insert(entry.field, pairs);
+        // Duplicate column names would silently shadow each other (last-wins),
+        // so a name-keyed caller could render the wrong column's distribution.
+        // Refuse such caches and let the caller recompute.
+        if columns.insert(entry.field, pairs).is_some() {
+            log::info!(
+                "Frequency cache has duplicate column names; recomputing to avoid ambiguity."
+            );
+            return None;
+        }
     }
     if columns.is_empty() {
         return None;

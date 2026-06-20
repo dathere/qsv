@@ -273,6 +273,46 @@ fn viz_smart_dashboard() {
 }
 
 #[test]
+fn viz_smart_uses_moarstats_box_hints() {
+    // End-to-end: when `moarstats` has extended the stats cache, `viz smart` reuses that cache
+    // (rather than regenerating a base-stats one) and annotates a continuous column's box panel
+    // with the moarstats shape stats — skew direction and the outlier share.
+    let wrk = Workdir::new("viz_smart_uses_moarstats_box_hints");
+    // `amount`: a continuous, right-skewed Integer column (cardinality 41, not near-unique) with
+    // a heavy right tail of 1000s -> box plot with positive Pearson skewness and ~6.7% outliers.
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=280 {
+        rows.push_str(&format!("{i},{}\n", i % 40 + 1));
+    }
+    for i in 281..=300 {
+        rows.push_str(&format!("{i},1000\n"));
+    }
+    wrk.create_from_string("amounts.csv", &rows);
+
+    // 1) extend the stats cache with moarstats (adds pearson_skewness, outliers_percentage, ...)
+    let mut moar = wrk.command("moarstats");
+    moar.arg("amounts.csv");
+    wrk.assert_success(&mut moar);
+
+    // 2) viz smart should reuse that cache and surface the hints in the box panel title
+    let out_html = wrk.path("amounts.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "amounts.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("amounts.html").unwrap();
+    assert!(
+        html.contains("right-skewed"),
+        "box panel title should carry the moarstats skew hint; html: {html}"
+    );
+    assert!(
+        html.contains("% outliers"),
+        "box panel title should carry the moarstats outlier-share hint; html: {html}"
+    );
+    assert!(html.contains(r#""type":"box""#));
+}
+
+#[test]
 fn viz_smart_caps_charts() {
     let wrk = Workdir::new("viz_smart_caps_charts");
     // four low-cardinality categorical columns (all chartable as frequency bars)

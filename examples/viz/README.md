@@ -40,6 +40,7 @@ as `text/plain`, so a browser won't render it):
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto map panel), `map` (points & density) |
+| `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart` (moarstats-informed: histogram + box hints) |
 
 ## The smart dashboard
 
@@ -63,6 +64,31 @@ it renders as a **density heatmap** (individual markers would overplot into a
 solid blob), and below that as semi-transparent point markers. (These caps apply
 only to the `smart` dashboard; the standalone chart commands below plot every
 row and frame the full extent.)
+
+### moarstats-informed dashboards
+
+If you run [`qsv moarstats`](https://github.com/dathere/qsv/blob/master/docs/help/moarstats.md)
+first, `viz smart` reads the extended statistics it adds to the stats cache and
+makes better chart choices (with no moarstats run, the behavior is unchanged):
+
+- a **bimodal/multimodal** continuous column (high bimodality coefficient) renders
+  as a **histogram** instead of a box plot, which would hide the separate peaks;
+- **box panels are annotated** with the column's skew direction and outlier share
+  (e.g. `account_age_days (right-skewed, 4.7% outliers)`), from the Pearson
+  skewness and outlier-percentage stats;
+- a **concentrated** high-cardinality categorical that would normally be skipped as
+  ID-like noise is kept as a top-N bar (when its normalized entropy is low).
+
+```bash
+# extend the stats cache, then let viz smart use it
+qsv moarstats --advanced customer_spend.csv
+qsv viz smart customer_spend.csv -o spend_dashboard.html
+# monthly_spend (bimodal) -> histogram; account_age_days (skewed) -> annotated box
+```
+
+> `moarstats --advanced` reads the whole file and auto-creates an `.idx` index;
+> the bimodality test needs the advanced stats, while the skew/outlier box hints
+> work from a plain `qsv moarstats` run.
 
 ```bash
 # 12 panels from sales_sample.csv (>8, so it renders as an inline-div grid)

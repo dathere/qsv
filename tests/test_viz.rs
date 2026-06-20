@@ -1445,6 +1445,33 @@ fn viz_map_mapbox_style_needs_token_errors() {
 }
 
 #[test]
+fn viz_map_mapbox_token_from_env() {
+    let wrk = Workdir::new("viz_map_mapbox_token_from_env");
+    quakes(&wrk);
+
+    // QSV_MAPBOX_TOKEN satisfies the token requirement for mapbox-hosted styles,
+    // exactly as if --mapbox-token had been passed on the command line.
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_MAPBOX_TOKEN", "pk.test_env_token_value");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--style",
+        "satellite",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the env-supplied token is embedded in the mapbox layout
+    assert!(html.contains("pk.test_env_token_value"));
+}
+
+#[test]
 fn viz_map_unknown_style_errors() {
     let wrk = Workdir::new("viz_map_unknown_style_errors");
     quakes(&wrk);

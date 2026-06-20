@@ -110,8 +110,11 @@ $ qsv luau filter "tonumber(a) >= tonumber(b)"
 
 PATTERN MATCHING WITH string.find AND OTHER STRING FUNCTIONS:  
 Lua/Luau string functions like string.find, string.match, string.gsub use
-PATTERN MATCHING by default, where certain characters have special meanings:  
+PATTERN MATCHING by default, where certain characters have special meanings:
+
+```text
 ( ) . % + - * ? [ ] ^ $
+```
 
 If you need to search for these characters literally, you have two options:  
 

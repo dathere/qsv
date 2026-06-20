@@ -82,17 +82,23 @@ Use case:
 Need to calculate checksum/md5sum of some columns. First column (c1) is "id", and do md5sum of
 the rest of the columns (c2, c3 and c4).
 
-Given test.csv:  
+Given test.csv:
+
+```text
 c1,c2,c3,c4
 1,a2,a3,a4
 2,b2,b3,b4
 3,c2,c3,c4
+```
 
-and hashhelper.py:  
+and hashhelper.py:
+
+```text
 import hashlib
-def md5hash (*args):  
-s = ",".join(args)
-return(hashlib.md5(s.encode('utf-8')).hexdigest())
+def md5hash (*args):
+    s = ",".join(args)
+    return(hashlib.md5(s.encode('utf-8')).hexdigest())
+```
 
 with the following command:  
 ```console

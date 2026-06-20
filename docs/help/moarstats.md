@@ -174,8 +174,11 @@ Outlier Boundary Statistics (2 statistics):
 
 These outlier statistics require reading the original CSV file and comparing each
 value against the fence thresholds.
-Fences are computed using the IQR method:  
+Fences are computed using the IQR method:
+
+```text
 inner fences at Q1/Q3 ± 1.5*IQR, outer fences at Q1/Q3 ± 3.0*IQR.
+```
 
 These univariate statistics are only computed for numeric and date/datetime columns
 where the required base univariate statistics (mean, median, stddev, etc.) are available.

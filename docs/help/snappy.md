@@ -14,15 +14,18 @@
 Does streaming compression/decompression of the input using the Snappy framing format.
 <https://github.com/google/snappy/blob/main/framing_format.txt>
 
-It has four subcommands:  
+It has four subcommands:
+
+```text
 compress:   Compress the input (multithreaded).
 decompress: Decompress the input (single-threaded).
-check:      Quickly check if the input is a Snappy file by inspecting the
-first 50 bytes of the input is valid Snappy data.
-Returns exitcode 0 if the first 50 bytes is valid Snappy data,
-exitcode 1 otherwise.
+check:      Quickly check if the input is a Snappy file by inspecting the 
+            first 50 bytes of the input is valid Snappy data.
+            Returns exitcode 0 if the first 50 bytes is valid Snappy data,
+            exitcode 1 otherwise.
 validate:   Validate if the ENTIRE input is a valid Snappy file.
-Returns exitcode 0 if valid, exitcode 1 otherwise.
+            Returns exitcode 0 if valid, exitcode 1 otherwise.
+```
 
 Note that most qsv commands already automatically decompresses Snappy files if the
 input file has an ".sz" extension. It will also automatically compress the output

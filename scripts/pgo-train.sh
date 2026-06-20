@@ -136,16 +136,26 @@ t index "$data"
 # ---- core CSV-engine training (all binary variants) -------------------------
 t count "$data"
 t count --no-polars "$data"
+t datefmt "Created Date" "$data"
+t datefmt --formatstr '%V' "Created Date" --new-column week_number "$data"
+t explode City "-" "$data"
 t headers "$data"
 t select 1-5 "$data"
 t slice --start 0 --len 5000 "$data"
 t sample --seed 42 10000 "$data"
 t search -s 1 "[0-9]" "$data"
 t frequency "$data"
+t frequency -i "$data"
+t frequency --limit 0 "$data"
 t stats "$data"
-t stats --everything "$data"
+t stats --everything "$data"  
+t stats --everything --infer-dates "$data"
 t dedup "$data"
 t sort "$data"
+t flatten "$data"
+t flatten "$data" --condense 50
+t split --size 50000 pgo_train_split_size "$data"
+t split --chunks 20 pgo_train_split_chunks "$data"
 t cat rows "$data" "$data"
 t behead "$data"
 t fixlengths "$data"
@@ -156,11 +166,24 @@ t extsort "$data" pgo_train_extsort.csv
 t extsort "$data" --select 1-5
 
 # ---- feature-gated paths (skipped automatically on reduced binaries) --------
+t apply calcconv --formatstr "{Unique Key} meters in miles" --new-column new_col "$data"
+t apply dynfmt --formatstr "{Created Date} {Complaint Type} - {BBL} {City}" --new-column new_col "$data"
+t apply emptyreplace "{Bridge Highway Name}" --replacement Unspecified "$data"
+t apply operations lower,eudex Agency --comparand Queens --new-column Agency_queens_soundex "$data"
 t apply operations lower 2 "$data"
 t schema "$data" --stdout
-t tojsonl "$data"
+t tojsonl "$data" --output pgo_train.jsonl
+t jsonl pgo_train.jsonl --batch 0
 t snappy compress "$data" --output pgo_train.snappy
+t snappy decompress pgo_train.snappy
+t snappy validate pgo_train.snappy
 t validate "$data"
+t moarstats "$data"
+t moarstats --advanced "$data"
+t moarstats --bivariate "$data"
+t moarstats --bivariate --bivariate-stats all "$data"
+t moarstats --advanced --bivariate "$data"
+t moarstats --advanced --bivariate --bivariate-stats all "$data"
 t blake3 "$data"
 t luau map newcol "1 + 1" "$data"
 t profile "$data"
@@ -171,11 +194,16 @@ if [[ "$minimal" -eq 0 ]]; then
   t searchset <(printf "homeless\npark\nNoise\n") "$data"
   t to xlsx pgo_train.xlsx "$data"
   t excel pgo_train.xlsx
+  t excel --metadata c pgo_train.xlsx
   # polars-backed paths - the biggest PGO win
   t sqlp "$data" "select * from _t_1 limit 1000"
   t sqlp "$data" "select \"Borough\", count(*) from _t_1 group by \"Borough\""
+  t pivotp "Agency" --index "Borough" --values "Complaint Type" "$data"
+  t pivotp "Agency" --index "Borough" --values "Complaint Type" --agg smart "$data"
+  t pivotp "Created Date" --index "Borough" --values "Complaint Type" --try-parsedates "$data"
   if [[ -r communityboards.csv ]]; then
     t joinp "Community Board" "$data" community_board communityboards.csv
+    t joinp "Community Board" "$data" community_board communityboards.csv --streaming
   fi
   t luau map newcol "1 + 1" "$data"
   # geocode auto-downloads the Geonames index on first run (network required)

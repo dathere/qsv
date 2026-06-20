@@ -395,7 +395,7 @@ The `moarstats` command extends an existing stats CSV file (created by the `stat
 
 **How it works:**
 - Looks for `<FILESTEM>.stats.csv` for a given CSV input
-- If the stats CSV file doesn't exist, it will first run the `stats` command with configurable options (via `--stats-options`, default: `--infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl`) to establish baseline stats
+- If the stats CSV file doesn't exist, it will first run the `stats` command with configurable options (via `--stats-options`, default: `--infer-dates --infer-boolean --cardinality --mode --mad --quartiles --percentiles --force --stats-jsonl`) to establish baseline stats
 - If the `.stats.csv` file is found, it skips running stats and just appends the additional stats columns
 - Statistics are rounded using Bankers Rounding (Midpoint Nearest Even) to the specified number of decimal places (default: 4, configurable with `--round`)
 - Uses parallel processing when an index is available for large files
@@ -453,7 +453,7 @@ will arrive at a higher number; arrive at 55 by collapsing the three groups abov
 | 16 | Bimodality Coefficient (`bimodality_coefficient`) | `--advanced` |
 | 17 | Jarque-Bera test (`jarque_bera` + `jarque_bera_pvalue`) | `--advanced` (emits 2 columns) |
 | 18 | Gini Coefficient (`gini_coefficient`) | `--advanced` |
-| 19 | Atkinson Index (`atkinson_index_(ε)`) | `--advanced --epsilon` |
+| 19 | Atkinson Index (`atkinson_index_(<ε>)`, e.g. `atkinson_index_(1)` with the default `--epsilon 1.0`) | `--advanced --epsilon` |
 | 20 | Theil Index (`theil_index`) | `--advanced` |
 | 21 | Mean Absolute Deviation from mean (`mean_ad`) | `--advanced` |
 | 22 | Shannon Entropy (`shannon_entropy`) | `--advanced` |
@@ -516,7 +516,7 @@ These statistics require the `--advanced` flag and reading the entire CSV file t
 | <a id="jarque_bera"></a>`jarque_bera` | Variable | Jarque-Bera test statistic. Standard test for normality using skewness and kurtosis. Higher values indicate greater departure from normality. | Computed as `(n/6) * (S² + K²/4)` where S is skewness and K is excess kurtosis. Requires: `skewness` (from base stats), `kurtosis` (from `--advanced` flag), and sample size n (from `n_positive + n_negative + n_zero`). See: [Jarque-Bera test](https://en.wikipedia.org/wiki/Jarque%E2%80%93Bera_test) |
 | `jarque_bera_pvalue` | Variable | P-value for the Jarque-Bera test. Low values (< 0.05) indicate the data is NOT normally distributed. | Computed from the chi-squared distribution with 2 degrees of freedom: `p = e^(-JB/2)`. Requires: `jarque_bera`. |
 | `gini_coefficient` | Variable | Gini Coefficient. Measures inequality/dispersion in the distribution. Values range from 0 (perfect equality) to 1 (maximum inequality). | Computed from all values in the column. Uses precalculated sum from baseline stats for efficiency. Requires: `sum`. See: [Gini Coefficient](https://en.wikipedia.org/wiki/Gini_coefficient) |
-| `atkinson_index_(ε)` | Variable | Atkinson Index. Measures inequality in the distribution with a sensitivity parameter. Values range from 0 (perfect equality) to 1 (maximum inequality). The Atkinson Index is a more general form of the Gini coefficient that allows for different sensitivity to inequality. | Computed from all values in the column. Uses precalculated mean from baseline stats for efficiency. The epsilon (ε) parameter controls sensitivity to inequality (configurable via `--epsilon`, default: 1.0). Higher epsilon values indicate greater sensitivity to inequality. Requires: `mean`. See: [Atkinson Index](https://en.wikipedia.org/wiki/Atkinson_index) |
+| `atkinson_index_(<ε>)` | Variable | Atkinson Index. Measures inequality in the distribution with a sensitivity parameter. The column name interpolates the epsilon value (e.g. `atkinson_index_(1)` with the default `--epsilon 1.0`). Values range from 0 (perfect equality) to 1 (maximum inequality). The Atkinson Index is a more general form of the Gini coefficient that allows for different sensitivity to inequality. | Computed from all values in the column. Uses precalculated mean from baseline stats for efficiency. The epsilon (ε) parameter controls sensitivity to inequality (configurable via `--epsilon`, default: 1.0). Higher epsilon values indicate greater sensitivity to inequality. Requires: `mean`. See: [Atkinson Index](https://en.wikipedia.org/wiki/Atkinson_index) |
 | <a id="theil_index"></a>`theil_index` | Variable | Theil Index (Generalized Entropy GE(1)). Measures inequality/concentration in the distribution. Unlike Gini, it is decomposable into within-group and between-group components. Only computed for positive values. | Computed as `(1/n) * Σ((x_i / mean) * ln(x_i / mean))` for positive values. Computes mean from positive values only (not the overall precalculated mean). Requires positive values in the column. See: [Theil Index](https://en.wikipedia.org/wiki/Theil_index) |
 | <a id="mean_ad"></a>`mean_ad` | Variable | Mean Absolute Deviation from mean. Average absolute distance of values from the arithmetic mean. Less robust than MAD (which uses median) but more statistically efficient. | Computed as `(1/n) * Σ|x_i - mean|`. Uses precalculated mean from baseline stats. Requires: `mean`. |
 | `shannon_entropy` | Variable | Shannon Entropy. Measures the information content/uncertainty in the distribution. Higher values indicate more diversity, lower values indicate more concentration. Values range from 0 (all values identical) to log2(n) where n is the number of unique values. | Computed using the `frequency` command with `--limit 0` to collect all frequencies, then calculates: `H(X) = -Σ p_i * log2(p_i)` where p_i is the probability of value i. Works for **all field types** (not just numeric). For all-unique fields, returns log2(n). See: [Entropy (Information Theory)](https://en.wikipedia.org/wiki/Entropy_(information_theory)) |
@@ -551,7 +551,7 @@ These statistics examine relationships between pairs of columns in a dataset. Th
 | `n_pairs` | Pairwise | Number of valid pairs used in computation. Indicates how many non-null value pairs were available for computing the relationship statistics. | Count of records where both fields have non-empty values. |
 
 **Configuration Options:**
-- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi) or use "all" or "fast" (pearson + covariance)
+- `--bivariate-stats`: Select specific statistics (pearson, spearman, kendall, covariance, mi, nmi) or use "all" or "fast" (pearson + covariance). Default: `fast`.
 - `--cardinality-threshold`: Skip mutual information for field pairs where either field exceeds cardinality threshold (default: 1,000,000)
 - `--join-inputs`: Join multiple datasets before computing bivariate statistics
 - `--join-keys`: Specify join keys for each dataset

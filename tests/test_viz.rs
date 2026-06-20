@@ -639,6 +639,38 @@ fn viz_static_png_export() {
     assert_eq!(&bytes[..4], b"\x89PNG");
 }
 
+// Regression (roborev #3090): on image export the map panel is HTML-only and is dropped, so valid
+// lat/lon columns must NOT be excluded from the other panels — otherwise a coordinates-only dataset
+// would have zero panels and fail to render. Requires a browser/webdriver, so ignored by default.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_map_coords_charted_on_image_export() {
+    let wrk = Workdir::new("viz_static_map_coords_charted_on_image_export");
+    // valid in-range lat/lon are the ONLY chartable columns; with the map dropped for image export
+    // they must still be charted as distributions, or there'd be nothing to render
+    let mut rows = String::from("lat,lon\n");
+    for i in 0..60 {
+        rows.push_str(&format!(
+            "{:.4},{:.4}\n",
+            34.0 + i as f64 * 0.1,
+            -118.0 + i as f64 * 0.1
+        ));
+    }
+    wrk.create_from_string("geo.csv", &rows);
+
+    let out_svg = wrk.path("geo.svg").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "geo.csv", "-o", &out_svg]);
+    wrk.assert_success(&mut cmd);
+
+    let svg = wrk.read_to_string("geo.svg").unwrap();
+    assert!(
+        svg.contains("<svg") || svg.contains("<?xml"),
+        "image export of a coords-only dataset should still produce a chart"
+    );
+}
+
 #[test]
 fn viz_pie() {
     let wrk = Workdir::new("viz_pie");

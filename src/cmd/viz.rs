@@ -2580,11 +2580,27 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // Build the geographic map panel up front (one data pass) so we can learn which lat/lon columns
     // it ACTUALLY consumed. Those columns are charted on the map only — excluded from per-column
     // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
-    // redundantly box/histogram its coordinates or plot e.g. latitude vs time. Excluding only the
-    // columns of a rendered map matters: if lat/lon are named+numeric but have no in-range value,
-    // build_map_panel returns None, map_cols stays None, and those columns are charted normally
-    // (rather than vanishing from the dashboard entirely).
-    let map_panel = build_map_panel(args, &stats)?;
+    // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
+    //
+    // The map panel is mapbox-based and HTML-only, so build it only for HTML output. Excluding the
+    // coordinate columns is tied to a map that will actually render:
+    //   - image export (PNG/SVG/PDF/...): the map can't be embedded, so skip the build entirely —
+    //     map_cols stays None and the coordinates are charted as normal distributions (rather than
+    //     being excluded AND having their only panel dropped, which would hide them from the
+    //     image);
+    //   - HTML with named+numeric lat/lon but no in-range value: build_map_panel returns None, so
+    //     map_cols is None and those columns are charted normally.
+    let map_panel = if out_format.is_image() {
+        if latlon_indices(&stats).is_some() {
+            eprintln!(
+                "viz smart: map panels are HTML-only (mapbox can't be exported in the subplot \
+                 grid); the map was skipped for image export."
+            );
+        }
+        None
+    } else {
+        build_map_panel(args, &stats)?
+    };
     let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
 
@@ -2692,19 +2708,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // export. An explicit `--max-charts N` caps the panel count to N instead.
     let is_html = matches!(out_format, OutFormat::Html);
 
-    // mapbox subplots can't live in the typed subplot grid that static image export requires, so
-    // for image export drop any map panel (with a note); for HTML, a map forces the inline path.
-    if out_format.is_image()
-        && panels
-            .iter()
-            .any(|p| matches!(p.kind, PanelKind::Map { .. }))
-    {
-        panels.retain(|p| !matches!(p.kind, PanelKind::Map { .. }));
-        eprintln!(
-            "viz smart: map panels are HTML-only (mapbox can't be exported in the subplot grid); \
-             the map was skipped for image export."
-        );
-    }
+    // a map (HTML-only, never built for image export above) forces the inline render path
     let has_map = panels
         .iter()
         .any(|p| matches!(p.kind, PanelKind::Map { .. }));

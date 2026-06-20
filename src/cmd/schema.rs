@@ -304,6 +304,22 @@ pub fn infer_schema_from_stats(
     // invoke cmd::stats
     let (csv_fields, csv_stats) = util::get_stats_records(args, StatsMode::Schema)?;
 
+    // Name-keyed outputs (this command's JSON Schema `properties`, and tojsonl's JSON
+    // objects — both reach here) cannot represent two columns sharing a name: the
+    // duplicates silently collapse onto a single key. Warn so the result isn't trusted
+    // blindly. Only meaningful when headers are in use (with --no-headers the "names"
+    // are the first data row).
+    if !quiet && !args.flag_no_headers {
+        let dupes = util::duplicate_headers(&csv_fields);
+        if !dupes.is_empty() {
+            wwarn!(
+                "Duplicate column name(s) detected ({}). Name-keyed output collapses them onto a \
+                 single key, so the result is unreliable for these columns.",
+                dupes.join(", ")
+            );
+        }
+    }
+
     // amortize memory allocation
     let mut low_cardinality_column_indices: Vec<u64> =
         Vec::with_capacity(args.flag_enum_threshold as usize);

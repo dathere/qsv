@@ -634,3 +634,35 @@ fn tojsonl_number_nan_infinity_literal_is_null() {
 {"id":5,"score":2.5}"#;
     assert_eq!(got, expected);
 }
+
+#[test]
+#[serial]
+fn tojsonl_duplicate_headers_warns() {
+    // Duplicate column names collapse into a single JSON key; warn the user.
+    let wrk = Workdir::new("tojsonl_duplicate_headers_warns");
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["id", "id", "name"],
+            svec!["1", "red", "bob"],
+            svec!["2", "blue", "sue"],
+        ],
+    );
+
+    let mut cmd = wrk.command("tojsonl");
+    cmd.arg("in.csv");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("Duplicate column name(s) detected (id)"),
+        "expected duplicate-header warning, got stderr: {stderr}"
+    );
+
+    // --quiet suppresses the warning
+    let mut quiet_cmd = wrk.command("tojsonl");
+    quiet_cmd.arg("--quiet").arg("in.csv");
+    let quiet_stderr = wrk.output_stderr(&mut quiet_cmd);
+    assert!(
+        !quiet_stderr.contains("Duplicate column name"),
+        "--quiet should suppress the warning, got stderr: {quiet_stderr}"
+    );
+}

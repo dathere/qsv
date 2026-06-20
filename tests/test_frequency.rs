@@ -711,6 +711,138 @@ fn frequency_all_unique_with_stats_cache() {
     assert_eq!(got, expected);
 }
 
+// Regression tests for duplicate-named columns. Per-column cardinality used to be
+// looked up by header NAME, so every duplicate inherited the FIRST duplicate's
+// stats (all classified identically). The fix keys cardinality/all-unique by
+// column POSITION, so each duplicate is classified on its own data.
+#[test]
+fn frequency_duplicate_headers_distinct_data() {
+    let wrk = Workdir::new("frequency_duplicate_headers_distinct_data");
+    // both columns are named "id": col 1 is all-unique, col 2 is red=3/blue=1
+    let rows = vec![
+        svec!["id", "id"],
+        svec!["a", "red"],
+        svec!["b", "red"],
+        svec!["c", "blue"],
+        svec!["d", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // create stats cache so cardinalities are available
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv");
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        // col 1 (a,b,c,d) is genuinely all-unique
+        svec!["id", "<ALL_UNIQUE>", "4", "100", "0"],
+        // col 2 (red,red,blue,red) must report its OWN distribution, NOT all-unique
+        svec!["id", "red", "3", "75", "1"],
+        svec!["id", "blue", "1", "25", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+fn frequency_duplicate_headers_jsonl_cache() {
+    let wrk = Workdir::new("frequency_duplicate_headers_jsonl_cache");
+    let rows = vec![
+        svec!["id", "id"],
+        svec!["a", "red"],
+        svec!["b", "red"],
+        svec!["c", "blue"],
+        svec!["d", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd);
+
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "Frequency cache file should exist");
+
+    let fields = decode_cache_fields(&cache_path);
+    assert_eq!(fields.len(), 2, "Should have one entry per column");
+
+    // First "id" column: genuinely all-unique, cardinality 4
+    assert_eq!(fields[0]["field"], "id");
+    assert_eq!(fields[0]["cardinality"], 4);
+    let freqs0 = fields[0]["frequencies"].as_array().unwrap();
+    assert_eq!(freqs0.len(), 1);
+    assert_eq!(freqs0[0]["value"], "<ALL_UNIQUE>");
+
+    // Second "id" column: cardinality 2, holds its OWN distribution (red=3, blue=1)
+    assert_eq!(fields[1]["field"], "id");
+    assert_eq!(fields[1]["cardinality"], 2);
+    let freqs1 = fields[1]["frequencies"].as_array().unwrap();
+    assert_eq!(freqs1.len(), 2);
+    assert_eq!(freqs1[0]["value"], "red");
+    assert_eq!(freqs1[0]["count"], 3);
+    assert_eq!(freqs1[1]["value"], "blue");
+    assert_eq!(freqs1[1]["count"], 1);
+}
+
+#[test]
+fn frequency_duplicate_headers_jsonl_high_cardinality() {
+    let wrk = Workdir::new("frequency_duplicate_headers_jsonl_high_cardinality");
+    // both columns are named "x": col 1 is all-unique (card 6), col 2 is card 3
+    let rows = vec![
+        svec!["x", "x"],
+        svec!["1", "a"],
+        svec!["2", "a"],
+        svec!["3", "b"],
+        svec!["4", "a"],
+        svec!["5", "b"],
+        svec!["6", "c"],
+    ];
+    wrk.create("in.csv", rows);
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    // threshold 2: col 2 (cardinality 3 > 2) is HIGH_CARDINALITY; col 1 is ALL_UNIQUE
+    cmd.arg("in.csv")
+        .args(["--high-card-threshold", "2"])
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut cmd);
+
+    let cache_path = wrk.path("in.freq.csv.data.jsonl");
+    let fields = decode_cache_fields(&cache_path);
+    assert_eq!(fields.len(), 2);
+
+    // col 1: all-unique on its OWN cardinality (6)
+    assert_eq!(fields[0]["cardinality"], 6);
+    let freqs0 = fields[0]["frequencies"].as_array().unwrap();
+    assert_eq!(freqs0[0]["value"], "<ALL_UNIQUE>");
+
+    // col 2: classified high-cardinality on its OWN cardinality (3), NOT all-unique
+    assert_eq!(fields[1]["cardinality"], 3);
+    let freqs1 = fields[1]["frequencies"].as_array().unwrap();
+    assert_eq!(freqs1.len(), 1);
+    assert_eq!(freqs1[0]["value"], "<HIGH_CARDINALITY>");
+}
+
 #[test]
 fn frequency_custom_null_text() {
     let wrk = Workdir::new("frequency_custom_null_text");
@@ -1222,6 +1354,47 @@ fn frequency_json() {
 }
 
 #[test]
+fn frequency_json_duplicate_headers() {
+    // Regression: JSON per-field stats were looked up by header NAME, so two columns
+    // named "id" both got the SAME stats record. They must each report their own.
+    let wrk = Workdir::new("frequency_json_duplicate_headers");
+    let rows = vec![
+        svec!["id", "id"],
+        svec!["10", "red"],
+        svec!["20", "red"],
+        svec!["30", "blue"],
+        svec!["40", "red"],
+    ];
+    wrk.create("in.csv", rows);
+
+    // stats cache is required for the per-field stats (type, cardinality, ...)
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").arg("--json");
+    let got: String = wrk.stdout(&mut cmd);
+    let v: Value = serde_json::from_str(&got).unwrap();
+
+    let fields = v["fields"].as_array().unwrap();
+    assert_eq!(fields.len(), 2);
+
+    // col 1: numeric, all-unique — its OWN type/cardinality
+    assert_eq!(fields[0]["field"], "id");
+    assert_eq!(fields[0]["type"], "Integer");
+    assert_eq!(fields[0]["cardinality"], 4);
+
+    // col 2: String red/blue — must NOT inherit col 1's record
+    assert_eq!(fields[1]["field"], "id");
+    assert_eq!(fields[1]["type"], "String");
+    assert_eq!(fields[1]["cardinality"], 2);
+}
+
+#[test]
 fn frequency_json_no_headers() {
     let (wrk, mut cmd) = setup("frequency_json_no_headers");
     cmd.args(["--limit", "0"])
@@ -1446,11 +1619,22 @@ rowcount: 8
 fieldcount: 1
 fields[1]:
   - field: "1"
-    type: ""
+    type: String
     cardinality: 5
-    nullcount: 0
-    sparsity: 0
+    nullcount: 1
+    sparsity: 0.125
     uniqueness_ratio: 0.625
+    stats[10]{name,value}:
+      min,(NULL)
+      max,h1
+      sort_order,Unsorted
+      min_length,0
+      max_length,6
+      sum_length,13
+      avg_length,1.625
+      stddev_length,1.7275
+      variance_length,2.9844
+      cv_length,1.0631
     frequencies[5]{value,count,percentage,rank}:
       a,4,50,1
       b,1,12.5,2
@@ -3404,6 +3588,43 @@ fn frequency_no_float_basic() {
 }
 
 #[test]
+fn frequency_no_float_duplicate_headers() {
+    // Regression: column types were looked up by header NAME, so two columns named "x"
+    // both inherited the first's type — --no-float would drop or keep BOTH. The fix keys
+    // type by position: only the genuinely-Float column is dropped.
+    let wrk = Workdir::new("frequency_no_float_duplicate_headers");
+    // col 1 "x" = Float, col 2 "x" = String
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["x", "x"],
+            svec!["1.5", "a"],
+            svec!["2.5", "a"],
+            svec!["3.5", "b"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--no-float", "*"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only the String column (col 2: a,a,b) survives; the Float column (col 1) is dropped.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["x", "a", "2", "66.66667", "1"],
+        svec!["x", "b", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn frequency_no_float_with_exceptions() {
     let wrk = Workdir::new("frequency_no_float_with_exceptions");
 
@@ -3748,6 +3969,86 @@ fn frequency_stats_filter_nullcount() {
     for h in headers.iter() {
         assert_eq!(*h, "name", "Only 'name' column should appear, got '{h}'");
     }
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_duplicate_headers() {
+    // Regression: stats records were looked up by header NAME, so two columns named "y"
+    // both evaluated against the first's stats. The fix keys stats by position: only the
+    // genuinely-Integer column is excluded by `type == "Integer"`.
+    let wrk = Workdir::new("frequency_stats_filter_duplicate_headers");
+    // col 1 "y" = Integer, col 2 "y" = String
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["y", "y"],
+            svec!["1", "a"],
+            svec!["2", "a"],
+            svec!["3", "b"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", r#"type == "Integer""#]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only the String column (col 2: a,a,b) survives; the Integer column (col 1) is excluded.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["y", "a", "2", "66.66667", "1"],
+        svec!["y", "b", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_no_float_and_stats_filter_compose() {
+    // Regression (roborev #3082): --no-float and --stats-filter compose. The stats-filter
+    // skip set must stay valid after --no-float removes an EARLIER column. Here A=Float is
+    // dropped by --no-float and B=Integer is excluded by --stats-filter, so only C=String
+    // survives. With position-based skip indices, the stats filter would have dropped the
+    // wrong (shifted) column.
+    let wrk = Workdir::new("frequency_no_float_and_stats_filter_compose");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["A", "B", "C"],
+            svec!["1.5", "10", "x"],
+            svec!["2.5", "20", "y"],
+            svec!["3.5", "20", "y"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--no-float", "*"])
+        .args(["--stats-filter", r#"type == "Integer""#]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // A (Float) dropped by --no-float; B (Integer) excluded by --stats-filter; only C remains.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["C", "y", "2", "66.66667", "1"],
+        svec!["C", "x", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
 }
 
 #[test]

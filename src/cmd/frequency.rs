@@ -381,15 +381,26 @@ pub struct Args {
 
 const NON_UTF8_ERR: &str = "<Non-UTF8 ERROR>";
 
+// Name-keyed stats records. Retained ONLY for lookups that legitimately address a
+// column by its user-specified name: the `--weight` column's tolerance scale and
+// `--stats-filter`. NOT used for per-output-column JSON stats (see STATS_RECORDS_BY_POS),
+// which must be positional so duplicate-named columns don't collapse onto one record.
 static STATS_RECORDS: OnceLock<HashMap<String, StatsData>> = OnceLock::new();
+// Per-output-column stats for JSON/TOON output, aligned positionally to the FINAL
+// selected columns (index = output column position). Positional — not name-keyed — so
+// duplicate-named columns each report their own stats.
+static STATS_RECORDS_BY_POS: OnceLock<Vec<StatsData>> = OnceLock::new();
 static NULL_VAL: OnceLock<Vec<u8>> = OnceLock::new();
 static UNIQUE_COLUMNS_VEC: OnceLock<Vec<usize>> = OnceLock::new();
-static COL_CARDINALITY_VEC: OnceLock<Vec<(String, u64)>> = OnceLock::new();
+// Cardinalities aligned positionally to the FINAL selected columns (NOT keyed by
+// name). Name-keying collapsed duplicate-named columns onto the first match; using
+// position lets each duplicate keep its own cardinality.
+static COL_CARDINALITY_VEC: OnceLock<Vec<u64>> = OnceLock::new();
 static FREQ_ROW_COUNT: OnceLock<u64> = OnceLock::new();
 static FLOAT_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
 #[cfg(feature = "luau")]
 static STATS_FILTER_COLUMNS_TO_SKIP: OnceLock<Vec<usize>> = OnceLock::new();
-static EMPTY_VEC: Vec<(String, u64)> = Vec::new();
+static EMPTY_VEC: Vec<u64> = Vec::new();
 static EMPTY_USIZE_VEC: Vec<usize> = Vec::new();
 static ALL_UNIQUE_TEXT: OnceLock<Vec<u8>> = OnceLock::new();
 // Partial frequency cache: when some columns are cached but others need computation,
@@ -1846,10 +1857,10 @@ impl Args {
                 util::bytes_to_cow_str(header).into_owned()
             };
 
-            let cardinality = col_cardinality
-                .iter()
-                .find(|(name, _)| name == &field_name)
-                .map_or(0, |(_, card)| *card);
+            // col_cardinality is aligned positionally to the selected columns, so index
+            // by position (i) — not by name — so duplicate-named columns each get their
+            // own cardinality.
+            let cardinality = col_cardinality.get(i).copied().unwrap_or(0);
 
             let is_high_cardinality =
                 !unique_headers.contains(&i) && cardinality > effective_threshold;
@@ -3156,11 +3167,11 @@ impl Args {
                     let capacity = if nchunks == 1 {
                         col_cardinality_vec
                             .get(i)
-                            .map_or(1000, |(_, cardinality)| *cardinality as usize)
+                            .map_or(1000, |&cardinality| cardinality as usize)
                     } else {
                         let cardinality = col_cardinality_vec
                             .get(i)
-                            .map_or(1000, |(_, cardinality)| *cardinality as usize);
+                            .map_or(1000, |&cardinality| cardinality as usize);
                         cardinality / nchunks
                     };
                     HashMap::with_capacity(capacity)
@@ -3322,12 +3333,12 @@ impl Args {
                     } else if nchunks == 1 {
                         col_cardinality_vec
                             .get(i)
-                            .map_or(1000, |(_, cardinality)| *cardinality as usize)
+                            .map_or(1000, |&cardinality| cardinality as usize)
                     } else {
                         // use cardinality and number of jobs to set the capacity
                         let cardinality = col_cardinality_vec
                             .get(i)
-                            .map_or(1000, |(_, cardinality)| *cardinality as usize);
+                            .map_or(1000, |&cardinality| cardinality as usize);
                         cardinality / nchunks
                     };
                     Frequencies::with_capacity(capacity)
@@ -3421,16 +3432,22 @@ impl Args {
     /// Compute indices of Float columns that should be skipped from frequency analysis.
     ///
     /// # Arguments
-    /// * `headers` - The selected CSV headers
-    /// * `col_type_map` - Map of column names to their data types from stats cache
+    /// * `headers` - The selected CSV headers (used for the --no-float exception list, which
+    ///   matches by user-supplied column name)
+    /// * `sel` - The selection; `sel[i]` is the ORIGINAL CSV column position of selected column
+    ///   `i`, used to look up the column type positionally
+    /// * `col_type_by_pos` - Column types indexed by ORIGINAL CSV column position
     ///
     /// # Returns
-    /// A vector of indices (into the selected headers) of Float columns to skip.
+    /// A vector of ORIGINAL CSV column indices of Float columns to skip. Original indices
+    /// (not selected positions) are stable when an earlier filter removes columns, so this
+    /// composes correctly with --stats-filter.
     /// Columns listed in the --no-float exception list are NOT included in the skip list.
     fn compute_float_columns_to_skip(
         &self,
         headers: &Headers,
-        col_type_map: &HashMap<String, String>,
+        sel: &Selection,
+        col_type_by_pos: &[String],
     ) -> Vec<usize> {
         // Parse exception columns from flag value
         // If value is "*", exclude ALL Float columns (empty exception list)
@@ -3455,17 +3472,21 @@ impl Args {
 
         let mut float_columns_to_skip = Vec::new();
 
-        for (i, header) in headers.iter().enumerate() {
-            let header_str = simdutf8::basic::from_utf8(header)
-                .unwrap_or(NON_UTF8_ERR)
-                .to_string();
-
-            // Check if column is Float type and not in exception list
-            if let Some(col_type) = col_type_map.get(&header_str)
+        // Look up the type by ORIGINAL column position (sel[i]) — not by header name — so
+        // duplicate-named columns are each evaluated on their own type. The exception list
+        // still matches by name (it's a user-supplied list of column names). We record the
+        // ORIGINAL column index (orig_idx), which stays valid even if another filter later
+        // removes columns ahead of it.
+        for (header, &orig_idx) in headers.iter().zip(sel.iter()) {
+            if let Some(col_type) = col_type_by_pos.get(orig_idx)
                 && col_type == "Float"
-                && !exception_cols.contains(&header_str.to_lowercase())
             {
-                float_columns_to_skip.push(i);
+                let header_str = simdutf8::basic::from_utf8(header)
+                    .unwrap_or(NON_UTF8_ERR)
+                    .to_lowercase();
+                if !exception_cols.contains(&header_str) {
+                    float_columns_to_skip.push(orig_idx);
+                }
             }
         }
 
@@ -3475,19 +3496,24 @@ impl Args {
     /// Compute indices of columns that should be skipped based on the --stats-filter expression.
     ///
     /// # Arguments
-    /// * `headers` - The selected CSV headers
-    /// * `stats_records` - Map of column names to their stats data from stats cache
+    /// * `headers` - The selected CSV headers (used only for log/error messages)
+    /// * `sel` - The selection; `sel[i]` is the ORIGINAL CSV column position of selected column
+    ///   `i`, used to look up the stats record positionally
+    /// * `stats_by_pos` - Stats records indexed by ORIGINAL CSV column position
     /// * `filter_expression` - The Luau expression to evaluate for each column
     ///
     /// # Returns
-    /// A vector of indices (into the selected headers) of columns where the filter
-    /// expression evaluated to `true` (meaning they should be excluded).
+    /// A vector of ORIGINAL CSV column indices of columns where the filter expression
+    /// evaluated to `true` (meaning they should be excluded). Original indices (not selected
+    /// positions) stay valid even if --no-float removed columns first, so the two filters
+    /// compose correctly.
     #[allow(clippy::unused_self)]
     #[cfg(feature = "luau")]
     fn compute_stats_filter_columns_to_skip(
         &self,
         headers: &Headers,
-        stats_records: &HashMap<String, StatsData>,
+        sel: &Selection,
+        stats_by_pos: &[StatsData],
         filter_expression: &str,
     ) -> CliResult<Vec<usize>> {
         use mlua::Lua;
@@ -3499,46 +3525,59 @@ impl Args {
 
         let mut columns_to_skip = Vec::new();
 
-        for (i, header) in headers.iter().enumerate() {
-            let header_str = simdutf8::basic::from_utf8(header)
-                .unwrap_or(NON_UTF8_ERR)
-                .to_string();
-
-            // Look up the stats record for this column
-            if let Some(stats_data) = stats_records.get(&header_str) {
-                // Evaluate the filter expression against this column's stats
-                match evaluate_stats_filter(&lua, stats_data, filter_expression) {
-                    Ok(should_exclude) => {
-                        if should_exclude {
-                            log::debug!(
-                                "Column '{header_str}' excluded by --stats-filter expression"
-                            );
-                            columns_to_skip.push(i);
-                        }
-                    },
-                    Err(e) => {
-                        return fail_clierror!(
-                            "Error evaluating --stats-filter expression for column \
-                             '{header_str}': {e}"
-                        );
-                    },
-                }
-            } else {
+        // Look up the stats record by ORIGINAL column position (sel[i]) — not by header
+        // name — so duplicate-named columns are each evaluated against their own stats. We
+        // record the ORIGINAL column index (orig_idx), which stays valid even if --no-float
+        // removed columns ahead of it.
+        for (header, &orig_idx) in headers.iter().zip(sel.iter()) {
+            let Some(stats_data) = stats_by_pos.get(orig_idx) else {
                 // No stats available for this column - skip filtering for it
                 log::debug!(
-                    "No stats available for column '{header_str}', skipping --stats-filter \
+                    "No stats available for column index {orig_idx}, skipping --stats-filter \
                      evaluation"
                 );
+                continue;
+            };
+
+            // Evaluate the filter expression against this column's stats
+            match evaluate_stats_filter(&lua, stats_data, filter_expression) {
+                Ok(should_exclude) => {
+                    if should_exclude {
+                        let header_str = simdutf8::basic::from_utf8(header).unwrap_or(NON_UTF8_ERR);
+                        log::debug!("Column '{header_str}' excluded by --stats-filter expression");
+                        columns_to_skip.push(orig_idx);
+                    }
+                },
+                Err(e) => {
+                    let header_str = simdutf8::basic::from_utf8(header).unwrap_or(NON_UTF8_ERR);
+                    return fail_clierror!(
+                        "Error evaluating --stats-filter expression for column '{header_str}': {e}"
+                    );
+                },
             }
         }
 
         Ok(columns_to_skip)
     }
 
-    /// return the names of headers/columns that are unique identifiers
-    /// (i.e. where cardinality == rowcount)
+    /// Return the all-unique columns (cardinality == rowcount) as ORIGINAL CSV
+    /// column indices, together with a cardinality vector indexed by ORIGINAL CSV
+    /// column position (aligned to the stats cache, which has one record per
+    /// column regardless of duplicate names).
+    ///
+    /// Both are keyed by position — NOT by header name — so duplicate-named columns
+    /// are each classified on their own data. `sel` maps each selected column to its
+    /// original CSV column position. An empty cardinality vector signals "no stats
+    /// cache available" (compute frequencies for all columns).
+    ///
     /// Also stores the stats records in a hashmap for use when producing JSON output
-    fn get_unique_headers(&self, headers: &Headers) -> CliResult<Vec<usize>> {
+    /// and computes the Float / `--stats-filter` skip lists (both still name-keyed,
+    /// as those features index by selected-header name).
+    fn get_unique_headers(
+        &self,
+        sel: &Selection,
+        headers: &Headers,
+    ) -> CliResult<(Vec<usize>, Vec<u64>, Vec<StatsData>)> {
         // get the stats records for the entire CSV
         let schema_args = util::SchemaArgs {
             flag_enum_threshold:  0,
@@ -3560,15 +3599,21 @@ impl Args {
             flag_output:          None,
         };
         let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
-        // Check if we need to populate stats_records_hashmap
-        // We need it for JSON output and for --stats-filter
-        #[cfg(feature = "luau")]
-        let needs_stats_records = is_json || self.flag_stats_filter.is_some();
-        #[cfg(not(feature = "luau"))]
-        let needs_stats_records = is_json;
 
-        // initialize the stats records hashmap
-        let mut stats_records_hashmap = if needs_stats_records {
+        // What positional/name-keyed structures each feature needs, so we only pay for
+        // what's requested. ALL per-column lookups are positional (indexed by ORIGINAL CSV
+        // column position) so duplicate-named columns are each classified on their own data
+        // — the lone exception is the name-keyed hashmap below, which exists solely for the
+        // --weight tolerance lookup (it addresses ONE column by the user-supplied name).
+        let needs_weight_records = is_json && self.flag_weight.is_some();
+        let needs_float_types = self.flag_no_float.is_some();
+        #[cfg(feature = "luau")]
+        let needs_stats_by_pos = is_json || self.flag_stats_filter.is_some();
+        #[cfg(not(feature = "luau"))]
+        let needs_stats_by_pos = is_json;
+
+        // initialize the name-keyed stats records hashmap (used only by --weight tolerance)
+        let mut stats_records_hashmap = if needs_weight_records {
             HashMap::with_capacity(headers.len())
         } else {
             HashMap::new()
@@ -3578,61 +3623,73 @@ impl Args {
 
         if csv_fields.is_empty() || csv_stats.len() != csv_fields.len() {
             // the stats cache does not exist or the number of fields & stats records
-            // do not match. Just return an empty vector.
+            // do not match. Just return empty vectors.
             // we're not going to be able to get the cardinalities, so
             // this signals that we just compute frequencies for all columns
-            return Ok(Vec::new());
+            return Ok((Vec::new(), Vec::new(), Vec::new()));
         }
 
-        // Build column name -> (cardinality, type) map for matching by name
-        let mut col_type_map: HashMap<String, String> = HashMap::with_capacity(csv_stats.len());
+        // Positional vectors indexed by ORIGINAL CSV column position. csv_stats/csv_fields
+        // have one entry per column in original order, so the index IS the original column
+        // position — duplicate-named columns each keep their own cardinality/type/stats (a
+        // name-keyed lookup would collapse them onto the first match).
+        let mut col_cardinality_by_pos: Vec<u64> = Vec::with_capacity(csv_stats.len());
+        // Per-column types for --no-float detection (built only when needed).
+        let mut col_type_by_pos: Vec<String> = if needs_float_types {
+            Vec::with_capacity(csv_stats.len())
+        } else {
+            Vec::new()
+        };
+        // Per-column stats for JSON/TOON output and --stats-filter, aligned to ORIGINAL
+        // columns. For JSON, the caller (sel_headers) remaps it to the final selected order.
+        let mut stats_by_pos: Vec<StatsData> = if needs_stats_by_pos {
+            Vec::with_capacity(csv_stats.len())
+        } else {
+            Vec::new()
+        };
 
-        let col_cardinality_vec: Vec<(String, u64)> = csv_stats
-            .iter()
-            .enumerate()
-            .map(|(i, stats_record)| {
-                // get the column name and stats record
-                // safety: we know that csv_fields and csv_stats have the same length
+        for (i, stats_record) in csv_stats.iter().enumerate() {
+            if needs_weight_records {
+                // Name-keyed record for the --weight tolerance lookup (addresses the weight
+                // column by user-supplied name). safety: csv_fields and csv_stats are equal
+                // length, so index i is valid for csv_fields.
                 let col_name = csv_fields.get(i).unwrap();
                 let col_name_str = simdutf8::basic::from_utf8(col_name)
                     .unwrap_or(NON_UTF8_ERR)
                     .to_string();
-                if needs_stats_records {
-                    // Store the stats records hashmap for later use when producing JSON output
-                    // or for --stats-filter evaluation
-                    stats_records_hashmap.insert(col_name_str.clone(), stats_record.clone());
-                }
-                // Store type info for Float column detection
-                col_type_map.insert(col_name_str.clone(), stats_record.r#type.clone());
-                (col_name_str, stats_record.cardinality)
-            })
-            .collect();
+                stats_records_hashmap.insert(col_name_str, stats_record.clone());
+            }
+            if needs_float_types {
+                col_type_by_pos.push(stats_record.r#type.clone());
+            }
+            if needs_stats_by_pos {
+                stats_by_pos.push(stats_record.clone());
+            }
+            col_cardinality_by_pos.push(stats_record.cardinality);
+        }
 
         // now, get the unique headers, where cardinality == rowcount
         let row_count = util::count_rows(&self.rconfig()).unwrap_or_default();
         FREQ_ROW_COUNT.set(row_count).unwrap();
 
-        // Most datasets have relatively few columns with all unique values (e.g. ID columns)
-        // so pre-allocate space for 5 as a reasonable default capacity
+        // Determine all-unique columns by ORIGINAL column position via the selection,
+        // not by header name, so duplicate-named columns are each classified on their
+        // own cardinality. `sel` yields the original CSV column index of each selected
+        // column. Returns original indices (the caller remaps them to selected positions).
+        // Most datasets have relatively few all-unique columns (e.g. ID columns), so
+        // pre-allocate space for 5 as a reasonable default capacity.
         let mut all_unique_headers_vec: Vec<usize> = Vec::with_capacity(5);
-        for (i, header) in headers.iter().enumerate() {
-            // Look up cardinality by column name, not index, since headers may be a
-            // user-selected subset in a different order than the original CSV columns
-            let cardinality = col_cardinality_vec
-                .iter()
-                .find(|(name, _)| {
-                    name == simdutf8::basic::from_utf8(header).unwrap_or(NON_UTF8_ERR)
-                })
-                .map_or(0, |(_, card)| *card);
-
+        for &orig_idx in sel.iter() {
+            let cardinality = col_cardinality_by_pos.get(orig_idx).copied().unwrap_or(0);
             if cardinality == row_count {
-                all_unique_headers_vec.push(i);
+                all_unique_headers_vec.push(orig_idx);
             }
         }
 
         // Compute Float columns to skip if --no-float is specified
         if self.flag_no_float.is_some() {
-            let float_columns_to_skip = self.compute_float_columns_to_skip(headers, &col_type_map);
+            let float_columns_to_skip =
+                self.compute_float_columns_to_skip(headers, sel, &col_type_by_pos);
             if FLOAT_COLUMNS_TO_SKIP.set(float_columns_to_skip).is_err() {
                 log::warn!("FLOAT_COLUMNS_TO_SKIP already set — stale float columns may be used");
             }
@@ -3641,7 +3698,7 @@ impl Args {
         // Compute stats filter columns to skip if --stats-filter is specified
         #[cfg(feature = "luau")]
         if let Some(ref filter_expression) = self.flag_stats_filter {
-            if stats_records_hashmap.is_empty() {
+            if stats_by_pos.is_empty() {
                 log::warn!(
                     "Stats cache unavailable. Cannot apply --stats-filter. Run 'qsv stats \
                      --cardinality --stats-jsonl' first."
@@ -3649,7 +3706,8 @@ impl Args {
             } else {
                 let stats_filter_columns_to_skip = self.compute_stats_filter_columns_to_skip(
                     headers,
-                    &stats_records_hashmap,
+                    sel,
+                    &stats_by_pos,
                     filter_expression,
                 )?;
                 if STATS_FILTER_COLUMNS_TO_SKIP
@@ -3664,14 +3722,17 @@ impl Args {
             }
         }
 
-        COL_CARDINALITY_VEC.get_or_init(|| col_cardinality_vec);
-
-        if is_json {
-            // Store the stats records hashmap for later use when producing JSON output
+        if is_json && self.flag_weight.is_some() {
+            // Only the weighted-JSON tolerance path reads STATS_RECORDS; set it just for
+            // that case (addresses the weight column by name). Non-weighted JSON never
+            // populated the hashmap above, so there is nothing to store.
             STATS_RECORDS.set(stats_records_hashmap).unwrap();
         }
 
-        Ok(all_unique_headers_vec)
+        // COL_CARDINALITY_VEC and STATS_RECORDS_BY_POS are set by the caller (sel_headers)
+        // once the FINAL selection is known, so they can be aligned positionally to the
+        // final columns.
+        Ok((all_unique_headers_vec, col_cardinality_by_pos, stats_by_pos))
     }
 
     #[allow(clippy::cast_precision_loss)]
@@ -3697,6 +3758,7 @@ impl Args {
 
         // Helper function to build a frequency field for JSON output
         let build_frequency_field = |field_name: String,
+                                     field_pos: usize,
                                      cardinality: u64,
                                      processed_frequencies: &mut Vec<ProcessedFrequency>,
                                      field_stats: &mut Vec<FieldStats>,
@@ -3715,10 +3777,11 @@ impl Args {
                 }
             }
 
-            // Get stats record for this field
-            let stats_record = STATS_RECORDS
+            // Get stats record for this field by output-column POSITION (not name), so
+            // duplicate-named columns each get their own stats.
+            let stats_record = STATS_RECORDS_BY_POS
                 .get()
-                .and_then(|records| records.get(&field_name));
+                .and_then(|records| records.get(field_pos));
 
             // Get data type and nullcount from stats record
             let dtype = stats_record.map_or(String::new(), |sr| sr.r#type.clone());
@@ -3832,6 +3895,7 @@ impl Args {
 
                 fields.push(build_frequency_field(
                     field_name,
+                    i,
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,
@@ -3868,6 +3932,7 @@ impl Args {
 
                 fields.push(build_frequency_field(
                     field_name,
+                    i,
                     cardinality,
                     &mut processed_frequencies,
                     &mut field_stats,
@@ -4008,7 +4073,8 @@ impl Args {
         let (weight_col_idx, mut sel, selected_headers) =
             self.process_headers_with_weight_exclusion(&full_headers)?;
 
-        let all_unique_headers_vec = self.get_unique_headers(&selected_headers)?;
+        let (all_unique_headers_vec, col_cardinality_by_pos, stats_by_pos) =
+            self.get_unique_headers(&sel, &selected_headers)?;
 
         // Filter out Float columns if --no-float is specified
         let (final_sel, final_headers) = if self.flag_no_float.is_some() {
@@ -4016,14 +4082,14 @@ impl Args {
                 if float_cols_to_skip.is_empty() {
                     (sel, selected_headers)
                 } else {
-                    // Filter selection to exclude Float columns
-                    // float_cols_to_skip contains indices into selected_headers
+                    // Filter selection to exclude Float columns.
+                    // float_cols_to_skip contains ORIGINAL CSV column indices, and sel
+                    // yields original column indices, so filter by the index value (stable
+                    // regardless of position).
                     let sel_vec: Vec<usize> = sel
                         .iter()
                         .copied()
-                        .enumerate()
-                        .filter(|(i, _)| !float_cols_to_skip.contains(i))
-                        .map(|(_, idx)| idx)
+                        .filter(|orig_idx| !float_cols_to_skip.contains(orig_idx))
                         .collect();
 
                     if sel_vec.is_empty() {
@@ -4057,14 +4123,14 @@ impl Args {
                 if stats_filter_cols_to_skip.is_empty() {
                     (final_sel, final_headers)
                 } else {
-                    // Filter selection to exclude stats-filtered columns
-                    // stats_filter_cols_to_skip contains indices into selected_headers
+                    // Filter selection to exclude stats-filtered columns.
+                    // stats_filter_cols_to_skip contains ORIGINAL CSV column indices; since
+                    // final_sel yields original column indices, this stays correct even when
+                    // --no-float already dropped earlier columns (positions would have shifted).
                     let sel_vec: Vec<usize> = final_sel
                         .iter()
                         .copied()
-                        .enumerate()
-                        .filter(|(i, _)| !stats_filter_cols_to_skip.contains(i))
-                        .map(|(_, idx)| idx)
+                        .filter(|orig_idx| !stats_filter_cols_to_skip.contains(orig_idx))
                         .collect();
 
                     if sel_vec.is_empty() {
@@ -4105,6 +4171,40 @@ impl Args {
         UNIQUE_COLUMNS_VEC
             .set(mapped_unique_headers)
             .map_err(|_| "Cannot set UNIQUE_COLUMNS")?;
+
+        // Build the cardinality vector aligned positionally to the FINAL selected
+        // columns (after --no-float / --stats-filter dropping), so downstream
+        // consumers (cache cardinality, capacity hints) can index by position.
+        // Skip when the stats cache is unavailable (empty), leaving COL_CARDINALITY_VEC
+        // unset so consumers fall back to default capacities.
+        if !col_cardinality_by_pos.is_empty() {
+            let final_cardinalities: Vec<u64> = final_sel
+                .iter()
+                .map(|&orig_idx| col_cardinality_by_pos.get(orig_idx).copied().unwrap_or(0))
+                .collect();
+            if COL_CARDINALITY_VEC.set(final_cardinalities).is_err() {
+                log::warn!("COL_CARDINALITY_VEC already set — stale cardinalities may be used");
+            }
+        }
+
+        // Likewise, align the per-output-column JSON stats to the FINAL selected columns
+        // (positional), so duplicate-named columns each report their own stats. orig_idx
+        // values come from a valid selection over the original columns, so every lookup
+        // resolves; the length guard skips the set if any unexpectedly does not.
+        // Only for JSON output: stats_by_pos may also be populated for --stats-filter in
+        // non-JSON mode, where STATS_RECORDS_BY_POS is never read.
+        let is_json = self.flag_json || self.flag_pretty_json || self.flag_toon;
+        if is_json && !stats_by_pos.is_empty() {
+            let final_stats: Vec<StatsData> = final_sel
+                .iter()
+                .filter_map(|&orig_idx| stats_by_pos.get(orig_idx).cloned())
+                .collect();
+            if final_stats.len() == final_sel.len()
+                && STATS_RECORDS_BY_POS.set(final_stats).is_err()
+            {
+                log::warn!("STATS_RECORDS_BY_POS already set — stale stats may be used");
+            }
+        }
 
         Ok((final_headers, final_sel, weight_col_idx))
     }

@@ -304,6 +304,31 @@ pub fn infer_schema_from_stats(
     // invoke cmd::stats
     let (csv_fields, csv_stats) = util::get_stats_records(args, StatsMode::Schema)?;
 
+    // Name-keyed outputs (this command's JSON Schema `properties`, and tojsonl's JSON
+    // objects — both reach here via this shared fn) cannot represent two columns sharing a
+    // name: the duplicates silently collapse onto a single key. Warn (once per duplicated
+    // name) so the result isn't trusted blindly. Only meaningful when headers are in use
+    // (with --no-headers the "names" are the first data row).
+    if !quiet && !args.flag_no_headers {
+        let mut seen: HashSet<&[u8]> = HashSet::default();
+        let mut dupes: Vec<String> = Vec::new();
+        for field in &csv_fields {
+            if !seen.insert(field) {
+                let name = String::from_utf8_lossy(field).into_owned();
+                if !dupes.contains(&name) {
+                    dupes.push(name);
+                }
+            }
+        }
+        if !dupes.is_empty() {
+            wwarn!(
+                "Duplicate column name(s) detected ({}). Name-keyed output collapses them onto a \
+                 single key, so the result is unreliable for these columns.",
+                dupes.join(", ")
+            );
+        }
+    }
+
     // amortize memory allocation
     let mut low_cardinality_column_indices: Vec<u64> =
         Vec::with_capacity(args.flag_enum_threshold as usize);

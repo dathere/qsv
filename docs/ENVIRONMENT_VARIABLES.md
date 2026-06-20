@@ -128,6 +128,7 @@ These environment variables configure the MCP server behavior:
 | `QSV_MCP_USE_DUCKDB` | Enable DuckDB for SQL queries when available. When `false`, always uses `sqlp` (Polars SQL). | `true` |
 | `QSV_MCP_OUTPUT_FORMAT` | Output format for qsv command results. Valid values: `"tsv"` or `"csv"`. | `tsv` |
 | `QSV_MCP_ENABLE_APPS` | Enable MCP Apps UI features (e.g., `qsv_browse_directory` interactive directory browser). | `true` |
+| `QSV_MCP_SANITIZE_ERRORS` | Strip absolute paths (usernames, directory layout) from command and error output before returning it to the client. Set to `false` to opt out (e.g., for local debugging). Sanitization protects hosted/shared deployments. | `true` |
 
 ### Update Checking
 
@@ -143,6 +144,12 @@ These environment variables configure the MCP server behavior:
 | Variable | Description | Default |
 | --- | --- | --- |
 | `MCPB_EXTENSION_MODE` | Set automatically by Claude Desktop when running as an extension. Enables stricter validation (requires fully qualified qsv path, version >= 17.0.0). | `false` |
+
+### Cowork Plugin Setup
+
+| Variable | Description | Default |
+| --- | --- | --- |
+| `QSV_NO_COWORK_SETUP` | When set to `1`, disables the Cowork plugin's auto-deployment of the workflow-guidance `CLAUDE.md`. Set in your shell before launching Claude Code. | Unset (auto-deploy enabled) |
 
 ### Template Variables
 

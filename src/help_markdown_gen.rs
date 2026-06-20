@@ -1050,6 +1050,70 @@ fn maybe_append_colon_break(md: &mut String, trimmed: &str) {
     }
 }
 
+/// Leading ASCII-space count of a raw (untrimmed) line. Counts spaces only (not
+/// tabs) since docopt USAGE blocks indent with spaces.
+fn leading_spaces(line: &str) -> usize {
+    line.len() - line.trim_start_matches(' ').len()
+}
+
+/// Emit a contiguous run of >=4-space-indented description lines (starting at
+/// `start`) as a verbatim ```` ```text ```` fenced code block, preserving column
+/// alignment. The run extends while lines are indented >=4 or blank (interior
+/// blanks allowed); trailing blanks are trimmed off. Lines are dedented by the
+/// run's minimum indent so the block isn't over-indented. Returns the index of
+/// the first line AFTER the consumed run (the loop's resume point).
+fn emit_indented_block(md: &mut String, lines: &[String], start: usize) -> usize {
+    // Find the end of the run. A literal fence marker ends the run so we never
+    // nest a ```` ``` ```` inside the ```` ```text ```` block we emit.
+    let mut end = start;
+    while end < lines.len() {
+        let l = &lines[end];
+        if l.trim().starts_with("```") {
+            break;
+        }
+        if l.trim().is_empty() || leading_spaces(l) >= 4 {
+            end += 1;
+        } else {
+            break;
+        }
+    }
+    // Trim trailing blank lines off the run.
+    let mut run_end = end;
+    while run_end > start && lines[run_end - 1].trim().is_empty() {
+        run_end -= 1;
+    }
+
+    let min_indent = lines[start..run_end]
+        .iter()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| leading_spaces(l))
+        .min()
+        .unwrap_or(0);
+
+    // If the preceding heading line got a colon hard-break (`:  \n`), drop the two
+    // trailing spaces so it sits cleanly above the fence.
+    if md.ends_with(":  \n") {
+        md.truncate(md.len() - 3);
+        md.push('\n');
+    }
+    if !md.ends_with("\n\n") && !md.is_empty() {
+        md.push('\n');
+    }
+
+    md.push_str("```text\n");
+    for line in &lines[start..run_end] {
+        if line.trim().is_empty() {
+            md.push('\n');
+        } else {
+            md.push_str(&line[min_indent..]);
+            md.push('\n');
+        }
+    }
+    md.push_str("```\n\n");
+
+    end
+}
+
 /// If a trimmed line begins with a `NOTE:`, `WARNING:`, or `IMPORTANT:` marker,
 /// return the corresponding GitHub Alert keyword and the remaining text after
 /// the marker (trimmed). Used to render these admonitions as GitHub Alerts:
@@ -1079,8 +1143,17 @@ fn format_description(lines: &[String]) -> String {
     // NOTE:/WARNING:/IMPORTANT: marker). Continuation lines are emitted as
     // blockquote lines until the next blank line closes the alert.
     let mut in_alert = false;
+    // Whether we are currently inside a bullet/numbered list. Indented
+    // continuation lines of a list item must NOT be captured as a code block.
+    let mut in_list = false;
+    // When an indented block is emitted as a fenced code block, the outer loop
+    // resumes here, skipping the lines already consumed.
+    let mut skip_until = 0usize;
 
     for (i, line) in lines.iter().enumerate() {
+        if i < skip_until {
+            continue;
+        }
         let trimmed = line.trim();
 
         if handle_fenced_block(
@@ -1198,6 +1271,8 @@ fn format_description(lines: &[String]) -> String {
         }
 
         if trimmed.is_empty() {
+            // A blank line ends any in-progress list.
+            in_list = false;
             if !prev_empty {
                 md.push('\n');
                 prev_empty = true;
@@ -1226,6 +1301,7 @@ fn format_description(lines: &[String]) -> String {
 
         // Bullet list items
         if trimmed.starts_with("* ") || trimmed.starts_with("- ") {
+            in_list = true;
             md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
@@ -1234,9 +1310,26 @@ fn format_description(lines: &[String]) -> String {
 
         // Numbered list items
         if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains(". ") {
+            in_list = true;
             md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
+            continue;
+        }
+
+        // Indented (>=4 space) pre-formatted block (e.g. aligned definition lists
+        // or ascii tables). Render verbatim in a fenced code block to preserve
+        // column alignment. Two guards keep this from mangling ordinary prose:
+        //   - the block must be introduced by a colon-terminated heading line directly above it
+        //     (the docopt convention for "here comes a pre-formatted listing"); this avoids
+        //     capturing hanging-indent continuation lines of flush-left sentences, which merely
+        //     wrap.
+        //   - it is skipped while inside a list, so indented list-item continuation lines stay part
+        //     of the list.
+        let colon_introduced = i > 0 && lines[i - 1].trim_end().ends_with(':');
+        if !in_list && colon_introduced && leading_spaces(line) >= 4 {
+            skip_until = emit_indented_block(&mut md, lines, i);
+            prev_empty = true;
             continue;
         }
 
@@ -2731,6 +2824,91 @@ mod tests {
         assert!(
             !md_2.contains("Examples:  \n"),
             "Examples: should not get hard line break, got:\n{md_2:?}"
+        );
+    }
+
+    #[test]
+    fn test_indented_block_after_colon_becomes_text_fence() {
+        // A colon-introduced, >=4-space-indented aligned listing (e.g. viz's
+        // "Chart types (subcommands):") is rendered verbatim in a ```text fence
+        // with column alignment and continuation indentation preserved.
+        let input = lines(&[
+            "Chart types (subcommands):",
+            "    smart       Auto-dashboard. Picks a chart per column from the",
+            "                dataset's stats & frequency distribution.",
+            "    bar         Bar chart.        --x = category, --y = value.",
+        ]);
+        let md = format_description(&input);
+        assert!(md.contains("```text\n"), "missing text fence, got:\n{md}");
+        // Column alignment preserved (dedented by the common 4-space indent).
+        assert!(
+            md.contains("smart       Auto-dashboard"),
+            "key/value column alignment lost, got:\n{md}"
+        );
+        // Continuation line keeps its alignment under the description column.
+        assert!(
+            md.contains("\n            dataset's stats"),
+            "continuation indentation lost, got:\n{md}"
+        );
+        // The introducing heading is plain (no `:  ` hard break before the fence).
+        assert!(
+            md.contains("Chart types (subcommands):\n\n```text"),
+            "heading hard-break not dropped before fence, got:\n{md:?}"
+        );
+    }
+
+    #[test]
+    fn test_hanging_indent_continuation_not_fenced() {
+        // A flush-left sentence whose wrapped continuation is merely indented
+        // (NOT introduced by a colon heading) must stay prose, not a code block.
+        let input = lines(&[
+            "center             Robust location; median of pairwise averages.",
+            "                   Stable with outliers; tolerates corrupted data.",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            !md.contains("```text"),
+            "hanging-indent continuation should not be fenced, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_indented_block_skipped_inside_list() {
+        // An indented line that is a continuation of a list item (even after a
+        // colon-terminated item) stays part of the list, not a code block.
+        let input = lines(&[
+            "It has subcommands:",
+            "1. first item that wraps onto:",
+            "    a continuation line of the list item",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            !md.contains("```text"),
+            "list-item continuation should not be fenced, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_indented_block_dedented_by_min_indent() {
+        // Nested indentation (min 4, inner 8) survives: dedent by the run minimum
+        // so the relative 4-space step is preserved.
+        let input = lines(&["Code:", "    def f():", "        return 1"]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("def f():\n    return 1"),
+            "relative nested indent not preserved after dedent, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_indented_block_keeps_interior_blank_line() {
+        // An interior blank line does not split the run into two fences.
+        let input = lines(&["Listing:", "    one   first", "", "    two   second"]);
+        let md = format_description(&input);
+        assert_eq!(
+            md.matches("```text").count(),
+            1,
+            "interior blank line should not split the fence, got:\n{md}"
         );
     }
 

@@ -28,7 +28,9 @@ A glob (e.g. data/*.csv) or directory source fetches every matching tabular file
 (.csv/.tsv/.tab/.ssv) — supported for local paths and (with the get_cloud feature)
 cloud buckets/prefixes. --name is ignored when a source expands to multiple files.
 
-Supported sources:  
+Supported sources:
+
+```text
 local file path, directory, or glob (e.g. /data/*.csv)
 http:// or https:// URL
 dathere://<path>          datHere qsv-lookup-tables repo
@@ -37,6 +39,8 @@ ckan://<name>?            a CKAN resource by name (resource_search)
 s3://<bucket>/<key>       AWS S3 / S3-compatible       (get_cloud feature)
 gs://<bucket>/<key>       Google Cloud Storage         (get_cloud feature)
 az://<container>/<key>    Azure Blob Storage           (get_cloud feature)
+```
+
 Cloud credentials are read from the standard AWS_*/AZURE_*/GOOGLE_* environment
 variables (and IAM roles); use --cloud-opt for one-off overrides such as region
 or endpoint. (sftp:// is planned for a later release.)

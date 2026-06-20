@@ -80,10 +80,13 @@ COMPARE1 OUTPUT (--compare1, one-sample confirmatory analysis)
 field, n, metric, threshold, estimate, lower, upper, verdict
 
 Tests one-sample estimates (center/spread) against user-defined thresholds.
-Each threshold produces one row per column with a verdict:  
+Each threshold produces one row per column with a verdict:
+
+```text
 less          Estimate is statistically less than the threshold.
 greater       Estimate is statistically greater than the threshold.
 inconclusive  Not enough evidence to decide (interval contains threshold).
+```
 
 COMPARE2 OUTPUT (--compare2, two-sample confirmatory analysis)
 field_x, field_y, n_x, n_y, metric, threshold, estimate, lower, upper, verdict

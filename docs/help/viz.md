@@ -23,9 +23,11 @@ The output format is inferred from the --output file extension (.html is the def
 Interactive HTML is written to stdout when --output is not given; image formats always
 require --output. Use --open to view the result in your default browser/viewer.
 
-Chart types (subcommands):  
+Chart types (subcommands):
+
+```text
 smart       Auto-dashboard. Picks an appropriate chart per column from the
-dataset's statistics & frequency distribution (no --x/--y needed).
+            dataset's statistics & frequency distribution (no --x/--y needed).
 bar         Bar chart.        --x = category column, --y = value column.
 line        Line chart.       --x = x column, --y = y column.
 scatter     Scatter plot.     --x = x column, --y = y column.
@@ -33,14 +35,15 @@ histogram   Distribution.     --x = numeric column to bin.
 box         Box plot.         --y = value column, optional --x = group column.
 pie         Proportions.      --x = label column, optional --y = value column.
 heatmap     Color grid. Correlation matrix of numeric columns (default; an
-optional column subset via --cols), or a category x category pivot
-with --x/--y/--z.
+            optional column subset via --cols), or a category x category pivot
+            with --x/--y/--z.
 candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
 ohlc        Financial OHLC bars (same inputs as candlestick).
 sankey      Flow diagram.     --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
 map         Geographic point map (or --density heatmap) on tile basemaps.
-Pick the coordinate columns with the lat/lon options below.
+            Pick the coordinate columns with the lat/lon options below.
+```
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches: continuous numeric columns become box plots (drawn from precomputed

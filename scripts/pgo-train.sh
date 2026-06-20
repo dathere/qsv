@@ -166,9 +166,9 @@ t extsort "$data" pgo_train_extsort.csv
 t extsort "$data" --select 1-5
 
 # ---- feature-gated paths (skipped automatically on reduced binaries) --------
-t apply calcconv --formatstr "{Unique Key} meters in miles" --new-column new_col "$data"
-t apply dynfmt --formatstr "{Created Date} {Complaint Type} - {BBL} {City}" --new-column new_col "$data"
-t apply emptyreplace "{Bridge Highway Name}" --replacement Unspecified "$data"
+t apply calcconv --formatstr "{Unique_Key} meters in miles" --new-column new_col "$data"
+t apply dynfmt --formatstr "{Created_Date} {Complaint_Type} - {BBL} {City}" --new-column new_col "$data"
+t apply emptyreplace "Bridge Highway Name" --replacement Unspecified "$data"
 t apply operations lower,eudex Agency --comparand Queens --new-column Agency_queens_soundex "$data"
 t apply operations lower 2 "$data"
 t schema "$data" --stdout

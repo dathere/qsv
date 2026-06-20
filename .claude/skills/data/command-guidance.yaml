@@ -166,6 +166,13 @@ geocode:
   subcommandHint: 'Must pass subcommand via args (e.g., args: {subcommand: "suggest", column: "city", input: "data.csv"}).'
   needsIndexHint: true
 
+viz:
+  whenToUse: "Build interactive Plotly charts and auto-dashboards from a CSV. Subcommands: smart (auto-dashboard from stats cache), bar, line, scatter, histogram, box, pie, heatmap, candlestick, ohlc, sankey, radar, map. Specify via subcommand parameter. Produces a self-contained interactive HTML artifact saved to the working directory."
+  commonPattern: "Quick overview: smart auto-selects panels (box plots, frequency bars, correlation heatmap, time-series) from the .stats.csv cache — run qsv_stats --cardinality first to warm it. Specific chart: pick a subcommand and pass the relevant column flags (e.g. bar with --x/--y, scatter with --x/--y/--color/--size)."
+  errorPrevention: "smart needs a real input file path (it reads the stats cache and cannot accept stdin). Output is HTML-only via the MCP server; static PNG/SVG/PDF export is CLI-only (needs a browser/webdriver). Large dashboards (>850KB) are saved to the working dir and the path is returned."
+  subcommandHint: 'Must pass subcommand via args (e.g., args: {subcommand: "smart", input: "data.csv", output: "dashboard.html"}).'
+  statsAware: true
+
 pivotp:
   whenToUse: "Polars-powered pivot tables and group-by aggregations. PIVOT MODE: provide <on-cols> with --agg (sum/mean/count/first/last/min/max/smart). GROUP-BY MODE: omit <on-cols> and use --index to aggregate without pivoting. Use qsv_stats --cardinality to check pivot column cardinality."
   commonPattern: "Stats → Pivot: Use qsv_stats --cardinality to estimate pivot output width (pivot column cardinality × value columns) and keep estimated columns below ~1000. Group-by: omit on-cols, e.g. qsv_pivotp(input_file='data.csv', index='group-col', values='val-col', agg='sum'). Use stats type column to pick the right --agg: sum/mean for numeric, count for categorical."

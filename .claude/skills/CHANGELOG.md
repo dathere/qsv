@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`qsv-viz` exposed as an MCP skill** ([#302](https://github.com/dathere/qsv/issues/302)). The Plotly charting/auto-dashboard command (subcommands `smart`, `bar`, `line`, `scatter`, `histogram`, `box`, `pie`, `heatmap`, `candlestick`, `ohlc`, `sankey`, `radar`, `map`) is now generated as a skill and is **search-discoverable** via `qsv_search_tools` (not preloaded in `COMMON_COMMANDS`). Skill count grows 54 → 55. Output is **HTML-only** over MCP: viz produces a self-contained interactive HTML artifact that is **always saved to the working directory** (never inlined into chat or deleted, regardless of size) and its `.html` path returned. A non-HTML `--output` (`.png/.svg/.pdf/.jpeg/.webp`) is **rejected** before viz runs, so MCP callers can't trigger the browser/webdriver-backed static-export path — static export remains CLI-only. `viz` is registered in `ALWAYS_FILE_COMMANDS` and `NON_TABULAR_COMMANDS`; the auto-created output file and the saved working-dir artifact both use the `.html` extension so the chart is correctly typed.
+
 ## [21.1.0] - 2026-06-14
 
 Companion release to qsv 21.1.0 ("Leaner & Faster"). The MCP server tracks the qsv binary version per the policy adopted in 20.0.0. A performance-and-polish release: no new MCP skills and no MSRV or Polars bump. The minimum qsv binary is raised to 21.1.0, so update your qsv binary first; existing pipelines are otherwise unaffected.

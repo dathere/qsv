@@ -779,6 +779,22 @@ export async function handleToolCall(
       await resolveFilePathParams(params, skill, filesystemProvider);
     }
 
+    // viz is HTML-only over MCP. viz infers its output format from the -o
+    // extension, and qsvmcp is built with viz_static — so a non-HTML --output
+    // (.png/.svg/.pdf/.jpeg/.webp) would trigger the browser/webdriver-backed
+    // static-export path, which is intentionally CLI-only. Reject it early.
+    if (commandName === "viz" && outputFile && !isHelpRequest) {
+      const lastDot = outputFile.lastIndexOf(".");
+      const lastSep = Math.max(outputFile.lastIndexOf("/"), outputFile.lastIndexOf("\\"));
+      const ext = lastDot > lastSep ? outputFile.slice(lastDot).toLowerCase() : "";
+      if (ext !== ".html" && ext !== ".htm") {
+        return errorResult(
+          `viz over MCP is HTML-only: --output must end in .html or .htm (got "${ext || "no extension"}"). ` +
+            `Static image export (.png/.svg/.pdf/.jpeg/.webp) needs a browser/webdriver and is available only via the qsv CLI.`,
+        );
+      }
+    }
+
     // Prevent overwriting reserved cache files (output_file and file-path output options)
     if (outputFile && isReservedCachePath(outputFile)) {
       return errorResult(reservedCachePathError(outputFile));
@@ -816,7 +832,14 @@ export async function handleToolCall(
       !isBinaryOutputFormat(commandName, params) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+      // viz emits a self-contained interactive HTML artifact; its output format is
+      // inferred from the -o extension, so the temp file must be named .html.
+      const tempExt =
+        commandName === "viz"
+          ? "html"
+          : config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName)
+            ? "tsv"
+            : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

@@ -109,7 +109,7 @@ test('SkillLoader loads all skills from JSON files', async () => {
   const skills = await loader.loadAll();
 
   assert.ok(skills.size > 0, 'Should load at least some skills');
-  // Should be approximately 54 skills
+  // Should be approximately 55 skills
   assert.ok(skills.size >= 50, `Should have ≥50 skills (found ${skills.size})`);
   assert.ok(skills.size <= 65, `Should have ≤65 skills (found ${skills.size})`);
 });

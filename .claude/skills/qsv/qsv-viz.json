@@ -1,0 +1,329 @@
+{
+  "name": "qsv-viz",
+  "version": "21.1.0",
+  "description": "Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using plotly. `viz smart` \"automagically\" picks an appropriate chart per column from the dataset's statistics & frequency distributions (box plots for continuous columns from precomputed quartiles; frequency bars for low-cardinality/boolean columns; a correlation heatmap when there are 2+ eligible continuous numeric columns; a map panel when a lat/lon column pair is detected). Outputs self-contained, interactive HTML (charts work offline; map basemaps fetch their tiles over the network unless the `white-bg` style is used) - or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature - and can `--open` the result in your browser.",
+  "category": "utility",
+  "command": {
+    "subcommand": "viz",
+    "args": [
+      {
+        "name": "subcommand",
+        "type": "string",
+        "required": true,
+        "description": "Subcommand to execute. Valid values: bar, box, candlestick, contour, geo, heatmap, histogram, line, map, ohlc, pie, radar, sankey, scatter, scatter3d, smart",
+        "enum": [
+          "bar",
+          "box",
+          "candlestick",
+          "contour",
+          "geo",
+          "heatmap",
+          "histogram",
+          "line",
+          "map",
+          "ohlc",
+          "pie",
+          "radar",
+          "sankey",
+          "scatter",
+          "scatter3d",
+          "smart"
+        ]
+      },
+      {
+        "name": "input",
+        "type": "file",
+        "required": true,
+        "description": ""
+      }
+    ],
+    "options": [
+      {
+        "flag": "--agg",
+        "type": "string",
+        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max."
+      },
+      {
+        "flag": "--bins",
+        "type": "string",
+        "description": "Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20)."
+      },
+      {
+        "flag": "--box-points",
+        "type": "string",
+        "description": "Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points for small data (<=1,000 rows), only the outliers for medium data (<=10,000 rows), and none above that (the box stays a fast cache-only quartile summary with observed min/max whiskers, no data re-scan). An explicit mode is applied to every box panel (one extra batched pass to read the values), except `none`, which keeps the cache-only box."
+      },
+      {
+        "flag": "--close",
+        "type": "string",
+        "description": "Close-price column for candlestick/ohlc charts."
+      },
+      {
+        "flag": "--color",
+        "type": "string",
+        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight."
+      },
+      {
+        "flag": "--cols",
+        "type": "string",
+        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot."
+      },
+      {
+        "flag": "--delimiter",
+        "type": "string",
+        "description": "The field delimiter for reading CSV data. Must be a single character. (default: ,)"
+      },
+      {
+        "flag": "--density",
+        "type": "flag",
+        "description": "Render a density heatmap (DensityMapbox) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series."
+      },
+      {
+        "flag": "--donut",
+        "type": "flag",
+        "description": "Render a pie chart as a donut (with a center hole)."
+      },
+      {
+        "flag": "--grid-cols",
+        "type": "string",
+        "description": "Number of columns in the dashboard grid.",
+        "default": "2"
+      },
+      {
+        "flag": "--height",
+        "type": "string",
+        "description": "Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows."
+      },
+      {
+        "flag": "--high",
+        "type": "string",
+        "description": "High-price column for candlestick/ohlc charts."
+      },
+      {
+        "flag": "--lat",
+        "type": "string",
+        "description": "Latitude column for a map (decimal degrees, -90 to 90)."
+      },
+      {
+        "flag": "--limit",
+        "type": "string",
+        "description": "Top-N categories per frequency bar chart.",
+        "default": "10"
+      },
+      {
+        "flag": "--lon",
+        "type": "string",
+        "description": "Longitude column for a map (decimal degrees, -180 to 180)."
+      },
+      {
+        "flag": "--low",
+        "type": "string",
+        "description": "Low-price column for candlestick/ohlc charts."
+      },
+      {
+        "flag": "--mapbox-token",
+        "type": "string",
+        "description": "Mapbox access token, required only for the mapbox-hosted basemap styles listed above."
+      },
+      {
+        "flag": "--max-charts",
+        "type": "string",
+        "description": "Maximum number of panels in the dashboard. 0 (the default) means auto: draw as many panels as the data warrants. For HTML that's every eligible column (up to 64); for static image export (png/svg/pdf/...) it's 8. Up to 8 panels render as one subplot grid (plotly's typed subplot-axis limit); HTML beyond 8 switches to an inline-div grid of independent plots. Set a positive <n> to cap the panel count instead. Eligible columns beyond the cap are reported but not drawn.",
+        "default": "0"
+      },
+      {
+        "flag": "--no-headers",
+        "type": "flag",
+        "description": "When set, the first row will not be interpreted as headers. Columns can then only be selected by index."
+      },
+      {
+        "flag": "--ohlc-open",
+        "type": "string",
+        "description": "Open-price column for candlestick/ohlc charts."
+      },
+      {
+        "flag": "--open",
+        "type": "flag",
+        "description": "Open the generated chart in the default browser/viewer."
+      },
+      {
+        "flag": "--output",
+        "type": "string",
+        "description": "Write output to <file> instead of stdout. The chart format is inferred from the extension: .html (default), .png, .svg, .pdf, .jpeg, .webp."
+      },
+      {
+        "flag": "--projection",
+        "type": "string",
+        "description": "Map projection for `viz geo`. One of: natural-earth (the default), mercator, orthographic, equirectangular, albers-usa, robinson, winkel-tripel, mollweide, hammer, azimuthal-equal-area. `viz geo` also reuses the lat, lon, text, color, size and series options from `map`.",
+        "default": "natural-earth"
+      },
+      {
+        "flag": "--scale",
+        "type": "string",
+        "description": "Image scale factor (static export).",
+        "default": "1.0"
+      },
+      {
+        "flag": "--series",
+        "type": "string",
+        "description": "Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo."
+      },
+      {
+        "flag": "--size",
+        "type": "string",
+        "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. In map density mode, this column is the heatmap weight."
+      },
+      {
+        "flag": "--smarter",
+        "type": "flag",
+        "description": "Before building the dashboard, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, and skew/outlier hints on box panels. Costs one extra pass over the data and writes <stem>.stats.csv, its sidecars, and an .idx index (like running `qsv moarstats` manually). Only affects `smart`. Applied only with default parsing; inputs using --no-headers or a custom --delimiter fall back to the standard dashboard."
+      },
+      {
+        "flag": "--source",
+        "type": "string",
+        "description": "Source node column for a sankey diagram."
+      },
+      {
+        "flag": "--style",
+        "type": "string",
+        "description": "Map basemap style. Token-free styles: open-street-map (the default), carto-positron, carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted styles (basic, streets, outdoors, light, dark, satellite, satellite-streets) require --mapbox-token.",
+        "default": "open-street-map"
+      },
+      {
+        "flag": "--target",
+        "type": "string",
+        "description": "Target node column for a sankey diagram."
+      },
+      {
+        "flag": "--text",
+        "type": "string",
+        "description": "Column whose value labels each point on hover."
+      },
+      {
+        "flag": "--title",
+        "type": "string",
+        "description": "Chart title."
+      },
+      {
+        "flag": "--value",
+        "type": "string",
+        "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1."
+      },
+      {
+        "flag": "--width",
+        "type": "string",
+        "description": "Image width in pixels for static export. Default 1000; for `smart`, auto-scaled to the grid's column count."
+      },
+      {
+        "flag": "--x",
+        "type": "string",
+        "description": "Column for the x-axis / category / bin / group."
+      },
+      {
+        "flag": "--x-title",
+        "type": "string",
+        "description": "X-axis title. (defaults to the x column name)"
+      },
+      {
+        "flag": "--y",
+        "type": "string",
+        "description": "Column for the y-axis / value."
+      },
+      {
+        "flag": "--y-title",
+        "type": "string",
+        "description": "Y-axis title. (defaults to the y column name)"
+      },
+      {
+        "flag": "--z",
+        "type": "string",
+        "description": "The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d."
+      }
+    ]
+  },
+  "hints": {
+    "memory": "constant"
+  },
+  "examples": [
+    {
+      "description": "Auto-dashboard for a dataset, opened in the browser",
+      "command": "qsv viz smart data.csv --open"
+    },
+    {
+      "description": "Auto-dashboard, at most 6 panels in a 3-column grid, top-5 categories per bar",
+      "command": "qsv viz smart data.csv --max-charts 6 --grid-cols 3 --limit 5 -o dashboard.html"
+    },
+    {
+      "description": "Bar chart of fruit prices, opened in the browser",
+      "command": "qsv viz bar fruits.csv --x Fruit --y Price --title \"Fruit prices\" --open"
+    },
+    {
+      "description": "Aggregate (sum) sales by region into a bar chart",
+      "command": "qsv viz bar sales.csv --x region --y amount --agg sum -o sales.html"
+    },
+    {
+      "description": "Scatter plot with a separate series (trace) per category",
+      "command": "qsv viz scatter data.csv --x age --y income --series gender -o scatter.html"
+    },
+    {
+      "description": "Bubble scatter: marker size by population, marker color by a numeric score",
+      "command": "qsv viz scatter data.csv --x gdp --y life_exp --size population --color score -o bubble.html"
+    },
+    {
+      "description": "Histogram of a numeric column with 30 bins",
+      "command": "qsv viz histogram data.csv --x value --bins 30 -o hist.html"
+    },
+    {
+      "description": "Box plot of a value column grouped by a category, exported to PNG (needs viz_static)",
+      "command": "qsv viz box data.csv --y measurement --x group -o box.png"
+    },
+    {
+      "description": "Box plot with every sample point overlaid (jittered) instead of just the outliers",
+      "command": "qsv viz box data.csv --y measurement --box-points all -o box.html"
+    },
+    {
+      "description": "Pie chart of category proportions (counts), as a donut",
+      "command": "qsv viz pie data.csv --x category --donut -o pie.html"
+    },
+    {
+      "description": "Correlation heatmap over all numeric columns",
+      "command": "qsv viz heatmap data.csv -o corr.html"
+    },
+    {
+      "description": "Heatmap pivot: average value per (region x product)",
+      "command": "qsv viz heatmap sales.csv --x region --y product --z amount -o pivot.html"
+    },
+    {
+      "description": "Candlestick chart from a date column and OHLC price columns",
+      "command": "qsv viz candlestick prices.csv --x date --ohlc-open open --high high --low low --close close -o ohlc.html"
+    },
+    {
+      "description": "Sankey flow diagram of source -> target weighted by value",
+      "command": "qsv viz sankey flows.csv --source from --target to --value weight -o sankey.html"
+    },
+    {
+      "description": "Radar chart comparing numeric metrics, one trace per team",
+      "command": "qsv viz radar teams.csv --cols speed,power,range,accuracy --series team -o radar.html"
+    },
+    {
+      "description": "Point map of earthquakes, marker color by magnitude and size by depth",
+      "command": "qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map.html"
+    },
+    {
+      "description": "Density heatmap of the same points, on a light Carto basemap",
+      "command": "qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html"
+    },
+    {
+      "description": "3D scatter of three numeric columns, colored by a fourth",
+      "command": "qsv viz scatter3d data.csv --x length --y width --z height --color weight -o scatter3d.html"
+    },
+    {
+      "description": "2D density contour of two numeric columns with a 40x40 grid",
+      "command": "qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html"
+    },
+    {
+      "description": "Projection map of earthquakes (token-free), marker color by magnitude",
+      "command": "qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html"
+    }
+  ]
+}

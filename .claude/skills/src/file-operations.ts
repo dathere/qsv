@@ -669,18 +669,32 @@ export async function formatToolResult(
       try {
         const tempFileStats = await stat(outputFile);
 
-        if (tempFileStats.size > MAX_MCP_RESPONSE_SIZE) {
-          console.error(
-            `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) exceeds MCP response limit (${formatBytes(MAX_MCP_RESPONSE_SIZE)})`,
-          );
+        // viz emits a self-contained interactive HTML artifact, not tabular
+        // text: it must always be saved to the working dir as a .html file and
+        // its path returned — never inlined/deleted (small charts) and never
+        // renamed with a .csv/.tsv extension (large charts).
+        const forceFileArtifact = commandName === "viz";
+
+        if (tempFileStats.size > MAX_MCP_RESPONSE_SIZE || forceFileArtifact) {
+          if (!forceFileArtifact) {
+            console.error(
+              `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) exceeds MCP response limit (${formatBytes(MAX_MCP_RESPONSE_SIZE)})`,
+            );
+          }
 
           const timestamp = new Date()
             .toISOString()
             .replace(/[:.]/g, "-")
             .replace("T", "_")
             .split(".")[0];
-          const savedExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
-          const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
+          const savedExt = forceFileArtifact
+            ? "html"
+            : config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
+          // Append a short random suffix so two saves in the same second (the
+          // timestamp is second-resolution) don't rename onto the same path and
+          // clobber the earlier artifact.
+          const uniqueSuffix = randomUUID().replace(/-/g, "").substring(0, 8);
+          const savedFileName = `qsv-${commandName}-${timestamp}-${uniqueSuffix}.${savedExt}`;
           const savedPath = join(workDir, savedFileName);
 
           try {
@@ -694,15 +708,19 @@ export async function formatToolResult(
               throw renameErr;
             }
           }
-          console.error(`[MCP Tools] Saved large output to: ${savedPath}`);
+          console.error(`[MCP Tools] Saved output to: ${savedPath}`);
           finalOutputFile = savedPath;
 
-          responseText = `✅ Large output saved to file (too large to display in chat)\n\n`;
+          responseText = forceFileArtifact
+            ? `✅ Interactive chart saved to file\n\n`
+            : `✅ Large output saved to file (too large to display in chat)\n\n`;
           responseText += `File: ${savedFileName}\n`;
           responseText += `Location: ${workDir}\n`;
           responseText += `Size: ${formatBytes(tempFileStats.size)}\n`;
           responseText += `Duration: ${result.metadata.duration}ms\n\n`;
-          responseText += `The file is now available in your working directory and can be processed with additional qsv commands.`;
+          responseText += forceFileArtifact
+            ? `Open this self-contained HTML file in a browser to view the interactive chart.`
+            : `The file is now available in your working directory and can be processed with additional qsv commands.`;
         } else {
           console.error(
             `[MCP Tools] Output file (${formatBytes(tempFileStats.size)}) is small enough to return directly`,

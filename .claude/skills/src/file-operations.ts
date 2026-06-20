@@ -690,7 +690,11 @@ export async function formatToolResult(
           const savedExt = forceFileArtifact
             ? "html"
             : config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) && !isBinaryOutputFormat(commandName, params) ? "tsv" : "csv";
-          const savedFileName = `qsv-${commandName}-${timestamp}.${savedExt}`;
+          // Append a short random suffix so two saves in the same second (the
+          // timestamp is second-resolution) don't rename onto the same path and
+          // clobber the earlier artifact.
+          const uniqueSuffix = randomUUID().replace(/-/g, "").substring(0, 8);
+          const savedFileName = `qsv-${commandName}-${timestamp}-${uniqueSuffix}.${savedExt}`;
           const savedPath = join(workDir, savedFileName);
 
           try {

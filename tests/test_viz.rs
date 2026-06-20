@@ -313,6 +313,156 @@ fn viz_smart_uses_moarstats_box_hints() {
 }
 
 #[test]
+fn viz_smart_smarter_promotes_bimodal_to_histogram() {
+    // `viz smart --smarter` runs `qsv moarstats --advanced` itself (no manual prior step), so the
+    // bimodality_coefficient is populated and a clearly-bimodal continuous column is rendered as a
+    // histogram instead of a box plot. Without --smarter the same column would be a box plot.
+    let wrk = Workdir::new("viz_smart_smarter_promotes_bimodal_to_histogram");
+    // `measure`: two well-separated clusters (0..39 and 1000..1039), 150 rows each. Cardinality 80
+    // (> CATEGORICAL_MAX_CARDINALITY=30, so it takes the continuous branch, not a freq bar) and a
+    // symmetric two-peak shape -> bimodality coefficient comfortably above the 0.555 threshold.
+    let mut rows = String::from("id,measure\n");
+    let mut id = 1;
+    for v in 0..150 {
+        rows.push_str(&format!("{id},{}\n", v % 40));
+        id += 1;
+    }
+    for v in 0..150 {
+        rows.push_str(&format!("{id},{}\n", 1000 + v % 40));
+        id += 1;
+    }
+    wrk.create_from_string("bimodal.csv", &rows);
+
+    let out_html = wrk.path("bimodal.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "bimodal.csv", "--smarter", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("bimodal.html").unwrap();
+    assert!(
+        html.contains(r#""type":"histogram""#),
+        "--smarter should populate bimodality_coefficient and render a histogram; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_smarter_matches_manual_moarstats() {
+    // `viz smart --smarter` is a drop-in for the manual `moarstats` + `viz smart` two-step: the
+    // box-panel skew/outlier hints appear without a prior moarstats run.
+    let wrk = Workdir::new("viz_smart_smarter_matches_manual_moarstats");
+    // same right-skewed fixture as viz_smart_uses_moarstats_box_hints, but no manual moarstats step
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=280 {
+        rows.push_str(&format!("{i},{}\n", i % 40 + 1));
+    }
+    for i in 281..=300 {
+        rows.push_str(&format!("{i},1000\n"));
+    }
+    wrk.create_from_string("amounts.csv", &rows);
+
+    let out_html = wrk.path("amounts.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "amounts.csv", "--smarter", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("amounts.html").unwrap();
+    assert!(
+        html.contains("right-skewed"),
+        "--smarter should surface the moarstats skew hint; html: {html}"
+    );
+    assert!(
+        html.contains("% outliers"),
+        "--smarter should surface the moarstats outlier-share hint; html: {html}"
+    );
+    assert!(html.contains(r#""type":"box""#));
+}
+
+#[test]
+fn viz_smart_smarter_no_headers_falls_back() {
+    // moarstats can't honor --no-headers for its advanced-stat readers, so `--smarter` skips the
+    // enrichment for --no-headers inputs and still renders a standard dashboard (no error).
+    let wrk = Workdir::new("viz_smart_smarter_no_headers_falls_back");
+    let mut rows = String::new();
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{i},{},{city}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("headerless.csv", &rows);
+
+    let out_html = wrk.path("headerless.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "headerless.csv",
+        "--smarter",
+        "--no-headers",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("headerless.html").unwrap();
+    // the standard (non-enriched) dashboard still renders chart panels
+    assert!(
+        html.contains("Plotly.newPlot"),
+        "fallback dashboard should still render; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_smarter_no_headers_rebuilds_stale_cache() {
+    // Regression: a pre-existing DEFAULT-parsing stats cache must not be reused by the
+    // `--smarter --no-headers` fallback. get_stats_records keys its cache only by mtime + stat
+    // sufficiency (not by parsing options), so the fallback forces a regeneration; the cache must
+    // come back with no-headers field names ("0","1",...), not the stale header-derived names.
+    let wrk = Workdir::new("viz_smart_smarter_no_headers_rebuilds_stale_cache");
+    wrk.create_from_string("data.csv", "category\nNYC\nLA\nNYC\nSF\nLA\nNYC\n");
+
+    // 1) build a default-parsing (headered) stats cache: the column is named by its header
+    let mut stats = wrk.command("stats");
+    stats.args([
+        "data.csv",
+        "--cardinality",
+        "--quartiles",
+        "--mode",
+        "--stats-jsonl",
+    ]);
+    wrk.assert_success(&mut stats);
+    let cache = wrk.read_to_string("data.stats.csv.data.jsonl").unwrap();
+    assert!(
+        cache.contains(r#""field":"category""#),
+        "precondition: default cache should be header-named; got: {cache}"
+    );
+
+    // 2) the fallback must force-regenerate the cache with no-headers parsing
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "--smarter",
+        "--no-headers",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let rebuilt = wrk.read_to_string("data.stats.csv.data.jsonl").unwrap();
+    assert!(
+        rebuilt.contains(r#""field":"0""#),
+        "fallback should force-rebuild the cache with no-headers field names; got: {rebuilt}"
+    );
+    assert!(
+        !rebuilt.contains(r#""field":"category""#),
+        "stale header-named field must not survive the no-headers fallback; got: {rebuilt}"
+    );
+}
+
+#[test]
 fn viz_smart_caps_charts() {
     let wrk = Workdir::new("viz_smart_caps_charts");
     // four low-cardinality categorical columns (all chartable as frequency bars)

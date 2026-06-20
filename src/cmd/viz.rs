@@ -178,6 +178,16 @@ smart options:
                            [default: 0]
     --grid-cols <n>        Number of columns in the dashboard grid. [default: 2]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
+    --smarter              Before building the dashboard, run `qsv moarstats --advanced`
+                           to enrich the stats cache with distribution-shape statistics
+                           (bimodality, entropy, skewness, outlier share). This unlocks
+                           histograms for bimodal columns, frequency bars for concentrated
+                           high-cardinality columns, and skew/outlier hints on box panels.
+                           Costs one extra pass over the data and writes <stem>.stats.csv,
+                           its sidecars, and an .idx index (like running `qsv moarstats`
+                           manually). Only affects `smart`. Applied only with default
+                           parsing; inputs using --no-headers or a custom --delimiter
+                           fall back to the standard dashboard.
 
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
@@ -390,6 +400,7 @@ struct Args {
     flag_max_charts:   usize,
     flag_grid_cols:    usize,
     flag_limit:        usize,
+    flag_smarter:      bool,
     flag_title:        Option<String>,
     flag_x_title:      Option<String>,
     flag_y_title:      Option<String>,
@@ -2473,6 +2484,62 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
+    // `--smarter` with non-default parsing (--no-headers / custom --delimiter) skips moarstats
+    // enrichment (see below) AND forces the standard stats path to regenerate. get_stats_records
+    // keys its `.stats.csv.data.jsonl` cache only by mtime + stat sufficiency, NOT by parsing
+    // options, so without this a current default-parsing cache (e.g. from an earlier headered run)
+    // would be reused and the "standard dashboard" would render from incorrectly parsed stats.
+    let force_stats_regen =
+        args.flag_smarter && (args.flag_no_headers || args.flag_delimiter.is_some());
+
+    if args.flag_smarter {
+        // moarstats --advanced computes its advanced stats by RE-READING the input itself: the
+        // KGA pass via `Config::new(...).reader_file()` and the entropy pass via a `frequency`
+        // subprocess, both using extension-based delimiter detection and assuming a header row
+        // (moarstats has no --delimiter/--no-headers flags). So when viz smart is given a custom
+        // --delimiter or --no-headers, moarstats would parse the data differently than viz does:
+        // for --no-headers the base stats name columns 1,2,... while the KGA reader treats row 1
+        // as headers, so the advanced columns never attach; for a custom delimiter the advanced
+        // readers mis-split the rows entirely. In either case skip enrichment and let the standard
+        // get_stats_records path below build a correct, freshly-regenerated cache
+        // (force_stats_regen above) that honors the parsing flags.
+        if args.flag_no_headers || args.flag_delimiter.is_some() {
+            eprintln!(
+                "viz smart --smarter: moarstats enrichment is only applied with default parsing; \
+                 --no-headers / --delimiter inputs use the standard dashboard instead."
+            );
+        } else {
+            // Enrich the stats cache with moarstats advanced distribution-shape stats so
+            // classify()/box_shape_hint() can upgrade box->histogram, surface concentrated
+            // high-cardinality FreqBars, and annotate box titles. moarstats rewrites the
+            // .stats.csv.data.jsonl sidecar that get_stats_records reads below.
+            //
+            // moarstats' top-level --force guarantees the base `qsv stats` subprocess re-runs
+            // with the full default --stats-options (cardinality/quartiles/skewness); without it
+            // a stale, lean stats cache would be reused and the advanced columns viz needs
+            // (bimodality_coefficient, normalized_entropy) would silently not be added.
+            //
+            // --stats-options mirrors moarstats' own default plus --dates-whitelist sniff, so the
+            // regenerated cache infers dates the same way viz smart does (for the time-series
+            // panel). Soft-fail: a moarstats error degrades to the plain ProfileSchema dashboard.
+            let stats_opts = "--infer-dates --infer-boolean --cardinality --mode --mad \
+                              --quartiles --percentiles --force --stats-jsonl --dates-whitelist \
+                              sniff";
+            let moar_argv = ["--advanced", "--force", "--stats-options", stats_opts];
+            if let Err(e) = util::run_qsv_cmd(
+                "moarstats",
+                &moar_argv,
+                &input,
+                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
+            ) {
+                eprintln!(
+                    "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
+                     standard stats. Dashboard will omit advanced refinements."
+                );
+            }
+        }
+    }
+
     let schema_args = util::SchemaArgs {
         flag_enum_threshold:  0,
         flag_ignore_case:     false,
@@ -2481,7 +2548,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
         flag_dates_whitelist: "sniff".to_string(),
         flag_prefer_dmy:      false,
-        flag_force:           false,
+        flag_force:           force_stats_regen,
         flag_stdout:          false,
         flag_jobs:            None,
         flag_polars:          false,

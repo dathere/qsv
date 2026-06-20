@@ -41,18 +41,17 @@ BANNER = (
     "-->"
 )
 
-# (title, description, full_width, [viz args]) — or a 5th element [prep qsv args] to run a
-# qsv command (e.g. moarstats) before the viz command, in the same dir. Order matters: the
-# full-width smart dashboards lead and close the contiguous run of individual chart types.
+# (title, description, full_width, [viz args]). Order matters: the full-width smart dashboards
+# lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart dashboard", "Auto-profiled overview: correlation heatmap + box plots + frequency bars.",
      True, ["smart", "sales_sample.csv", "--max-charts", "8"]),
-    ("smart dashboard (moarstats-informed)",
-     "Same auto-profiler, but after `qsv moarstats --advanced` has extended the stats cache: the "
-     "bimodal monthly_spend column renders as a histogram (a box plot would hide its two peaks), "
-     "and the skewed account_age_days box is annotated with its skew direction and outlier share.",
-     True, ["smart", "customer_spend.csv", "--max-charts", "8"],
-     ["moarstats", "--advanced", "customer_spend.csv"]),
+    ("smart dashboard (--smarter)",
+     "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
+     "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "
+     "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
+     "skew direction and outlier share.",
+     True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("line", "Closing price over time.",
@@ -139,11 +138,7 @@ def extract_fig_json(html):
     raise ValueError("unbalanced braces after newPlot marker")
 
 
-def run_fig(qsv, args, prep=None):
-    # optional prep step (e.g. `qsv moarstats --advanced <file>`) that extends the stats cache
-    # the following `viz smart` run reads; sidecars are cleaned up after all figures are built
-    if prep:
-        subprocess.run([qsv, *prep], cwd=VIZ_DIR, check=True, capture_output=True, text=True)
+def run_fig(qsv, args):
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
@@ -156,8 +151,9 @@ def run_fig(qsv, args, prep=None):
 
 
 def cleanup_sidecars():
-    # `viz smart` writes a stats cache next to the CSV, and `moarstats --advanced` auto-creates
-    # an `.idx` index; don't leave either in the tree (the committed datasets ship without them)
+    # `viz smart` writes a stats cache next to the CSV; `--smarter` (via its internal
+    # `moarstats --advanced`) also auto-creates an `.idx` index. Don't leave either in the tree
+    # (the committed datasets ship without them).
     for f in os.listdir(VIZ_DIR):
         if ".stats.csv" in f or ".stats.jsonl" in f or f.endswith(".idx"):
             os.unlink(os.path.join(VIZ_DIR, f))
@@ -175,10 +171,9 @@ def main():
 
     figs, fig_divs, plots = [], [], []
     for idx, fig in enumerate(FIGURES):
-        title, desc, full, args = fig[:4]
-        prep = fig[4] if len(fig) > 4 else None
+        title, desc, full, args = fig
         sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)}\n")
-        figs.append(run_fig(qsv, args, prep))
+        figs.append(run_fig(qsv, args))
         cls = "cell full" if full else "cell"
         gid = f"g{idx}"
         fig_divs.append(

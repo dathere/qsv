@@ -190,6 +190,7 @@ qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natura
 
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
+See also <https://github.com/dathere/qsv/wiki/Visualization>
 
 <a name="usage"></a>
 

@@ -110,6 +110,7 @@ Examples:
   qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
 
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
+See also https://github.com/dathere/qsv/wiki/Visualization
 
 Usage:
     qsv viz smart       [options] <input>

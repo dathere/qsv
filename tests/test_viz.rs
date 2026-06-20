@@ -1158,3 +1158,328 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(html.contains(r#""type":"scattermapbox""#));
     assert!(html.contains("open-street-map"));
 }
+
+/// Tamper with a frequency JSONL cache by replacing the first occurrence of
+/// `old_count` with `new_count`. Used to prove `viz smart` reads the cache.
+fn tamper_freq_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
+    let contents = std::fs::read_to_string(path).expect("read cache");
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut found = false;
+    // lines[0] is metadata; lines[1..] are per-column entries
+    'outer: for line in lines.iter_mut().skip(1) {
+        let mut entry: serde_json::Value = serde_json::from_str(line).expect("parse entry");
+        for freq in entry["frequencies"]
+            .as_array_mut()
+            .expect("frequencies array")
+        {
+            if freq["count"].as_u64() == Some(old_count) {
+                freq["count"] = serde_json::Value::from(new_count);
+                found = true;
+                *line = serde_json::to_string(&entry).expect("re-encode entry");
+                break 'outer;
+            }
+        }
+    }
+    assert!(found, "count {old_count} not found in cache to tamper");
+    std::fs::write(path, lines.join("\n")).expect("write tampered cache");
+}
+
+// `viz smart` builds its frequency bars from the data; here we prove it reuses a
+// pre-existing `frequency` JSONL cache instead of re-scanning. A tampered count
+// (987654 — distinctive enough not to collide with the embedded plotly.min.js)
+// must surface in the rendered bar, which can only happen on a cache read.
+#[test]
+fn viz_smart_uses_frequency_cache() {
+    let wrk = Workdir::new("viz_smart_uses_frequency_cache");
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\n",
+    );
+
+    // create the frequency cache (color: red=2, blue=1, green=1)
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "frequency cache should exist");
+
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        html.contains("987654"),
+        "tampered cache count should appear in the bar (proving cache read)"
+    );
+}
+
+// A cache older than the source CSV is stale: `viz smart` must ignore it and
+// recompute, so a tampered (stale) count must NOT surface.
+#[test]
+fn viz_smart_stale_frequency_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_stale_frequency_cache_fallback");
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\n",
+    );
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    // rewrite the source so it is newer than the cache => cache is stale
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\nDave,red\n",
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "stale cache must be ignored; recomputed bars should not show the tampered count"
+    );
+}
+
+// A frequency cache with duplicate column names is ambiguous for a name-keyed
+// reader (last column shadows the earlier one), so `viz smart` must reject it
+// and recompute — the tampered (cached) count must NOT surface.
+#[test]
+fn viz_smart_duplicate_headers_frequency_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_duplicate_headers_frequency_cache_fallback");
+    // two columns both named "color"
+    wrk.create_from_string("people.csv", "color,color\nred,x\nblue,y\nred,x\ngreen,z\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "duplicate-header cache is ambiguous and must be ignored; bars should be recomputed"
+    );
+}
+
+// `viz smart --no-headers` reads the whole file in original order, while a
+// frequency cache built with the same (default, full) selection keys columns
+// positionally. Those line up, so the cache IS reused — the tampered count
+// surfaces. Guards that the no-headers selection-signature check does not
+// over-reject a legitimate full-selection cache.
+#[test]
+fn viz_smart_no_headers_frequency_cache_used() {
+    let wrk = Workdir::new("viz_smart_no_headers_frequency_cache_used");
+    // headerless: two low-cardinality categorical columns
+    wrk.create_from_string("people.csv", "red,x\nblue,y\nred,x\ngreen,z\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        html.contains("987654"),
+        "full-selection no-headers cache should be reused (tampered count expected)"
+    );
+}
+
+// A frequency cache built with a reordered `--no-headers --select` keys columns
+// positionally within that selection. `viz smart --no-headers` reads columns in
+// original order, so the cache's selection signature won't match and the cache
+// must be rejected — the tampered count must NOT surface (no silent mis-mapping).
+#[test]
+fn viz_smart_no_headers_reordered_select_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_reordered_select_cache_rejected");
+    wrk.create_from_string("people.csv", "red,x\nblue,y\nred,x\ngreen,z\n");
+
+    // cache built over a reordered selection (col 2 then col 1)
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .args(["--select", "2,1"])
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "reordered-select no-headers cache must be rejected to avoid mis-mapping columns"
+    );
+}
+
+// The no-headers selection signature is built from first-row bytes, so when two
+// columns share the same first-row value a reordered `--select` can produce an
+// identical signature. `viz smart --no-headers` must therefore reject a
+// no-headers cache whose first row has repeated values (the order can't be
+// proven) — the tampered count must NOT surface.
+#[test]
+fn viz_smart_no_headers_colliding_firstrow_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_colliding_firstrow_cache_rejected");
+    // first row is "red,red" — equal values in both columns
+    wrk.create_from_string("people.csv", "red,red\nblue,red\nred,blue\ngreen,red\n");
+
+    // reordered selection whose signature collides with the full-order signature
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .args(["--select", "2,1"])
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "ambiguous (colliding-first-row) no-headers cache must be rejected"
+    );
+}
+
+// Duplicate column names must be detected even when one duplicate is a sentinel
+// that the build loop skips. `qsv frequency` can't emit this mix for duplicate
+// names (it classifies same-named columns identically), so the only way to reach
+// it is a hand-edited/corrupt cache — which the view must still reject. Here a
+// crafted cache pairs an <ALL_UNIQUE> "id" (skipped) with a data "id" carrying a
+// distinctive count; `viz smart` must ignore the cache and recompute, so that
+// count must NOT surface.
+#[test]
+fn viz_smart_duplicate_headers_with_sentinel_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_duplicate_headers_with_sentinel_cache_fallback");
+    // col1 "id" all-unique; col2 "id" low-cardinality (the charted bar)
+    wrk.create_from_string("people.csv", "id,id\na,red\nb,red\nc,blue\nd,red\n");
+
+    // hand-craft a cache: sentinel "id" then a data "id" with a planted count.
+    // (Written after the CSV so it is newer / not stale.)
+    // headed cache: selection_signature is not validated, so a placeholder is fine
+    let cache = concat!(
+        r#"{"arg_input":"people.csv","flag_high_card_threshold":100,"flag_high_card_pct":90,"flag_no_nulls":false,"flag_no_headers":false,"flag_delimiter":",","record_count":4,"column_count":2,"date_generated":"2026-06-20T00:00:00+00:00","qsv_version":"21.1.0","selection_signature":"","canonical_input_path":""}"#,
+        "\n",
+        r#"{"field":"id","cardinality":4,"frequencies":[{"value":"<ALL_UNIQUE>","count":4,"percentage":100.0}]}"#,
+        "\n",
+        r#"{"field":"id","cardinality":2,"frequencies":[{"value":"red","count":987654,"percentage":75.0},{"value":"blue","count":1,"percentage":25.0}]}"#,
+        "\n",
+    );
+    std::fs::write(wrk.path("people.freq.csv.data.jsonl"), cache).unwrap();
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "duplicate name with a sentinel duplicate must still be detected and rejected"
+    );
+}
+
+// The no-headers selection signature joins first-row bytes with a 0x1f (Unit
+// Separator) WITHOUT escaping, so a first-row value that itself contains 0x1f
+// makes the join ambiguous (a reordered selection could collide even with
+// distinct values). `viz smart --no-headers` must therefore reject such a cache
+// conservatively — even a legitimate full-selection cache — so the tampered
+// count must NOT surface.
+#[test]
+fn viz_smart_no_headers_separator_in_data_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_separator_in_data_cache_rejected");
+    // col1's first-row value embeds the 0x1f separator
+    wrk.create_from_string("people.csv", "a\u{1f}b,c\nx,y\na\u{1f}b,c\nz,w\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "no-headers cache with an embedded signature separator must be rejected"
+    );
+}
+
+// The no-headers selection signature stringifies each first-row value with a
+// LOSSY UTF-8 conversion, so two distinct invalid-UTF8 values could collapse to
+// the same replacement text and let a reordered selection collide. `viz smart
+// --no-headers` must therefore reject a cache whose first row has any non-UTF8
+// value — even a legitimate full selection — so the tampered count must NOT
+// surface. (Raw bytes are written directly since invalid UTF-8 isn't a &str.)
+#[test]
+fn viz_smart_no_headers_invalid_utf8_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_invalid_utf8_cache_rejected");
+    // col1's first-row value is an invalid UTF-8 byte (0xFF)
+    std::fs::write(wrk.path("people.csv"), b"\xff,c\nx,y\n\xff,c\nz,w\n").unwrap();
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "no-headers cache with non-UTF8 first-row data must be rejected"
+    );
+}

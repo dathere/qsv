@@ -2683,7 +2683,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let freq = if bar_indices.is_empty() {
         HashMap::new()
     } else {
-        count_values(args, &bar_indices, top_n)?
+        // Prefer a pre-existing `frequency` cache (no data pass); fall back to a
+        // single-pass recompute when it's absent/stale/incompatible.
+        match freq_from_cache(args, &stats, &bar_indices, top_n) {
+            Some(cached) => cached,
+            None => count_values(args, &bar_indices, top_n)?,
+        }
     };
 
     // gather raw values for any histogram panels (moarstats-flagged bimodal columns) in a single
@@ -3120,6 +3125,56 @@ fn html_escape(s: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+/// Try to satisfy the bar-panel frequency counts from a pre-existing `frequency`
+/// JSONL cache (`qsv frequency --frequency-jsonl`), avoiding the extra full-data
+/// pass `count_values` does. Returns `None` — so the caller falls back to
+/// `count_values` — when no compatible cache exists or any requested bar column
+/// is absent from it (e.g. a high-cardinality/all-unique sentinel column).
+///
+/// On a hit, each column's pairs are re-sorted (count desc, then value asc) and
+/// truncated to `top_n` so the result is identical to `count_values`. The cache
+/// already had its null/empty bucket filtered out by `read_frequency_cache_view`,
+/// matching `count_values`, which skips empty cells.
+fn freq_from_cache(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    bar_indices: &[usize],
+    top_n: usize,
+) -> Option<HashMap<usize, Vec<(String, u64)>>> {
+    let path = args.arg_input.as_ref()?;
+    let rconfig = Config::new(Some(path))
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let no_headers = rconfig.no_headers;
+
+    // `viz` never sets --no-nulls, so it can only reuse a default (nulls-kept)
+    // cache; the null bucket is then filtered to match count_values.
+    let view = crate::cmd::frequency::read_frequency_cache_view(
+        std::path::Path::new(path),
+        false,
+        no_headers,
+        args.flag_delimiter,
+    )?;
+
+    let mut out = HashMap::with_capacity(bar_indices.len());
+    for &idx in bar_indices {
+        // In --no-headers mode the cache keys columns positionally ("1", "2", …),
+        // matching how `frequency` (and stats) name them; otherwise use the field
+        // name. Any column missing from the cache abandons the fast path entirely
+        // (return None) so output never silently mixes cached and recomputed bars.
+        let key = if no_headers {
+            (idx + 1).to_string()
+        } else {
+            stats.get(idx)?.field.clone()
+        };
+        let mut pairs = view.columns.get(&key)?.clone();
+        pairs.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        pairs.truncate(top_n);
+        out.insert(idx, pairs);
+    }
+    Some(out)
 }
 
 /// Count value occurrences for the given column indices in a single pass, returning the

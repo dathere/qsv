@@ -450,6 +450,179 @@ struct FrequencyCacheMetadata {
     canonical_input_path:     String,
 }
 
+/// A neutral, read-only view of a frequency cache for consumers outside the
+/// `frequency` command (currently `viz smart`) that want each column's top
+/// value/count pairs without re-scanning the data.
+pub(crate) struct FreqCacheView {
+    /// Map of column field name -> (value, count) pairs, in the cache's stored
+    /// order (count descending). For `--no-headers` caches the keys are 1-based
+    /// positional strings ("1", "2", ...). The null/empty bucket and
+    /// `<HIGH_CARDINALITY>`/`<ALL_UNIQUE>` sentinel columns are omitted, so a
+    /// missing key signals "recompute this column".
+    pub columns: std::collections::HashMap<String, Vec<(String, u64)>>,
+}
+
+/// Read and validate a frequency JSONL cache for `path`, independent of any
+/// `frequency::Args`, for read-only reuse by other commands. Returns `None`
+/// when the cache is absent, stale (older than the source), or was generated
+/// with options incompatible with `(no_nulls, no_headers, delimiter)`.
+///
+/// Unlike `Args::read_frequency_cache`, this does NO `--select` filtering — it
+/// returns the full set of cached columns and the caller looks up the ones it
+/// needs by name. It DOES, however, reject caches that would be ambiguous for a
+/// whole-file, name-keyed reader:
+/// - In `--no-headers` mode, cache columns are keyed positionally within the selection that built
+///   them, so a cache made with a non-identity `--select` (or with a legacy empty signature) would
+///   alias the wrong columns. The cache is only trusted when its column count equals the full
+///   input's AND the recorded selection signature matches the full input in original order AND that
+///   signature is unambiguous: all first-row values distinct, all valid UTF-8 (the signature
+///   stringifies fields lossily, so two distinct invalid-UTF8 values could collapse to the same
+///   text), and none containing the `\x1f` separator the signature joins on (the join is
+///   unescaped). Equal values, lossy collapse, or an embedded separator could otherwise mask a
+///   reordering.
+/// - Duplicate column names (across ALL entries, including sentinels) would make a name-keyed
+///   lookup return the wrong column's data, so such caches are refused.
+pub(crate) fn read_frequency_cache_view(
+    path: &std::path::Path,
+    no_nulls: bool,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> Option<FreqCacheView> {
+    use filetime::FileTime;
+
+    let cache_path = Args::cache_path_for(path);
+    if !cache_path.exists() {
+        return None;
+    }
+
+    // Cache must be newer than the source CSV, else it's stale.
+    let csv_metadata = fs::metadata(path).ok()?;
+    let cache_fs_metadata = fs::metadata(&cache_path).ok()?;
+    if FileTime::from_last_modification_time(&cache_fs_metadata)
+        <= FileTime::from_last_modification_time(&csv_metadata)
+    {
+        log::info!("Frequency cache is stale; recomputing bar frequencies.");
+        return None;
+    }
+
+    // JSONL: line 1 = metadata, remaining lines = per-column entries.
+    let jsonl_content = fs::read_to_string(&cache_path).ok()?;
+    let mut lines = jsonl_content.lines();
+    let metadata: FrequencyCacheMetadata = serde_json::from_str(lines.next()?).ok()?;
+
+    // Option compatibility — these affect what's stored / how columns are named
+    // / how values were split, so a mismatch means the cache can't be reused.
+    let current_delimiter =
+        delimiter.map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
+    if metadata.flag_no_nulls != no_nulls
+        || metadata.flag_no_headers != no_headers
+        || metadata.flag_delimiter != current_delimiter
+    {
+        log::info!("Frequency cache incompatible with current options; recomputing.");
+        return None;
+    }
+
+    // In `--no-headers` mode the cache keys columns positionally within the
+    // selection that produced it ("1", "2", ...). A caller reading the whole
+    // file in original order would mis-map those keys if the cache was built
+    // with a reordered/subset `--select`. The only identifier the cache records
+    // for the selection is `selection_signature` — the first-row bytes joined in
+    // selection order with a `\x1f` (Unit Separator) delimiter. That can PROVE
+    // original order only when (a) the cache covers exactly all columns, (b) the
+    // signature matches the full input in original order, (c) the first-row
+    // values are all distinct (equal values could let a reordered selection
+    // produce an identical signature), and (d) NO first-row value itself
+    // contains the `\x1f` separator — otherwise the unescaped join is ambiguous
+    // and a reordering could still collide even with distinct values. Reject
+    // conservatively when any of these can't be established. (Headed caches are
+    // keyed by name, so they self-protect and need no signature check.)
+    if no_headers {
+        // must match the separator used by `Args::selection_signature`
+        const SIG_SEPARATOR: u8 = 0x1f;
+
+        let path_str = path.to_string_lossy().into_owned();
+        let rconfig = Config::new(Some(&path_str))
+            .delimiter(delimiter)
+            .no_headers_flag(true);
+        let mut rdr = rconfig.reader().ok()?;
+        let full_headers = rdr.byte_headers().ok()?.clone();
+
+        // `selection_signature` stringifies each field with a LOSSY UTF-8
+        // conversion and joins on `\x1f` without escaping. For the signature to
+        // unambiguously prove identity column order we need every first-row value
+        // to be (1) valid UTF-8 — so the lossy conversion is faithful and two
+        // distinct invalid-UTF8 fields can't collapse to the same replacement
+        // text — and (2) free of the `\x1f` separator — so the join splits back
+        // to the original fields. Given those, distinct raw bytes ⇒ distinct
+        // signature positions ⇒ a matching signature can only be the identity
+        // permutation.
+        let mut seen_vals: HashSet<Vec<u8>> = HashSet::new();
+        let all_distinct = full_headers.iter().all(|f| seen_vals.insert(f.to_vec()));
+        let all_utf8 = full_headers
+            .iter()
+            .all(|f| simdutf8::basic::from_utf8(f).is_ok());
+        let has_separator = full_headers.iter().any(|f| f.contains(&SIG_SEPARATOR));
+        let expected_sig = Args::selection_signature(&full_headers);
+
+        if !all_distinct
+            || !all_utf8
+            || has_separator
+            || metadata.column_count != full_headers.len()
+            || metadata.selection_signature.is_empty()
+            || metadata.selection_signature != expected_sig
+        {
+            log::info!(
+                "Frequency cache selection can't be proven to match the full input \
+                 (--no-headers); recomputing."
+            );
+            return None;
+        }
+    }
+
+    let mut columns: std::collections::HashMap<String, Vec<(String, u64)>> =
+        std::collections::HashMap::new();
+    // Track every column name seen (sentinels included). A duplicate name makes a
+    // name-keyed lookup ambiguous regardless of whether one duplicate is a
+    // sentinel, so detect it before the sentinel skip below and refuse the cache.
+    let mut seen_fields: HashSet<String> = HashSet::new();
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let entry: FrequencyCacheEntry = serde_json::from_str(line).ok()?;
+        if !seen_fields.insert(entry.field.clone()) {
+            log::info!(
+                "Frequency cache has duplicate column names; recomputing to avoid ambiguity."
+            );
+            return None;
+        }
+        // Skip sentinel columns (no usable per-value data) — leaving them out of
+        // the map makes the caller fall back to recomputation for that column.
+        if entry.frequencies.len() == 1
+            && matches!(
+                entry.frequencies[0].value.as_str(),
+                "<HIGH_CARDINALITY>" | "<ALL_UNIQUE>"
+            )
+        {
+            continue;
+        }
+        // Drop the null/empty bucket to match `viz`'s count_values, which skips
+        // empty cells.
+        let pairs: Vec<(String, u64)> = entry
+            .frequencies
+            .into_iter()
+            .filter(|f| !f.value.is_empty())
+            .map(|f| (f.value, f.count))
+            .collect();
+        columns.insert(entry.field, pairs);
+    }
+    if columns.is_empty() {
+        return None;
+    }
+
+    Some(FreqCacheView { columns })
+}
+
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]

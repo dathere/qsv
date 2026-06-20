@@ -816,7 +816,14 @@ export async function handleToolCall(
       !isBinaryOutputFormat(commandName, params) &&
       (await shouldUseTempFile(commandName, inputFile))
     ) {
-      const tempExt = config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName) ? "tsv" : "csv";
+      // viz emits a self-contained interactive HTML artifact; its output format is
+      // inferred from the -o extension, so the temp file must be named .html.
+      const tempExt =
+        commandName === "viz"
+          ? "html"
+          : config.outputFormat === "tsv" && !NON_TABULAR_COMMANDS.has(commandName)
+            ? "tsv"
+            : "csv";
       const tempFileName = `qsv-output-${randomUUID()}.${tempExt}`;
       outputFile = join(tmpdir(), tempFileName);
       autoCreatedTempFile = true;

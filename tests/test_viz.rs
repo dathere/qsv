@@ -378,6 +378,42 @@ fn viz_smart_smarter_matches_manual_moarstats() {
 }
 
 #[test]
+fn viz_smart_smarter_no_headers_falls_back() {
+    // moarstats can't honor --no-headers for its advanced-stat readers, so `--smarter` skips the
+    // enrichment for --no-headers inputs and still renders a standard dashboard (no error).
+    let wrk = Workdir::new("viz_smart_smarter_no_headers_falls_back");
+    let mut rows = String::new();
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{i},{},{city}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("headerless.csv", &rows);
+
+    let out_html = wrk.path("headerless.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "headerless.csv",
+        "--smarter",
+        "--no-headers",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("headerless.html").unwrap();
+    // the standard (non-enriched) dashboard still renders chart panels
+    assert!(
+        html.contains("Plotly.newPlot"),
+        "fallback dashboard should still render; html: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_caps_charts() {
     let wrk = Workdir::new("viz_smart_caps_charts");
     // four low-cardinality categorical columns (all chartable as frequency bars)

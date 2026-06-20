@@ -833,29 +833,6 @@ pub fn show_env_vars() {
     }
 }
 
-/// Return the header names that occur more than once, each listed once in
-/// first-seen order (empty when all headers are unique).
-///
-/// Output formats that key by column name — JSON objects (`tojsonl`), JSON Schema
-/// `properties` (`schema`) — cannot represent two columns sharing a name distinctly,
-/// so the duplicates silently collapse. Callers should warn the user when this
-/// returns a non-empty list.
-#[must_use]
-pub fn duplicate_headers(headers: &ByteRecord) -> Vec<String> {
-    use std::collections::HashSet;
-
-    let mut seen: HashSet<&[u8]> = HashSet::with_capacity(headers.len());
-    let mut reported: HashSet<&[u8]> = HashSet::new();
-    let mut dupes: Vec<String> = Vec::new();
-    for field in headers {
-        if !seen.insert(field) && reported.insert(field) {
-            // first repeat of this name → record it once
-            dupes.push(String::from_utf8_lossy(field).into_owned());
-        }
-    }
-    dupes
-}
-
 #[inline]
 pub fn count_rows(conf: &Config) -> Result<u64, CliError> {
     // Check if ROW_COUNT is already initialized to avoid redundant counting

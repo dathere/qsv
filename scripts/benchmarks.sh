@@ -42,7 +42,7 @@
 arg_pat="$1"
 
 # the version of this script
-bm_version=9.3.0
+bm_version=9.3.1
 
 # CONFIGURABLE VARIABLES ---------------------------------------
 # change as needed to reflect your environment/workloads
@@ -599,8 +599,8 @@ function run {
 # If you're using a different dataset, you will need to modify the commands below to use the
 # appropriate column names.
 
-run apply_calcconv "$qsv_bin apply calcconv --formatstr \"{Unique Key} meters in miles\" --new-column new_col $data"
-run apply_dynfmt "$qsv_bin apply dynfmt --formatstr \"{Created Date} {Complaint Type} - {BBL} {City}\" --new-column new_col $data"
+run apply_calcconv "$qsv_bin apply calcconv --formatstr \"{Unique_Key} meters in miles\" --new-column new_col $data"
+run apply_dynfmt "$qsv_bin apply dynfmt --formatstr \"{Created_Date} {Complaint_Type} - {BBL} {City}\" --new-column new_col $data"
 run apply_emptyreplace "$qsv_bin" apply emptyreplace \"Bridge Highway Name\" --replacement Unspecified "$data"
 run apply_op_eudex "$qsv_bin apply operations lower,eudex Agency --comparand Queens --new-column Agency_queens_soundex $data"
 run apply_op_string "$qsv_bin apply operations lower Agency $data"

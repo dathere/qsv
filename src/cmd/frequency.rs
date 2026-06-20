@@ -3439,7 +3439,9 @@ impl Args {
     /// * `col_type_by_pos` - Column types indexed by ORIGINAL CSV column position
     ///
     /// # Returns
-    /// A vector of indices (into the selected headers) of Float columns to skip.
+    /// A vector of ORIGINAL CSV column indices of Float columns to skip. Original indices
+    /// (not selected positions) are stable when an earlier filter removes columns, so this
+    /// composes correctly with --stats-filter.
     /// Columns listed in the --no-float exception list are NOT included in the skip list.
     fn compute_float_columns_to_skip(
         &self,
@@ -3472,8 +3474,10 @@ impl Args {
 
         // Look up the type by ORIGINAL column position (sel[i]) — not by header name — so
         // duplicate-named columns are each evaluated on their own type. The exception list
-        // still matches by name (it's a user-supplied list of column names).
-        for (i, (header, &orig_idx)) in headers.iter().zip(sel.iter()).enumerate() {
+        // still matches by name (it's a user-supplied list of column names). We record the
+        // ORIGINAL column index (orig_idx), which stays valid even if another filter later
+        // removes columns ahead of it.
+        for (header, &orig_idx) in headers.iter().zip(sel.iter()) {
             if let Some(col_type) = col_type_by_pos.get(orig_idx)
                 && col_type == "Float"
             {
@@ -3481,7 +3485,7 @@ impl Args {
                     .unwrap_or(NON_UTF8_ERR)
                     .to_lowercase();
                 if !exception_cols.contains(&header_str) {
-                    float_columns_to_skip.push(i);
+                    float_columns_to_skip.push(orig_idx);
                 }
             }
         }
@@ -3499,8 +3503,10 @@ impl Args {
     /// * `filter_expression` - The Luau expression to evaluate for each column
     ///
     /// # Returns
-    /// A vector of indices (into the selected headers) of columns where the filter
-    /// expression evaluated to `true` (meaning they should be excluded).
+    /// A vector of ORIGINAL CSV column indices of columns where the filter expression
+    /// evaluated to `true` (meaning they should be excluded). Original indices (not selected
+    /// positions) stay valid even if --no-float removed columns first, so the two filters
+    /// compose correctly.
     #[allow(clippy::unused_self)]
     #[cfg(feature = "luau")]
     fn compute_stats_filter_columns_to_skip(
@@ -3520,8 +3526,10 @@ impl Args {
         let mut columns_to_skip = Vec::new();
 
         // Look up the stats record by ORIGINAL column position (sel[i]) — not by header
-        // name — so duplicate-named columns are each evaluated against their own stats.
-        for (i, (header, &orig_idx)) in headers.iter().zip(sel.iter()).enumerate() {
+        // name — so duplicate-named columns are each evaluated against their own stats. We
+        // record the ORIGINAL column index (orig_idx), which stays valid even if --no-float
+        // removed columns ahead of it.
+        for (header, &orig_idx) in headers.iter().zip(sel.iter()) {
             let Some(stats_data) = stats_by_pos.get(orig_idx) else {
                 // No stats available for this column - skip filtering for it
                 log::debug!(
@@ -3537,7 +3545,7 @@ impl Args {
                     if should_exclude {
                         let header_str = simdutf8::basic::from_utf8(header).unwrap_or(NON_UTF8_ERR);
                         log::debug!("Column '{header_str}' excluded by --stats-filter expression");
-                        columns_to_skip.push(i);
+                        columns_to_skip.push(orig_idx);
                     }
                 },
                 Err(e) => {
@@ -4074,14 +4082,14 @@ impl Args {
                 if float_cols_to_skip.is_empty() {
                     (sel, selected_headers)
                 } else {
-                    // Filter selection to exclude Float columns
-                    // float_cols_to_skip contains indices into selected_headers
+                    // Filter selection to exclude Float columns.
+                    // float_cols_to_skip contains ORIGINAL CSV column indices, and sel
+                    // yields original column indices, so filter by the index value (stable
+                    // regardless of position).
                     let sel_vec: Vec<usize> = sel
                         .iter()
                         .copied()
-                        .enumerate()
-                        .filter(|(i, _)| !float_cols_to_skip.contains(i))
-                        .map(|(_, idx)| idx)
+                        .filter(|orig_idx| !float_cols_to_skip.contains(orig_idx))
                         .collect();
 
                     if sel_vec.is_empty() {
@@ -4115,14 +4123,14 @@ impl Args {
                 if stats_filter_cols_to_skip.is_empty() {
                     (final_sel, final_headers)
                 } else {
-                    // Filter selection to exclude stats-filtered columns
-                    // stats_filter_cols_to_skip contains indices into selected_headers
+                    // Filter selection to exclude stats-filtered columns.
+                    // stats_filter_cols_to_skip contains ORIGINAL CSV column indices; since
+                    // final_sel yields original column indices, this stays correct even when
+                    // --no-float already dropped earlier columns (positions would have shifted).
                     let sel_vec: Vec<usize> = final_sel
                         .iter()
                         .copied()
-                        .enumerate()
-                        .filter(|(i, _)| !stats_filter_cols_to_skip.contains(i))
-                        .map(|(_, idx)| idx)
+                        .filter(|orig_idx| !stats_filter_cols_to_skip.contains(orig_idx))
                         .collect();
 
                     if sel_vec.is_empty() {

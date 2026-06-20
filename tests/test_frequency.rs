@@ -4012,6 +4012,47 @@ fn frequency_stats_filter_duplicate_headers() {
 
 #[test]
 #[cfg(feature = "luau")]
+fn frequency_no_float_and_stats_filter_compose() {
+    // Regression (roborev #3082): --no-float and --stats-filter compose. The stats-filter
+    // skip set must stay valid after --no-float removes an EARLIER column. Here A=Float is
+    // dropped by --no-float and B=Integer is excluded by --stats-filter, so only C=String
+    // survives. With position-based skip indices, the stats filter would have dropped the
+    // wrong (shifted) column.
+    let wrk = Workdir::new("frequency_no_float_and_stats_filter_compose");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["A", "B", "C"],
+            svec!["1.5", "10", "x"],
+            svec!["2.5", "20", "y"],
+            svec!["3.5", "20", "y"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--no-float", "*"])
+        .args(["--stats-filter", r#"type == "Integer""#]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // A (Float) dropped by --no-float; B (Integer) excluded by --stats-filter; only C remains.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["C", "y", "2", "66.66667", "1"],
+        svec!["C", "x", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
+#[cfg(feature = "luau")]
 fn frequency_stats_filter_type() {
     // Test filtering columns by type
     let wrk = Workdir::new("frequency_stats_filter_type");

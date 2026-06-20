@@ -3588,6 +3588,43 @@ fn frequency_no_float_basic() {
 }
 
 #[test]
+fn frequency_no_float_duplicate_headers() {
+    // Regression: column types were looked up by header NAME, so two columns named "x"
+    // both inherited the first's type — --no-float would drop or keep BOTH. The fix keys
+    // type by position: only the genuinely-Float column is dropped.
+    let wrk = Workdir::new("frequency_no_float_duplicate_headers");
+    // col 1 "x" = Float, col 2 "x" = String
+    wrk.create(
+        "in.csv",
+        vec![
+            svec!["x", "x"],
+            svec!["1.5", "a"],
+            svec!["2.5", "a"],
+            svec!["3.5", "b"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("in.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("in.csv").args(["--no-float", "*"]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only the String column (col 2: a,a,b) survives; the Float column (col 1) is dropped.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["x", "a", "2", "66.66667", "1"],
+        svec!["x", "b", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
+}
+
+#[test]
 fn frequency_no_float_with_exceptions() {
     let wrk = Workdir::new("frequency_no_float_with_exceptions");
 
@@ -3932,6 +3969,45 @@ fn frequency_stats_filter_nullcount() {
     for h in headers.iter() {
         assert_eq!(*h, "name", "Only 'name' column should appear, got '{h}'");
     }
+}
+
+#[test]
+#[cfg(feature = "luau")]
+fn frequency_stats_filter_duplicate_headers() {
+    // Regression: stats records were looked up by header NAME, so two columns named "y"
+    // both evaluated against the first's stats. The fix keys stats by position: only the
+    // genuinely-Integer column is excluded by `type == "Integer"`.
+    let wrk = Workdir::new("frequency_stats_filter_duplicate_headers");
+    // col 1 "y" = Integer, col 2 "y" = String
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["y", "y"],
+            svec!["1", "a"],
+            svec!["2", "a"],
+            svec!["3", "b"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd
+        .arg("data.csv")
+        .arg("--cardinality")
+        .arg("--stats-jsonl");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("frequency");
+    cmd.arg("data.csv")
+        .args(["--stats-filter", r#"type == "Integer""#]);
+
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    // Only the String column (col 2: a,a,b) survives; the Integer column (col 1) is excluded.
+    let expected = vec![
+        svec!["field", "value", "count", "percentage", "rank"],
+        svec!["y", "a", "2", "66.66667", "1"],
+        svec!["y", "b", "1", "33.33333", "2"],
+    ];
+    assert_eq!(got, expected);
 }
 
 #[test]

@@ -37,16 +37,21 @@ Chart types (subcommands):
                 as `map`, plus --projection. Good for global/country-scale data.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
-frequency caches: continuous numeric columns become box plots (drawn from precomputed
-quartiles, so no data is re-scanned), and low-cardinality / boolean columns become
-frequency bar charts. ID-like (near-unique) and all-empty columns are skipped. When the
-dataset has two or more continuous numeric columns, a correlation heatmap panel is added
-(this one panel does a single extra data pass to compute Pearson correlations), and if the
-most strongly correlated pair is at least moderately correlated, a scatter of that pair is
-added next to it. When the
-dataset has a date/datetime column (auto-detected via stats date inference) plus a
-continuous numeric column, a time-series line panel of that column over time is added too.
-The first run computes & caches stats; subsequent runs are fast.
+frequency caches. Continuous numeric columns become box plots (quartiles from the stats
+cache; sample points are overlaid by a size heuristic - see --box-points), and
+low-cardinality / boolean columns become frequency bar charts. ID-like (near-unique) and
+all-empty columns are skipped. When the dataset has two or more continuous numeric columns,
+a correlation heatmap panel is added (one extra data pass to compute Pearson correlations),
+and if the most strongly correlated pair is at least moderately correlated, a drill-down of
+that pair is added beside it: a scatter, or a 2D density contour for large datasets where a
+scatter would overplot; with three or more numeric columns, a 3D scatter of the
+strongest-correlation triple is added too. When the dataset has a date/datetime column
+(auto-detected via stats date inference) plus a continuous numeric column, a time-series
+line panel over time is added. When a latitude/longitude column pair is detected, a
+geographic panel leads the dashboard: a Mapbox tile map for a local extent, or an offline
+ScatterGeo projection world-overview for continental/global data. Map/geo and 3D panels are
+HTML-only (they can't share the static-image subplot grid). The first run computes & caches
+stats; subsequent runs are fast.
 
 Examples:
   # Auto-dashboard for a dataset, opened in the browser
@@ -134,21 +139,23 @@ Usage:
 viz options:
     -x, --x <col>          Column for the x-axis / category / bin / group.
     -y, --y <col>          Column for the y-axis / value.
-    -z, --z <col>          Value column for a heatmap pivot (with --x and --y).
+    -z, --z <col>          The z column: a heatmap pivot value (with --x and --y), or
+                           the third numeric axis for scatter3d.
     --cols <cols>          Columns to use. For heatmap: numeric columns for the
                            correlation matrix (default: all numeric). For radar:
                            the numeric axes to plot.
     --series <col>         Column to split into multiple series (one trace per
-                           distinct value). Applies to bar/line/scatter/radar.
-    --color <col>          For scatter/map: a numeric column to encode as marker color
-                           (a continuous colorscale with a colorbar). For categorical
-                           coloring, use the --series option instead. Cannot be
-                           combined with --series. In density mode, this column is the
-                           heatmap weight.
-    --size <col>           For scatter/map: a numeric column to encode as marker size,
-                           producing a bubble chart (values are rescaled to a readable
-                           pixel range). Cannot be combined with --series. In density
-                           mode, this column is the heatmap weight.
+                           distinct value). Applies to bar, line, scatter, scatter3d,
+                           radar, map and geo.
+    --color <col>          For scatter/scatter3d/map/geo: a numeric column to encode as
+                           marker color (a continuous colorscale with a colorbar). For
+                           categorical coloring, use the --series option instead. Cannot
+                           be combined with --series. In map density mode, this column is
+                           the heatmap weight.
+    --size <col>           For scatter/scatter3d/map/geo: a numeric column to encode as
+                           marker size, producing a bubble chart (values are rescaled to
+                           a readable pixel range). Cannot be combined with --series. In
+                           map density mode, this column is the heatmap weight.
     --donut                Render a pie chart as a donut (with a center hole).
     --ohlc-open <col>      Open-price column for candlestick/ohlc charts.
     --high <col>           High-price column for candlestick/ohlc charts.
@@ -158,7 +165,9 @@ viz options:
     --target <col>         Target node column for a sankey diagram.
     --value <col>          Flow value column for a sankey diagram. When omitted,
                            each row counts as a flow of 1.
-    --bins <n>             Number of bins for the histogram. (default: auto)
+    --bins <n>             Number of bins. For histogram: bins along the x-axis
+                           (default: auto). For contour: the per-axis resolution of
+                           the density grid (default: 20).
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
     --box-points <mode>    Which sample points to draw alongside a box. Reading the
@@ -167,10 +176,14 @@ viz options:
                            outliers (only the outliers), all (every point, jittered),
                            suspected (mark suspected outliers), none (no points, but
                            still real Tukey whiskers). For `viz box` the default is
-                           outliers. For `viz smart` this flag is OPT-IN: without it,
-                           box panels are drawn from the precomputed quartiles (no data
-                           re-scan, observed min/max whiskers); passing it makes smart
-                           do one extra batched pass to overlay the points.
+                           outliers. For `viz smart` this flag OVERRIDES the default
+                           size-based heuristic, which overlays all points for small
+                           data (<=1,000 rows), only the outliers for medium data
+                           (<=10,000 rows), and none above that (the box stays a fast
+                           cache-only quartile summary with observed min/max whiskers,
+                           no data re-scan). An explicit mode is applied to every box
+                           panel (one extra batched pass to read the values), except
+                           `none`, which keeps the cache-only box.
 
 map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).

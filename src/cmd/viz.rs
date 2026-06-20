@@ -243,6 +243,18 @@ const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
 
+/// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose moarstats
+/// `bimodality_coefficient` reaches this is treated as bimodal/multimodal, so `viz smart` draws
+/// a histogram (which shows the separate peaks) instead of a box plot (which hides them).
+/// The 0.555 cutoff is the standard uniform-distribution reference value.
+const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.555;
+
+/// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
+/// only when moarstats says its distribution is concentrated rather than near-uniform: a
+/// `normalized_entropy` at/above this is treated as noise (every value about equally frequent),
+/// while a lower value means a few dominant categories worth a top-N bar.
+const HIGH_CARD_ENTROPY_NOISE_THRESHOLD: f64 = 0.95;
+
 /// Max bars in a single-series `viz bar` chart that still get value labels; beyond this the
 /// labels would overlap, so they're omitted.
 const LABEL_MAX_BARS: usize = 40;
@@ -2156,6 +2168,11 @@ enum PanelKind {
     /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
     /// heatmap. Carries the two columns' precomputed, row-aligned values.
     ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
+    /// Histogram of a continuous numeric column, chosen INSTEAD of a box plot when moarstats
+    /// flagged the column as bimodal/multimodal (a box plot would hide the multiple peaks).
+    /// `idx` is the source column index; the (downsampled) values are gathered in a single
+    /// batched pass and looked up by `idx` at render time — same side-table pattern as `FreqBar`.
+    Histogram { idx: usize },
     /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
     /// precomputed, row-aligned coordinates (already downsampled to `MAX_SMART_POINTS`). `density`
     /// requests a heatmap render instead of discrete markers when the source had many rows. Mapbox
@@ -2195,6 +2212,18 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         if let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3)
             && s.cardinality > 1
         {
+            // moarstats refinement: a box plot summarizes a column by its quartiles, which hides
+            // multiple peaks. When moarstats has flagged this column as bimodal/multimodal, a
+            // histogram tells the truth instead. This is the one smart panel that needs the raw
+            // values (gathered later in a single batched pass), taken only for the few columns
+            // actually flagged bimodal — the same "selective extra pass" cost as the correlation
+            // and time-series panels. Absent moarstats, `bimodality_coefficient` is None and we
+            // fall through to the cache-only box plot (today's behavior).
+            if s.bimodality_coefficient
+                .is_some_and(|bc| bc >= BIMODALITY_COEFFICIENT_THRESHOLD)
+            {
+                return Some(PanelKind::Histogram { idx });
+            }
             // Use the actual observed min/max as the whisker endpoints. We intentionally do
             // NOT use the Tukey inner fences: a fence is a computed threshold (Q1-1.5*IQR /
             // Q3+1.5*IQR) that need not coincide with any value in the dataset, so plotting
@@ -2217,9 +2246,53 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
 
     // String / Date / DateTime -> frequency bar when low-cardinality
     if low_cardinality {
-        Some(PanelKind::FreqBar { idx })
+        return Some(PanelKind::FreqBar { idx });
+    }
+    // moarstats refinement: a high-cardinality categorical is normally skipped as ID-like noise.
+    // But normalized_entropy distinguishes "near-uniform (truly noise)" from "concentrated (a few
+    // dominant categories)". When moarstats says the distribution is concentrated, a top-N
+    // frequency bar is still informative, so chart it. Absent moarstats (None), keep today's
+    // behavior and skip.
+    if !near_unique
+        && s.normalized_entropy
+            .is_some_and(|e| e < HIGH_CARD_ENTROPY_NOISE_THRESHOLD)
+    {
+        return Some(PanelKind::FreqBar { idx });
+    }
+    None // high-cardinality / ID-like text
+}
+
+/// Build a short parenthetical title hint for a box-plot panel from moarstats shape statistics:
+/// skew direction (from `pearson_skewness`) and the outlier share (from `outliers_percentage`).
+/// Returns None when neither extended stat is present (moarstats hasn't been run) or the column
+/// is roughly symmetric with no notable outliers — so the title is left unchanged.
+fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
+    // |Pearson skewness| below this reads as ~symmetric; outlier shares below 1% are negligible.
+    const SKEW_MIN_ABS: f64 = 0.5;
+    const OUTLIER_MIN_PCT: f64 = 1.0;
+
+    let mut parts: Vec<String> = Vec::new();
+    if let Some(skew) = s.pearson_skewness
+        && skew.abs() >= SKEW_MIN_ABS
+    {
+        parts.push(
+            if skew > 0.0 {
+                "right-skewed"
+            } else {
+                "left-skewed"
+            }
+            .to_string(),
+        );
+    }
+    if let Some(pct) = s.outliers_percentage
+        && pct >= OUTLIER_MIN_PCT
+    {
+        parts.push(format!("{pct:.1}% outliers"));
+    }
+    if parts.is_empty() {
+        None
     } else {
-        None // high-cardinality / ID-like text
+        Some(format!("({})", parts.join(", ")))
     }
 }
 
@@ -2437,7 +2510,19 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             s.field.clone()
         };
         match classify(idx, s) {
-            Some(kind) => panels.push(Panel { name, kind }),
+            Some(kind) => {
+                // for box panels, append moarstats shape hints (skew direction, outlier share)
+                // to the panel title when those extended stats are present. Cache-only, no cost;
+                // without moarstats the hint is None and the title is unchanged.
+                let name = match &kind {
+                    PanelKind::BoxStats { .. } => match box_shape_hint(s) {
+                        Some(hint) => format!("{name} {hint}"),
+                        None => name,
+                    },
+                    _ => name,
+                };
+                panels.push(Panel { name, kind });
+            },
             None => skipped.push(name),
         }
     }
@@ -2590,6 +2675,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::Histogram { .. }
             | PanelKind::Map { .. } => None,
         })
         .collect();
@@ -2598,6 +2684,22 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         HashMap::new()
     } else {
         count_values(args, &bar_indices, top_n)?
+    };
+
+    // gather raw values for any histogram panels (moarstats-flagged bimodal columns) in a single
+    // batched pass — the only smart panel that needs raw data, taken only when at least one
+    // bimodal column was found.
+    let hist_indices: Vec<usize> = panels
+        .iter()
+        .filter_map(|p| match p.kind {
+            PanelKind::Histogram { idx } => Some(idx),
+            _ => None,
+        })
+        .collect();
+    let hist = if hist_indices.is_empty() {
+        HashMap::new()
+    } else {
+        collect_numeric_values(args, &hist_indices)?
     };
 
     // dashboard title: the user's --title, else the dataset's file name
@@ -2614,10 +2716,11 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             args,
             &panels,
             &freq,
+            &hist,
             &title_text,
         )))
     } else {
-        render_smart_grid(args, &panels, &freq, &title_text)
+        render_smart_grid(args, &panels, &freq, &hist, &title_text)
     }
 }
 
@@ -2629,6 +2732,7 @@ fn panel_trace(
     panel: &Panel,
     color: &'static str,
     freq: &HashMap<usize, Vec<(String, u64)>>,
+    hist: &HashMap<usize, Vec<f64>>,
     axes: Option<(String, String)>,
 ) -> (Box<dyn Trace>, Option<f64>) {
     let mut bar_max: Option<f64> = None;
@@ -2679,6 +2783,16 @@ fn panel_trace(
             }
             bar
         },
+        PanelKind::Histogram { idx } => {
+            let values = hist.get(idx).cloned().unwrap_or_default();
+            let mut h = Histogram::new(values)
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color));
+            if let Some((x, y)) = &axes {
+                h = h.x_axis(x.clone()).y_axis(y.clone());
+            }
+            h
+        },
         PanelKind::TimeSeries { y_label, xs, ys } => {
             let mut t = Scatter::new(xs.clone(), ys.clone())
                 .mode(Mode::Lines)
@@ -2727,6 +2841,7 @@ fn render_smart_grid(
     args: &Args,
     panels: &[Panel],
     freq: &HashMap<usize, Vec<(String, u64)>>,
+    hist: &HashMap<usize, Vec<f64>>,
     title_text: &str,
 ) -> CliResult<SmartRender> {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
@@ -2744,6 +2859,7 @@ fn render_smart_grid(
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::Histogram { .. }
             | PanelKind::Map { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
@@ -2793,7 +2909,8 @@ fn render_smart_grid(
         let color = PALETTE[n % PALETTE.len()];
         let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
         let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-        let (trace, bar_max) = panel_trace(panel, color, freq, Some((xref.clone(), yref.clone())));
+        let (trace, bar_max) =
+            panel_trace(panel, color, freq, hist, Some((xref.clone(), yref.clone())));
         plot.add_trace(trace);
 
         // position this subplot's styled axes and add its title above the cell
@@ -2875,6 +2992,7 @@ fn smart_inline_panel_plot(
     panel: &Panel,
     color: &'static str,
     freq: &HashMap<usize, Vec<(String, u64)>>,
+    hist: &HashMap<usize, Vec<f64>>,
 ) -> Plot {
     // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
     // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
@@ -2921,7 +3039,7 @@ fn smart_inline_panel_plot(
     let is_box = matches!(panel.kind, PanelKind::BoxStats { .. });
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-    let (trace, bar_max) = panel_trace(panel, color, freq, None);
+    let (trace, bar_max) = panel_trace(panel, color, freq, hist, None);
 
     let mut plot = Plot::new();
     plot.add_trace(trace);
@@ -2966,6 +3084,7 @@ fn render_smart_inline(
     args: &Args,
     panels: &[Panel],
     freq: &HashMap<usize, Vec<(String, u64)>>,
+    hist: &HashMap<usize, Vec<f64>>,
     title_text: &str,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
@@ -2973,7 +3092,7 @@ fn render_smart_inline(
     let mut cells = String::new();
     for (n, panel) in panels.iter().enumerate() {
         let color = PALETTE[n % PALETTE.len()];
-        let plot = smart_inline_panel_plot(panel, color, freq);
+        let plot = smart_inline_panel_plot(panel, color, freq, hist);
         let div_id = format!("qsv-viz-panel-{n}");
         cells.push_str("    <div class=\"qsv-viz-cell\">\n");
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
@@ -3043,6 +3162,39 @@ fn count_values(
         out.insert(i, counts);
     }
     Ok(out)
+}
+
+/// Collect raw numeric values for the given column indices in a single pass, each downsampled to
+/// at most `MAX_SMART_POINTS` via uniform stride (preserving the distribution shape). Feeds
+/// `viz smart`'s histogram panels — the only smart panel that needs raw data. Empty and
+/// non-numeric cells are skipped.
+fn collect_numeric_values(args: &Args, indices: &[usize]) -> CliResult<HashMap<usize, Vec<f64>>> {
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
+
+    let mut maps: HashMap<usize, Vec<f64>> = indices.iter().map(|&i| (i, Vec::new())).collect();
+
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        for &i in indices {
+            if let Some(v) = parse_f64(record.get(i))
+                && let Some(col) = maps.get_mut(&i)
+            {
+                col.push(v);
+            }
+        }
+    }
+
+    // downsample each column so the embedded HTML stays small while keeping the distribution shape
+    for col in maps.values_mut() {
+        if col.len() > MAX_SMART_POINTS {
+            let (sampled, _) = downsample_pair(col, col, MAX_SMART_POINTS);
+            *col = sampled;
+        }
+    }
+    Ok(maps)
 }
 
 /// The plotly axis reference string for subplot `pos` (1-based): "x"/"y" for the first,
@@ -3282,6 +3434,76 @@ mod tests {
             },
             _ => panic!("expected BoxStats"),
         }
+    }
+
+    #[test]
+    fn classify_bimodal_continuous_is_histogram_not_box() {
+        // a continuous column moarstats flagged as bimodal (BC >= 0.555) should become a
+        // histogram (which shows the two peaks), not a box plot (which hides them).
+        let mut s = stat("Float", 500, Some(0.9));
+        s.q1 = Some(1.0);
+        s.q2_median = Some(2.0);
+        s.q3 = Some(3.0);
+        s.min = Some("0.0".to_string());
+        s.max = Some("4.0".to_string());
+        s.bimodality_coefficient = Some(0.7); // >= 0.555 threshold
+        assert!(matches!(
+            classify(4, &s),
+            Some(PanelKind::Histogram { idx: 4 })
+        ));
+    }
+
+    #[test]
+    fn classify_unimodal_continuous_stays_box() {
+        // bimodality below the threshold (or absent) keeps the cache-only box plot.
+        let mut s = stat("Float", 500, Some(0.9));
+        s.q1 = Some(1.0);
+        s.q2_median = Some(2.0);
+        s.q3 = Some(3.0);
+        s.min = Some("0.0".to_string());
+        s.max = Some("4.0".to_string());
+        s.bimodality_coefficient = Some(0.40); // unimodal
+        assert!(matches!(classify(0, &s), Some(PanelKind::BoxStats { .. })));
+    }
+
+    #[test]
+    fn classify_high_card_concentrated_string_is_bar() {
+        // high-cardinality text is normally skipped, but a low normalized_entropy (concentrated
+        // distribution, a few dominant categories) makes a top-N bar worthwhile.
+        let mut s = stat("String", 9999, Some(0.6));
+        s.normalized_entropy = Some(0.4); // concentrated, below the 0.95 noise cutoff
+        assert!(matches!(
+            classify(7, &s),
+            Some(PanelKind::FreqBar { idx: 7 })
+        ));
+    }
+
+    #[test]
+    fn classify_high_card_uniform_string_still_skipped() {
+        // high cardinality AND near-uniform entropy => genuinely noise, still skipped.
+        let mut s = stat("String", 9999, Some(0.6));
+        s.normalized_entropy = Some(0.99); // near-uniform
+        assert!(classify(0, &s).is_none());
+    }
+
+    #[test]
+    fn box_shape_hint_reports_skew_and_outliers() {
+        let mut s = stat("Float", 100, Some(0.8));
+        s.pearson_skewness = Some(1.2); // right skew
+        s.outliers_percentage = Some(4.2);
+        assert_eq!(
+            box_shape_hint(&s).as_deref(),
+            Some("(right-skewed, 4.2% outliers)")
+        );
+
+        // symmetric, no notable outliers => no hint
+        let mut s2 = stat("Float", 100, Some(0.8));
+        s2.pearson_skewness = Some(0.1);
+        s2.outliers_percentage = Some(0.2);
+        assert_eq!(box_shape_hint(&s2), None);
+
+        // no moarstats stats at all => no hint
+        assert_eq!(box_shape_hint(&stat("Float", 100, Some(0.8))), None);
     }
 
     #[test]

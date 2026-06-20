@@ -275,7 +275,7 @@ moarstats options:
     --stats-options <arg>  Options to pass to the stats command if baseline stats need
                            to be generated. The options are passed as a single string
                            that will be split by whitespace.
-                           [default: --infer-dates --infer-boolean --mad --quartiles --percentiles --force --stats-jsonl]
+                           [default: --infer-dates --infer-boolean --cardinality --mode --mad --quartiles --percentiles --force --stats-jsonl]
     --round <n>            Round statistics to <n> decimal places. Rounding follows
                            Midpoint Nearest Even (Bankers Rounding) rule.
                            [default: 4]

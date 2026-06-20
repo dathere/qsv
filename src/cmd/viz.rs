@@ -1199,14 +1199,23 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
         let hi = sorted_quantile(&sorted, 1.0 - trim_frac);
         ((lo + hi) / 2.0, hi - lo)
     } else {
-        // data crosses the antimeridian: the cluster runs from sorted[gap_idx + 1] eastward,
-        // wrapping past 180, to sorted[gap_idx] (+360 to keep the arc contiguous)
-        let span = 360.0 - max_gap;
-        let mut center = (sorted[gap_idx + 1] + sorted[gap_idx] + 360.0) / 2.0;
+        // data crosses the antimeridian: unwrap the cluster into a contiguous ascending longitude
+        // range — the arc east of the gap (sorted[gap_idx + 1..]), then the points west of it
+        // shifted +360 — and apply the same quantile trimming as the non-crossing branch, so a lone
+        // far in-range outlier can't inflate the span. The cluster runs from sorted[gap_idx + 1]
+        // eastward, wrapping past 180, to sorted[gap_idx] (+360 keeps the arc contiguous). With
+        // trim_frac == 0 this reduces exactly to the full `360 - max_gap` span and the arc-midpoint
+        // center.
+        let mut unwrapped: Vec<f64> = Vec::with_capacity(n);
+        unwrapped.extend_from_slice(&sorted[gap_idx + 1..]);
+        unwrapped.extend(sorted[..=gap_idx].iter().map(|v| v + 360.0));
+        let lo = sorted_quantile(&unwrapped, trim_frac);
+        let hi = sorted_quantile(&unwrapped, 1.0 - trim_frac);
+        let mut center = (lo + hi) / 2.0;
         if center > 180.0 {
             center -= 360.0;
         }
-        (center, span)
+        (center, hi - lo)
     }
 }
 
@@ -4591,6 +4600,29 @@ mod tests {
         let (center, span) = lon_center_and_span(&[-75.1, -74.9, -75.0], 0.0);
         assert!((center - (-75.0)).abs() < 1e-9);
         assert!((span - 0.2).abs() < 1e-9);
+    }
+
+    #[test]
+    fn lon_center_and_span_crossing_trims_outlier() {
+        // a tight cluster straddling +/-180 plus one far in-range longitude outlier (80). The
+        // crossing branch must trim like the non-crossing one: untrimmed, the unwrapped span runs
+        // from the outlier (~80) to the cluster (~182) and reads as global; trimming the outlier
+        // away keeps the span local.
+        let mut lons = vec![80.0_f64]; // single far outlier
+        for k in 0..100 {
+            lons.push(178.0 + (k % 2) as f64); // 178 / 179
+            lons.push(-179.0 + (k % 2) as f64); // -179 / -178
+        }
+        let (_, untrimmed) = lon_center_and_span(&lons, 0.0);
+        let (_, trimmed) = lon_center_and_span(&lons, MAP_FRAME_TRIM_FRAC);
+        assert!(
+            untrimmed >= 90.0,
+            "untrimmed crossing span should include the outlier, got {untrimmed}"
+        );
+        assert!(
+            trimmed < 10.0,
+            "trimmed crossing span should exclude the outlier, got {trimmed}"
+        );
     }
 
     #[test]

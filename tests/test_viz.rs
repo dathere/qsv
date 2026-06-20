@@ -1309,6 +1309,47 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(html.contains("open-street-map"));
 }
 
+#[test]
+fn viz_smart_map_coords_not_charted_as_distributions() {
+    // Columns recognized as the map's lat/lon pair are charted on the map only — not redundantly
+    // as their own box/histogram distribution panels (and not picked as the time-series y).
+    let wrk = Workdir::new("viz_smart_map_coords_not_charted_as_distributions");
+    // lat/lon (continuous, near-unique) + one low-cardinality categorical. Without the exclusion,
+    // each coordinate would fall through to a box/histogram panel; with it, only the map + the bar.
+    let mut rows = String::from("lat,lon,category\n");
+    for i in 0..60 {
+        let lat = 34.0 + (i as f64) * 0.1;
+        let lon = -118.0 + (i as f64) * 0.1;
+        let cat = match i % 3 {
+            0 => "A",
+            1 => "B",
+            _ => "C",
+        };
+        rows.push_str(&format!("{lat:.4},{lon:.4},{cat}\n"));
+    }
+    wrk.create_from_string("geo.csv", &rows);
+
+    let out_html = wrk.path("geo.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "geo.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("geo.html").unwrap();
+    assert!(
+        html.contains(r#""type":"scattermapbox""#),
+        "map panel should be present"
+    );
+    assert!(
+        html.contains(r#""type":"bar""#),
+        "the categorical should still be a bar panel"
+    );
+    // the coordinates must NOT be re-charted as their own distribution panels
+    assert!(
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"histogram""#),
+        "lat/lon must not be charted as box/histogram distribution panels; html: {html}"
+    );
+}
+
 /// Tamper with a frequency JSONL cache by replacing the first occurrence of
 /// `old_count` with `new_count`. Used to prove `viz smart` reads the cache.
 fn tamper_freq_cache(path: &std::path::Path, old_count: u64, new_count: u64) {

@@ -41,6 +41,7 @@ as `text/plain`, so a browser won't render it):
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto map panel), `map` (points & density) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
+| `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
 
 ## The smart dashboard
 
@@ -108,6 +109,11 @@ qsv viz smart stock_prices.csv -o stocks_dashboard.html
 
 # quakes has lat/lon, so the dashboard leads with a geographic map panel
 qsv viz smart quakes.csv -o quakes_dashboard.html
+
+# the full geospatial dashboard: a map, a time-series, a correlation heatmap + drill-down
+# scatter, a bimodal-depth histogram, annotated boxes and frequency bars — all auto-chosen.
+# Recognized lat/lon columns are charted on the map only, not as redundant distribution panels.
+qsv viz smart seismic_events.csv --smarter --grid-cols 3 -o seismic_dashboard.html
 ```
 
 ## Individual chart types

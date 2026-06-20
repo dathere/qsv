@@ -2307,20 +2307,11 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     }
 }
 
-/// Build a time-series trend panel when the dataset has a date/datetime column and a
-/// continuous numeric column: that numeric column plotted as a line over the first
-/// date/datetime column, with rows sorted chronologically.
-///
-/// `viz smart` computes stats with `--infer-dates --dates-whitelist sniff` (see
-/// `util::get_stats_records`, `StatsMode::ProfileSchema`), so date/datetime columns that
-/// `qsv sniff` identifies are typed confidently rather than reported as plain strings. Like
-/// the correlation panel, this does one extra data pass (timestamps are not in the stats
-/// cache). Returns None when there is no date column, no continuous numeric column, or fewer
-/// than two parseable (date, value) pairs.
 fn build_timeseries_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     prefer_dmy: bool,
+    map_cols: Option<(usize, usize)>,
 ) -> CliResult<Option<Panel>> {
     use qsv_dateparser::parse_with_preference;
 
@@ -2342,7 +2333,9 @@ fn build_timeseries_panel(
     // low-cardinality categorical), preferring a Float over an Integer. Near-unique columns are
     // deliberately allowed here — a measurement like revenue or temperature is often near-unique
     // yet makes the most meaningful trend — unlike the box/correlation panels, which treat
-    // near-unique integers as ID-like and skip them.
+    // near-unique integers as ID-like and skip them. Coordinate columns claimed by the map panel
+    // are excluded so the trend doesn't end up plotting e.g. latitude over time.
+    let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
     let continuous_numeric = |s: &crate::cmd::stats::StatsData| {
         if !matches!(s.r#type.as_str(), "Integer" | "Float") || s.cardinality <= 1 {
             return false;
@@ -2354,7 +2347,7 @@ fn build_timeseries_panel(
     let Some(y_idx) = stats
         .iter()
         .enumerate()
-        .filter(|(_, s)| continuous_numeric(s))
+        .filter(|(i, s)| !is_map_col(*i) && continuous_numeric(s))
         .min_by_key(|(_, s)| usize::from(s.r#type != "Float"))
         .map(|(i, _)| i)
     else {
@@ -2410,15 +2403,12 @@ fn build_timeseries_panel(
     }))
 }
 
-/// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
-/// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
-/// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
-/// columns aren't numeric, or no row has valid coordinates. Name detection needs headers, so this
-/// is a no-op under `--no-headers`.
-fn build_map_panel(
-    args: &Args,
-    stats: &[crate::cmd::stats::StatsData],
-) -> CliResult<Option<Panel>> {
+/// Detect the latitude/longitude column index pair by header name + numeric stats type. Shared by
+/// the map-panel builder and the `viz smart` classifier so that columns recognized as geographic
+/// coordinates are charted on the map panel only — not redundantly as per-column distribution
+/// panels, a correlation-matrix axis, or the time-series y. Name detection needs headers, so this
+/// returns None under `--no-headers` (field names are then "0","1",... and won't match).
+fn latlon_indices(stats: &[crate::cmd::stats::StatsData]) -> Option<(usize, usize)> {
     let find = |names: &[&str]| {
         stats
             .iter()
@@ -2429,10 +2419,25 @@ fn build_map_panel(
             })
             .map(|(i, _)| i)
     };
-    let (Some(lat_idx), Some(lon_idx)) = (
+    match (
         find(&["lat", "latitude"]),
         find(&["lon", "long", "lng", "longitude"]),
-    ) else {
+    ) {
+        (Some(lat), Some(lon)) => Some((lat, lon)),
+        _ => None,
+    }
+}
+
+/// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
+/// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
+/// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
+/// columns aren't numeric, or no row has valid coordinates. Name detection needs headers, so this
+/// is a no-op under `--no-headers`.
+fn build_map_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+) -> CliResult<Option<Panel>> {
+    let Some((lat_idx, lon_idx)) = latlon_indices(stats) else {
         return Ok(None);
     };
 
@@ -2567,10 +2572,19 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
+    // columns recognized as the map's lat/lon pair are charted on the map panel only — exclude
+    // them from per-column distribution panels, the correlation matrix, and the time-series y so a
+    // map dashboard doesn't redundantly box/histogram its coordinates or plot e.g. latitude vs time
+    let map_cols = latlon_indices(&stats);
+    let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
+
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     for (idx, s) in stats.iter().enumerate() {
+        if is_map_col(idx) {
+            continue;
+        }
         let name = if s.field.is_empty() {
             format!("col {}", idx + 1)
         } else {
@@ -2600,8 +2614,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let numeric_indices: Vec<usize> = stats
         .iter()
         .enumerate()
-        .filter(|(_, s)| {
-            matches!(s.r#type.as_str(), "Integer" | "Float")
+        .filter(|(i, s)| {
+            !is_map_col(*i)
+                && matches!(s.r#type.as_str(), "Integer" | "Float")
                 && s.cardinality > 1
                 && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
         })
@@ -2647,7 +2662,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // effective preference is the env flag. Parse dates the same way here so DMY-formatted dates
     // are ordered correctly rather than misparsed/dropped.
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-    if let Some(panel) = build_timeseries_panel(args, &stats, prefer_dmy)? {
+    if let Some(panel) = build_timeseries_panel(args, &stats, prefer_dmy, map_cols)? {
         panels.insert(0, panel);
     }
 

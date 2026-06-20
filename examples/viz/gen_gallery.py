@@ -52,6 +52,17 @@ FIGURES = [
      "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
      "skew direction and outlier share.",
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
+    ("smart dashboard (--smarter, geospatial)",
+     "One `qsv viz smart seismic_events.csv --smarter` command, 9 auto-chosen panels — nearly every "
+     "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
+     "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
+     "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
+     "draws a histogram, not a box that would average the peaks away); the points trace Japan's "
+     "subduction arcs on the map; magnitude vs felt_reports is almost perfectly correlated "
+     "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
+     "magnitude-over-time trend spikes during a September aftershock sequence. Coordinate columns "
+     "are shown on the map only, not re-charted as distributions.",
+     True, ["smart", "seismic_events.csv", "--smarter", "--grid-cols", "3"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("line", "Closing price over time.",
@@ -112,12 +123,11 @@ def find_qsv():
     sys.exit("qsv binary not found: build it (cargo build --bin qsv -F all_features) or set QSV_BIN")
 
 
-def extract_fig_json(html):
-    """Brace-scan the balanced {...} object after the plotly newPlot marker."""
-    start = html.index(MARKER) + len(MARKER)
-    assert html[start] == "{", f"expected object at {start}, got {html[start]!r}"
+def scan_object(html, brace_start):
+    """Brace-scan the balanced {...} object starting at brace_start; return (obj, end_index)."""
+    assert html[brace_start] == "{", f"expected object at {brace_start}, got {html[brace_start]!r}"
     depth, in_str, esc = 0, False, False
-    for i in range(start, len(html)):
+    for i in range(brace_start, len(html)):
         c = html[i]
         if in_str:
             if esc:
@@ -134,8 +144,31 @@ def extract_fig_json(html):
         elif c == "}":
             depth -= 1
             if depth == 0:
-                return json.loads(html[start:i + 1])
+                return json.loads(html[brace_start:i + 1]), i + 1
     raise ValueError("unbalanced braces after newPlot marker")
+
+
+def extract_fig_json(html):
+    """The single grid-form figure object: `Plotly.newPlot(graph_div, {...})`."""
+    obj, _ = scan_object(html, html.index(MARKER) + len(MARKER))
+    return obj
+
+
+def extract_inline_panels(html):
+    """The inline-div smart dashboard form (used when a map panel forces it, or for >8 panels):
+    a series of `Plotly.newPlot("qsv-viz-panel-N", {...})` calls, each a self-contained figure.
+    Returns the list of panel objects, or None when the output isn't the inline form."""
+    needle = 'Plotly.newPlot("qsv-viz-panel-'
+    if needle not in html:
+        return None
+    panels, idx = [], 0
+    while True:
+        i = html.find(needle, idx)
+        if i < 0:
+            break
+        obj, idx = scan_object(html, html.index("{", i))
+        panels.append(obj)
+    return panels
 
 
 def run_fig(qsv, args):
@@ -145,9 +178,20 @@ def run_fig(qsv, args):
         subprocess.run([qsv, "viz", *args, "-o", out], cwd=VIZ_DIR,
                        check=True, capture_output=True, text=True)
         with open(out, encoding="utf-8") as fh:
-            return extract_fig_json(fh.read())
+            html = fh.read()
     finally:
         os.unlink(out)
+    panels = extract_inline_panels(html)
+    if panels is not None:
+        return {"panels": panels}          # inline multi-panel dashboard
+    return {"fig": extract_fig_json(html)}  # single grid-form figure
+
+
+def grid_cols(args):
+    """The --grid-cols value from a smart dashboard's args (default 2)."""
+    if "--grid-cols" in args:
+        return int(args[args.index("--grid-cols") + 1])
+    return 2
 
 
 def cleanup_sidecars():
@@ -173,17 +217,40 @@ def main():
     for idx, fig in enumerate(FIGURES):
         title, desc, full, args = fig
         sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)}\n")
-        figs.append(run_fig(qsv, args))
-        cls = "cell full" if full else "cell"
+        result = run_fig(qsv, args)
         gid = f"g{idx}"
-        fig_divs.append(
-            f'<figure class="{cls}"><figcaption><span class="t">{title}</span>'
-            f'<span class="d">{desc}</span></figcaption><div id="{gid}" class="plot"></div></figure>'
-        )
-        plots.append(
-            f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
-            f'Object.assign({{responsive:true}}, FIGS[{idx}].config || {{}}));'
-        )
+        if "panels" in result:
+            # inline multi-panel dashboard: store the panel list and render a nested sub-grid of
+            # independent plots (one <div> + newPlot per panel) inside a single full-width cell
+            panels = result["panels"]
+            figs.append(panels)
+            cols = grid_cols(args)
+            cells = "".join(
+                f'<div id="{gid}-p{k}" style="height:340px"></div>' for k in range(len(panels)))
+            fig_divs.append(
+                f'<figure class="cell full"><figcaption><span class="t">{title}</span>'
+                f'<span class="d">{desc}</span></figcaption>'
+                f'<div style="display:grid;grid-template-columns:repeat({cols},minmax(0,1fr));'
+                f'gap:14px">{cells}</div></figure>'
+            )
+            for k in range(len(panels)):
+                plots.append(
+                    f'Plotly.newPlot("{gid}-p{k}", FIGS[{idx}][{k}].data, '
+                    f'FIGS[{idx}][{k}].layout || {{}}, '
+                    f'Object.assign({{responsive:true}}, FIGS[{idx}][{k}].config || {{}}));'
+                )
+        else:
+            figs.append(result["fig"])
+            cls = "cell full" if full else "cell"
+            fig_divs.append(
+                f'<figure class="{cls}"><figcaption><span class="t">{title}</span>'
+                f'<span class="d">{desc}</span></figcaption><div id="{gid}" class="plot"></div>'
+                f'</figure>'
+            )
+            plots.append(
+                f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
+                f'Object.assign({{responsive:true}}, FIGS[{idx}].config || {{}}));'
+            )
 
     figs_json = "const FIGS = [" + ",".join(
         json.dumps(f, ensure_ascii=False, separators=(",", ":")) for f in figs) + "];"

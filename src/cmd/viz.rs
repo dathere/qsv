@@ -2484,6 +2484,14 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
+    // `--smarter` with non-default parsing (--no-headers / custom --delimiter) skips moarstats
+    // enrichment (see below) AND forces the standard stats path to regenerate. get_stats_records
+    // keys its `.stats.csv.data.jsonl` cache only by mtime + stat sufficiency, NOT by parsing
+    // options, so without this a current default-parsing cache (e.g. from an earlier headered run)
+    // would be reused and the "standard dashboard" would render from incorrectly parsed stats.
+    let force_stats_regen =
+        args.flag_smarter && (args.flag_no_headers || args.flag_delimiter.is_some());
+
     if args.flag_smarter {
         // moarstats --advanced computes its advanced stats by RE-READING the input itself: the
         // KGA pass via `Config::new(...).reader_file()` and the entropy pass via a `frequency`
@@ -2493,7 +2501,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // for --no-headers the base stats name columns 1,2,... while the KGA reader treats row 1
         // as headers, so the advanced columns never attach; for a custom delimiter the advanced
         // readers mis-split the rows entirely. In either case skip enrichment and let the standard
-        // get_stats_records path below build a correct cache that honors the parsing flags.
+        // get_stats_records path below build a correct, freshly-regenerated cache
+        // (force_stats_regen above) that honors the parsing flags.
         if args.flag_no_headers || args.flag_delimiter.is_some() {
             eprintln!(
                 "viz smart --smarter: moarstats enrichment is only applied with default parsing; \
@@ -2539,7 +2548,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
         flag_dates_whitelist: "sniff".to_string(),
         flag_prefer_dmy:      false,
-        flag_force:           false,
+        flag_force:           force_stats_regen,
         flag_stdout:          false,
         flag_jobs:            None,
         flag_polars:          false,

@@ -1056,15 +1056,11 @@ fn leading_spaces(line: &str) -> usize {
     line.len() - line.trim_start_matches(' ').len()
 }
 
-/// Emit a contiguous run of >=4-space-indented description lines (starting at
-/// `start`) as a verbatim ```` ```text ```` fenced code block, preserving column
-/// alignment. The run extends while lines are indented >=4 or blank (interior
-/// blanks allowed); trailing blanks are trimmed off. Lines are dedented by the
-/// run's minimum indent so the block isn't over-indented. Returns the index of
-/// the first line AFTER the consumed run (the loop's resume point).
-fn emit_indented_block(md: &mut String, lines: &[String], start: usize) -> usize {
-    // Find the end of the run. A literal fence marker ends the run so we never
-    // nest a ```` ``` ```` inside the ```` ```text ```` block we emit.
+/// Index of the first line AFTER the contiguous >=4-space-indented run starting
+/// at `start`. The run extends while lines are indented >=4 or blank (interior
+/// blanks allowed). A literal fence marker ends the run so we never nest a
+/// ```` ``` ```` inside the ```` ```text ```` block we emit.
+fn indented_run_end(lines: &[String], start: usize) -> usize {
     let mut end = start;
     while end < lines.len() {
         let l = &lines[end];
@@ -1077,6 +1073,31 @@ fn emit_indented_block(md: &mut String, lines: &[String], start: usize) -> usize
             break;
         }
     }
+    end
+}
+
+/// Whether the indented run starting at `start` is a single line already wrapped
+/// as a Markdown inline-code span (e.g. `` `iconv ...`. ``). Such a line is meant
+/// to render as inline code, so fencing it would show the backticks and
+/// surrounding punctuation literally. Multi-line runs and non-backtick lines
+/// (which may rely on fencing to protect markdown-special characters) are fenced.
+fn indented_run_is_inline_code(lines: &[String], start: usize) -> bool {
+    let end = indented_run_end(lines, start);
+    let mut non_blank = lines[start..end].iter().filter(|l| !l.trim().is_empty());
+    match (non_blank.next(), non_blank.next()) {
+        (Some(only), None) => only.trim().starts_with('`'),
+        _ => false,
+    }
+}
+
+/// Emit a contiguous run of >=4-space-indented description lines (starting at
+/// `start`) as a verbatim ```` ```text ```` fenced code block, preserving column
+/// alignment. The run extends while lines are indented >=4 or blank (interior
+/// blanks allowed); trailing blanks are trimmed off. Lines are dedented by the
+/// run's minimum indent so the block isn't over-indented. Returns the index of
+/// the first line AFTER the consumed run (the loop's resume point).
+fn emit_indented_block(md: &mut String, lines: &[String], start: usize) -> usize {
+    let end = indented_run_end(lines, start);
     // Trim trailing blank lines off the run.
     let mut run_end = end;
     while run_end > start && lines[run_end - 1].trim().is_empty() {
@@ -1326,8 +1347,14 @@ fn format_description(lines: &[String]) -> String {
         //     wrap.
         //   - it is skipped while inside a list, so indented list-item continuation lines stay part
         //     of the list.
+        //   - a lone line already wrapped as an inline-code span (e.g. `` `cmd ...` ``) stays
+        //     inline prose, since fencing it would show the backticks/punctuation literally.
         let colon_introduced = i > 0 && lines[i - 1].trim_end().ends_with(':');
-        if !in_list && colon_introduced && leading_spaces(line) >= 4 {
+        if !in_list
+            && colon_introduced
+            && leading_spaces(line) >= 4
+            && !indented_run_is_inline_code(lines, i)
+        {
             skip_until = emit_indented_block(&mut md, lines, i);
             prev_empty = true;
             continue;
@@ -2909,6 +2936,42 @@ mod tests {
             md.matches("```text").count(),
             1,
             "interior blank line should not split the fence, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_lone_inline_code_line_not_fenced() {
+        // A single colon-introduced indented line that is already an inline-code
+        // span (backtick-wrapped) stays inline prose; fencing it would expose the
+        // backticks and trailing punctuation literally.
+        let input = lines(&[
+            "to convert an ISO-8859-1 encoded file to UTF-8:",
+            "    `iconv -f ISO-8859-1 -t UTF-8 input.csv -o utf8_output.csv`.",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            !md.contains("```text"),
+            "lone inline-code line should not be fenced, got:\n{md}"
+        );
+        assert!(
+            md.contains("`iconv -f ISO-8859-1 -t UTF-8 input.csv -o utf8_output.csv`."),
+            "inline-code span lost, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_lone_special_char_line_still_fenced() {
+        // A single colon-introduced indented line that is NOT inline code (no
+        // leading backtick) is still fenced — fencing protects markdown-special
+        // characters like * and [ ] from being interpreted.
+        let input = lines(&[
+            "where certain characters have special meanings:",
+            "    ( ) . % + - * ? [ ] ^ $",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("```text\n( ) . % + - * ? [ ] ^ $"),
+            "special-char line should be fenced, got:\n{md}"
         );
     }
 

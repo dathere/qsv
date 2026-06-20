@@ -475,9 +475,11 @@ pub(crate) struct FreqCacheView {
 ///   them, so a cache made with a non-identity `--select` (or with a legacy empty signature) would
 ///   alias the wrong columns. The cache is only trusted when its column count equals the full
 ///   input's AND the recorded selection signature matches the full input in original order AND that
-///   signature is unambiguous: all first-row values distinct, and none containing the `\x1f`
-///   separator the signature joins on (since the signature is the unescaped join of first-row
-///   bytes, equal values or an embedded separator could mask a reordering).
+///   signature is unambiguous: all first-row values distinct, all valid UTF-8 (the signature
+///   stringifies fields lossily, so two distinct invalid-UTF8 values could collapse to the same
+///   text), and none containing the `\x1f` separator the signature joins on (the join is
+///   unescaped). Equal values, lossy collapse, or an embedded separator could otherwise mask a
+///   reordering.
 /// - Duplicate column names (across ALL entries, including sentinels) would make a name-keyed
 ///   lookup return the wrong column's data, so such caches are refused.
 pub(crate) fn read_frequency_cache_view(
@@ -545,12 +547,25 @@ pub(crate) fn read_frequency_cache_view(
         let mut rdr = rconfig.reader().ok()?;
         let full_headers = rdr.byte_headers().ok()?.clone();
 
+        // `selection_signature` stringifies each field with a LOSSY UTF-8
+        // conversion and joins on `\x1f` without escaping. For the signature to
+        // unambiguously prove identity column order we need every first-row value
+        // to be (1) valid UTF-8 — so the lossy conversion is faithful and two
+        // distinct invalid-UTF8 fields can't collapse to the same replacement
+        // text — and (2) free of the `\x1f` separator — so the join splits back
+        // to the original fields. Given those, distinct raw bytes ⇒ distinct
+        // signature positions ⇒ a matching signature can only be the identity
+        // permutation.
         let mut seen_vals: HashSet<Vec<u8>> = HashSet::new();
         let all_distinct = full_headers.iter().all(|f| seen_vals.insert(f.to_vec()));
+        let all_utf8 = full_headers
+            .iter()
+            .all(|f| simdutf8::basic::from_utf8(f).is_ok());
         let has_separator = full_headers.iter().any(|f| f.contains(&SIG_SEPARATOR));
         let expected_sig = Args::selection_signature(&full_headers);
 
         if !all_distinct
+            || !all_utf8
             || has_separator
             || metadata.column_count != full_headers.len()
             || metadata.selection_signature.is_empty()

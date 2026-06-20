@@ -1450,3 +1450,36 @@ fn viz_smart_no_headers_separator_in_data_cache_rejected() {
         "no-headers cache with an embedded signature separator must be rejected"
     );
 }
+
+// The no-headers selection signature stringifies each first-row value with a
+// LOSSY UTF-8 conversion, so two distinct invalid-UTF8 values could collapse to
+// the same replacement text and let a reordered selection collide. `viz smart
+// --no-headers` must therefore reject a cache whose first row has any non-UTF8
+// value — even a legitimate full selection — so the tampered count must NOT
+// surface. (Raw bytes are written directly since invalid UTF-8 isn't a &str.)
+#[test]
+fn viz_smart_no_headers_invalid_utf8_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_invalid_utf8_cache_rejected");
+    // col1's first-row value is an invalid UTF-8 byte (0xFF)
+    std::fs::write(wrk.path("people.csv"), b"\xff,c\nx,y\n\xff,c\nz,w\n").unwrap();
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "no-headers cache with non-UTF8 first-row data must be rejected"
+    );
+}

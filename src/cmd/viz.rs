@@ -178,6 +178,14 @@ smart options:
                            [default: 0]
     --grid-cols <n>        Number of columns in the dashboard grid. [default: 2]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
+    --smarter              Before building the dashboard, run `qsv moarstats --advanced`
+                           to enrich the stats cache with distribution-shape statistics
+                           (bimodality, entropy, skewness, outlier share). This unlocks
+                           histograms for bimodal columns, frequency bars for concentrated
+                           high-cardinality columns, and skew/outlier hints on box panels.
+                           Costs one extra pass over the data and writes <stem>.stats.csv,
+                           its sidecars, and an .idx index (like running `qsv moarstats`
+                           manually). Only affects `smart`.
 
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
@@ -390,6 +398,7 @@ struct Args {
     flag_max_charts:   usize,
     flag_grid_cols:    usize,
     flag_limit:        usize,
+    flag_smarter:      bool,
     flag_title:        Option<String>,
     flag_x_title:      Option<String>,
     flag_y_title:      Option<String>,
@@ -2471,6 +2480,50 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         return fail_incorrectusage_clierror!(
             "`viz smart` cannot read from stdin; pass a CSV/TSV file path."
         );
+    }
+
+    if args.flag_smarter {
+        // Enrich the stats cache with moarstats advanced distribution-shape stats so
+        // classify()/box_shape_hint() can upgrade box->histogram, surface concentrated
+        // high-cardinality FreqBars, and annotate box titles. moarstats rewrites the
+        // .stats.csv.data.jsonl sidecar that get_stats_records reads below.
+        //
+        // moarstats' top-level --force is what guarantees the base `qsv stats` subprocess
+        // re-runs with the full default --stats-options (cardinality/quartiles/skewness);
+        // without it a stale, lean stats cache would be reused and the advanced columns
+        // viz needs (bimodality_coefficient, normalized_entropy) would silently not be added.
+        //
+        // moarstats has no --delimiter/--no-headers flags, so thread those (and the same
+        // date-sniffing viz uses normally) through --stats-options, mirroring moarstats'
+        // own default options string. Soft-fail: a moarstats error degrades to the plain
+        // ProfileSchema dashboard rather than aborting.
+        let mut stats_opts = String::from(
+            "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles --percentiles \
+             --force --stats-jsonl --dates-whitelist sniff",
+        );
+        if let Some(delim) = args.flag_delimiter {
+            stats_opts.push_str(&format!(" --delimiter {}", delim.as_byte() as char));
+        }
+        if args.flag_no_headers {
+            stats_opts.push_str(" --no-headers");
+        }
+        let moar_argv = [
+            "--advanced",
+            "--force",
+            "--stats-options",
+            stats_opts.as_str(),
+        ];
+        if let Err(e) = util::run_qsv_cmd(
+            "moarstats",
+            &moar_argv,
+            &input,
+            "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
+        ) {
+            eprintln!(
+                "viz smart --smarter: moarstats enrichment failed ({e}); falling back to standard \
+                 stats. Dashboard will omit advanced refinements."
+            );
+        }
     }
 
     let schema_args = util::SchemaArgs {

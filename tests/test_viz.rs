@@ -1417,3 +1417,36 @@ fn viz_smart_duplicate_headers_with_sentinel_cache_fallback() {
         "duplicate name with a sentinel duplicate must still be detected and rejected"
     );
 }
+
+// The no-headers selection signature joins first-row bytes with a 0x1f (Unit
+// Separator) WITHOUT escaping, so a first-row value that itself contains 0x1f
+// makes the join ambiguous (a reordered selection could collide even with
+// distinct values). `viz smart --no-headers` must therefore reject such a cache
+// conservatively — even a legitimate full-selection cache — so the tampered
+// count must NOT surface.
+#[test]
+fn viz_smart_no_headers_separator_in_data_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_separator_in_data_cache_rejected");
+    // col1's first-row value embeds the 0x1f separator
+    wrk.create_from_string("people.csv", "a\u{1f}b,c\nx,y\na\u{1f}b,c\nz,w\n");
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "no-headers cache with an embedded signature separator must be rejected"
+    );
+}

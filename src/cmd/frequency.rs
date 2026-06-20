@@ -475,8 +475,9 @@ pub(crate) struct FreqCacheView {
 ///   them, so a cache made with a non-identity `--select` (or with a legacy empty signature) would
 ///   alias the wrong columns. The cache is only trusted when its column count equals the full
 ///   input's AND the recorded selection signature matches the full input in original order AND that
-///   signature is unambiguous (all first-row values distinct, since the signature is built from
-///   first-row bytes and equal values could mask a reordering).
+///   signature is unambiguous: all first-row values distinct, and none containing the `\x1f`
+///   separator the signature joins on (since the signature is the unescaped join of first-row
+///   bytes, equal values or an embedded separator could mask a reordering).
 /// - Duplicate column names (across ALL entries, including sentinels) would make a name-keyed
 ///   lookup return the wrong column's data, so such caches are refused.
 pub(crate) fn read_frequency_cache_view(
@@ -524,14 +525,19 @@ pub(crate) fn read_frequency_cache_view(
     // file in original order would mis-map those keys if the cache was built
     // with a reordered/subset `--select`. The only identifier the cache records
     // for the selection is `selection_signature` — the first-row bytes joined in
-    // selection order. That can PROVE original order only when (a) the cache
-    // covers exactly all columns, (b) the signature matches the full input in
-    // original order, and (c) the first-row values are all distinct (equal
-    // values could let a reordered selection produce an identical signature).
-    // Reject conservatively when any of these can't be established. (Headed
-    // caches are keyed by name, so they self-protect and need no signature
-    // check.)
+    // selection order with a `\x1f` (Unit Separator) delimiter. That can PROVE
+    // original order only when (a) the cache covers exactly all columns, (b) the
+    // signature matches the full input in original order, (c) the first-row
+    // values are all distinct (equal values could let a reordered selection
+    // produce an identical signature), and (d) NO first-row value itself
+    // contains the `\x1f` separator — otherwise the unescaped join is ambiguous
+    // and a reordering could still collide even with distinct values. Reject
+    // conservatively when any of these can't be established. (Headed caches are
+    // keyed by name, so they self-protect and need no signature check.)
     if no_headers {
+        // must match the separator used by `Args::selection_signature`
+        const SIG_SEPARATOR: u8 = 0x1f;
+
         let path_str = path.to_string_lossy().into_owned();
         let rconfig = Config::new(Some(&path_str))
             .delimiter(delimiter)
@@ -541,9 +547,11 @@ pub(crate) fn read_frequency_cache_view(
 
         let mut seen_vals: HashSet<Vec<u8>> = HashSet::new();
         let all_distinct = full_headers.iter().all(|f| seen_vals.insert(f.to_vec()));
+        let has_separator = full_headers.iter().any(|f| f.contains(&SIG_SEPARATOR));
         let expected_sig = Args::selection_signature(&full_headers);
 
         if !all_distinct
+            || has_separator
             || metadata.column_count != full_headers.len()
             || metadata.selection_signature.is_empty()
             || metadata.selection_signature != expected_sig

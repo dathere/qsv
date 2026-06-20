@@ -1024,6 +1024,138 @@ fn viz_smart_scatter_pair_panel() {
 }
 
 #[test]
+fn viz_smart_scatter3d_triple_panel() {
+    let wrk = Workdir::new("viz_smart_scatter3d_triple_panel");
+    // three strongly-correlated, non-near-unique numeric columns => beyond the correlation heatmap
+    // and the pair scatter, `viz smart` adds a 3D scatter of the strongest-correlation triple.
+    let mut rows = String::from("a,b,c,city\n");
+    for i in 0..120 {
+        let a = i % 10;
+        let b = a * 2 + (i % 2);
+        let c = a * 3 - (i % 3);
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{a},{b},{c},{city}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"heatmap""#));
+    // a 3D scatter trace whose panel title names the triple; a 3D scene forces the inline page
+    assert!(html.contains("<!doctype html>"));
+    assert!(html.contains(r#""type":"scatter3d""#));
+    assert!(html.contains("a / b / c (3D)"));
+}
+
+#[test]
+fn viz_smart_contour_pair_for_big_data() {
+    let wrk = Workdir::new("viz_smart_contour_pair_for_big_data");
+    // a strongly-correlated pair over a LARGE row count (>= SMART_CONTOUR_MIN_POINTS): the pair
+    // drill-down is rendered as a 2D density contour (a scatter would overplot) rather than a
+    // scatter.
+    let mut rows = String::from("p,q\n");
+    for i in 0..6_000 {
+        let p = i % 100;
+        let q = p * 2 + (i % 7);
+        rows.push_str(&format!("{p},{q}\n"));
+    }
+    wrk.create_from_string("big.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "big.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"heatmap""#));
+    // the correlated pair is a contour density, NOT a scatter
+    assert!(html.contains(r#""type":"contour""#));
+    assert!(html.contains("p vs q (r="));
+    assert!(!html.contains(r#""type":"scatter""#));
+}
+
+// a continuous numeric column with cardinality > 30 (so it's a box, not a frequency bar) and
+// uniqueness < 0.95 (so it's not skipped as an ID). `n` rows of distinct-ish floats.
+fn continuous_box_csv(rows: usize) -> String {
+    let mut s = String::from("measure,grp\n");
+    for i in 0..rows {
+        // ~ (rows mod 400) distinct values: high cardinality, low uniqueness for large `rows`
+        let v = (i % 400) as f64 * 0.37 + (i % 7) as f64 * 0.013;
+        let grp = if i % 2 == 0 { "a" } else { "b" };
+        s.push_str(&format!("{v:.3},{grp}\n"));
+    }
+    s
+}
+
+#[test]
+fn viz_smart_box_points_heuristic_small_overlays_all() {
+    // small dataset (<= SMART_BOX_ALL_MAX rows): the size heuristic overlays every sample point on
+    // the box (no explicit --box-points needed).
+    let wrk = Workdir::new("viz_smart_box_points_heuristic_small_overlays_all");
+    wrk.create_from_string("d.csv", &continuous_box_csv(100));
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"box""#));
+    assert!(html.contains(r#""boxpoints":"all""#));
+}
+
+#[test]
+fn viz_smart_box_points_heuristic_large_none() {
+    // large dataset (> SMART_BOX_OUTLIERS_MAX rows): the heuristic draws NO points and the box
+    // stays a cache-only quartile summary (no `boxpoints` key on the trace).
+    let wrk = Workdir::new("viz_smart_box_points_heuristic_large_none");
+    wrk.create_from_string("d.csv", &continuous_box_csv(12_000));
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    // the JSON key `"boxpoints":` is only emitted for raw boxes; a cache-only box omits it
+    assert!(!html.contains(r#""boxpoints":"#));
+}
+
+#[test]
+fn viz_smart_box_points_explicit_overrides_heuristic() {
+    // an explicit --box-points wins over the size heuristic: `none` keeps the cache-only box even
+    // though the small dataset would otherwise overlay all points.
+    let wrk = Workdir::new("viz_smart_box_points_explicit_overrides_heuristic");
+    wrk.create_from_string("d.csv", &continuous_box_csv(100));
+
+    let mut none_cmd = wrk.command("viz");
+    none_cmd.args(["smart", "d.csv", "--box-points", "none"]);
+    let none_out = wrk.output(&mut none_cmd);
+    assert!(none_out.status.success());
+    let none_html = String::from_utf8_lossy(&none_out.stdout);
+    assert!(none_html.contains(r#""type":"box""#));
+    assert!(!none_html.contains(r#""boxpoints":"#));
+
+    // and an explicit `outliers` forces outliers regardless of the small size (which would be
+    // `all`)
+    let mut out_cmd = wrk.command("viz");
+    out_cmd.args(["smart", "d.csv", "--box-points", "outliers"]);
+    let out = wrk.output(&mut out_cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""boxpoints":"outliers""#));
+}
+
+#[test]
 fn viz_smart_no_scatter_pair_when_weakly_correlated() {
     let wrk = Workdir::new("viz_smart_no_scatter_pair_when_weakly_correlated");
     // metric_a and metric_b are the two "digits" of i, so over 60 rows they enumerate the full
@@ -1334,11 +1466,12 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // smart auto-detects the lat/lon pair and adds a map panel; a map forces the inline
-    // (self-contained HTML page) render path
+    // smart auto-detects the lat/lon pair and adds a geographic panel; it forces the inline
+    // (self-contained HTML page) render path. The quakes data spans the globe, so the panel is
+    // rendered as an offline ScatterGeo projection world-overview (not a zoomed mapbox tile map).
     assert!(html.contains("<!doctype html>"));
-    assert!(html.contains(r#""type":"scattermapbox""#));
-    assert!(html.contains("open-street-map"));
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(!html.contains(r#""type":"scattermapbox""#));
 }
 
 #[test]
@@ -1738,4 +1871,194 @@ fn viz_smart_no_headers_invalid_utf8_cache_rejected() {
         !html.contains("987654"),
         "no-headers cache with non-UTF8 first-row data must be rejected"
     );
+}
+
+#[test]
+fn viz_geo_basic() {
+    let wrk = Workdir::new("viz_geo_basic");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["geo", "quakes.csv", "--lat", "lat", "--lon", "lon"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a token-free ScatterGeo point map on a projection basemap (no tiles)
+    assert!(html.contains("Plotly.newPlot"));
+    assert!(html.contains(r#""type":"scattergeo""#));
+    // default projection is natural-earth, with land/countries drawn
+    assert!(html.contains(r#""type":"natural earth""#));
+    assert!(html.contains(r#""showcountries":true"#));
+}
+
+#[test]
+fn viz_geo_projection_and_color() {
+    let wrk = Workdir::new("viz_geo_projection_and_color");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "geo",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--color",
+        "magnitude",
+        "--projection",
+        "orthographic",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(html.contains(r#""type":"orthographic""#));
+    // --color maps a numeric column onto a continuous colorscale with a colorbar
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"magnitude"#));
+}
+
+#[test]
+fn viz_geo_series_traces() {
+    let wrk = Workdir::new("viz_geo_series_traces");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "geo",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--series",
+        "region",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattergeo""#));
+    // one trace per region category, with a legend
+    assert!(html.contains(r#""name":"Asia""#));
+    assert!(html.contains(r#""name":"Europe""#));
+    assert!(html.contains(r#""showlegend":true"#));
+}
+
+#[test]
+fn viz_geo_bad_projection_errors() {
+    let wrk = Workdir::new("viz_geo_bad_projection_errors");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "geo",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--projection",
+        "bogus",
+    ]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("Unknown --projection"));
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_scatter3d_basic() {
+    let wrk = Workdir::new("viz_scatter3d_basic");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter3d",
+        "quakes.csv",
+        "--x",
+        "lon",
+        "--y",
+        "lat",
+        "--z",
+        "magnitude",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scatter3d""#));
+    assert!(html.contains(r#""mode":"markers""#));
+    // a 3D scene layout with z-axis title from the --z column
+    assert!(html.contains(r#""scene""#));
+    assert!(html.contains(r#""text":"magnitude"#));
+}
+
+#[test]
+fn viz_scatter3d_color_encoding() {
+    let wrk = Workdir::new("viz_scatter3d_color_encoding");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter3d",
+        "quakes.csv",
+        "--x",
+        "lon",
+        "--y",
+        "lat",
+        "--z",
+        "magnitude",
+        "--color",
+        "depth_km",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scatter3d""#));
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"depth_km"#));
+}
+
+#[test]
+fn viz_contour_density() {
+    let wrk = Workdir::new("viz_contour_density");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "contour",
+        "quakes.csv",
+        "--x",
+        "lon",
+        "--y",
+        "lat",
+        "--bins",
+        "10",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"contour""#));
+    assert!(html.contains(r#""colorscale":"Viridis""#));
+    // x/y axis titles come from the column names
+    assert!(html.contains(r#""text":"lon"#));
+    assert!(html.contains(r#""text":"lat"#));
+}
+
+#[test]
+fn viz_contour_non_numeric_errors() {
+    let wrk = Workdir::new("viz_contour_non_numeric_errors");
+    quakes(&wrk);
+
+    // `place` and `region` are non-numeric, so there are no plottable rows
+    let mut cmd = wrk.command("viz");
+    cmd.args(["contour", "quakes.csv", "--x", "place", "--y", "region"]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("No rows with numeric"));
+    wrk.assert_err(&mut cmd);
 }

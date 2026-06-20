@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Geo Options](#geo-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -31,18 +31,24 @@ smart       Auto-dashboard. Picks an appropriate chart per column from the
 bar         Bar chart.        --x = category column, --y = value column.
 line        Line chart.       --x = x column, --y = y column.
 scatter     Scatter plot.     --x = x column, --y = y column.
+scatter3d   3D scatter plot.  --x, --y, --z = three numeric columns.
 histogram   Distribution.     --x = numeric column to bin.
 box         Box plot.         --y = value column, optional --x = group column.
 pie         Proportions.      --x = label column, optional --y = value column.
 heatmap     Color grid. Correlation matrix of numeric columns (default; an
             optional column subset via --cols), or a category x category pivot
             with --x/--y/--z.
+contour     2D density contour of two numeric columns (--x and --y), binned
+            into a grid (--bins controls the grid resolution).
 candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/--close.
 ohlc        Financial OHLC bars (same inputs as candlestick).
 sankey      Flow diagram.     --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
 map         Geographic point map (or --density heatmap) on tile basemaps.
             Pick the coordinate columns with the lat/lon options below.
+geo         Geographic point map on a projection basemap (coastlines/land/
+            countries; no tiles, no token). Uses the same lat/lon options
+            as `map`, plus --projection. Good for global/country-scale data.
 ```
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
@@ -164,6 +170,24 @@ qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth -o map
 qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o heat.html
 ```
 
+> 3D scatter of three numeric columns, colored by a fourth
+
+```console
+qsv viz scatter3d data.csv --x length --y width --z height --color weight -o scatter3d.html
+```
+
+> 2D density contour of two numeric columns with a 40x40 grid
+
+```console
+qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html
+```
+
+> Projection map of earthquakes (token-free), marker color by magnitude
+
+```console
+qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 
@@ -176,15 +200,18 @@ qsv viz smart       [options] <input>
 qsv viz bar         [options] <input>
 qsv viz line        [options] <input>
 qsv viz scatter     [options] <input>
+qsv viz scatter3d   [options] <input>
 qsv viz histogram   [options] <input>
 qsv viz box         [options] <input>
 qsv viz pie         [options] <input>
 qsv viz heatmap     [options] <input>
+qsv viz contour     [options] <input>
 qsv viz candlestick [options] <input>
 qsv viz ohlc        [options] <input>
 qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
 qsv viz map         [options] <input>
+qsv viz geo         [options] <input>
 qsv viz --help
 ```
 
@@ -211,7 +238,7 @@ qsv viz --help
 | &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins for the histogram. (default: auto) |  |
 | &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. |  |
-| &nbsp;`‑‑box‑points`&nbsp; | string | For box plots, which sample points to draw alongside the box. Explicit `viz box` reads the raw values, so plotly renders true Tukey whiskers (1.5*IQR) and the points beyond the fences are the outliers. One of: outliers (only the outliers, the default), all (every point, jittered), suspected (mark suspected outliers), none (no points). | `outliers` |
+| &nbsp;`‑‑box‑points`&nbsp; | string | Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag is OPT-IN: without it, box panels are drawn from the precomputed quartiles (no data re-scan, observed min/max whiskers); passing it makes smart do one extra batched pass to overlay the points. |  |
 
 <a name="map-options"></a>
 
@@ -225,6 +252,14 @@ qsv viz --help
 | &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMapbox) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
 | &nbsp;`‑‑style`&nbsp; | string | Map basemap style. Token-free styles: open-street-map (the default), carto-positron, carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted styles (basic, streets, outdoors, light, dark, satellite, satellite-streets) require --mapbox-token. | `open-street-map` |
 | &nbsp;`‑‑mapbox‑token`&nbsp; | string | Mapbox access token, required only for the mapbox-hosted basemap styles listed above. |  |
+
+<a name="geo-options"></a>
+
+## Geo Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑projection`&nbsp; | string | Map projection for `viz geo`. One of: natural-earth (the default), mercator, orthographic, equirectangular, albers-usa, robinson, winkel-tripel, mollweide, hammer, azimuthal-equal-area. `viz geo` also reuses the lat, lon, text, color, size and series options from `map`. | `natural-earth` |
 
 <a name="smart-options"></a>
 

@@ -72,6 +72,9 @@ FIGURES = [
     ("scatter (bubble)", "Units vs revenue; marker size = shipping cost, color = profit margin %.",
      False, ["scatter", "sales_sample.csv", "--x", "units_sold", "--y", "revenue",
              "--size", "shipping_cost", "--color", "profit_margin_pct"]),
+    ("scatter3d", "Units vs revenue vs shipping cost in 3D; marker color = profit margin %.",
+     False, ["scatter3d", "sales_sample.csv", "--x", "units_sold", "--y", "revenue",
+             "--z", "shipping_cost", "--color", "profit_margin_pct"]),
     ("histogram", "Distribution of unit price.",
      False, ["histogram", "sales_sample.csv", "--x", "unit_price"]),
     ("box", "Spread of revenue (Tukey whiskers; points beyond the fences shown as outliers).",
@@ -86,6 +89,9 @@ FIGURES = [
      "The most strongly correlated numeric pair (discount_pct vs profit_margin_pct, r=-0.99). "
      "viz smart auto-adds this as a drill-down beside the correlation heatmap.",
      False, ["scatter", "sales_sample.csv", "--x", "discount_pct", "--y", "profit_margin_pct"]),
+    ("contour", "2D density of units sold vs revenue (binned into a 20x20 grid). viz smart uses "
+     "this instead of the pair scatter for large datasets, where a scatter would overplot.",
+     False, ["contour", "sales_sample.csv", "--x", "units_sold", "--y", "revenue", "--bins", "20"]),
     ("heatmap (pivot)", "Region x category grid of revenue.",
      False, ["heatmap", "sales_sample.csv", "--x", "region", "--y", "product_category", "--z", "revenue"]),
     ("candlestick", "OHLC price action.",
@@ -103,6 +109,10 @@ FIGURES = [
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
     ("map (density)", "DensityMapbox heatmap of the same points on a light Carto basemap.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--density", "--style", "carto-positron"]),
+    ("geo", "Same earthquakes on an offline natural-earth projection (no tiles, no token); marker "
+     "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",
+     False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude",
+             "--projection", "natural-earth"]),
     ("smart dashboard (time-series)",
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads, alongside box-plot summaries of the OHLC columns.",

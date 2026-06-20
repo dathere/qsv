@@ -8,6 +8,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - `viz`: new chart subcommands `pie`, `heatmap` (correlation matrix or category×category pivot), `candlestick`/`ohlc`, `sankey`, and `radar` (polar). `viz smart` now adds a correlation-heatmap panel when the dataset has 2+ numeric columns ([#302](https://github.com/dathere/qsv/issues/302)).
+- `viz`: new chart subcommands `geo` (token-free projection point map via ScatterGeo, with `--projection`), `contour` (2D density of two numeric columns, binned via `--bins`), and `scatter3d` (3D scatter over `--x`/`--y`/`--z`). `geo` and `scatter3d` honor the `--color`/`--size` marker encodings and `--series` ([#302](https://github.com/dathere/qsv/issues/302)).
+- `viz smart` now auto-wires the new chart types: a **3D scatter** of the strongest-correlation triple when there are 3+ numeric columns; a **2D density contour** instead of the correlated-pair scatter for large datasets (where a scatter overplots); and an offline **ScatterGeo projection** world-overview instead of mapbox tiles when the coordinates span a continental/global extent ([#302](https://github.com/dathere/qsv/issues/302)).
+- `viz smart` box plots now overlay sample points via a size-based heuristic — all points for small data, Tukey outliers for medium, none for large (a fast cache-only quartile box) — overridable with `--box-points` (now accepted by `smart`, not just `box`) ([#302](https://github.com/dathere/qsv/issues/302)).
 
 ### Changed
 - `viz smart`: HTML dashboards now auto-fit the data. `--max-charts` defaults to `0` (auto), drawing every eligible column for HTML output (up to 64) and 8 for static image export. Up to 8 panels render as a single subplot grid (plotly's typed subplot-axis limit); HTML beyond 8 switches to an inline-div grid of independent plots. Set a positive `--max-charts N` to cap the count ([#302](https://github.com/dathere/qsv/issues/302)).

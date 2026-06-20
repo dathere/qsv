@@ -1158,3 +1158,97 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(html.contains(r#""type":"scattermapbox""#));
     assert!(html.contains("open-street-map"));
 }
+
+/// Tamper with a frequency JSONL cache by replacing the first occurrence of
+/// `old_count` with `new_count`. Used to prove `viz smart` reads the cache.
+fn tamper_freq_cache(path: &std::path::Path, old_count: u64, new_count: u64) {
+    let contents = std::fs::read_to_string(path).expect("read cache");
+    let mut lines: Vec<String> = contents.lines().map(String::from).collect();
+    let mut found = false;
+    // lines[0] is metadata; lines[1..] are per-column entries
+    'outer: for line in lines.iter_mut().skip(1) {
+        let mut entry: serde_json::Value = serde_json::from_str(line).expect("parse entry");
+        for freq in entry["frequencies"]
+            .as_array_mut()
+            .expect("frequencies array")
+        {
+            if freq["count"].as_u64() == Some(old_count) {
+                freq["count"] = serde_json::Value::from(new_count);
+                found = true;
+                *line = serde_json::to_string(&entry).expect("re-encode entry");
+                break 'outer;
+            }
+        }
+    }
+    assert!(found, "count {old_count} not found in cache to tamper");
+    std::fs::write(path, lines.join("\n")).expect("write tampered cache");
+}
+
+// `viz smart` builds its frequency bars from the data; here we prove it reuses a
+// pre-existing `frequency` JSONL cache instead of re-scanning. A tampered count
+// (987654 — distinctive enough not to collide with the embedded plotly.min.js)
+// must surface in the rendered bar, which can only happen on a cache read.
+#[test]
+fn viz_smart_uses_frequency_cache() {
+    let wrk = Workdir::new("viz_smart_uses_frequency_cache");
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\n",
+    );
+
+    // create the frequency cache (color: red=2, blue=1, green=1)
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    assert!(cache_path.exists(), "frequency cache should exist");
+
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        html.contains("987654"),
+        "tampered cache count should appear in the bar (proving cache read)"
+    );
+}
+
+// A cache older than the source CSV is stale: `viz smart` must ignore it and
+// recompute, so a tampered (stale) count must NOT surface.
+#[test]
+fn viz_smart_stale_frequency_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_stale_frequency_cache_fallback");
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\n",
+    );
+
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv").arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    // rewrite the source so it is newer than the cache => cache is stale
+    wrk.create_from_string(
+        "people.csv",
+        "name,color\nAlice,red\nBob,blue\nAlice,red\nCarol,green\nDave,red\n",
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "stale cache must be ignored; recomputed bars should not show the tampered count"
+    );
+}

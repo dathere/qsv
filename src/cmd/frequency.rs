@@ -450,6 +450,100 @@ struct FrequencyCacheMetadata {
     canonical_input_path:     String,
 }
 
+/// A neutral, read-only view of a frequency cache for consumers outside the
+/// `frequency` command (currently `viz smart`) that want each column's top
+/// value/count pairs without re-scanning the data.
+pub(crate) struct FreqCacheView {
+    /// Map of column field name -> (value, count) pairs, in the cache's stored
+    /// order (count descending). For `--no-headers` caches the keys are 1-based
+    /// positional strings ("1", "2", ...). The null/empty bucket and
+    /// `<HIGH_CARDINALITY>`/`<ALL_UNIQUE>` sentinel columns are omitted, so a
+    /// missing key signals "recompute this column".
+    pub columns: std::collections::HashMap<String, Vec<(String, u64)>>,
+}
+
+/// Read and validate a frequency JSONL cache for `path`, independent of any
+/// `frequency::Args`, for read-only reuse by other commands. Returns `None`
+/// when the cache is absent, stale (older than the source), or was generated
+/// with options incompatible with `(no_nulls, no_headers, delimiter)`.
+///
+/// Unlike `Args::read_frequency_cache`, this does NO `--select`/selection
+/// validation — it returns the full set of cached columns and the caller looks
+/// up the ones it needs by name.
+pub(crate) fn read_frequency_cache_view(
+    path: &std::path::Path,
+    no_nulls: bool,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> Option<FreqCacheView> {
+    use filetime::FileTime;
+
+    let cache_path = Args::cache_path_for(path);
+    if !cache_path.exists() {
+        return None;
+    }
+
+    // Cache must be newer than the source CSV, else it's stale.
+    let csv_metadata = fs::metadata(path).ok()?;
+    let cache_fs_metadata = fs::metadata(&cache_path).ok()?;
+    if FileTime::from_last_modification_time(&cache_fs_metadata)
+        <= FileTime::from_last_modification_time(&csv_metadata)
+    {
+        log::info!("Frequency cache is stale; recomputing bar frequencies.");
+        return None;
+    }
+
+    // JSONL: line 1 = metadata, remaining lines = per-column entries.
+    let jsonl_content = fs::read_to_string(&cache_path).ok()?;
+    let mut lines = jsonl_content.lines();
+    let metadata: FrequencyCacheMetadata = serde_json::from_str(lines.next()?).ok()?;
+
+    // Option compatibility — these affect what's stored / how columns are named
+    // / how values were split, so a mismatch means the cache can't be reused.
+    let current_delimiter =
+        delimiter.map_or_else(|| ",".to_string(), |d| (d.as_byte() as char).to_string());
+    if metadata.flag_no_nulls != no_nulls
+        || metadata.flag_no_headers != no_headers
+        || metadata.flag_delimiter != current_delimiter
+    {
+        log::info!("Frequency cache incompatible with current options; recomputing.");
+        return None;
+    }
+
+    let mut columns: std::collections::HashMap<String, Vec<(String, u64)>> =
+        std::collections::HashMap::new();
+    for line in lines {
+        if line.is_empty() {
+            continue;
+        }
+        let entry: FrequencyCacheEntry = serde_json::from_str(line).ok()?;
+        // Skip sentinel columns (no usable per-value data) — leaving them out of
+        // the map makes the caller fall back to recomputation for that column.
+        if entry.frequencies.len() == 1
+            && matches!(
+                entry.frequencies[0].value.as_str(),
+                "<HIGH_CARDINALITY>" | "<ALL_UNIQUE>"
+            )
+        {
+            continue;
+        }
+        // Drop the null/empty bucket to match `viz`'s count_values, which skips
+        // empty cells.
+        let pairs: Vec<(String, u64)> = entry
+            .frequencies
+            .into_iter()
+            .filter(|f| !f.value.is_empty())
+            .map(|f| (f.value, f.count))
+            .collect();
+        columns.insert(entry.field, pairs);
+    }
+    if columns.is_empty() {
+        return None;
+    }
+
+    Some(FreqCacheView { columns })
+}
+
 // FrequencyEntry, FrequencyField and FrequencyOutput are
 // structs for JSON output
 #[derive(Serialize)]

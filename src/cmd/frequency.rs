@@ -473,10 +473,12 @@ pub(crate) struct FreqCacheView {
 /// whole-file, name-keyed reader:
 /// - In `--no-headers` mode, cache columns are keyed positionally within the selection that built
 ///   them, so a cache made with a non-identity `--select` (or with a legacy empty signature) would
-///   alias the wrong columns. The cache's selection signature is validated against the full input
-///   in original order.
-/// - Duplicate column names (in headed mode) would silently shadow each other in the returned map,
-///   so such caches are refused.
+///   alias the wrong columns. The cache is only trusted when its column count equals the full
+///   input's AND the recorded selection signature matches the full input in original order AND that
+///   signature is unambiguous (all first-row values distinct, since the signature is built from
+///   first-row bytes and equal values could mask a reordering).
+/// - Duplicate column names (across ALL entries, including sentinels) would make a name-keyed
+///   lookup return the wrong column's data, so such caches are refused.
 pub(crate) fn read_frequency_cache_view(
     path: &std::path::Path,
     no_nulls: bool,
@@ -520,10 +522,15 @@ pub(crate) fn read_frequency_cache_view(
     // In `--no-headers` mode the cache keys columns positionally within the
     // selection that produced it ("1", "2", ...). A caller reading the whole
     // file in original order would mis-map those keys if the cache was built
-    // with a reordered/subset `--select`. Validate the recorded selection
-    // signature against the full input header record (original order); a legacy
-    // empty signature is treated as a mismatch and rejected. (Headed caches are
-    // keyed by name, so they self-protect and need no signature check.)
+    // with a reordered/subset `--select`. The only identifier the cache records
+    // for the selection is `selection_signature` — the first-row bytes joined in
+    // selection order. That can PROVE original order only when (a) the cache
+    // covers exactly all columns, (b) the signature matches the full input in
+    // original order, and (c) the first-row values are all distinct (equal
+    // values could let a reordered selection produce an identical signature).
+    // Reject conservatively when any of these can't be established. (Headed
+    // caches are keyed by name, so they self-protect and need no signature
+    // check.)
     if no_headers {
         let path_str = path.to_string_lossy().into_owned();
         let rconfig = Config::new(Some(&path_str))
@@ -531,11 +538,19 @@ pub(crate) fn read_frequency_cache_view(
             .no_headers_flag(true);
         let mut rdr = rconfig.reader().ok()?;
         let full_headers = rdr.byte_headers().ok()?.clone();
+
+        let mut seen_vals: HashSet<Vec<u8>> = HashSet::new();
+        let all_distinct = full_headers.iter().all(|f| seen_vals.insert(f.to_vec()));
         let expected_sig = Args::selection_signature(&full_headers);
-        if metadata.selection_signature.is_empty() || metadata.selection_signature != expected_sig {
+
+        if !all_distinct
+            || metadata.column_count != full_headers.len()
+            || metadata.selection_signature.is_empty()
+            || metadata.selection_signature != expected_sig
+        {
             log::info!(
-                "Frequency cache selection differs from the full input (--no-headers); \
-                 recomputing."
+                "Frequency cache selection can't be proven to match the full input \
+                 (--no-headers); recomputing."
             );
             return None;
         }
@@ -543,11 +558,21 @@ pub(crate) fn read_frequency_cache_view(
 
     let mut columns: std::collections::HashMap<String, Vec<(String, u64)>> =
         std::collections::HashMap::new();
+    // Track every column name seen (sentinels included). A duplicate name makes a
+    // name-keyed lookup ambiguous regardless of whether one duplicate is a
+    // sentinel, so detect it before the sentinel skip below and refuse the cache.
+    let mut seen_fields: HashSet<String> = HashSet::new();
     for line in lines {
         if line.is_empty() {
             continue;
         }
         let entry: FrequencyCacheEntry = serde_json::from_str(line).ok()?;
+        if !seen_fields.insert(entry.field.clone()) {
+            log::info!(
+                "Frequency cache has duplicate column names; recomputing to avoid ambiguity."
+            );
+            return None;
+        }
         // Skip sentinel columns (no usable per-value data) — leaving them out of
         // the map makes the caller fall back to recomputation for that column.
         if entry.frequencies.len() == 1
@@ -566,15 +591,7 @@ pub(crate) fn read_frequency_cache_view(
             .filter(|f| !f.value.is_empty())
             .map(|f| (f.value, f.count))
             .collect();
-        // Duplicate column names would silently shadow each other (last-wins),
-        // so a name-keyed caller could render the wrong column's distribution.
-        // Refuse such caches and let the caller recompute.
-        if columns.insert(entry.field, pairs).is_some() {
-            log::info!(
-                "Frequency cache has duplicate column names; recomputing to avoid ambiguity."
-            );
-            return None;
-        }
+        columns.insert(entry.field, pairs);
     }
     if columns.is_empty() {
         return None;

@@ -1344,3 +1344,76 @@ fn viz_smart_no_headers_reordered_select_cache_rejected() {
         "reordered-select no-headers cache must be rejected to avoid mis-mapping columns"
     );
 }
+
+// The no-headers selection signature is built from first-row bytes, so when two
+// columns share the same first-row value a reordered `--select` can produce an
+// identical signature. `viz smart --no-headers` must therefore reject a
+// no-headers cache whose first row has repeated values (the order can't be
+// proven) — the tampered count must NOT surface.
+#[test]
+fn viz_smart_no_headers_colliding_firstrow_cache_rejected() {
+    let wrk = Workdir::new("viz_smart_no_headers_colliding_firstrow_cache_rejected");
+    // first row is "red,red" — equal values in both columns
+    wrk.create_from_string("people.csv", "red,red\nblue,red\nred,blue\ngreen,red\n");
+
+    // reordered selection whose signature collides with the full-order signature
+    let mut fc = wrk.command("frequency");
+    fc.arg("people.csv")
+        .arg("--no-headers")
+        .args(["--select", "2,1"])
+        .arg("--frequency-jsonl");
+    wrk.assert_success(&mut fc);
+    let cache_path = wrk.path("people.freq.csv.data.jsonl");
+    tamper_freq_cache(&cache_path, 2, 987_654);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--no-headers", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "ambiguous (colliding-first-row) no-headers cache must be rejected"
+    );
+}
+
+// Duplicate column names must be detected even when one duplicate is a sentinel
+// that the build loop skips. `qsv frequency` can't emit this mix for duplicate
+// names (it classifies same-named columns identically), so the only way to reach
+// it is a hand-edited/corrupt cache — which the view must still reject. Here a
+// crafted cache pairs an <ALL_UNIQUE> "id" (skipped) with a data "id" carrying a
+// distinctive count; `viz smart` must ignore the cache and recompute, so that
+// count must NOT surface.
+#[test]
+fn viz_smart_duplicate_headers_with_sentinel_cache_fallback() {
+    let wrk = Workdir::new("viz_smart_duplicate_headers_with_sentinel_cache_fallback");
+    // col1 "id" all-unique; col2 "id" low-cardinality (the charted bar)
+    wrk.create_from_string("people.csv", "id,id\na,red\nb,red\nc,blue\nd,red\n");
+
+    // hand-craft a cache: sentinel "id" then a data "id" with a planted count.
+    // (Written after the CSV so it is newer / not stale.)
+    // headed cache: selection_signature is not validated, so a placeholder is fine
+    let cache = concat!(
+        r#"{"arg_input":"people.csv","flag_high_card_threshold":100,"flag_high_card_pct":90,"flag_no_nulls":false,"flag_no_headers":false,"flag_delimiter":",","record_count":4,"column_count":2,"date_generated":"2026-06-20T00:00:00+00:00","qsv_version":"21.1.0","selection_signature":"","canonical_input_path":""}"#,
+        "\n",
+        r#"{"field":"id","cardinality":4,"frequencies":[{"value":"<ALL_UNIQUE>","count":4,"percentage":100.0}]}"#,
+        "\n",
+        r#"{"field":"id","cardinality":2,"frequencies":[{"value":"red","count":987654,"percentage":75.0},{"value":"blue","count":1,"percentage":25.0}]}"#,
+        "\n",
+    );
+    std::fs::write(wrk.path("people.freq.csv.data.jsonl"), cache).unwrap();
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        !html.contains("987654"),
+        "duplicate name with a sentinel duplicate must still be detected and rejected"
+    );
+}

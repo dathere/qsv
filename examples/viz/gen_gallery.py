@@ -53,7 +53,8 @@ FIGURES = [
      "skew direction and outlier share.",
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("smart dashboard (--smarter, geospatial)",
-     "One `qsv viz smart seismic_events.csv --smarter` command, 9 auto-chosen panels — nearly every "
+     "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3` command, "
+     "9 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
@@ -62,7 +63,7 @@ FIGURES = [
      "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
      "magnitude-over-time trend spikes during a September aftershock sequence. Coordinate columns "
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
-     "<code>plotly_dark</code> theme (<code>--theme plotly_dark</code>).",
+     "<code>plotly_dark</code> theme.",
      True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),

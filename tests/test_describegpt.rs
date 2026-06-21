@@ -2912,6 +2912,164 @@ fn describegpt_semanticmd_dictionary() {
     );
 }
 
+// --format okf CLI validation: rejects when neither --dictionary nor --all is set.
+// Non-LLM test (validation runs before any LLM call).
+#[test]
+fn describegpt_okf_requires_dictionary() {
+    let wrk = Workdir::new("describegpt_okf_requires_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--format", "okf"])
+        .arg("--description")
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        !got.status.success(),
+        "Expected --format okf without --dictionary to fail"
+    );
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        stderr.contains("--format okf requires --dictionary"),
+        "stderr did not mention the dictionary requirement: {stderr}"
+    );
+}
+
+// --format okf is incompatible with --prompt. Non-LLM test.
+#[test]
+fn describegpt_okf_prompt_incompatible() {
+    let wrk = Workdir::new("describegpt_okf_prompt_incompatible");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+        ],
+    );
+
+    // --dictionary satisfies the dictionary-required check so the prompt-incompatibility
+    // check is the one that fires.
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .args(["--format", "okf"])
+        .arg("--dictionary")
+        .args(["--prompt", "What is this?"])
+        .arg("--no-cache");
+
+    let got = wrk.output(&mut cmd);
+    assert!(
+        !got.status.success(),
+        "Expected --format okf with --prompt to fail"
+    );
+    let stderr = String::from_utf8_lossy(&got.stderr);
+    assert!(
+        stderr.contains("--format okf is not compatible with --prompt"),
+        "stderr did not mention the prompt incompatibility: {stderr}"
+    );
+}
+
+// --format okf with --dictionary emits an Open Knowledge Format document.
+#[test]
+#[serial]
+fn describegpt_okf_dictionary() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_okf_dictionary");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "okf"])
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+
+    // OKF frontmatter: required `type` (default), plus resolved placeholders
+    // (no --description/--tags here => description blank, no tags block).
+    assert!(
+        got.starts_with("---\ntype: \"CSV Table\"\n"),
+        "missing/incorrect frontmatter:\n{got}"
+    );
+    assert!(
+        got.contains("title:"),
+        "missing title frontmatter key:\n{got}"
+    );
+    assert!(
+        !got.contains("{DATASET_DESCRIPTION}") && !got.contains("{DATASET_DESCRIPTION_FM}"),
+        "unsubstituted description placeholder:\n{got}"
+    );
+    assert!(
+        !got.contains("{OKF_TAGS}"),
+        "unsubstituted tags placeholder:\n{got}"
+    );
+    assert!(got.contains("# Schema"), "missing # Schema section:\n{got}");
+    assert!(
+        got.contains("| Column | Type | Content Type | Description | Enumeration |"),
+        "missing schema table:\n{got}"
+    );
+    // Lean OKF: no semantic-md profile line nor Role/Concept/Join schema columns.
+    assert!(
+        !got.contains("semantic-md:") && !got.contains("Join?"),
+        "OKF output leaked semantic-md structure:\n{got}"
+    );
+}
+
+// --format okf honors --okf-type for the required `type` frontmatter key.
+#[test]
+#[serial]
+fn describegpt_okf_custom_type() {
+    if !is_local_llm_available() {
+        return;
+    }
+    let wrk = Workdir::new("describegpt_okf_custom_type");
+    wrk.create_indexed(
+        "in.csv",
+        vec![
+            svec!["letter", "number"],
+            svec!["alpha", "13"],
+            svec!["beta", "24"],
+            svec!["gamma", "37"],
+        ],
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    set_describegpt_testing_envvars(&mut cmd);
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .args(["--format", "okf"])
+        .args(["--okf-type", "BigQuery Table"])
+        .arg("--no-cache");
+
+    let got = wrk.stdout::<String>(&mut cmd);
+    assert!(
+        got.starts_with("---\ntype: \"BigQuery Table\"\n"),
+        "--okf-type did not set the type frontmatter key:\n{got}"
+    );
+}
+
 // --format jsonschema with --dictionary emits a valid draft 2020-12 schema.
 #[test]
 #[serial]

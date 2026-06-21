@@ -237,6 +237,12 @@ smart options:
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
     --y-title <s>          Y-axis title. (defaults to the y column name)
+    --theme <name>         Plotly theme that drives the chart's overall look
+                           (background, fonts, axis styling). One of: default,
+                           plotly_white, plotly_dark, seaborn, seaborn_whitegrid,
+                           seaborn_dark, matplotlib, plotnine (case-insensitive;
+                           hyphens accepted). When omitted, qsv's built-in look
+                           is used. Applies to all chart types, including `smart`.
     --width <n>            Image width in pixels for static export. Default 1000;
                            for `smart`, auto-scaled to the grid's column count.
     --height <n>           Image height in pixels for static export. Default 600;
@@ -271,7 +277,7 @@ use plotly::{
     },
     layout::{
         Annotation, Axis, AxisType, Center, Layout, LayoutGeo, LayoutScene, Mapbox, MapboxStyle,
-        Margin, Projection, ProjectionType,
+        Margin, Projection, ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
 };
@@ -424,6 +430,12 @@ const CORR_LABEL_MAX_CHARS: usize = 16;
 const CORR_LABEL_PX_PER_CHAR: usize = 7;
 const CORR_INCELL_MAX_N: usize = 8;
 
+/// `viz smart` frequency-bar panel tuning. Very long category names (e.g. full agency names or
+/// datetime strings) rotate into tall x-axis tick labels that squeeze the plot area, clipping
+/// the outside value labels at the top of the cell. Displayed tick labels are truncated to this
+/// many characters (the full value is preserved on hover) to keep the plot area tall enough.
+const BAR_LABEL_MAX_CHARS: usize = 20;
+
 #[derive(Deserialize)]
 struct Args {
     cmd_smart:         bool,
@@ -481,6 +493,7 @@ struct Args {
     flag_title:        Option<String>,
     flag_x_title:      Option<String>,
     flag_y_title:      Option<String>,
+    flag_theme:        Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
     // and height are optional: when unset, `viz smart` derives them from its grid shape and
     // other charts fall back to the defaults below.
@@ -530,6 +543,14 @@ impl OutFormat {
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    if let Some(name) = &args.flag_theme
+        && parse_theme(name).is_none()
+    {
+        return fail_incorrectusage_clierror!(
+            "Unknown --theme '{name}'. Valid themes: {VALID_THEMES}."
+        );
+    }
 
     // --mapbox-token falls back to the QSV_MAPBOX_TOKEN env var when not passed explicitly.
     if args.flag_mapbox_token.is_none()
@@ -1485,7 +1506,7 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
-    plot.set_layout(layout);
+    plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
 }
 
@@ -1684,7 +1705,7 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
-    plot.set_layout(layout);
+    plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
 }
 
@@ -1831,7 +1852,7 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
-    plot.set_layout(layout);
+    plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
 }
 
@@ -2491,6 +2512,63 @@ fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
     Ok(traces)
 }
 
+/// Map a `--theme` name to a plotly built-in theme. Case-insensitive; hyphens are
+/// accepted as separators. Returns `None` for an unrecognized name so callers can
+/// surface a usage error.
+fn parse_theme(name: &str) -> Option<BuiltinTheme> {
+    match name.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "default" => Some(BuiltinTheme::Default),
+        "plotly_white" | "white" => Some(BuiltinTheme::PlotlyWhite),
+        "plotly_dark" | "dark" => Some(BuiltinTheme::PlotlyDark),
+        "seaborn" => Some(BuiltinTheme::Seaborn),
+        "seaborn_whitegrid" => Some(BuiltinTheme::SeabornWhitegrid),
+        "seaborn_dark" => Some(BuiltinTheme::SeabornDark),
+        "matplotlib" => Some(BuiltinTheme::Matplotlib),
+        "plotnine" => Some(BuiltinTheme::Plotnine),
+        _ => None,
+    }
+}
+
+/// The comma-separated list of accepted `--theme` names, for usage errors.
+const VALID_THEMES: &str = "default, plotly_white, plotly_dark, seaborn, seaborn_whitegrid, \
+                            seaborn_dark, matplotlib, plotnine";
+
+impl Args {
+    /// The resolved plotly theme for this invocation. `flag_theme` is validated in
+    /// `run()`, so an unrecognized name never reaches here (returns `None`).
+    fn theme(&self) -> Option<BuiltinTheme> {
+        self.flag_theme.as_deref().and_then(parse_theme)
+    }
+}
+
+/// Apply the chosen built-in theme to a layout as a plotly template. When no theme
+/// is set the layout is returned unchanged (qsv's built-in look). Explicit color
+/// overrides at the call sites are gated on `theme.is_none()` so the template can
+/// drive backgrounds, fonts and axis chrome.
+fn apply_theme(layout: Layout, theme: Option<BuiltinTheme>) -> Layout {
+    match theme {
+        Some(t) => layout.template(t.build()),
+        None => layout,
+    }
+}
+
+/// The `(page background, text color)` to use for the inline `viz smart` HTML page chrome
+/// (the `<body>` around the panel grid), matching each built-in theme's paper/font colors so
+/// a dark theme gets a dark page rather than dark plots floating on white. Mirrors the values
+/// in plotly's `layout::themes` templates. `None` keeps qsv's built-in look.
+fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str) {
+    match theme {
+        None => (PAPER_BG, INK),
+        Some(BuiltinTheme::Default | BuiltinTheme::PlotlyWhite) => ("#FFFFFF", "#2a3f5f"),
+        Some(BuiltinTheme::PlotlyDark) => ("#111111", "#f2f5fa"),
+        Some(BuiltinTheme::Seaborn) => ("#EAEAF2", "#333333"),
+        Some(BuiltinTheme::SeabornWhitegrid) => ("#FFFFFF", "#333333"),
+        Some(BuiltinTheme::SeabornDark) => ("#222222", "#eaeaf2"),
+        Some(BuiltinTheme::Matplotlib) => ("#FFFFFF", "black"),
+        Some(BuiltinTheme::Plotnine) => ("#EBEBEB", "#525252"),
+    }
+}
+
 fn build_layout(
     args: &Args,
     default_x: Option<String>,
@@ -2507,7 +2585,7 @@ fn build_layout(
     if let Some(t) = args.flag_y_title.clone().or(default_y) {
         layout = layout.y_axis(Axis::new().title(Title::with_text(t)));
     }
-    layout
+    apply_theme(layout, args.theme())
 }
 
 fn output_plot(
@@ -3588,8 +3666,19 @@ fn panel_trace(
     freq: &HashMap<usize, Vec<(String, u64)>>,
     hist: &HashMap<usize, Vec<f64>>,
     axes: Option<(String, String)>,
+    theme: Option<BuiltinTheme>,
 ) -> (Box<dyn Trace>, Option<f64>) {
     let mut bar_max: Option<f64> = None;
+    // bar value-label font: in the unthemed look use qsv's ink color; when themed, omit the
+    // color so the label inherits the template's font color (legible on dark backgrounds).
+    let label_font = {
+        let f = Font::new().size(9);
+        if theme.is_some() {
+            f
+        } else {
+            f.family(FONT_FAMILY).color(INK)
+        }
+    };
     let trace: Box<dyn Trace> = match &panel.kind {
         PanelKind::BoxStats {
             q1,
@@ -3635,17 +3724,25 @@ fn panel_trace(
         },
         PanelKind::FreqBar { idx } => {
             let counts = freq.get(idx).cloned().unwrap_or_default();
-            let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
+            // truncate the displayed tick labels so very long category names don't rotate into
+            // tall labels that squeeze the plot area (clipping the top value labels); the full
+            // value is kept as hover text.
+            let xs: Vec<String> = counts
+                .iter()
+                .map(|(v, _)| truncate_label(v, BAR_LABEL_MAX_CHARS))
+                .collect();
+            let full_xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
             let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
             bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
             let mut bar = Bar::new(xs, ys)
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
+                .hover_text_array(full_xs)
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
                 .text_position(TextPosition::Outside)
-                .text_font(Font::new().family(FONT_FAMILY).color(INK).size(9));
+                .text_font(label_font);
             if let Some((x, y)) = &axes {
                 bar = bar.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -3754,6 +3851,21 @@ fn render_smart_grid(
             (longest * CORR_LABEL_PX_PER_CHAR + 24).max(DEFAULT_LEFT_MARGIN_PX)
         });
 
+    // when a theme is set, let its plotly template drive backgrounds/fonts/axis chrome;
+    // otherwise apply qsv's built-in look. `themed` gates the explicit overrides below.
+    let theme = args.theme();
+    let themed = theme.is_some();
+    // a dashboard text font: only set family/ink color in the unthemed look, so themed
+    // text inherits the template's font (legible on dark backgrounds).
+    let ann_font = |size: usize| {
+        let f = Font::new().size(size);
+        if themed {
+            f
+        } else {
+            f.family(FONT_FAMILY).color(INK)
+        }
+    };
+
     let mut plot = Plot::new();
     let mut layout = Layout::new()
         .show_legend(false)
@@ -3765,10 +3877,13 @@ fn render_smart_grid(
                 .left(left_margin)
                 .right(40)
                 .pad(4),
-        )
-        .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-        .paper_background_color(PAPER_BG)
-        .plot_background_color(PAPER_BG);
+        );
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .plot_background_color(PAPER_BG);
+    }
 
     // annotations: the dashboard title (in the reserved top strip) plus one title per panel
     let mut annotations: Vec<Annotation> = Vec::with_capacity(panels.len() + 1);
@@ -3782,7 +3897,7 @@ fn render_smart_grid(
             .x_anchor(Anchor::Center)
             .y_anchor(Anchor::Bottom)
             .show_arrow(false)
-            .font(Font::new().family(FONT_FAMILY).color(INK).size(20)),
+            .font(ann_font(20)),
     );
 
     for (n, panel) in panels.iter().enumerate() {
@@ -3795,8 +3910,14 @@ fn render_smart_grid(
             PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. }
         );
         let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-        let (trace, bar_max) =
-            panel_trace(panel, color, freq, hist, Some((xref.clone(), yref.clone())));
+        let (trace, bar_max) = panel_trace(
+            panel,
+            color,
+            freq,
+            hist,
+            Some((xref.clone(), yref.clone())),
+            theme,
+        );
         plot.add_trace(trace);
 
         // position this subplot's styled axes and add its title above the cell
@@ -3804,8 +3925,8 @@ fn render_smart_grid(
         layout = place_subplot_axes(
             layout,
             pos,
-            styled_x_axis(is_box, is_date),
-            styled_y_axis(bar_max),
+            styled_x_axis(is_box, is_date, theme),
+            styled_y_axis(bar_max, theme),
             geom.x_domain,
             geom.y_domain,
             &xref,
@@ -3821,7 +3942,7 @@ fn render_smart_grid(
                 .x_anchor(Anchor::Center)
                 .y_anchor(Anchor::Bottom)
                 .show_arrow(false)
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(13)),
+                .font(ann_font(13)),
         );
 
         // in-cell `r` value labels for the correlation panel, drawn only when the matrix is
@@ -3838,7 +3959,7 @@ fn render_smart_grid(
     }
     layout = layout.annotations(annotations);
 
-    plot.set_layout(layout);
+    plot.set_layout(apply_theme(layout, theme));
     Ok(SmartRender::Grid {
         plot: Box::new(plot),
         dims: (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX),
@@ -3879,7 +4000,10 @@ fn smart_inline_panel_plot(
     color: &'static str,
     freq: &HashMap<usize, Vec<(String, u64)>>,
     hist: &HashMap<usize, Vec<f64>>,
+    theme: Option<BuiltinTheme>,
 ) -> Plot {
+    // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
+    let themed = theme.is_some();
     // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
     // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
     if let PanelKind::Map {
@@ -3904,20 +4028,23 @@ fn smart_inline_panel_plot(
                     .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
             );
         }
-        let layout = Layout::new()
+        let mut layout = Layout::new()
             .show_legend(false)
             .height(ROW_HEIGHT_PX)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-            .paper_background_color(PAPER_BG)
             .mapbox(
                 Mapbox::new()
                     .style(MapboxStyle::OpenStreetMap)
                     .center(center)
                     .zoom(zoom),
             );
-        plot.set_layout(layout);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
     }
@@ -3940,15 +4067,18 @@ fn smart_inline_panel_plot(
             .showlakes(true)
             .lakecolor(NamedColor::LightBlue)
             .showcountries(true);
-        let layout = Layout::new()
+        let mut layout = Layout::new()
             .show_legend(false)
             .height(ROW_HEIGHT_PX)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-            .paper_background_color(PAPER_BG)
             .geo(geo);
-        plot.set_layout(layout);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
     }
@@ -3967,15 +4097,18 @@ fn smart_inline_panel_plot(
             .x_axis(Axis::new().title(Title::with_text(x_label.clone())))
             .y_axis(Axis::new().title(Title::with_text(y_label.clone())))
             .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
-        let layout = Layout::new()
+        let mut layout = Layout::new()
             .show_legend(false)
             .height(ROW_HEIGHT_PX)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-            .paper_background_color(PAPER_BG)
             .scene(scene);
-        plot.set_layout(layout);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
     }
@@ -3986,7 +4119,7 @@ fn smart_inline_panel_plot(
     );
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-    let (trace, bar_max) = panel_trace(panel, color, freq, hist, None);
+    let (trace, bar_max) = panel_trace(panel, color, freq, hist, None, theme);
 
     let mut plot = Plot::new();
     plot.add_trace(trace);
@@ -4005,11 +4138,14 @@ fn smart_inline_panel_plot(
                 .right(right)
                 .pad(4),
         )
-        .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-        .paper_background_color(PAPER_BG)
-        .plot_background_color(PAPER_BG)
-        .x_axis(styled_x_axis(is_box, is_date))
-        .y_axis(styled_y_axis(bar_max));
+        .x_axis(styled_x_axis(is_box, is_date, theme))
+        .y_axis(styled_y_axis(bar_max, theme));
+    if !themed {
+        layout = layout
+            .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+            .paper_background_color(PAPER_BG)
+            .plot_background_color(PAPER_BG);
+    }
 
     if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
         && matrix.len() <= CORR_INCELL_MAX_N
@@ -4017,7 +4153,7 @@ fn smart_inline_panel_plot(
         layout = layout.annotations(corr_incell_annotations(matrix, "x", "y"));
     }
 
-    plot.set_layout(layout);
+    plot.set_layout(apply_theme(layout, theme));
     plot.set_configuration(Configuration::new().responsive(true));
     plot
 }
@@ -4035,11 +4171,13 @@ fn render_smart_inline(
     title_text: &str,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
+    let theme = args.theme();
+    let (page_bg, page_ink) = theme_page_chrome(theme);
 
     let mut cells = String::new();
     for (n, panel) in panels.iter().enumerate() {
         let color = PALETTE[n % PALETTE.len()];
-        let plot = smart_inline_panel_plot(panel, color, freq, hist);
+        let plot = smart_inline_panel_plot(panel, color, freq, hist, theme);
         let div_id = format!("qsv-viz-panel-{n}");
         cells.push_str("    <div class=\"qsv-viz-cell\">\n");
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
@@ -4052,7 +4190,7 @@ fn render_smart_inline(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
          name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
          />\n<title>{title}</title>\n{js}\n<style>\n  body {{ font-family: {FONT_FAMILY}; color: \
-         {INK}; background: {PAPER_BG}; margin: 0; padding: 16px; }}\n  h1.qsv-viz-title {{ \
+         {page_ink}; background: {page_bg}; margin: 0; padding: 16px; }}\n  h1.qsv-viz-title {{ \
          font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
          .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
          gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n</style>\n</head>\n<body>\n<h1 \
@@ -4276,14 +4414,18 @@ fn subplot_geometry(
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
 /// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
 /// the axis is typed as a date axis so plotly spaces ticks chronologically.
-fn styled_x_axis(is_box: bool, is_date: bool) -> Axis {
+fn styled_x_axis(is_box: bool, is_date: bool, theme: Option<BuiltinTheme>) -> Axis {
     let mut a = Axis::new()
         .show_grid(false)
         .zero_line(false)
-        .show_line(true)
-        .line_color(AXIS_LINE)
-        .tick_color(AXIS_LINE)
-        .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+        .show_line(true);
+    // when themed, let the template style the axis lines/ticks/fonts
+    if theme.is_none() {
+        a = a
+            .line_color(AXIS_LINE)
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+    }
     if is_box {
         a = a.show_tick_labels(false).show_line(false);
     }
@@ -4296,15 +4438,19 @@ fn styled_x_axis(is_box: bool, is_date: bool) -> Axis {
 /// A styled y-axis for a dashboard panel: light horizontal gridlines only, small ticks.
 /// When `headroom_max` is given (bar panels), the range is fixed to `0..=max*1.15` so the
 /// tallest bar's outside value label has room and isn't clipped at the cell top.
-fn styled_y_axis(headroom_max: Option<f64>) -> Axis {
+fn styled_y_axis(headroom_max: Option<f64>, theme: Option<BuiltinTheme>) -> Axis {
     let mut a = Axis::new()
         .show_grid(true)
-        .grid_color(GRID_COLOR)
         .grid_width(1)
         .zero_line(false)
-        .show_line(false)
-        .tick_color(AXIS_LINE)
-        .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+        .show_line(false);
+    // when themed, let the template style the gridlines/ticks/fonts
+    if theme.is_none() {
+        a = a
+            .grid_color(GRID_COLOR)
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+    }
     if let Some(m) = headroom_max
         && m > 0.0
     {
@@ -4520,6 +4666,66 @@ mod tests {
 
         // fewer than two columns => no pair
         assert_eq!(strongest_pair(&[vec![1.0]]), None);
+    }
+
+    #[test]
+    fn parse_theme_accepts_names_case_and_hyphens() {
+        // all 8 canonical names resolve
+        assert!(matches!(
+            parse_theme("default"),
+            Some(BuiltinTheme::Default)
+        ));
+        assert!(matches!(
+            parse_theme("plotly_white"),
+            Some(BuiltinTheme::PlotlyWhite)
+        ));
+        assert!(matches!(
+            parse_theme("plotly_dark"),
+            Some(BuiltinTheme::PlotlyDark)
+        ));
+        assert!(matches!(
+            parse_theme("seaborn"),
+            Some(BuiltinTheme::Seaborn)
+        ));
+        assert!(matches!(
+            parse_theme("seaborn_whitegrid"),
+            Some(BuiltinTheme::SeabornWhitegrid)
+        ));
+        assert!(matches!(
+            parse_theme("seaborn_dark"),
+            Some(BuiltinTheme::SeabornDark)
+        ));
+        assert!(matches!(
+            parse_theme("matplotlib"),
+            Some(BuiltinTheme::Matplotlib)
+        ));
+        assert!(matches!(
+            parse_theme("plotnine"),
+            Some(BuiltinTheme::Plotnine)
+        ));
+
+        // case-insensitive, hyphens accepted as separators, surrounding whitespace trimmed
+        assert!(matches!(
+            parse_theme("Plotly-Dark"),
+            Some(BuiltinTheme::PlotlyDark)
+        ));
+        assert!(matches!(
+            parse_theme("  SEABORN_WHITEGRID  "),
+            Some(BuiltinTheme::SeabornWhitegrid)
+        ));
+        // short aliases
+        assert!(matches!(
+            parse_theme("dark"),
+            Some(BuiltinTheme::PlotlyDark)
+        ));
+        assert!(matches!(
+            parse_theme("white"),
+            Some(BuiltinTheme::PlotlyWhite)
+        ));
+
+        // unknown names are rejected
+        assert!(parse_theme("bogus").is_none());
+        assert!(parse_theme("").is_none());
     }
 
     #[test]

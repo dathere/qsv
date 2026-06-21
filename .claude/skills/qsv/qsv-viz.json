@@ -200,6 +200,11 @@
         "description": "Column whose value labels each point on hover."
       },
       {
+        "flag": "--theme",
+        "type": "string",
+        "description": "Plotly theme that drives the chart's overall look (background, fonts, axis styling). One of: default, plotly_white, plotly_dark, seaborn, seaborn_whitegrid, seaborn_dark, matplotlib, plotnine (case-insensitive; hyphens accepted). When omitted, qsv's built-in look is used. Applies to all chart types, including `smart`."
+      },
+      {
         "flag": "--title",
         "type": "string",
         "description": "Chart title."

@@ -280,6 +280,7 @@ qsv viz --help
 | &nbsp;`‑‑title`&nbsp; | string | Chart title. |  |
 | &nbsp;`‑‑x‑title`&nbsp; | string | X-axis title. (defaults to the x column name) |  |
 | &nbsp;`‑‑y‑title`&nbsp; | string | Y-axis title. (defaults to the y column name) |  |
+| &nbsp;`‑‑theme`&nbsp; | string | Plotly theme that drives the chart's overall look (background, fonts, axis styling). One of: default, plotly_white, plotly_dark, seaborn, seaborn_whitegrid, seaborn_dark, matplotlib, plotnine (case-insensitive; hyphens accepted). When omitted, qsv's built-in look is used. Applies to all chart types, including `smart`. |  |
 | &nbsp;`‑‑width`&nbsp; | integer | Image width in pixels for static export. Default 1000; for `smart`, auto-scaled to the grid's column count. |  |
 | &nbsp;`‑‑height`&nbsp; | integer | Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows. |  |
 | &nbsp;`‑‑scale`&nbsp; | float | Image scale factor (static export). | `1.0` |

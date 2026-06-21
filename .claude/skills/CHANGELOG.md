@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- **`qsv-viz` skill regenerated for the new `--theme` flag** ([#302](https://github.com/dathere/qsv/issues/302)). `viz` gains a `--theme <name>` option that applies a Plotly built-in theme (`default`, `plotly_white`, `plotly_dark`, `seaborn`, `seaborn_whitegrid`, `seaborn_dark`, `matplotlib`, `plotnine`; case-insensitive, hyphens accepted) to all chart types including `smart` dashboards. The theme drives backgrounds, fonts and axis chrome; dark themes also drive the inline dashboard's page chrome. Skill count unchanged at 55.
 - **`qsv-describegpt` skill regenerated for the new `--format okf` output** ([#4018](https://github.com/dathere/qsv/issues/4018)). The describegpt skill now advertises **OKF (Open Knowledge Format)** as a `--format` choice alongside SemanticMd — a leaner, vendor-neutral plain-markdown-plus-YAML-frontmatter Data Dictionary document (`type`/`title`/`description`/`resource`/`timestamp`/`tags` frontmatter + a `Column | Type | Description` Schema table). Adds the `--okf-type` flag (sets the required `type` frontmatter key, default `"CSV Table"`); `--ds-source`/`--ds-updated` additionally map to OKF's `resource`/`timestamp`. Skill count unchanged at 55.
 
 ### Added

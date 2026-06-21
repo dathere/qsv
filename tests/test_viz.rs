@@ -2318,6 +2318,37 @@ fn viz_smart_truncates_long_bar_labels() {
 }
 
 #[test]
+fn viz_smart_bar_numeric_categories_use_category_axis() {
+    let wrk = Workdir::new("viz_smart_bar_numeric_categories_use_category_axis");
+    // a low-cardinality column whose category values look NUMERIC ("2", "10", "100"). The
+    // frequency-bar truncation positions ticks at integer indices 0..n, which only line up with
+    // the bars if the axis is category-typed; otherwise plotly would infer a linear axis and the
+    // ticks at 0/1/2 would not match bars at x=2/10/100. Force category mode for bar panels.
+    let mut rows = String::from("rating,note\n");
+    for i in 0..90 {
+        let rating = match i % 3 {
+            0 => "100",
+            1 => "2",
+            _ => "10",
+        };
+        rows.push_str(&format!("{rating},n\n"));
+    }
+    wrk.create_from_string("ratings.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "ratings.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the bar's x data are the numeric-looking category strings ...
+    assert!(html.contains(r#""x":["#));
+    // ... and the axis is forced to category mode so the array ticks align with the bars
+    assert!(html.contains(r#""tickmode":"array""#));
+    assert!(html.contains(r#""type":"category""#));
+}
+
+#[test]
 fn viz_smart_inline_theme_drives_page_chrome() {
     let wrk = Workdir::new("viz_smart_inline_theme_drives_page_chrome");
     // 10 low-cardinality categorical columns -> 10 panels > the typed-subplot limit of 8,

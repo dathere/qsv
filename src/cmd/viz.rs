@@ -4459,12 +4459,15 @@ fn styled_x_axis(
     if is_date {
         a = a.type_(AxisType::Date);
     }
-    // display-only truncated labels: a category axis positions categories at integer indices
-    // 0..n in x-data order, so the tick values are those indices and the text is the truncated
-    // labels (in the same order). The underlying full category values are unchanged.
+    // display-only truncated labels for frequency-bar panels. Force the axis to category mode:
+    // a category axis positions categories at integer indices 0..n in x-data order regardless
+    // of how the category strings look, so our integer `tickvals` line up with the bars. Without
+    // this, numeric ("10", "2") or date-like ("2026-06-21") category values could be inferred as
+    // a linear/date axis, leaving the ticks misaligned. The full x category values are unchanged.
     if let Some(labels) = tick_text {
         let positions: Vec<f64> = (0..labels.len()).map(|i| i as f64).collect();
         a = a
+            .type_(AxisType::Category)
             .tick_mode(TickMode::Array)
             .tick_values(positions)
             .tick_text(labels);

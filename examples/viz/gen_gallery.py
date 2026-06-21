@@ -61,8 +61,9 @@ FIGURES = [
      "subduction arcs on the map; magnitude vs felt_reports is almost perfectly correlated "
      "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
      "magnitude-over-time trend spikes during a September aftershock sequence. Coordinate columns "
-     "are shown on the map only, not re-charted as distributions.",
-     True, ["smart", "seismic_events.csv", "--smarter", "--grid-cols", "3"]),
+     "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
+     "<code>plotly_dark</code> theme (<code>--theme plotly_dark</code>).",
+     True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("line", "Closing price over time.",

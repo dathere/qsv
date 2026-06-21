@@ -2995,7 +2995,9 @@ fn build_timeseries_panel(
     let mut points: Vec<(i64, String, f64)> = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        let Some(y) = parse_f64(record.get(y_idx)) else {
+        // skip non-finite y (NaN/inf): parse_f64 accepts "NaN"/"inf", but a single non-finite
+        // value would poison LTTB's bucket averages and area comparisons (and render as a gap)
+        let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
             continue;
         };
         let Some(raw) = record.get(date_idx) else {

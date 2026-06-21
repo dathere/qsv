@@ -1271,6 +1271,31 @@ fn viz_smart_timeseries_dmy_dates() {
     ));
 }
 
+#[test]
+fn viz_smart_timeseries_skips_non_finite() {
+    let wrk = Workdir::new("viz_smart_timeseries_skips_non_finite");
+    // a time-series numeric column with NaN and inf rows interleaved among finite ones. parse_f64
+    // accepts "NaN"/"inf", but a single non-finite value would poison LTTB's bucket averages and
+    // area comparisons -> the builder must drop them at collection so the rendered series stays
+    // finite. (serde_json serializes a non-finite f64 as `null`, which would also be a chart gap.)
+    let rows = "txn_date,revenue,region\n2021-01-01,1000,east\n2021-01-02,NaN,west\n2021-01-03,\
+                1200,east\n2021-01-04,inf,west\n2021-01-05,1400,east\n";
+    wrk.create_from_string("sales.csv", rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the time-series panel is still drawn ...
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains("revenue over txn_date"));
+    // ... and the NaN/inf rows are gone: the line-trace y-array holds only the 3 finite values,
+    // not the `[1000.0,null,1200.0,null,1400.0]` it would be if non-finite rows slipped through.
+    assert!(html.contains(r#""y":[1000.0,1200.0,1400.0]"#));
+}
+
 fn quakes(wrk: &Workdir) {
     wrk.create_from_string(
         "quakes.csv",

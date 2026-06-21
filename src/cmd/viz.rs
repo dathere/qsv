@@ -453,6 +453,39 @@ const OTHER_TEXT: &str = "Other";
 /// buckets, visually distinct from the palette-colored real categories.
 const MUTED_COLOR: &str = "#999999";
 
+/// Zero-width space suffixed onto the plotly category-axis key of the synthetic aggregate
+/// frequency bars. It keeps their `x_key` distinct from a real category that happens to share
+/// their display label (so the two never collapse onto the same plotly bar) while staying
+/// invisible in the hovered key.
+const AGG_KEY_SENTINEL: char = '\u{200B}';
+
+/// One bar in a `viz smart` frequency panel.
+#[derive(Clone)]
+struct FreqBar {
+    /// The plotly category-axis key — distinct within the panel so bars never collapse onto
+    /// the same category slot. Real categories use their (trimmed) value; the synthetic
+    /// aggregate buckets append `AGG_KEY_SENTINEL` so they can't collide with a real category
+    /// that shares their display label.
+    x_key: String,
+    /// Friendly display label, used for the x-axis tick text (and the hovered category for
+    /// real categories).
+    label: String,
+    count: u64,
+    /// Whether this is a real category or a synthetic aggregate (NULL / Other) bucket. This —
+    /// not the label — drives the bar color, so a real category literally named "(NULL)" or
+    /// "Other (5)" is never mis-colored as an aggregate.
+    kind:  FreqBarKind,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FreqBarKind {
+    Category,
+    Aggregate,
+}
+
+/// Per-column frequency bars for the `viz smart` panels, keyed by column index.
+type FreqMap = HashMap<usize, Vec<FreqBar>>;
+
 #[derive(Deserialize)]
 struct Args {
     cmd_smart:         bool,
@@ -3682,7 +3715,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
 fn panel_trace(
     panel: &Panel,
     color: &'static str,
-    freq: &HashMap<usize, Vec<(String, u64)>>,
+    freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
     axes: Option<(String, String)>,
     theme: Option<BuiltinTheme>,
@@ -3742,24 +3775,21 @@ fn panel_trace(
             b
         },
         PanelKind::FreqBar { idx } => {
-            let counts = freq.get(idx).cloned().unwrap_or_default();
-            // keep the full category names as the bar's x data so distinct categories never
-            // collapse onto the same plotly category; the long-label truncation that keeps the
-            // plot area tall is display-only, applied to the x-axis ticktext (freq_bar_tick_text).
-            let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
-            let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
+            let bars = freq.get(idx).cloned().unwrap_or_default();
+            // x = each bar's distinct category-axis key (real value, or aggregate sentinel) so
+            // distinct categories never collapse onto the same plotly category; the friendly,
+            // truncated tick labels are applied separately via freq_bar_tick_text.
+            let xs: Vec<String> = bars.iter().map(|b| b.x_key.clone()).collect();
+            let ys: Vec<f64> = bars.iter().map(|b| b.count as f64).collect();
             // muted-grey the aggregate "(NULL)" / "Other (N)" buckets so they read as summary
-            // bars, visually distinct from the palette-colored real categories. These labels
-            // are produced by `finalize_freq_bars`, so exact/prefix matching is safe.
-            let other_prefix = format!("{OTHER_TEXT} (");
-            let bar_colors: Vec<&'static str> = counts
+            // bars, visually distinct from the palette-colored real categories. Color is driven
+            // by the bar's kind (not its label), so a real category named like an aggregate is
+            // never mis-colored.
+            let bar_colors: Vec<&'static str> = bars
                 .iter()
-                .map(|(v, _)| {
-                    if v == NULL_TEXT || v.starts_with(&other_prefix) {
-                        MUTED_COLOR
-                    } else {
-                        color
-                    }
+                .map(|b| match b.kind {
+                    FreqBarKind::Aggregate => MUTED_COLOR,
+                    FreqBarKind::Category => color,
                 })
                 .collect();
             bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
@@ -3844,7 +3874,7 @@ fn panel_trace(
 fn render_smart_grid(
     args: &Args,
     panels: &[Panel],
-    freq: &HashMap<usize, Vec<(String, u64)>>,
+    freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
     title_text: &str,
 ) -> CliResult<SmartRender> {
@@ -4026,7 +4056,7 @@ fn corr_incell_annotations(matrix: &[Vec<f64>], xref: &str, yref: &str) -> Vec<A
 fn smart_inline_panel_plot(
     panel: &Panel,
     color: &'static str,
-    freq: &HashMap<usize, Vec<(String, u64)>>,
+    freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
     theme: Option<BuiltinTheme>,
 ) -> Plot {
@@ -4199,7 +4229,7 @@ fn smart_inline_panel_plot(
 fn render_smart_inline(
     args: &Args,
     panels: &[Panel],
-    freq: &HashMap<usize, Vec<(String, u64)>>,
+    freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
     title_text: &str,
 ) -> String {
@@ -4250,13 +4280,15 @@ fn html_escape(s: &str) -> String {
 /// truncated to `top_n`, and given the same aggregate `(NULL)` / `Other (N)` buckets
 /// (via `finalize_freq_bars`) as the `count_values` path, so cached and recomputed bars
 /// are identical. The cache stores complete per-value data including the empty/null bucket,
-/// which `read_frequency_cache_view` surfaces as `FreqCacheColumn::null_count`.
+/// which `read_frequency_cache_view` surfaces as `FreqCacheColumn::null_count`. (The cache is
+/// always whitespace-trimmed — `--frequency-jsonl` is incompatible with `--no-trim` — matching
+/// the trim `count_values` applies.)
 fn freq_from_cache(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     bar_indices: &[usize],
     top_n: usize,
-) -> Option<HashMap<usize, Vec<(String, u64)>>> {
+) -> Option<FreqMap> {
     let path = args.arg_input.as_ref()?;
     let rconfig = Config::new(Some(path))
         .delimiter(args.flag_delimiter)
@@ -4301,44 +4333,63 @@ fn freq_from_cache(
     Some(out)
 }
 
-/// Append the aggregate `(NULL)` and `Other (N)` buckets to a column's frequency bars,
-/// matching `qsv frequency`'s default output. `counts` is the full set of non-null
-/// `(value, count)` pairs (already sorted: count desc, then value asc); `null_count` is the
-/// number of empty cells. The top `top_n` non-null categories are kept, and the rest are
-/// summarized as a single `Other (N)` bar where N = the count of distinct categories dropped.
-/// Both buckets are appended AFTER the real categories (`(NULL)` first, then `Other`) and can
-/// be suppressed with `no_nulls` / `no_other`.
+/// Turn a column's non-null `(value, count)` pairs into the panel's frequency bars, appending
+/// the aggregate `(NULL)` and `Other (N)` buckets to match `qsv frequency`'s default output.
+/// `counts` is the full set of non-null pairs (already sorted: count desc, then value asc);
+/// `null_count` is the number of empty cells. The top `top_n` non-null categories are kept,
+/// and the rest are summarized as a single `Other (N)` bar where N = the count of distinct
+/// categories dropped. Both aggregate buckets are appended AFTER the real categories (`(NULL)`
+/// first, then `Other`) and can be suppressed with `no_nulls` / `no_other`.
 fn finalize_freq_bars(
-    mut counts: Vec<(String, u64)>,
+    counts: Vec<(String, u64)>,
     null_count: u64,
     top_n: usize,
     no_nulls: bool,
     no_other: bool,
-) -> Vec<(String, u64)> {
+) -> Vec<FreqBar> {
     let other_unique = counts.len().saturating_sub(top_n);
     let other_count: u64 = counts.iter().skip(top_n).map(|(_, c)| *c).sum();
-    counts.truncate(top_n);
+    let mut bars: Vec<FreqBar> = counts
+        .into_iter()
+        .take(top_n)
+        .map(|(label, count)| FreqBar {
+            x_key: label.clone(),
+            label,
+            count,
+            kind: FreqBarKind::Category,
+        })
+        .collect();
     if !no_nulls && null_count > 0 {
-        counts.push((NULL_TEXT.to_string(), null_count));
+        bars.push(aggregate_bar(NULL_TEXT.to_string(), null_count));
     }
     if !no_other && other_count > 0 {
-        counts.push((
+        bars.push(aggregate_bar(
             format!("{OTHER_TEXT} ({})", HumanCount(other_unique as u64)),
             other_count,
         ));
     }
-    counts
+    bars
+}
+
+/// Build a synthetic aggregate frequency bar (a `(NULL)` or `Other (N)` bucket). Its
+/// category-axis key gets the `AGG_KEY_SENTINEL` suffix so it can never collapse onto a real
+/// category that shares the same display label.
+fn aggregate_bar(label: String, count: u64) -> FreqBar {
+    FreqBar {
+        x_key: format!("{label}{AGG_KEY_SENTINEL}"),
+        label,
+        count,
+        kind: FreqBarKind::Aggregate,
+    }
 }
 
 /// Count value occurrences for the given column indices in a single pass, returning the
 /// top-N `(value, count)` pairs per column (sorted by count desc, then value asc), plus the
 /// aggregate `(NULL)` / `Other (N)` buckets appended by `finalize_freq_bars` (honoring
-/// `--no-nulls` / `--no-other`).
-fn count_values(
-    args: &Args,
-    indices: &[usize],
-    top_n: usize,
-) -> CliResult<HashMap<usize, Vec<(String, u64)>>> {
+/// `--no-nulls` / `--no-other`). Values are ASCII-whitespace-trimmed before counting, matching
+/// `qsv frequency`'s default, so whitespace-only cells count as NULL and the raw-scan path
+/// stays consistent with the always-trimmed frequency cache.
+fn count_values(args: &Args, indices: &[usize], top_n: usize) -> CliResult<FreqMap> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
@@ -4354,6 +4405,10 @@ fn count_values(
     while rdr.read_byte_record(&mut record)? {
         for &i in indices {
             if let Some(cell) = record.get(i) {
+                // trim ASCII whitespace before the empty/null check (and before counting),
+                // matching `qsv frequency`'s default trim — otherwise whitespace-only cells
+                // would become a literal blank category here but "(NULL)" from the cache.
+                let cell = crate::cmd::frequency::trim_bs_whitespace(cell);
                 if cell.is_empty() {
                     if let Some(n) = null_counts.get_mut(&i) {
                         *n += 1;
@@ -4504,15 +4559,12 @@ fn subplot_geometry(
 /// as the bar's x data). Very long category names (full agency names, datetime strings) would
 /// otherwise rotate into tall labels that squeeze the plot area and clip the top value labels.
 /// Returns `None` for non-bar panels (their axes are left untouched).
-fn freq_bar_tick_text(
-    panel: &Panel,
-    freq: &HashMap<usize, Vec<(String, u64)>>,
-) -> Option<Vec<String>> {
+fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
     if let PanelKind::FreqBar { idx } = &panel.kind {
         let labels = freq
             .get(idx)?
             .iter()
-            .map(|(v, _)| truncate_label(v, BAR_LABEL_MAX_CHARS))
+            .map(|b| truncate_label(&b.label, BAR_LABEL_MAX_CHARS))
             .collect();
         Some(labels)
     } else {
@@ -4763,16 +4815,29 @@ mod tests {
     fn finalize_freq_bars_appends_null_and_other() {
         // 12 distinct categories (a..l), descending counts, plus 7 empty cells. With top_n=10,
         // the top 10 are kept and the remaining 2 distinct roll up into "Other (2)"; the null
-        // bucket becomes "(NULL)". Both are appended after the real categories.
+        // bucket becomes "(NULL)". Both are appended after the real categories, tagged Aggregate.
         let counts: Vec<(String, u64)> = (0..12)
             .map(|i| (((b'a' + i) as char).to_string(), (100 - i as u64)))
             .collect();
         let out = finalize_freq_bars(counts, 7, 10, false, false);
         assert_eq!(out.len(), 12); // 10 real + (NULL) + Other
-        assert_eq!(out[9].0, "j"); // last real category kept
-        assert_eq!(out[10], ("(NULL)".to_string(), 7));
+        assert_eq!(out[9].label, "j"); // last real category kept
+        assert_eq!(out[9].kind, FreqBarKind::Category);
+
+        assert_eq!(out[10].label, "(NULL)");
+        assert_eq!(out[10].count, 7);
+        assert_eq!(out[10].kind, FreqBarKind::Aggregate);
+
         // the two dropped categories ("k"=90, "l"=89) aggregate to 179, labeled by distinct count
-        assert_eq!(out[11], ("Other (2)".to_string(), 179));
+        assert_eq!(out[11].label, "Other (2)");
+        assert_eq!(out[11].count, 179);
+        assert_eq!(out[11].kind, FreqBarKind::Aggregate);
+
+        // aggregate bars get a sentinel-suffixed x_key so they can't collide with a real
+        // category sharing their display label; real categories key on their value
+        assert_eq!(out[9].x_key, "j");
+        assert_eq!(out[10].x_key, format!("(NULL){AGG_KEY_SENTINEL}"));
+        assert_ne!(out[10].x_key, out[10].label);
     }
 
     #[test]
@@ -4783,10 +4848,7 @@ mod tests {
         // suppress both buckets -> just the top 10 real categories remain
         let out = finalize_freq_bars(counts, 7, 10, true, true);
         assert_eq!(out.len(), 10);
-        assert!(
-            !out.iter()
-                .any(|(v, _)| v == "(NULL)" || v.starts_with("Other ("))
-        );
+        assert!(out.iter().all(|b| b.kind == FreqBarKind::Category));
     }
 
     #[test]
@@ -4794,7 +4856,9 @@ mod tests {
         // no nulls and fewer distinct than top_n -> no aggregate bars even with flags off
         let counts = vec![("a".to_string(), 5_u64), ("b".to_string(), 3)];
         let out = finalize_freq_bars(counts, 0, 10, false, false);
-        assert_eq!(out, vec![("a".to_string(), 5), ("b".to_string(), 3)]);
+        let labels: Vec<(String, u64)> = out.iter().map(|b| (b.label.clone(), b.count)).collect();
+        assert_eq!(labels, vec![("a".to_string(), 5), ("b".to_string(), 3)]);
+        assert!(out.iter().all(|b| b.kind == FreqBarKind::Category));
     }
 
     #[test]

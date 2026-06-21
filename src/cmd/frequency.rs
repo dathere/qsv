@@ -4484,7 +4484,7 @@ fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: O
 /// trim leading and trailing whitespace from a byte slice
 #[allow(clippy::inline_always)]
 #[inline(always)]
-fn trim_bs_whitespace(bytes: &[u8]) -> &[u8] {
+pub(crate) fn trim_bs_whitespace(bytes: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = bytes.len();
 

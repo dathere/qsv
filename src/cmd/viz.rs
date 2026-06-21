@@ -4359,28 +4359,48 @@ fn finalize_freq_bars(
             kind: FreqBarKind::Category,
         })
         .collect();
+
+    // derive the aggregate bars' axis keys against the real category keys (and each other) so
+    // they're provably unique — see `push_aggregate_bar`.
+    let mut used: std::collections::HashSet<String> =
+        bars.iter().map(|b| b.x_key.clone()).collect();
     if !no_nulls && null_count > 0 {
-        bars.push(aggregate_bar(NULL_TEXT.to_string(), null_count));
+        push_aggregate_bar(&mut bars, &mut used, NULL_TEXT.to_string(), null_count);
     }
     if !no_other && other_count > 0 {
-        bars.push(aggregate_bar(
+        push_aggregate_bar(
+            &mut bars,
+            &mut used,
             format!("{OTHER_TEXT} ({})", HumanCount(other_unique as u64)),
             other_count,
-        ));
+        );
     }
     bars
 }
 
-/// Build a synthetic aggregate frequency bar (a `(NULL)` or `Other (N)` bucket). Its
-/// category-axis key gets the `AGG_KEY_SENTINEL` suffix so it can never collapse onto a real
-/// category that shares the same display label.
-fn aggregate_bar(label: String, count: u64) -> FreqBar {
-    FreqBar {
-        x_key: format!("{label}{AGG_KEY_SENTINEL}"),
+/// Append a synthetic aggregate frequency bar (a `(NULL)` or `Other (N)` bucket) to `bars`.
+/// Its category-axis key is derived from the display label plus an `AGG_KEY_SENTINEL` suffix,
+/// extended (sentinel repeated) until it is provably distinct from every key already in `used`
+/// — the real category keys plus any earlier aggregate. This guarantees the aggregate can never
+/// collapse onto a real category's bar on the plotly axis, even if a real value happens to equal
+/// the sentinel-suffixed form. `used` is updated with the chosen key.
+fn push_aggregate_bar(
+    bars: &mut Vec<FreqBar>,
+    used: &mut std::collections::HashSet<String>,
+    label: String,
+    count: u64,
+) {
+    let mut x_key = format!("{label}{AGG_KEY_SENTINEL}");
+    while used.contains(&x_key) {
+        x_key.push(AGG_KEY_SENTINEL);
+    }
+    used.insert(x_key.clone());
+    bars.push(FreqBar {
+        x_key,
         label,
         count,
         kind: FreqBarKind::Aggregate,
-    }
+    });
 }
 
 /// Count value occurrences for the given column indices in a single pass, returning the
@@ -4859,6 +4879,28 @@ mod tests {
         let labels: Vec<(String, u64)> = out.iter().map(|b| (b.label.clone(), b.count)).collect();
         assert_eq!(labels, vec![("a".to_string(), 5), ("b".to_string(), 3)]);
         assert!(out.iter().all(|b| b.kind == FreqBarKind::Category));
+    }
+
+    #[test]
+    fn finalize_freq_bars_aggregate_key_never_collides() {
+        // pathological data: a real category whose value already equals the sentinel-suffixed
+        // form of the NULL bucket's key. The aggregate key must extend its sentinel until it is
+        // distinct, so the synthetic (NULL) bar can never collapse onto that real category.
+        let collider = format!("(NULL){AGG_KEY_SENTINEL}");
+        let counts = vec![("apple".to_string(), 10_u64), (collider.clone(), 4)];
+        let out = finalize_freq_bars(counts, 3, 10, false, false);
+
+        // real category keeps its value as the key; the NULL aggregate is forced to a longer key
+        let real = out.iter().find(|b| b.label == collider).unwrap();
+        assert_eq!(real.x_key, collider);
+        assert_eq!(real.kind, FreqBarKind::Category);
+
+        let null_bar = out.iter().find(|b| b.label == "(NULL)").unwrap();
+        assert_eq!(null_bar.kind, FreqBarKind::Aggregate);
+        assert_ne!(null_bar.x_key, collider);
+        // all x_keys across the panel are unique
+        let keys: std::collections::HashSet<&String> = out.iter().map(|b| &b.x_key).collect();
+        assert_eq!(keys.len(), out.len());
     }
 
     #[test]

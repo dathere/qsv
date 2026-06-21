@@ -1163,6 +1163,54 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
     (out_x, out_y)
 }
 
+/// Largest-Triangle-Three-Buckets downsampling. Returns the indices (into `xs`/`ys`) of at most
+/// `cap` points that best preserve the visual shape of a `y = f(x)` series. Unlike uniform stride
+/// sampling (`downsample_pair`), this selects by triangle area in (x, y) space, so spikes/peaks
+/// between strides survive instead of being stepped over. Requires `xs` sorted ascending
+/// (monotonic) and finite `ys`. First and last points are always retained.
+fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
+    let n = xs.len();
+    if cap == 0 || n <= cap {
+        return (0..n).collect();
+    }
+    if cap < 3 {
+        return if cap == 1 { vec![0] } else { vec![0, n - 1] };
+    }
+    let mut out = Vec::with_capacity(cap);
+    out.push(0); // always keep the first point
+    let every = (n - 2) as f64 / (cap - 2) as f64; // bucket width over the interior points
+    let mut a = 0usize; // last selected point (the triangle's first vertex)
+    for i in 0..cap - 2 {
+        // average of the *next* bucket is the triangle's third vertex
+        let avg_start = ((i + 1) as f64 * every) as usize + 1;
+        let avg_end = (((i + 2) as f64 * every) as usize + 1).min(n);
+        let avg_len = (avg_end - avg_start).max(1) as f64;
+        let (mut avg_x, mut avg_y) = (0.0_f64, 0.0_f64);
+        for j in avg_start..avg_end {
+            avg_x += xs[j];
+            avg_y += ys[j];
+        }
+        avg_x /= avg_len;
+        avg_y /= avg_len;
+        // pick the point in the current bucket forming the largest triangle with (a, next-avg)
+        let range_start = (i as f64 * every) as usize + 1;
+        let range_end = (((i + 1) as f64 * every) as usize + 1).min(n);
+        let (ax, ay) = (xs[a], ys[a]);
+        let (mut max_area, mut chosen) = (-1.0_f64, range_start);
+        for j in range_start..range_end {
+            let area = ((ax - avg_x) * (ys[j] - ay) - (ax - xs[j]) * (avg_y - ay)).abs();
+            if area > max_area {
+                max_area = area;
+                chosen = j;
+            }
+        }
+        out.push(chosen);
+        a = chosen;
+    }
+    out.push(n - 1); // always keep the last point
+    out
+}
+
 /// Compute a map center and a zoom level that frames the data, so the basemap doesn't default to
 /// plotly's whole-world view centered at (0, 0). Longitude is handled with antimeridian wrap so a
 /// cluster straddling the 180° line (e.g. 179 and -179) frames as the small arc across the date
@@ -2978,10 +3026,22 @@ fn build_timeseries_panel(
 
     let y_label = col_label(&headers, y_idx, nh);
     let date_label = col_label(&headers, date_idx, nh);
-    // points are chronologically sorted, so stride downsampling preserves the trend's shape
-    let xs_full: Vec<String> = points.iter().map(|p| p.1.clone()).collect();
-    let ys_full: Vec<f64> = points.iter().map(|p| p.2).collect();
-    let (xs, ys) = downsample_pair(&xs_full, &ys_full, MAX_SMART_POINTS);
+    // points are chronologically sorted (monotonic x), so LTTB can downsample by triangle area,
+    // preserving spikes/peaks a uniform stride would step over. Timestamps give LTTB its numeric
+    // x-axis; the display labels are gathered alongside the selected indices.
+    let (xs, ys) = if points.len() > MAX_SMART_POINTS {
+        let ts: Vec<f64> = points.iter().map(|p| p.0 as f64).collect();
+        let yv: Vec<f64> = points.iter().map(|p| p.2).collect();
+        let keep = lttb_indices(&ts, &yv, MAX_SMART_POINTS);
+        let xs = keep.iter().map(|&i| points[i].1.clone()).collect();
+        let ys = keep.iter().map(|&i| points[i].2).collect();
+        (xs, ys)
+    } else {
+        (
+            points.iter().map(|p| p.1.clone()).collect(),
+            points.iter().map(|p| p.2).collect(),
+        )
+    };
     Ok(Some(Panel {
         name: format!("{y_label} over {date_label}"),
         kind: PanelKind::TimeSeries { y_label, xs, ys },
@@ -4682,6 +4742,52 @@ mod tests {
         assert_eq!(sy.len(), 50);
         // cap == 0 -> unchanged (no divide-by-zero)
         assert_eq!(downsample_pair(&xs, &ys, 0).0.len(), 1000);
+    }
+
+    #[test]
+    fn lttb_indices_keeps_endpoints_and_spike() {
+        // a flat baseline with a single tall spike that sits BETWEEN uniform-stride samples
+        let n = 1000;
+        let cap = 50;
+        let spike = 333usize; // 333 * (n-1) / (cap-1) is not an integer -> stride would miss it
+        let xs: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let ys: Vec<f64> = (0..n)
+            .map(|i| if i == spike { 1000.0 } else { 0.0 })
+            .collect();
+
+        // baseline: uniform stride steps right over the spike
+        let stride: Vec<usize> = (0..cap).map(|i| i * (n - 1) / (cap - 1)).collect();
+        assert!(
+            !stride.contains(&spike),
+            "test precondition: stride must miss the spike"
+        );
+        let (_, stride_y) = downsample_pair(&xs, &ys, cap);
+        assert!(
+            stride_y.iter().all(|&y| y < 1.0),
+            "uniform stride drops the spike"
+        );
+
+        // LTTB selects by triangle area, so the spike survives
+        let keep = lttb_indices(&xs, &ys, cap);
+        assert_eq!(keep.len(), cap);
+        assert_eq!(keep[0], 0, "first point always kept");
+        assert_eq!(*keep.last().unwrap(), n - 1, "last point always kept");
+        assert!(
+            keep.contains(&spike),
+            "LTTB preserves the peak a uniform stride misses"
+        );
+        // indices are strictly increasing (monotonic selection)
+        assert!(keep.windows(2).all(|w| w[0] < w[1]));
+
+        // edge caps: no panic, sensible output
+        assert_eq!(lttb_indices(&xs, &ys, 0), (0..n).collect::<Vec<_>>());
+        assert_eq!(lttb_indices(&xs, &ys, 1), vec![0]);
+        assert_eq!(lttb_indices(&xs, &ys, 2), vec![0, n - 1]);
+        // already within cap -> all indices unchanged
+        assert_eq!(
+            lttb_indices(&xs[..10], &ys[..10], 50),
+            (0..10).collect::<Vec<_>>()
+        );
     }
 
     /// A tight NYC cluster plus a handful of far-west bad coordinates, used to contrast the

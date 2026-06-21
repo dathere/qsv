@@ -416,9 +416,9 @@ fn viz_smart_freq_bars_whitespace_counts_as_null() {
 
     // --no-nulls must then suppress them (it couldn't if they were a literal blank category)
     let out_html2 = wrk.path("ws_nonulls.html").to_string_lossy().to_string();
-    let mut cmd2 = wrk.command("viz");
-    cmd2.args(["smart", "ws.csv", "--no-nulls", "-o", &out_html2]);
-    wrk.assert_success(&mut cmd2);
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args(["smart", "ws.csv", "--no-nulls", "-o", &out_html2]);
+    wrk.assert_success(&mut cmd_2);
     let html2 = wrk.read_to_string("ws_nonulls.html").unwrap();
     assert!(
         !html2.contains("(NULL)"),

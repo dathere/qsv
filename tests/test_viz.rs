@@ -1298,6 +1298,9 @@ fn viz_smart_box_points_heuristic_small_overlays_all() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"box""#));
     assert!(html.contains(r#""boxpoints":"all""#));
+    // box hover shows only the y stats ("median: ...") — NOT plotly's default
+    // "(<trace name>, median: ...)" which repeats the long column name on every stat line
+    assert!(html.contains(r#""hoverinfo":"y""#));
 }
 
 #[test]
@@ -1316,6 +1319,8 @@ fn viz_smart_box_points_heuristic_large_none() {
     assert!(html.contains(r#""type":"box""#));
     // the JSON key `"boxpoints":` is only emitted for raw boxes; a cache-only box omits it
     assert!(!html.contains(r#""boxpoints":"#));
+    // even the cache-only quartile box shows only y stats in the hover (no repeated column name)
+    assert!(html.contains(r#""hoverinfo":"y""#));
 }
 
 #[test]
@@ -1341,6 +1346,138 @@ fn viz_smart_box_points_explicit_overrides_heuristic() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""boxpoints":"outliers""#));
+}
+
+/// A single continuous numeric column (high enough cardinality for a box) of `bulk` tightly
+/// clustered values in ~[100,150), plus `n_out` copies of `outlier_val` far beyond the Tukey
+/// fences. With `bulk` >> `n_out`, the quartiles are set by the cluster so `outlier_val` reads as
+/// a genuine outlier.
+fn box_with_outliers_csv(bulk: usize, n_out: usize, outlier_val: f64) -> String {
+    let mut s = String::from("measure\n");
+    for i in 0..bulk {
+        let v = 100.0 + (i % 500) as f64 * 0.1; // ~500 distinct -> continuous
+        s.push_str(&format!("{v:.3}\n"));
+    }
+    for _ in 0..n_out {
+        s.push_str(&format!("{outlier_val}\n"));
+    }
+    s
+}
+
+#[test]
+fn viz_smart_box_outliers_large() {
+    // a > SMART_BOX_OUTLIERS_MAX (10k) column WITH outliers: a precomputed quartile box plus the
+    // out-of-fence values overlaid as native box points (no scatter overlay, no full re-embed).
+    let wrk = Workdir::new("viz_smart_box_outliers_large");
+    wrk.create_from_string("d.csv", &box_with_outliers_csv(12_000, 10, 99999.0));
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    // native outlier points require a 2D `y` ([[...]]); a 1D y renders the box but drops the points
+    assert!(html.contains(r#""y":[["#));
+    assert!(html.contains(r#""boxpoints":"all""#));
+    // the box is precomputed (carries q1), NOT recomputed from the outlier points
+    assert!(html.contains(r#""q1":["#));
+    // the injected extreme is embedded as an outlier point
+    assert!(html.contains("99999"));
+}
+
+#[test]
+fn viz_smart_box_no_outliers_large() {
+    // a > 10k column with NO Tukey outliers (uniform spread) stays a cache-only quartile box:
+    // a box trace, but no native points (no boxpoints key, no 2D y) and so no data pass.
+    let wrk = Workdir::new("viz_smart_box_no_outliers_large");
+    wrk.create_from_string("d.csv", &continuous_box_csv(12_000));
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    assert!(!html.contains(r#""boxpoints":"#));
+    assert!(!html.contains(r#""y":[["#));
+}
+
+#[test]
+fn viz_smart_box_outliers_capped() {
+    // 6000 outliers but only SMART_BOX_OUTLIERS_CAP (5000) are embedded, keeping the HTML bounded.
+    // bulk (20k) >> outliers (6k) so q3 stays inside the cluster and 99999 reads as an outlier.
+    let wrk = Workdir::new("viz_smart_box_outliers_capped");
+    wrk.create_from_string("d.csv", &box_with_outliers_csv(20_000, 6_000, 99999.0));
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    // the distinctive outlier value appears ~the cap number of times (5000 of 6000) — well below
+    // the uncapped 6000, confirming the cap. A few extra matches come from the plotly.js bundle.
+    let n = html.matches("99999").count();
+    assert!(
+        (5000..=5050).contains(&n),
+        "expected ~5000 (cap) embedded outliers, not the uncapped 6000; got {n}"
+    );
+}
+
+#[test]
+fn viz_smart_box_explicit_none_large() {
+    // explicit `--box-points none` keeps a cache-only quartile box even on a large file WITH
+    // outliers: no points, no pass — guards the user-intent path.
+    let wrk = Workdir::new("viz_smart_box_explicit_none_large");
+    wrk.create_from_string("d.csv", &box_with_outliers_csv(12_000, 10, 99999.0));
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "--box-points", "none", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    // cache-only path: no native points (no boxpoints, no 2D `y` array). (We can't assert the
+    // outlier value is absent — a cache-only box draws its whisker to the observed max, which here
+    // IS the outlier value.)
+    assert!(!html.contains(r#""boxpoints":"#));
+    assert!(!html.contains(r#""y":[["#));
+}
+
+#[test]
+fn viz_smart_two_outlier_boxes_single_pass() {
+    // two large continuous columns, each with distinctive outliers, are collected (fence-filtered)
+    // for BOTH columns in the same single pass; assert each column's outliers are embedded.
+    let wrk = Workdir::new("viz_smart_two_outlier_boxes_single_pass");
+    let mut s = String::from("a,b\n");
+    for i in 0..12_000 {
+        let va = if i < 8 {
+            88888.0
+        } else {
+            100.0 + (i % 500) as f64 * 0.1
+        };
+        let vb = if i < 8 {
+            77777.0
+        } else {
+            200.0 + (i % 500) as f64 * 0.1
+        };
+        s.push_str(&format!("{va:.3},{vb:.3}\n"));
+    }
+    wrk.create_from_string("d.csv", &s);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains("88888"));
+    assert!(html.contains("77777"));
 }
 
 #[test]
@@ -2469,6 +2606,67 @@ fn viz_smart_truncates_long_bar_labels() {
     // that truncate to the same label stay distinct (not collapsed onto one bar).
     assert!(html.contains(long_a));
     assert!(html.contains(long_b));
+}
+
+#[test]
+fn viz_smart_log_scale_skewed_freq_panel() {
+    let wrk = Workdir::new("viz_smart_log_scale_skewed_freq_panel");
+    // a low-cardinality categorical dominated by one value ("A" ~ 96%), so its frequency panel
+    // has a huge dynamic range. Under --log-scale auto (the default) the panel switches to a log
+    // y-axis with a "count (log)" title cue; the second, uniform column stays linear & untitled.
+    let cats = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L"];
+    let mut rows = String::from("dominated,balanced\n");
+    for i in 0..2400usize {
+        // ~96% "A", the rest spread thinly across the other categories -> high dynamic range
+        let dominated = if i % 25 == 0 { cats[1 + (i % 11)] } else { "A" };
+        rows.push_str(&format!("{dominated},{}\n", cats[i % 10]));
+    }
+    wrk.create_from_string("skew.csv", &rows);
+
+    // auto (default): the dominated panel logs, the balanced one does not
+    let auto_html = wrk.path("auto.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "skew.csv", "-o", &auto_html]);
+    wrk.assert_success(&mut cmd);
+    let auto = wrk.read_to_string("auto.html").unwrap();
+    assert!(auto.contains(r#""type":"log""#));
+    // the y-axis title cue is present exactly once (only the dominated panel is log)
+    assert_eq!(auto.matches("count (log)").count(), 1);
+
+    // off: no log axis, no cue
+    let off_html = wrk.path("off.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "skew.csv", "--log-scale", "off", "-o", &off_html]);
+    wrk.assert_success(&mut cmd);
+    let off = wrk.read_to_string("off.html").unwrap();
+    assert!(!off.contains(r#""type":"log""#));
+    assert!(!off.contains("count (log)"));
+
+    // on: both frequency panels log, so the cue appears twice
+    let on_html = wrk.path("on.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "skew.csv", "--log-scale", "on", "-o", &on_html]);
+    wrk.assert_success(&mut cmd);
+    let on = wrk.read_to_string("on.html").unwrap();
+    assert_eq!(on.matches("count (log)").count(), 2);
+}
+
+#[test]
+fn viz_smart_log_scale_invalid_errors() {
+    let wrk = Workdir::new("viz_smart_log_scale_invalid_errors");
+    fruits(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "fruits.csv",
+        "--log-scale",
+        "bogus",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_err(&mut cmd);
 }
 
 #[test]

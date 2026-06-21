@@ -124,7 +124,8 @@ qsv viz smart quakes.csv -o quakes_dashboard.html
 # the full geospatial dashboard: a map, a time-series, a correlation heatmap + drill-down
 # scatter, a bimodal-depth histogram, annotated boxes and frequency bars — all auto-chosen.
 # Recognized lat/lon columns are charted on the map only, not as redundant distribution panels.
-qsv viz smart seismic_events.csv --smarter --grid-cols 3 -o seismic_dashboard.html
+# Rendered with the built-in plotly_dark theme (--theme works on every chart type, incl. smart).
+qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 -o seismic_dashboard.html
 ```
 
 ## Individual chart types

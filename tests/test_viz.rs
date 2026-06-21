@@ -1428,6 +1428,9 @@ fn viz_map_mapbox_style_needs_token_errors() {
     quakes(&wrk);
 
     let mut cmd = wrk.command("viz");
+    // isolate from any inherited QSV_MAPBOX_TOKEN, which would satisfy the token
+    // requirement via the env-var fallback and make this error-path test fail.
+    cmd.env_remove("QSV_MAPBOX_TOKEN");
     cmd.args([
         "map",
         "quakes.csv",

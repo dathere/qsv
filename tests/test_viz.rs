@@ -1428,6 +1428,9 @@ fn viz_map_mapbox_style_needs_token_errors() {
     quakes(&wrk);
 
     let mut cmd = wrk.command("viz");
+    // isolate from any inherited QSV_MAPBOX_TOKEN, which would satisfy the token
+    // requirement via the env-var fallback and make this error-path test fail.
+    cmd.env_remove("QSV_MAPBOX_TOKEN");
     cmd.args([
         "map",
         "quakes.csv",
@@ -1442,6 +1445,33 @@ fn viz_map_mapbox_style_needs_token_errors() {
     assert!(!out.status.success());
     let stderr = wrk.output_stderr(&mut cmd);
     assert!(stderr.contains("requires --mapbox-token"));
+}
+
+#[test]
+fn viz_map_mapbox_token_from_env() {
+    let wrk = Workdir::new("viz_map_mapbox_token_from_env");
+    quakes(&wrk);
+
+    // QSV_MAPBOX_TOKEN satisfies the token requirement for mapbox-hosted styles,
+    // exactly as if --mapbox-token had been passed on the command line.
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_MAPBOX_TOKEN", "pk.test_env_token_value");
+    cmd.args([
+        "map",
+        "quakes.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--style",
+        "satellite",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the env-supplied token is embedded in the mapbox layout
+    assert!(html.contains("pk.test_env_token_value"));
 }
 
 #[test]

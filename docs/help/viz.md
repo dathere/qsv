@@ -257,7 +257,7 @@ qsv viz --help
 | &nbsp;`‑‑text`&nbsp; | string | Column whose value labels each point on hover. |  |
 | &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMapbox) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
 | &nbsp;`‑‑style`&nbsp; | string | Map basemap style. Token-free styles: open-street-map (the default), carto-positron, carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted styles (basic, streets, outdoors, light, dark, satellite, satellite-streets) require --mapbox-token. | `open-street-map` |
-| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Mapbox access token, required only for the mapbox-hosted basemap styles listed above. |  |
+| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Mapbox access token, required only for the mapbox-hosted basemap styles listed above. Can also be set with the QSV_MAPBOX_TOKEN environment variable (the --mapbox-token flag takes precedence). |  |
 
 <a name="geo-options"></a>
 

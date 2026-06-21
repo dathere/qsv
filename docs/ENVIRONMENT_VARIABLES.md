@@ -61,6 +61,7 @@
 | `QSV_OPENCAGE_API_KEY`| the OpenCage API key used by the `geocode opencage`/`opencagenow` subcommands for online forward/reverse geocoding. Can also be set with the `--api-key` option. |
 | `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode iplookup*` commands. (default: `GeoLite2-City.mmdb`) |
 | `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
+| `QSV_MAPBOX_TOKEN` | the Mapbox access token used by the `viz map` command for Mapbox-hosted basemap styles (basic, streets, outdoors, light, dark, satellite, satellite-streets). Can also be set with the `--mapbox-token` option, which takes precedence. Token-free styles (e.g. open-street-map, carto-positron) do not require it. Requires the `viz` feature. |
 
 Several dependencies also have environment variables that influence qsv's performance & behavior:
 

@@ -200,6 +200,8 @@ map options:
                            [default: open-street-map]
     --mapbox-token <tok>   Mapbox access token, required only for the mapbox-hosted
                            basemap styles listed above.
+                           Can also be set with the QSV_MAPBOX_TOKEN environment
+                           variable (the --mapbox-token flag takes precedence).
 
 geo options:
     --projection <name>    Map projection for `viz geo`. One of: natural-earth (the
@@ -527,7 +529,15 @@ impl OutFormat {
 }
 
 pub fn run(argv: &[&str]) -> CliResult<()> {
-    let args: Args = util::get_args(USAGE, argv)?;
+    let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // --mapbox-token falls back to the QSV_MAPBOX_TOKEN env var when not passed explicitly.
+    if args.flag_mapbox_token.is_none()
+        && let Ok(token) = std::env::var("QSV_MAPBOX_TOKEN")
+        && !token.is_empty()
+    {
+        args.flag_mapbox_token = Some(token);
+    }
 
     let out_format = match args.flag_output.as_deref() {
         Some(path) => match OutFormat::from_output(path) {

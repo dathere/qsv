@@ -178,12 +178,14 @@ viz options:
                            still real Tukey whiskers). For `viz box` the default is
                            outliers. For `viz smart` this flag OVERRIDES the default
                            size-based heuristic, which overlays all points for small
-                           data (<=1,000 rows), only the outliers for medium data
-                           (<=10,000 rows), and none above that (the box stays a fast
-                           cache-only quartile summary with observed min/max whiskers,
-                           no data re-scan). An explicit mode is applied to every box
-                           panel (one extra batched pass to read the values), except
-                           `none`, which keeps the cache-only box.
+                           data (<=1,000 rows) and only the outliers for medium data
+                           (<=10,000 rows). Above that, a column that HAS outliers shows
+                           them as points on a precomputed quartile box (a single pass
+                           collects only the out-of-fence values, capped); a column with
+                           no outliers stays a fast cache-only quartile summary with no
+                           data re-scan. An explicit mode is applied to every box panel
+                           (one batched pass to read the values), except `none`, which
+                           always keeps the cache-only box.
 
 map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
@@ -238,6 +240,13 @@ smart options:
                            manually). Only affects `smart`. Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
+    --log-scale <mode>     Use a logarithmic y-axis for frequency bar panels whose
+                           tallest bar dwarfs the rest (e.g. a large "(NULL)" or
+                           "Other (N)" bucket), so the small categories stay visible.
+                           One of: auto, on, off. "auto" (the default) switches a panel
+                           to a log y-axis only when its dynamic range is high; "on"
+                           forces a log y-axis on every frequency panel; "off" keeps the
+                           linear axes. Only affects `smart`. [default: auto]
 
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
@@ -278,7 +287,7 @@ use plotly::{
     box_plot::{BoxPoints, QuartileMethod},
     color::NamedColor,
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Line, Marker, Mode,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, HoverInfo, Line, Marker, Mode,
         TextPosition, TickMode, Title,
     },
     layout::{
@@ -309,6 +318,12 @@ const MAX_PANELS_INLINE: usize = 64;
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 
+/// `viz smart --log-scale auto`: a frequency bar panel switches to a logarithmic y-axis when
+/// its tallest bar is at least this many times the shortest positive bar. A dominating
+/// "(NULL)"/"Other (N)" bucket flattens the real categories to invisible slivers on a linear
+/// axis; a log scale keeps them legible. Requires at least 3 positive bars.
+const LOG_SCALE_MIN_RATIO: f64 = 50.0;
+
 /// Minimum absolute Pearson correlation for `viz smart` to add a scatter panel of the most
 /// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
@@ -324,12 +339,19 @@ const SMART_CONTOUR_MIN_POINTS: usize = 5_000;
 const SMART_CONTOUR_BINS: usize = 30;
 
 /// `viz smart` row-count thresholds for the default (no explicit `--box-points`) box-overlay
-/// heuristic: at or below ALL, every sample point is overlaid on a box; at or below OUTLIERS, only
-/// the Tukey outliers; above that, no points are drawn and the box stays a cache-only quartile
-/// summary (overlaying tens of thousands of points is an unreadable smear, and skipping them avoids
-/// the extra data pass).
+/// heuristic: at or below ALL, every sample point is overlaid on a box (via `BoxRaw`); at or below
+/// OUTLIERS, only the Tukey outliers (via `BoxRaw`). ABOVE OUTLIERS, embedding the full column is
+/// an unreadable smear and a large payload, so the box stays a precomputed quartile box — but if
+/// the column actually HAS outliers (cached min/max fall outside the Tukey fences), they're
+/// overlaid as native box points via a single fence-filtered pass (`BoxOutliers`); a column with
+/// no outliers stays a pure cache-only `BoxStats` with no pass at all.
 const SMART_BOX_ALL_MAX: u64 = 1_000;
 const SMART_BOX_OUTLIERS_MAX: u64 = 10_000;
+
+/// Max number of outlier points embedded per `BoxOutliers` panel, keeping the HTML bounded for
+/// heavy-tailed columns. When a column has more outliers than this, the rest are dropped (the
+/// overflow is logged); far below `MAX_SMART_POINTS` since these all render as discrete dots.
+const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 
 /// `viz smart` renders its geographic panel as a `ScatterGeo` projection world-overview (offline,
 /// no tiles) instead of a zoomed mapbox tile map when the coordinates span at least this many
@@ -427,6 +449,13 @@ const TITLE_OFFSET_PX: usize = 6;
 /// Default dashboard left margin (pixels), widened when a correlation-heatmap panel is present
 /// so its (long) numeric-column tick labels aren't clipped.
 const DEFAULT_LEFT_MARGIN_PX: usize = 60;
+
+/// Y-axis title shown ONLY on frequency panels rendered with a logarithmic y-axis (see
+/// `--log-scale`). It's the visual cue that the axis is log, not linear; linear panels stay
+/// title-less to keep the cells compact. The rotated title needs a little extra left margin
+/// (`LOG_AXIS_TITLE_MARGIN_PX`) so it isn't clipped against the page edge.
+const LOG_AXIS_TITLE: &str = "count (log)";
+const LOG_AXIS_TITLE_MARGIN_PX: usize = 20;
 
 /// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
 /// the dashboard's left margin, so its axis tick labels are truncated to this many characters
@@ -542,6 +571,7 @@ struct Args {
     flag_no_nulls:     bool,
     flag_no_other:     bool,
     flag_smarter:      bool,
+    flag_log_scale:    String,
     flag_title:        Option<String>,
     flag_x_title:      Option<String>,
     flag_y_title:      Option<String>,
@@ -2770,6 +2800,72 @@ fn parse_agg(agg: Option<&str>) -> CliResult<Option<Agg>> {
     }
 }
 
+/// Resolved `--log-scale` mode for `viz smart` frequency bar panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum LogScale {
+    /// Per-panel: log y-axis only when the bar distribution's dynamic range is high.
+    Auto,
+    /// Force a log y-axis on every frequency bar panel.
+    On,
+    /// Never use a log y-axis (linear axes only).
+    Off,
+}
+
+/// Parse the `--log-scale` flag (defaults to `auto`).
+fn parse_log_scale(mode: &str) -> CliResult<LogScale> {
+    match mode.to_ascii_lowercase().as_str() {
+        "auto" => Ok(LogScale::Auto),
+        "on" | "true" => Ok(LogScale::On),
+        "off" | "false" => Ok(LogScale::Off),
+        other => {
+            fail_incorrectusage_clierror!("Unknown --log-scale '{other}'. Use auto, on, or off.")
+        },
+    }
+}
+
+/// Decide whether a frequency bar panel should use a logarithmic y-axis, given its resolved
+/// `--log-scale` mode and the panel's bar counts. `On` always logs (when there are 2+ positive
+/// bars to compare), `Off` never does, and `Auto` logs only when the tallest positive bar is at
+/// least `LOG_SCALE_MIN_RATIO`x the shortest positive bar (the high-dynamic-range case where a
+/// dominating "(NULL)"/"Other" bucket would otherwise flatten the real categories).
+fn freq_panel_logs(mode: LogScale, counts: &[u64]) -> bool {
+    if mode == LogScale::Off {
+        return false;
+    }
+    let mut min_pos = u64::MAX;
+    let mut max_pos = 0_u64;
+    let mut n_pos = 0_usize;
+    for &c in counts {
+        if c > 0 {
+            n_pos += 1;
+            min_pos = min_pos.min(c);
+            max_pos = max_pos.max(c);
+        }
+    }
+    match mode {
+        // forcing log still needs 2+ positive bars to be meaningful (and a positive max)
+        LogScale::On => n_pos >= 2 && max_pos > 0,
+        LogScale::Auto => n_pos >= 3 && (max_pos as f64) >= (min_pos as f64) * LOG_SCALE_MIN_RATIO,
+        LogScale::Off => false,
+    }
+}
+
+/// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
+/// Only frequency bar panels can be log; every other panel kind is always linear. Used both to
+/// gate the panel's y-axis title cue and to size the dashboard's left margin to fit it.
+fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
+    match panel.kind {
+        PanelKind::FreqBar { idx } => {
+            let counts: Vec<u64> = freq
+                .get(&idx)
+                .map(|bars| bars.iter().map(|b| b.count).collect())
+                .unwrap_or_default();
+            freq_panel_logs(log_scale, &counts)
+        },
+        _ => false,
+    }
+}
+
 /// Parse the `--box-points` flag controlling which sample points are drawn alongside a
 /// box plot. Defaults to `outliers` (only the points beyond the Tukey 1.5*IQR fences).
 fn parse_box_points(points: Option<&str>) -> CliResult<BoxPoints> {
@@ -2899,6 +2995,22 @@ enum PanelKind {
     /// column index; the (downsampled) values are gathered in the same batched pass as `Histogram`
     /// and looked up by `idx` at render time. `points` is this panel's resolved overlay mode.
     BoxRaw { idx: usize, points: BoxPoints },
+    /// Cache-quartile box for a large (> `SMART_BOX_OUTLIERS_MAX` row) column that HAS Tukey
+    /// outliers. The box is drawn from the precomputed q1/median/q3 (like `BoxStats`), but its
+    /// whiskers end at the observed in-fence extremes and the out-of-fence outlier values are
+    /// overlaid as native box points (plotly does NOT recompute the box). `idx` keys the
+    /// post-pass `OutlierStats` side table (whisker ends + the capped outlier values); the box
+    /// stats are carried on the panel and `fence_low`/`fence_high` are the Tukey inner fences used
+    /// to filter the single collection pass.
+    BoxOutliers {
+        idx:        usize,
+        q1:         f64,
+        median:     f64,
+        q3:         f64,
+        mean:       Option<f64>,
+        fence_low:  f64,
+        fence_high: f64,
+    },
     /// Frequency bar chart; `idx` is the source column index.
     FreqBar { idx: usize },
     /// Line chart of a numeric column over a date/datetime column, sorted chronologically.
@@ -2957,6 +3069,22 @@ enum PanelKind {
     /// continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the typed x/y
     /// grid, so a dashboard containing this panel always renders via the inline path.
     Geo { lats: Vec<f64>, lons: Vec<f64> },
+}
+
+/// Tukey inner fences (lower = q1 - 1.5*IQR, upper = q3 + 1.5*IQR) for a numeric column, used to
+/// identify outliers for a large-dataset box panel. Prefers the values precomputed in the stats
+/// cache; falls back to computing them from q1/q3/IQR. Returns `None` when the quartiles are
+/// unavailable or the IQR is non-positive (a constant / near-constant column, where every value
+/// would falsely flag as an outlier).
+fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
+    let (q1, q3) = (s.q1?, s.q3?);
+    let iqr = s.iqr.unwrap_or(q3 - q1);
+    if iqr <= 0.0 {
+        return None;
+    }
+    let lo = s.lower_inner_fence.unwrap_or(q1 - 1.5 * iqr);
+    let hi = s.upper_inner_fence.unwrap_or(q3 + 1.5 * iqr);
+    Some((lo, hi))
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -3430,24 +3558,51 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         match classify(idx, s) {
             Some(mut kind) => {
                 // a cache-only quartile box becomes a raw box (with an overlay mode) when the
-                // explicit flag or the size heuristic calls for points; large datasets keep the
-                // cheap cache-only box (the heuristic returns None) to avoid the extra pass.
-                if matches!(kind, PanelKind::BoxStats { .. }) {
+                // explicit flag or the size heuristic calls for points (<= SMART_BOX_OUTLIERS_MAX
+                // rows). Above that, a column that HAS Tukey outliers becomes a `BoxOutliers`
+                // (precomputed box + native outlier-point overlay via a single fence-filtered
+                // pass); a column with no outliers stays a cheap cache-only `BoxStats` (no pass).
+                if let PanelKind::BoxStats {
+                    q1,
+                    median,
+                    q3,
+                    lower,
+                    upper,
+                    mean,
+                } = kind
+                {
                     let n =
                         *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
                     if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n) {
                         kind = PanelKind::BoxRaw { idx, points };
+                    } else if explicit_box_points.is_none()
+                        && n > SMART_BOX_OUTLIERS_MAX
+                        && let Some((fence_low, fence_high)) = box_fences(s)
+                        && (lower.is_some_and(|lo| lo < fence_low)
+                            || upper.is_some_and(|hi| hi > fence_high))
+                    {
+                        // `lower`/`upper` are the column's observed min/max — outside the Tukey
+                        // fences means real outliers exist, so overlay them.
+                        kind = PanelKind::BoxOutliers {
+                            idx,
+                            q1,
+                            median,
+                            q3,
+                            mean,
+                            fence_low,
+                            fence_high,
+                        };
                     }
                 }
                 // for box panels, append moarstats shape hints (skew direction, outlier share)
                 // to the panel title when those extended stats are present. Cache-only, no cost;
                 // without moarstats the hint is None and the title is unchanged.
                 let name = match &kind {
-                    PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } => {
-                        match box_shape_hint(s) {
-                            Some(hint) => format!("{name} {hint}"),
-                            None => name,
-                        }
+                    PanelKind::BoxStats { .. }
+                    | PanelKind::BoxRaw { .. }
+                    | PanelKind::BoxOutliers { .. } => match box_shape_hint(s) {
+                        Some(hint) => format!("{name} {hint}"),
+                        None => name,
                     },
                     _ => name,
                 };
@@ -3648,6 +3803,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             PanelKind::FreqBar { idx } => Some(idx),
             PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
+            | PanelKind::BoxOutliers { .. }
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
@@ -3680,10 +3836,24 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             _ => None,
         })
         .collect();
-    let raw_values = if raw_indices.is_empty() {
-        HashMap::new()
+    // large box panels that have outliers: collect ONLY their out-of-fence values, keyed by the
+    // Tukey fences resolved during classification (folded into the same pass as `raw_indices`).
+    let fence_bounds: HashMap<usize, (f64, f64)> = panels
+        .iter()
+        .filter_map(|p| match p.kind {
+            PanelKind::BoxOutliers {
+                idx,
+                fence_low,
+                fence_high,
+                ..
+            } => Some((idx, (fence_low, fence_high))),
+            _ => None,
+        })
+        .collect();
+    let (raw_values, outlier_stats) = if raw_indices.is_empty() && fence_bounds.is_empty() {
+        (HashMap::new(), HashMap::new())
     } else {
-        collect_numeric_values(args, &raw_indices)?
+        collect_smart_values(args, &raw_indices, &fence_bounds)?
     };
 
     // dashboard title: the user's --title, else the dataset's file name
@@ -3695,32 +3865,47 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         format!("{dataset} \u{2014} data overview")
     });
 
+    let log_scale = parse_log_scale(&args.flag_log_scale)?;
     if inline {
         Ok(SmartRender::Inline(render_smart_inline(
             args,
             &panels,
             &freq,
             &raw_values,
+            &outlier_stats,
             &title_text,
+            log_scale,
         )))
     } else {
-        render_smart_grid(args, &panels, &freq, &raw_values, &title_text)
+        render_smart_grid(
+            args,
+            &panels,
+            &freq,
+            &raw_values,
+            &outlier_stats,
+            &title_text,
+            log_scale,
+        )
     }
 }
 
 /// Build the plotly trace for one smart-dashboard panel. `axes` carries the subplot axis refs
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
-/// to add vertical headroom for the outside value labels).
+/// to add vertical headroom for the outside value labels) and whether that panel's y-axis
+/// should be logarithmic (per `--log-scale`; always `false` for non-bar panels).
 fn panel_trace(
     panel: &Panel,
     color: &'static str,
     freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
     axes: Option<(String, String)>,
     theme: Option<BuiltinTheme>,
-) -> (Box<dyn Trace>, Option<f64>) {
+    log_scale: LogScale,
+) -> (Box<dyn Trace>, Option<f64>, bool) {
     let mut bar_max: Option<f64> = None;
+    let mut log_y = false;
     // bar value-label font: in the unthemed look use qsv's ink color; when themed, omit the
     // color so the label inherits the template's font color (legible on dark backgrounds).
     let label_font = {
@@ -3745,7 +3930,11 @@ fn panel_trace(
                 .q1(vec![*q1])
                 .median(vec![*median])
                 .q3(vec![*q3])
-                .marker(Marker::new().color(color));
+                .marker(Marker::new().color(color))
+                // show only the y stats in the hover ("median: 202.771k"), not plotly's default
+                // "(<trace name>, median: ...)" which repeats the (long) column name on every
+                // statistic line — the column name is already the panel title.
+                .hover_info(HoverInfo::Y);
             if let Some((x, y)) = &axes {
                 b = b.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -3768,7 +3957,48 @@ fn panel_trace(
                 .name(panel.name.clone())
                 .quartile_method(QuartileMethod::Linear)
                 .box_points(points.clone())
-                .marker(Marker::new().color(color));
+                .marker(Marker::new().color(color))
+                // show only the y stats in the hover ("median: 202.771k"), not plotly's default
+                // "(<trace name>, median: ...)" which repeats the (long) column name on every
+                // statistic line — the column name is already the panel title.
+                .hover_info(HoverInfo::Y);
+            if let Some((x, y)) = &axes {
+                b = b.x_axis(x.clone()).y_axis(y.clone());
+            }
+            b
+        },
+        PanelKind::BoxOutliers {
+            idx,
+            q1,
+            median,
+            q3,
+            mean,
+            ..
+        } => {
+            // large column WITH outliers: a precomputed quartile box whose whiskers end at the
+            // observed in-fence extremes, with the out-of-fence values overlaid as NATIVE box
+            // points. The outliers are passed as a 2D `y` (`[[...]]`, via `Y = Vec<f64>`), which
+            // makes plotly draw them as points WITHOUT recomputing the box from them — a 1D `y`
+            // renders the box but drops the points.
+            let stats = outliers.get(idx);
+            let pts = stats.map(|o| o.outliers.clone()).unwrap_or_default();
+            let whisker_low = stats.map_or(*q1, |o| o.whisker_low);
+            let whisker_high = stats.map_or(*q3, |o| o.whisker_high);
+            let mut b = BoxPlot::<f64, Vec<f64>>::new(vec![pts])
+                .name(panel.name.clone())
+                .q1(vec![*q1])
+                .median(vec![*median])
+                .q3(vec![*q3])
+                .lower_fence(vec![whisker_low])
+                .upper_fence(vec![whisker_high])
+                .box_points(BoxPoints::All)
+                .point_pos(0.0)
+                .jitter(0.0)
+                .marker(Marker::new().color(color).size(4))
+                .hover_info(HoverInfo::Y);
+            if let Some(m) = mean {
+                b = b.mean(vec![*m]);
+            }
             if let Some((x, y)) = &axes {
                 b = b.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -3793,6 +4023,9 @@ fn panel_trace(
                 })
                 .collect();
             bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
+            // high dynamic range (a dominating "(NULL)"/"Other" bucket) -> log y-axis so the
+            // small real categories stay visible; gated by the resolved --log-scale mode.
+            log_y = panel_is_log(panel, freq, log_scale);
             let mut bar = Bar::new(xs, ys)
                 .name(panel.name.clone())
                 .marker(Marker::new().color_array(bar_colors))
@@ -3863,7 +4096,7 @@ fn panel_trace(
             unreachable!("map/geo/3D panels are rendered via the inline path, not panel_trace")
         },
     };
-    (trace, bar_max)
+    (trace, bar_max, log_y)
 }
 
 /// Render the dashboard as a single `Plot` with a typed subplot grid (≤ `MAX_SUBPLOTS` panels).
@@ -3876,7 +4109,9 @@ fn render_smart_grid(
     panels: &[Panel],
     freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
     title_text: &str,
+    log_scale: LogScale,
 ) -> CliResult<SmartRender> {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     let rows = panels.len().div_ceil(cols);
@@ -3891,6 +4126,7 @@ fn render_smart_grid(
             PanelKind::CorrHeatmap { labels, .. } => Some(labels),
             PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
+            | PanelKind::BoxOutliers { .. }
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
@@ -3908,6 +4144,13 @@ fn render_smart_grid(
                 .unwrap_or(0);
             (longest * CORR_LABEL_PX_PER_CHAR + 24).max(DEFAULT_LEFT_MARGIN_PX)
         });
+    // log freq panels carry a rotated y-axis title cue; reserve extra left room (shared across
+    // the single-Plot grid) so it isn't clipped against the page edge.
+    let left_margin = if panels.iter().any(|p| panel_is_log(p, freq, log_scale)) {
+        left_margin + LOG_AXIS_TITLE_MARGIN_PX
+    } else {
+        left_margin
+    };
 
     // when a theme is set, let its plotly template drive backgrounds/fonts/axis chrome;
     // otherwise apply qsv's built-in look. `themed` gates the explicit overrides below.
@@ -3965,16 +4208,18 @@ fn render_smart_grid(
         let color = PALETTE[n % PALETTE.len()];
         let is_box = matches!(
             panel.kind,
-            PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. }
+            PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
         );
         let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-        let (trace, bar_max) = panel_trace(
+        let (trace, bar_max, log_y) = panel_trace(
             panel,
             color,
             freq,
             hist,
+            outliers,
             Some((xref.clone(), yref.clone())),
             theme,
+            log_scale,
         );
         plot.add_trace(trace);
 
@@ -3984,7 +4229,7 @@ fn render_smart_grid(
             layout,
             pos,
             styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq)),
-            styled_y_axis(bar_max, theme),
+            styled_y_axis(bar_max, log_y, theme),
             geom.x_domain,
             geom.y_domain,
             &xref,
@@ -4058,7 +4303,9 @@ fn smart_inline_panel_plot(
     color: &'static str,
     freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
     theme: Option<BuiltinTheme>,
+    log_scale: LogScale,
 ) -> Plot {
     // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
     let themed = theme.is_some();
@@ -4173,17 +4420,25 @@ fn smart_inline_panel_plot(
 
     let is_box = matches!(
         panel.kind,
-        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. }
+        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
     );
     let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
-    let (trace, bar_max) = panel_trace(panel, color, freq, hist, None, theme);
+    let (trace, bar_max, log_y) =
+        panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
     let mut plot = Plot::new();
     plot.add_trace(trace);
 
-    // correlation cells need extra left room for tick labels and right room for the colorbar
-    let (left, right) = if is_corr { (110, 90) } else { (60, 30) };
+    // correlation cells need extra left room for tick labels and right room for the colorbar;
+    // log freq cells need a little extra left room for the rotated y-axis title cue.
+    let (left, right) = if is_corr {
+        (110, 90)
+    } else if log_y {
+        (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
+    } else {
+        (60, 30)
+    };
     let mut layout = Layout::new()
         .show_legend(false)
         .height(ROW_HEIGHT_PX)
@@ -4202,7 +4457,7 @@ fn smart_inline_panel_plot(
             theme,
             freq_bar_tick_text(panel, freq),
         ))
-        .y_axis(styled_y_axis(bar_max, theme));
+        .y_axis(styled_y_axis(bar_max, log_y, theme));
     if !themed {
         layout = layout
             .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -4231,7 +4486,9 @@ fn render_smart_inline(
     panels: &[Panel],
     freq: &FreqMap,
     hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
     title_text: &str,
+    log_scale: LogScale,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -4240,7 +4497,7 @@ fn render_smart_inline(
     let mut cells = String::new();
     for (n, panel) in panels.iter().enumerate() {
         let color = PALETTE[n % PALETTE.len()];
-        let plot = smart_inline_panel_plot(panel, color, freq, hist, theme);
+        let plot = smart_inline_panel_plot(panel, color, freq, hist, outliers, theme, log_scale);
         let div_id = format!("qsv-viz-panel-{n}");
         cells.push_str("    <div class=\"qsv-viz-cell\">\n");
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
@@ -4464,37 +4721,106 @@ fn count_values(args: &Args, indices: &[usize], top_n: usize) -> CliResult<FreqM
     Ok(out)
 }
 
-/// Collect raw numeric values for the given column indices in a single pass, each downsampled to
-/// at most `MAX_SMART_POINTS` via uniform stride (preserving the distribution shape). Feeds
-/// `viz smart`'s histogram panels — the only smart panel that needs raw data. Empty and
-/// non-numeric cells are skipped.
-fn collect_numeric_values(args: &Args, indices: &[usize]) -> CliResult<HashMap<usize, Vec<f64>>> {
+/// Per-column result for a `BoxOutliers` panel, produced by the single `collect_smart_values`
+/// pass: the out-of-fence outlier values (capped, rendered as native box points), the most
+/// extreme IN-fence values (the honest Tukey whisker endpoints), and the true uncapped outlier
+/// count (for the overflow log).
+struct OutlierStats {
+    outliers:      Vec<f64>,
+    whisker_low:   f64,
+    whisker_high:  f64,
+    outlier_count: usize,
+}
+
+/// One streaming pass serving both `viz smart` raw-value panels and outlier-box panels:
+/// - `full_indices` (histograms / small raw boxes) collect EVERY numeric value, each downsampled to
+///   at most `MAX_SMART_POINTS` via uniform stride (preserving the distribution shape).
+/// - `fence_bounds` (large boxes that have outliers) collect ONLY the out-of-fence values (capped
+///   at `SMART_BOX_OUTLIERS_CAP`; never uniform-downsampled, which would drop the extremes) and
+///   track the in-fence min/max for honest whisker ends.
+///
+/// Empty and non-numeric cells are skipped. Folding both into one reader loop means a dashboard
+/// mixing histograms and outlier boxes still scans the data only once.
+fn collect_smart_values(
+    args: &Args,
+    full_indices: &[usize],
+    fence_bounds: &HashMap<usize, (f64, f64)>,
+) -> CliResult<(HashMap<usize, Vec<f64>>, HashMap<usize, OutlierStats>)> {
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
     let mut rdr = rconfig.reader()?;
 
-    let mut maps: HashMap<usize, Vec<f64>> = indices.iter().map(|&i| (i, Vec::new())).collect();
+    let mut full: HashMap<usize, Vec<f64>> =
+        full_indices.iter().map(|&i| (i, Vec::new())).collect();
+    let mut outliers: HashMap<usize, OutlierStats> = fence_bounds
+        .keys()
+        .map(|&i| {
+            (
+                i,
+                OutlierStats {
+                    outliers:      Vec::new(),
+                    whisker_low:   f64::INFINITY,
+                    whisker_high:  f64::NEG_INFINITY,
+                    outlier_count: 0,
+                },
+            )
+        })
+        .collect();
 
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
-        for &i in indices {
+        for &i in full_indices {
             if let Some(v) = parse_f64(record.get(i))
-                && let Some(col) = maps.get_mut(&i)
+                && let Some(col) = full.get_mut(&i)
             {
                 col.push(v);
             }
         }
+        for (&i, &(lo, hi)) in fence_bounds {
+            if let Some(v) = parse_f64(record.get(i))
+                && let Some(os) = outliers.get_mut(&i)
+            {
+                if v < lo || v > hi {
+                    os.outlier_count += 1;
+                    if os.outliers.len() < SMART_BOX_OUTLIERS_CAP {
+                        os.outliers.push(v);
+                    }
+                } else {
+                    os.whisker_low = os.whisker_low.min(v);
+                    os.whisker_high = os.whisker_high.max(v);
+                }
+            }
+        }
     }
 
-    // downsample each column so the embedded HTML stays small while keeping the distribution shape
-    for col in maps.values_mut() {
+    // downsample full columns so the embedded HTML stays small (outlier columns are already capped)
+    for col in full.values_mut() {
         if col.len() > MAX_SMART_POINTS {
             let (sampled, _) = downsample_pair(col, col, MAX_SMART_POINTS);
             *col = sampled;
         }
     }
-    Ok(maps)
+
+    // degenerate guard: if a column had NO in-fence value (essentially impossible — q1..q3 is
+    // within the fences by construction — but be safe), fall the whisker back to the fence.
+    for (&i, os) in &mut outliers {
+        if !os.whisker_low.is_finite() {
+            os.whisker_low = fence_bounds[&i].0;
+        }
+        if !os.whisker_high.is_finite() {
+            os.whisker_high = fence_bounds[&i].1;
+        }
+        if os.outlier_count > SMART_BOX_OUTLIERS_CAP {
+            log::info!(
+                "viz smart: column index {i} has {} outliers; showing the first {}",
+                os.outlier_count,
+                SMART_BOX_OUTLIERS_CAP
+            );
+        }
+    }
+
+    Ok((full, outliers))
 }
 
 /// The plotly axis reference string for subplot `pos` (1-based): "x"/"y" for the first,
@@ -4638,9 +4964,11 @@ fn styled_x_axis(
 }
 
 /// A styled y-axis for a dashboard panel: light horizontal gridlines only, small ticks.
-/// When `headroom_max` is given (bar panels), the range is fixed to `0..=max*1.15` so the
-/// tallest bar's outside value label has room and isn't clipped at the cell top.
-fn styled_y_axis(headroom_max: Option<f64>, theme: Option<BuiltinTheme>) -> Axis {
+/// When `headroom_max` is given (bar panels), the range is fixed so the tallest bar's outside
+/// value label has room and isn't clipped at the cell top: `0..=max*1.15` on a linear axis, or
+/// (when `log`) a log10 range from just under 1 up to `log10(max)` plus a margin. A `log` axis
+/// also carries a `LOG_AXIS_TITLE` ("count (log)") as the visual cue that it's logarithmic.
+fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinTheme>) -> Axis {
     let mut a = Axis::new()
         .show_grid(true)
         .grid_width(1)
@@ -4653,10 +4981,30 @@ fn styled_y_axis(headroom_max: Option<f64>, theme: Option<BuiltinTheme>) -> Axis
             .tick_color(AXIS_LINE)
             .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
     }
-    if let Some(m) = headroom_max
-        && m > 0.0
-    {
-        a = a.range(vec![0.0, m * 1.15]);
+    match (log, headroom_max) {
+        // log axis: plotly ranges are in log10 units. Start a hair below 1 (counts are >= 1) so
+        // a count-of-1 bar still draws a visible sliver, and add ~0.15 in log10 (~1.4x) of top
+        // headroom for the outside value labels.
+        (true, Some(m)) if m > 0.0 => {
+            a = a.type_(AxisType::Log).range(vec![-0.05, m.log10() + 0.15]);
+        },
+        // log axis without a known max (shouldn't happen for bar panels): let plotly autorange.
+        (true, _) => {
+            a = a.type_(AxisType::Log);
+        },
+        (false, Some(m)) if m > 0.0 => {
+            a = a.range(vec![0.0, m * 1.15]);
+        },
+        (false, _) => {},
+    }
+    if log {
+        // the visual cue: only log panels get a y-axis title, so a log scale is never mistaken
+        // for linear. Linear panels stay title-less to keep the cells compact.
+        let mut title_font = Font::new().size(11);
+        if theme.is_none() {
+            title_font = title_font.family(FONT_FAMILY).color(INK);
+        }
+        a = a.title(Title::with_text(LOG_AXIS_TITLE).font(title_font));
     }
     a
 }
@@ -4745,6 +5093,40 @@ mod tests {
         s.min = Some("0.5".to_string());
         s.max = Some("3.5".to_string());
         assert!(matches!(classify(1, &s), Some(PanelKind::BoxStats { .. })));
+    }
+
+    #[test]
+    fn log_scale_parse() {
+        assert!(matches!(parse_log_scale("auto"), Ok(LogScale::Auto)));
+        assert!(matches!(parse_log_scale("AUTO"), Ok(LogScale::Auto)));
+        assert!(matches!(parse_log_scale("on"), Ok(LogScale::On)));
+        assert!(matches!(parse_log_scale("true"), Ok(LogScale::On)));
+        assert!(matches!(parse_log_scale("off"), Ok(LogScale::Off)));
+        assert!(matches!(parse_log_scale("false"), Ok(LogScale::Off)));
+        assert!(parse_log_scale("bogus").is_err());
+    }
+
+    #[test]
+    fn freq_panel_logs_auto_triggers_on_high_dynamic_range() {
+        // a dominating bucket (10000) dwarfs the small categories (>= 50x) -> log
+        let dominated = [10_000, 120, 90, 30];
+        assert!(freq_panel_logs(LogScale::Auto, &dominated));
+        // a balanced distribution (max/min < 50x) stays linear under auto
+        let balanced = [100, 90, 80, 70];
+        assert!(!freq_panel_logs(LogScale::Auto, &balanced));
+        // auto needs at least 3 positive bars (a lone tall bar isn't "dominating" anything)
+        let two_bars = [10_000, 1];
+        assert!(!freq_panel_logs(LogScale::Auto, &two_bars));
+    }
+
+    #[test]
+    fn freq_panel_logs_on_and_off_modes() {
+        let balanced = [100, 90, 80];
+        // `on` forces log even when the range is low (needs 2+ positive bars)
+        assert!(freq_panel_logs(LogScale::On, &balanced));
+        assert!(!freq_panel_logs(LogScale::On, &[5]));
+        // `off` never logs, even on a wildly skewed distribution
+        assert!(!freq_panel_logs(LogScale::Off, &[10_000, 100, 10, 1]));
     }
 
     #[test]

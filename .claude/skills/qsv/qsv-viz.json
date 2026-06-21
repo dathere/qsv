@@ -51,7 +51,7 @@
       {
         "flag": "--box-points",
         "type": "string",
-        "description": "Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points for small data (<=1,000 rows), only the outliers for medium data (<=10,000 rows), and none above that (the box stays a fast cache-only quartile summary with observed min/max whiskers, no data re-scan). An explicit mode is applied to every box panel (one extra batched pass to read the values), except `none`, which keeps the cache-only box."
+        "description": "Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points for small data (<=1,000 rows) and only the outliers for medium data (<=10,000 rows). Above that, a column that HAS outliers shows them as points on a precomputed quartile box (a single pass collects only the out-of-fence values, capped); a column with no outliers stays a fast cache-only quartile summary with no data re-scan. An explicit mode is applied to every box panel (one batched pass to read the values), except `none`, which always keeps the cache-only box."
       },
       {
         "flag": "--close",
@@ -109,6 +109,12 @@
         "type": "string",
         "description": "Top-N categories per frequency bar chart.",
         "default": "10"
+      },
+      {
+        "flag": "--log-scale",
+        "type": "string",
+        "description": "Use a logarithmic y-axis for frequency bar panels whose tallest bar dwarfs the rest (e.g. a large \"(NULL)\" or \"Other (N)\" bucket), so the small categories stay visible. One of: auto, on, off. \"auto\" (the default) switches a panel to a log y-axis only when its dynamic range is high; \"on\" forces a log y-axis on every frequency panel; \"off\" keeps the linear axes. Only affects `smart`.",
+        "default": "auto"
       },
       {
         "flag": "--lon",

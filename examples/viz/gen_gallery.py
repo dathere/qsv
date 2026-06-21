@@ -54,7 +54,7 @@ FIGURES = [
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("smart dashboard (--smarter, geospatial)",
      "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3` command, "
-     "9 auto-chosen panels — nearly every "
+     "10 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "

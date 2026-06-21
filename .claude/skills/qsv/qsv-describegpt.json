@@ -64,12 +64,12 @@
       {
         "flag": "--ds-source",
         "type": "string",
-        "description": "For the SemanticMd format only: the dataset source/provenance recorded in the document frontmatter (e.g. a source URL or publisher). Optional; the frontmatter key is omitted when unset. Ignored by other formats."
+        "description": "For the SemanticMd & OKF formats only: the dataset source/provenance recorded in the document frontmatter (e.g. a source URL or publisher). For OKF this populates the `resource` key. Optional; the frontmatter key is omitted when unset. Ignored by other formats."
       },
       {
         "flag": "--ds-updated",
         "type": "string",
-        "description": "For the SemanticMd format only: the dataset's last-updated date recorded in the document frontmatter. Optional. Ignored by other formats."
+        "description": "For the SemanticMd & OKF formats only: the dataset's last-updated date recorded in the document frontmatter. For OKF this populates the `timestamp` key. Optional. Ignored by other formats."
       },
       {
         "flag": "--enum-threshold",
@@ -90,7 +90,7 @@
       {
         "flag": "--format",
         "type": "string",
-        "description": "Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported. SemanticMd emits the Data Dictionary as a Semantic Markdown document (https://semanticmd.org/) - human-readable markdown with light, agent-parseable conventions that a companion converter turns into JSON. It enriches each column with a catalog-wide Concept ID (for cross-dataset join discovery), an analytical Role (dimension/measure/identifier/timestamp), join keys & cardinality, data-quality flags, and a richer per-column statistics block; it also emits a dataset grain and a temporal/spatial envelope. To populate Concept/Role/grain, SemanticMd implies --infer-content-type. Like JSONSchema, it requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the '# Dataset' description; tags, when also run, are embedded in the document frontmatter. The prompt inference is not supported.",
+        "description": "Output format: Markdown, TSV, JSON, TOON, JSONSchema, SemanticMd, or OKF. TOON is a compact, human-readable encoding of the JSON data model for LLM prompts. See https://toonformat.dev/ for more info. JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12) document, enriched with LLM-inferred Label, Description and Content Type (the latter only when the infer-content-type flag is set). qsv- and LLM- specific metadata not modeled by the JSON Schema spec (cardinality, null_count, weighted example counts, content_type, addl stats columns) is preserved via a single x-qsv annotation object per property; unknown keywords are ignored by validators per the 2020-12 spec. The JSONSchema format requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the schema's top-level description; tags, when also run, are embedded at x-qsv.tags. The prompt inference is not supported. SemanticMd emits the Data Dictionary as a Semantic Markdown document (https://semanticmd.org/) - human-readable markdown with light, agent-parseable conventions that a companion converter turns into JSON. It enriches each column with a catalog-wide Concept ID (for cross-dataset join discovery), an analytical Role (dimension/measure/identifier/timestamp), join keys & cardinality, data-quality flags, and a richer per-column statistics block; it also emits a dataset grain and a temporal/spatial envelope. To populate Concept/Role/grain, SemanticMd implies --infer-content-type. Like JSONSchema, it requires the dictionary inference phase (the dictionary or all flag). The description inference, when also run, becomes the '# Dataset' description; tags, when also run, are embedded in the document frontmatter. The prompt inference is not supported. OKF emits the Data Dictionary as an Open Knowledge Format document (https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) - a leaner, vendor-neutral plain-markdown-plus-YAML-frontmatter format. It emits frontmatter (type/title/description/resource/timestamp/tags) and a Schema section with a Column/Type/Description table. The type frontmatter key is set via the okf-type flag (default \"CSV Table\"); ds-source maps to resource and ds-updated maps to timestamp. Like SemanticMd, OKF implies infer-content-type, requires the dictionary inference phase (the dictionary or all flag), folds the description inference into the body prose and frontmatter description, and embeds tags in the frontmatter. The prompt inference is not supported.",
         "default": "Markdown"
       },
       {
@@ -140,6 +140,11 @@
         "type": "string",
         "description": "The maximum number of tags to infer when the --tags option is used. Maximum allowed value is 50.",
         "default": "10"
+      },
+      {
+        "flag": "--okf-type",
+        "type": "string",
+        "description": "For the OKF format only: the value of the required `type` frontmatter key (e.g. \"CSV Table\", \"BigQuery Table\"). Optional; defaults to \"CSV Table\". Ignored by other formats."
       },
       {
         "flag": "--output",

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **`qsv-describegpt` skill regenerated for the new `--format okf` output** ([#4018](https://github.com/dathere/qsv/issues/4018)). The describegpt skill now advertises **OKF (Open Knowledge Format)** as a `--format` choice alongside SemanticMd — a leaner, vendor-neutral plain-markdown-plus-YAML-frontmatter Data Dictionary document (`type`/`title`/`description`/`resource`/`timestamp`/`tags` frontmatter + a `Column | Type | Description` Schema table). Adds the `--okf-type` flag (sets the required `type` frontmatter key, default `"CSV Table"`); `--ds-source`/`--ds-updated` additionally map to OKF's `resource`/`timestamp`. Skill count unchanged at 55.
+
 ### Added
 - **`qsv-viz` exposed as an MCP skill** ([#302](https://github.com/dathere/qsv/issues/302)). The Plotly charting/auto-dashboard command (subcommands `smart`, `bar`, `line`, `scatter`, `histogram`, `box`, `pie`, `heatmap`, `candlestick`, `ohlc`, `sankey`, `radar`, `map`) is now generated as a skill and is **search-discoverable** via `qsv_search_tools` (not preloaded in `COMMON_COMMANDS`). Skill count grows 54 → 55. Output is **HTML-only** over MCP: viz produces a self-contained interactive HTML artifact that is **always saved to the working directory** (never inlined into chat or deleted, regardless of size) and its `.html` path returned. A non-HTML `--output` (`.png/.svg/.pdf/.jpeg/.webp`) is **rejected** before viz runs, so MCP callers can't trigger the browser/webdriver-backed static-export path — static export remains CLI-only. `viz` is registered in `ALWAYS_FILE_COMMANDS` and `NON_TABULAR_COMMANDS`; the auto-created output file and the saved working-dir artifact both use the `.html` extension so the chart is correctly typed.
 

@@ -406,7 +406,7 @@ describegpt options:
 
 Common options:
     -h, --help             Display this message
-    --format <format>      Output format: Markdown, TSV, JSON, TOON, JSONSchema, or SemanticMd.
+    --format <format>      Output format: Markdown, TSV, JSON, TOON, JSONSchema, SemanticMd, or OKF.
                            TOON is a compact, human-readable encoding of the JSON data model for LLM prompts.
                            See https://toonformat.dev/ for more info.
                            JSONSchema emits the Data Dictionary as a JSON Schema (draft 2020-12)
@@ -433,6 +433,17 @@ Common options:
                            dictionary or all flag). The description inference, when also run, becomes
                            the '# Dataset' description; tags, when also run, are embedded in the
                            document frontmatter. The prompt inference is not supported.
+                           OKF emits the Data Dictionary as an Open Knowledge Format document
+                           (https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) -
+                           a leaner, vendor-neutral plain-markdown-plus-YAML-frontmatter format. It
+                           emits frontmatter (type/title/description/resource/timestamp/tags) and a
+                           Schema section with a Column/Type/Description table. The type frontmatter
+                           key is set via the okf-type flag (default "CSV Table"); ds-source maps to
+                           resource and ds-updated maps to timestamp. Like SemanticMd, OKF implies
+                           infer-content-type, requires the dictionary inference phase (the dictionary
+                           or all flag), folds the description inference into the body prose and
+                           frontmatter description, and embeds tags in the frontmatter. The prompt
+                           inference is not supported.
                            [default: Markdown]
     --allow-extra-cols     When the format is JSONSchema, emit additionalProperties as true at the
                            schema root (default is false, strict). Only meaningful with the
@@ -444,13 +455,18 @@ Common options:
                            the validate roundtrip would otherwise fail. Set this only when your
                            source columns are guaranteed to be RFC 3339 full-date / date-time.
                            Mirrors the same flag on the schema command.
-    --ds-source <text>     For the SemanticMd format only: the dataset source/provenance recorded in
-                           the document frontmatter (e.g. a source URL or publisher). Optional;
-                           the frontmatter key is omitted when unset. Ignored by other formats.
-    --ds-updated <text>    For the SemanticMd format only: the dataset's last-updated date recorded
-                           in the document frontmatter. Optional. Ignored by other formats.
+    --ds-source <text>     For the SemanticMd & OKF formats only: the dataset source/provenance
+                           recorded in the document frontmatter (e.g. a source URL or publisher).
+                           For OKF this populates the `resource` key. Optional; the frontmatter key
+                           is omitted when unset. Ignored by other formats.
+    --ds-updated <text>    For the SemanticMd & OKF formats only: the dataset's last-updated date
+                           recorded in the document frontmatter. For OKF this populates the
+                           `timestamp` key. Optional. Ignored by other formats.
     --ds-license <text>    For the SemanticMd format only: the dataset license recorded in the
                            document frontmatter. Optional. Ignored by other formats.
+    --okf-type <text>      For the OKF format only: the value of the required `type` frontmatter key
+                           (e.g. "CSV Table", "BigQuery Table"). Optional; defaults to "CSV Table".
+                           Ignored by other formats.
     -o, --output <file>    Write output to <file> instead of stdout. If --format is set to TSV,
                            separate files will be created for each prompt type with the pattern
                            {filestem}.{kind}.tsv (e.g., output.dictionary.tsv, output.tags.tsv).
@@ -533,6 +549,7 @@ enum OutputFormat {
     Toon,
     JsonSchema,
     SemanticMd,
+    Okf,
 }
 #[derive(Debug, Deserialize)]
 struct Args {
@@ -595,6 +612,7 @@ struct Args {
     flag_ds_source:          Option<String>,
     flag_ds_updated:         Option<String>,
     flag_ds_license:         Option<String>,
+    flag_okf_type:           Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -647,6 +665,7 @@ struct MarkdownTemplateFile {
     tags_md_template: String,
     custom_prompt_md_template: String,
     semanticmd_md_body_template: String,
+    okf_md_body_template: String,
 }
 
 /// User-supplied `--markdown-template` overrides. Every field is optional so a user can
@@ -675,6 +694,8 @@ struct MarkdownTemplateOverride {
     custom_prompt_md_template: Option<String>,
     #[serde(default)]
     semanticmd_md_body_template: Option<String>,
+    #[serde(default)]
+    okf_md_body_template: Option<String>,
 }
 
 impl MarkdownTemplateOverride {
@@ -702,6 +723,9 @@ impl MarkdownTemplateOverride {
             semanticmd_md_body_template: self
                 .semanticmd_md_body_template
                 .unwrap_or(base.semanticmd_md_body_template),
+            okf_md_body_template: self
+                .okf_md_body_template
+                .unwrap_or(base.okf_md_body_template),
         }
     }
 }
@@ -1518,6 +1542,60 @@ fn render_semanticmd_body(
         .map_err(|e| CliError::Other(format!("SemanticMd body template render error: {e}")))
 }
 
+/// Render an Open Knowledge Format (OKF) data dictionary document from the dictionary entries.
+///
+/// OKF (<https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf>) is a leaner,
+/// vendor-neutral sibling of the semantic-md format: YAML frontmatter (`type`/`title`/
+/// `description`/`resource`/`timestamp`/`tags`) plus a `# Schema` Column|Type|Description table.
+/// It reuses the same `build_semanticmd_data` context; the OKF template just consumes a subset.
+///
+/// The output carries three placeholders — `{DATASET_DESCRIPTION}` (body prose),
+/// `{DATASET_DESCRIPTION_FM}` (flattened single-line frontmatter description) and `{OKF_TAGS}` —
+/// that `finalize_structured_output` substitutes once the Description / Tags phases have run.
+fn render_okf_body(
+    args: &Args,
+    entries: &[dictionary::DictionaryEntry],
+    grain: Option<&str>,
+    model: &str,
+    base_url: &str,
+    shared: &SharedRenderCtx,
+) -> CliResult<String> {
+    let md_file = get_md_template_file(args)?;
+    let env = make_describegpt_md_env();
+
+    let (resource_name, dataset_id, schema_id, dataset_title) =
+        semanticmd_ids(args.arg_input.as_deref());
+    let data = formatters::build_semanticmd_data(entries, grain.map(str::to_string));
+
+    let ctx = context! {
+        okf_type => args.flag_okf_type.as_deref().unwrap_or("CSV Table"),
+        profile => SEMANTICMD_PROFILE,
+        dataset_id => dataset_id,
+        dataset_title => dataset_title,
+        schema_id => schema_id,
+        resource_name => resource_name,
+        primary_key => data.primary_key,
+        row_count => data.row_count,
+        grain => data.grain,
+        concepts => data.concepts,
+        temporal_coverage => data.temporal_coverage,
+        spatial => data.spatial,
+        ds_source => args.flag_ds_source.as_deref().unwrap_or_default(),
+        ds_updated => args.flag_ds_updated.as_deref().unwrap_or_default(),
+        ds_license => args.flag_ds_license.as_deref().unwrap_or_default(),
+        entries => data.entries,
+        kind => PromptType::Dictionary.to_string(),
+        generated_by_signature => &shared.attribution,
+        model => model,
+        base_url => base_url,
+        input_filename => args.arg_input.as_deref().unwrap_or("stdin"),
+        timestamp => &shared.timestamp,
+    };
+
+    env.render_str(&md_file.okf_md_body_template, &ctx)
+        .map_err(|e| CliError::Other(format!("OKF body template render error: {e}")))
+}
+
 fn render_markdown_template(
     kind: PromptType,
     args: &Args,
@@ -2132,9 +2210,9 @@ fn get_prompt(
 
     // Build context with all variables needed for template rendering
     let json_add = match get_output_format(args)? {
-        // SemanticMd folds the Tags response into the document frontmatter as a YAML list,
-        // so request JSON (a clean {"tags": [...]} array) rather than free-form Markdown.
-        OutputFormat::Json | OutputFormat::SemanticMd => {
+        // SemanticMd and OKF fold the Tags response into the document frontmatter as a YAML
+        // list, so request JSON (a clean {"tags": [...]} array) rather than free-form Markdown.
+        OutputFormat::Json | OutputFormat::SemanticMd | OutputFormat::Okf => {
             " (in valid, pretty-printed JSON format, ensuring string values are properly escaped)"
         },
         OutputFormat::Toon => " (in TOON format)",
@@ -2642,9 +2720,10 @@ fn get_output_format(args: &Args) -> CliResult<OutputFormat> {
         "toon" => Ok(OutputFormat::Toon),
         "jsonschema" | "json-schema" | "json_schema" => Ok(OutputFormat::JsonSchema),
         "semanticmd" | "semantic-md" | "semantic_md" => Ok(OutputFormat::SemanticMd),
+        "okf" | "open-knowledge-format" | "open_knowledge_format" => Ok(OutputFormat::Okf),
         _ => fail_incorrectusage_clierror!(
             "Invalid format '{format_str}'. Must be one of: Markdown, TSV, JSON, TOON, \
-             JSONSchema, SemanticMd"
+             JSONSchema, SemanticMd, OKF"
         ),
     }
 }
@@ -2955,14 +3034,17 @@ fn format_dictionary_phase(
     base_url: &str,
     output_format: OutputFormat,
 ) -> CliResult<()> {
-    if output_format == OutputFormat::SemanticMd {
-        // Render the semantic-md data dictionary document. The dataset description
+    if matches!(output_format, OutputFormat::SemanticMd | OutputFormat::Okf) {
+        // Render the semantic-md or OKF data dictionary document. The dataset description
         // (from --description) and tags frontmatter (from --tags) are folded in by
         // `finalize_structured_output`, which substitutes the `{DATASET_DESCRIPTION}`
-        // and `{SEMANTICMD_TAGS}` placeholders the template leaves behind.
+        // and `{SEMANTICMD_TAGS}`/`{OKF_TAGS}` placeholders the template leaves behind.
         let shared = SharedRenderCtx::new(args, model, base_url, PromptType::Dictionary);
-        let mut semanticmd_output =
-            render_semanticmd_body(args, combined_entries, grain, model, base_url, &shared)?;
+        let mut semanticmd_output = if output_format == OutputFormat::Okf {
+            render_okf_body(args, combined_entries, grain, model, base_url, &shared)?
+        } else {
+            render_semanticmd_body(args, combined_entries, grain, model, base_url, &shared)?
+        };
         // Belt-and-suspenders: also substitute any literal {GENERATED_BY_SIGNATURE} that
         // may have leaked through from a custom template.
         semanticmd_output = replace_attribution_placeholder(
@@ -3436,11 +3518,17 @@ fn process_phase_output(
     // is_sql_response) so adding a new OutputFormat variant is a compile error here,
     // forcing an explicit routing decision.
     match (output_format, is_sql_response) {
-        (OutputFormat::Json | OutputFormat::JsonSchema | OutputFormat::SemanticMd, false) => {
-            // JsonSchema and SemanticMd reuse the JSON accumulator for Description/Tags so
+        (
+            OutputFormat::Json
+            | OutputFormat::JsonSchema
+            | OutputFormat::SemanticMd
+            | OutputFormat::Okf,
+            false,
+        ) => {
+            // JsonSchema, SemanticMd and OKF reuse the JSON accumulator for Description/Tags so
             // `finalize_structured_output` can fold their LLM responses into the schema's
             // top-level `description` / `x-qsv.tags` (JsonSchema) or the document's
-            // `# Dataset` description / frontmatter tags (SemanticMd).
+            // `# Dataset` description / frontmatter tags (SemanticMd / OKF).
             format_phase_json(kind, args, completion_response, total_json_output);
             Ok(())
         },
@@ -3462,7 +3550,8 @@ fn process_phase_output(
             | OutputFormat::Tsv
             | OutputFormat::Toon
             | OutputFormat::JsonSchema
-            | OutputFormat::SemanticMd,
+            | OutputFormat::SemanticMd
+            | OutputFormat::Okf,
             true,
         ) => format_phase_markdown(
             kind,
@@ -4570,6 +4659,52 @@ fn finalize_structured_output(
                 println!("{doc}");
             }
         },
+        OutputFormat::Okf => {
+            // Pull the OKF document rendered by `format_dictionary_phase`. Required —
+            // run() rejects --format okf without --dictionary/--all, so this entry
+            // must exist by the time we get here.
+            let mut doc = total_json_output
+                .get(PromptType::Dictionary.to_string())
+                .and_then(|v| v.get("response"))
+                .and_then(|v| v.as_str())
+                .map(ToString::to_string)
+                .ok_or_else(|| {
+                    CliError::Other(
+                        "--format okf: dictionary document missing from phase output. This is a \
+                         bug — please report it."
+                            .to_string(),
+                    )
+                })?;
+
+            // The Description phase (if it ran) feeds both the `# <title>` body prose and the
+            // single-line frontmatter `description:` key. Strip the attribution footer the
+            // description prompt appends so the doc's single attribution stays at the bottom.
+            let description = total_json_output
+                .get(PromptType::Description.to_string())
+                .and_then(|v| v.get("response"))
+                .and_then(|v| v.as_str())
+                .map(strip_attribution_block)
+                .unwrap_or_default();
+            // Frontmatter needs a single-line, YAML-escaped scalar — flatten the prose.
+            let description_fm =
+                yaml_scalar(&description.split_whitespace().collect::<Vec<_>>().join(" "));
+            doc = doc.replace("{DATASET_DESCRIPTION_FM}", &description_fm);
+            doc = doc.replace("{DATASET_DESCRIPTION}", &description);
+
+            // OKF's recommended `tags` is a YAML list — identical shape to semanticmd's,
+            // so reuse the same builder. Empty/missing tags collapse the placeholder cleanly.
+            let tags_block = total_json_output
+                .get(PromptType::Tags.to_string())
+                .and_then(|v| v.get("response"))
+                .map_or_else(String::new, build_semanticmd_tags_frontmatter);
+            doc = doc.replace("{OKF_TAGS}", &tags_block);
+
+            if let Some(output_file_path) = &args.flag_output {
+                fs::write(output_file_path, doc)?;
+            } else {
+                println!("{doc}");
+            }
+        },
         OutputFormat::Markdown | OutputFormat::Tsv => {
             // Already written inline by per-phase helpers.
         },
@@ -5242,6 +5377,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         // the content-type LLM pass (concept seeds from content_type). Auto-enable it so a
         // plain `--dictionary --format semanticmd` yields the full semantic document; this
         // is the documented gating ("SemanticMd implies --infer-content-type").
+        args.flag_infer_content_type = true;
+    } else if output_format_check == OutputFormat::Okf {
+        // OKF is dictionary-centric like SemanticMd: it emits an Open Knowledge Format
+        // markdown document. --description becomes the body prose + frontmatter description
+        // and --tags are embedded in the frontmatter; --prompt is conceptually separate
+        // and unsupported.
+        if !(args.flag_dictionary || args.flag_all) {
+            return fail_incorrectusage_clierror!("--format okf requires --dictionary (or --all).");
+        }
+        if args.flag_prompt.is_some() {
+            return fail_incorrectusage_clierror!("--format okf is not compatible with --prompt.");
+        }
+        // Auto-enable content-type inference for parity with SemanticMd: it enriches the
+        // per-column Description (and seeds Concept/Role used internally), giving a plain
+        // `--dictionary --format okf` the same quality of column descriptions.
         args.flag_infer_content_type = true;
     } else if args.flag_allow_extra_cols && !args.flag_quiet {
         wwarn!("--allow-extra-cols is only meaningful with --format jsonschema; ignoring.");
@@ -6817,6 +6967,7 @@ p_fewshot_examples = ""
             flag_ds_source:          None,
             flag_ds_updated:         None,
             flag_ds_license:         None,
+            flag_okf_type:           None,
         }
     }
 
@@ -7105,6 +7256,136 @@ p_fewshot_examples = ""
         assert!(rendered.contains("| Choice | Frequency | Percentage | Rank |"));
         assert!(rendered.contains("| Closed | 800 | 84.21% | 1 |"));
         assert!(rendered.contains("| Open | 150 | 15.79% | 2 |"));
+    }
+
+    #[test]
+    fn okf_body_default_template() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/NYC_311.csv".to_string());
+        args.flag_ds_source = Some("https://data.cityofnewyork.us/311".to_string());
+        args.flag_ds_updated = Some("2026-06-20".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let entries = vec![
+            dictionary::DictionaryEntry {
+                name:         "Unique Key".to_string(),
+                r#type:       "Integer".to_string(),
+                label:        "Record Identifier".to_string(),
+                description:  "A unique numeric identifier for each record.".to_string(),
+                content_type: "unique_id".to_string(),
+                min:          "1".to_string(),
+                max:          "1000".to_string(),
+                cardinality:  1000,
+                enumeration:  String::new(),
+                null_count:   0,
+                addl_cols:    IndexMap::new(),
+                examples:     "<ALL_UNIQUE>".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: true,
+                concept:      "id.surrogate_key".to_string(),
+                role:         "identifier".to_string(),
+            },
+            dictionary::DictionaryEntry {
+                name:         "Status".to_string(),
+                r#type:       "String".to_string(),
+                label:        "Complaint Status".to_string(),
+                description:  "Current processing status.".to_string(),
+                content_type: "category".to_string(),
+                min:          "Assigned".to_string(),
+                max:          "Open".to_string(),
+                cardinality:  3,
+                enumeration:  "Assigned\nClosed\nOpen".to_string(),
+                null_count:   50,
+                addl_cols:    IndexMap::new(),
+                examples:     "Closed [800]\nOpen [150]".to_string(),
+                freq_details: Vec::new(),
+                is_unique_id: false,
+                concept:      "category.status".to_string(),
+                role:         "dimension".to_string(),
+            },
+        ];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered = render_okf_body(
+            &args,
+            &entries,
+            Some("one row = one 311 service request"),
+            model,
+            base_url,
+            &shared,
+        )
+        .unwrap();
+
+        // OKF frontmatter: required `type` (default), title, ds-source->resource,
+        // ds-updated->timestamp, and the placeholders finalize substitutes later.
+        assert!(rendered.starts_with("---\ntype: \"CSV Table\"\n"));
+        assert!(rendered.contains("title: \"NYC 311\"\n"));
+        assert!(rendered.contains("description: {DATASET_DESCRIPTION_FM}\n"));
+        assert!(rendered.contains("resource: \"https://data.cityofnewyork.us/311\"\n"));
+        assert!(rendered.contains("timestamp: \"2026-06-20\"\n"));
+        assert!(rendered.contains("{OKF_TAGS}"));
+        assert!(rendered.contains("{DATASET_DESCRIPTION}"));
+        // Body: # title + Schema table (Column | Type | Description), using the
+        // human-friendly sem_type vocabulary and the LLM Description.
+        assert!(rendered.contains("# NYC 311"));
+        assert!(rendered.contains("# Schema"));
+        assert!(rendered.contains("| Column | Type | Description |"));
+        assert!(
+            rendered.contains(
+                "| `Unique Key` | integer | A unique numeric identifier for each record. |"
+            )
+        );
+        assert!(rendered.contains("| `Status` | text | Current processing status. |"));
+        // Lean format: no semantic-md profile line, no Role/Concept/Join schema columns.
+        assert!(!rendered.contains("semantic-md:"));
+        assert!(!rendered.contains("Join?"));
+    }
+
+    #[test]
+    fn okf_body_custom_type() {
+        use indexmap::IndexMap;
+
+        let mut args = default_args_for_test();
+        args.flag_base_url = Some(DEFAULT_BASE_URL.to_string());
+        args.flag_model = Some(DEFAULT_MODEL.to_string());
+        args.arg_input = Some("data/orders.csv".to_string());
+        args.flag_okf_type = Some("BigQuery Table".to_string());
+        let model = "openai/gpt-oss-20b";
+        let base_url = "http://localhost:11434/v1";
+
+        let entries = vec![dictionary::DictionaryEntry {
+            name:         "order_id".to_string(),
+            r#type:       "String".to_string(),
+            label:        "Order ID".to_string(),
+            description:  "Unique order identifier.".to_string(),
+            content_type: "unique_id".to_string(),
+            min:          "A".to_string(),
+            max:          "Z".to_string(),
+            cardinality:  100,
+            enumeration:  String::new(),
+            null_count:   0,
+            addl_cols:    IndexMap::new(),
+            examples:     "<ALL_UNIQUE>".to_string(),
+            freq_details: Vec::new(),
+            is_unique_id: true,
+            concept:      "id.surrogate_key".to_string(),
+            role:         "identifier".to_string(),
+        }];
+
+        let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
+        let rendered = render_okf_body(&args, &entries, None, model, base_url, &shared).unwrap();
+
+        // --okf-type overrides the default `type` frontmatter key.
+        assert!(rendered.starts_with("---\ntype: \"BigQuery Table\"\n"));
+        // No --ds-updated: timestamp falls back to the generated render timestamp.
+        assert!(rendered.contains("timestamp: "));
+        // No --ds-source: the resource frontmatter key is omitted.
+        assert!(!rendered.contains("resource:"));
     }
 
     #[test]

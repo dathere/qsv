@@ -226,3 +226,38 @@ dataset:
 {% endif %}{% endfor %}
 *Attribution: {{ generated_by_signature }}*
 """
+
+# ─────────────────────────────────────────────────────────────────────────────
+# okf_md_body_template — renders an Open Knowledge Format (OKF) document
+# (https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf).
+# OKF is a leaner, vendor-neutral sibling of semantic-md: YAML frontmatter
+# (type/title/description/resource/timestamp/tags) plus a `# Schema` table of
+# Column|Type|Description, with cross-reference markdown links in prose.
+# Rendered during the Dictionary phase; the {DATASET_DESCRIPTION} (body prose),
+# {DATASET_DESCRIPTION_FM} (single-line frontmatter description) and {OKF_TAGS}
+# placeholders are substituted afterwards by finalize_structured_output.
+# Receives the same context as semanticmd plus {{ okf_type }}.
+okf_md_body_template = """---
+type: {{ okf_type | yaml_scalar }}
+title: {{ dataset_title | yaml_scalar }}
+description: {DATASET_DESCRIPTION_FM}
+{% if ds_source %}resource: {{ ds_source | yaml_scalar }}
+{% endif -%}
+{% if ds_updated %}timestamp: {{ ds_updated | yaml_scalar }}
+{% else %}timestamp: {{ timestamp | yaml_scalar }}
+{% endif -%}
+{OKF_TAGS}---
+
+# {{ dataset_title }}
+
+{DATASET_DESCRIPTION}
+
+# Schema
+
+| Column | Type | Description |
+| --- | --- | --- |
+{% for entry in entries -%}
+| `{{ entry.name | pipe_escape }}` | {{ entry.sem_type }} | {{ (entry.description if entry.description else entry.label) | pipe_escape }} |
+{% endfor %}
+*Attribution: {{ generated_by_signature }}*
+"""

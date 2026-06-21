@@ -437,13 +437,14 @@ Common options:
                            (https://github.com/GoogleCloudPlatform/knowledge-catalog/tree/main/okf) -
                            a leaner, vendor-neutral plain-markdown-plus-YAML-frontmatter format. It
                            emits frontmatter (type/title/description/resource/timestamp/tags) and a
-                           Schema section with a Column/Type/Description table. The type frontmatter
-                           key is set via the okf-type flag (default "CSV Table"); ds-source maps to
-                           resource and ds-updated maps to timestamp. Like SemanticMd, OKF implies
-                           infer-content-type, requires the dictionary inference phase (the dictionary
-                           or all flag), folds the description inference into the body prose and
-                           frontmatter description, and embeds tags in the frontmatter. The prompt
-                           inference is not supported.
+                           Schema section with a Column/Type/Content Type/Description/Enumeration
+                           table. The type frontmatter key is set via the okf-type flag (default
+                           "CSV Table"); ds-source maps to resource and ds-updated maps to timestamp.
+                           Like SemanticMd, OKF implies infer-content-type, requires the dictionary
+                           inference phase (the dictionary or all flag), folds the description
+                           inference into the body prose and a single-sentence frontmatter
+                           description, and embeds tags in the frontmatter. The prompt inference is
+                           not supported.
                            [default: Markdown]
     --allow-extra-cols     When the format is JSONSchema, emit additionalProperties as true at the
                            schema root (default is false, strict). Only meaningful with the

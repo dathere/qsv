@@ -2178,3 +2178,209 @@ fn viz_contour_non_numeric_errors() {
     assert!(got.contains("No rows with numeric"));
     wrk.assert_err(&mut cmd);
 }
+
+#[test]
+fn viz_theme_dark_applies_template() {
+    let wrk = Workdir::new("viz_theme_dark_applies_template");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "fruits.csv",
+        "--x",
+        "Fruit",
+        "--y",
+        "Price",
+        "--theme",
+        "plotly_dark",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the chosen built-in theme is injected as a plotly layout template ...
+    assert!(html.contains(r#""template":{"layout""#));
+    // ... carrying the dark theme's backgrounds
+    assert!(html.contains(r##""paper_bgcolor":"#111111""##));
+    assert!(html.contains(r##""plot_bgcolor":"#111111""##));
+}
+
+#[test]
+fn viz_no_theme_has_no_template() {
+    let wrk = Workdir::new("viz_no_theme_has_no_template");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["bar", "fruits.csv", "--x", "Fruit", "--y", "Price"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // without --theme, qsv's built-in look is used: no layout template is emitted
+    assert!(!html.contains(r#""template":{"layout""#));
+}
+
+#[test]
+fn viz_theme_unknown_errors() {
+    let wrk = Workdir::new("viz_theme_unknown_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "fruits.csv",
+        "--x",
+        "Fruit",
+        "--y",
+        "Price",
+        "--theme",
+        "bogus",
+    ]);
+    let got = wrk.output_stderr(&mut cmd);
+    assert!(got.contains("Unknown --theme 'bogus'"));
+    // the error lists the valid theme names
+    assert!(got.contains("plotly_dark"));
+    assert!(got.contains("seaborn_whitegrid"));
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_smart_theme_drives_dashboard() {
+    let wrk = Workdir::new("viz_smart_theme_drives_dashboard");
+    // continuous numeric (box) + categorical (bar) gives a multi-panel dashboard
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "people.csv",
+        "--theme",
+        "plotly_dark",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the theme drives the (single-Plot grid) dashboard's look: dark template + dark
+    // backgrounds, with the qsv built-in white paper override suppressed
+    assert!(html.contains(r#""template":{"layout""#));
+    assert!(html.contains(r##""paper_bgcolor":"#111111""##));
+    assert!(!html.contains(r##""paper_bgcolor":"#FFFFFF""##));
+    // qsv's hardcoded ink color must not leak into a themed dashboard (e.g. the bar
+    // value-labels) — it would be near-invisible on the dark background. (This dataset
+    // has no correlation panel, the one place ink is intentionally kept for cell contrast.)
+    assert!(!html.contains("#2A3F5F"));
+}
+
+#[test]
+fn viz_smart_truncates_long_bar_labels() {
+    let wrk = Workdir::new("viz_smart_truncates_long_bar_labels");
+    // two distinct long category names that share their first 19 characters, so both truncate
+    // to the SAME display label ("Department of Trans…"). As raw x-axis tick labels these long
+    // names rotate tall and squeeze the plot area (clipping the top value labels); truncation
+    // must therefore be display-only via the axis ticktext, NOT applied to the bar x data —
+    // otherwise the two categories would collapse onto a single ambiguous bar.
+    let long_a = "Department of Transportation and Infrastructure";
+    let long_b = "Department of Transparency and Public Records";
+    let mut rows = String::from("agency,val\n");
+    for i in 0..60 {
+        let agency = if i % 2 == 0 { long_a } else { long_b };
+        rows.push_str(&format!("\"{agency}\",{}\n", i));
+    }
+    wrk.create_from_string("agencies.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "agencies.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // truncation is display-only: the axis uses array tickmode with truncated ticktext ...
+    assert!(html.contains(r#""tickmode":"array""#));
+    assert!(html.contains('…'));
+    // ... while BOTH full category names remain as the bar's x data, so the two categories
+    // that truncate to the same label stay distinct (not collapsed onto one bar).
+    assert!(html.contains(long_a));
+    assert!(html.contains(long_b));
+}
+
+#[test]
+fn viz_smart_bar_numeric_categories_use_category_axis() {
+    let wrk = Workdir::new("viz_smart_bar_numeric_categories_use_category_axis");
+    // a low-cardinality column whose category values look NUMERIC ("2", "10", "100"). The
+    // frequency-bar truncation positions ticks at integer indices 0..n, which only line up with
+    // the bars if the axis is category-typed; otherwise plotly would infer a linear axis and the
+    // ticks at 0/1/2 would not match bars at x=2/10/100. Force category mode for bar panels.
+    let mut rows = String::from("rating,note\n");
+    for i in 0..90 {
+        let rating = match i % 3 {
+            0 => "100",
+            1 => "2",
+            _ => "10",
+        };
+        rows.push_str(&format!("{rating},n\n"));
+    }
+    wrk.create_from_string("ratings.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "ratings.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the bar's x data are the numeric-looking category strings ...
+    assert!(html.contains(r#""x":["#));
+    // ... and the axis is forced to category mode so the array ticks align with the bars
+    assert!(html.contains(r#""tickmode":"array""#));
+    assert!(html.contains(r#""type":"category""#));
+}
+
+#[test]
+fn viz_smart_inline_theme_drives_page_chrome() {
+    let wrk = Workdir::new("viz_smart_inline_theme_drives_page_chrome");
+    // 10 low-cardinality categorical columns -> 10 panels > the typed-subplot limit of 8,
+    // so the inline-div HTML page renderer is used (which carries its own page chrome).
+    let headers: Vec<String> = (0..10).map(|c| format!("c{c}")).collect();
+    let mut rows = headers.join(",");
+    rows.push('\n');
+    for r in 0..30 {
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "wide.csv",
+        "--theme",
+        "plotly_dark",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("wide.html").unwrap();
+    // inline-div grid renderer ...
+    assert!(html.contains(r#"class="qsv-viz-grid""#));
+    // ... with a dark page body matching the theme (not qsv's white chrome)
+    assert!(html.contains("background: #111111"));
+    assert!(!html.contains("background: #FFFFFF"));
+    // and the panels themselves carry the dark template
+    assert!(html.contains(r#""template":{"layout""#));
+}

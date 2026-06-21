@@ -3027,7 +3027,7 @@ fn describegpt_okf_dictionary() {
     );
     assert!(got.contains("# Schema"), "missing # Schema section:\n{got}");
     assert!(
-        got.contains("| Column | Type | Description |"),
+        got.contains("| Column | Type | Content Type | Description |"),
         "missing schema table:\n{got}"
     );
     // Lean OKF: no semantic-md profile line nor Role/Concept/Join schema columns.

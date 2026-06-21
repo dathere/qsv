@@ -566,6 +566,9 @@ pub(super) struct SemanticMdValidation {
 pub(super) struct SemanticMdEntry {
     pub(super) name:              String,
     pub(super) sem_type:          String,
+    /// LLM-inferred semantic content type (e.g. `unique_id`, `zip_code`, a date format);
+    /// empty when content-type inference is off. Surfaced in the OKF Schema table.
+    pub(super) content_type:      String,
     pub(super) required:          bool,
     pub(super) label:             String,
     pub(super) description:       String,
@@ -817,6 +820,7 @@ fn build_semanticmd_entry(e: &DictionaryEntry, primary_key: Option<&str>) -> Sem
     SemanticMdEntry {
         name: e.name.clone(),
         sem_type: sem_type.to_string(),
+        content_type: e.content_type.clone(),
         required: e.null_count == 0,
         label: e.label.clone(),
         description: e.description.clone(),

@@ -273,7 +273,7 @@ use plotly::{
     color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, Line, Marker, Mode,
-        TextPosition, Title,
+        TextPosition, TickMode, Title,
     },
     layout::{
         Annotation, Axis, AxisType, Center, Layout, LayoutGeo, LayoutScene, Mapbox, MapboxStyle,
@@ -3724,20 +3724,15 @@ fn panel_trace(
         },
         PanelKind::FreqBar { idx } => {
             let counts = freq.get(idx).cloned().unwrap_or_default();
-            // truncate the displayed tick labels so very long category names don't rotate into
-            // tall labels that squeeze the plot area (clipping the top value labels); the full
-            // value is kept as hover text.
-            let xs: Vec<String> = counts
-                .iter()
-                .map(|(v, _)| truncate_label(v, BAR_LABEL_MAX_CHARS))
-                .collect();
-            let full_xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
+            // keep the full category names as the bar's x data so distinct categories never
+            // collapse onto the same plotly category; the long-label truncation that keeps the
+            // plot area tall is display-only, applied to the x-axis ticktext (freq_bar_tick_text).
+            let xs: Vec<String> = counts.iter().map(|(v, _)| v.clone()).collect();
             let ys: Vec<f64> = counts.iter().map(|(_, c)| *c as f64).collect();
             bar_max = Some(ys.iter().copied().fold(0.0_f64, f64::max));
             let mut bar = Bar::new(xs, ys)
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
-                .hover_text_array(full_xs)
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
@@ -3925,7 +3920,7 @@ fn render_smart_grid(
         layout = place_subplot_axes(
             layout,
             pos,
-            styled_x_axis(is_box, is_date, theme),
+            styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq)),
             styled_y_axis(bar_max, theme),
             geom.x_domain,
             geom.y_domain,
@@ -4138,7 +4133,12 @@ fn smart_inline_panel_plot(
                 .right(right)
                 .pad(4),
         )
-        .x_axis(styled_x_axis(is_box, is_date, theme))
+        .x_axis(styled_x_axis(
+            is_box,
+            is_date,
+            theme,
+            freq_bar_tick_text(panel, freq),
+        ))
         .y_axis(styled_y_axis(bar_max, theme));
     if !themed {
         layout = layout
@@ -4410,11 +4410,38 @@ fn subplot_geometry(
     }
 }
 
+/// For a frequency-bar panel, the display-only truncated x-axis tick labels (in the same order
+/// as the bar's x data). Very long category names (full agency names, datetime strings) would
+/// otherwise rotate into tall labels that squeeze the plot area and clip the top value labels.
+/// Returns `None` for non-bar panels (their axes are left untouched).
+fn freq_bar_tick_text(
+    panel: &Panel,
+    freq: &HashMap<usize, Vec<(String, u64)>>,
+) -> Option<Vec<String>> {
+    if let PanelKind::FreqBar { idx } = &panel.kind {
+        let labels = freq
+            .get(idx)?
+            .iter()
+            .map(|(v, _)| truncate_label(v, BAR_LABEL_MAX_CHARS))
+            .collect();
+        Some(labels)
+    } else {
+        None
+    }
+}
+
 /// A styled x-axis for a dashboard panel: no vertical gridlines, a light baseline, and
 /// small tick labels. For single-box panels (`is_box`), the lone "0" category tick is
 /// meaningless, so its labels and baseline are hidden. For time-series panels (`is_date`),
-/// the axis is typed as a date axis so plotly spaces ticks chronologically.
-fn styled_x_axis(is_box: bool, is_date: bool, theme: Option<BuiltinTheme>) -> Axis {
+/// the axis is typed as a date axis so plotly spaces ticks chronologically. `tick_text`, when
+/// present (frequency-bar panels), supplies display-only truncated category labels — the bar's
+/// x data keeps the full names, so distinct categories never collapse onto one tick.
+fn styled_x_axis(
+    is_box: bool,
+    is_date: bool,
+    theme: Option<BuiltinTheme>,
+    tick_text: Option<Vec<String>>,
+) -> Axis {
     let mut a = Axis::new()
         .show_grid(false)
         .zero_line(false)
@@ -4431,6 +4458,16 @@ fn styled_x_axis(is_box: bool, is_date: bool, theme: Option<BuiltinTheme>) -> Ax
     }
     if is_date {
         a = a.type_(AxisType::Date);
+    }
+    // display-only truncated labels: a category axis positions categories at integer indices
+    // 0..n in x-data order, so the tick values are those indices and the text is the truncated
+    // labels (in the same order). The underlying full category values are unchanged.
+    if let Some(labels) = tick_text {
+        let positions: Vec<f64> = (0..labels.len()).map(|i| i as f64).collect();
+        a = a
+            .tick_mode(TickMode::Array)
+            .tick_values(positions)
+            .tick_text(labels);
     }
     a
 }

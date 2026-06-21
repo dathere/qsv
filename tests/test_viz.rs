@@ -2288,10 +2288,13 @@ fn viz_smart_theme_drives_dashboard() {
 #[test]
 fn viz_smart_truncates_long_bar_labels() {
     let wrk = Workdir::new("viz_smart_truncates_long_bar_labels");
-    // a low-cardinality categorical column with very long names: as raw x-axis tick labels
-    // these rotate into tall labels that squeeze the plot area and clip the top value labels.
-    let long_a = "Department of Housing Preservation and Development";
-    let long_b = "Department of Environmental Protection and Sustainability";
+    // two distinct long category names that share their first 19 characters, so both truncate
+    // to the SAME display label ("Department of Trans…"). As raw x-axis tick labels these long
+    // names rotate tall and squeeze the plot area (clipping the top value labels); truncation
+    // must therefore be display-only via the axis ticktext, NOT applied to the bar x data —
+    // otherwise the two categories would collapse onto a single ambiguous bar.
+    let long_a = "Department of Transportation and Infrastructure";
+    let long_b = "Department of Transparency and Public Records";
     let mut rows = String::from("agency,val\n");
     for i in 0..60 {
         let agency = if i % 2 == 0 { long_a } else { long_b };
@@ -2305,12 +2308,13 @@ fn viz_smart_truncates_long_bar_labels() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // the displayed tick label is truncated with an ellipsis (kept short so the plot area
-    // stays tall enough that the outside value labels aren't clipped) ...
+    // truncation is display-only: the axis uses array tickmode with truncated ticktext ...
+    assert!(html.contains(r#""tickmode":"array""#));
     assert!(html.contains('…'));
-    // ... while the untruncated value is preserved as hover text
-    assert!(html.contains(r#""hovertext":["#));
+    // ... while BOTH full category names remain as the bar's x data, so the two categories
+    // that truncate to the same label stay distinct (not collapsed onto one bar).
     assert!(html.contains(long_a));
+    assert!(html.contains(long_b));
 }
 
 #[test]

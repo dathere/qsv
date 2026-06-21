@@ -4685,9 +4685,10 @@ fn finalize_structured_output(
                 .and_then(|v| v.as_str())
                 .map(strip_attribution_block)
                 .unwrap_or_default();
-            // Frontmatter needs a single-line, YAML-escaped scalar — flatten the prose.
-            let description_fm =
-                yaml_scalar(&description.split_whitespace().collect::<Vec<_>>().join(" "));
+            // OKF's spec wants `description` to be a single-sentence summary, so the
+            // frontmatter key gets just the first sentence of the prose (the body keeps
+            // the full description). yaml_scalar quotes/escapes it for the YAML frontmatter.
+            let description_fm = yaml_scalar(&okf_short_description(&description));
             doc = doc.replace("{DATASET_DESCRIPTION_FM}", &description_fm);
             doc = doc.replace("{DATASET_DESCRIPTION}", &description);
 
@@ -4737,6 +4738,62 @@ fn strip_attribution_block(s: &str) -> String {
         out = out.trim_end().to_string();
     }
     out
+}
+
+/// Extract a single-sentence summary from the (attribution-stripped) Description response
+/// for OKF's frontmatter `description:` key — OKF's spec calls for a single-sentence summary,
+/// while the document body keeps the full prose. The Description response is structured as
+/// lead prose followed by a "Notable Characteristics" section, so we keep only the leading
+/// prose (dropping any "**Description**"-style header the LLM emits) and return its first
+/// sentence, flattened onto one line.
+fn okf_short_description(full: &str) -> String {
+    let mut prose = full.trim();
+
+    // Keep only the lead prose: cut at the "Notable Characteristics" section or a
+    // horizontal rule, whichever comes first.
+    let mut cut = prose.len();
+    for marker in ["Notable Characteristics", "\n---", "\n***", "\n___"] {
+        if let Some(idx) = prose.find(marker) {
+            cut = cut.min(idx);
+        }
+    }
+    prose = prose[..cut].trim();
+
+    // Drop a leading "Description" header line (e.g. "**Description**", "# Description",
+    // "Description:") the LLM sometimes prefixes.
+    let Some(first) = prose.lines().find(|l| !l.trim().is_empty()) else {
+        return String::new();
+    };
+    let bare = first
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .trim_matches('*')
+        .trim()
+        .trim_end_matches(':')
+        .trim();
+    if bare.eq_ignore_ascii_case("description") {
+        prose = prose[prose.find(first).map_or(0, |i| i + first.len())..].trim_start();
+    }
+
+    // Flatten whitespace/newlines so the sentence reads cleanly on one frontmatter line.
+    let flat: String = prose.split_whitespace().collect::<Vec<_>>().join(" ");
+
+    // Return the first sentence: text up to the first '.', '!' or '?' that is followed by
+    // a space or end-of-string. A minimum length guards against early cuts on abbreviations
+    // (e.g. "U.S."). ASCII-only terminator checks keep byte indices on char boundaries.
+    const MIN_SENTENCE_LEN: usize = 40;
+    let bytes = flat.as_bytes();
+    for (i, &c) in bytes.iter().enumerate() {
+        if matches!(c, b'.' | b'!' | b'?') {
+            let end = i + 1;
+            let at_boundary = end >= bytes.len() || bytes[end] == b' ';
+            if at_boundary && end >= MIN_SENTENCE_LEN {
+                return flat[..end].to_string();
+            }
+        }
+    }
+    flat
 }
 
 /// Build the frontmatter `tags:` YAML block from the Tags phase response.
@@ -7386,6 +7443,35 @@ p_fewshot_examples = ""
         assert!(rendered.contains("timestamp: "));
         // No --ds-source: the resource frontmatter key is omitted.
         assert!(!rendered.contains("resource:"));
+    }
+
+    #[test]
+    fn okf_short_description_first_sentence() {
+        // Lead prose + Notable Characteristics section + stray attribution: the short
+        // form keeps only the first sentence of the lead prose.
+        let full = "**Description**\n\nThis dataset contains one million NYC 311 complaint \
+                    records, each uniquely identified by an integer key. The complaints span 2010 \
+                    to 2020.\n\n---\n\n### Notable Characteristics\n- Unique Key is truly \
+                    unique.\n- High missingness in Due Date.";
+        assert_eq!(
+            okf_short_description(full),
+            "This dataset contains one million NYC 311 complaint records, each uniquely \
+             identified by an integer key."
+        );
+
+        // No header, no Notable Characteristics: still just the first sentence.
+        let plain = "A simple catalog of widgets with prices and stock levels. Updated daily.";
+        assert_eq!(
+            okf_short_description(plain),
+            "A simple catalog of widgets with prices and stock levels."
+        );
+
+        // No sentence terminator: returns the whole flattened prose.
+        let no_period = "Short blurb with no terminator at all here";
+        assert_eq!(okf_short_description(no_period), no_period);
+
+        // Empty / whitespace-only input collapses to empty.
+        assert_eq!(okf_short_description("   \n  "), "");
     }
 
     #[test]

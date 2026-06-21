@@ -1,90 +1,113 @@
 ---
 type: "CSV Table"
 title: "NYC 311 SR 2010 2020 sample 1M"
-description: "**Description** The dataset contains one million New York City 311 complaint records spanning the period from January 1 2010 to December 23 2020. Each record is uniquely identified by an integer surrogate key that increases monotonically with time, and includes timestamps for when the complaint was created, closed (if applicable), and when resolution actions were last updated. The data capture a wide range of fields describing the incident location (ZIP code, street names, latitude/longitude, borough, community board, etc.), the nature of the complaint (type, descriptor, agency responsible, status, and resolution narrative), as well as administrative metadata such as the submission channel and due dates. The majority of complaints are closed (≈ 95 %) and most records lack a due date or a closed‑date value. While many categorical fields exhibit heavy skew—most notably “Complaint Type” and “Descriptor,” where an “Other” bucket accounts for more than half of the entries—the dataset also includes high‑cardinality numeric identifiers such as borough–block–lot (BBL) values and geospatial coordinates. **Notable Characteristics** - **Central tendency & spread** – Created dates cluster in 2013‑2015, with a median around late 2014; closed dates are similarly concentrated but have a broader range (up to ~73049 days). - **Distribution shape** – Categorical fields such as “Complaint Type” and “Descriptor” show extreme right‑skewness: the “Other” category captures >56 % and >67 % of observations, respectively. The “Status” field is highly imbalanced with “Closed” dominating (~95 %). - **Missing values** – Substantial nulls exist in fields like `Due Date` (≈ 65 % missing), `Incident Zip`, `City`, `Landmark`, and the geospatial coordinates (`Latitude`, `Longitude`). The presence of a large “Other (N)” bucket in many frequency distributions indicates many unique or low‑frequency values. - **Outliers & data quality** – Although most latitude/longitude pairs fall within NYC bounds, a few entries have extreme coordinate values that likely correspond to placeholder defaults (e.g., `-77.5195844` longitude). The dataset has no duplicate surrogate keys, ensuring record uniqueness. - **Potential privacy concerns** – While the data are not personally identifiable on their own, combining detailed address fields with precise geospatial coordinates can potentially reveal individual locations and should be handled with care in downstream analyses. - **Data consistency** – Certain textual fields contain inconsistent formatting (e.g., `Agency` codes vs. full names), mixed case, or non‑standard delimiters (`Cross Street 1`, `Intersection Street 2`). These inconsistencies may affect join operations and require standardization."
+description: "This NYC 311 complaint dataset contains 1 000 000 records, each uniquely identified by a system‑generated integer key."
 resource: "https://data.cityofnewyork.us/Social-Services/311-Service-Requests"
 timestamp: "2020-12-31"
 tags:
   - nyc_311_complaints
-  - city_government_service_requests
-  - geocoded_location_data
-  - borough_zip_code_analysis
-  - noise_and_light_abuse
-  - infrastructure_and_transportation
-  - parks_and_recreation_complaints
-  - health_environment_issues
-  - public_safety_incidents
-  - municipal_agencies_involvement
+  - public_service_complaint
+  - geospatial_data
+  - borough_and_zip_code
+  - agency_responsibility
+  - status_tracking
+  - date_time_records
+  - open_data_submission
+  - noise_plumbing_heating
+  - complaint_types
 ---
 
 # NYC 311 SR 2010 2020 sample 1M
 
 **Description**
 
-The dataset contains one million New York City 311 complaint records spanning the period from January 1 2010 to December 23 2020.  Each record is uniquely identified by an integer surrogate key that increases monotonically with time, and includes timestamps for when the complaint was created, closed (if applicable), and when resolution actions were last updated.  The data capture a wide range of fields describing the incident location (ZIP code, street names, latitude/longitude, borough, community board, etc.), the nature of the complaint (type, descriptor, agency responsible, status, and resolution narrative), as well as administrative metadata such as the submission channel and due dates.  The majority of complaints are closed (≈ 95 %) and most records lack a due date or a closed‑date value.  While many categorical fields exhibit heavy skew—most notably “Complaint Type” and “Descriptor,” where an “Other” bucket accounts for more than half of the entries—the dataset also includes high‑cardinality numeric identifiers such as borough–block–lot (BBL) values and geospatial coordinates.
+This NYC 311 complaint dataset contains 1 000 000 records, each uniquely identified by a system‑generated integer key. The complaints were logged between January 2010 and December 2020, with most incident dates concentrated in the first half of that decade. About 12 % of the records lack a closure date, while the remaining 88 % span from 1900 to 2100. Agency responsibility is heavily skewed toward NYPD (≈26 %) and HPD (≈26 %), with the rest distributed among DOT, DSNY, DEP, and other city agencies. Complaint types are dominated by a single “Other” category that accounts for more than half of all entries; the next most common categories—Noise‑Residential, Heat/Hot Water, Illegal Parking—collectively represent roughly 20 %. Geographic coordinates are provided in both decimal degrees and New York State Plane units, with latitude values between 40.11° and 40.91° and longitude values from –77.52° to –73.70°. Many address‑related fields (e.g., Incident Address, Street Name) contain a high proportion of unique or “Other” entries, reflecting the free‑text nature of the source data.
 
-**Notable Characteristics**
+---
 
-- **Central tendency & spread** – Created dates cluster in 2013‑2015, with a median around late 2014; closed dates are similarly concentrated but have a broader range (up to ~73049 days).  
-- **Distribution shape** – Categorical fields such as “Complaint Type” and “Descriptor” show extreme right‑skewness: the “Other” category captures >56 % and >67 % of observations, respectively.  The “Status” field is highly imbalanced with “Closed” dominating (~95 %).  
-- **Missing values** – Substantial nulls exist in fields like `Due Date` (≈ 65 % missing), `Incident Zip`, `City`, `Landmark`, and the geospatial coordinates (`Latitude`, `Longitude`).  The presence of a large “Other (N)” bucket in many frequency distributions indicates many unique or low‑frequency values.  
-- **Outliers & data quality** – Although most latitude/longitude pairs fall within NYC bounds, a few entries have extreme coordinate values that likely correspond to placeholder defaults (e.g., `-77.5195844` longitude).  The dataset has no duplicate surrogate keys, ensuring record uniqueness.  
-- **Potential privacy concerns** – While the data are not personally identifiable on their own, combining detailed address fields with precise geospatial coordinates can potentially reveal individual locations and should be handled with care in downstream analyses.  
-- **Data consistency** – Certain textual fields contain inconsistent formatting (e.g., `Agency` codes vs. full names), mixed case, or non‑standard delimiters (`Cross Street 1`, `Intersection Street 2`).  These inconsistencies may affect join operations and require standardization.
+### Notable Characteristics
+
+- **Cardinality & Sparsity**  
+  *Unique Key* is truly unique (1 000 000 distinct values).  
+  Several fields exhibit extreme sparsity: *Closed Date* has ~2.9 % null, *Resolution Description* and *Vehicle Type* are almost entirely missing (~20 % and >99 % null respectively).  
+  *Incident Zip*, *City*, and *Borough* show moderate cardinality (535, 382, 6), but most values cluster in a few ZIPs (e.g., 11226) and boroughs (Brooklyn, Queens).
+
+- **Distribution Shape**  
+  - Created/Closed dates are heavily right‑skewed; the top ten dates account for ~10 % of all complaints.  
+  - *Complaint Type* and *Descriptor* have long tails with a dominant “Other” bucket (>50 %).  
+  - *Agency* distribution is bimodal, split roughly between police (NYPD/HPD) and transportation/environmental agencies.
+
+- **Outliers & Extremes**  
+  Date fields contain sentinel extremes: *Closed Date* ranges from 01‑01‑1900 to 01‑01‑2100.  
+  Coordinate fields have a few outlier values outside the expected NYC bounds (e.g., latitude > 41°, longitude < –78°), likely due to data entry errors.
+
+- **Missing Values & Data Quality**  
+  - High missingness in *Resolution Description* (~2 % null) and *Vehicle Type* (>99 %) limits analytical depth for those dimensions.  
+  - The free‑text nature of *Incident Address*, *Landmark*, and *Taxi Pick Up Location* leads to a large “Other” category, hindering reliable categorization without NLP preprocessing.
+
+- **Privacy & PII**  
+  While no explicit personal identifiers are present, addresses and geographic coordinates can potentially be used to re‑identify individuals or sensitive locations. Users should apply masking or aggregation when publishing derived insights.
+
+- **Duplicates & Uniqueness**  
+  No duplicate *Unique Key* values exist; however, many records share identical timestamps or address fields, indicating possible multiple complaints for the same incident.
+
+---
+
+**Attribution**
 
 # Schema
 
 | Column | Type | Description |
 | --- | --- | --- |
-| `Unique Key` | integer | A surrogate numeric identifier that uniquely distinguishes each record in the dataset. It is an integer that increases with time but contains no inherent meaning beyond uniqueness. |
-| `Created Date` | timestamp | The timestamp when the complaint record was created in the system. Values are stored as date‑time strings in the format "MM/DD/YYYY hh:mm:ss AM/PM". |
-| `Closed Date` | timestamp | The timestamp when the complaint was closed or resolved. The format matches that of Created Date: "MM/DD/YYYY hh:mm:ss AM/PM". |
-| `Agency` | text | A short code identifying the New York City agency responsible for handling the complaint (e.g., NYPD, HPD). |
-| `Agency Name` | text | The full name of the agency that received or processed the complaint. |
-| `Complaint Type` | text | High‑level category of the complaint (e.g., Noise, Illegal Parking). The most common types account for about half of all records. |
-| `Descriptor` | text | A more detailed free‑text description that further specifies the nature of the complaint (e.g., Loud Music/Party, Street Light Out). |
-| `Location Type` | text | The type of location where the complaint occurred (e.g., RESIDENTIAL BUILDING, STREET/SIDEWALK). |
+| `Unique Key` | integer | A system-generated unique identifier for each complaint record. |
+| `Created Date` | timestamp | The date and time when the complaint was first logged in the system. |
+| `Closed Date` | timestamp | The date and time when the complaint was closed or resolved. |
+| `Agency` | text | The short code identifying the agency that is responsible for handling the complaint. |
+| `Agency Name` | text | The full name of the agency responsible for addressing the complaint. |
+| `Complaint Type` | text | The primary category describing the nature of the complaint (e.g., Noise, Plumbing). |
+| `Descriptor` | text | A more detailed description or sub‑type of the complaint within its primary category. |
+| `Location Type` | text | The type of location where the complaint was reported (e.g., Residential Building, Street). |
 | `Incident Zip` | text | The five‑digit ZIP code of the incident location. |
-| `Incident Address` | text | A street address string indicating where the complaint was reported (often includes building number and street). |
-| `Street Name` | text | The name of the main street on which the incident occurred. |
-| `Cross Street 1` | text | The first cross‑street name at an intersection, if applicable. |
-| `Cross Street 2` | text | The second cross‑street name at an intersection, if applicable. |
-| `Intersection Street 1` | text | One street involved in the intersection where the incident occurred. |
-| `Intersection Street 2` | text | The second street involved in the intersection where the incident occurred. |
-| `Address Type` | text | Classification of how the address was recorded (e.g., ADDRESS, INTERSECTION). |
-| `City` | text | The city or borough name in which the incident took place (e.g., BROOKLYN, NEW YORK). |
-| `Landmark` | text | A notable nearby landmark or point of interest mentioned in the complaint. |
-| `Facility Type` | text | The type of facility involved, such as DSNY Garage or School District. |
-| `Status` | text | Current status of the complaint record (e.g., Closed, Pending). |
-| `Due Date` | timestamp | The deadline date for resolving the complaint. Stored as a timestamp in "MM/DD/YYYY hh:mm:ss AM/PM" format. |
-| `Resolution Description` | text | A narrative description of the actions taken to resolve the complaint. |
-| `Resolution Action Updated Date` | timestamp | The most recent timestamp when the resolution action was updated. Format matches other date‑time fields. |
-| `Community Board` | text | The NYC community board number or "Unspecified" if not applicable. |
-| `BBL` | text | A numeric identifier representing the borough, block, and lot of a property in NYC. |
-| `Borough` | text | The borough (e.g., BROOKLYN, QUEENS) where the incident occurred. |
-| `X Coordinate (State Plane)` | integer | The easting coordinate in the New York State Plane coordinate system. |
-| `Y Coordinate (State Plane)` | integer | The northing coordinate in the New York State Plane coordinate system. |
+| `Incident Address` | text | A free‑text street address where the complaint was reported. |
+| `Street Name` | text | The primary street name associated with the incident location. |
+| `Cross Street 1` | text | First cross street intersecting at or near the incident location. |
+| `Cross Street 2` | text | Second cross street intersecting at or near the incident location, if applicable. |
+| `Intersection Street 1` | text | One of the streets forming an intersection at the incident location. |
+| `Intersection Street 2` | text | The other street forming an intersection at the incident location, if applicable. |
+| `Address Type` | text | The type of address used to locate the complaint (e.g., ADDRESS, INTERSECTION). |
+| `City` | text | The city or borough in which the incident occurred. |
+| `Landmark` | text | A notable nearby landmark referenced in the complaint record. |
+| `Facility Type` | text | The type of facility involved or affected (e.g., DSNY Garage, School District). |
+| `Status` | text | Current status of the complaint (e.g., Closed, Pending, Open). |
+| `Due Date` | timestamp | The deadline by which the complaint should be resolved. |
+| `Resolution Description` | text | Free‑text narrative describing the actions taken to resolve or investigate the complaint. |
+| `Resolution Action Updated Date` | timestamp | The most recent date and time when the resolution action was updated. |
+| `Community Board` | text | The community board number responsible for the area where the incident occurred. |
+| `BBL` | text | Borough‑Block‑Lot identifier used by NYC planning and tax maps. |
+| `Borough` | text | The borough in which the incident took place (e.g., BROOKLYN, MANHATTAN). |
+| `X Coordinate (State Plane)` | integer | The X coordinate of the incident location in New York State Plane coordinates. |
+| `Y Coordinate (State Plane)` | integer | The Y coordinate of the incident location in New York State Plane coordinates. |
 | `Open Data Channel Type` | text | The channel through which the complaint was submitted (e.g., PHONE, ONLINE). |
-| `Park Facility Name` | text | Name of a park facility involved in the complaint, if any. |
-| `Park Borough` | text | The borough where the park facility is located. |
-| `Vehicle Type` | text | Type of vehicle involved, such as Car Service or Green Taxi. |
-| `Taxi Company Borough` | text | The borough in which the taxi company operates. |
-| `Taxi Pick Up Location` | text | Text description of where a taxi was picked up (e.g., JFK Airport, Intersection). |
-| `Bridge Highway Name` | text | Name or designation of the bridge or highway involved in the complaint. |
-| `Bridge Highway Direction` | text | The directionality of traffic on the bridge/highway (e.g., East/Long Island Bound). |
-| `Road Ramp` | text | Indicates whether a ramp or roadway was involved. |
-| `Bridge Highway Segment` | text | Specific segment of the bridge or highway (e.g., Exit 13). |
-| `Latitude` | number | Geographic latitude coordinate in decimal degrees. |
-| `Longitude` | number | Geographic longitude coordinate in decimal degrees. |
-| `Location` | text | String representation of the latitude and longitude pair in the format "(lat, lon)". |
+| `Park Facility Name` | text | Name of a park facility involved in the complaint if applicable. |
+| `Park Borough` | text | The borough where the referenced park facility is located. |
+| `Vehicle Type` | text | Type of vehicle associated with the complaint (e.g., Car Service, Green Taxi). |
+| `Taxi Company Borough` | text | The borough where the taxi company is registered. |
+| `Taxi Pick Up Location` | text | Free‑text description of the location from which a taxi was picked up. |
+| `Bridge Highway Name` | text | Name or designation of a bridge or highway involved in the complaint. |
+| `Bridge Highway Direction` | text | The direction of travel for the bridge or highway (e.g., East/Long Island Bound). |
+| `Road Ramp` | text | Type of road ramp referenced in the complaint. |
+| `Bridge Highway Segment` | text | Specific segment or exit number on a bridge or highway, if applicable. |
+| `Latitude` | number | Geographic latitude of the incident location in decimal degrees. |
+| `Longitude` | number | Geographic longitude of the incident location in decimal degrees. |
+| `Location` | text | String representation of the geographic coordinate pair for the incident location. |
 
 *Attribution: Generated by qsv v21.1.0 describegpt
-Command line: target/debug/qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all --format okf --ds-source https://data.cityofnewyork.us/Social-Services/311-Service-Requests --ds-updated 2020-12-31 --no-cache -o docs/describegpt/nyc311-describegpt-okf.md
+Command line: ./target/debug/qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all --format okf --model openai/gpt-oss-20b --ds-source https://data.cityofnewyork.us/Social-Services/311-Service-Requests --ds-updated 2020-12-31 -o docs/describegpt/nyc311-describegpt-okf.md
 Prompt file: Default v7.2.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-06-21T05:01:14.708504+00:00
+Timestamp: 2026-06-21T05:20:40.257019+00:00
 
 WARNING: Label, Description and Content Type generated by an LLM and may contain inaccuracies. Verify before using!
 *

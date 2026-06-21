@@ -137,6 +137,16 @@
         "description": "When set, the first row will not be interpreted as headers. Columns can then only be selected by index."
       },
       {
+        "flag": "--no-nulls",
+        "type": "flag",
+        "description": "Omit the \"(NULL)\" bar (empty cells) from frequency bar charts. By default `viz smart` shows a \"(NULL)\" bar, like `qsv frequency`."
+      },
+      {
+        "flag": "--no-other",
+        "type": "flag",
+        "description": "Omit the \"Other (N)\" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default."
+      },
+      {
         "flag": "--ohlc-open",
         "type": "string",
         "description": "Open-price column for candlestick/ohlc charts."

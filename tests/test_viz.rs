@@ -272,6 +272,160 @@ fn viz_smart_dashboard() {
     assert!(html.contains(r#""type":"bar""#));
 }
 
+/// A low-cardinality categorical column with more distinct values than `--limit` and some empty
+/// cells. `id` is near-unique (skipped); `category` has 15 distinct values (cat00..cat14) plus
+/// empty cells, so a `viz smart` frequency bar should show the top-10 categories, an aggregate
+/// `Other (5)` bar, and a `(NULL)` bar.
+fn categories_with_nulls(wrk: &Workdir) {
+    let mut rows = String::from("id,category\n");
+    for i in 1..=150 {
+        // every 10th row leaves the category empty -> 15 NULLs
+        let cat = if i % 10 == 0 {
+            String::new()
+        } else {
+            format!("cat{:02}", i % 15)
+        };
+        rows.push_str(&format!("{i},{cat}\n"));
+    }
+    wrk.create_from_string("cats.csv", &rows);
+}
+
+#[test]
+fn viz_smart_freq_bars_null_and_other() {
+    let wrk = Workdir::new("viz_smart_freq_bars_null_and_other");
+    categories_with_nulls(&wrk);
+
+    let out_html = wrk.path("cats.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "cats.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("cats.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    // empty cells become a "(NULL)" bar; the 5 categories beyond --limit 10 roll up into
+    // "Other (5)"; both aggregate bars are drawn in the muted-grey #999999.
+    assert!(
+        html.contains("(NULL)"),
+        "expected a (NULL) bar; html: {html}"
+    );
+    assert!(
+        html.contains("Other (5)"),
+        "expected an Other (5) aggregate bar; html: {html}"
+    );
+    assert!(
+        html.contains("#999999"),
+        "expected the muted-grey aggregate-bar color; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_freq_bars_no_nulls_no_other() {
+    let wrk = Workdir::new("viz_smart_freq_bars_no_nulls_no_other");
+    categories_with_nulls(&wrk);
+
+    let out_html = wrk.path("cats.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "cats.csv",
+        "--no-nulls",
+        "--no-other",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("cats.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    // both aggregate bars suppressed
+    assert!(
+        !html.contains("(NULL)"),
+        "--no-nulls should drop the (NULL) bar; html: {html}"
+    );
+    assert!(
+        !html.contains("Other ("),
+        "--no-other should drop the Other bar; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_freq_bars_from_cache_match_rawscan() {
+    // The frequency cache stores the complete per-value distribution including the null bucket,
+    // so the cache-driven path (freq_from_cache) must produce the same (NULL)/Other bars as the
+    // raw-scan path (count_values).
+    let wrk = Workdir::new("viz_smart_freq_bars_from_cache");
+    categories_with_nulls(&wrk);
+
+    // pre-build the frequency JSONL cache
+    let mut freq = wrk.command("frequency");
+    freq.args(["cats.csv", "--frequency-jsonl"]);
+    wrk.assert_success(&mut freq);
+
+    let out_html = wrk.path("cats.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "cats.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("cats.html").unwrap();
+    assert!(
+        html.contains("(NULL)"),
+        "cache path should keep (NULL); html: {html}"
+    );
+    assert!(
+        html.contains("Other (5)"),
+        "cache path should keep Other (5); html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_freq_bars_whitespace_counts_as_null() {
+    // `qsv frequency` trims values by default (and the frequency cache is always trimmed), so a
+    // whitespace-only cell is a NULL. The raw-scan path must trim too, otherwise whitespace-only
+    // cells would become a literal blank category instead of "(NULL)" — diverging from the cache
+    // and escaping --no-nulls. Here the ONLY nulls are whitespace-only cells (no byte-empty
+    // cells), so a "(NULL)" bar can only appear if the raw path trims.
+    let wrk = Workdir::new("viz_smart_freq_bars_whitespace_null");
+    let mut rows = String::from("id,category\n");
+    for i in 1..=60 {
+        let cat = if i % 5 == 0 {
+            "   ".to_string() // whitespace-only -> NULL after trim
+        } else {
+            match i % 3 {
+                0 => "apple",
+                1 => "banana",
+                _ => "cherry",
+            }
+            .to_string()
+        };
+        rows.push_str(&format!("{i},{cat}\n"));
+    }
+    wrk.create_from_string("ws.csv", &rows);
+
+    // raw-scan path (no frequency cache present)
+    let out_html = wrk.path("ws.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "ws.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("ws.html").unwrap();
+    assert!(
+        html.contains("(NULL)"),
+        "whitespace-only cells should be trimmed and counted as (NULL) on the raw-scan path; \
+         html: {html}"
+    );
+
+    // --no-nulls must then suppress them (it couldn't if they were a literal blank category)
+    let out_html2 = wrk.path("ws_nonulls.html").to_string_lossy().to_string();
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args(["smart", "ws.csv", "--no-nulls", "-o", &out_html2]);
+    wrk.assert_success(&mut cmd_2);
+    let html2 = wrk.read_to_string("ws_nonulls.html").unwrap();
+    assert!(
+        !html2.contains("(NULL)"),
+        "--no-nulls should suppress the whitespace-derived (NULL) bar; html: {html2}"
+    );
+}
+
 #[test]
 fn viz_smart_uses_moarstats_box_hints() {
     // End-to-end: when `moarstats` has extended the stats cache, `viz smart` reuses that cache

@@ -465,12 +465,21 @@ struct FrequencyCacheMetadata {
 /// `frequency` command (currently `viz smart`) that want each column's top
 /// value/count pairs without re-scanning the data.
 pub(crate) struct FreqCacheView {
-    /// Map of column field name -> (value, count) pairs, in the cache's stored
-    /// order (count descending). For `--no-headers` caches the keys are 1-based
-    /// positional strings ("1", "2", ...). The null/empty bucket and
-    /// `<HIGH_CARDINALITY>`/`<ALL_UNIQUE>` sentinel columns are omitted, so a
-    /// missing key signals "recompute this column".
-    pub columns: std::collections::HashMap<String, Vec<(String, u64)>>,
+    /// Map of column field name -> per-column data. For `--no-headers` caches the keys are
+    /// 1-based positional strings ("1", "2", ...). The `<HIGH_CARDINALITY>` / `<ALL_UNIQUE>`
+    /// sentinel columns are omitted, so a missing key signals "recompute this column".
+    pub columns: std::collections::HashMap<String, FreqCacheColumn>,
+}
+
+/// One column's data from a frequency cache, split into the non-null `(value, count)` pairs
+/// and the count of empty/null cells (the cache's empty-string bucket). Kept separate so a
+/// consumer can render the null bucket as its own bar (or drop it) rather than mixing it into
+/// the value list.
+pub(crate) struct FreqCacheColumn {
+    /// Non-null `(value, count)` pairs, in the cache's stored order (count descending).
+    pub pairs:      Vec<(String, u64)>,
+    /// Count of empty/null cells for this column (0 if the cache had no null bucket).
+    pub null_count: u64,
 }
 
 /// Read and validate a frequency JSONL cache for `path`, independent of any
@@ -590,7 +599,7 @@ pub(crate) fn read_frequency_cache_view(
         }
     }
 
-    let mut columns: std::collections::HashMap<String, Vec<(String, u64)>> =
+    let mut columns: std::collections::HashMap<String, FreqCacheColumn> =
         std::collections::HashMap::new();
     // Track every column name seen (sentinels included). A duplicate name makes a
     // name-keyed lookup ambiguous regardless of whether one duplicate is a
@@ -617,15 +626,23 @@ pub(crate) fn read_frequency_cache_view(
         {
             continue;
         }
-        // Drop the null/empty bucket to match `viz`'s count_values, which skips
-        // empty cells.
+        // Split the column into its non-null pairs and the empty/null bucket count, so the
+        // consumer can render the null bucket as its own bar (or drop it) rather than mixing
+        // it into the value list.
+        let mut null_count: u64 = 0;
         let pairs: Vec<(String, u64)> = entry
             .frequencies
             .into_iter()
-            .filter(|f| !f.value.is_empty())
-            .map(|f| (f.value, f.count))
+            .filter_map(|f| {
+                if f.value.is_empty() {
+                    null_count += f.count;
+                    None
+                } else {
+                    Some((f.value, f.count))
+                }
+            })
             .collect();
-        columns.insert(entry.field, pairs);
+        columns.insert(entry.field, FreqCacheColumn { pairs, null_count });
     }
     if columns.is_empty() {
         return None;
@@ -4467,7 +4484,7 @@ fn add_stat<T: ToString>(field_stats: &mut Vec<FieldStats>, name: &str, value: O
 /// trim leading and trailing whitespace from a byte slice
 #[allow(clippy::inline_always)]
 #[inline(always)]
-fn trim_bs_whitespace(bytes: &[u8]) -> &[u8] {
+pub(crate) fn trim_bs_whitespace(bytes: &[u8]) -> &[u8] {
     let mut start = 0;
     let mut end = bytes.len();
 

@@ -21,7 +21,7 @@ The QSV MCP Server now supports **direct access to local tabular data files** (C
 
 This directory contains:
 
-1. **54 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
+1. **55 Auto-generated Skill Definitions** - JSON files describing all qsv commands (parsed with qsv-docopt)
 2. **TypeScript Executor** - Complete implementation for running qsv skills
 3. **MCP Server with Filesystem Access** - Model Context Protocol server for Claude Desktop integration
 4. **Working Demos** - Practical demonstrations of the system
@@ -123,7 +123,7 @@ npm test
 npm run mcpb:package
 ```
 
-## Generated Skills (54)
+## Generated Skills (55)
 
 | Category | Count | Skills |
 |----------|-------|--------|
@@ -140,7 +140,7 @@ npm run mcpb:package
 | **generation** | 1 | synthesize |
 
 **Total Statistics:**
-- **Skills**: 54 commands
+- **Skills**: 55 commands
 - **Usage Examples**: 221 from documentation
 - **Options**: 658 command-line options
 - **Arguments**: 98 positional arguments
@@ -149,7 +149,7 @@ npm run mcpb:package
 
 ```
 .claude/skills/
-├── qsv/                    # 54 skill JSON definitions
+├── qsv/                    # 55 skill JSON definitions
 │   ├── qsv-select.json
 │   ├── qsv-stats.json
 │   ├── qsv-moarstats.json
@@ -202,7 +202,7 @@ npm run mcpb:package
 ```typescript
 import { SkillLoader, SkillExecutor } from './dist/index.js';
 
-// Load all 54 skills
+// Load all 55 skills
 const loader = new SkillLoader();
 await loader.loadAll();
 
@@ -342,7 +342,7 @@ await agent.chat("Remove duplicates from sales.csv");
 
 ## Integration with Claude Desktop (MCP Server)
 
-The QSV MCP Server exposes all 54 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
+The QSV MCP Server exposes all 55 qsv skill-based commands to Claude Desktop through the Model Context Protocol.
 
 ### Quick Start
 
@@ -470,7 +470,7 @@ MIT
 **Updated**: 2026-05-18
 **Version**: 20.1.0
 **Generator**: `qsv --update-mcp-skills`
-**Skills**: 54 commands
+**Skills**: 55 commands
 **Usage Examples**: 221 from documentation
 **Parsing**: qsv-docopt (robust, accurate)
 **Features**: MCP server, filesystem access, type-safe execution

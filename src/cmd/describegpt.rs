@@ -7397,15 +7397,20 @@ p_fewshot_examples = ""
         assert!(rendered.contains("timestamp: \"2026-06-20\"\n"));
         assert!(rendered.contains("{OKF_TAGS}"));
         assert!(rendered.contains("{DATASET_DESCRIPTION}"));
-        // Body: # title + Schema table (Column | Type | Content Type | Description), using
-        // the human-friendly sem_type vocabulary, the LLM content_type and Description.
+        // Body: # title + Schema table (Column | Type | Content Type | Description |
+        // Enumeration), using the sem_type vocabulary, content_type, Description and
+        // the enumeration choices (joined with <br>; blank for high-cardinality columns).
         assert!(rendered.contains("# NYC 311"));
         assert!(rendered.contains("# Schema"));
-        assert!(rendered.contains("| Column | Type | Content Type | Description |"));
+        assert!(rendered.contains("| Column | Type | Content Type | Description | Enumeration |"));
         assert!(rendered.contains(
-            "| `Unique Key` | integer | unique_id | A unique numeric identifier for each record. |"
+            "| `Unique Key` | integer | unique_id | A unique numeric identifier for each record. \
+             |  |"
         ));
-        assert!(rendered.contains("| `Status` | text | category | Current processing status. |"));
+        assert!(rendered.contains(
+            "| `Status` | text | category | Current processing status. | \
+             Assigned<br>Closed<br>Open |"
+        ));
         // Lean format: no semantic-md profile line, no Role/Concept/Join schema columns.
         assert!(!rendered.contains("semantic-md:"));
         assert!(!rendered.contains("Join?"));

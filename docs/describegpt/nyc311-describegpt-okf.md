@@ -53,49 +53,49 @@ This NYC 311 complaint dataset contains 1 000 000 records, each uniquely ide
 
 # Schema
 
-| Column | Type | Content Type | Description |
-| --- | --- | --- | --- |
-| `Unique Key` | integer | unique_id | A system-generated unique identifier for each complaint record. |
-| `Created Date` | timestamp | date:%m/%d/%Y | The date and time when the complaint was first logged in the system. |
-| `Closed Date` | timestamp | date:%m/%d/%Y | The date and time when the complaint was closed or resolved. |
-| `Agency` | text | category | The short code identifying the agency that is responsible for handling the complaint. |
-| `Agency Name` | text | unknown | The full name of the agency responsible for addressing the complaint. |
-| `Complaint Type` | text | category | The primary category describing the nature of the complaint (e.g., Noise, Plumbing). |
-| `Descriptor` | text | category | A more detailed description or sub‑type of the complaint within its primary category. |
-| `Location Type` | text | category | The type of location where the complaint was reported (e.g., Residential Building, Street). |
-| `Incident Zip` | text | zip_code | The five‑digit ZIP code of the incident location. |
-| `Incident Address` | text | street_address | A free‑text street address where the complaint was reported. |
-| `Street Name` | text | street_name | The primary street name associated with the incident location. |
-| `Cross Street 1` | text | street_name | First cross street intersecting at or near the incident location. |
-| `Cross Street 2` | text | street_name | Second cross street intersecting at or near the incident location, if applicable. |
-| `Intersection Street 1` | text | street_name | One of the streets forming an intersection at the incident location. |
-| `Intersection Street 2` | text | street_name | The other street forming an intersection at the incident location, if applicable. |
-| `Address Type` | text | category | The type of address used to locate the complaint (e.g., ADDRESS, INTERSECTION). |
-| `City` | text | city | The city or borough in which the incident occurred. |
-| `Landmark` | text | free_text | A notable nearby landmark referenced in the complaint record. |
-| `Facility Type` | text | category | The type of facility involved or affected (e.g., DSNY Garage, School District). |
-| `Status` | text | category | Current status of the complaint (e.g., Closed, Pending, Open). |
-| `Due Date` | timestamp | datetime:%m/%d/%Y %I:%M:%S %p | The deadline by which the complaint should be resolved. |
-| `Resolution Description` | text | free_text | Free‑text narrative describing the actions taken to resolve or investigate the complaint. |
-| `Resolution Action Updated Date` | timestamp | date:%m/%d/%Y | The most recent date and time when the resolution action was updated. |
-| `Community Board` | text | category | The community board number responsible for the area where the incident occurred. |
-| `BBL` | text | unknown | Borough‑Block‑Lot identifier used by NYC planning and tax maps. |
-| `Borough` | text | unknown | The borough in which the incident took place (e.g., BROOKLYN, MANHATTAN). |
-| `X Coordinate (State Plane)` | integer | unknown | The X coordinate of the incident location in New York State Plane coordinates. |
-| `Y Coordinate (State Plane)` | integer | unknown | The Y coordinate of the incident location in New York State Plane coordinates. |
-| `Open Data Channel Type` | text | category | The channel through which the complaint was submitted (e.g., PHONE, ONLINE). |
-| `Park Facility Name` | text | free_text | Name of a park facility involved in the complaint if applicable. |
-| `Park Borough` | text | unknown | The borough where the referenced park facility is located. |
-| `Vehicle Type` | text | category | Type of vehicle associated with the complaint (e.g., Car Service, Green Taxi). |
-| `Taxi Company Borough` | text | unknown | The borough where the taxi company is registered. |
-| `Taxi Pick Up Location` | text | free_text | Free‑text description of the location from which a taxi was picked up. |
-| `Bridge Highway Name` | text | category | Name or designation of a bridge or highway involved in the complaint. |
-| `Bridge Highway Direction` | text | category | The direction of travel for the bridge or highway (e.g., East/Long Island Bound). |
-| `Road Ramp` | text | category | Type of road ramp referenced in the complaint. |
-| `Bridge Highway Segment` | text | free_text | Specific segment or exit number on a bridge or highway, if applicable. |
-| `Latitude` | number | latitude | Geographic latitude of the incident location in decimal degrees. |
-| `Longitude` | number | longitude | Geographic longitude of the incident location in decimal degrees. |
-| `Location` | text | unknown | String representation of the geographic coordinate pair for the incident location. |
+| Column | Type | Content Type | Description | Enumeration |
+| --- | --- | --- | --- | --- |
+| `Unique Key` | integer | unique_id | A system-generated unique identifier for each complaint record. |  |
+| `Created Date` | timestamp | date:%m/%d/%Y | The date and time when the complaint was first logged in the system. |  |
+| `Closed Date` | timestamp | date:%m/%d/%Y | The date and time when the complaint was closed or resolved. |  |
+| `Agency` | text | category | The short code identifying the agency that is responsible for handling the complaint. |  |
+| `Agency Name` | text | unknown | The full name of the agency responsible for addressing the complaint. |  |
+| `Complaint Type` | text | category | The primary category describing the nature of the complaint (e.g., Noise, Plumbing). |  |
+| `Descriptor` | text | category | A more detailed description or sub‑type of the complaint within its primary category. |  |
+| `Location Type` | text | category | The type of location where the complaint was reported (e.g., Residential Building, Street). |  |
+| `Incident Zip` | text | zip_code | The five‑digit ZIP code of the incident location. |  |
+| `Incident Address` | text | street_address | A free‑text street address where the complaint was reported. |  |
+| `Street Name` | text | street_name | The primary street name associated with the incident location. |  |
+| `Cross Street 1` | text | street_name | First cross street intersecting at or near the incident location. |  |
+| `Cross Street 2` | text | street_name | Second cross street intersecting at or near the incident location, if applicable. |  |
+| `Intersection Street 1` | text | street_name | One of the streets forming an intersection at the incident location. |  |
+| `Intersection Street 2` | text | street_name | The other street forming an intersection at the incident location, if applicable. |  |
+| `Address Type` | text | category | The type of address used to locate the complaint (e.g., ADDRESS, INTERSECTION). |  |
+| `City` | text | city | The city or borough in which the incident occurred. |  |
+| `Landmark` | text | free_text | A notable nearby landmark referenced in the complaint record. |  |
+| `Facility Type` | text | category | The type of facility involved or affected (e.g., DSNY Garage, School District). |  |
+| `Status` | text | category | Current status of the complaint (e.g., Closed, Pending, Open). | Assigned<br>Closed<br>Closed - Testing<br>Email Sent<br>In Progress<br>Open<br>Pending<br>Started<br>Unassigned<br>Unspecified |
+| `Due Date` | timestamp | datetime:%m/%d/%Y %I:%M:%S %p | The deadline by which the complaint should be resolved. |  |
+| `Resolution Description` | text | free_text | Free‑text narrative describing the actions taken to resolve or investigate the complaint. |  |
+| `Resolution Action Updated Date` | timestamp | date:%m/%d/%Y | The most recent date and time when the resolution action was updated. |  |
+| `Community Board` | text | category | The community board number responsible for the area where the incident occurred. |  |
+| `BBL` | text | unknown | Borough‑Block‑Lot identifier used by NYC planning and tax maps. |  |
+| `Borough` | text | unknown | The borough in which the incident took place (e.g., BROOKLYN, MANHATTAN). | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified |
+| `X Coordinate (State Plane)` | integer | unknown | The X coordinate of the incident location in New York State Plane coordinates. |  |
+| `Y Coordinate (State Plane)` | integer | unknown | The Y coordinate of the incident location in New York State Plane coordinates. |  |
+| `Open Data Channel Type` | text | category | The channel through which the complaint was submitted (e.g., PHONE, ONLINE). | MOBILE<br>ONLINE<br>OTHER<br>PHONE<br>UNKNOWN |
+| `Park Facility Name` | text | free_text | Name of a park facility involved in the complaint if applicable. |  |
+| `Park Borough` | text | unknown | The borough where the referenced park facility is located. | BRONX<br>BROOKLYN<br>MANHATTAN<br>QUEENS<br>STATEN ISLAND<br>Unspecified |
+| `Vehicle Type` | text | category | Type of vehicle associated with the complaint (e.g., Car Service, Green Taxi). |  |
+| `Taxi Company Borough` | text | unknown | The borough where the taxi company is registered. |  |
+| `Taxi Pick Up Location` | text | free_text | Free‑text description of the location from which a taxi was picked up. |  |
+| `Bridge Highway Name` | text | category | Name or designation of a bridge or highway involved in the complaint. |  |
+| `Bridge Highway Direction` | text | category | The direction of travel for the bridge or highway (e.g., East/Long Island Bound). |  |
+| `Road Ramp` | text | category | Type of road ramp referenced in the complaint. |  |
+| `Bridge Highway Segment` | text | free_text | Specific segment or exit number on a bridge or highway, if applicable. |  |
+| `Latitude` | number | latitude | Geographic latitude of the incident location in decimal degrees. |  |
+| `Longitude` | number | longitude | Geographic longitude of the incident location in decimal degrees. |  |
+| `Location` | text | unknown | String representation of the geographic coordinate pair for the incident location. |  |
 
 *Attribution: Generated by qsv v21.1.0 describegpt
 Command line: ./target/debug/qsv describegpt NYC_311_SR_2010-2020-sample-1M.csv --all --format okf --model openai/gpt-oss-20b --ds-source https://data.cityofnewyork.us/Social-Services/311-Service-Requests --ds-updated 2020-12-31 -o docs/describegpt/nyc311-describegpt-okf.md
@@ -103,7 +103,7 @@ Prompt file: Default v7.2.0
 Model: openai/gpt-oss-20b
 LLM API URL: http://localhost:1234/v1
 Language: 
-Timestamp: 2026-06-21T05:51:16.836505+00:00
+Timestamp: 2026-06-21T05:57:05.934694+00:00
 
 WARNING: Label, Description and Content Type generated by an LLM and may contain inaccuracies. Verify before using!
 *

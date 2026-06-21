@@ -254,10 +254,10 @@ description: {DATASET_DESCRIPTION_FM}
 
 # Schema
 
-| Column | Type | Content Type | Description |
-| --- | --- | --- | --- |
+| Column | Type | Content Type | Description | Enumeration |
+| --- | --- | --- | --- | --- |
 {% for entry in entries -%}
-| `{{ entry.name | pipe_escape }}` | {{ entry.sem_type }} | {{ entry.content_type | pipe_escape }} | {{ (entry.description if entry.description else entry.label) | pipe_escape }} |
+| `{{ entry.name | pipe_escape }}` | {{ entry.sem_type }} | {{ entry.content_type | pipe_escape }} | {{ (entry.description if entry.description else entry.label) | pipe_escape }} | {% for c in entry.choices %}{{ c | pipe_escape }}{% if not loop.last %}<br>{% endif %}{% endfor %} |
 {% endfor %}
 *Attribution: {{ generated_by_signature }}*
 """

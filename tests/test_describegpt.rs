@@ -357,6 +357,95 @@ fn describegpt_context_file_missing_errors() {
     );
 }
 
+// Test that a text --context-file is injected into the USER message, NOT the system prompt
+// (the historical behavior was to inject into the system prompt).
+#[test]
+fn describegpt_context_file_moves_to_user_role() {
+    let wrk = Workdir::new("describegpt_context_user_role");
+
+    wrk.create(
+        "in.csv",
+        vec![svec!["id", "city"], svec!["1", "NYC"], svec!["2", "LA"]],
+    );
+    wrk.create_from_string(
+        "context.md",
+        "# Provenance\nData from the 2020 municipal survey.\n",
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "context.md"])
+        .arg("--no-cache");
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        output.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let got = String::from_utf8(output.stdout).expect("describegpt stdout should be UTF-8");
+    let v: serde_json::Value = serde_json::from_str(&got).expect("prepare-context emits JSON");
+    let phase = &v["phases"][0];
+    let sys = phase["system_prompt"].as_str().expect("system_prompt");
+    let usr = phase["user_prompt"].as_str().expect("user_prompt");
+
+    assert!(
+        usr.contains("ADDITIONAL CONTEXT") && usr.contains("municipal survey"),
+        "context must be injected into the user prompt, got: {usr}"
+    );
+    assert!(
+        !sys.contains("ADDITIONAL CONTEXT") && !sys.contains("municipal survey"),
+        "context must NOT be in the system prompt, got: {sys}"
+    );
+}
+
+// Test that a PDF --context-file is detected and surfaces an attachment MARKER in the user
+// prompt (the base64 bytes ride in a separate content block built only at inference time, so
+// they don't appear in --prepare-context output).
+#[test]
+fn describegpt_context_file_pdf_attachment_marker() {
+    let wrk = Workdir::new("describegpt_context_pdf");
+
+    wrk.create("in.csv", vec![svec!["id", "city"], svec!["1", "NYC"]]);
+
+    // A minimal but well-formed PDF (the "%PDF-" signature drives MIME detection).
+    wrk.create_from_string(
+        "notes.pdf",
+        "%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n2 0 obj\n<< /Type /Pages \
+         /Kids [3 0 R] /Count 1 >>\nendobj\n3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 \
+         612 792] >>\nendobj\nxref\n0 4\n0000000000 65535 f \ntrailer\n<< /Root 1 0 R /Size 4 \
+         >>\nstartxref\n0\n%%EOF\n",
+    );
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("in.csv")
+        .arg("--dictionary")
+        .arg("--prepare-context")
+        .args(["--context-file", "notes.pdf"])
+        .arg("--no-cache");
+    let output = cmd.output().expect("describegpt should run");
+    assert!(
+        output.status.success(),
+        "describegpt exited non-zero\nstderr: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let got = String::from_utf8(output.stdout).expect("describegpt stdout should be UTF-8");
+    let v: serde_json::Value = serde_json::from_str(&got).expect("prepare-context emits JSON");
+    let phase = &v["phases"][0];
+    let usr = phase["user_prompt"].as_str().expect("user_prompt");
+
+    assert!(
+        usr.contains("notes.pdf") && usr.contains("Attached document"),
+        "PDF attachment marker must appear in the user prompt, got: {usr}"
+    );
+    // The raw base64 file bytes must NOT leak into the rendered prompt text.
+    assert!(
+        !usr.contains("base64,"),
+        "base64 data must not appear in the prepared prompt text, got: {usr}"
+    );
+}
+
 // Test that --dictionary --infer-content-type infers inter-column relationships
 // and emits them as a structurally-valid `relationships` array (consumed by
 // `synthesize` to preserve inter-column structure).

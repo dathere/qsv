@@ -859,6 +859,75 @@ fn viz_static_three_numeric_no_scatter3d_panic() {
     );
 }
 
+// Static image export of >8 panels: plotly's typed Layout only has 8 axis fields, so the grid is
+// assembled as raw JSON with domain-positioned xaxis9+ and rendered via StaticExporter::write_fig.
+// Requires a browser/webdriver, so ignored by default.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_more_than_eight_panels() {
+    let wrk = Workdir::new("viz_static_more_than_eight_panels");
+    // 12 low-cardinality categorical columns => 12 frequency-bar panels (well past the 8 cap)
+    let headers: Vec<String> = (1..=12).map(|i| format!("cat{i:02}")).collect();
+    let mut rows = format!("{}\n", headers.join(","));
+    for i in 0..90 {
+        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", (i + c) % 4)).collect();
+        rows.push_str(&format!("{}\n", cells.join(",")));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "-o", &out_svg]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    wrk.assert_success(&mut cmd);
+
+    // the old 8-panel ceiling warning must be gone
+    assert!(
+        !stderr.contains("limited to"),
+        "static export should no longer cap at 8 panels: {stderr}"
+    );
+
+    let svg = wrk.read_to_string("dash.svg").unwrap();
+    assert!(svg.contains("<svg") || svg.contains("<?xml"));
+    // panels beyond the typed-Layout limit (their column-name titles) must be present in the image
+    for late in ["cat09", "cat10", "cat11", "cat12"] {
+        assert!(
+            svg.contains(late),
+            "panel {late} (beyond the 8-axis limit) is missing from the rendered image"
+        );
+    }
+}
+
+// `--max-charts` still caps the panel count for static export. Requires a browser/webdriver, so
+// ignored by default.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_max_charts_caps_panels() {
+    let wrk = Workdir::new("viz_static_max_charts_caps_panels");
+    let headers: Vec<String> = (1..=12).map(|i| format!("cat{i:02}")).collect();
+    let mut rows = format!("{}\n", headers.join(","));
+    for i in 0..90 {
+        let cells: Vec<String> = (1..=12).map(|c| format!("v{}", (i + c) % 4)).collect();
+        rows.push_str(&format!("{}\n", cells.join(",")));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_svg = wrk.path("dash.svg").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "--max-charts", "4", "-o", &out_svg]);
+    wrk.assert_success(&mut cmd);
+
+    let svg = wrk.read_to_string("dash.svg").unwrap();
+    // only the first 4 panels are drawn; later columns are capped out
+    assert!(svg.contains("cat01"));
+    assert!(
+        !svg.contains("cat12"),
+        "--max-charts 4 should cap panels; cat12 must not be drawn"
+    );
+}
+
 #[test]
 fn viz_pie() {
     let wrk = Workdir::new("viz_pie");

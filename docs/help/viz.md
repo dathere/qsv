@@ -67,8 +67,11 @@ geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local ex
 offline ScatterGeo projection world-overview for continental/global data. For static image
 export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
 Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. The first run
-computes & caches stats; subsequent runs are fast.
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. These overview
+panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
+on their own full-width row; the per-column box/bar/histogram panels flow below in the
+multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
+are fast.
 
 
 <a name="examples"></a>
@@ -276,7 +279,7 @@ qsv viz --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the dashboard. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export (png/svg/pdf/...). Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid of independent plots, and static image export uses domain-positioned axes to fit them in one image. Set a positive <n> to cap the panel count instead. Eligible columns beyond the cap are reported but not drawn. | `0` |
-| &nbsp;`‑‑grid‑cols`&nbsp; | integer | Number of columns in the dashboard grid. | `2` |
+| &nbsp;`‑‑grid‑cols`&nbsp; | integer | Number of columns in the dashboard grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width. | `2` |
 | &nbsp;`‑‑limit`&nbsp; | integer | Top-N categories per frequency bar chart. | `10` |
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Omit the "(NULL)" bar (empty cells) from frequency bar charts. By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`. |  |
 | &nbsp;`‑‑no‑other`&nbsp; | flag | Omit the "Other (N)" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default. |  |

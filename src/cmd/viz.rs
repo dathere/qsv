@@ -5101,9 +5101,14 @@ struct SubplotGeometry {
 /// Compute the paper-space domains for subplot `n` (0-based) in a `rows`×`cols` grid that
 /// occupies the vertical band `0.0..=top` (the strip above `top` is left for the dashboard
 /// title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a paper
-/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom with fixed
-/// gaps; the vertical gap leaves room for each panel's title and the row below it's tick
-/// labels.
+/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom; the vertical gap
+/// leaves room for each panel's title and the row below it's tick labels.
+///
+/// The inter-cell gaps are fixed paper fractions for typical dashboards, but the *total* gap is
+/// capped (`MAX_TOTAL_HGAP`/`MAX_TOTAL_VGAP`) so cells never collapse to a negative size: a fixed
+/// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
+/// 21-row dashboard would need 1.8 of vertical gap alone), which previously could only happen
+/// for static image export now that it's no longer capped at `MAX_SUBPLOTS` panels.
 fn subplot_geometry(
     n: usize,
     rows: usize,
@@ -5111,20 +5116,34 @@ fn subplot_geometry(
     top: f64,
     title_offset: f64,
 ) -> SubplotGeometry {
-    const HGAP: f64 = 0.08;
-    const VGAP: f64 = 0.09;
+    const HGAP_BASE: f64 = 0.08;
+    const VGAP_BASE: f64 = 0.09;
+    const MAX_TOTAL_HGAP: f64 = 0.5;
+    const MAX_TOTAL_VGAP: f64 = 0.4;
 
     let cols_f = cols as f64;
     let rows_f = rows as f64;
-    let cell_w = (1.0 - HGAP * (cols_f - 1.0)) / cols_f;
-    let cell_h = (top - VGAP * (rows_f - 1.0)) / rows_f;
+
+    let hgap = if cols > 1 {
+        HGAP_BASE.min(MAX_TOTAL_HGAP / (cols_f - 1.0))
+    } else {
+        0.0
+    };
+    let vgap = if rows > 1 {
+        VGAP_BASE.min(MAX_TOTAL_VGAP / (rows_f - 1.0))
+    } else {
+        0.0
+    };
+
+    let cell_w = (1.0 - hgap * (cols_f - 1.0)) / cols_f;
+    let cell_h = (top - vgap * (rows_f - 1.0)) / rows_f;
 
     let col = (n % cols) as f64;
     let row = (n / cols) as f64; // row 0 is the top of the band
 
-    let x0 = col * (cell_w + HGAP);
+    let x0 = col * (cell_w + hgap);
     let x1 = x0 + cell_w;
-    let y1 = top - row * (cell_h + VGAP); // top edge of the cell
+    let y1 = top - row * (cell_h + vgap); // top edge of the cell
     let y0 = y1 - cell_h;
 
     SubplotGeometry {
@@ -5716,6 +5735,46 @@ mod tests {
         // the reserved band is a real pixel size even for a short one-row dashboard
         let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
+    }
+
+    #[test]
+    fn subplot_geometry_stays_positive_for_many_rows() {
+        // Regression: a fixed per-gap paper fraction (VGAP=0.09) overflowed the 0..=top band once
+        // there were ~6+ rows, yielding negative cell heights and a garbled dashboard. Now that
+        // static image export draws >MAX_SUBPLOTS panels, verify every cell stays positive and
+        // in-bounds for tall grids (e.g. a 42-panel, 21-row dashboard), with rows not overlapping.
+        for panels in [9usize, 16, 30, 42, 64] {
+            let cols = 2;
+            let rows = panels.div_ceil(cols);
+            let top = smart_grid_top(rows);
+            let offset = smart_title_offset(rows);
+            for n in 0..panels {
+                let g = subplot_geometry(n, rows, cols, top, offset);
+                assert!(
+                    g.y_domain[1] > g.y_domain[0],
+                    "panels={panels} n={n}: non-positive cell height {:?}",
+                    g.y_domain
+                );
+                assert!(
+                    g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9,
+                    "panels={panels} n={n}: y-domain out of bounds {:?}",
+                    g.y_domain
+                );
+                assert!(
+                    g.x_domain[1] > g.x_domain[0] && g.x_domain[1] <= 1.0 + 1e-9,
+                    "panels={panels} n={n}: bad x-domain {:?}",
+                    g.x_domain
+                );
+                // each cell sits strictly below the one directly above it (n - cols)
+                if n >= cols {
+                    let above = subplot_geometry(n - cols, rows, cols, top, offset);
+                    assert!(
+                        g.y_domain[1] <= above.y_domain[0] + 1e-9,
+                        "panels={panels} n={n}: row overlaps the one above"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

@@ -2160,7 +2160,9 @@ fn classify_context_file(
 ///
 /// The accumulated output is capped at `CONTEXT_FILE_MAX_BYTES`: a compressed spreadsheet can
 /// be well under the raw 32 MB input limit yet expand into a far larger prompt payload, so the
-/// extraction aborts with a clear error once the limit is exceeded (keeping memory bounded).
+/// extraction aborts with a clear error once the limit is exceeded. Cells are appended
+/// incrementally (no per-row intermediate `Vec`/`String`) and the cap is checked after each
+/// cell, so even a single very wide or very large row can't allocate far beyond the bound.
 fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
     use calamine::{Reader, open_workbook_auto};
 
@@ -2171,6 +2173,14 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
     })?;
 
     let cap = CONTEXT_FILE_MAX_BYTES as usize;
+    let over_cap = || {
+        fail_clierror!(
+            "--context-file '{path}' expands to more than {CONTEXT_FILE_MAX_BYTES} bytes (~32 MB) \
+             of extracted spreadsheet text, exceeding the limit for LLM file inputs. Reduce the \
+             spreadsheet or pre-extract the relevant rows/columns."
+        )
+    };
+
     let mut out = String::new();
     for sheet in wb.sheet_names() {
         let Ok(range) = wb.worksheet_range(&sheet) else {
@@ -2180,21 +2190,22 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
             continue;
         }
         out.push_str(&format!("# Sheet: {sheet}\n"));
+        if out.len() > cap {
+            return over_cap();
+        }
         for row in range.rows() {
-            let line = row
-                .iter()
-                .map(ToString::to_string)
-                .collect::<Vec<_>>()
-                .join(",");
-            out.push_str(&line);
-            out.push('\n');
-            if out.len() > cap {
-                return fail_clierror!(
-                    "--context-file '{path}' expands to more than {CONTEXT_FILE_MAX_BYTES} bytes \
-                     (~32 MB) of extracted spreadsheet text, exceeding the limit for LLM file \
-                     inputs. Reduce the spreadsheet or pre-extract the relevant rows/columns."
-                );
+            for (i, cell) in row.iter().enumerate() {
+                if i > 0 {
+                    out.push(',');
+                }
+                use std::fmt::Write as _;
+                // write! a Display straight into `out` - no per-cell/per-row intermediate.
+                let _ = write!(out, "{cell}");
+                if out.len() > cap {
+                    return over_cap();
+                }
             }
+            out.push('\n');
         }
         out.push('\n');
     }

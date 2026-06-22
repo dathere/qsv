@@ -52,8 +52,11 @@ geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local ex
 offline ScatterGeo projection world-overview for continental/global data. For static image
 export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
 Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. The first run
-computes & caches stats; subsequent runs are fast.
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. These overview
+panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
+on their own full-width row; the per-column box/bar/histogram panels flow below in the
+multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
+are fast.
 
 Examples:
   # Auto-dashboard for a dataset, opened in the browser
@@ -225,7 +228,9 @@ smart options:
                            one image. Set a positive <n> to cap the panel count instead.
                            Eligible columns beyond the cap are reported but not drawn.
                            [default: 0]
-    --grid-cols <n>        Number of columns in the dashboard grid. [default: 2]
+    --grid-cols <n>        Number of columns in the dashboard grid for the per-column
+                           distribution panels. Overview panels (map/geo, correlation,
+                           time-series) always span the full width. [default: 2]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -4319,9 +4324,8 @@ fn smart_grid_parts(
     log_scale: LogScale,
 ) -> SmartGridParts {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
-    let rows = panels.len().div_ceil(cols);
-    let grid_top = smart_grid_top(rows);
-    let title_offset = smart_title_offset(rows);
+    // each leading overview panel takes a full-width row; the rest pack into `cols`-wide rows.
+    let (geoms, rows) = smart_grid_layout(panels, cols);
 
     // widen the left margin when a correlation panel is present so its (long) numeric-column
     // tick labels — truncated to CORR_LABEL_MAX_CHARS — aren't clipped against the page edge.
@@ -4420,7 +4424,7 @@ fn smart_grid_parts(
         // data extent, and emit the domain-positioned geo layout object as raw JSON (the typed
         // `Layout` has only a single `.geo()` with no per-cell domain).
         if let PanelKind::Geo { lats, lons } = &panel.kind {
-            let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
+            let geom = geoms[n].clone();
             let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
@@ -4485,7 +4489,7 @@ fn smart_grid_parts(
 
         // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
         // above the cell. x-axis anchors to its paired y-axis and vice versa.
-        let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
+        let geom = geoms[n].clone();
         let x_axis = styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq))
             .domain(&geom.x_domain)
             .anchor(yref.clone());
@@ -4867,7 +4871,12 @@ fn render_smart_inline(
         let color = PALETTE[n % PALETTE.len()];
         let plot = smart_inline_panel_plot(panel, color, freq, hist, outliers, theme, log_scale);
         let div_id = format!("qsv-viz-panel-{n}");
-        cells.push_str("    <div class=\"qsv-viz-cell\">\n");
+        // leading overview panels span the full page width (their own grid row).
+        if is_overview_panel(&panel.kind) {
+            cells.push_str("    <div class=\"qsv-viz-cell full-width\">\n");
+        } else {
+            cells.push_str("    <div class=\"qsv-viz-cell\">\n");
+        }
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
         cells.push_str("\n    </div>\n");
     }
@@ -4881,7 +4890,8 @@ fn render_smart_inline(
          {page_ink}; background: {page_bg}; margin: 0; padding: 16px; }}\n  h1.qsv-viz-title {{ \
          font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
          .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
-         gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n</style>\n</head>\n<body>\n<h1 \
+         gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n  .qsv-viz-cell.full-width {{ \
+         grid-column: 1 / -1; }}\n</style>\n</head>\n<body>\n<h1 \
          class=\"qsv-viz-title\">{title}</h1>\n<div \
          class=\"qsv-viz-grid\">\n{cells}</div>\n</body>\n</html>\n"
     )
@@ -5244,6 +5254,7 @@ fn smart_title_offset(rows: usize) -> f64 {
 }
 
 /// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
+#[derive(Clone)]
 struct SubplotGeometry {
     x_domain: Vec<f64>,
     y_domain: Vec<f64>,
@@ -5251,21 +5262,43 @@ struct SubplotGeometry {
     title_y:  f64,
 }
 
-/// Compute the paper-space domains for subplot `n` (0-based) in a `rows`×`cols` grid that
-/// occupies the vertical band `0.0..=top` (the strip above `top` is left for the dashboard
-/// title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a paper
-/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom; the vertical gap
-/// leaves room for each panel's title and the row below it's tick labels.
+/// Whether a panel is a leading "overview" summary — map/geo, correlation heatmap and its
+/// scatter/contour/3D drill-downs, or the time-series trend — that should span the full dashboard
+/// width, as opposed to a per-column distribution panel (box/bar/histogram) that flows in the
+/// multi-column grid below.
+fn is_overview_panel(kind: &PanelKind) -> bool {
+    match kind {
+        PanelKind::CorrHeatmap { .. }
+        | PanelKind::ScatterPair { .. }
+        | PanelKind::ContourPair { .. }
+        | PanelKind::Scatter3D { .. }
+        | PanelKind::TimeSeries { .. }
+        | PanelKind::Map { .. }
+        | PanelKind::Geo { .. } => true,
+        PanelKind::BoxStats { .. }
+        | PanelKind::BoxRaw { .. }
+        | PanelKind::BoxOutliers { .. }
+        | PanelKind::FreqBar { .. }
+        | PanelKind::Histogram { .. } => false,
+    }
+}
+
+/// Compute the paper-space domains for a cell at grid position (`row`, `col`) in a `rows`×`cols`
+/// grid that occupies the vertical band `0.0..=top` (the strip above `top` is left for the
+/// dashboard title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a
+/// paper fraction) above the cell. When `full_width` is set the cell spans the entire page width
+/// (`x_domain == [0.0, 1.0]`, used for the leading overview panels) rather than a single column.
 ///
 /// The inter-cell gaps are fixed paper fractions for typical dashboards, but the *total* gap is
 /// capped (`MAX_TOTAL_HGAP`/`MAX_TOTAL_VGAP`) so cells never collapse to a negative size: a fixed
 /// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
-/// 21-row dashboard would need 1.8 of vertical gap alone), which previously could only happen
-/// for static image export now that it's no longer capped at `MAX_SUBPLOTS` panels.
-fn subplot_geometry(
-    n: usize,
+/// 21-row dashboard would need 1.8 of vertical gap alone).
+fn cell_geometry(
+    row: usize,
+    col: usize,
     rows: usize,
     cols: usize,
+    full_width: bool,
     top: f64,
     title_offset: f64,
 ) -> SubplotGeometry {
@@ -5291,12 +5324,14 @@ fn subplot_geometry(
     let cell_w = (1.0 - hgap * (cols_f - 1.0)) / cols_f;
     let cell_h = (top - vgap * (rows_f - 1.0)) / rows_f;
 
-    let col = (n % cols) as f64;
-    let row = (n / cols) as f64; // row 0 is the top of the band
-
-    let x0 = col * (cell_w + hgap);
-    let x1 = x0 + cell_w;
-    let y1 = top - row * (cell_h + vgap); // top edge of the cell
+    // a full-width overview cell spans the whole page; otherwise it occupies its single column.
+    let (x0, x1) = if full_width {
+        (0.0, 1.0)
+    } else {
+        let x0 = col as f64 * (cell_w + hgap);
+        (x0, x0 + cell_w)
+    };
+    let y1 = top - row as f64 * (cell_h + vgap); // top edge of the cell
     let y0 = y1 - cell_h;
 
     SubplotGeometry {
@@ -5305,6 +5340,43 @@ fn subplot_geometry(
         title_x:  (x0 + x1) / 2.0,
         title_y:  (y1 + title_offset).min(1.0),
     }
+}
+
+/// Lay out the dashboard panels: each leading overview panel (see `is_overview_panel`) takes its
+/// own full-width row, while the remaining per-column distribution panels pack into `cols`-wide
+/// rows below. Returns the per-panel geometry (indexed like `panels`) and the total row count.
+fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, usize) {
+    // assign each panel a (row, col, full_width) placement
+    let mut placements: Vec<(usize, usize, bool)> = Vec::with_capacity(panels.len());
+    let mut row = 0;
+    let mut col_in_row = 0;
+    for panel in panels {
+        if is_overview_panel(&panel.kind) {
+            // close any partially-filled grid row, then take a full-width row of its own
+            if col_in_row > 0 {
+                row += 1;
+                col_in_row = 0;
+            }
+            placements.push((row, 0, true));
+            row += 1;
+        } else {
+            if col_in_row == cols {
+                row += 1;
+                col_in_row = 0;
+            }
+            placements.push((row, col_in_row, false));
+            col_in_row += 1;
+        }
+    }
+    let rows = (if col_in_row > 0 { row + 1 } else { row }).max(1);
+
+    let top = smart_grid_top(rows);
+    let title_offset = smart_title_offset(rows);
+    let geoms = placements
+        .into_iter()
+        .map(|(r, c, full)| cell_geometry(r, c, rows, cols, full, top, title_offset))
+        .collect();
+    (geoms, rows)
 }
 
 /// For a frequency-bar panel, the display-only truncated x-axis tick labels (in the same order
@@ -5913,11 +5985,11 @@ mod tests {
     }
 
     #[test]
-    fn subplot_geometry_cells_are_within_bounds_and_titled_above() {
+    fn cell_geometry_cells_are_within_bounds_and_titled_above() {
         // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
         let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
         for n in 0..4 {
-            let g = subplot_geometry(n, rows, cols, top, offset);
+            let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset);
             // domains stay inside the paper area
             assert!(g.x_domain[0] >= 0.0 && g.x_domain[1] <= 1.0 + 1e-9);
             assert!(g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9);
@@ -5926,13 +5998,17 @@ mod tests {
             assert!(g.title_y >= g.y_domain[1] - 1e-9);
         }
         // top row is higher on the page than the bottom row
-        let upper = subplot_geometry(0, rows, cols, top, offset);
-        let lower = subplot_geometry(2, rows, cols, top, offset);
+        let upper = cell_geometry(0, 0, rows, cols, false, top, offset);
+        let lower = cell_geometry(1, 0, rows, cols, false, top, offset);
         assert!(upper.y_domain[0] > lower.y_domain[1]);
         // the two columns don't overlap horizontally
-        let left = subplot_geometry(0, rows, cols, top, offset);
-        let right = subplot_geometry(1, rows, cols, top, offset);
+        let left = cell_geometry(0, 0, rows, cols, false, top, offset);
+        let right = cell_geometry(0, 1, rows, cols, false, top, offset);
         assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
+        // a full-width cell spans the whole page regardless of column
+        let full = cell_geometry(0, 0, rows, cols, true, top, offset);
+        assert_eq!(full.x_domain, vec![0.0, 1.0]);
+        assert!((full.title_x - 0.5).abs() < 1e-9);
     }
 
     #[test]
@@ -5943,7 +6019,15 @@ mod tests {
         const GLYPH_PX: f64 = 20.0; // generous estimate of the 13px title's rendered height
         for rows in 1..=MAX_SUBPLOTS {
             let area = smart_plot_area_h(rows);
-            let g = subplot_geometry(0, rows, 1, smart_grid_top(rows), smart_title_offset(rows));
+            let g = cell_geometry(
+                0,
+                0,
+                rows,
+                1,
+                false,
+                smart_grid_top(rows),
+                smart_title_offset(rows),
+            );
             let title_top = g.title_y + GLYPH_PX / area;
             assert!(
                 title_top <= 1.0 + 1e-9,
@@ -5959,7 +6043,7 @@ mod tests {
     }
 
     #[test]
-    fn subplot_geometry_stays_positive_for_many_rows() {
+    fn cell_geometry_stays_positive_for_many_rows() {
         // Regression: a fixed per-gap paper fraction (VGAP=0.09) overflowed the 0..=top band once
         // there were ~6+ rows, yielding negative cell heights and a garbled dashboard. Now that
         // static image export draws >MAX_SUBPLOTS panels, verify every cell stays positive and
@@ -5970,7 +6054,7 @@ mod tests {
             let top = smart_grid_top(rows);
             let offset = smart_title_offset(rows);
             for n in 0..panels {
-                let g = subplot_geometry(n, rows, cols, top, offset);
+                let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset);
                 assert!(
                     g.y_domain[1] > g.y_domain[0],
                     "panels={panels} n={n}: non-positive cell height {:?}",
@@ -5988,7 +6072,8 @@ mod tests {
                 );
                 // each cell sits strictly below the one directly above it (n - cols)
                 if n >= cols {
-                    let above = subplot_geometry(n - cols, rows, cols, top, offset);
+                    let m = n - cols;
+                    let above = cell_geometry(m / cols, m % cols, rows, cols, false, top, offset);
                     assert!(
                         g.y_domain[1] <= above.y_domain[0] + 1e-9,
                         "panels={panels} n={n}: row overlaps the one above"
@@ -5996,6 +6081,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn smart_grid_layout_gives_overview_panels_full_width_rows() {
+        // one overview panel (correlation heatmap) followed by three distribution bars, 2 columns:
+        // the heatmap takes a full-width row, the three bars pack into 2 rows below (2 + 1).
+        let panels = vec![
+            Panel {
+                name: "corr".to_string(),
+                kind: PanelKind::CorrHeatmap {
+                    labels: vec!["a".to_string(), "b".to_string()],
+                    matrix: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
+                },
+            },
+            Panel {
+                name: "c1".to_string(),
+                kind: PanelKind::FreqBar { idx: 0 },
+            },
+            Panel {
+                name: "c2".to_string(),
+                kind: PanelKind::FreqBar { idx: 1 },
+            },
+            Panel {
+                name: "c3".to_string(),
+                kind: PanelKind::FreqBar { idx: 2 },
+            },
+        ];
+        let (geoms, rows) = smart_grid_layout(&panels, 2);
+        // 1 full-width overview row + ceil(3/2) = 2 grid rows
+        assert_eq!(rows, 3);
+        // the overview panel spans the full page width and leads the dashboard (top band)
+        assert_eq!(geoms[0].x_domain, vec![0.0, 1.0]);
+        // the distribution bars are NOT full width (two columns)
+        assert!(geoms[1].x_domain[1] < 1.0 - 1e-9);
+        assert!(geoms[2].x_domain[0] > 1e-9);
+        // the first bar row sits below the overview row
+        assert!(geoms[1].y_domain[1] <= geoms[0].y_domain[0] + 1e-9);
+        // the two bars on the same row share a y-band but occupy different columns
+        assert_eq!(geoms[1].y_domain, geoms[2].y_domain);
+        assert!(geoms[1].x_domain[1] <= geoms[2].x_domain[0] + 1e-9);
+        // the third bar wraps to its own (last) row, below the first bar row
+        assert!(geoms[3].y_domain[1] <= geoms[1].y_domain[0] + 1e-9);
     }
 
     #[test]

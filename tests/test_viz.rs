@@ -671,6 +671,71 @@ fn viz_smart_inline_many_panels() {
     assert!(html.contains("<!doctype html>"));
 }
 
+#[test]
+fn viz_smart_overview_panel_spans_full_width_typed_grid() {
+    // 2 numeric columns -> a correlation heatmap + correlated-pair scatter (both "overview"
+    // panels), plus 2 low-cardinality categoricals. With <= 8 cartesian panels this renders as the
+    // typed subplot grid, where each overview panel must get a full-width x-axis domain ([0,1]).
+    // The numeric columns are low-cardinality (repeated values) so they pass the correlation
+    // panel's near-unique filter (uniqueness_ratio <= 0.95).
+    let wrk = Workdir::new("viz_smart_overview_panel_spans_full_width_typed_grid");
+    let mut rows = String::from("x,y,cat,grp\n");
+    for i in 0..60 {
+        let x = i % 10;
+        let y = 2 * (i % 10) + (i % 2); // strongly correlated with x, low cardinality
+        let cat = match i % 3 {
+            0 => "A",
+            1 => "B",
+            _ => "C",
+        };
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{x},{y},{cat},{grp}\n"));
+    }
+    wrk.create_from_string("corr.csv", &rows);
+
+    let out_html = wrk.path("corr.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "corr.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("corr.html").unwrap();
+    // a correlation heatmap overview panel is present and spans the full page width
+    assert!(
+        html.contains(r#""type":"heatmap""#),
+        "expected a correlation heatmap: {html}"
+    );
+    assert!(
+        html.contains(r#""domain":[0.0,1.0]"#),
+        "an overview panel's x-axis should span the full width ([0,1]): {html}"
+    );
+}
+
+#[test]
+fn viz_smart_overview_panels_full_width_inline() {
+    // the global-extent quakes data forces the inline-div render path (geo panel). Its leading
+    // overview panels (geo map + correlation heatmap) must be marked full-width so the CSS grid
+    // spans them across all columns.
+    let wrk = Workdir::new("viz_smart_overview_panels_full_width_inline");
+    quakes(&wrk);
+
+    let out_html = wrk.path("quakes.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("quakes.html").unwrap();
+    // the inline path is in use, with a full-width CSS rule and at least one full-width cell
+    assert!(html.contains(r#"class="qsv-viz-grid""#));
+    assert!(
+        html.contains("grid-column: 1 / -1;"),
+        "the full-width CSS rule should be present: {html}"
+    );
+    assert!(
+        html.contains(r#"class="qsv-viz-cell full-width""#),
+        "the overview (geo) panel cell should be marked full-width: {html}"
+    );
+}
+
 // `--open` on a >8-panel smart dashboard with NO --output must succeed: it writes the inline
 // HTML to stdout AND opens a temp copy (it must not bail with a usage error after writing
 // stdout, the pre-fix regression). `BROWSER=true` neutralizes the actual launch so the test is

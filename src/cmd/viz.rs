@@ -288,7 +288,7 @@ use plotly::{
     color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, HoverInfo, Line, Marker, Mode,
-        TextPosition, TickMode, Title,
+        Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
         Annotation, Axis, AxisType, Center, Layout, LayoutGeo, LayoutScene, Mapbox, MapboxStyle,
@@ -4026,13 +4026,24 @@ fn panel_trace(
             // high dynamic range (a dominating "(NULL)"/"Other" bucket) -> log y-axis so the
             // small real categories stay visible; gated by the resolved --log-scale mode.
             log_y = panel_is_log(panel, freq, log_scale);
+            // on a log y-axis, hatch the muted-grey aggregate bars as a redundant cue
+            // (alongside the "count (log)" axis title) that the axis is non-linear
+            let mut marker = Marker::new().color_array(bar_colors);
+            if let Some(shapes) = freq_bar_pattern_shapes(&bars, log_y) {
+                marker = marker.pattern(Pattern::new().shape_array(shapes));
+            }
             let mut bar = Bar::new(xs, ys)
                 .name(panel.name.clone())
-                .marker(Marker::new().color_array(bar_colors))
+                .marker(marker)
                 // value labels above each bar, SI-formatted ("258k", "1.05M") to match
                 // the axis ticks
                 .text_template("%{y:.3s}")
                 .text_position(TextPosition::Outside)
+                // don't clip the outside label of the tallest bar at the cell's top edge. On a
+                // log axis the fixed top headroom shrinks to a few pixels when counts span many
+                // decades (a dominant "(NULL)"/"Other" bucket), so its value label would otherwise
+                // be cut off; let it draw into the inter-row gap instead.
+                .clip_on_axis(false)
                 .text_font(label_font);
             if let Some((x, y)) = &axes {
                 bar = bar.x_axis(x.clone()).y_axis(y.clone());
@@ -4588,6 +4599,25 @@ fn freq_from_cache(
         );
     }
     Some(out)
+}
+
+/// Per-bar pattern (hatch) shapes for a frequency panel, or `None` when no hatching applies.
+/// On a log y-axis, the dominant `(NULL)`/`Other` aggregate bars are diagonally hatched as a
+/// redundant cue that the axis is non-linear; real categories stay flat-filled. Returns `None`
+/// on linear panels so the marker is built exactly as before. Hatching is keyed on the bar's
+/// `kind` (not its label), so a real category literally named "Other" is never hatched.
+fn freq_bar_pattern_shapes(bars: &[FreqBar], log_y: bool) -> Option<Vec<PatternShape>> {
+    if !log_y {
+        return None;
+    }
+    Some(
+        bars.iter()
+            .map(|b| match b.kind {
+                FreqBarKind::Aggregate => PatternShape::RightDiagonalLine,
+                FreqBarKind::Category => PatternShape::None,
+            })
+            .collect(),
+    )
 }
 
 /// Turn a column's non-null `(value, count)` pairs into the panel's frequency bars, appending
@@ -5240,6 +5270,33 @@ mod tests {
         assert_eq!(out[9].x_key, "j");
         assert_eq!(out[10].x_key, format!("(NULL){AGG_KEY_SENTINEL}"));
         assert_ne!(out[10].x_key, out[10].label);
+    }
+
+    #[test]
+    fn freq_bar_pattern_shapes_hatches_aggregates_only_on_log() {
+        // 10 real categories + (NULL) + Other, the last two tagged Aggregate.
+        let counts: Vec<(String, u64)> = (0..12)
+            .map(|i| (((b'a' + i) as char).to_string(), (100 - i as u64)))
+            .collect();
+        let bars = finalize_freq_bars(counts, 7, 10, false, false);
+
+        // linear panel -> no hatching at all
+        assert!(freq_bar_pattern_shapes(&bars, false).is_none());
+
+        // log panel -> diagonal hatch on aggregates, none on real categories
+        let shapes = freq_bar_pattern_shapes(&bars, true).unwrap();
+        assert_eq!(shapes.len(), bars.len());
+        // PatternShape has no PartialEq; compare via serde (empty "" = no pattern, "/" = hatch)
+        for (bar, shape) in bars.iter().zip(shapes.iter()) {
+            let want = match bar.kind {
+                FreqBarKind::Aggregate => "/",
+                FreqBarKind::Category => "",
+            };
+            assert_eq!(
+                serde_json::to_value(shape).unwrap(),
+                serde_json::json!(want)
+            );
+        }
     }
 
     #[test]

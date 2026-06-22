@@ -215,12 +215,12 @@ geo options:
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
-                           means auto: draw as many panels as the data warrants. For
-                           HTML that's every eligible column (up to 64); for static
-                           image export (png/svg/pdf/...) it's 8. Up to 8 panels render
-                           as one subplot grid (plotly's typed subplot-axis limit);
-                           HTML beyond 8 switches to an inline-div grid of independent
-                           plots. Set a positive <n> to cap the panel count instead.
+                           means auto: draw every eligible column (up to 64), for both
+                           HTML and static image export (png/svg/pdf/...). Up to 8
+                           cartesian panels render as one typed subplot grid; beyond 8,
+                           HTML switches to an inline-div grid of independent plots, and
+                           static image export uses domain-positioned axes to fit them in
+                           one image. Set a positive <n> to cap the panel count instead.
                            Eligible columns beyond the cap are reported but not drawn.
                            [default: 0]
     --grid-cols <n>        Number of columns in the dashboard grid. [default: 2]
@@ -674,6 +674,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
             SmartRender::Inline(html) => return output_inline_html(&html, &args),
+            // >8-panel static image export is a raw Plotly JSON value (with xaxis9+/yaxis9+ that
+            // the typed `Plot` can't hold), rendered directly via the static exporter.
+            SmartRender::GridJson { value, dims } => {
+                let img_width = args.flag_width.unwrap_or(dims.0);
+                let img_height = args.flag_height.unwrap_or(dims.1);
+                return output_image_json(
+                    &value,
+                    &args,
+                    out_format,
+                    img_width,
+                    img_height,
+                    args.flag_scale,
+                );
+            },
             SmartRender::Grid { plot, dims } => (plot, Some(dims)),
         }
     } else {
@@ -700,14 +714,22 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     )
 }
 
-/// The two ways `viz smart` can render: a single-`Plot` typed subplot grid (up to
-/// `MAX_SUBPLOTS` panels; the only form that supports static image export), or a
-/// self-contained inline-div HTML page (for >8-panel HTML dashboards).
+/// The ways `viz smart` can render: a single-`Plot` typed subplot grid (up to `MAX_SUBPLOTS`
+/// panels; supports static image export), a raw-JSON subplot grid with domain-positioned axes
+/// (for static image export of >`MAX_SUBPLOTS` panels, where plotly's typed `Layout` runs out
+/// of axis fields), or a self-contained inline-div HTML page (for >8-panel HTML dashboards).
 enum SmartRender {
     // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
     Grid {
         plot: Box<Plot>,
         dims: (usize, usize),
+    },
+    /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
+    /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
+    /// `Layout` can't express, so it's rendered via `StaticExporter::write_fig` (raw JSON).
+    GridJson {
+        value: Box<serde_json::Value>,
+        dims:  (usize, usize),
     },
     Inline(String),
 }
@@ -2712,26 +2734,12 @@ fn output_image(
     height: usize,
     scale: f64,
 ) -> CliResult<()> {
-    use plotly::ImageFormat;
     let path = args
         .flag_output
         .as_deref()
         .expect("image format without --output should have been rejected");
-    let image_format = match fmt {
-        OutFormat::Png => ImageFormat::PNG,
-        OutFormat::Jpeg => ImageFormat::JPEG,
-        OutFormat::Webp => ImageFormat::WEBP,
-        OutFormat::Svg => ImageFormat::SVG,
-        OutFormat::Pdf => ImageFormat::PDF,
-        OutFormat::Html => unreachable!(),
-    };
-    plot.write_image(path, image_format, width, height, scale)
-        .map_err(|e| {
-            crate::CliError::Other(format!(
-                "Static image export failed: {e}. A Chromium or Firefox browser must be installed \
-                 and available for plotly's webdriver-based export."
-            ))
-        })?;
+    plot.write_image(path, image_format(fmt), width, height, scale)
+        .map_err(image_export_err)?;
     if args.flag_open {
         open_path(path)?;
     }
@@ -2749,6 +2757,86 @@ fn output_image(
     _scale: f64,
 ) -> CliResult<()> {
     unreachable!("image export is rejected in run() without the viz_static feature");
+}
+
+/// Render a pre-assembled Plotly JSON value (data + layout) to a static image, for `viz smart`
+/// dashboards with > `MAX_SUBPLOTS` panels — whose layout carries `xaxis9+`/`yaxis9+` that the
+/// typed `Plot` can't express. `StaticExporter::write_fig` accepts an arbitrary JSON value and
+/// renders it through the same headless-browser backend as `Plot::write_image`.
+#[cfg(feature = "viz_static")]
+fn output_image_json(
+    value: &serde_json::Value,
+    args: &Args,
+    fmt: OutFormat,
+    width: usize,
+    height: usize,
+    scale: f64,
+) -> CliResult<()> {
+    use std::path::Path;
+
+    use plotly::plotly_static::StaticExporterBuilder;
+
+    let path = args
+        .flag_output
+        .as_deref()
+        .expect("image format without --output should have been rejected");
+    let mut exporter = StaticExporterBuilder::default()
+        .build()
+        .map_err(image_export_err)?;
+    let result = exporter.write_fig(
+        Path::new(path),
+        value,
+        image_format(fmt),
+        width,
+        height,
+        scale,
+    );
+    // release the webdriver even if the render failed (a leaked session worsens later exports),
+    // mirroring plotly's own `Plot::write_image`.
+    exporter.close();
+    result.map_err(image_export_err)?;
+    if args.flag_open {
+        open_path(path)?;
+    }
+    Ok(())
+}
+
+#[cfg(not(feature = "viz_static"))]
+#[allow(clippy::unnecessary_wraps)]
+fn output_image_json(
+    _value: &serde_json::Value,
+    _args: &Args,
+    _fmt: OutFormat,
+    _width: usize,
+    _height: usize,
+    _scale: f64,
+) -> CliResult<()> {
+    unreachable!("image export is rejected in run() without the viz_static feature");
+}
+
+/// Map a `viz` output format to plotly's `ImageFormat`. `Html` never reaches here (it's routed to
+/// the HTML writers before any image export).
+#[cfg(feature = "viz_static")]
+fn image_format(fmt: OutFormat) -> plotly::ImageFormat {
+    use plotly::ImageFormat;
+    match fmt {
+        OutFormat::Png => ImageFormat::PNG,
+        OutFormat::Jpeg => ImageFormat::JPEG,
+        OutFormat::Webp => ImageFormat::WEBP,
+        OutFormat::Svg => ImageFormat::SVG,
+        OutFormat::Pdf => ImageFormat::PDF,
+        OutFormat::Html => unreachable!(),
+    }
+}
+
+/// Shared error mapper for static image export failures, pointing users at the browser/webdriver
+/// requirement (the most common cause).
+#[cfg(feature = "viz_static")]
+fn image_export_err(e: impl std::fmt::Display) -> crate::CliError {
+    crate::CliError::Other(format!(
+        "Static image export failed: {e}. A Chromium or Firefox browser must be installed and \
+         available for plotly's webdriver-based export."
+    ))
 }
 
 /// Open `path` in the user's default application, honoring the `BROWSER` environment variable
@@ -3749,32 +3837,21 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     });
 
     let eligible = panels.len();
+    // default (--max-charts 0) draws every eligible panel up to MAX_PANELS_INLINE, for both HTML
+    // and static image export. Static export of >MAX_SUBPLOTS panels is rendered via raw-JSON
+    // domain-positioned axes (see render_smart_grid_json), so it's no longer capped at 8.
     let requested = if args.flag_max_charts == 0 {
-        if is_html {
-            MAX_PANELS_INLINE
-        } else {
-            MAX_SUBPLOTS
-        }
+        MAX_PANELS_INLINE
     } else {
         args.flag_max_charts
     };
     let want = requested.min(eligible);
+    // HTML with >MAX_SUBPLOTS panels (or any non-cartesian panel) uses the inline-div grid.
+    // Static image export always uses a single composition (typed grid for ≤MAX_SUBPLOTS, raw
+    // JSON beyond), so it never takes the inline path; non-cartesian panels stay HTML-only.
     let inline = is_html && (want > MAX_SUBPLOTS || has_noncartesian);
 
-    let max_panels = if inline {
-        requested.min(MAX_PANELS_INLINE)
-    } else {
-        requested.min(MAX_SUBPLOTS)
-    };
-
-    // for image export, flag when the 8-panel limit (not an explicit smaller --max-charts) is
-    // what's dropping panels, pointing users to HTML for the full picture.
-    if out_format.is_image() && eligible > MAX_SUBPLOTS && max_panels == MAX_SUBPLOTS {
-        eprintln!(
-            "viz smart: static image export is limited to {MAX_SUBPLOTS} panels; output an .html \
-             file to render up to {MAX_PANELS_INLINE} panels."
-        );
-    }
+    let max_panels = requested.min(MAX_PANELS_INLINE);
 
     if panels.len() > max_panels {
         for p in panels.drain(max_panels..) {
@@ -3876,6 +3953,18 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             &title_text,
             log_scale,
         )))
+    } else if panels.len() > MAX_SUBPLOTS {
+        // static image export of >MAX_SUBPLOTS panels: plotly's typed Layout only has
+        // xaxis1..xaxis8, so assemble the grid as raw JSON with domain-positioned xaxis9+.
+        render_smart_grid_json(
+            args,
+            &panels,
+            &freq,
+            &raw_values,
+            &outlier_stats,
+            &title_text,
+            log_scale,
+        )
     } else {
         render_smart_grid(
             args,
@@ -4110,12 +4199,28 @@ fn panel_trace(
     (trace, bar_max, log_y)
 }
 
-/// Render the dashboard as a single `Plot` with a typed subplot grid (≤ `MAX_SUBPLOTS` panels).
-/// This is the only form that supports static image export. We lay out each cell's axes with
-/// explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot height with
-/// the row count, (b) reserve a band at the top for the dashboard title, and (c) place each
-/// column's name as a title *above* its panel.
-fn render_smart_grid(
+/// The reusable building blocks of a smart-dashboard subplot grid, shared by the typed-`Layout`
+/// renderer (`render_smart_grid`, ≤ `MAX_SUBPLOTS` panels) and the raw-JSON renderer
+/// (`render_smart_grid_json`, used for static image export of more panels). Each axis pair in
+/// `axes` already has its paper-domain and cross-anchor applied; `base_layout` carries the
+/// page chrome (size/margins/fonts/background) but neither the per-subplot axes nor the
+/// annotations, so each assembler can stamp those on in its own way.
+struct SmartGridParts {
+    traces:      Vec<Box<dyn Trace>>,
+    axes:        Vec<(usize, Axis, Axis)>,
+    annotations: Vec<Annotation>,
+    base_layout: Layout,
+    theme:       Option<BuiltinTheme>,
+    dims:        (usize, usize),
+}
+
+/// Build the shared pieces of a smart-dashboard subplot grid: one trace per panel (each
+/// referencing its own `x{n}`/`y{n}` axes), the domain-positioned + cross-anchored axis pairs,
+/// the dashboard + per-panel title annotations, and the base page layout. We lay out each cell's
+/// axes with explicit paper-domains (rather than a plotly `grid`) so we can (a) scale the plot
+/// height with the row count, (b) reserve a band at the top for the dashboard title, and (c)
+/// place each column's name as a title *above* its panel.
+fn smart_grid_parts(
     args: &Args,
     panels: &[Panel],
     freq: &FreqMap,
@@ -4123,7 +4228,7 @@ fn render_smart_grid(
     outliers: &HashMap<usize, OutlierStats>,
     title_text: &str,
     log_scale: LogScale,
-) -> CliResult<SmartRender> {
+) -> SmartGridParts {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     let rows = panels.len().div_ceil(cols);
     let grid_top = smart_grid_top(rows);
@@ -4178,8 +4283,7 @@ fn render_smart_grid(
         }
     };
 
-    let mut plot = Plot::new();
-    let mut layout = Layout::new()
+    let mut base_layout = Layout::new()
         .show_legend(false)
         .height(rows * ROW_HEIGHT_PX)
         .margin(
@@ -4191,7 +4295,7 @@ fn render_smart_grid(
                 .pad(4),
         );
     if !themed {
-        layout = layout
+        base_layout = base_layout
             .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
             .paper_background_color(PAPER_BG)
             .plot_background_color(PAPER_BG);
@@ -4211,6 +4315,9 @@ fn render_smart_grid(
             .show_arrow(false)
             .font(ann_font(20)),
     );
+
+    let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(panels.len());
+    let mut axes: Vec<(usize, Axis, Axis)> = Vec::with_capacity(panels.len());
 
     for (n, panel) in panels.iter().enumerate() {
         let pos = n + 1;
@@ -4232,20 +4339,18 @@ fn render_smart_grid(
             theme,
             log_scale,
         );
-        plot.add_trace(trace);
+        traces.push(trace);
 
-        // position this subplot's styled axes and add its title above the cell
+        // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
+        // above the cell. x-axis anchors to its paired y-axis and vice versa.
         let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
-        layout = place_subplot_axes(
-            layout,
-            pos,
-            styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq)),
-            styled_y_axis(bar_max, log_y, theme),
-            geom.x_domain,
-            geom.y_domain,
-            &xref,
-            &yref,
-        );
+        let x_axis = styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq))
+            .domain(&geom.x_domain)
+            .anchor(yref.clone());
+        let y_axis = styled_y_axis(bar_max, log_y, theme)
+            .domain(&geom.y_domain)
+            .anchor(xref.clone());
+        axes.push((pos, x_axis, y_axis));
         annotations.push(
             Annotation::new()
                 .text(panel.name.clone())
@@ -4271,12 +4376,111 @@ fn render_smart_grid(
             }
         }
     }
-    layout = layout.annotations(annotations);
 
-    plot.set_layout(apply_theme(layout, theme));
+    SmartGridParts {
+        traces,
+        axes,
+        annotations,
+        base_layout,
+        theme,
+        dims: (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX),
+    }
+}
+
+/// Render the dashboard as a single `Plot` with a typed subplot grid (≤ `MAX_SUBPLOTS` panels).
+/// Static image export of more panels goes through `render_smart_grid_json` instead, because
+/// plotly's typed `Layout` only exposes axis fields up to `x_axis8`/`y_axis8`.
+fn render_smart_grid(
+    args: &Args,
+    panels: &[Panel],
+    freq: &FreqMap,
+    hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
+    title_text: &str,
+    log_scale: LogScale,
+) -> CliResult<SmartRender> {
+    let SmartGridParts {
+        traces,
+        axes,
+        annotations,
+        mut base_layout,
+        theme,
+        dims,
+    } = smart_grid_parts(args, panels, freq, hist, outliers, title_text, log_scale);
+
+    let mut plot = Plot::new();
+    for trace in traces {
+        plot.add_trace(trace);
+    }
+    for (pos, x_axis, y_axis) in axes {
+        base_layout = assign_typed_axis(base_layout, pos, x_axis, y_axis);
+    }
+    base_layout = base_layout.annotations(annotations);
+
+    plot.set_layout(apply_theme(base_layout, theme));
     Ok(SmartRender::Grid {
         plot: Box::new(plot),
-        dims: (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX),
+        dims,
+    })
+}
+
+/// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
+/// export of > `MAX_SUBPLOTS` panels. plotly's typed `Layout` only has `x_axis1..x_axis8`, but
+/// plotly.js itself supports any number of axes — so we serialize the plot, then inject each
+/// cell's `xaxis{n}`/`yaxis{n}` (the traces already reference them by name). The result is fed to
+/// `StaticExporter::write_fig`, which renders an arbitrary JSON value through the same
+/// headless-browser backend as `Plot::write_image`.
+fn render_smart_grid_json(
+    args: &Args,
+    panels: &[Panel],
+    freq: &FreqMap,
+    hist: &HashMap<usize, Vec<f64>>,
+    outliers: &HashMap<usize, OutlierStats>,
+    title_text: &str,
+    log_scale: LogScale,
+) -> CliResult<SmartRender> {
+    let SmartGridParts {
+        traces,
+        axes,
+        annotations,
+        base_layout,
+        theme,
+        dims,
+    } = smart_grid_parts(args, panels, freq, hist, outliers, title_text, log_scale);
+
+    let mut plot = Plot::new();
+    for trace in traces {
+        plot.add_trace(trace);
+    }
+    plot.set_layout(apply_theme(base_layout.annotations(annotations), theme));
+
+    let mut value: serde_json::Value = serde_json::from_str(&plot.to_json()).map_err(|e| {
+        crate::CliError::Other(format!("viz smart: could not assemble dashboard JSON: {e}"))
+    })?;
+    let Some(layout_obj) = value
+        .get_mut("layout")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return fail_clierror!("viz smart: assembled dashboard JSON has no layout object");
+    };
+    for (pos, x_axis, y_axis) in &axes {
+        layout_obj.insert(
+            axis_json_key('x', *pos),
+            serde_json::to_value(x_axis).map_err(|e| {
+                crate::CliError::Other(format!("viz smart: could not serialize x-axis {pos}: {e}"))
+            })?,
+        );
+        layout_obj.insert(
+            axis_json_key('y', *pos),
+            serde_json::to_value(y_axis).map_err(|e| {
+                crate::CliError::Other(format!("viz smart: could not serialize y-axis {pos}: {e}"))
+            })?,
+        );
+    }
+
+    Ok(SmartRender::GridJson {
+        value: Box::new(value),
+        dims,
     })
 }
 
@@ -4897,9 +5101,14 @@ struct SubplotGeometry {
 /// Compute the paper-space domains for subplot `n` (0-based) in a `rows`×`cols` grid that
 /// occupies the vertical band `0.0..=top` (the strip above `top` is left for the dashboard
 /// title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a paper
-/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom with fixed
-/// gaps; the vertical gap leaves room for each panel's title and the row below it's tick
-/// labels.
+/// fraction) above the cell. Cells are laid out left-to-right, top-to-bottom; the vertical gap
+/// leaves room for each panel's title and the row below it's tick labels.
+///
+/// The inter-cell gaps are fixed paper fractions for typical dashboards, but the *total* gap is
+/// capped (`MAX_TOTAL_HGAP`/`MAX_TOTAL_VGAP`) so cells never collapse to a negative size: a fixed
+/// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
+/// 21-row dashboard would need 1.8 of vertical gap alone), which previously could only happen
+/// for static image export now that it's no longer capped at `MAX_SUBPLOTS` panels.
 fn subplot_geometry(
     n: usize,
     rows: usize,
@@ -4907,20 +5116,34 @@ fn subplot_geometry(
     top: f64,
     title_offset: f64,
 ) -> SubplotGeometry {
-    const HGAP: f64 = 0.08;
-    const VGAP: f64 = 0.09;
+    const HGAP_BASE: f64 = 0.08;
+    const VGAP_BASE: f64 = 0.09;
+    const MAX_TOTAL_HGAP: f64 = 0.5;
+    const MAX_TOTAL_VGAP: f64 = 0.4;
 
     let cols_f = cols as f64;
     let rows_f = rows as f64;
-    let cell_w = (1.0 - HGAP * (cols_f - 1.0)) / cols_f;
-    let cell_h = (top - VGAP * (rows_f - 1.0)) / rows_f;
+
+    let hgap = if cols > 1 {
+        HGAP_BASE.min(MAX_TOTAL_HGAP / (cols_f - 1.0))
+    } else {
+        0.0
+    };
+    let vgap = if rows > 1 {
+        VGAP_BASE.min(MAX_TOTAL_VGAP / (rows_f - 1.0))
+    } else {
+        0.0
+    };
+
+    let cell_w = (1.0 - hgap * (cols_f - 1.0)) / cols_f;
+    let cell_h = (top - vgap * (rows_f - 1.0)) / rows_f;
 
     let col = (n % cols) as f64;
     let row = (n / cols) as f64; // row 0 is the top of the band
 
-    let x0 = col * (cell_w + HGAP);
+    let x0 = col * (cell_w + hgap);
     let x1 = x0 + cell_w;
-    let y1 = top - row * (cell_h + VGAP); // top edge of the cell
+    let y1 = top - row * (cell_h + vgap); // top edge of the cell
     let y0 = y1 - cell_h;
 
     SubplotGeometry {
@@ -5039,22 +5262,12 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
     a
 }
 
-/// Place subplot `pos`'s prebuilt axis pair: stamp on the cell's domains + cross anchors
-/// and assign them to the typed Layout axis fields (which only exist up to 8, matching
-/// MAX_SUBPLOTS).
-fn place_subplot_axes(
-    layout: Layout,
-    pos: usize,
-    x_axis: Axis,
-    y_axis: Axis,
-    x_domain: Vec<f64>,
-    y_domain: Vec<f64>,
-    xref: &str,
-    yref: &str,
-) -> Layout {
-    // x-axis anchors to its paired y-axis and vice versa.
-    let x = x_axis.domain(&x_domain).anchor(yref);
-    let y = y_axis.domain(&y_domain).anchor(xref);
+/// Assign subplot `pos`'s prebuilt axis pair (domains + cross anchors already applied by
+/// `smart_grid_parts`) to the typed `Layout` axis fields, which only exist up to 8 (matching
+/// `MAX_SUBPLOTS`). Positions beyond 8 can't be expressed by the typed `Layout`; those grids
+/// go through `render_smart_grid_json` instead, so this silently drops them as a safeguard.
+fn assign_typed_axis(layout: Layout, pos: usize, x_axis: Axis, y_axis: Axis) -> Layout {
+    let (x, y) = (x_axis, y_axis);
     match pos {
         1 => layout.x_axis(x).y_axis(y),
         2 => layout.x_axis2(x).y_axis2(y),
@@ -5065,6 +5278,17 @@ fn place_subplot_axes(
         7 => layout.x_axis7(x).y_axis7(y),
         8 => layout.x_axis8(x).y_axis8(y),
         _ => layout,
+    }
+}
+
+/// The plotly.js layout key for axis `pos` (1-based): `xaxis`/`yaxis` for the first cell,
+/// `xaxis{pos}`/`yaxis{pos}` thereafter — matching the `serde(rename = ...)` the typed `Layout`
+/// uses, and the `x{pos}`/`y{pos}` refs `axis_ref` stamps on each trace.
+fn axis_json_key(prefix: char, pos: usize) -> String {
+    if pos <= 1 {
+        format!("{prefix}axis")
+    } else {
+        format!("{prefix}axis{pos}")
     }
 }
 
@@ -5511,6 +5735,81 @@ mod tests {
         // the reserved band is a real pixel size even for a short one-row dashboard
         let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
+    }
+
+    #[test]
+    fn subplot_geometry_stays_positive_for_many_rows() {
+        // Regression: a fixed per-gap paper fraction (VGAP=0.09) overflowed the 0..=top band once
+        // there were ~6+ rows, yielding negative cell heights and a garbled dashboard. Now that
+        // static image export draws >MAX_SUBPLOTS panels, verify every cell stays positive and
+        // in-bounds for tall grids (e.g. a 42-panel, 21-row dashboard), with rows not overlapping.
+        for panels in [9usize, 16, 30, 42, 64] {
+            let cols = 2;
+            let rows = panels.div_ceil(cols);
+            let top = smart_grid_top(rows);
+            let offset = smart_title_offset(rows);
+            for n in 0..panels {
+                let g = subplot_geometry(n, rows, cols, top, offset);
+                assert!(
+                    g.y_domain[1] > g.y_domain[0],
+                    "panels={panels} n={n}: non-positive cell height {:?}",
+                    g.y_domain
+                );
+                assert!(
+                    g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9,
+                    "panels={panels} n={n}: y-domain out of bounds {:?}",
+                    g.y_domain
+                );
+                assert!(
+                    g.x_domain[1] > g.x_domain[0] && g.x_domain[1] <= 1.0 + 1e-9,
+                    "panels={panels} n={n}: bad x-domain {:?}",
+                    g.x_domain
+                );
+                // each cell sits strictly below the one directly above it (n - cols)
+                if n >= cols {
+                    let above = subplot_geometry(n - cols, rows, cols, top, offset);
+                    assert!(
+                        g.y_domain[1] <= above.y_domain[0] + 1e-9,
+                        "panels={panels} n={n}: row overlaps the one above"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn axis_layout_keys_align_with_trace_refs_beyond_eight() {
+        // render_smart_grid_json lets static export exceed the typed Layout's 8-axis limit only if
+        // each cell's injected layout key (xaxis{n}) matches the axis its trace references (x{n}).
+        // Verify the two naming schemes agree for the first dozen positions — including the pos-1
+        // special case ("xaxis"/"x", not "xaxis1"/"x1") — so panels 9+ aren't silently orphaned.
+        for (prefix, axis_word) in [('x', "xaxis"), ('y', "yaxis")] {
+            assert_eq!(axis_json_key(prefix, 1), axis_word);
+            assert_eq!(axis_ref(prefix, 1), prefix.to_string());
+            for pos in 2..=12usize {
+                let key = axis_json_key(prefix, pos);
+                let reference = axis_ref(prefix, pos);
+                assert_eq!(key, format!("{axis_word}{pos}"));
+                assert_eq!(reference, format!("{prefix}{pos}"));
+                // a layout key like "xaxis9" is referenced by its trace as "x9"
+                assert_eq!(reference.trim_start_matches(prefix), pos.to_string());
+            }
+        }
+
+        // a domain-positioned, cross-anchored axis serializes to the JSON shape plotly.js
+        // expects under the injected key: a 2-element `domain` array and an `anchor` string.
+        let axis = styled_y_axis(None, false, None)
+            .domain(&[0.0, 0.5])
+            .anchor("x9");
+        let v = serde_json::to_value(&axis).unwrap();
+        assert_eq!(
+            v.get("domain").and_then(|d| d.as_array()).map(Vec::len),
+            Some(2)
+        );
+        assert_eq!(
+            v.get("anchor").and_then(serde_json::Value::as_str),
+            Some("x9")
+        );
     }
 
     #[test]

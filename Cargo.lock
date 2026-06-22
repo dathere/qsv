@@ -6514,7 +6514,7 @@ dependencies = [
  "serde_stacker",
  "slotmap",
  "stacker",
- "sysinfo 0.39.3",
+ "sysinfo 0.39.4",
  "tokio",
  "uuid",
  "version_check",
@@ -6900,7 +6900,7 @@ dependencies = [
  "strsim",
  "strum 0.28.0",
  "strum_macros 0.28.0",
- "sysinfo 0.39.3",
+ "sysinfo 0.39.4",
  "tempfile",
  "terminal-colorsaurus",
  "textwrap",
@@ -8899,9 +8899,9 @@ dependencies = [
 
 [[package]]
 name = "sysinfo"
-version = "0.39.3"
+version = "0.39.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21d0d938c10fcda3e897e28aaddf4ab462375d411f4378cd63b1c945f69aba96"
+checksum = "a71c821502e2786cc74c965f86561090a2b08fea91507cb599b5da291486a2aa"
 dependencies = [
  "libc",
  "memchr",

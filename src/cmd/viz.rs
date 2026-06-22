@@ -3678,6 +3678,60 @@ fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     (lats, lons)
 }
 
+/// Styled line for the spatial-extent bounding box: a thick dashed red frame, so it reads as a
+/// boundary annotation rather than a data series.
+#[cfg(feature = "geocode")]
+fn extent_box_line() -> Line {
+    Line::new()
+        .color(GEO_EXTENT_LINE_COLOR)
+        .width(GEO_EXTENT_LINE_WIDTH)
+        .dash(plotly::common::DashType::Dash)
+}
+
+/// Styled marker for the reverse-geocoded extent corner/center points: large, fully opaque, with
+/// a white halo, so they stand out from the faded translucent data points.
+#[cfg(feature = "geocode")]
+fn extent_marker() -> Marker {
+    Marker::new()
+        .color(GEO_EXTENT_LINE_COLOR)
+        .size(GEO_EXTENT_MARKER_SIZE)
+        .opacity(1.0)
+        .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.0))
+}
+
+/// Mapbox center + zoom that frames the full extent bounding box (with a little padding), so the
+/// box and its corner markers stay inside the viewport. The plain `viz smart` map otherwise frames
+/// the *trimmed* data, which can leave the true-extent box (and its corners) clipped off-screen.
+#[cfg(feature = "geocode")]
+fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
+    let lat_center = (e.min_lat + e.max_lat) / 2.0;
+    let lon_center = (e.min_lon + e.max_lon) / 2.0;
+    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FRAME_PAD;
+    let zoom = if span <= 0.0 {
+        10
+    } else {
+        ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
+    };
+    (Center::new(lat_center, lon_center), zoom)
+}
+
+/// Padded longitude + latitude `geo` axis ranges that frame the full extent box, for the offline
+/// `ScatterGeo` (local Mercator) path — the analogue of `extent_center_zoom` for projection maps.
+#[cfg(feature = "geocode")]
+fn extent_geo_axes(e: &MapExtent) -> (Axis, Axis) {
+    let lat_pad = ((e.max_lat - e.min_lat) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lon_pad = ((e.max_lon - e.min_lon) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lon = Axis::new().range(vec![
+        (e.min_lon - lon_pad).max(-180.0),
+        (e.max_lon + lon_pad).min(180.0),
+    ]);
+    let lat = Axis::new().range(vec![
+        (e.min_lat - lat_pad).max(-90.0),
+        (e.max_lat + lat_pad).min(90.0),
+    ]);
+    (lon, lat)
+}
+
 /// Join the non-empty components of a reverse-geocoded label into "City, Admin1, Country".
 #[cfg(feature = "geocode")]
 fn format_geo_label(label: &crate::cmd::geocode::GeoLabel) -> String {
@@ -3821,20 +3875,32 @@ fn build_geo_meta(extent: MapExtent) -> Option<GeoMeta> {
 const GEO_EXTENT_LINE_COLOR: &str = "#d62728";
 /// Translucent fill for the spatial-extent bounding box (kept faint so it doesn't obscure data).
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_FILL_COLOR: &str = "rgba(214, 39, 40, 0.08)";
-/// Marker size (px) for the reverse-geocoded extent corner/center points.
+const GEO_EXTENT_FILL_COLOR: &str = "rgba(214, 39, 40, 0.10)";
+/// White halo around extent markers, for contrast against both the basemap and the data points.
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_MARKER_SIZE: usize = 9;
+const GEO_EXTENT_MARKER_BORDER: &str = "#ffffff";
+/// Marker size (px) for the reverse-geocoded extent corner/center points — deliberately large so
+/// they read as annotations, not data.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_MARKER_SIZE: usize = 14;
+/// Bounding-box line width (px) for the spatial-extent frame.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
+/// Padding multiplier applied to the extent span when framing the map, so the box + corner markers
+/// sit comfortably inside the viewport.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_FRAME_PAD: f64 = 1.15;
 
-/// Add the spatial-extent bounding box (filled outline) plus reverse-geocoded corner/center
+/// Add the spatial-extent bounding box (dashed filled outline) plus reverse-geocoded corner/center
 /// markers (hover-labeled) to a mapbox map `Plot`.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterMapbox::new(blat, blon)
+            .name("spatial extent")
             .mode(Mode::Lines)
-            .line(Line::new().color(GEO_EXTENT_LINE_COLOR).width(2.0))
+            .line(extent_box_line())
             .fill(plotly::traces::scatter_mapbox::Fill::ToSelf)
             .fill_color(GEO_EXTENT_FILL_COLOR)
             .hover_info(HoverInfo::Skip)
@@ -3845,12 +3911,9 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterMapbox::new(mlat, mlon)
+            .name("extent points")
             .mode(Mode::Markers)
-            .marker(
-                Marker::new()
-                    .color(GEO_EXTENT_LINE_COLOR)
-                    .size(GEO_EXTENT_MARKER_SIZE),
-            )
+            .marker(extent_marker())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
@@ -3865,8 +3928,9 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterGeo::new(blat, blon)
+            .name("spatial extent")
             .mode(Mode::Lines)
-            .line(Line::new().color(GEO_EXTENT_LINE_COLOR).width(2.0))
+            .line(extent_box_line())
             .fill(plotly::traces::scatter_geo::Fill::ToSelf)
             .fill_color(GEO_EXTENT_FILL_COLOR)
             .hover_info(HoverInfo::Skip)
@@ -3877,12 +3941,9 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
         ScatterGeo::new(mlat, mlon)
+            .name("extent points")
             .mode(Mode::Markers)
-            .marker(
-                Marker::new()
-                    .color(GEO_EXTENT_LINE_COLOR)
-                    .size(GEO_EXTENT_MARKER_SIZE),
-            )
+            .marker(extent_marker())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
@@ -4744,6 +4805,18 @@ fn smart_grid_parts(
         if let PanelKind::Geo { lats, lons } = &panel.kind {
             let geom = geoms[n].clone();
             let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
+            // when drawing the extent overlay on a local (Mercator) projection — geo_framing
+            // returns fitted axes only in that case — frame the FULL extent box instead of the
+            // trimmed data, so the box and its corners aren't clipped. Whole-region projections
+            // (albers-usa / natural-earth) return no axes and already contain the box.
+            #[cfg(feature = "geocode")]
+            let (lonaxis, lataxis) = match &panel.geo_meta {
+                Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
+                    let (lon, lat) = extent_geo_axes(&meta.extent);
+                    (Some(lon), Some(lat))
+                },
+                _ => (lonaxis, lataxis),
+            };
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .showland(true)
@@ -4773,8 +4846,9 @@ fn smart_grid_parts(
                 let (blat, blon) = extent_box_latlon(&meta.extent);
                 traces.push(
                     ScatterGeo::new(blat, blon)
+                        .name("spatial extent")
                         .mode(Mode::Lines)
-                        .line(Line::new().color(GEO_EXTENT_LINE_COLOR).width(2.0))
+                        .line(extent_box_line())
                         .fill(plotly::traces::scatter_geo::Fill::ToSelf)
                         .fill_color(GEO_EXTENT_FILL_COLOR)
                         .hover_info(HoverInfo::Skip)
@@ -4786,12 +4860,9 @@ fn smart_grid_parts(
                 let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
                 traces.push(
                     ScatterGeo::new(mlat, mlon)
+                        .name("extent points")
                         .mode(Mode::Markers)
-                        .marker(
-                            Marker::new()
-                                .color(GEO_EXTENT_LINE_COLOR)
-                                .size(GEO_EXTENT_MARKER_SIZE),
-                        )
+                        .marker(extent_marker())
                         .hover_text_array(htext)
                         .hover_info(HoverInfo::Text)
                         .show_legend(false)
@@ -5055,7 +5126,16 @@ fn smart_inline_panel_plot(
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
-        let (center, zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
+        #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
+        let (mut center, mut zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
+        // when the spatial-extent overlay is drawn, frame the FULL extent box instead of the
+        // trimmed data, so the box and its corner markers aren't clipped off-screen.
+        #[cfg(feature = "geocode")]
+        if let Some(meta) = &panel.geo_meta {
+            let (c, z) = extent_center_zoom(&meta.extent);
+            center = c;
+            zoom = z;
+        }
         let mut plot = Plot::new();
         if *density {
             // many points overplot into a solid mass as markers, so aggregate into a heatmap

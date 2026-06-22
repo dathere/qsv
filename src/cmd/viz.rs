@@ -3439,12 +3439,15 @@ const GEO_FIT_PAD_FRAC: f64 = 0.1;
 const GEO_FIT_PAD_MIN_DEG: f64 = 0.5;
 
 /// Choose the projection and (for local extents) the fitted lon/lat axis ranges for a `viz smart`
-/// static geo map. Continental/global extents use the world `NaturalEarth` projection; data that
-/// spans a continental fraction of the US uses `albers usa` (a fixed composite that frames the US,
-/// so no axis ranges are set); everything else uses `Mercator` fit to the data's trimmed extent so
-/// a city-scale dataset renders as a zoomed-in map instead of a dot on the world. Mirrors the
-/// antimeridian-aware, trimmed framing semantics that `build_map_panel`/the map view use.
-fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<(Axis, Axis)>) {
+/// static geo map. Data that spans a continental fraction of the US uses `albers usa` (a fixed
+/// composite that frames the US — CONUS plus Alaska/Hawaii insets — so no axis ranges are set);
+/// other continental/global extents use the world `NaturalEarth` projection; everything else uses
+/// `Mercator` fit to the data's trimmed extent so a city-scale dataset renders as a zoomed-in map
+/// instead of a dot on the world. Returns the longitude and latitude ranges separately so a local
+/// extent that wraps the antimeridian can still fit latitude while leaving longitude full-width.
+/// Mirrors the antimeridian-aware, trimmed framing semantics that `build_map_panel`/the map view
+/// use.
+fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<Axis>, Option<Axis>) {
     let (lon_center, lon_span) = lon_center_and_span(lons, MAP_FRAME_TRIM_FRAC);
     let mut lats_sorted = lats.to_vec();
     lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
@@ -3452,35 +3455,47 @@ fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<(Axis, Axi
     let lat_hi = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
     let lat_span = lat_hi - lat_lo;
 
-    // continental/global extent: a fitted view would be unwieldy, so use the world projection.
-    if lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG {
-        return (ProjectionType::NaturalEarth, None);
-    }
-
     let lon_lo = lon_center - lon_span / 2.0;
     let lon_hi = lon_center + lon_span / 2.0;
+
     // US-spanning extent: `albers usa` frames the US itself (CONUS + Alaska/Hawaii insets) and
-    // ignores lon/lat axis ranges, so don't set them.
+    // ignores lon/lat axis ranges, so don't set them. Checked BEFORE the global fallback so a
+    // coast-to-coast dataset that includes Alaska/Hawaii — and therefore exceeds the global span
+    // thresholds — still gets albers usa rather than a NaturalEarth world overview.
     let within_us = lon_lo >= US_LON_MIN
         && lon_hi <= US_LON_MAX
         && lat_lo >= US_LAT_MIN
         && lat_hi <= US_LAT_MAX;
     if within_us && lon_span >= US_SPAN_MIN_LON_DEG && lat_span >= US_SPAN_MIN_LAT_DEG {
-        return (ProjectionType::AlbersUsa, None);
+        return (ProjectionType::AlbersUsa, None, None);
+    }
+
+    // other continental/global extent: a fitted view would be unwieldy, so use the world
+    // projection.
+    if lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG {
+        return (ProjectionType::NaturalEarth, None, None);
     }
 
     // local extent: Mercator fit to the padded data bounds, clamped to valid coordinate ranges.
-    let lon_pad = (lon_span * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
     let lat_pad = (lat_span * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
-    let lonaxis = Axis::new().range(vec![
-        (lon_lo - lon_pad).max(-180.0),
-        (lon_hi + lon_pad).min(180.0),
-    ]);
     let lataxis = Axis::new().range(vec![
         (lat_lo - lat_pad).max(-90.0),
         (lat_hi + lat_pad).min(90.0),
     ]);
-    (ProjectionType::Mercator, Some((lonaxis, lataxis)))
+
+    // a cluster that wraps the antimeridian yields fitted longitudes outside [-180, 180]; clamping
+    // them would crop the points on the far side of +/-180, so skip the fitted longitude range
+    // (let the projection show the full width) and fit latitude only.
+    if lon_lo < -180.0 || lon_hi > 180.0 {
+        return (ProjectionType::Mercator, None, Some(lataxis));
+    }
+
+    let lon_pad = (lon_span * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lonaxis = Axis::new().range(vec![
+        (lon_lo - lon_pad).max(-180.0),
+        (lon_hi + lon_pad).min(180.0),
+    ]);
+    (ProjectionType::Mercator, Some(lonaxis), Some(lataxis))
 }
 
 /// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
@@ -4406,7 +4421,7 @@ fn smart_grid_parts(
         // `Layout` has only a single `.geo()` with no per-cell domain).
         if let PanelKind::Geo { lats, lons } = &panel.kind {
             let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
-            let (projection, ranges) = geo_framing(lats, lons);
+            let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .showland(true)
@@ -4416,8 +4431,11 @@ fn smart_grid_parts(
                 .showlakes(true)
                 .lakecolor(NamedColor::LightBlue)
                 .showcountries(true);
-            if let Some((lonaxis, lataxis)) = ranges {
-                geo = geo.lonaxis(lonaxis).lataxis(lataxis);
+            if let Some(lonaxis) = lonaxis {
+                geo = geo.lonaxis(lonaxis);
+            }
+            if let Some(lataxis) = lataxis {
+                geo = geo.lataxis(lataxis);
             }
             traces.push(
                 ScatterGeo::new(lats.clone(), lons.clone())
@@ -5756,26 +5774,56 @@ mod tests {
         // a tight local cluster (LA area, ~1 deg span) -> Mercator fit to padded bounds
         let lats: Vec<f64> = (0..20).map(|i| 34.0 + i as f64 * 0.05).collect();
         let lons: Vec<f64> = (0..20).map(|i| -118.0 + i as f64 * 0.05).collect();
-        let (proj, ranges) = geo_framing(&lats, &lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons);
         assert!(matches!(proj, ProjectionType::Mercator));
-        assert!(ranges.is_some(), "local extent should be fit to bounds");
+        assert!(
+            lonaxis.is_some() && lataxis.is_some(),
+            "local extent should be fit to bounds on both axes"
+        );
 
         // coordinates spanning the continental US -> albers usa, no fitted ranges
         let us_lats = [40.7_f64, 34.0, 41.9, 29.8, 47.6, 25.8, 39.7];
         let us_lons = [-74.0_f64, -118.2, -87.6, -95.4, -122.3, -80.2, -105.0];
-        let (proj, ranges) = geo_framing(&us_lats, &us_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons);
         assert!(matches!(proj, ProjectionType::AlbersUsa));
         assert!(
-            ranges.is_none(),
+            lonaxis.is_none() && lataxis.is_none(),
             "albers usa frames the US, so no axis ranges"
+        );
+
+        // a US extent that includes Alaska/Hawaii spans >90 deg of longitude, exceeding the global
+        // threshold; the US heuristic must still win (albers usa), not fall through to
+        // NaturalEarth.
+        let akhi_lats = [21.3_f64, 61.2, 34.0, 41.9, 40.7, 42.4];
+        let akhi_lons = [-157.8_f64, -149.9, -118.2, -87.6, -74.0, -168.0];
+        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons);
+        assert!(
+            matches!(proj, ProjectionType::AlbersUsa),
+            "a US extent with Alaska/Hawaii should still use albers usa"
         );
 
         // a global spread -> NaturalEarth world overview, no fitted ranges
         let g_lats = [-40.0_f64, 51.5, 35.7, -33.9, 1.3, 64.1];
         let g_lons = [174.8_f64, -0.1, 139.7, 151.2, 103.8, -21.9];
-        let (proj, ranges) = geo_framing(&g_lats, &g_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
         assert!(matches!(proj, ProjectionType::NaturalEarth));
-        assert!(ranges.is_none());
+        assert!(lonaxis.is_none() && lataxis.is_none());
+
+        // a local cluster straddling the +/-180 antimeridian: the fitted longitude range would land
+        // outside [-180, 180] and clamping it would crop the far-side points, so longitude is left
+        // unfit (full width) while latitude is still fit.
+        let am_lats = [10.0_f64, 10.5, 11.0, 11.5];
+        let am_lons = [179.0_f64, 179.5, -179.5, -179.0];
+        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons);
+        assert!(matches!(proj, ProjectionType::Mercator));
+        assert!(
+            lonaxis.is_none(),
+            "antimeridian-wrapped longitude must not be clamped (would crop points)"
+        );
+        assert!(
+            lataxis.is_some(),
+            "latitude is still fit for a local extent"
+        );
     }
 
     #[test]

@@ -793,16 +793,17 @@ fn viz_static_png_export() {
     assert_eq!(&bytes[..4], b"\x89PNG");
 }
 
-// Regression (roborev #3090): on image export the map panel is HTML-only and is dropped, so valid
-// lat/lon columns must NOT be excluded from the other panels — otherwise a coordinates-only dataset
-// would have zero panels and fail to render. Requires a browser/webdriver, so ignored by default.
+// On image export the mapbox tile map can't be rendered, so a local-extent coordinate pair is
+// drawn as an offline ScatterGeo projection fit to the extent (the lat/lon columns are consumed by
+// that geo panel, not charted as distributions). A coordinates-only dataset must still produce a
+// chart. Requires a browser/webdriver, so ignored by default.
 #[cfg(feature = "viz_static")]
 #[test]
 #[ignore = "requires a browser/webdriver for plotly static export"]
-fn viz_static_map_coords_charted_on_image_export() {
-    let wrk = Workdir::new("viz_static_map_coords_charted_on_image_export");
-    // valid in-range lat/lon are the ONLY chartable columns; with the map dropped for image export
-    // they must still be charted as distributions, or there'd be nothing to render
+fn viz_static_geo_map_rendered_on_image_export() {
+    let wrk = Workdir::new("viz_static_geo_map_rendered_on_image_export");
+    // valid in-range lat/lon are the ONLY chartable columns; the offline geo map renders them, so
+    // the export still produces a chart (the LA-area extent fits a local Mercator view)
     let mut rows = String::from("lat,lon\n");
     for i in 0..60 {
         rows.push_str(&format!(
@@ -821,8 +822,39 @@ fn viz_static_map_coords_charted_on_image_export() {
     let svg = wrk.read_to_string("geo.svg").unwrap();
     assert!(
         svg.contains("<svg") || svg.contains("<?xml"),
-        "image export of a coords-only dataset should still produce a chart"
+        "image export of a coords-only dataset should render the offline geo map"
     );
+}
+
+// A US-spanning coordinate extent must export without panicking (exercises the `albers usa`
+// projection branch of the static geo map and the geo-subplot JSON injection alongside other
+// panels). Requires a browser/webdriver, so ignored by default.
+#[cfg(feature = "viz_static")]
+#[test]
+#[ignore = "requires a browser/webdriver for plotly static export"]
+fn viz_static_us_extent_geo_albersusa() {
+    let wrk = Workdir::new("viz_static_us_extent_geo_albersusa");
+    // coordinates spread across the continental US (lon ~-122..-71, lat ~33..47) -> albers usa,
+    // plus a low-cardinality categorical so the dashboard mixes a geo subplot with a bar panel
+    let lats = [40.7_f64, 34.0, 41.9, 29.8, 33.4, 39.7, 47.6, 25.8];
+    let lons = [
+        -74.0_f64, -118.2, -87.6, -95.4, -112.1, -105.0, -122.3, -80.2,
+    ];
+    let mut rows = String::from("lat,lon,region\n");
+    for i in 0..64 {
+        let j = i % lats.len();
+        let region = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{:.4},{:.4},{region}\n", lats[j], lons[j]));
+    }
+    wrk.create_from_string("us.csv", &rows);
+
+    let out_svg = wrk.path("us.svg").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "us.csv", "-o", &out_svg]);
+    wrk.assert_success(&mut cmd);
+
+    let svg = wrk.read_to_string("us.svg").unwrap();
+    assert!(svg.contains("<svg") || svg.contains("<?xml"));
 }
 
 #[cfg(feature = "viz_static")]

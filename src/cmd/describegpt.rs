@@ -265,11 +265,16 @@ describegpt options:
                            If no file is provided, default prompts will be used.
                            The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
-    --context-file <file>  Path to a Markdown (or plain text) file with additional context about the
-                           dataset - e.g. variable/code labels, provenance & domain notes - that is
-                           injected into the prompts as the {{ context }} Mini Jinja variable.
-                           The default prompts add this context to the system prompt; custom prompt
-                           file templates may reference {{ context }} anywhere.
+    --context-file <file>  Path to a file with additional context about the dataset - e.g.
+                           variable/code labels, provenance & domain notes - injected into the
+                           prompts as the {{ context }} Mini Jinja variable. The file TYPE is
+                           sniffed from its contents (not its extension). Supported types:
+                           plain text, Markdown, CSV, Excel/ODS spreadsheets (extracted to CSV),
+                           and PDF or image files (JPEG/PNG/WebP/GIF) sent to the LLM as a
+                           multimodal attachment (needs a multimodal model & endpoint; max ~32 MB).
+                           Word/PowerPoint (docx/pptx) are NOT supported - convert to PDF or text.
+                           By default qsv injects this context into the USER message; custom prompt
+                           file templates may reference {{ context }} anywhere to place it instead.
                            If the option is unset or the file is empty, {{ context }} renders as an
                            empty string and the prompts are unaffected. The file's contents are part
                            of the cache key, so editing it produces a fresh LLM call.
@@ -765,6 +770,80 @@ static DUCKDB_PATH: OnceLock<String> = OnceLock::new();
 static SAMPLE_FILE: OnceLock<String> = OnceLock::new();
 
 static DATA_DICTIONARY_JSON: OnceLock<String> = OnceLock::new();
+
+/// Maximum `--context-file` size (bytes) accepted. Mirrors the OpenAI ~32 MB per-request
+/// file-content ceiling for multimodal inputs; larger files are rejected with guidance.
+const CONTEXT_FILE_MAX_BYTES: u64 = 32 * 1024 * 1024;
+
+// Office/spreadsheet MIME types recognized at the `--context-file` read site. Spreadsheets
+// are extracted to CSV text locally (calamine); Word/PowerPoint are rejected (no Chat
+// Completions ingestion path) with guidance to convert to PDF or text first.
+const XLSX_MIME: &str = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const XLS_MIME: &str = "application/vnd.ms-excel";
+const ODS_MIME: &str = "application/vnd.oasis.opendocument.spreadsheet";
+const DOCX_MIME: &str = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const PPTX_MIME: &str = "application/vnd.openxmlformats-officedocument.presentationml.presentation";
+const DOC_MIME: &str = "application/msword";
+const PPT_MIME: &str = "application/vnd.ms-powerpoint";
+
+/// A classified `--context-file` payload, produced once by `load_context_file` and consumed
+/// when building prompts. Text payloads (plain text / markdown / CSV, plus spreadsheets
+/// extracted to CSV) are injected as framed text into the user turn; binary payloads (PDF /
+/// images) ride as a base64 Chat Completions content block in that same user turn.
+#[derive(Clone, Debug)]
+enum ContextFile {
+    /// UTF-8 text contents (text/markdown/CSV, or a spreadsheet extracted to CSV).
+    Text(String),
+    /// A base64-encoded binary attachment (PDF or image) sent as a content block.
+    Attachment {
+        mime:     String,
+        filename: String,
+        b64:      String,
+        kind:     AttachmentKind,
+    },
+}
+
+/// How a binary `--context-file` attachment is encoded as a Chat Completions content block.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum AttachmentKind {
+    /// Sent as an `image_url` data-URL block (JPEG/PNG/WebP/GIF).
+    Image,
+    /// Sent as a `file` block with base64 `file_data` (PDF).
+    File,
+}
+
+impl ContextFile {
+    /// The text shown to the LLM as `{{ context }}` and in the appended ADDITIONAL CONTEXT
+    /// block. Text payloads return their contents; attachments return a short marker (the
+    /// actual bytes ride in a separate content block built by `build_inference_messages`).
+    fn context_text(&self) -> String {
+        match self {
+            ContextFile::Text(s) => s.clone(),
+            ContextFile::Attachment {
+                filename,
+                mime,
+                kind,
+                ..
+            } => {
+                let what = match kind {
+                    AttachmentKind::Image => "image",
+                    AttachmentKind::File => "document",
+                };
+                format!(
+                    "[Attached {what}: {filename} ({mime}) - provided as an attached {what} in \
+                     this message. Use its contents as additional context.]"
+                )
+            },
+        }
+    }
+}
+
+/// The classified `--context-file`, loaded once in `run()` before any prompt is built and
+/// reused across every inference phase (so the file is read and base64-encoded only once).
+/// `Some(None)` / unset both mean "no context". Mirrors the `SAMPLE_FILE` /
+/// `DATA_DICTIONARY_JSON` one-shot globals so the payload need not be threaded through every
+/// `get_prompt` / `build_inference_messages` call site.
+static CONTEXT_FILE: OnceLock<Option<ContextFile>> = OnceLock::new();
 
 /// First-pass Data Dictionary JSON, used as `{{ first_pass_dictionary }}` context only when
 /// rendering `PromptType::DictionaryRefine` during a `--two-pass` run. Cleared (set to `None`)
@@ -1940,6 +2019,174 @@ fn format_prompt_tsv(response: &str, reasoning: &str, token_usage: &TokenUsage) 
     format_description_tsv(response, reasoning, token_usage)
 }
 
+/// Read, validate, and classify the optional `--context-file`.
+///
+/// Branches on the MIME type sniffed from the file's BYTES (via the `sniff` command's
+/// detector - never trusting the extension):
+/// - text / markdown / CSV (or any UTF-8-decodable file)  -> `ContextFile::Text`
+/// - xlsx / xls / ods                                     -> `ContextFile::Text` (calamine -> CSV)
+/// - pdf                                                  -> `ContextFile::Attachment{ File }`
+/// - jpeg / png / webp / gif                              -> `ContextFile::Attachment{ Image }`
+/// - docx / pptx / doc / ppt                              -> hard error (convert to PDF/text)
+/// - anything else that is not valid UTF-8                -> hard error (unsupported type)
+///
+/// Returns `Ok(None)` when `--context-file` is unset.
+fn load_context_file(args: &Args) -> CliResult<Option<ContextFile>> {
+    let Some(path) = args.flag_context_file.as_deref() else {
+        return Ok(None);
+    };
+
+    let bytes = fs::read(path)
+        .map_err(|e| CliError::Other(format!("Failed to read --context-file '{path}': {e}")))?;
+
+    if bytes.len() as u64 > CONTEXT_FILE_MAX_BYTES {
+        return fail_clierror!(
+            "--context-file '{path}' is {} bytes, exceeding the {CONTEXT_FILE_MAX_BYTES}-byte \
+             (~32 MB) limit for LLM file inputs.",
+            bytes.len()
+        );
+    }
+
+    // An empty file renders no context - matches the historical `{% if context %}` guard and
+    // the cache-key collapse for empty context files.
+    if bytes.is_empty() {
+        return Ok(Some(ContextFile::Text(String::new())));
+    }
+
+    let filename = Path::new(path)
+        .file_name()
+        .map_or_else(|| path.to_string(), |n| n.to_string_lossy().into_owned());
+
+    // sniff the MIME from bytes; normalize away any "; charset=..." parameter and case.
+    let (mime, _label, _score) = crate::cmd::sniff::detect_mime_from_bytes(&bytes);
+    let mime = mime
+        .split(';')
+        .next()
+        .unwrap_or(&mime)
+        .trim()
+        .to_ascii_lowercase();
+
+    classify_context_file(&mime, &bytes, path, filename).map(Some)
+}
+
+/// Map a sniffed MIME type + file bytes to a [`ContextFile`]. Factored out of
+/// `load_context_file` so it can be unit-tested directly.
+fn classify_context_file(
+    mime: &str,
+    bytes: &[u8],
+    path: &str,
+    filename: String,
+) -> CliResult<ContextFile> {
+    use base64_simd::STANDARD as BASE64;
+
+    // images -> image_url block
+    if matches!(
+        mime,
+        "image/jpeg" | "image/png" | "image/webp" | "image/gif"
+    ) {
+        return Ok(ContextFile::Attachment {
+            mime: mime.to_string(),
+            filename,
+            b64: BASE64.encode_to_string(bytes),
+            kind: AttachmentKind::Image,
+        });
+    }
+
+    // pdf -> file block
+    if mime == "application/pdf" {
+        return Ok(ContextFile::Attachment {
+            mime: "application/pdf".to_string(),
+            filename,
+            b64: BASE64.encode_to_string(bytes),
+            kind: AttachmentKind::File,
+        });
+    }
+
+    // spreadsheets -> extract to CSV text locally (no API office-format dependency)
+    if matches!(mime, XLSX_MIME | XLS_MIME | ODS_MIME) {
+        return Ok(ContextFile::Text(extract_spreadsheet_to_csv(path)?));
+    }
+
+    // Word / PowerPoint: no Chat Completions ingestion path - reject with guidance.
+    if matches!(mime, DOCX_MIME | PPTX_MIME | DOC_MIME | PPT_MIME) {
+        return fail_incorrectusage_clierror!(
+            "--context-file '{path}' is a Word/PowerPoint document ({mime}), which is not \
+             supported. Convert it to PDF or plain text first."
+        );
+    }
+
+    // text-ish: an explicit text MIME, or any file whose bytes decode as UTF-8 (covers
+    // markdown/CSV/JSON/YAML and a sniffer that returns octet-stream for real text). This
+    // preserves the historical read-as-text behavior for all textual context files.
+    if mime.starts_with("text/") || matches!(mime, "application/csv" | "application/json") {
+        return match std::str::from_utf8(bytes) {
+            Ok(s) => Ok(ContextFile::Text(s.to_string())),
+            Err(_) => {
+                fail_clierror!(
+                    "--context-file '{path}' was detected as '{mime}' but is not valid UTF-8 text."
+                )
+            },
+        };
+    }
+    if let Ok(s) = std::str::from_utf8(bytes) {
+        return Ok(ContextFile::Text(s.to_string()));
+    }
+
+    fail_incorrectusage_clierror!(
+        "--context-file '{path}' has unsupported type '{mime}'. Supported types: PDF, JPEG, PNG, \
+         WebP, GIF, CSV, plain text, Markdown, and Excel/ODS spreadsheets."
+    )
+}
+
+/// Extract a spreadsheet (xlsx/xls/ods) into a CSV-ish text representation for use as
+/// `{{ context }}`. Each sheet is prefixed with a `# Sheet: <name>` header; cells are
+/// comma-joined per row. Intended as LLM context, not a strict RFC-4180 CSV, so cell values
+/// are not quote-escaped.
+fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
+    use calamine::{Reader, open_workbook_auto};
+
+    let mut wb = open_workbook_auto(path).map_err(|e| {
+        CliError::Other(format!(
+            "Failed to open spreadsheet --context-file '{path}': {e}"
+        ))
+    })?;
+
+    let mut out = String::new();
+    for sheet in wb.sheet_names() {
+        let Ok(range) = wb.worksheet_range(&sheet) else {
+            continue;
+        };
+        if range.is_empty() {
+            continue;
+        }
+        out.push_str(&format!("# Sheet: {sheet}\n"));
+        for row in range.rows() {
+            let line = row
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(",");
+            out.push_str(&line);
+            out.push('\n');
+        }
+        out.push('\n');
+    }
+    Ok(out)
+}
+
+/// Wrap user-supplied context in the ADDITIONAL CONTEXT framing appended to the user prompt.
+/// This is the same framing the default system prompt used before context moved to the user
+/// turn, so prompt wording is unchanged - only the message role differs.
+fn format_additional_context(context: &str) -> String {
+    format!(
+        "\n\nThe user has also provided the following ADDITIONAL CONTEXT about this specific \
+         Dataset (e.g. variable or code labels, provenance, and other domain knowledge). Use it \
+         to enrich and improve the accuracy of your response, giving it precedence over \
+         inferences drawn solely from the statistics when they conflict:\n\nBEGIN ADDITIONAL \
+         CONTEXT\n{context}\nEND ADDITIONAL CONTEXT"
+    )
+}
+
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
 /// prompts. Uses the Mini Jinja template engine to render prompt templates with variables.
 ///
@@ -2193,14 +2440,16 @@ fn get_prompt(
         String::new()
     };
 
-    // Load the optional --context-file contents to expose as the `{{ context }}` template
-    // variable. Empty string when the option is unset so templates guarded with
-    // `{% if context %}` render unchanged. A set-but-unreadable file is a hard error.
-    let context_content = match args.flag_context_file.as_deref() {
-        Some(path) => fs::read_to_string(path)
-            .map_err(|e| CliError::Other(format!("Failed to read --context-file '{path}': {e}")))?,
-        None => String::new(),
-    };
+    // The optional --context-file is loaded and classified once in `run()` into the
+    // CONTEXT_FILE global. Text payloads contribute their UTF-8 contents; binary attachments
+    // (PDF/image) contribute a short marker (their bytes ride as a content block added later
+    // in `build_inference_messages`). Empty string when unset so templates guarded with
+    // `{% if context %}` render unchanged. Direct callers that never populate the global
+    // (e.g. unit tests) see no context.
+    let context_content = CONTEXT_FILE
+        .get()
+        .and_then(Option::as_ref)
+        .map_or_else(String::new, ContextFile::context_text);
 
     // Set up Mini Jinja environment for template rendering
     let mut env = Environment::new();
@@ -2258,7 +2507,7 @@ fn get_prompt(
     };
 
     // Render prompt using Mini Jinja
-    let rendered_prompt = env
+    let mut rendered_prompt = env
         .render_str(&prompt, &ctx)
         .map_err(|e| CliError::Other(format!("Failed to render prompt template: {e}")))?;
 
@@ -2266,6 +2515,19 @@ fn get_prompt(
     let rendered_system_prompt = env
         .render_str(&prompt_file.system_prompt, &ctx)
         .map_err(|e| CliError::Other(format!("Failed to render system_prompt template: {e}")))?;
+
+    // Move user-supplied --context-file into the USER turn (it used to live in the system
+    // prompt). If a custom template already references `{{ context }}` in EITHER the user or
+    // system template, honor that explicit placement and don't double-inject; otherwise, when
+    // context is present, append a framed ADDITIONAL CONTEXT block to the rendered user
+    // prompt. Binary attachments additionally ride as a content block added by
+    // `build_inference_messages`; the marker text injected here tells the model to use it.
+    let context_re = regex_oncelock!(r"\{\{\s*context\s*\}\}");
+    let template_inlines_context =
+        context_re.is_match(&prompt) || context_re.is_match(&prompt_file.system_prompt);
+    if !template_inlines_context && !context_content.is_empty() {
+        rendered_prompt.push_str(&format_additional_context(&context_content));
+    }
 
     if log::log_enabled!(log::Level::Debug) {
         log::debug!("Prompt Type: {prompt_type}");
@@ -2310,7 +2572,29 @@ fn get_completion(
         max_tokens,
         messages,
         args.flag_addl_props.as_deref(),
-    )?;
+    )
+    .map_err(|e| {
+        // A PDF --context-file rides as a Chat Completions `file` content block, which only
+        // some OpenAI-compatible endpoints accept (OpenAI does; many local servers like LM
+        // Studio only accept `text`/`image_url`). When such an endpoint rejects the request,
+        // append an actionable hint rather than leaving only the raw API error.
+        if matches!(
+            CONTEXT_FILE.get().and_then(Option::as_ref),
+            Some(ContextFile::Attachment {
+                kind: AttachmentKind::File,
+                ..
+            })
+        ) {
+            CliError::Other(format!(
+                "{e}\n\nHint: the --context-file is a PDF sent as a 'file' attachment, but the \
+                 LLM endpoint may not support PDF file inputs. Use an OpenAI-compatible endpoint \
+                 that supports 'file' content blocks (e.g. OpenAI), or convert the PDF to images \
+                 or text first."
+            ))
+        } else {
+            e
+        }
+    })?;
 
     let token_usage = TokenUsage {
         prompt:     llm_response.prompt_tokens,
@@ -2456,18 +2740,22 @@ fn get_cache_key_with_flag(
         .flag_tag_vocab
         .as_deref()
         .map_or(String::new(), path_fingerprint);
-    // The --context-file contents are inlined into the rendered prompts via the `{{ context }}`
-    // template variable, so track local-file edits by content fingerprint. The key collapses to
-    // the unset (suffix-less) key in exactly TWO cases, and keeps a path-specific suffix otherwise:
+    // The --context-file contents reach the LLM (as injected user-turn text for text/CSV/
+    // spreadsheet files, or as a base64 content block for PDF/image attachments), so track
+    // local-file edits by content fingerprint. `path_fingerprint` BLAKE3-hashes the raw bytes,
+    // so swapping in a file of a different type (or different contents) already busts the key.
+    // The key collapses to the unset (suffix-less) key in exactly TWO cases, and keeps a
+    // path-specific suffix otherwise:
     //  1. Unset (None): an unconditional suffix would change the key for every run that doesn't use
     //     --context-file, busting describegpt caches (keyed on file content, not qsv version, so
     //     they're meant to survive upgrades) despite identical rendered prompts.
-    //  2. Set to a readable file whose contents are EMPTY: it renders no `{{ context }}` block (the
-    //     `{% if context %}` guard sees an empty string), so its prompt is byte-for-byte identical
-    //     to the unset case and its key must match too. The check mirrors get_prompt's own
-    //     `fs::read_to_string` so the cache decision matches what is actually rendered: only a
-    //     real, readable, empty file collapses. A zero-byte directory or a perms-denied path fails
-    //     read_to_string and does NOT collapse, even though its metadata length may read as 0.
+    //  2. Set to a readable file whose contents are EMPTY: it renders no context (an empty string),
+    //     so its prompt is byte-for-byte identical to the unset case and its key must match too.
+    //     The check mirrors load_context_file's empty-file handling so the cache decision matches
+    //     what is actually rendered: only a real, readable, empty file collapses. A binary
+    //     attachment never reads back as empty UTF-8 (read_to_string fails on non-UTF-8 bytes), so
+    //     it always keeps a path+fingerprint suffix. A zero-byte directory or a perms-denied path
+    //     fails read_to_string and does NOT collapse, even though its metadata length reads as 0.
     // Any path that does not read back as empty content is NOT collapsed: the inference path's
     // `get_prompt` reads the file first and errors out before any lookup, but cache-removal/
     // inspection paths (--forget, invalidate_cache_entry) compute this key WITHOUT reading the
@@ -3665,16 +3953,49 @@ fn build_inference_messages(
                  this request. Return the complete refined SQL query that modifies the baseline \
                  query."
             );
-            messages.push(json!({"role": "user", "content": refined_prompt}));
+            messages
+                .push(json!({"role": "user", "content": user_message_content(&refined_prompt)}));
         } else {
-            messages.push(json!({"role": "user", "content": prompt}));
+            messages.push(json!({"role": "user", "content": user_message_content(prompt)}));
         }
     } else {
         // No session, just add the prompt
-        messages.push(json!({"role": "user", "content": prompt}));
+        messages.push(json!({"role": "user", "content": user_message_content(prompt)}));
     }
 
     serde_json::Value::Array(messages)
+}
+
+/// Build the `content` value for the final user message. When a binary `--context-file`
+/// attachment (PDF or image) is present in the CONTEXT_FILE global, the content becomes a
+/// Chat Completions block array `[{text}, {image_url|file}]` so the file rides alongside the
+/// prompt; otherwise it stays a plain string (backward compatible). Text context files need
+/// no block here - their contents are already appended to `text` by `get_prompt`.
+fn user_message_content(text: &str) -> serde_json::Value {
+    match CONTEXT_FILE.get().and_then(Option::as_ref) {
+        Some(ContextFile::Attachment {
+            mime,
+            filename,
+            b64,
+            kind,
+        }) => {
+            let attachment = match kind {
+                AttachmentKind::Image => json!({
+                    "type": "image_url",
+                    "image_url": { "url": format!("data:{mime};base64,{b64}") }
+                }),
+                AttachmentKind::File => json!({
+                    "type": "file",
+                    "file": {
+                        "filename": filename,
+                        "file_data": format!("data:{mime};base64,{b64}")
+                    }
+                }),
+            };
+            json!([{ "type": "text", "text": text }, attachment])
+        },
+        _ => serde_json::Value::String(text.to_string()),
+    }
 }
 
 /// Run the Data Dictionary inference phase. Returns the completion the downstream phases
@@ -6027,6 +6348,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 
     print_status("Analyzed data.", Some(analysis_start.elapsed()));
 
+    // Load and classify the optional --context-file ONCE, before any prompt is built, so every
+    // inference phase (and the --prepare-context branch) reuses the same payload without
+    // re-reading/re-encoding the file. A set-but-unreadable/oversized/unsupported file is a
+    // hard error here. `.set` only fails if already set (run() is once-per-process); ignore.
+    let _ = CONTEXT_FILE.set(load_context_file(&args)?);
+
     // --prepare-context mode: output prompts and cache state as JSON, then exit
     if args.flag_prepare_context {
         let prompt_file = get_prompt_file(&args)?;
@@ -6342,6 +6669,118 @@ mod tests {
         let v = extract_json_from_output(out).unwrap();
         assert_eq!(v["a"], 1);
         assert_eq!(v["b"], "x");
+    }
+
+    #[test]
+    fn classify_context_file_text_payloads() {
+        // explicit text MIME -> Text
+        let cf = classify_context_file(
+            "text/plain",
+            b"hello world",
+            "notes.txt",
+            "notes.txt".into(),
+        )
+        .expect("text/plain should classify");
+        assert!(matches!(cf, ContextFile::Text(ref s) if s == "hello world"));
+
+        // markdown -> Text
+        let cf = classify_context_file("text/markdown", b"# Title", "notes.md", "notes.md".into())
+            .expect("markdown should classify");
+        assert!(matches!(cf, ContextFile::Text(_)));
+
+        // octet-stream that is really UTF-8 text falls back to Text (preserves legacy behavior)
+        let cf = classify_context_file("application/octet-stream", b"plain", "f", "f".into())
+            .expect("utf-8 octet-stream should classify as text");
+        assert!(matches!(cf, ContextFile::Text(ref s) if s == "plain"));
+    }
+
+    #[test]
+    fn classify_context_file_binary_attachments() {
+        let cf = classify_context_file(
+            "image/png",
+            &[0x89, b'P', b'N', b'G'],
+            "c.png",
+            "c.png".into(),
+        )
+        .expect("png should classify");
+        match cf {
+            ContextFile::Attachment {
+                mime,
+                kind,
+                b64,
+                filename,
+            } => {
+                assert_eq!(mime, "image/png");
+                assert_eq!(kind, AttachmentKind::Image);
+                assert_eq!(filename, "c.png");
+                assert!(!b64.is_empty());
+            },
+            ContextFile::Text(_) => panic!("expected image attachment"),
+        }
+
+        let cf = classify_context_file("application/pdf", b"%PDF-1.4", "r.pdf", "r.pdf".into())
+            .expect("pdf should classify");
+        match cf {
+            ContextFile::Attachment { mime, kind, .. } => {
+                assert_eq!(mime, "application/pdf");
+                assert_eq!(kind, AttachmentKind::File);
+            },
+            ContextFile::Text(_) => panic!("expected file attachment"),
+        }
+    }
+
+    #[test]
+    fn classify_context_file_rejects_office_and_unknown_binary() {
+        // Word/PowerPoint are explicitly unsupported (no read of the file needed).
+        let err =
+            classify_context_file(DOCX_MIME, b"PK\x03\x04", "d.docx", "d.docx".into()).unwrap_err();
+        assert!(err.to_string().contains("Word/PowerPoint"), "got: {err}");
+
+        let err =
+            classify_context_file(PPTX_MIME, b"PK\x03\x04", "s.pptx", "s.pptx".into()).unwrap_err();
+        assert!(err.to_string().contains("Word/PowerPoint"), "got: {err}");
+
+        // Unknown binary (unrecognized MIME, not valid UTF-8) is rejected.
+        let err =
+            classify_context_file("application/x-thing", &[0xff, 0xfe, 0x00], "x", "x".into())
+                .unwrap_err();
+        assert!(err.to_string().contains("unsupported type"), "got: {err}");
+    }
+
+    #[test]
+    fn context_file_attachment_marker_text() {
+        let cf = classify_context_file(
+            "image/png",
+            &[0x89, b'P', b'N', b'G'],
+            "chart.png",
+            "chart.png".into(),
+        )
+        .unwrap();
+        let marker = cf.context_text();
+        assert!(marker.contains("chart.png"), "got: {marker}");
+        assert!(marker.contains("image"), "got: {marker}");
+
+        let cf = classify_context_file(
+            "application/pdf",
+            b"%PDF-1.4",
+            "report.pdf",
+            "report.pdf".into(),
+        )
+        .unwrap();
+        let marker = cf.context_text();
+        assert!(marker.contains("report.pdf"), "got: {marker}");
+        assert!(marker.contains("document"), "got: {marker}");
+    }
+
+    #[test]
+    fn extract_spreadsheet_to_csv_reads_xlsx() {
+        let csv = extract_spreadsheet_to_csv("resources/test/excel-xlsx.xlsx")
+            .expect("should extract xlsx fixture");
+        assert!(
+            csv.contains("# Sheet:"),
+            "expected a sheet header, got: {csv}"
+        );
+        assert!(!csv.trim().is_empty());
     }
 
     #[test]

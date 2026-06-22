@@ -202,8 +202,14 @@ These are replaced in the prompt sent to the LLM with their respective values at
 -   `{{ input_table_name }}` - replaced by the name of the input file
 -   `{{ generated_by_signature }}` - replaced with model name and current timestamp
 -   `{{ duckdb_version }}` - DuckDB version (up to the minor version)
--   `{{ context }}` - additional, user-supplied context provided via `--context-file`. Empty when not set,
-    so guard usage with `{% if context %}`.
+-   `{{ context }}` - additional, user-supplied context provided via `--context-file`. The file type is
+    sniffed from its contents (not its extension). Supported types: plain text, Markdown, CSV, Excel/ODS
+    spreadsheets (extracted to CSV), and PDF or image files (JPEG/PNG/WebP/GIF) — the latter are sent to
+    the LLM as a multimodal attachment (needs a multimodal model & endpoint; ~32 MB max), and here the
+    variable renders a short marker. Word/PowerPoint (docx/pptx) are not supported — convert to PDF or
+    text first. By default qsv injects this context into the **user** message; if a custom template
+    references `{{ context }}` in any prompt, that explicit placement is honored instead. Empty when not
+    set, so guard usage with `{% if context %}`.
 
 See the header of `resources/describegpt_defaults.toml` for the full list of available template variables.
 

@@ -38,7 +38,7 @@
       {
         "flag": "--context-file",
         "type": "string",
-        "description": "Path to a Markdown (or plain text) file with additional context about the dataset - e.g. variable/code labels, provenance & domain notes - that is injected into the prompts as the {{ context }} Mini Jinja variable. The default prompts add this context to the system prompt; custom prompt file templates may reference {{ context }} anywhere. If the option is unset or the file is empty, {{ context }} renders as an empty string and the prompts are unaffected. The file's contents are part of the cache key, so editing it produces a fresh LLM call."
+        "description": "Path to a file with additional context about the dataset - e.g. variable/code labels, provenance & domain notes - injected into the prompts as the {{ context }} Mini Jinja variable. The file TYPE is sniffed from its contents (not its extension). Supported types: plain text, Markdown, CSV, Excel/ODS spreadsheets (extracted to CSV), and PDF or image files (JPEG/PNG/WebP/GIF) sent to the LLM as a multimodal attachment (needs a multimodal model & endpoint; max ~32 MB). Word/PowerPoint (docx/pptx) are NOT supported - convert to PDF or text. By default qsv injects this context into the USER message; custom prompt file templates may reference {{ context }} anywhere to place it instead. If the option is unset or the file is empty, {{ context }} renders as an empty string and the prompts are unaffected. The file's contents are part of the cache key, so editing it produces a fresh LLM call."
       },
       {
         "flag": "--description",

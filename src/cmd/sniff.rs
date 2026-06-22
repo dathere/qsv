@@ -187,7 +187,7 @@ fn get_label(fmt: &file_format::FileFormat, mime_type: &str) -> String {
 /// Detect mime type from bytes using available backend
 /// Returns (`mime_type`, label, `inference_score`)
 #[cfg(feature = "magika")]
-fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
+pub(crate) fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     // If Magika failed to initialize or the mutex is poisoned, fall back to a default mime type
     let default_mime = || {
         (
@@ -213,7 +213,7 @@ fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
 }
 
 #[cfg(not(feature = "magika"))]
-fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
+pub(crate) fn detect_mime_from_bytes(bytes: &[u8]) -> (String, String, f32) {
     let fmt = FileFormat::from_bytes(bytes);
     let mime = fmt.media_type().to_string();
     let label = get_label(&fmt, &mime);

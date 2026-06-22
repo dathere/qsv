@@ -46,10 +46,13 @@ language = ""
 #                     cross-field context (e.g. recognizing that street_no + street_name +
 #                     city + state + zip describe a single mailing address).
 # {{ context }} - Additional, user-supplied context about the dataset, provided via the
-#                     --context-file option (a Markdown or plain text file with variable/code
-#                     labels, provenance, domain notes, etc.). Empty string when --context-file
-#                     is not set, so guard usage with `{% if context %}`. The default system
-#                     prompt below injects it; custom templates may reference it in any prompt.
+#                     --context-file option. Accepts text/Markdown/CSV, Excel/ODS spreadsheets
+#                     (extracted to CSV), and PDF/image files (JPEG/PNG/WebP/GIF, sent to the
+#                     LLM as a multimodal attachment - here the variable renders a short marker).
+#                     Empty string when --context-file is not set, so guard usage with
+#                     `{% if context %}`. By default qsv injects this into the USER message (not
+#                     the system prompt); if a custom template references {{ context }} in any
+#                     prompt, that explicit placement is honored instead.
 
 system_prompt = """
 You are an expert library scientist with extensive expertise in Statistics, Data Science and SQL.
@@ -70,15 +73,6 @@ most frequent having a rank of 1. In case of ties, `rank` is calculated based on
 
 For Dataset fields with all unique values (i.e. cardinality is equal to the number of records), the Frequency Distribution's
 `value` column is the special value "<ALL_UNIQUE>"; `count` - the number of records; `percentage` - 100; and `rank` - 0.
-{% if context %}
-The user has also provided the following ADDITIONAL CONTEXT about this specific Dataset (e.g. variable
-or code labels, provenance, and other domain knowledge). Use it to enrich and improve the accuracy of
-your response, giving it precedence over inferences drawn solely from the statistics when they conflict:
-
-BEGIN ADDITIONAL CONTEXT
-{{ context }}
-END ADDITIONAL CONTEXT
-{% endif %}
 """
 
 dictionary_prompt = """

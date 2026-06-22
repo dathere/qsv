@@ -627,13 +627,23 @@ viz = ["dep:plotly", "dep:opener", "plotly/plotly_embed_js"]
 viz_static = ["viz", "plotly/static_export_default"]
 lens = ["csvlens"]
 lite = []
-datapusher_plus = ["geocode", "get", "get_cloud", "polars", "profile", "self_update"]
+datapusher_plus = [
+    "base64-simd",
+    "geocode",
+    "get",
+    "get_cloud",
+    "polars",
+    "profile",
+    "self_update",
+]
 ui = ["clipboard", "color", "prompt", "lens"]
 jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
 # feature_capable backs the always-compiled commands that consume lookup tables
 # (validate/template/describegpt). Pull flate2 + zstd so their remote lookups
 # auto-decompress .gz/.zlib/.zst (alongside the always-available .zip/.sz). #1417.
-feature_capable = ["flate2", "zstd"]
+# base64-simd backs describegpt's multimodal --context-file (base64-encoding image/PDF
+# attachments for the LLM); it's always available wherever describegpt is (non-lite).
+feature_capable = ["base64-simd", "flate2", "zstd"]
 nightly = [
     "crc32fast/nightly",
     "pyo3/nightly",

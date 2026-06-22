@@ -2036,9 +2036,24 @@ fn load_context_file(args: &Args) -> CliResult<Option<ContextFile>> {
         return Ok(None);
     };
 
+    // Reject an oversized file BEFORE loading it into memory. fs::metadata follows symlinks
+    // and returns the target's size; if metadata is unavailable (e.g. a named pipe), fall
+    // through and rely on the post-read length check below.
+    if let Ok(meta) = fs::metadata(path)
+        && meta.len() > CONTEXT_FILE_MAX_BYTES
+    {
+        return fail_clierror!(
+            "--context-file '{path}' is {} bytes, exceeding the {CONTEXT_FILE_MAX_BYTES}-byte \
+             (~32 MB) limit for LLM file inputs.",
+            meta.len()
+        );
+    }
+
     let bytes = fs::read(path)
         .map_err(|e| CliError::Other(format!("Failed to read --context-file '{path}': {e}")))?;
 
+    // Defense-in-depth: also reject if the in-memory size exceeds the cap (metadata was
+    // unavailable above, or the file grew between the metadata check and the read).
     if bytes.len() as u64 > CONTEXT_FILE_MAX_BYTES {
         return fail_clierror!(
             "--context-file '{path}' is {} bytes, exceeding the {CONTEXT_FILE_MAX_BYTES}-byte \
@@ -2142,6 +2157,10 @@ fn classify_context_file(
 /// `{{ context }}`. Each sheet is prefixed with a `# Sheet: <name>` header; cells are
 /// comma-joined per row. Intended as LLM context, not a strict RFC-4180 CSV, so cell values
 /// are not quote-escaped.
+///
+/// The accumulated output is capped at `CONTEXT_FILE_MAX_BYTES`: a compressed spreadsheet can
+/// be well under the raw 32 MB input limit yet expand into a far larger prompt payload, so the
+/// extraction aborts with a clear error once the limit is exceeded (keeping memory bounded).
 fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
     use calamine::{Reader, open_workbook_auto};
 
@@ -2151,6 +2170,7 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
         ))
     })?;
 
+    let cap = CONTEXT_FILE_MAX_BYTES as usize;
     let mut out = String::new();
     for sheet in wb.sheet_names() {
         let Ok(range) = wb.worksheet_range(&sheet) else {
@@ -2168,6 +2188,13 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
                 .join(",");
             out.push_str(&line);
             out.push('\n');
+            if out.len() > cap {
+                return fail_clierror!(
+                    "--context-file '{path}' expands to more than {CONTEXT_FILE_MAX_BYTES} bytes \
+                     (~32 MB) of extracted spreadsheet text, exceeding the limit for LLM file \
+                     inputs. Reduce the spreadsheet or pre-extract the relevant rows/columns."
+                );
+            }
         }
         out.push('\n');
     }

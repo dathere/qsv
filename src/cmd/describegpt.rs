@@ -480,7 +480,7 @@ Common options:
 "#;
 
 use std::{
-    env, fs,
+    env, fmt, fs,
     io::{Read, Write},
     path::{Path, PathBuf},
     sync::{LazyLock, OnceLock},
@@ -899,12 +899,43 @@ static TAG_VOCAB_CKAN_API: OnceLock<String> = OnceLock::new();
 static TAG_VOCAB_CKAN_TOKEN: OnceLock<Option<String>> = OnceLock::new();
 
 #[allow(dead_code)]
-#[derive(Debug, Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
+#[derive(Default, Serialize, Deserialize, Clone, PartialEq, Eq, Hash)]
 struct TokenUsage {
     prompt:     u64,
     completion: u64,
     total:      u64,
     elapsed:    u64,
+}
+
+impl TokenUsage {
+    /// Completion tokens per second, rounded to 2 decimals.
+    /// Returns 0.0 when `elapsed` is 0 to avoid division by zero.
+    fn completion_tps(&self) -> f64 {
+        if self.elapsed == 0 {
+            0.0
+        } else {
+            ((self.completion as f64 * 1000.0 / self.elapsed as f64) * 100.0).round() / 100.0
+        }
+    }
+}
+
+// Custom Debug so the user-visible `## TOKEN USAGE` line includes a computed
+// completion_tps (completion tokens/sec). The struct stores only integer fields
+// (preserving Serialize/Eq/Hash and the disk/Redis cache format); tps is derived
+// on the fly. elapsed is in milliseconds. See issue #4051.
+impl fmt::Debug for TokenUsage {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "TokenUsage {{ prompt: {}, completion: {}, total: {}, elapsed: {}, completion_tps: \
+             {:.2} }}",
+            self.prompt,
+            self.completion,
+            self.total,
+            self.elapsed,
+            self.completion_tps()
+        )
+    }
 }
 
 #[derive(Debug, Default, PartialEq, Eq, Clone)]
@@ -1945,12 +1976,13 @@ fn replace_attribution_placeholder(
 fn format_token_usage_comments(reasoning: &str, token_usage: &TokenUsage) -> String {
     format!(
         "# REASONING\n# {}\n# TOKEN USAGE\n# prompt: {}\n# completion: {}\n# total: {}\n# \
-         elapsed: {} ms\n",
+         elapsed: {} ms\n# completion_tps: {:.2}\n",
         reasoning.replace('\n', "\n# "),
         token_usage.prompt,
         token_usage.completion,
         token_usage.total,
-        token_usage.elapsed
+        token_usage.elapsed,
+        token_usage.completion_tps()
     )
 }
 
@@ -1986,13 +2018,14 @@ fn format_tags_tsv(
     let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
 
     format!(
-        "tags\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
+        "tags\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\ttoken_completion_tps\n{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\n",
         tags_escaped,
         reasoning_escaped,
         token_usage.prompt,
         token_usage.completion,
         token_usage.total,
-        token_usage.elapsed
+        token_usage.elapsed,
+        token_usage.completion_tps()
     )
 }
 
@@ -2004,13 +2037,14 @@ fn format_description_tsv(response: &str, reasoning: &str, token_usage: &TokenUs
     let reasoning_escaped = reasoning.replace(['\t', '\n', '\r'], " ");
 
     format!(
-        "response\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\n{}\t{}\t{}\t{}\t{}\t{}\n",
+        "response\treasoning\ttoken_prompt\ttoken_completion\ttoken_total\telapsed\ttoken_completion_tps\n{}\t{}\t{}\t{}\t{}\t{}\t{:.2}\n",
         response_escaped,
         reasoning_escaped,
         token_usage.prompt,
         token_usage.completion,
         token_usage.total,
-        token_usage.elapsed
+        token_usage.elapsed,
+        token_usage.completion_tps()
     )
 }
 
@@ -6708,6 +6742,46 @@ fn get_cached_analysis(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn token_usage_completion_tps_math() {
+        // issue #4051 example: 10000 completion tokens over 267842 ms -> 37.34 tps
+        let tu = TokenUsage {
+            prompt:     24606,
+            completion: 10000,
+            total:      34606,
+            elapsed:    267842,
+        };
+        assert_eq!(tu.completion_tps(), 37.34);
+    }
+
+    #[test]
+    fn token_usage_completion_tps_zero_elapsed_guard() {
+        // elapsed == 0 must not divide by zero
+        let tu = TokenUsage {
+            prompt:     12,
+            completion: 34,
+            total:      46,
+            elapsed:    0,
+        };
+        assert_eq!(tu.completion_tps(), 0.0);
+    }
+
+    #[test]
+    fn token_usage_debug_includes_completion_tps() {
+        // 34 completion tokens over 789 ms -> 43.09 tps
+        let tu = TokenUsage {
+            prompt:     12,
+            completion: 34,
+            total:      46,
+            elapsed:    789,
+        };
+        assert_eq!(
+            format!("{tu:?}"),
+            "TokenUsage { prompt: 12, completion: 34, total: 46, elapsed: 789, completion_tps: \
+             43.09 }"
+        );
+    }
 
     #[test]
     fn extract_json_handles_fenced_json() {

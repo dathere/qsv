@@ -63,10 +63,12 @@ scatter would overplot; with three or more numeric columns, a 3D scatter of the
 strongest-correlation triple is added too. When the dataset has a date/datetime column
 (auto-detected via stats date inference) plus a continuous numeric column, a time-series
 line panel over time is added. When a latitude/longitude column pair is detected, a
-geographic panel leads the dashboard: a Mapbox tile map for a local extent, or an offline
-ScatterGeo projection world-overview for continental/global data. Map/geo and 3D panels are
-HTML-only (they can't share the static-image subplot grid). The first run computes & caches
-stats; subsequent runs are fast.
+geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local extent or an
+offline ScatterGeo projection world-overview for continental/global data. For static image
+export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
+Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. The first run
+computes & caches stats; subsequent runs are fast.
 
 
 <a name="examples"></a>

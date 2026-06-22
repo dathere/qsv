@@ -48,10 +48,12 @@ scatter would overplot; with three or more numeric columns, a 3D scatter of the
 strongest-correlation triple is added too. When the dataset has a date/datetime column
 (auto-detected via stats date inference) plus a continuous numeric column, a time-series
 line panel over time is added. When a latitude/longitude column pair is detected, a
-geographic panel leads the dashboard: a Mapbox tile map for a local extent, or an offline
-ScatterGeo projection world-overview for continental/global data. Map/geo and 3D panels are
-HTML-only (they can't share the static-image subplot grid). The first run computes & caches
-stats; subsequent runs are fast.
+geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local extent or an
+offline ScatterGeo projection world-overview for continental/global data. For static image
+export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
+Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. The first run
+computes & caches stats; subsequent runs are fast.
 
 Examples:
   # Auto-dashboard for a dataset, opened in the browser
@@ -3421,6 +3423,81 @@ fn latlon_indices(stats: &[crate::cmd::stats::StatsData]) -> Option<(usize, usiz
     }
 }
 
+// Rough bounding box of the United States (including Alaska and Hawaii) for the `viz smart` static
+// geo map's `albers usa` heuristic.
+const US_LON_MIN: f64 = -170.0;
+const US_LON_MAX: f64 = -66.0;
+const US_LAT_MIN: f64 = 18.0;
+const US_LAT_MAX: f64 = 72.0;
+// `albers usa` is only chosen when the data spans a continental fraction of the US, so a single
+// US city renders as a fitted Mercator view rather than a US-wide composite.
+const US_SPAN_MIN_LON_DEG: f64 = 15.0;
+const US_SPAN_MIN_LAT_DEG: f64 = 8.0;
+// padding (as a fraction of the span, with a small floor) added around a fitted local geo map so
+// points aren't flush against the frame.
+const GEO_FIT_PAD_FRAC: f64 = 0.1;
+const GEO_FIT_PAD_MIN_DEG: f64 = 0.5;
+
+/// Choose the projection and (for local extents) the fitted lon/lat axis ranges for a `viz smart`
+/// static geo map. Data that spans a continental fraction of the US uses `albers usa` (a fixed
+/// composite that frames the US — CONUS plus Alaska/Hawaii insets — so no axis ranges are set);
+/// other continental/global extents use the world `NaturalEarth` projection; everything else uses
+/// `Mercator` fit to the data's trimmed extent so a city-scale dataset renders as a zoomed-in map
+/// instead of a dot on the world. Returns the longitude and latitude ranges separately so a local
+/// extent that wraps the antimeridian can still fit latitude while leaving longitude full-width.
+/// Mirrors the antimeridian-aware, trimmed framing semantics that `build_map_panel`/the map view
+/// use.
+fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<Axis>, Option<Axis>) {
+    let (lon_center, lon_span) = lon_center_and_span(lons, MAP_FRAME_TRIM_FRAC);
+    let mut lats_sorted = lats.to_vec();
+    lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lat_lo = sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
+    let lat_hi = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
+    let lat_span = lat_hi - lat_lo;
+
+    let lon_lo = lon_center - lon_span / 2.0;
+    let lon_hi = lon_center + lon_span / 2.0;
+
+    // US-spanning extent: `albers usa` frames the US itself (CONUS + Alaska/Hawaii insets) and
+    // ignores lon/lat axis ranges, so don't set them. Checked BEFORE the global fallback so a
+    // coast-to-coast dataset that includes Alaska/Hawaii — and therefore exceeds the global span
+    // thresholds — still gets albers usa rather than a NaturalEarth world overview.
+    let within_us = lon_lo >= US_LON_MIN
+        && lon_hi <= US_LON_MAX
+        && lat_lo >= US_LAT_MIN
+        && lat_hi <= US_LAT_MAX;
+    if within_us && lon_span >= US_SPAN_MIN_LON_DEG && lat_span >= US_SPAN_MIN_LAT_DEG {
+        return (ProjectionType::AlbersUsa, None, None);
+    }
+
+    // other continental/global extent: a fitted view would be unwieldy, so use the world
+    // projection.
+    if lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG {
+        return (ProjectionType::NaturalEarth, None, None);
+    }
+
+    // local extent: Mercator fit to the padded data bounds, clamped to valid coordinate ranges.
+    let lat_pad = (lat_span * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lataxis = Axis::new().range(vec![
+        (lat_lo - lat_pad).max(-90.0),
+        (lat_hi + lat_pad).min(90.0),
+    ]);
+
+    // a cluster that wraps the antimeridian yields fitted longitudes outside [-180, 180]; clamping
+    // them would crop the points on the far side of +/-180, so skip the fitted longitude range
+    // (let the projection show the full width) and fit latitude only.
+    if lon_lo < -180.0 || lon_hi > 180.0 {
+        return (ProjectionType::Mercator, None, Some(lataxis));
+    }
+
+    let lon_pad = (lon_span * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lonaxis = Axis::new().range(vec![
+        (lon_lo - lon_pad).max(-180.0),
+        (lon_hi + lon_pad).min(180.0),
+    ]);
+    (ProjectionType::Mercator, Some(lonaxis), Some(lataxis))
+}
+
 /// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
 /// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
 /// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
@@ -3594,24 +3671,25 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
     // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
     //
-    // The map panel is mapbox-based and HTML-only, so build it only for HTML output. Excluding the
-    // coordinate columns is tied to a map that will actually render:
-    //   - image export (PNG/SVG/PDF/...): the map can't be embedded, so skip the build entirely —
-    //     map_cols stays None and the coordinates are charted as normal distributions (rather than
-    //     being excluded AND having their only panel dropped, which would hide them from the
-    //     image);
-    //   - HTML with named+numeric lat/lon but no in-range value: build_map_panel returns None, so
-    //     map_cols is None and those columns are charted normally.
-    let map_panel = if out_format.is_image() {
-        if latlon_indices(&stats).is_some() {
-            eprintln!(
-                "viz smart: map panels are HTML-only (mapbox can't be exported in the subplot \
-                 grid); the map was skipped for image export."
-            );
+    // The map panel is built for BOTH HTML and static image output. The mapbox tile basemap
+    // (ScatterMapbox/DensityMapbox) needs a live browser + network tiles, so it can't be statically
+    // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
+    // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
+    // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
+    // None (no usable lat/lon pair), map_cols stays None and those columns are charted normally.
+    let map_panel = {
+        let panel = build_map_panel(args, &stats)?;
+        if out_format.is_image() {
+            panel.map(|(p, cols)| {
+                let kind = match p.kind {
+                    PanelKind::Map { lats, lons, .. } => PanelKind::Geo { lats, lons },
+                    other => other,
+                };
+                (Panel { name: p.name, kind }, cols)
+            })
+        } else {
+            panel
         }
-        None
-    } else {
-        build_map_panel(args, &stats)?
     };
     let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
@@ -3943,6 +4021,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     });
 
     let log_scale = parse_log_scale(&args.flag_log_scale)?;
+    // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned `geo`
+    // subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't express.
+    let has_geo_image = out_format.is_image()
+        && panels
+            .iter()
+            .any(|p| matches!(p.kind, PanelKind::Geo { .. }));
     if inline {
         Ok(SmartRender::Inline(render_smart_inline(
             args,
@@ -3953,9 +4037,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             &title_text,
             log_scale,
         )))
-    } else if panels.len() > MAX_SUBPLOTS {
-        // static image export of >MAX_SUBPLOTS panels: plotly's typed Layout only has
-        // xaxis1..xaxis8, so assemble the grid as raw JSON with domain-positioned xaxis9+.
+    } else if panels.len() > MAX_SUBPLOTS || has_geo_image {
+        // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
+        // plotly's typed Layout only has xaxis1..xaxis8 and a single typed `geo`, so assemble the
+        // grid as raw JSON with domain-positioned xaxis9+ and (for geo panels) geo/geo2+ subplots.
         render_smart_grid_json(
             args,
             &panels,
@@ -4208,6 +4293,10 @@ fn panel_trace(
 struct SmartGridParts {
     traces:      Vec<Box<dyn Trace>>,
     axes:        Vec<(usize, Axis, Axis)>,
+    // geo panels don't use cartesian x/y axes: each carries a domain-positioned `geo{pos}` layout
+    // object (as raw JSON, since the typed `Layout` has only one `.geo()`), injected by
+    // `render_smart_grid_json`. Empty for the typed-`Layout` grid (geo dashboards never use it).
+    geos:        Vec<(usize, serde_json::Value)>,
     annotations: Vec<Annotation>,
     base_layout: Layout,
     theme:       Option<BuiltinTheme>,
@@ -4318,12 +4407,65 @@ fn smart_grid_parts(
 
     let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(panels.len());
     let mut axes: Vec<(usize, Axis, Axis)> = Vec::with_capacity(panels.len());
+    let mut geos: Vec<(usize, serde_json::Value)> = Vec::new();
 
     for (n, panel) in panels.iter().enumerate() {
         let pos = n + 1;
         let xref = axis_ref('x', pos);
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];
+
+        // geo panels use a `geo{pos}` projection subplot (no cartesian x/y axes), only reachable on
+        // the raw-JSON static-export path. Build the ScatterGeo trace, fit the projection to the
+        // data extent, and emit the domain-positioned geo layout object as raw JSON (the typed
+        // `Layout` has only a single `.geo()` with no per-cell domain).
+        if let PanelKind::Geo { lats, lons } = &panel.kind {
+            let geom = subplot_geometry(n, rows, cols, grid_top, title_offset);
+            let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
+            let mut geo = LayoutGeo::new()
+                .projection(Projection::new().projection_type(projection))
+                .showland(true)
+                .landcolor(NamedColor::LightGray)
+                .showocean(true)
+                .oceancolor(NamedColor::LightBlue)
+                .showlakes(true)
+                .lakecolor(NamedColor::LightBlue)
+                .showcountries(true);
+            if let Some(lonaxis) = lonaxis {
+                geo = geo.lonaxis(lonaxis);
+            }
+            if let Some(lataxis) = lataxis {
+                geo = geo.lataxis(lataxis);
+            }
+            traces.push(
+                ScatterGeo::new(lats.clone(), lons.clone())
+                    .mode(Mode::Markers)
+                    .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
+                    .subplot(geo_ref(pos)),
+            );
+            let mut geo_json = serde_json::to_value(&geo).unwrap_or(serde_json::Value::Null);
+            if let Some(obj) = geo_json.as_object_mut() {
+                obj.insert(
+                    "domain".to_string(),
+                    serde_json::json!({ "x": geom.x_domain, "y": geom.y_domain }),
+                );
+            }
+            geos.push((pos, geo_json));
+            annotations.push(
+                Annotation::new()
+                    .text(panel.name.clone())
+                    .x(geom.title_x)
+                    .y(geom.title_y)
+                    .x_ref("paper")
+                    .y_ref("paper")
+                    .x_anchor(Anchor::Center)
+                    .y_anchor(Anchor::Bottom)
+                    .show_arrow(false)
+                    .font(ann_font(13)),
+            );
+            continue;
+        }
+
         let is_box = matches!(
             panel.kind,
             PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
@@ -4380,6 +4522,7 @@ fn smart_grid_parts(
     SmartGridParts {
         traces,
         axes,
+        geos,
         annotations,
         base_layout,
         theme,
@@ -4402,6 +4545,9 @@ fn render_smart_grid(
     let SmartGridParts {
         traces,
         axes,
+        // geo dashboards are routed to `render_smart_grid_json` (a geo subplot can't live in the
+        // typed `Layout`), so `geos` is always empty here.
+        geos: _,
         annotations,
         mut base_layout,
         theme,
@@ -4442,6 +4588,7 @@ fn render_smart_grid_json(
     let SmartGridParts {
         traces,
         axes,
+        geos,
         annotations,
         base_layout,
         theme,
@@ -4476,6 +4623,12 @@ fn render_smart_grid_json(
                 crate::CliError::Other(format!("viz smart: could not serialize y-axis {pos}: {e}"))
             })?,
         );
+    }
+    // geo panels: inject each domain-positioned `geo{pos}` layout object (its trace already carries
+    // a matching `subplot` reference). Pre-serialized as JSON because the typed `Layout` can't hold
+    // more than one geo subplot nor a per-cell domain.
+    for (pos, geo) in geos {
+        layout_obj.insert(geo_ref(pos), geo);
     }
 
     Ok(SmartRender::GridJson {
@@ -5292,6 +5445,17 @@ fn axis_json_key(prefix: char, pos: usize) -> String {
     }
 }
 
+/// The plotly.js subplot id / layout key for geo panel `pos` (1-based): `geo` for the first geo
+/// subplot, `geo{pos}` thereafter. The same string is used both as the trace's `subplot` value
+/// and as the layout object key (plotly.js uses identical names for the two).
+fn geo_ref(pos: usize) -> String {
+    if pos <= 1 {
+        "geo".to_string()
+    } else {
+        format!("geo{pos}")
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5603,6 +5767,63 @@ mod tests {
 
         // fewer than two columns => no pair
         assert_eq!(strongest_pair(&[vec![1.0]]), None);
+    }
+
+    #[test]
+    fn geo_framing_picks_projection_by_extent() {
+        // a tight local cluster (LA area, ~1 deg span) -> Mercator fit to padded bounds
+        let lats: Vec<f64> = (0..20).map(|i| 34.0 + i as f64 * 0.05).collect();
+        let lons: Vec<f64> = (0..20).map(|i| -118.0 + i as f64 * 0.05).collect();
+        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons);
+        assert!(matches!(proj, ProjectionType::Mercator));
+        assert!(
+            lonaxis.is_some() && lataxis.is_some(),
+            "local extent should be fit to bounds on both axes"
+        );
+
+        // coordinates spanning the continental US -> albers usa, no fitted ranges
+        let us_lats = [40.7_f64, 34.0, 41.9, 29.8, 47.6, 25.8, 39.7];
+        let us_lons = [-74.0_f64, -118.2, -87.6, -95.4, -122.3, -80.2, -105.0];
+        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons);
+        assert!(matches!(proj, ProjectionType::AlbersUsa));
+        assert!(
+            lonaxis.is_none() && lataxis.is_none(),
+            "albers usa frames the US, so no axis ranges"
+        );
+
+        // a US extent that includes Alaska/Hawaii spans >90 deg of longitude, exceeding the global
+        // threshold; the US heuristic must still win (albers usa), not fall through to
+        // NaturalEarth.
+        let akhi_lats = [21.3_f64, 61.2, 34.0, 41.9, 40.7, 42.4];
+        let akhi_lons = [-157.8_f64, -149.9, -118.2, -87.6, -74.0, -168.0];
+        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons);
+        assert!(
+            matches!(proj, ProjectionType::AlbersUsa),
+            "a US extent with Alaska/Hawaii should still use albers usa"
+        );
+
+        // a global spread -> NaturalEarth world overview, no fitted ranges
+        let g_lats = [-40.0_f64, 51.5, 35.7, -33.9, 1.3, 64.1];
+        let g_lons = [174.8_f64, -0.1, 139.7, 151.2, 103.8, -21.9];
+        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
+        assert!(matches!(proj, ProjectionType::NaturalEarth));
+        assert!(lonaxis.is_none() && lataxis.is_none());
+
+        // a local cluster straddling the +/-180 antimeridian: the fitted longitude range would land
+        // outside [-180, 180] and clamping it would crop the far-side points, so longitude is left
+        // unfit (full width) while latitude is still fit.
+        let am_lats = [10.0_f64, 10.5, 11.0, 11.5];
+        let am_lons = [179.0_f64, 179.5, -179.5, -179.0];
+        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons);
+        assert!(matches!(proj, ProjectionType::Mercator));
+        assert!(
+            lonaxis.is_none(),
+            "antimeridian-wrapped longitude must not be clamped (would crop points)"
+        );
+        assert!(
+            lataxis.is_some(),
+            "latitude is still fit for a local extent"
+        );
     }
 
     #[test]

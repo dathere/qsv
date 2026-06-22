@@ -9211,9 +9211,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.49"
+version = "0.3.50"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "711a53c2d47bbd818258c498c8dbfe186a2526c631495cfe7e078567f86b8469"
+checksum = "5e3cd1bb2f84f20374ba5900f0fa59f9125e23a6f1537b7ea87696972b04a80a"
 dependencies = [
  "deranged",
  "js-sys",

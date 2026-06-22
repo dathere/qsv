@@ -2902,3 +2902,33 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
 }
+
+#[test]
+fn viz_smart_map_geocode_extent_metadata() {
+    // a tightly-clustered NYC-area lat/lon dataset: every bounding-box corner + the center
+    // reverse-geocode to US/New-York-area cities, so the consolidated summary is stable.
+    let wrk = Workdir::new("viz_smart_map_geocode_extent_metadata");
+    wrk.create_from_string(
+        "places.csv",
+        "name,lat,lon,score\nA,40.71,-74.01,10\nB,40.75,-73.98,20\nC,40.68,-73.95,30\nD,40.73,-74.\
+         00,40\nE,40.70,-73.99,50\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "places.csv"]);
+    let out = wrk.output(&mut cmd);
+    // the command must always succeed, even if the Geonames index can't be loaded (offline CI).
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a lat/lon pair always yields a (full-width) map panel in the inline HTML dashboard.
+    assert!(html.contains("Plotly.newPlot"));
+
+    // When qsv is built with the `geocode` feature AND the index is available, the spatial-extent
+    // overlay + consolidated summary caption render. Guarded so a build/run without the index
+    // (geocode feature off, or offline first-use) still passes the structural check.
+    if html.contains("qsv-viz-geo-meta") {
+        assert!(html.contains("Spatial extent:"));
+        assert!(html.contains("United States") || html.contains("New York"));
+    }
+}

@@ -1008,27 +1008,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
     };
 
     // setup cache directory
-    let geocode_cache_dir = if let Ok(cache_dir) = std::env::var("QSV_CACHE_DIR") {
-        // if QSV_CACHE_DIR env var is set, check if it exists. If it doesn't, create it.
-        if cache_dir.starts_with('~') {
-            // QSV_CACHE_DIR starts with ~, expand it; fall back to literal path if HOME unset
-            expand_tilde(&cache_dir).unwrap_or_else(|| PathBuf::from(&cache_dir))
-        } else {
-            PathBuf::from(cache_dir)
-        }
-    } else {
-        // QSV_CACHE_DIR env var is not set, use args.flag_cache_dir
-        // first check if it starts with ~, expand it
-        if args.flag_cache_dir.starts_with('~') {
-            expand_tilde(&args.flag_cache_dir)
-                .unwrap_or_else(|| PathBuf::from(&args.flag_cache_dir))
-        } else {
-            PathBuf::from(&args.flag_cache_dir)
-        }
-    };
-    if !Path::new(&geocode_cache_dir).exists() {
-        fs::create_dir_all(&geocode_cache_dir)?;
-    }
+    let geocode_cache_dir = resolve_geocode_cache_dir(&args.flag_cache_dir)?;
 
     info!("Using cache directory: {}", geocode_cache_dir.display());
 
@@ -3533,6 +3513,105 @@ fn get_cityrecord_name_in_lang(cityrecord: &CitiesRecord, lang_lookup: &str) -> 
         admin2name,
         countryname,
     }
+}
+
+/// Resolve the geocode cache directory, honoring the `QSV_CACHE_DIR` env var (which takes
+/// precedence) and falling back to `fallback_cache_dir` (e.g. the `--cache-dir` flag default
+/// of `~/.qsv-cache`). Leading `~` is expanded. The directory is created if it doesn't exist.
+fn resolve_geocode_cache_dir(fallback_cache_dir: &str) -> CliResult<PathBuf> {
+    let cache_dir = if let Ok(env_cache_dir) = std::env::var("QSV_CACHE_DIR") {
+        if env_cache_dir.starts_with('~') {
+            // QSV_CACHE_DIR starts with ~, expand it; fall back to literal path if HOME unset
+            expand_tilde(&env_cache_dir).unwrap_or_else(|| PathBuf::from(&env_cache_dir))
+        } else {
+            PathBuf::from(env_cache_dir)
+        }
+    } else if fallback_cache_dir.starts_with('~') {
+        expand_tilde(fallback_cache_dir).unwrap_or_else(|| PathBuf::from(fallback_cache_dir))
+    } else {
+        PathBuf::from(fallback_cache_dir)
+    };
+    if !Path::new(&cache_dir).exists() {
+        fs::create_dir_all(&cache_dir)?;
+    }
+    Ok(cache_dir)
+}
+
+/// Structured reverse-geocoding result for a single coordinate, used by callers outside
+/// `geocode` (e.g. `viz smart`) that need the location components rather than a preformatted
+/// string. `country` is the localized country name when available, otherwise the 2-letter code.
+#[derive(Clone, Debug)]
+pub struct GeoLabel {
+    pub city:    String,
+    pub admin1:  String,
+    pub country: String,
+}
+
+/// Reverse-geocode a batch of `(lat, lon)` points against the local Geonames index, loading
+/// the engine ONCE. Returns one `Option<GeoLabel>` per input point (in order); `None` where no
+/// city matched (e.g. a coordinate over open water). Returns `Err` only on a hard setup failure
+/// (tokio runtime creation, or index download/load failure, e.g. offline on first use) — callers
+/// like `viz smart` treat `Err` as "no metadata" and degrade gracefully.
+///
+/// `lang` selects the language for the returned names (defaults to `"en"`); note the index must
+/// have been built with that language for non-English names to resolve.
+#[allow(clippy::cast_possible_truncation)]
+pub fn reverse_geocode_points(
+    points: &[(f64, f64)],
+    lang: Option<&str>,
+) -> CliResult<Vec<Option<GeoLabel>>> {
+    let lang_lookup = lang.unwrap_or("en");
+
+    // resolve the active index file path the same way geocode_main does, so viz shares the
+    // exact same on-disk Geonames index (default `~/.qsv-cache`).
+    let geocode_cache_dir = resolve_geocode_cache_dir("~/.qsv-cache")?;
+    let geocode_index_filename = std::env::var("QSV_GEOCODE_INDEX_FILENAME")
+        .unwrap_or_else(|_| DEFAULT_GEOCODE_INDEX_FILENAME.to_string());
+    let geocode_index_file = PathBuf::from(format!(
+        "{}/{geocode_index_filename}",
+        geocode_cache_dir.display()
+    ));
+
+    // geosuggest's index loader is async (it may download the index on first use); spin up a
+    // tokio runtime to drive it, mirroring geocode::run. The reverse lookups themselves are sync.
+    let rt = tokio::runtime::Runtime::new()?;
+    let progressbar = ProgressBar::hidden();
+    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar))?;
+    // `as_engine` borrows `engine_data`, so it must outlive `engine` and all lookups below.
+    let engine = engine_data
+        .as_engine()
+        .map_err(|e| CliError::Other(format!("Error initializing geocode Engine: {e}")))?;
+
+    let mut results = Vec::with_capacity(points.len());
+    for &(lat, lon) in points {
+        let label = (|| {
+            if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+                return None;
+            }
+            // turbofish pins the unused `countries` filter's element type (both filters are None).
+            let search_result = engine.reverse::<String>((lat as f32, lon as f32), 1, None, None);
+            let cityrecord = search_result?.into_iter().next().map(|ri| ri.city)?;
+            let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+            // prefer the localized country name; fall back to the 2-letter country code.
+            let country = if nameslang.countryname.is_empty() {
+                cityrecord
+                    .country
+                    .as_ref()
+                    .map(|c| c.code.as_str().to_string())
+                    .unwrap_or_default()
+            } else {
+                nameslang.countryname.clone()
+            };
+            Some(GeoLabel {
+                city: nameslang.cityname.clone(),
+                admin1: nameslang.admin1name.clone(),
+                country,
+            })
+        })();
+        results.push(label);
+    }
+
+    Ok(results)
 }
 
 #[inline]

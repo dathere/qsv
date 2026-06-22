@@ -67,7 +67,14 @@ geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local ex
 offline ScatterGeo projection world-overview for continental/global data. For static image
 export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
 Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. These overview
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. When qsv is built with
+the `geocode` feature, the map's spatial extent (its 4 bounding-box corners + center) is
+reverse-geocoded against the local Geonames index and drawn on the map as a bounding box with
+labeled points, plus a consolidated location summary below it (e.g. "New York & New Jersey,
+United States"). In HTML the points reveal their city/state/country on hover; static exports
+show the box without hover. The first such run may download the Geonames index (~13MB, cached
+in ~/.qsv-cache); if it's unavailable (offline) the map still renders without the overlay.
+Extents that span the antimeridian (>180 degrees of longitude) are skipped. These overview
 panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
 on their own full-width row; the per-column box/bar/histogram panels flow below in the
 multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs

@@ -424,6 +424,12 @@ const BUBBLE_MAX_PX: f64 = 40.0;
 /// readable instead of being crammed into plotly's ~450px default.
 const ROW_HEIGHT_PX: usize = 320;
 
+/// Taller height (in pixels) for full-width "overview" panels (map/geo, correlation heatmap and
+/// its drill-downs, time-series) in the inline HTML dashboard, so they get more room than the
+/// per-column box/bar/histogram panels — and, for a map, so the spatial-extent caption below it
+/// has space.
+const OVERVIEW_ROW_HEIGHT_PX: usize = 420;
+
 /// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
 /// smart` static image export width.
 const SMART_COL_WIDTH_PX: usize = 500;
@@ -3678,25 +3684,33 @@ fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     (lats, lons)
 }
 
-/// Styled line for the spatial-extent bounding box: a thick dashed red frame, so it reads as a
+/// Styled line for the spatial-extent bounding box: a thick dotted purple frame, so it reads as a
 /// boundary annotation rather than a data series.
 #[cfg(feature = "geocode")]
 fn extent_box_line() -> Line {
     Line::new()
         .color(GEO_EXTENT_LINE_COLOR)
         .width(GEO_EXTENT_LINE_WIDTH)
-        .dash(plotly::common::DashType::Dash)
+        .dash(plotly::common::DashType::Dot)
 }
 
-/// Styled marker for the reverse-geocoded extent corner/center points: large, fully opaque, with
-/// a white halo, so they stand out from the faded translucent data points.
+/// Marker for the extent corner/center points on a mapbox tile map: a large, fully opaque purple
+/// circle with a white halo. Mapbox raster basemaps can't render custom marker symbols (no sprite)
+/// or reliably show text glyphs (label collision culls them), so a haloed circle is used here.
 #[cfg(feature = "geocode")]
-fn extent_marker() -> Marker {
+fn extent_marker_mapbox() -> Marker {
     Marker::new()
         .color(GEO_EXTENT_LINE_COLOR)
         .size(GEO_EXTENT_MARKER_SIZE)
         .opacity(1.0)
-        .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.0))
+        .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.5))
+}
+
+/// Like `extent_marker_mapbox`, but a diamond — `ScatterGeo` (offline projection / static export)
+/// renders the standard plotly marker symbols, so the points get a distinctive shape there.
+#[cfg(feature = "geocode")]
+fn extent_marker_geo() -> Marker {
+    extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
 /// Mapbox center + zoom that frames the full extent bounding box (with a little padding), so the
@@ -3870,19 +3884,20 @@ fn build_geo_meta(extent: MapExtent) -> Option<GeoMeta> {
     })
 }
 
-/// Outline/marker color for the spatial-extent overlay drawn on `viz smart` maps.
+/// Outline/symbol color for the spatial-extent overlay drawn on `viz smart` maps. A deep purple,
+/// deliberately distinct from the warm (red/orange) palette the data points/density use.
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_LINE_COLOR: &str = "#d62728";
+const GEO_EXTENT_LINE_COLOR: &str = "#6a1b9a";
 /// Translucent fill for the spatial-extent bounding box (kept faint so it doesn't obscure data).
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_FILL_COLOR: &str = "rgba(214, 39, 40, 0.10)";
+const GEO_EXTENT_FILL_COLOR: &str = "rgba(106, 27, 154, 0.12)";
 /// White halo around extent markers, for contrast against both the basemap and the data points.
 #[cfg(feature = "geocode")]
 const GEO_EXTENT_MARKER_BORDER: &str = "#ffffff";
 /// Marker size (px) for the reverse-geocoded extent corner/center points — deliberately large so
 /// they read as annotations, not data.
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_MARKER_SIZE: usize = 14;
+const GEO_EXTENT_MARKER_SIZE: usize = 16;
 /// Bounding-box line width (px) for the spatial-extent frame.
 #[cfg(feature = "geocode")]
 const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
@@ -3891,8 +3906,8 @@ const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
 #[cfg(feature = "geocode")]
 const GEO_EXTENT_FRAME_PAD: f64 = 1.15;
 
-/// Add the spatial-extent bounding box (dashed filled outline) plus reverse-geocoded corner/center
-/// markers (hover-labeled) to a mapbox map `Plot`.
+/// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
+/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
@@ -3913,7 +3928,7 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
         ScatterMapbox::new(mlat, mlon)
             .name("extent points")
             .mode(Mode::Markers)
-            .marker(extent_marker())
+            .marker(extent_marker_mapbox())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
@@ -3922,7 +3937,7 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
 
 /// Like `add_extent_overlay_mapbox`, but for an offline `ScatterGeo` projection `Plot` (used for
 /// continental/global extents and static image export). Hover labels are inert in static images,
-/// so the static export simply shows the box + markers, as intended.
+/// so the static export simply shows the box + diamond glyphs, as intended.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
     let (blat, blon) = extent_box_latlon(&meta.extent);
@@ -3943,7 +3958,7 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
         ScatterGeo::new(mlat, mlon)
             .name("extent points")
             .mode(Mode::Markers)
-            .marker(extent_marker())
+            .marker(extent_marker_geo())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
@@ -4862,7 +4877,7 @@ fn smart_grid_parts(
                     ScatterGeo::new(mlat, mlon)
                         .name("extent points")
                         .mode(Mode::Markers)
-                        .marker(extent_marker())
+                        .marker(extent_marker_geo())
                         .hover_text_array(htext)
                         .hover_info(HoverInfo::Text)
                         .show_legend(false)
@@ -5117,6 +5132,9 @@ fn smart_inline_panel_plot(
 ) -> Plot {
     // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
     let themed = theme.is_some();
+    // overview panels (map/geo, correlation, time-series, …) render a little taller than the
+    // per-column box/bar/histogram panels.
+    let row_height = panel_render_height(&panel.kind);
     // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
     // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
     if let PanelKind::Map {
@@ -5156,7 +5174,7 @@ fn smart_inline_panel_plot(
         }
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .mapbox(
@@ -5199,7 +5217,7 @@ fn smart_inline_panel_plot(
             .showcountries(true);
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
@@ -5229,7 +5247,7 @@ fn smart_inline_panel_plot(
             .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .scene(scene);
@@ -5266,7 +5284,7 @@ fn smart_inline_panel_plot(
     };
     let mut layout = Layout::new()
         .show_legend(false)
-        .height(ROW_HEIGHT_PX)
+        .height(row_height)
         .title(Title::with_text(panel.name.clone()))
         .margin(
             Margin::new()
@@ -5330,18 +5348,26 @@ fn render_smart_inline(
         } else {
             cells.push_str("    <div class=\"qsv-viz-cell\">\n");
         }
+        // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
+        // a concrete height instead of expanding to fill the whole cell (which would otherwise
+        // overlap/clip any caption rendered below it).
+        let plot_height = panel_render_height(&panel.kind);
+        cells.push_str(&format!(
+            "      <div class=\"qsv-viz-plot\" style=\"height:{plot_height}px\">\n"
+        ));
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
+        cells.push_str("\n      </div>\n");
         // reverse-geocoded spatial-extent summary caption, shown below a map panel.
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta
             && !meta.summary.is_empty()
         {
             cells.push_str(&format!(
-                "\n      <div class=\"qsv-viz-geo-meta\">Spatial extent: {}</div>",
+                "      <div class=\"qsv-viz-geo-meta\">Spatial extent: {}</div>\n",
                 html_escape(&meta.summary)
             ));
         }
-        cells.push_str("\n    </div>\n");
+        cells.push_str("    </div>\n");
     }
 
     let js = Plot::offline_js_sources();
@@ -5354,9 +5380,9 @@ fn render_smart_inline(
          font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
          .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
          gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n  .qsv-viz-cell.full-width {{ \
-         grid-column: 1 / -1; }}\n  .qsv-viz-geo-meta {{ font-size: 12px; color: #6b7280; \
-         text-align: center; margin-top: 6px; }}\n</style>\n</head>\n<body>\n<h1 \
-         class=\"qsv-viz-title\">{title}</h1>\n<div \
+         grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}\n  .qsv-viz-geo-meta {{ \
+         font-size: 13px; color: #4b5563; text-align: center; padding: 8px 4px 4px; \
+         }}\n</style>\n</head>\n<body>\n<h1 class=\"qsv-viz-title\">{title}</h1>\n<div \
          class=\"qsv-viz-grid\">\n{cells}</div>\n</body>\n</html>\n"
     )
 }
@@ -5744,6 +5770,16 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::BoxOutliers { .. }
         | PanelKind::FreqBar { .. }
         | PanelKind::Histogram { .. } => false,
+    }
+}
+
+/// Inline-dashboard render height (px) for a panel: overview panels get the taller
+/// `OVERVIEW_ROW_HEIGHT_PX`, everything else the standard `ROW_HEIGHT_PX`.
+fn panel_render_height(kind: &PanelKind) -> usize {
+    if is_overview_panel(kind) {
+        OVERVIEW_ROW_HEIGHT_PX
+    } else {
+        ROW_HEIGHT_PX
     }
 }
 

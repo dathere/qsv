@@ -2161,9 +2161,12 @@ fn classify_context_file(
 /// The accumulated output is capped at `CONTEXT_FILE_MAX_BYTES`: a compressed spreadsheet can
 /// be well under the raw 32 MB input limit yet expand into a far larger prompt payload, so the
 /// extraction aborts with a clear error once the limit is exceeded. Cells are appended
-/// incrementally (no per-row intermediate `Vec`/`String`) and the cap is checked after each
-/// cell, so even a single very wide or very large row can't allocate far beyond the bound.
+/// incrementally (no per-row intermediate `Vec`/`String`) and the cap is checked after EVERY
+/// append - cell, row delimiter, and sheet delimiter - so the returned text never exceeds the
+/// bound and even a single very wide/large row can't allocate far beyond it.
 fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
+    use std::fmt::Write as _;
+
     use calamine::{Reader, open_workbook_auto};
 
     let mut wb = open_workbook_auto(path).map_err(|e| {
@@ -2198,7 +2201,6 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
                 if i > 0 {
                     out.push(',');
                 }
-                use std::fmt::Write as _;
                 // write! a Display straight into `out` - no per-cell/per-row intermediate.
                 let _ = write!(out, "{cell}");
                 if out.len() > cap {
@@ -2206,8 +2208,14 @@ fn extract_spreadsheet_to_csv(path: &str) -> CliResult<String> {
                 }
             }
             out.push('\n');
+            if out.len() > cap {
+                return over_cap();
+            }
         }
         out.push('\n');
+        if out.len() > cap {
+            return over_cap();
+        }
     }
     Ok(out)
 }

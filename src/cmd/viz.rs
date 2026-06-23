@@ -3283,11 +3283,11 @@ const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
 /// median) centroid exceeds the Tukey far-out fence `q3 + 3*IQR` of all points' distances. Distance
 /// is an equirectangular approximation with longitude scaled by `cos(centroid_lat)` so it's roughly
 /// isotropic in degrees. Unlike a per-axis percentile, this flags only points genuinely far from
-/// the bulk (true strays), not the distribution's tails. When the distance IQR is zero (e.g. many
-/// duplicate coordinates), the fence falls back to a mean + 3*std (3-sigma) cutoff so a lone far
-/// stray is still flagged; with too few points (< 4) or a fully degenerate (all-identical) distance
-/// spread, nothing is flagged and the whole set is core. Returns
-/// `(core_lats, core_lons, outlier_lats, outlier_lons)`.
+/// the bulk (true strays), not the distribution's tails. When the distance IQR is zero (a
+/// point-mass core, e.g. many duplicate coordinates) the fence falls back to the point-mass band
+/// itself (`d > q3`), so a lone far stray is flagged even with very few duplicates; with too few
+/// points (< 4) or a fully degenerate (all-identical) distance spread, nothing is flagged and the
+/// whole set is core. Returns `(core_lats, core_lons, outlier_lats, outlier_lons)`.
 fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
     let n = lats.len();
     if n < 4 {
@@ -3320,22 +3320,17 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
     let q1 = sorted_quantile(&sorted_dists, 0.25);
     let q3 = sorted_quantile(&sorted_dists, 0.75);
     let iqr = q3 - q1;
+    // a zero IQR means the middle 50% of distances are identical — a point-mass core, common when
+    // many rows share the exact same coordinate (duplicate geocodes). The Tukey fence would then
+    // collapse and a scale-based fallback (mean/std) is itself inflated by the candidate stray, so
+    // it misses a lone stray when there are few duplicates. Instead flag anything beyond the
+    // point-mass band itself (`d > q3`): `q3` is robust (unmoved by the stray), so a single far
+    // stray is caught regardless of how few duplicates form the mass. A truly degenerate
+    // all-identical set has `q3 == 0` and nothing exceeds it, so nothing is flagged.
     let fence = if iqr > 0.0 {
         q3 + GEO_OUTLIER_DIST_IQR_MULT * iqr
     } else {
-        // a zero IQR means the middle 50% of distances are identical — common when many rows share
-        // the exact same coordinate (duplicate geocodes). The Tukey fence would then collapse and
-        // never flag a lone far stray, so fall back to a mean + 3*std (3-sigma) fence. This still
-        // flags a genuinely distant point without over-flagging a legitimate gradual spread around
-        // a dominant point-mass (where the suburbs stay within 3-sigma).
-        let count = dists.len() as f64;
-        let mean = dists.iter().sum::<f64>() / count;
-        let std = (dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / count).sqrt();
-        if std <= 0.0 {
-            // every distance is identical -> nothing is meaningfully far
-            return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
-        }
-        mean + GEO_OUTLIER_DIST_IQR_MULT * std
+        q3
     };
 
     let (mut core_lats, mut core_lons) = (Vec::with_capacity(n), Vec::with_capacity(n));
@@ -6530,10 +6525,11 @@ mod tests {
 
     #[test]
     fn partition_geo_outliers_duplicates_plus_stray() {
-        // a very common shape: many duplicate coordinates (zero distance IQR) plus one bad geocode.
-        // the 3-sigma fallback must still flag the lone far stray.
-        let mut lats: Vec<f64> = vec![40.70; 200];
-        let mut lons: Vec<f64> = vec![-74.00; 200];
+        // a very common shape: a few duplicate coordinates (zero distance IQR) plus one bad
+        // geocode. the point-mass (d > q3) fallback must flag the lone far stray even with
+        // < 10 duplicates, where a mean/std fence (inflated by the stray itself) would not.
+        let mut lats: Vec<f64> = vec![40.70; 5];
+        let mut lons: Vec<f64> = vec![-74.00; 5];
         lats.push(60.0); // a distant stray
         lons.push(-74.0);
         let (clat, _clon, olat, olon) = partition_geo_outliers(&lats, &lons);
@@ -6543,7 +6539,7 @@ mod tests {
             "the lone far stray is flagged despite zero IQR"
         );
         assert!(olat.contains(&60.0));
-        assert_eq!(clat.len(), 200, "the duplicate core points stay core");
+        assert_eq!(clat.len(), 5, "the duplicate core points stay core");
         assert_eq!(olon, vec![-74.0]);
     }
 

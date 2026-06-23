@@ -2932,3 +2932,69 @@ fn viz_smart_map_geocode_extent_metadata() {
         assert!(html.contains("United States") || html.contains("New York"));
     }
 }
+
+#[test]
+fn viz_smart_map_outlier_markers() {
+    // A tight NYC-area cluster plus two far-flung (but in-range) strays. The strays fall outside
+    // the lat/lon Tukey fences, so they're drawn as a distinct "geographic outliers" marker
+    // trace. This is pure plotly styling (no geocoding), so it must appear in every build.
+    let wrk = Workdir::new("viz_smart_map_outlier_markers");
+    let mut rows = String::from("name,lat,lon\n");
+    for i in 0..30 {
+        let lat = 40.70 + (i as f64) * 0.003;
+        let lon = -74.02 + (i as f64) * 0.002;
+        rows.push_str(&format!("p{i},{lat:.4},{lon:.4}\n"));
+    }
+    // two clear geographic outliers, still within valid coordinate ranges
+    rows.push_str("far_north,41.90,-74.00\n");
+    rows.push_str("far_east,40.72,-72.00\n");
+    wrk.create_from_string("geo.csv", &rows);
+
+    let out_html = wrk.path("geo.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "geo.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("geo.html").unwrap();
+    assert!(
+        html.contains(r#""type":"scattermapbox""#),
+        "map panel should be present"
+    );
+    assert!(
+        html.contains("geographic outliers"),
+        "outliers should be drawn as a distinct marker trace; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_map_outlier_extent_callout() {
+    // A tight NYC cluster plus one point in Pennsylvania. With the `geocode` feature and a usable
+    // Geonames index, the PA point is a geographic outlier: it's excluded from the (core) spatial
+    // extent summary and called out separately. Guarded like viz_smart_map_geocode_extent_metadata
+    // so a build/run without the index still passes the structural check.
+    let wrk = Workdir::new("viz_smart_map_outlier_extent_callout");
+    let mut rows = String::from("name,lat,lon\n");
+    for i in 0..20 {
+        let lat = 40.70 + (i as f64) * 0.004;
+        let lon = -74.02 + (i as f64) * 0.003;
+        rows.push_str(&format!("nyc{i},{lat:.4},{lon:.4}\n"));
+    }
+    // Harrisburg, PA — clearly outside the NYC cluster's lat/lon fences
+    rows.push_str("harrisburg,40.27,-76.88\n");
+    wrk.create_from_string("places.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "places.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+    // the distinct outlier marker trace is non-gated, so it's always present
+    assert!(html.contains("geographic outliers"));
+    // the jurisdiction call-out only renders with the geocode feature + index available
+    if html.contains("qsv-viz-geo-meta") {
+        assert!(html.contains("Spatial extent:"));
+        assert!(html.contains("outlier"));
+    }
+}

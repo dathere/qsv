@@ -3283,8 +3283,10 @@ const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
 /// median) centroid exceeds the Tukey far-out fence `q3 + 3*IQR` of all points' distances. Distance
 /// is an equirectangular approximation with longitude scaled by `cos(centroid_lat)` so it's roughly
 /// isotropic in degrees. Unlike a per-axis percentile, this flags only points genuinely far from
-/// the bulk (true strays), not the distribution's tails. With too few points (< 4) or a degenerate
-/// (zero-IQR) distance spread, nothing is flagged and the whole set is core. Returns
+/// the bulk (true strays), not the distribution's tails. When the distance IQR is zero (e.g. many
+/// duplicate coordinates), the fence falls back to a mean + 3*std (3-sigma) cutoff so a lone far
+/// stray is still flagged; with too few points (< 4) or a fully degenerate (all-identical) distance
+/// spread, nothing is flagged and the whole set is core. Returns
 /// `(core_lats, core_lons, outlier_lats, outlier_lons)`.
 fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
     let n = lats.len();
@@ -3318,11 +3320,23 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
     let q1 = sorted_quantile(&sorted_dists, 0.25);
     let q3 = sorted_quantile(&sorted_dists, 0.75);
     let iqr = q3 - q1;
-    if iqr <= 0.0 {
-        // degenerate spread (e.g. all-identical points) -> nothing is meaningfully far
-        return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
-    }
-    let fence = q3 + GEO_OUTLIER_DIST_IQR_MULT * iqr;
+    let fence = if iqr > 0.0 {
+        q3 + GEO_OUTLIER_DIST_IQR_MULT * iqr
+    } else {
+        // a zero IQR means the middle 50% of distances are identical — common when many rows share
+        // the exact same coordinate (duplicate geocodes). The Tukey fence would then collapse and
+        // never flag a lone far stray, so fall back to a mean + 3*std (3-sigma) fence. This still
+        // flags a genuinely distant point without over-flagging a legitimate gradual spread around
+        // a dominant point-mass (where the suburbs stay within 3-sigma).
+        let count = dists.len() as f64;
+        let mean = dists.iter().sum::<f64>() / count;
+        let std = (dists.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / count).sqrt();
+        if std <= 0.0 {
+            // every distance is identical -> nothing is meaningfully far
+            return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
+        }
+        mean + GEO_OUTLIER_DIST_IQR_MULT * std
+    };
 
     let (mut core_lats, mut core_lons) = (Vec::with_capacity(n), Vec::with_capacity(n));
     let (mut out_lats, mut out_lons) = (Vec::new(), Vec::new());
@@ -6512,6 +6526,25 @@ mod tests {
         assert_eq!(clat.len(), 3);
         assert!(olat.is_empty());
         assert!(olon.is_empty());
+    }
+
+    #[test]
+    fn partition_geo_outliers_duplicates_plus_stray() {
+        // a very common shape: many duplicate coordinates (zero distance IQR) plus one bad geocode.
+        // the 3-sigma fallback must still flag the lone far stray.
+        let mut lats: Vec<f64> = vec![40.70; 200];
+        let mut lons: Vec<f64> = vec![-74.00; 200];
+        lats.push(60.0); // a distant stray
+        lons.push(-74.0);
+        let (clat, _clon, olat, olon) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(
+            olat.len(),
+            1,
+            "the lone far stray is flagged despite zero IQR"
+        );
+        assert!(olat.contains(&60.0));
+        assert_eq!(clat.len(), 200, "the duplicate core points stay core");
+        assert_eq!(olon, vec![-74.0]);
     }
 
     #[test]

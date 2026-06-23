@@ -5279,14 +5279,25 @@ fn smart_grid_parts(
             };
             let (projection, lonaxis, lataxis) = geo_framing(&frame_lats, &frame_lons);
             // for a fitted (Mercator) extent, refine the axis ranges with the tighter extent-fit
-            // padding using the geocoded full/core extent when available; whole-region projections
-            // (albers-usa / natural-earth) return no axes and already contain the full extent.
+            // padding — but only from a concrete extent that already covers everything plotted: the
+            // full extent if we have it, else the core extent ONLY when there are no outliers. With
+            // outliers but no full extent (e.g. it was antimeridian-filtered), keep the
+            // plotted-coords frame so the outlier markers aren't cropped back to the core. Whole-
+            // region projections (albers-usa / natural-earth) return no axes and need no refining.
             #[cfg(feature = "geocode")]
             let (lonaxis, lataxis) = match &panel.geo_meta {
                 Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
-                    let (lon, lat) =
-                        extent_geo_axes(meta.full_extent.as_ref().unwrap_or(&meta.extent));
-                    (Some(lon), Some(lat))
+                    match meta
+                        .full_extent
+                        .as_ref()
+                        .or_else(|| outlier_lats.is_empty().then_some(&meta.extent))
+                    {
+                        Some(ext) => {
+                            let (lon, lat) = extent_geo_axes(ext);
+                            (Some(lon), Some(lat))
+                        },
+                        None => (lonaxis, lataxis),
+                    }
                 },
                 _ => (lonaxis, lataxis),
             };

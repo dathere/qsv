@@ -69,9 +69,10 @@ FIGURES = [
      "`qsv viz smart delivery_stops.csv` — delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "
      "their distances) are flagged as geographic <b>outliers</b>: drawn as distinct amber markers, "
-     "drawn outside the purple spatial-extent box, and excluded from the auto-zoom — so the default "
-     "view stays tight on the core cluster (zoom/pan out to see the strays). In the full "
-     "<code>qsv viz smart</code> HTML output the spatial-extent label calls them out — "
+     "drawn outside the purple (filled) spatial-extent box, and excluded from the auto-zoom — so the "
+     "default view stays tight on the core cluster. A second, dashed-magenta no-fill box marks the "
+     "full extent (core + outliers), so the strays' span is legible once you zoom/pan out. In the "
+     "full <code>qsv viz smart</code> HTML output the spatial-extent label calls them out — "
      "<i>Colorado, United States &mdash; 4 outliers (Wyoming, Kansas &amp; Nebraska)</i> — while "
      "strays within the core's own jurisdiction are folded back in silently instead.",
      True, ["smart", "delivery_stops.csv"]),

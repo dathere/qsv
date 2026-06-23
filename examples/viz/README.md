@@ -17,6 +17,13 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
+The five **smart dashboards** are embedded as `<iframe>`s of their genuine
+`qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
+the full-width overview panels (map, correlation heatmap, time-series), themes and
+map zoom buttons render exactly as the CLI produces them. Those iframe sources are
+the real output with the inline plotly bundle swapped for the same CDN tag (so they
+stay a few KB each); they need a network connection to render.
+
 **▶ View it rendered** (via githack, which serves the file with the correct
 `text/html` type — one-click "External Content Notice" the first time):
 

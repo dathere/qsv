@@ -77,7 +77,9 @@ edge, not strays elsewhere). When qsv is built with the `geocode` feature, the m
 (its 4 bounding-box corners + center) is reverse-geocoded against the local Geonames index and
 drawn on the map as a bounding box with labeled points, plus a consolidated location summary below
 it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
-count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). In HTML the points reveal their
+count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). When there are outliers, a second
+dotted box with no fill marks the full extent (core + outliers), so the strays' span is visible
+alongside the core box. In HTML the points reveal their
 city/state/country on hover; static exports show the box without hover. The first such run may
 download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
 still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)

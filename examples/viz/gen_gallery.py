@@ -65,6 +65,16 @@ FIGURES = [
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
      "<code>plotly_dark</code> theme.",
      True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3"]),
+    ("smart dashboard (geographic outliers)",
+     "`qsv viz smart delivery_stops.csv` — delivery stops clustered in metro Denver with four "
+     "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "
+     "their distances) are flagged as geographic <b>outliers</b>: drawn as distinct amber markers, "
+     "drawn outside the purple spatial-extent box, and excluded from the auto-zoom — so the default "
+     "view stays tight on the core cluster (zoom/pan out to see the strays). In the full "
+     "<code>qsv viz smart</code> HTML output the spatial-extent label calls them out — "
+     "<i>Colorado, United States &mdash; 4 outliers (Wyoming, Kansas &amp; Nebraska)</i> — while "
+     "strays within the core's own jurisdiction are folded back in silently instead.",
+     True, ["smart", "delivery_stops.csv"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("line", "Closing price over time.",

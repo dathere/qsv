@@ -42,7 +42,7 @@ as `text/plain`, so a browser won't render it):
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
-| `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with a `zone` categorical | `smart` (geographic outlier markers + spatial-extent call-out) |
+| `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with a `zone` categorical | `smart` (geographic outlier markers + core/full extent boxes + spatial-extent call-out) |
 
 ## The smart dashboard
 
@@ -67,7 +67,9 @@ coordinates span a continental/global area. Points far from the cluster centroid
 (beyond the Tukey far-out fence of their distances) are flagged as **geographic
 outliers**: they're drawn with a distinct marker, excluded from the spatial
 extent (so a few bad geocodes can't inflate it), and excluded from the auto-zoom
-(so the default view stays tight on the core cluster). When qsv is built with the
+(so the default view stays tight on the core cluster). When there are outliers, a
+second dashed box with no fill marks the full extent (core + outliers) alongside
+the (filled) core box, so the strays' span stays legible. When qsv is built with the
 `geocode` feature, the (core) extent is reverse-geocoded into a one-line location
 summary, and any outliers in a *different* jurisdiction are called out beside it
 (e.g. `Colorado, United States — 4 outliers (Wyoming, Kansas & Nebraska)`);
@@ -131,7 +133,8 @@ qsv viz smart stock_prices.csv -o stocks_dashboard.html
 qsv viz smart quakes.csv -o quakes_dashboard.html
 
 # delivery_stops clusters in metro Denver with a few bad-geocode strays: the map flags them as
-# distinct outlier markers, keeps the auto-zoom tight on the core, and (with the geocode feature)
+# distinct outlier markers, keeps the auto-zoom tight on the core (a filled purple box), draws a
+# dashed-magenta no-fill box around the full extent (core + strays), and (with the geocode feature)
 # calls them out in the spatial-extent label, e.g. "... — 4 outliers (Wyoming, Kansas & Nebraska)"
 qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 

@@ -5257,24 +5257,30 @@ fn smart_grid_parts(
         {
             let geom = geoms[n].clone();
             // a static image can't be panned/zoomed, so when there are outliers the projection AND
-            // the framing must be chosen from the FULL extent (core + outliers), not the core
-            // alone. Feeding `geo_framing` the full-extent corners ensures a stray outside the US
-            // doesn't leave it on `albers-usa` (a fixed US composite, no fitted axes) that would
-            // clip the full-extent box and the stray. Without outliers, frame from the core points.
-            #[cfg(feature = "geocode")]
-            let frame: Option<(Vec<f64>, Vec<f64>)> = panel
-                .geo_meta
-                .as_ref()
-                .and_then(|meta| meta.full_extent.map(|fe| extent_box_latlon(&fe)));
-            #[cfg(not(feature = "geocode"))]
-            let frame: Option<(Vec<f64>, Vec<f64>)> = None;
-            let (projection, lonaxis, lataxis) = match &frame {
-                Some((flat, flon)) => geo_framing(flat, flon),
-                None => geo_framing(lats, lons),
+            // framing must cover the FULL plotted extent (core + outliers), not the core alone —
+            // otherwise a stray outside the US could leave the projection on `albers-usa` (a fixed
+            // US composite, no fitted axes) and clip it. Derive the frame from the actual plotted
+            // coords so this holds even without geocode metadata (the outlier markers render either
+            // way). Pass the bounding-box CORNERS (not the raw points) so geo_framing's 2.5% trim
+            // can't drop the handful of outliers. Without outliers, frame from the core points.
+            let (frame_lats, frame_lons) = if outlier_lats.is_empty() {
+                (lats.clone(), lons.clone())
+            } else {
+                let lat_iter = || lats.iter().chain(outlier_lats.iter()).copied();
+                let lon_iter = || lons.iter().chain(outlier_lons.iter()).copied();
+                let min_lat = lat_iter().fold(f64::INFINITY, f64::min);
+                let max_lat = lat_iter().fold(f64::NEG_INFINITY, f64::max);
+                let min_lon = lon_iter().fold(f64::INFINITY, f64::min);
+                let max_lon = lon_iter().fold(f64::NEG_INFINITY, f64::max);
+                (
+                    vec![max_lat, max_lat, min_lat, min_lat, max_lat],
+                    vec![min_lon, max_lon, max_lon, min_lon, min_lon],
+                )
             };
-            // for a fitted (Mercator) full extent, refine the axis ranges with the tighter
-            // extent-fit padding; whole-region projections (albers-usa / natural-earth) return no
-            // axes and already contain the full extent.
+            let (projection, lonaxis, lataxis) = geo_framing(&frame_lats, &frame_lons);
+            // for a fitted (Mercator) extent, refine the axis ranges with the tighter extent-fit
+            // padding using the geocoded full/core extent when available; whole-region projections
+            // (albers-usa / natural-earth) return no axes and already contain the full extent.
             #[cfg(feature = "geocode")]
             let (lonaxis, lataxis) = match &panel.geo_meta {
                 Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
@@ -7221,20 +7227,17 @@ mod tests {
         );
     }
 
-    #[cfg(feature = "geocode")]
     #[test]
     fn geo_framing_full_extent_avoids_albers_usa_outside_us() {
         // a US-spanning core alone picks albers-usa (a fixed US composite with no fitted axes). The
-        // static-export path feeds geo_framing the FULL-extent corners instead, so once a stray
-        // outside the US (here far south) expands the box, the projection must NOT stay albers-usa
-        // — otherwise the full-extent box and the stray would be clipped in a non-pannable image.
-        let full = MapExtent {
-            min_lat: 10.0,
-            max_lat: 47.6,
-            min_lon: -122.3,
-            max_lon: -74.0,
-        };
-        let (flat, flon) = extent_box_latlon(&full);
+        // static-export path feeds geo_framing the FULL-extent box corners (core + outliers)
+        // instead, so once a stray outside the US (here far south, lat 10) expands the box, the
+        // projection must NOT stay albers-usa — otherwise the full-extent box and the stray would
+        // be clipped in a non-pannable image. Corners built the same way the static-export
+        // path does.
+        let (min_lat, max_lat, min_lon, max_lon) = (10.0, 47.6, -122.3, -74.0);
+        let flat = vec![max_lat, max_lat, min_lat, min_lat, max_lat];
+        let flon = vec![min_lon, max_lon, max_lon, min_lon, min_lon];
         let (proj, ..) = geo_framing(&flat, &flon);
         assert!(
             !matches!(proj, ProjectionType::AlbersUsa),

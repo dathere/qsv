@@ -64,7 +64,8 @@ drawn on the map as a bounding box with labeled points, plus a consolidated loca
 it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
 count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). When there are outliers, a second
 dotted box with no fill marks the full extent (core + outliers), so the strays' span is visible
-alongside the core box. In HTML the points reveal their
+alongside the core box, and the interactive HTML map gets "Core extent" / "Full extent" buttons to
+jump between the two views (the map opens at the tight core view). In HTML the points reveal their
 city/state/country on hover; static exports show the box without hover. The first such run may
 download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
 still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)
@@ -304,6 +305,11 @@ use std::{
 };
 
 use indicatif::HumanCount;
+// the Core/Full extent zoom buttons are part of the geocode-gated spatial-extent overlay
+#[cfg(feature = "geocode")]
+use plotly::layout::update_menu::{
+    Button, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
+};
 use plotly::{
     Bar, BoxPlot, Candlestick, Configuration, Contour, DensityMapbox, HeatMap, Histogram, Ohlc,
     Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox, ScatterPolar, Trace,
@@ -3909,15 +3915,13 @@ fn extent_marker_geo() -> Marker {
     extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
-/// Mapbox center + zoom that frames the (core) extent bounding box as TIGHTLY as possible while
-/// keeping the whole box inside the viewport — so the default view fills with the core cluster
-/// rather than zooming out to include far-flung outliers (those are drawn as distinct markers and
-/// named in the label, visible on zoom-out). `floor(log2(360/span))` is the largest integer zoom
-/// at which the box still fits a full-width map; mapbox zoom is pixel/subplot-dependent (a panel is
-/// narrower than the whole page), so `GEO_EXTENT_FIT_PAD` keeps a thin safety margin against
-/// clipping. Verify visually if the panel sizing changes.
+/// Mapbox (center lat, center lon, zoom) that frames an extent bounding box as TIGHTLY as possible
+/// while keeping the whole box inside the viewport. `floor(log2(360/span))` is the largest integer
+/// zoom at which the box still fits a full-width map; mapbox zoom is pixel/subplot-dependent (a
+/// panel is narrower than the whole page), so `GEO_EXTENT_FIT_PAD` keeps a thin safety margin
+/// against clipping. Verify visually if the panel sizing changes.
 #[cfg(feature = "geocode")]
-fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
+fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
     let lat_center = (e.min_lat + e.max_lat) / 2.0;
     let lon_center = (e.min_lon + e.max_lon) / 2.0;
     let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FIT_PAD;
@@ -3926,7 +3930,52 @@ fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
     } else {
         (360.0 / span).log2().floor().clamp(1.0, 16.0) as u8
     };
-    (Center::new(lat_center, lon_center), zoom)
+    (lat_center, lon_center, zoom)
+}
+
+/// Mapbox center + zoom framing the (core) extent — so the default view fills with the core cluster
+/// rather than zooming out to include far-flung outliers (those are drawn as distinct markers,
+/// named in the label, and reachable via the "Full extent" zoom button). Thin wrapper over
+/// `extent_center_zoom_raw`.
+#[cfg(feature = "geocode")]
+fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
+    let (lat, lon, zoom) = extent_center_zoom_raw(e);
+    (Center::new(lat, lon), zoom)
+}
+
+/// Build the "Core extent" / "Full extent" zoom buttons for a `viz smart` mapbox map. Each button
+/// relayouts the mapbox center+zoom to frame the respective extent. Only used when the panel has
+/// geographic outliers (so the two views actually differ). The map opens at the core view, so
+/// "Core extent" is the active button.
+#[cfg(feature = "geocode")]
+fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
+    let button = |label: &str, e: &MapExtent| {
+        let (lat, lon, zoom) = extent_center_zoom_raw(e);
+        Button::new()
+            .label(label)
+            .method(ButtonMethod::Relayout)
+            .args(serde_json::json!([{
+                "mapbox.center": { "lat": lat, "lon": lon },
+                "mapbox.zoom": zoom,
+            }]))
+    };
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .direction(UpdateMenuDirection::Right)
+        .buttons(vec![
+            button("Core extent", core),
+            button("Full extent", full),
+        ])
+        .x(0.02)
+        .x_anchor(Anchor::Left)
+        .y(0.98)
+        .y_anchor(Anchor::Top)
+        .show_active(true)
+        .active(0)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        .font(Font::new().size(11))
 }
 
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
@@ -5641,13 +5690,20 @@ fn smart_inline_panel_plot(
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
         #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
         let (mut center, mut zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
-        // when the spatial-extent overlay is drawn, frame the FULL extent box instead of the
-        // trimmed data, so the box and its corner markers aren't clipped off-screen.
+        // frame the tight CORE extent (outliers are drawn distinctly and reachable via the "Full
+        // extent" zoom button below).
+        #[cfg(feature = "geocode")]
+        let mut extent_menu: Option<UpdateMenu> = None;
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
             let (c, z) = extent_center_zoom(&meta.extent);
             center = c;
             zoom = z;
+            // with geographic outliers, offer Core/Full extent zoom buttons: the map opens tight on
+            // the core, and "Full extent" reveals the strays without manual panning/zooming.
+            if let Some(full) = &meta.full_extent {
+                extent_menu = Some(extent_zoom_menu(&meta.extent, full));
+            }
         }
         let mut plot = Plot::new();
         if *density {
@@ -5688,6 +5744,10 @@ fn smart_inline_panel_plot(
                     .center(center)
                     .zoom(zoom),
             );
+        #[cfg(feature = "geocode")]
+        if let Some(menu) = extent_menu {
+            layout = layout.update_menus(vec![menu]);
+        }
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -6836,6 +6896,42 @@ mod tests {
         let (lats, lons) = extent_box_latlon(&e);
         assert_eq!(lats, vec![3.0, 3.0, 1.0, 1.0, 3.0]);
         assert_eq!(lons, vec![-5.0, 10.0, 10.0, -5.0, -5.0]);
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn extent_zoom_menu_core_and_full_buttons() {
+        let core = MapExtent {
+            min_lat: 40.70,
+            max_lat: 40.80,
+            min_lon: -74.05,
+            max_lon: -73.95,
+        };
+        // full extent reaches well beyond the core (a far stray)
+        let full = MapExtent {
+            min_lat: 40.20,
+            max_lat: 41.20,
+            min_lon: -76.90,
+            max_lon: -73.90,
+        };
+        let v = serde_json::to_value(extent_zoom_menu(&core, &full)).unwrap();
+        let btns = v["buttons"].as_array().expect("buttons array");
+        assert_eq!(btns.len(), 2);
+        assert_eq!(btns[0]["label"], "Core extent");
+        assert_eq!(btns[1]["label"], "Full extent");
+        // each button is a relayout of the mapbox center + zoom
+        let core_args = &btns[0]["args"][0];
+        assert!(core_args["mapbox.center"]["lat"].is_number());
+        assert!(core_args["mapbox.center"]["lon"].is_number());
+        let cz = core_args["mapbox.zoom"].as_f64().expect("core zoom");
+        let fz = btns[1]["args"][0]["mapbox.zoom"]
+            .as_f64()
+            .expect("full zoom");
+        // the full extent is larger, so its fit zoom is further out (<=) than the core's
+        assert!(
+            fz <= cz,
+            "full-extent zoom {fz} should be <= core-extent zoom {cz}"
+        );
     }
 
     #[cfg(feature = "geocode")]

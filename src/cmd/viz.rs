@@ -52,14 +52,21 @@ geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local ex
 offline ScatterGeo projection world-overview for continental/global data. For static image
 export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
 Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. When qsv is built with
-the `geocode` feature, the map's spatial extent (its 4 bounding-box corners + center) is
-reverse-geocoded against the local Geonames index and drawn on the map as a bounding box with
-labeled points, plus a consolidated location summary below it (e.g. "New York & New Jersey,
-United States"). In HTML the points reveal their city/state/country on hover; static exports
-show the box without hover. The first such run may download the Geonames index (~13MB, cached
-in ~/.qsv-cache); if it's unavailable (offline) the map still renders without the overlay.
-Extents that span the antimeridian (>180 degrees of longitude) are skipped. These overview
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. Points that lie
+far from the cluster centroid (distance beyond the Tukey far-out fence of all points' distances) are
+flagged as geographic outliers: they're drawn with a distinct marker, excluded from the spatial
+extent (so a few strays don't inflate it), and the map zooms tightly to the core extent (outliers
+may then sit off-screen until you zoom out). When those outliers fall within the same jurisdiction
+as the core, the spatial-extent label's outlier call-out is suppressed (they're the cluster's far
+edge, not strays elsewhere). When qsv is built with the `geocode` feature, the map's (core) spatial extent
+(its 4 bounding-box corners + center) is reverse-geocoded against the local Geonames index and
+drawn on the map as a bounding box with labeled points, plus a consolidated location summary below
+it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
+count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). In HTML the points reveal their
+city/state/country on hover; static exports show the box without hover. The first such run may
+download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
+still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)
+are skipped. These overview
 panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
 on their own full-width row; the per-column box/bar/histogram panels flow below in the
 multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
@@ -400,6 +407,11 @@ const MAX_SMART_POINTS: usize = 50_000;
 /// At or above this many mappable rows, `viz smart` draws its map panel as a density heatmap
 /// (DensityMapbox) rather than individual markers, which overplot into a solid mass at scale.
 const MAP_DENSITY_MIN_POINTS: usize = 20_000;
+
+/// Max geographic outlier points embedded per `viz smart` map panel. Outliers are the whole point
+/// of the call-out, so this is set generously, but still bounds the embedded payload; if there are
+/// more, they're uniformly stride-sampled (like the core points) rather than dropped wholesale.
+const SMART_GEO_OUTLIER_CAP: usize = 5_000;
 
 /// Marker opacity for the `viz smart` map panel when it's drawn as discrete points (i.e. fewer
 /// than `MAP_DENSITY_MIN_POINTS` rows). Mild transparency reveals overlapping points instead of a
@@ -3106,7 +3118,9 @@ impl Panel {
     }
 }
 
-/// The bounding box of a map panel's in-range coordinates (observed min/max, no trimming).
+/// An observed min/max lat/lon bounding box. For a `viz smart` map this is the CORE extent — the
+/// box of the non-outlier points (geographic outliers are excluded so a few strays don't inflate
+/// it); `map_extent` itself just computes min/max over whatever coordinates it's given.
 #[cfg(feature = "geocode")]
 #[derive(Clone, Copy)]
 struct MapExtent {
@@ -3130,11 +3144,14 @@ struct GeoPoint {
 /// Reverse-geocoded spatial-extent metadata attached to a `Map`/`Geo` panel.
 #[cfg(feature = "geocode")]
 struct GeoMeta {
+    /// The CORE extent (non-outlier bounding box) — drives the overlay box, corner markers, and
+    /// the tight default framing.
     extent:  MapExtent,
-    /// The 4 corners + center, in order NW, NE, SW, SE, Center.
+    /// The 4 core-extent corners + center, in order NW, NE, SW, SE, Center.
     points:  Vec<GeoPoint>,
-    /// Consolidated one-line jurisdiction summary (e.g. "New York & New Jersey, United States").
-    /// Empty when no point resolved to a city.
+    /// Consolidated one-line jurisdiction summary (e.g. "New York & New Jersey, United States"),
+    /// with an outlier call-out appended when there are geographic outliers (e.g.
+    /// "… — 3 outliers (Pennsylvania)"). Empty when no core point resolved to a city.
     summary: String,
 }
 
@@ -3217,16 +3234,26 @@ enum PanelKind {
     /// requests a heatmap render instead of discrete markers when the source had many rows. Mapbox
     /// subplots don't compose with the typed x/y subplot grid, so a dashboard containing this panel
     /// always renders via the inline path.
+    /// `outlier_lats`/`outlier_lons` carry the geographic outliers (far from the cluster centroid),
+    /// drawn as a distinct marker trace on top of the core points.
     Map {
-        lats:    Vec<f64>,
-        lons:    Vec<f64>,
-        density: bool,
+        lats:         Vec<f64>,
+        lons:         Vec<f64>,
+        density:      bool,
+        outlier_lats: Vec<f64>,
+        outlier_lons: Vec<f64>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
     /// continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the typed x/y
     /// grid, so a dashboard containing this panel always renders via the inline path.
-    Geo { lats: Vec<f64>, lons: Vec<f64> },
+    /// `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
+    Geo {
+        lats:         Vec<f64>,
+        lons:         Vec<f64>,
+        outlier_lats: Vec<f64>,
+        outlier_lons: Vec<f64>,
+    },
 }
 
 /// Tukey inner fences (lower = q1 - 1.5*IQR, upper = q3 + 1.5*IQR) for a numeric column, used to
@@ -3243,6 +3270,72 @@ fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
     let lo = s.lower_inner_fence.unwrap_or(q1 - 1.5 * iqr);
     let hi = s.upper_inner_fence.unwrap_or(q3 + 1.5 * iqr);
     Some((lo, hi))
+}
+
+/// Tukey IQR multiplier applied to the distance-from-centroid distribution when flagging
+/// geographic outliers. 3.0 is the "far out" (extreme-outlier) fence, deliberately stricter than
+/// the 1.5 inner fence so only points GENUINELY far from the cluster flag — a broad single-region
+/// distribution's edge points stay core rather than swamping the map.
+const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
+
+/// Partition row-aligned (lat, lon) pairs into a core set and a geographic-outlier set by distance
+/// from the cluster centroid: a point is an outlier when its distance from the (robust, per-axis
+/// median) centroid exceeds the Tukey far-out fence `q3 + 3*IQR` of all points' distances. Distance
+/// is an equirectangular approximation with longitude scaled by `cos(centroid_lat)` so it's roughly
+/// isotropic in degrees. Unlike a per-axis percentile, this flags only points genuinely far from
+/// the bulk (true strays), not the distribution's tails. With too few points (< 4) or a degenerate
+/// (zero-IQR) distance spread, nothing is flagged and the whole set is core. Returns
+/// `(core_lats, core_lons, outlier_lats, outlier_lons)`.
+fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = lats.len();
+    if n < 4 {
+        // too few points to characterize a cluster -> everything is core, zero outliers
+        return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
+    }
+    // robust centroid: per-axis medians (so a few strays don't drag the center toward them)
+    let mut sorted_lats = lats.to_vec();
+    let mut sorted_lons = lons.to_vec();
+    sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    sorted_lons.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let c_lat = sorted_quantile(&sorted_lats, 0.5);
+    let c_lon = sorted_quantile(&sorted_lons, 0.5);
+    // scale longitude so a degree of lon counts like a degree of lat at this latitude
+    let lon_scale = c_lat.to_radians().cos().abs().max(0.01);
+
+    let dist = |lat: f64, lon: f64| -> f64 {
+        let dlat = lat - c_lat;
+        let dlon = (lon - c_lon) * lon_scale;
+        (dlat * dlat + dlon * dlon).sqrt()
+    };
+
+    let dists: Vec<f64> = lats
+        .iter()
+        .zip(lons)
+        .map(|(&la, &lo)| dist(la, lo))
+        .collect();
+    let mut sorted_dists = dists.clone();
+    sorted_dists.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let q1 = sorted_quantile(&sorted_dists, 0.25);
+    let q3 = sorted_quantile(&sorted_dists, 0.75);
+    let iqr = q3 - q1;
+    if iqr <= 0.0 {
+        // degenerate spread (e.g. all-identical points) -> nothing is meaningfully far
+        return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
+    }
+    let fence = q3 + GEO_OUTLIER_DIST_IQR_MULT * iqr;
+
+    let (mut core_lats, mut core_lons) = (Vec::with_capacity(n), Vec::with_capacity(n));
+    let (mut out_lats, mut out_lons) = (Vec::new(), Vec::new());
+    for ((&lat, &lon), &d) in lats.iter().zip(lons).zip(&dists) {
+        if d > fence {
+            out_lats.push(lat);
+            out_lons.push(lon);
+        } else {
+            core_lats.push(lat);
+            core_lons.push(lon);
+        }
+    }
+    (core_lats, core_lons, out_lats, out_lons)
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -3615,22 +3708,43 @@ fn build_map_panel(
     lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let lat_span = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC)
         - sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
+    // density/global classification stays on the FULL in-range set (above), so removing outliers
+    // doesn't perturb which basemap or render path is chosen.
     let global = lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG;
 
-    // reverse-geocode the observed bounding box (computed on the full in-range set, before
-    // downsampling) into spatial-extent overlay + summary metadata. Degrades to None when the
-    // geocode feature is off, the lookup fails, or the extent spans the antimeridian.
-    #[cfg(feature = "geocode")]
-    let geo_meta = build_geo_meta(map_extent(&lats, &lons));
+    // split into the core cluster vs. geographic outliers (points far from the cluster centroid)
+    // BEFORE downsampling, so the centroid/distances see the full population and true strays are
+    // never stride-sampled away first. Not geocode-gated: the distinct outlier markers render in
+    // every `viz` build; only the jurisdiction naming/suppression below needs geocode.
+    let (core_lats, core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
 
-    let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
+    // reverse-geocode the CORE bounding box into the spatial-extent overlay + summary, plus a
+    // representative sample of the outliers for the call-out (one batched engine load). Degrades to
+    // None when the geocode feature is off, the lookup fails, or the extent spans the antimeridian.
+    #[cfg(feature = "geocode")]
+    let geo_meta = build_geo_meta(
+        map_extent(&core_lats, &core_lons),
+        &out_lats,
+        &out_lons,
+        out_lats.len(),
+    );
+
+    let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
+    let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
     let kind = if global {
-        PanelKind::Geo { lats, lons }
+        PanelKind::Geo {
+            lats,
+            lons,
+            outlier_lats,
+            outlier_lons,
+        }
     } else {
         PanelKind::Map {
             lats,
             lons,
             density,
+            outlier_lats,
+            outlier_lons,
         }
     };
     Ok(Some((
@@ -3713,28 +3827,36 @@ fn extent_marker_geo() -> Marker {
     extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
-/// Mapbox center + zoom that frames the full extent bounding box (with a little padding), so the
-/// box and its corner markers stay inside the viewport. The plain `viz smart` map otherwise frames
-/// the *trimmed* data, which can leave the true-extent box (and its corners) clipped off-screen.
+/// Mapbox center + zoom that frames the (core) extent bounding box as TIGHTLY as possible while
+/// keeping the whole box inside the viewport — so the default view fills with the core cluster
+/// rather than zooming out to include far-flung outliers (those are drawn as distinct markers and
+/// named in the label, visible on zoom-out). `floor(log2(360/span))` is the largest integer zoom
+/// at which the box still fits a full-width map; mapbox zoom is pixel/subplot-dependent (a panel is
+/// narrower than the whole page), so `GEO_EXTENT_FIT_PAD` keeps a thin safety margin against
+/// clipping. Verify visually if the panel sizing changes.
 #[cfg(feature = "geocode")]
 fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
     let lat_center = (e.min_lat + e.max_lat) / 2.0;
     let lon_center = (e.min_lon + e.max_lon) / 2.0;
-    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FRAME_PAD;
+    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FIT_PAD;
     let zoom = if span <= 0.0 {
         10
     } else {
-        ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
+        (360.0 / span).log2().floor().clamp(1.0, 16.0) as u8
     };
     (Center::new(lat_center, lon_center), zoom)
 }
 
-/// Padded longitude + latitude `geo` axis ranges that frame the full extent box, for the offline
-/// `ScatterGeo` (local Mercator) path — the analogue of `extent_center_zoom` for projection maps.
+/// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
+/// possible, for the offline `ScatterGeo` (local Mercator) path — the analogue of
+/// `extent_center_zoom` for projection maps. Unlike mapbox, these are exact ranges, so the small
+/// `GEO_EXTENT_FIT_PAD_*` padding is the only slack.
 #[cfg(feature = "geocode")]
 fn extent_geo_axes(e: &MapExtent) -> (Axis, Axis) {
-    let lat_pad = ((e.max_lat - e.min_lat) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
-    let lon_pad = ((e.max_lon - e.min_lon) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lat_pad =
+        ((e.max_lat - e.min_lat) * GEO_EXTENT_FIT_PAD_FRAC).max(GEO_EXTENT_FIT_PAD_MIN_DEG);
+    let lon_pad =
+        ((e.max_lon - e.min_lon) * GEO_EXTENT_FIT_PAD_FRAC).max(GEO_EXTENT_FIT_PAD_MIN_DEG);
     let lon = Axis::new().range(vec![
         (e.min_lon - lon_pad).max(-180.0),
         (e.max_lon + lon_pad).min(180.0),
@@ -3771,54 +3893,152 @@ fn point_hover_text(p: &GeoPoint) -> String {
     }
 }
 
+/// Distinct, first-seen order, case-insensitive dedup of non-empty trimmed values.
+#[cfg(feature = "geocode")]
+fn distinct_jurisdictions<'a>(vals: impl Iterator<Item = &'a str>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    let mut out = Vec::new();
+    for v in vals {
+        let v = v.trim();
+        if v.is_empty() {
+            continue;
+        }
+        if seen.insert(v.to_lowercase()) {
+            out.push(v.to_string());
+        }
+    }
+    out
+}
+
+/// Join a list of names as "A" | "A & B" | "A, B & C".
+#[cfg(feature = "geocode")]
+fn join_jurisdictions(items: &[String]) -> String {
+    match items {
+        [] => String::new(),
+        [a] => a.clone(),
+        [a, b] => format!("{a} & {b}"),
+        [rest @ .., last] => format!("{} & {last}", rest.join(", ")),
+    }
+}
+
+/// Concise jurisdiction list for the outlier call-out: distinct admin1s (states/regions) if any
+/// resolved, else distinct countries, joined "A" / "A & B" / "A, B & C"; more than 3 collapses to a
+/// count. Returns "" when no outlier point resolved (the call-out then omits the parenthetical).
+#[cfg(feature = "geocode")]
+fn outlier_jurisdictions(labels: &[Option<crate::cmd::geocode::GeoLabel>]) -> String {
+    let resolved: Vec<&crate::cmd::geocode::GeoLabel> =
+        labels.iter().filter_map(|l| l.as_ref()).collect();
+    if resolved.is_empty() {
+        return String::new();
+    }
+    let admin1s = distinct_jurisdictions(resolved.iter().map(|l| l.admin1.as_str()));
+    let names = if admin1s.is_empty() {
+        distinct_jurisdictions(resolved.iter().map(|l| l.country.as_str()))
+    } else {
+        admin1s
+    };
+    match names.len() {
+        0 => String::new(),
+        n if n > 3 => format!("{n} areas"),
+        _ => join_jurisdictions(&names),
+    }
+}
+
+/// Whether the geographic outliers fall within the SAME jurisdiction(s) as the core extent — in
+/// which case they're not meaningful "elsewhere" strays (just the cluster's far edge), so the
+/// outlier call-out is suppressed. True when every resolved outlier admin1 is already among the
+/// core's admin1s AND every resolved outlier country is among the core's countries; also true when
+/// no outlier point resolved to a jurisdiction (we can't claim a different place). False as soon as
+/// an outlier introduces a new admin1/country (e.g. a Pennsylvania stray beside a NY/NJ core).
+#[cfg(feature = "geocode")]
+fn outliers_share_core_region(
+    core: &[GeoPoint],
+    outlier_labels: &[Option<crate::cmd::geocode::GeoLabel>],
+) -> bool {
+    use std::collections::HashSet;
+    let lower_set = |it: &mut dyn Iterator<Item = &str>| -> HashSet<String> {
+        it.map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_lowercase)
+            .collect()
+    };
+    let core_admin1 = lower_set(
+        &mut core
+            .iter()
+            .filter_map(|p| p.label.as_ref())
+            .map(|l| l.admin1.as_str()),
+    );
+    let core_country = lower_set(
+        &mut core
+            .iter()
+            .filter_map(|p| p.label.as_ref())
+            .map(|l| l.country.as_str()),
+    );
+    let out_admin1 = lower_set(
+        &mut outlier_labels
+            .iter()
+            .filter_map(|l| l.as_ref())
+            .map(|l| l.admin1.as_str()),
+    );
+    let out_country = lower_set(
+        &mut outlier_labels
+            .iter()
+            .filter_map(|l| l.as_ref())
+            .map(|l| l.country.as_str()),
+    );
+
+    if out_admin1.is_empty() && out_country.is_empty() {
+        // outliers didn't resolve to any place -> can't claim they're elsewhere; suppress
+        return true;
+    }
+    out_admin1.is_subset(&core_admin1) && out_country.is_subset(&core_country)
+}
+
+/// Assemble the spatial-extent summary string from the core jurisdiction summary, the (true)
+/// outlier count, and their consolidated jurisdiction. With zero outliers the core summary is
+/// returned unchanged (byte-identical to the pre-feature behavior). Otherwise an em-dash call-out
+/// is appended, e.g. "New York & New Jersey, United States — 3 outliers (Pennsylvania)"; the
+/// parenthetical is omitted when no outlier point resolved to a jurisdiction.
+#[cfg(feature = "geocode")]
+fn outlier_summary(core: &str, n_outliers: usize, jurisdictions: &str) -> String {
+    if n_outliers == 0 {
+        return core.to_string();
+    }
+    let noun = if n_outliers == 1 {
+        "outlier"
+    } else {
+        "outliers"
+    };
+    if jurisdictions.is_empty() {
+        format!("{core} \u{2014} {n_outliers} {noun}")
+    } else {
+        format!("{core} \u{2014} {n_outliers} {noun} ({jurisdictions})")
+    }
+}
+
 /// Post-process the up-to-5 reverse-geocoded extent points into one concise jurisdiction
 /// line. Collapses shared country/state instead of repeating it; lists up to 3 distinct
 /// regions/countries, else falls back to a count. Returns "" when no point resolved.
 #[cfg(feature = "geocode")]
 fn consolidate_geo(points: &[GeoPoint]) -> String {
-    // distinct, first-seen order, case-insensitive dedup of non-empty trimmed values
-    fn distinct<'a>(vals: impl Iterator<Item = &'a str>) -> Vec<String> {
-        let mut seen = std::collections::HashSet::new();
-        let mut out = Vec::new();
-        for v in vals {
-            let v = v.trim();
-            if v.is_empty() {
-                continue;
-            }
-            if seen.insert(v.to_lowercase()) {
-                out.push(v.to_string());
-            }
-        }
-        out
-    }
-    // "A" | "A & B" | "A, B & C"
-    fn join_list(items: &[String]) -> String {
-        match items {
-            [] => String::new(),
-            [a] => a.clone(),
-            [a, b] => format!("{a} & {b}"),
-            [rest @ .., last] => format!("{} & {last}", rest.join(", ")),
-        }
-    }
-
     let labels: Vec<&crate::cmd::geocode::GeoLabel> =
         points.iter().filter_map(|p| p.label.as_ref()).collect();
     if labels.is_empty() {
         return String::new();
     }
 
-    let countries = distinct(labels.iter().map(|l| l.country.as_str()));
+    let countries = distinct_jurisdictions(labels.iter().map(|l| l.country.as_str()));
     if countries.len() > 3 {
         return format!("{} countries", countries.len());
     }
     if countries.len() >= 2 {
-        return join_list(&countries);
+        return join_jurisdictions(&countries);
     }
     // 0 or 1 distinct country
     let country = countries.first();
     let suffix = country.map(|c| format!(", {c}")).unwrap_or_default();
 
-    let admin1s = distinct(labels.iter().map(|l| l.admin1.as_str()));
+    let admin1s = distinct_jurisdictions(labels.iter().map(|l| l.admin1.as_str()));
     if admin1s.is_empty() {
         return country.cloned().unwrap_or_default();
     }
@@ -3826,41 +4046,70 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
         return format!("{} regions{suffix}", admin1s.len());
     }
     if admin1s.len() >= 2 {
-        return format!("{}{suffix}", join_list(&admin1s));
+        return format!("{}{suffix}", join_jurisdictions(&admin1s));
     }
     // single admin1: name the city only when the whole extent resolved to one city
     let admin1 = &admin1s[0];
-    let cities = distinct(labels.iter().map(|l| l.city.as_str()));
+    let cities = distinct_jurisdictions(labels.iter().map(|l| l.city.as_str()));
     if cities.len() == 1 {
         return format!("{}, {admin1}{suffix}", cities[0]);
     }
     format!("{admin1}{suffix}")
 }
 
-/// Reverse-geocode the 4 bounding-box corners + center of a map extent and assemble the
-/// `GeoMeta` overlay/summary. Returns `None` (so the map renders without the overlay) when the
-/// extent spans the antimeridian (corner/center labels would be meaningless), the geocode
-/// lookup fails (offline/missing index), or no point resolves to a city. The engine is loaded
-/// ONCE for all 5 lookups.
+/// Max outlier points reverse-geocoded for the call-out's jurisdiction list. The TRUE outlier count
+/// is reported separately (it's just the partition size); this only bounds how many we look up to
+/// NAME the jurisdictions, so a far-flung set is still represented without ballooning the lookup.
 #[cfg(feature = "geocode")]
-fn build_geo_meta(extent: MapExtent) -> Option<GeoMeta> {
+const GEO_OUTLIER_GEOCODE_SAMPLE: usize = 12;
+
+/// Reverse-geocode the CORE bounding box (4 corners + center) into the `GeoMeta` overlay + summary,
+/// plus a capped, stride-sampled set of the outlier points — all in ONE batched lookup (the engine
+/// loads once). The summary names the core jurisdictions and, when there are outliers that resolve
+/// to a DIFFERENT jurisdiction than the core, appends a call-out with the count + the outliers'
+/// jurisdiction; outliers within the core's own jurisdiction(s) are suppressed (just the cluster's
+/// far edge, not strays elsewhere), and with zero outliers the result is byte-identical to the
+/// pre-feature behavior. Returns `None` (so the map renders without the
+/// overlay) when the core extent spans the antimeridian (corner/center labels would be
+/// meaningless), the geocode lookup fails (offline/missing index), or no core point resolves to a
+/// city.
+#[cfg(feature = "geocode")]
+fn build_geo_meta(
+    core_extent: MapExtent,
+    outlier_lats: &[f64],
+    outlier_lons: &[f64],
+    n_outliers: usize,
+) -> Option<GeoMeta> {
     // a dataset straddling +/-180 yields a near-global box whose center lands mid-ocean; skip.
-    if extent_spans_antimeridian(&extent) {
+    if extent_spans_antimeridian(&core_extent) {
         return None;
     }
-    let c_lat = (extent.min_lat + extent.max_lat) / 2.0;
-    let c_lon = (extent.min_lon + extent.max_lon) / 2.0;
+    let c_lat = (core_extent.min_lat + core_extent.max_lat) / 2.0;
+    let c_lon = (core_extent.min_lon + core_extent.max_lon) / 2.0;
     let coords = [
-        ("NW", extent.max_lat, extent.min_lon),
-        ("NE", extent.max_lat, extent.max_lon),
-        ("SW", extent.min_lat, extent.min_lon),
-        ("SE", extent.min_lat, extent.max_lon),
+        ("NW", core_extent.max_lat, core_extent.min_lon),
+        ("NE", core_extent.max_lat, core_extent.max_lon),
+        ("SW", core_extent.min_lat, core_extent.min_lon),
+        ("SE", core_extent.min_lat, core_extent.max_lon),
         ("Center", c_lat, c_lon),
     ];
-    let query: Vec<(f64, f64)> = coords.iter().map(|&(_, lat, lon)| (lat, lon)).collect();
+
+    // batch the 5 core corner/center lookups with a stride-sampled set of the outlier points so the
+    // whole call-out resolves in a single engine load.
+    let (sample_lats, sample_lons) =
+        downsample_pair(outlier_lats, outlier_lons, GEO_OUTLIER_GEOCODE_SAMPLE);
+    let mut query: Vec<(f64, f64)> = coords.iter().map(|&(_, lat, lon)| (lat, lon)).collect();
+    query.extend(
+        sample_lats
+            .iter()
+            .zip(&sample_lons)
+            .map(|(&lat, &lon)| (lat, lon)),
+    );
 
     // a lookup failure (e.g. offline first-use) degrades to no metadata rather than failing viz.
-    let labels = crate::cmd::geocode::reverse_geocode_points(&query, None).ok()?;
+    let mut labels = crate::cmd::geocode::reverse_geocode_points(&query, None).ok()?;
+    // split: first 5 -> core corners/center, remainder -> the outlier sample
+    let outlier_labels = labels.split_off(coords.len());
 
     let points: Vec<GeoPoint> = coords
         .iter()
@@ -3873,12 +4122,23 @@ fn build_geo_meta(extent: MapExtent) -> Option<GeoMeta> {
         })
         .collect();
 
-    let summary = consolidate_geo(&points);
-    if summary.is_empty() {
+    let core_summary = consolidate_geo(&points);
+    if core_summary.is_empty() {
         return None;
     }
+    // suppress the call-out when the outliers fall within the core's own jurisdiction(s) — they're
+    // the cluster's far edge, not strays "elsewhere", so naming them would just be redundant noise.
+    let summary = if n_outliers == 0 || outliers_share_core_region(&points, &outlier_labels) {
+        core_summary
+    } else {
+        outlier_summary(
+            &core_summary,
+            n_outliers,
+            &outlier_jurisdictions(&outlier_labels),
+        )
+    };
     Some(GeoMeta {
-        extent,
+        extent: core_extent,
         points,
         summary,
     })
@@ -3901,10 +4161,19 @@ const GEO_EXTENT_MARKER_SIZE: usize = 16;
 /// Bounding-box line width (px) for the spatial-extent frame.
 #[cfg(feature = "geocode")]
 const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
-/// Padding multiplier applied to the extent span when framing the map, so the box + corner markers
-/// sit comfortably inside the viewport.
+/// Padding multiplier applied to the (core) extent span when computing the tight mapbox fit zoom.
+/// Kept just above 1.0 — only a thin safety margin so the box isn't clipped on a narrower-than-full
+/// subplot — so the default view stays as zoomed-in as possible on the core cluster.
 #[cfg(feature = "geocode")]
-const GEO_EXTENT_FRAME_PAD: f64 = 1.15;
+const GEO_EXTENT_FIT_PAD: f64 = 1.15;
+/// Fractional padding added to each side of the (core) extent box for the `ScatterGeo` exact-range
+/// fit. Small, so the projection map frames the core cluster tightly.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_FIT_PAD_FRAC: f64 = 0.04;
+/// Minimum absolute padding (degrees) for the `ScatterGeo` extent fit, so a near-degenerate box
+/// still gets a sliver of margin.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 
 /// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
 /// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`.
@@ -3963,6 +4232,32 @@ fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
             .hover_info(HoverInfo::Text)
             .show_legend(false),
     );
+}
+
+/// Marker color for geographic outlier points on `viz smart` maps. A vivid amber, deliberately
+/// distinct from BOTH the warm (red/orange) data points AND the deep-purple extent overlay, so all
+/// three layers read as separate. Not geocode-gated — outlier styling works in every `viz` build.
+const GEO_OUTLIER_COLOR: &str = "#f9a825";
+/// Marker size (px) for outlier points — larger than the data points so the handful of strays stand
+/// out at a glance, even when they sit outside the default (core-fit) viewport.
+const GEO_OUTLIER_MARKER_SIZE: usize = 11;
+/// White halo around outlier markers, for contrast against both tile and projection basemaps.
+const GEO_OUTLIER_MARKER_BORDER: &str = "#ffffff";
+
+/// Outlier marker for mapbox tile maps: a haloed amber circle. Mapbox can't render custom symbols,
+/// so the distinction comes from size + color versus the data points.
+fn outlier_marker_mapbox() -> Marker {
+    Marker::new()
+        .color(GEO_OUTLIER_COLOR)
+        .size(GEO_OUTLIER_MARKER_SIZE)
+        .opacity(0.95)
+        .line(Line::new().color(GEO_OUTLIER_MARKER_BORDER).width(1.5))
+}
+
+/// Like `outlier_marker_mapbox`, but an X glyph — `ScatterGeo` renders plotly symbols, giving the
+/// outliers a distinct SHAPE in addition to color (and a readable glyph in inert static images).
+fn outlier_marker_geo() -> Marker {
+    outlier_marker_mapbox().symbol(plotly::common::MarkerSymbol::X)
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
@@ -4079,7 +4374,18 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         if out_format.is_image() {
             panel.map(|(p, cols)| {
                 let kind = match p.kind {
-                    PanelKind::Map { lats, lons, .. } => PanelKind::Geo { lats, lons },
+                    PanelKind::Map {
+                        lats,
+                        lons,
+                        outlier_lats,
+                        outlier_lons,
+                        ..
+                    } => PanelKind::Geo {
+                        lats,
+                        lons,
+                        outlier_lats,
+                        outlier_lons,
+                    },
                     other => other,
                 };
                 (
@@ -4817,7 +5123,13 @@ fn smart_grid_parts(
         // the raw-JSON static-export path. Build the ScatterGeo trace, fit the projection to the
         // data extent, and emit the domain-positioned geo layout object as raw JSON (the typed
         // `Layout` has only a single `.geo()` with no per-cell domain).
-        if let PanelKind::Geo { lats, lons } = &panel.kind {
+        if let PanelKind::Geo {
+            lats,
+            lons,
+            outlier_lats,
+            outlier_lons,
+        } = &panel.kind
+        {
             let geom = geoms[n].clone();
             let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
             // when drawing the extent overlay on a local (Mercator) projection — geo_framing
@@ -4853,6 +5165,17 @@ fn smart_grid_parts(
                     .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
                     .subplot(geo_ref(pos)),
             );
+            // geographic outliers as a distinct amber/X marker trace on top of the core points
+            if !outlier_lats.is_empty() {
+                traces.push(
+                    ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
+                        .name("geographic outliers")
+                        .mode(Mode::Markers)
+                        .marker(outlier_marker_geo())
+                        .show_legend(false)
+                        .subplot(geo_ref(pos)),
+                );
+            }
             // spatial-extent overlay (bounding box + reverse-geocoded corner/center markers),
             // both bound to this cell's `geo{pos}` subplot, plus a consolidated summary
             // annotation below the cell. Hover labels are inert in static images.
@@ -5141,6 +5464,8 @@ fn smart_inline_panel_plot(
         lats,
         lons,
         density,
+        outlier_lats,
+        outlier_lons,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -5166,6 +5491,16 @@ fn smart_inline_panel_plot(
                 ScatterMapbox::new(lats.clone(), lons.clone())
                     .mode(Mode::Markers)
                     .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+            );
+        }
+        // geographic outliers as a distinct amber marker trace on top of the core points/heatmap
+        if !outlier_lats.is_empty() {
+            plot.add_trace(
+                ScatterMapbox::new(outlier_lats.clone(), outlier_lons.clone())
+                    .name("geographic outliers")
+                    .mode(Mode::Markers)
+                    .marker(outlier_marker_mapbox())
+                    .show_legend(false),
             );
         }
         #[cfg(feature = "geocode")]
@@ -5195,13 +5530,29 @@ fn smart_inline_panel_plot(
 
     // geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
     // x/y axes, so they're assembled here like the mapbox map panel above.
-    if let PanelKind::Geo { lats, lons } = &panel.kind {
+    if let PanelKind::Geo {
+        lats,
+        lons,
+        outlier_lats,
+        outlier_lons,
+    } = &panel.kind
+    {
         let mut plot = Plot::new();
         plot.add_trace(
             ScatterGeo::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
                 .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
         );
+        // geographic outliers as a distinct amber/X marker trace on top of the core points
+        if !outlier_lats.is_empty() {
+            plot.add_trace(
+                ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
+                    .name("geographic outliers")
+                    .mode(Mode::Markers)
+                    .marker(outlier_marker_geo())
+                    .show_legend(false),
+            );
+        }
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_geo(&mut plot, meta);
@@ -6121,6 +6472,143 @@ mod tests {
             (e.min_lat, e.max_lat, e.min_lon, e.max_lon),
             (1.0, 3.0, -5.0, 10.0)
         );
+    }
+
+    #[test]
+    fn partition_geo_outliers_flags_far_from_centroid() {
+        // a small spread cluster (10x10 grid in a ~0.09deg box, so the distance IQR is non-zero),
+        // plus two points far from the centroid — only the two strays exceed the far-out fence.
+        let mut lats: Vec<f64> = Vec::new();
+        let mut lons: Vec<f64> = Vec::new();
+        for i in 0..10 {
+            for j in 0..10 {
+                lats.push(40.70 + f64::from(i) * 0.01);
+                lons.push(-74.00 + f64::from(j) * 0.01);
+            }
+        }
+        lats.push(45.0); // far north
+        lons.push(-74.0);
+        lats.push(40.7); // far east
+        lons.push(-69.0);
+        let (clat, clon, olat, olon) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(olat.len(), 2, "only the two far strays flagged");
+        assert_eq!(olon.len(), 2);
+        assert_eq!(
+            clat.len() + olat.len(),
+            lats.len(),
+            "every point accounted for"
+        );
+        assert_eq!(clon.len(), clat.len());
+        assert!(olat.contains(&45.0));
+        assert!(olon.contains(&-69.0));
+    }
+
+    #[test]
+    fn partition_geo_outliers_too_few_all_core() {
+        // too few points to characterize a cluster -> everything is core, zero outliers
+        let lats = vec![1.0, 2.0, 3.0];
+        let lons = vec![1.0, 2.0, 3.0];
+        let (clat, _clon, olat, olon) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(clat.len(), 3);
+        assert!(olat.is_empty());
+        assert!(olon.is_empty());
+    }
+
+    #[test]
+    fn partition_geo_outliers_constant_flags_nothing() {
+        // a fully constant (zero-spread) distribution has zero distance IQR -> nothing flagged
+        let lats = vec![10.0; 50];
+        let lons = vec![20.0; 50];
+        let (_clat, _clon, olat, olon) = partition_geo_outliers(&lats, &lons);
+        assert!(olat.is_empty());
+        assert!(olon.is_empty());
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn outlier_summary_count_and_jurisdiction() {
+        let core = "New York & New Jersey, United States";
+        // zero outliers -> core summary unchanged
+        assert_eq!(outlier_summary(core, 0, "Pennsylvania"), core);
+        // singular / plural
+        assert_eq!(
+            outlier_summary(core, 1, "Pennsylvania"),
+            "New York & New Jersey, United States \u{2014} 1 outlier (Pennsylvania)"
+        );
+        assert_eq!(
+            outlier_summary(core, 3, "Pennsylvania"),
+            "New York & New Jersey, United States \u{2014} 3 outliers (Pennsylvania)"
+        );
+        // empty jurisdiction -> no parenthetical
+        assert_eq!(
+            outlier_summary(core, 2, ""),
+            "New York & New Jersey, United States \u{2014} 2 outliers"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn outlier_jurisdictions_lists_admin1_then_countries() {
+        let label = |admin1: &str, country: &str| {
+            Some(crate::cmd::geocode::GeoLabel {
+                city:    String::new(),
+                admin1:  admin1.to_string(),
+                country: country.to_string(),
+            })
+        };
+        // single admin1
+        assert_eq!(
+            outlier_jurisdictions(&[label("Pennsylvania", "United States")]),
+            "Pennsylvania"
+        );
+        // two distinct admin1s
+        assert_eq!(
+            outlier_jurisdictions(&[
+                label("Pennsylvania", "United States"),
+                label("Ohio", "United States"),
+            ]),
+            "Pennsylvania & Ohio"
+        );
+        // no admin1 -> falls back to countries
+        assert_eq!(
+            outlier_jurisdictions(&[label("", "Canada"), label("", "Mexico")]),
+            "Canada & Mexico"
+        );
+        // nothing resolved -> empty
+        assert_eq!(outlier_jurisdictions(&[None, None]), "");
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn outliers_share_core_region_suppression() {
+        let label = |admin1: &str, country: &str| {
+            Some(crate::cmd::geocode::GeoLabel {
+                city:    String::new(),
+                admin1:  admin1.to_string(),
+                country: country.to_string(),
+            })
+        };
+        let core = vec![
+            gp("NW", "Newark", "New Jersey", "United States"),
+            gp("NE", "Brooklyn", "New York", "United States"),
+        ];
+        // outliers in a core admin1 -> share region (suppress)
+        assert!(outliers_share_core_region(
+            &core,
+            &[label("New York", "United States")]
+        ));
+        // outliers in a NEW admin1 (Pennsylvania) -> real strays (keep call-out)
+        assert!(!outliers_share_core_region(
+            &core,
+            &[label("Pennsylvania", "United States")]
+        ));
+        // outliers in a new country -> real strays
+        assert!(!outliers_share_core_region(
+            &core,
+            &[label("Ontario", "Canada")]
+        ));
+        // unresolved outliers -> can't claim elsewhere -> suppress
+        assert!(outliers_share_core_region(&core, &[None]));
     }
 
     #[cfg(feature = "geocode")]

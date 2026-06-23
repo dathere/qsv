@@ -5256,14 +5256,25 @@ fn smart_grid_parts(
         } = &panel.kind
         {
             let geom = geoms[n].clone();
-            let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
-            // when drawing the extent overlay on a local (Mercator) projection — geo_framing
-            // returns fitted axes only in that case — frame the FULL extent box instead of the
-            // trimmed data, so the box and its corners aren't clipped. Whole-region projections
-            // (albers-usa / natural-earth) return no axes and already contain the box.
-            // a static image can't be panned/zoomed, so frame it to the FULL extent (core +
-            // outliers) when there are outliers, so the second box and the strays are all visible;
-            // otherwise frame the core extent. Interactive paths keep the tight core framing.
+            // a static image can't be panned/zoomed, so when there are outliers the projection AND
+            // the framing must be chosen from the FULL extent (core + outliers), not the core
+            // alone. Feeding `geo_framing` the full-extent corners ensures a stray outside the US
+            // doesn't leave it on `albers-usa` (a fixed US composite, no fitted axes) that would
+            // clip the full-extent box and the stray. Without outliers, frame from the core points.
+            #[cfg(feature = "geocode")]
+            let frame: Option<(Vec<f64>, Vec<f64>)> = panel
+                .geo_meta
+                .as_ref()
+                .and_then(|meta| meta.full_extent.map(|fe| extent_box_latlon(&fe)));
+            #[cfg(not(feature = "geocode"))]
+            let frame: Option<(Vec<f64>, Vec<f64>)> = None;
+            let (projection, lonaxis, lataxis) = match &frame {
+                Some((flat, flon)) => geo_framing(flat, flon),
+                None => geo_framing(lats, lons),
+            };
+            // for a fitted (Mercator) full extent, refine the axis ranges with the tighter
+            // extent-fit padding; whole-region projections (albers-usa / natural-earth) return no
+            // axes and already contain the full extent.
             #[cfg(feature = "geocode")]
             let (lonaxis, lataxis) = match &panel.geo_meta {
                 Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
@@ -7207,6 +7218,27 @@ mod tests {
         assert!(
             lataxis.is_some(),
             "latitude is still fit for a local extent"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn geo_framing_full_extent_avoids_albers_usa_outside_us() {
+        // a US-spanning core alone picks albers-usa (a fixed US composite with no fitted axes). The
+        // static-export path feeds geo_framing the FULL-extent corners instead, so once a stray
+        // outside the US (here far south) expands the box, the projection must NOT stay albers-usa
+        // — otherwise the full-extent box and the stray would be clipped in a non-pannable image.
+        let full = MapExtent {
+            min_lat: 10.0,
+            max_lat: 47.6,
+            min_lon: -122.3,
+            max_lon: -74.0,
+        };
+        let (flat, flon) = extent_box_latlon(&full);
+        let (proj, ..) = geo_framing(&flat, &flon);
+        assert!(
+            !matches!(proj, ProjectionType::AlbersUsa),
+            "a full extent reaching outside the US must not use albers-usa"
         );
     }
 

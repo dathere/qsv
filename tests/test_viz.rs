@@ -2992,9 +2992,11 @@ fn viz_smart_map_outlier_extent_callout() {
     assert!(html.contains("Plotly.newPlot"));
     // the distinct outlier marker trace is non-gated, so it's always present
     assert!(html.contains("geographic outliers"));
-    // the jurisdiction call-out only renders with the geocode feature + index available
+    // the jurisdiction call-out + full-extent box only render with the geocode feature + index
     if html.contains("qsv-viz-geo-meta") {
         assert!(html.contains("Spatial extent:"));
         assert!(html.contains("outlier"));
+        // the second (no-fill) bounding box covering core + outliers
+        assert!(html.contains("full extent (incl. outliers)"));
     }
 }

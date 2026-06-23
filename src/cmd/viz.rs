@@ -62,7 +62,9 @@ edge, not strays elsewhere). When qsv is built with the `geocode` feature, the m
 (its 4 bounding-box corners + center) is reverse-geocoded against the local Geonames index and
 drawn on the map as a bounding box with labeled points, plus a consolidated location summary below
 it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
-count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). In HTML the points reveal their
+count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). When there are outliers, a second
+dotted box with no fill marks the full extent (core + outliers), so the strays' span is visible
+alongside the core box. In HTML the points reveal their
 city/state/country on hover; static exports show the box without hover. The first such run may
 download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
 still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)
@@ -3144,15 +3146,19 @@ struct GeoPoint {
 /// Reverse-geocoded spatial-extent metadata attached to a `Map`/`Geo` panel.
 #[cfg(feature = "geocode")]
 struct GeoMeta {
-    /// The CORE extent (non-outlier bounding box) — drives the overlay box, corner markers, and
-    /// the tight default framing.
-    extent:  MapExtent,
+    /// The CORE extent (non-outlier bounding box) — drives the (filled) overlay box, corner
+    /// markers, and the tight default framing.
+    extent:      MapExtent,
+    /// The FULL extent (core + all geographic outliers). `Some` only when there are outliers (and
+    /// the box doesn't wrap the antimeridian); drawn as a second, no-fill dotted box so the
+    /// strays' span is legible alongside the core box.
+    full_extent: Option<MapExtent>,
     /// The 4 core-extent corners + center, in order NW, NE, SW, SE, Center.
-    points:  Vec<GeoPoint>,
+    points:      Vec<GeoPoint>,
     /// Consolidated one-line jurisdiction summary (e.g. "New York & New Jersey, United States"),
     /// with an outlier call-out appended when there are geographic outliers (e.g.
     /// "… — 3 outliers (Pennsylvania)"). Empty when no core point resolved to a city.
-    summary: String,
+    summary:     String,
 }
 
 enum PanelKind {
@@ -3791,6 +3797,20 @@ fn map_extent(lats: &[f64], lons: &[f64]) -> MapExtent {
     e
 }
 
+/// Expand a bounding box to also include the given coordinates (used to grow the core extent into
+/// the full extent that covers the geographic outliers too).
+#[cfg(feature = "geocode")]
+fn extent_including(core: MapExtent, lats: &[f64], lons: &[f64]) -> MapExtent {
+    let mut e = core;
+    for (&lat, &lon) in lats.iter().zip(lons) {
+        e.min_lat = e.min_lat.min(lat);
+        e.max_lat = e.max_lat.max(lat);
+        e.min_lon = e.min_lon.min(lon);
+        e.max_lon = e.max_lon.max(lon);
+    }
+    e
+}
+
 /// Whether a map extent spans the antimeridian (>180 degrees of longitude), in which case the
 /// box corners + center are meaningless and reverse-geocoding is skipped.
 #[cfg(feature = "geocode")]
@@ -3807,6 +3827,47 @@ fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     (lats, lons)
 }
 
+/// Build a *dashed* bounding-box outline as a single gapped polyline: each edge is split into short
+/// dash segments separated by `NaN` breaks (which serialize to JSON `null`, rendering as gaps).
+/// `scattermapbox` ignores `line.dash` (Mapbox GL can't render dashed lines), so the dashes have to
+/// be drawn as geometry; this gives the full-extent box a dashed look on the tile map. Dash spacing
+/// is proportional to the box size so it reads as dashes at any zoom.
+#[cfg(feature = "geocode")]
+fn dashed_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
+    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon);
+    // target dash+gap cell length (~40 cells across the longest edge -> ~20 dashes)
+    let cell = (span / 40.0).max(f64::MIN_POSITIVE);
+    let corners = [
+        (e.max_lat, e.min_lon),
+        (e.max_lat, e.max_lon),
+        (e.min_lat, e.max_lon),
+        (e.min_lat, e.min_lon),
+        (e.max_lat, e.min_lon),
+    ];
+    let (mut lats, mut lons) = (Vec::new(), Vec::new());
+    for edge in corners.windows(2) {
+        let (la0, lo0) = edge[0];
+        let (la1, lo1) = edge[1];
+        let len = ((la1 - la0).powi(2) + (lo1 - lo0).powi(2)).sqrt();
+        // even cell count so each edge ends on a gap, not a dash bleeding into the corner
+        let mut cells = ((len / cell).round() as usize).max(2);
+        if cells % 2 == 1 {
+            cells += 1;
+        }
+        // draw the even cells (dashes), skip the odd ones (gaps)
+        for c in (0..cells).step_by(2) {
+            let (t0, t1) = (c as f64 / cells as f64, (c + 1) as f64 / cells as f64);
+            lats.push(la0 + (la1 - la0) * t0);
+            lons.push(lo0 + (lo1 - lo0) * t0);
+            lats.push(la0 + (la1 - la0) * t1);
+            lons.push(lo0 + (lo1 - lo0) * t1);
+            lats.push(f64::NAN); // break -> gap between dashes
+            lons.push(f64::NAN);
+        }
+    }
+    (lats, lons)
+}
+
 /// Styled line for the spatial-extent bounding box: a thick dotted purple frame, so it reads as a
 /// boundary annotation rather than a data series.
 #[cfg(feature = "geocode")]
@@ -3814,6 +3875,18 @@ fn extent_box_line() -> Line {
     Line::new()
         .color(GEO_EXTENT_LINE_COLOR)
         .width(GEO_EXTENT_LINE_WIDTH)
+        .dash(plotly::common::DashType::Dot)
+}
+
+/// Styled line for the FULL-extent box (core + outliers): a dashed vivid-magenta frame. Magenta
+/// stays high-contrast on every basemap layer (tan land, green, blue water, white) — unlike the
+/// amber it replaced, which washed out over light terrain — and is distinct from the purple core
+/// box, the warm data points, and the amber outlier markers.
+#[cfg(feature = "geocode")]
+fn full_extent_box_line() -> Line {
+    Line::new()
+        .color(GEO_FULL_EXTENT_LINE_COLOR)
+        .width(GEO_FULL_EXTENT_LINE_WIDTH)
         .dash(plotly::common::DashType::Dot)
 }
 
@@ -4146,8 +4219,15 @@ fn build_geo_meta(
             &outlier_jurisdictions(&outlier_labels),
         )
     };
+    // the full extent (core + all outliers) is drawn as a second, no-fill box. Only meaningful when
+    // there ARE outliers; skip it if a stray pushes the box across the antimeridian (it would
+    // wrap).
+    let full_extent = (n_outliers > 0)
+        .then(|| extent_including(core_extent, outlier_lats, outlier_lons))
+        .filter(|fe| !extent_spans_antimeridian(fe));
     Some(GeoMeta {
         extent: core_extent,
+        full_extent,
         points,
         summary,
     })
@@ -4170,6 +4250,14 @@ const GEO_EXTENT_MARKER_SIZE: usize = 16;
 /// Bounding-box line width (px) for the spatial-extent frame.
 #[cfg(feature = "geocode")]
 const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
+/// Line width (px) for the full-extent box.
+#[cfg(feature = "geocode")]
+const GEO_FULL_EXTENT_LINE_WIDTH: f64 = 2.5;
+/// Line color for the full-extent box: a vivid magenta/fuchsia that stays visible on every basemap
+/// layer (light land, green, blue water) and is distinct from the purple core box and amber
+/// outliers.
+#[cfg(feature = "geocode")]
+const GEO_FULL_EXTENT_LINE_COLOR: &str = "#e6007e";
 /// Padding multiplier applied to the (core) extent span when computing the tight mapbox fit zoom.
 /// Kept just above 1.0 — only a thin safety margin so the box isn't clipped on a narrower-than-full
 /// subplot — so the default view stays as zoomed-in as possible on the core cluster.
@@ -4185,9 +4273,24 @@ const GEO_EXTENT_FIT_PAD_FRAC: f64 = 0.04;
 const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 
 /// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
-/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`.
+/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`. When the panel has
+/// geographic outliers, a second no-fill dotted amber box marking the full extent (core + outliers)
+/// is drawn underneath.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
+    // the full-extent box (core + outliers) is drawn first, underneath, with no fill. Mapbox
+    // ignores line.dash, so the dashed look is drawn as a gapped polyline.
+    if let Some(full) = &meta.full_extent {
+        let (flat, flon) = dashed_box_latlon(full);
+        plot.add_trace(
+            ScatterMapbox::new(flat, flon)
+                .name("full extent (incl. outliers)")
+                .mode(Mode::Lines)
+                .line(full_extent_box_line())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false),
+        );
+    }
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterMapbox::new(blat, blon)
@@ -4213,11 +4316,24 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     );
 }
 
-/// Like `add_extent_overlay_mapbox`, but for an offline `ScatterGeo` projection `Plot` (used for
-/// continental/global extents and static image export). Hover labels are inert in static images,
-/// so the static export simply shows the box + diamond glyphs, as intended.
+/// Like `add_extent_overlay_mapbox` (including the optional full-extent box), but for an offline
+/// `ScatterGeo` projection `Plot` (used for continental/global extents and static image export).
+/// Hover labels are inert in static images, so the static export simply shows the box + diamond
+/// glyphs, as intended.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
+    // the full-extent box (core + outliers) is drawn first, underneath, with no fill
+    if let Some(full) = &meta.full_extent {
+        let (flat, flon) = extent_box_latlon(full);
+        plot.add_trace(
+            ScatterGeo::new(flat, flon)
+                .name("full extent (incl. outliers)")
+                .mode(Mode::Lines)
+                .line(full_extent_box_line())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false),
+        );
+    }
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
         ScatterGeo::new(blat, blon)
@@ -5145,10 +5261,14 @@ fn smart_grid_parts(
             // returns fitted axes only in that case — frame the FULL extent box instead of the
             // trimmed data, so the box and its corners aren't clipped. Whole-region projections
             // (albers-usa / natural-earth) return no axes and already contain the box.
+            // a static image can't be panned/zoomed, so frame it to the FULL extent (core +
+            // outliers) when there are outliers, so the second box and the strays are all visible;
+            // otherwise frame the core extent. Interactive paths keep the tight core framing.
             #[cfg(feature = "geocode")]
             let (lonaxis, lataxis) = match &panel.geo_meta {
                 Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
-                    let (lon, lat) = extent_geo_axes(&meta.extent);
+                    let (lon, lat) =
+                        extent_geo_axes(meta.full_extent.as_ref().unwrap_or(&meta.extent));
                     (Some(lon), Some(lat))
                 },
                 _ => (lonaxis, lataxis),
@@ -5190,6 +5310,19 @@ fn smart_grid_parts(
             // annotation below the cell. Hover labels are inert in static images.
             #[cfg(feature = "geocode")]
             if let Some(meta) = &panel.geo_meta {
+                // full-extent box (core + outliers), no fill, drawn first/underneath
+                if let Some(full) = &meta.full_extent {
+                    let (flat, flon) = extent_box_latlon(full);
+                    traces.push(
+                        ScatterGeo::new(flat, flon)
+                            .name("full extent (incl. outliers)")
+                            .mode(Mode::Lines)
+                            .line(full_extent_box_line())
+                            .hover_info(HoverInfo::Skip)
+                            .show_legend(false)
+                            .subplot(geo_ref(pos)),
+                    );
+                }
                 let (blat, blon) = extent_box_latlon(&meta.extent);
                 traces.push(
                     ScatterGeo::new(blat, blon)
@@ -6483,6 +6616,29 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn extent_including_grows_to_cover_points() {
+        let core = MapExtent {
+            min_lat: 40.0,
+            max_lat: 41.0,
+            min_lon: -75.0,
+            max_lon: -74.0,
+        };
+        // a far north-west stray and a far south-east stray expand the box on all four sides
+        let full = extent_including(core, &[44.0, 38.0], &[-78.0, -70.0]);
+        assert_eq!(
+            (full.min_lat, full.max_lat, full.min_lon, full.max_lon),
+            (38.0, 44.0, -78.0, -70.0)
+        );
+        // no points -> unchanged
+        let same = extent_including(core, &[], &[]);
+        assert_eq!(
+            (same.min_lat, same.max_lat, same.min_lon, same.max_lon),
+            (40.0, 41.0, -75.0, -74.0)
+        );
+    }
+
     #[test]
     fn partition_geo_outliers_flags_far_from_centroid() {
         // a small spread cluster (10x10 grid in a ~0.09deg box, so the distance IQR is non-zero),
@@ -6652,6 +6808,30 @@ mod tests {
         let (lats, lons) = extent_box_latlon(&e);
         assert_eq!(lats, vec![3.0, 3.0, 1.0, 1.0, 3.0]);
         assert_eq!(lons, vec![-5.0, 10.0, 10.0, -5.0, -5.0]);
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn dashed_box_has_gaps_within_bounds() {
+        let e = MapExtent {
+            min_lat: 40.0,
+            max_lat: 42.0,
+            min_lon: -76.0,
+            max_lon: -74.0,
+        };
+        let (lats, lons) = dashed_box_latlon(&e);
+        assert_eq!(lats.len(), lons.len());
+        // NaN breaks produce the dash gaps
+        assert!(lats.iter().any(|v| v.is_nan()), "expected gap (NaN) breaks");
+        // every finite dash vertex lies on the box bounds (a small epsilon for float math)
+        for (&la, &lo) in lats.iter().zip(&lons) {
+            if la.is_nan() {
+                assert!(lo.is_nan(), "lat/lon gaps must be paired");
+                continue;
+            }
+            assert!((40.0 - 1e-9..=42.0 + 1e-9).contains(&la));
+            assert!((-76.0 - 1e-9..=-74.0 + 1e-9).contains(&lo));
+        }
     }
 
     #[cfg(feature = "geocode")]

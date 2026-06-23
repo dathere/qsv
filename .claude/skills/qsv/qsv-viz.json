@@ -86,7 +86,7 @@
       {
         "flag": "--grid-cols",
         "type": "string",
-        "description": "Number of columns in the dashboard grid.",
+        "description": "Number of columns in the dashboard grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width.",
         "default": "2"
       },
       {

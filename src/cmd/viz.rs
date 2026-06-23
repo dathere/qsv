@@ -52,7 +52,14 @@ geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local ex
 offline ScatterGeo projection world-overview for continental/global data. For static image
 export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
 Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. These overview
+albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. When qsv is built with
+the `geocode` feature, the map's spatial extent (its 4 bounding-box corners + center) is
+reverse-geocoded against the local Geonames index and drawn on the map as a bounding box with
+labeled points, plus a consolidated location summary below it (e.g. "New York & New Jersey,
+United States"). In HTML the points reveal their city/state/country on hover; static exports
+show the box without hover. The first such run may download the Geonames index (~13MB, cached
+in ~/.qsv-cache); if it's unavailable (offline) the map still renders without the overlay.
+Extents that span the antimeridian (>180 degrees of longitude) are skipped. These overview
 panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
 on their own full-width row; the per-column box/bar/histogram panels flow below in the
 multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
@@ -416,6 +423,12 @@ const BUBBLE_MAX_PX: f64 = 40.0;
 /// dashboard. The total plot height scales with the number of rows so panels stay
 /// readable instead of being crammed into plotly's ~450px default.
 const ROW_HEIGHT_PX: usize = 320;
+
+/// Taller height (in pixels) for full-width "overview" panels (map/geo, correlation heatmap and
+/// its drill-downs, time-series) in the inline HTML dashboard, so they get more room than the
+/// per-column box/bar/histogram panels — and, for a map, so the spatial-extent caption below it
+/// has space.
+const OVERVIEW_ROW_HEIGHT_PX: usize = 420;
 
 /// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
 /// smart` static image export width.
@@ -3071,8 +3084,58 @@ fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
 
 /// A single dashboard panel: a column and the chart chosen for it.
 struct Panel {
-    name: String,
-    kind: PanelKind,
+    name:     String,
+    kind:     PanelKind,
+    /// Reverse-geocoded spatial-extent metadata for a `Map`/`Geo` panel (the 4 bounding-box
+    /// corners + center, plus a consolidated jurisdiction summary). `None` for non-map panels,
+    /// when geocoding was skipped (e.g. antimeridian-spanning data), or when the lookup failed
+    /// (offline/missing index) — the map then renders without the overlay.
+    #[cfg(feature = "geocode")]
+    geo_meta: Option<GeoMeta>,
+}
+
+impl Panel {
+    /// Construct a panel with no geo metadata (the common case for non-map panels).
+    fn new(name: String, kind: PanelKind) -> Self {
+        Panel {
+            name,
+            kind,
+            #[cfg(feature = "geocode")]
+            geo_meta: None,
+        }
+    }
+}
+
+/// The bounding box of a map panel's in-range coordinates (observed min/max, no trimming).
+#[cfg(feature = "geocode")]
+#[derive(Clone, Copy)]
+struct MapExtent {
+    min_lat: f64,
+    max_lat: f64,
+    min_lon: f64,
+    max_lon: f64,
+}
+
+/// One reverse-geocoded point of a map's spatial extent (a corner or the center).
+#[cfg(feature = "geocode")]
+struct GeoPoint {
+    /// Short positional tag: "NW", "NE", "SW", "SE", or "Center".
+    tag:   &'static str,
+    lat:   f64,
+    lon:   f64,
+    /// The reverse-geocoded location, or `None` when no city matched (e.g. over open water).
+    label: Option<crate::cmd::geocode::GeoLabel>,
+}
+
+/// Reverse-geocoded spatial-extent metadata attached to a `Map`/`Geo` panel.
+#[cfg(feature = "geocode")]
+struct GeoMeta {
+    extent:  MapExtent,
+    /// The 4 corners + center, in order NW, NE, SW, SE, Center.
+    points:  Vec<GeoPoint>,
+    /// Consolidated one-line jurisdiction summary (e.g. "New York & New Jersey, United States").
+    /// Empty when no point resolved to a city.
+    summary: String,
 }
 
 enum PanelKind {
@@ -3397,10 +3460,10 @@ fn build_timeseries_panel(
             points.iter().map(|p| p.2).collect(),
         )
     };
-    Ok(Some(Panel {
-        name: format!("{y_label} over {date_label}"),
-        kind: PanelKind::TimeSeries { y_label, xs, ys },
-    }))
+    Ok(Some(Panel::new(
+        format!("{y_label} over {date_label}"),
+        PanelKind::TimeSeries { y_label, xs, ys },
+    )))
 }
 
 /// Detect the latitude/longitude column index pair by header name + numeric stats type. Shared by
@@ -3554,6 +3617,12 @@ fn build_map_panel(
         - sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
     let global = lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG;
 
+    // reverse-geocode the observed bounding box (computed on the full in-range set, before
+    // downsampling) into spatial-extent overlay + summary metadata. Degrades to None when the
+    // geocode feature is off, the lookup fails, or the extent spans the antimeridian.
+    #[cfg(feature = "geocode")]
+    let geo_meta = build_geo_meta(map_extent(&lats, &lons));
+
     let (lats, lons) = downsample_pair(&lats, &lons, MAX_SMART_POINTS);
     let kind = if global {
         PanelKind::Geo { lats, lons }
@@ -3568,9 +3637,332 @@ fn build_map_panel(
         Panel {
             name: "Map".to_string(),
             kind,
+            #[cfg(feature = "geocode")]
+            geo_meta,
         },
         (lat_idx, lon_idx),
     )))
+}
+
+/// Vertical paper-coordinate offset below a map subplot's plotting area at which the
+/// consolidated location-summary annotation is anchored (typed-`Plot` grid + GridJson paths).
+#[cfg(feature = "geocode")]
+const GEO_META_OFFSET: f64 = 0.02;
+
+/// Compute the observed bounding box (min/max lat/lon, no trimming) of a map panel's
+/// in-range coordinates.
+#[cfg(feature = "geocode")]
+fn map_extent(lats: &[f64], lons: &[f64]) -> MapExtent {
+    let mut e = MapExtent {
+        min_lat: f64::INFINITY,
+        max_lat: f64::NEG_INFINITY,
+        min_lon: f64::INFINITY,
+        max_lon: f64::NEG_INFINITY,
+    };
+    for (&lat, &lon) in lats.iter().zip(lons) {
+        e.min_lat = e.min_lat.min(lat);
+        e.max_lat = e.max_lat.max(lat);
+        e.min_lon = e.min_lon.min(lon);
+        e.max_lon = e.max_lon.max(lon);
+    }
+    e
+}
+
+/// Whether a map extent spans the antimeridian (>180 degrees of longitude), in which case the
+/// box corners + center are meaningless and reverse-geocoding is skipped.
+#[cfg(feature = "geocode")]
+fn extent_spans_antimeridian(e: &MapExtent) -> bool {
+    e.max_lon - e.min_lon > 180.0
+}
+
+/// Build the closed-loop (lat, lon) polyline tracing a bounding box, in order
+/// NW -> NE -> SE -> SW -> NW, for drawing the spatial extent on the map.
+#[cfg(feature = "geocode")]
+fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
+    let lats = vec![e.max_lat, e.max_lat, e.min_lat, e.min_lat, e.max_lat];
+    let lons = vec![e.min_lon, e.max_lon, e.max_lon, e.min_lon, e.min_lon];
+    (lats, lons)
+}
+
+/// Styled line for the spatial-extent bounding box: a thick dotted purple frame, so it reads as a
+/// boundary annotation rather than a data series.
+#[cfg(feature = "geocode")]
+fn extent_box_line() -> Line {
+    Line::new()
+        .color(GEO_EXTENT_LINE_COLOR)
+        .width(GEO_EXTENT_LINE_WIDTH)
+        .dash(plotly::common::DashType::Dot)
+}
+
+/// Marker for the extent corner/center points on a mapbox tile map: a large, fully opaque purple
+/// circle with a white halo. Mapbox raster basemaps can't render custom marker symbols (no sprite)
+/// or reliably show text glyphs (label collision culls them), so a haloed circle is used here.
+#[cfg(feature = "geocode")]
+fn extent_marker_mapbox() -> Marker {
+    Marker::new()
+        .color(GEO_EXTENT_LINE_COLOR)
+        .size(GEO_EXTENT_MARKER_SIZE)
+        .opacity(1.0)
+        .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.5))
+}
+
+/// Like `extent_marker_mapbox`, but a diamond — `ScatterGeo` (offline projection / static export)
+/// renders the standard plotly marker symbols, so the points get a distinctive shape there.
+#[cfg(feature = "geocode")]
+fn extent_marker_geo() -> Marker {
+    extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
+}
+
+/// Mapbox center + zoom that frames the full extent bounding box (with a little padding), so the
+/// box and its corner markers stay inside the viewport. The plain `viz smart` map otherwise frames
+/// the *trimmed* data, which can leave the true-extent box (and its corners) clipped off-screen.
+#[cfg(feature = "geocode")]
+fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
+    let lat_center = (e.min_lat + e.max_lat) / 2.0;
+    let lon_center = (e.min_lon + e.max_lon) / 2.0;
+    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FRAME_PAD;
+    let zoom = if span <= 0.0 {
+        10
+    } else {
+        ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
+    };
+    (Center::new(lat_center, lon_center), zoom)
+}
+
+/// Padded longitude + latitude `geo` axis ranges that frame the full extent box, for the offline
+/// `ScatterGeo` (local Mercator) path — the analogue of `extent_center_zoom` for projection maps.
+#[cfg(feature = "geocode")]
+fn extent_geo_axes(e: &MapExtent) -> (Axis, Axis) {
+    let lat_pad = ((e.max_lat - e.min_lat) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lon_pad = ((e.max_lon - e.min_lon) * GEO_FIT_PAD_FRAC).max(GEO_FIT_PAD_MIN_DEG);
+    let lon = Axis::new().range(vec![
+        (e.min_lon - lon_pad).max(-180.0),
+        (e.max_lon + lon_pad).min(180.0),
+    ]);
+    let lat = Axis::new().range(vec![
+        (e.min_lat - lat_pad).max(-90.0),
+        (e.max_lat + lat_pad).min(90.0),
+    ]);
+    (lon, lat)
+}
+
+/// Join the non-empty components of a reverse-geocoded label into "City, Admin1, Country".
+#[cfg(feature = "geocode")]
+fn format_geo_label(label: &crate::cmd::geocode::GeoLabel) -> String {
+    [
+        label.city.as_str(),
+        label.admin1.as_str(),
+        label.country.as_str(),
+    ]
+    .iter()
+    .filter(|s| !s.trim().is_empty())
+    .copied()
+    .collect::<Vec<_>>()
+    .join(", ")
+}
+
+/// Hover text for a single extent point marker, e.g. "NW: Newark, New Jersey, United States"
+/// (or "NW: no nearby city" when the coordinate didn't resolve).
+#[cfg(feature = "geocode")]
+fn point_hover_text(p: &GeoPoint) -> String {
+    match &p.label {
+        Some(label) => format!("{}: {}", p.tag, format_geo_label(label)),
+        None => format!("{}: no nearby city", p.tag),
+    }
+}
+
+/// Post-process the up-to-5 reverse-geocoded extent points into one concise jurisdiction
+/// line. Collapses shared country/state instead of repeating it; lists up to 3 distinct
+/// regions/countries, else falls back to a count. Returns "" when no point resolved.
+#[cfg(feature = "geocode")]
+fn consolidate_geo(points: &[GeoPoint]) -> String {
+    // distinct, first-seen order, case-insensitive dedup of non-empty trimmed values
+    fn distinct<'a>(vals: impl Iterator<Item = &'a str>) -> Vec<String> {
+        let mut seen = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for v in vals {
+            let v = v.trim();
+            if v.is_empty() {
+                continue;
+            }
+            if seen.insert(v.to_lowercase()) {
+                out.push(v.to_string());
+            }
+        }
+        out
+    }
+    // "A" | "A & B" | "A, B & C"
+    fn join_list(items: &[String]) -> String {
+        match items {
+            [] => String::new(),
+            [a] => a.clone(),
+            [a, b] => format!("{a} & {b}"),
+            [rest @ .., last] => format!("{} & {last}", rest.join(", ")),
+        }
+    }
+
+    let labels: Vec<&crate::cmd::geocode::GeoLabel> =
+        points.iter().filter_map(|p| p.label.as_ref()).collect();
+    if labels.is_empty() {
+        return String::new();
+    }
+
+    let countries = distinct(labels.iter().map(|l| l.country.as_str()));
+    if countries.len() > 3 {
+        return format!("{} countries", countries.len());
+    }
+    if countries.len() >= 2 {
+        return join_list(&countries);
+    }
+    // 0 or 1 distinct country
+    let country = countries.first();
+    let suffix = country.map(|c| format!(", {c}")).unwrap_or_default();
+
+    let admin1s = distinct(labels.iter().map(|l| l.admin1.as_str()));
+    if admin1s.is_empty() {
+        return country.cloned().unwrap_or_default();
+    }
+    if admin1s.len() > 3 {
+        return format!("{} regions{suffix}", admin1s.len());
+    }
+    if admin1s.len() >= 2 {
+        return format!("{}{suffix}", join_list(&admin1s));
+    }
+    // single admin1: name the city only when the whole extent resolved to one city
+    let admin1 = &admin1s[0];
+    let cities = distinct(labels.iter().map(|l| l.city.as_str()));
+    if cities.len() == 1 {
+        return format!("{}, {admin1}{suffix}", cities[0]);
+    }
+    format!("{admin1}{suffix}")
+}
+
+/// Reverse-geocode the 4 bounding-box corners + center of a map extent and assemble the
+/// `GeoMeta` overlay/summary. Returns `None` (so the map renders without the overlay) when the
+/// extent spans the antimeridian (corner/center labels would be meaningless), the geocode
+/// lookup fails (offline/missing index), or no point resolves to a city. The engine is loaded
+/// ONCE for all 5 lookups.
+#[cfg(feature = "geocode")]
+fn build_geo_meta(extent: MapExtent) -> Option<GeoMeta> {
+    // a dataset straddling +/-180 yields a near-global box whose center lands mid-ocean; skip.
+    if extent_spans_antimeridian(&extent) {
+        return None;
+    }
+    let c_lat = (extent.min_lat + extent.max_lat) / 2.0;
+    let c_lon = (extent.min_lon + extent.max_lon) / 2.0;
+    let coords = [
+        ("NW", extent.max_lat, extent.min_lon),
+        ("NE", extent.max_lat, extent.max_lon),
+        ("SW", extent.min_lat, extent.min_lon),
+        ("SE", extent.min_lat, extent.max_lon),
+        ("Center", c_lat, c_lon),
+    ];
+    let query: Vec<(f64, f64)> = coords.iter().map(|&(_, lat, lon)| (lat, lon)).collect();
+
+    // a lookup failure (e.g. offline first-use) degrades to no metadata rather than failing viz.
+    let labels = crate::cmd::geocode::reverse_geocode_points(&query, None).ok()?;
+
+    let points: Vec<GeoPoint> = coords
+        .iter()
+        .zip(labels)
+        .map(|(&(tag, lat, lon), label)| GeoPoint {
+            tag,
+            lat,
+            lon,
+            label,
+        })
+        .collect();
+
+    let summary = consolidate_geo(&points);
+    if summary.is_empty() {
+        return None;
+    }
+    Some(GeoMeta {
+        extent,
+        points,
+        summary,
+    })
+}
+
+/// Outline/symbol color for the spatial-extent overlay drawn on `viz smart` maps. A deep purple,
+/// deliberately distinct from the warm (red/orange) palette the data points/density use.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_LINE_COLOR: &str = "#6a1b9a";
+/// Translucent fill for the spatial-extent bounding box (kept faint so it doesn't obscure data).
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_FILL_COLOR: &str = "rgba(106, 27, 154, 0.12)";
+/// White halo around extent markers, for contrast against both the basemap and the data points.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_MARKER_BORDER: &str = "#ffffff";
+/// Marker size (px) for the reverse-geocoded extent corner/center points — deliberately large so
+/// they read as annotations, not data.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_MARKER_SIZE: usize = 16;
+/// Bounding-box line width (px) for the spatial-extent frame.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_LINE_WIDTH: f64 = 3.0;
+/// Padding multiplier applied to the extent span when framing the map, so the box + corner markers
+/// sit comfortably inside the viewport.
+#[cfg(feature = "geocode")]
+const GEO_EXTENT_FRAME_PAD: f64 = 1.15;
+
+/// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
+/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`.
+#[cfg(feature = "geocode")]
+fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
+    let (blat, blon) = extent_box_latlon(&meta.extent);
+    plot.add_trace(
+        ScatterMapbox::new(blat, blon)
+            .name("spatial extent")
+            .mode(Mode::Lines)
+            .line(extent_box_line())
+            .fill(plotly::traces::scatter_mapbox::Fill::ToSelf)
+            .fill_color(GEO_EXTENT_FILL_COLOR)
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false),
+    );
+    let mlat: Vec<f64> = meta.points.iter().map(|p| p.lat).collect();
+    let mlon: Vec<f64> = meta.points.iter().map(|p| p.lon).collect();
+    let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
+    plot.add_trace(
+        ScatterMapbox::new(mlat, mlon)
+            .name("extent points")
+            .mode(Mode::Markers)
+            .marker(extent_marker_mapbox())
+            .hover_text_array(htext)
+            .hover_info(HoverInfo::Text)
+            .show_legend(false),
+    );
+}
+
+/// Like `add_extent_overlay_mapbox`, but for an offline `ScatterGeo` projection `Plot` (used for
+/// continental/global extents and static image export). Hover labels are inert in static images,
+/// so the static export simply shows the box + diamond glyphs, as intended.
+#[cfg(feature = "geocode")]
+fn add_extent_overlay_geo(plot: &mut Plot, meta: &GeoMeta) {
+    let (blat, blon) = extent_box_latlon(&meta.extent);
+    plot.add_trace(
+        ScatterGeo::new(blat, blon)
+            .name("spatial extent")
+            .mode(Mode::Lines)
+            .line(extent_box_line())
+            .fill(plotly::traces::scatter_geo::Fill::ToSelf)
+            .fill_color(GEO_EXTENT_FILL_COLOR)
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false),
+    );
+    let mlat: Vec<f64> = meta.points.iter().map(|p| p.lat).collect();
+    let mlon: Vec<f64> = meta.points.iter().map(|p| p.lon).collect();
+    let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
+    plot.add_trace(
+        ScatterGeo::new(mlat, mlon)
+            .name("extent points")
+            .mode(Mode::Markers)
+            .marker(extent_marker_geo())
+            .hover_text_array(htext)
+            .hover_info(HoverInfo::Text)
+            .show_legend(false),
+    );
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
@@ -3690,7 +4082,15 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     PanelKind::Map { lats, lons, .. } => PanelKind::Geo { lats, lons },
                     other => other,
                 };
-                (Panel { name: p.name, kind }, cols)
+                (
+                    Panel {
+                        name: p.name,
+                        kind,
+                        #[cfg(feature = "geocode")]
+                        geo_meta: p.geo_meta,
+                    },
+                    cols,
+                )
             })
         } else {
             panel
@@ -3777,7 +4177,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     },
                     _ => name,
                 };
-                panels.push(Panel { name, kind });
+                panels.push(Panel::new(name, kind));
             },
             None => skipped.push(name),
         }
@@ -3816,16 +4216,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 let name = format!("{} vs {} (r={r:.2})", labels[i], labels[j]);
                 if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
                     let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                    Panel {
-                        name,
-                        kind: PanelKind::ContourPair { x, y, z },
-                    }
+                    Panel::new(name, PanelKind::ContourPair { x, y, z })
                 } else {
                     let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
-                    Panel {
-                        name,
-                        kind: PanelKind::ScatterPair { xs, ys },
-                    }
+                    Panel::new(name, PanelKind::ScatterPair { xs, ys })
                 }
             });
 
@@ -3850,24 +4244,24 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                         // aligned
                         let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
                         let (_, zs) = downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
-                        Panel {
-                            name: format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
-                            kind: PanelKind::Scatter3D {
+                        Panel::new(
+                            format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
+                            PanelKind::Scatter3D {
                                 xs,
                                 ys,
                                 zs,
                                 labels: (labels[i].clone(), labels[j].clone(), labels[k].clone()),
                             },
-                        }
+                        )
                     })
                 });
 
             panels.insert(
                 0,
-                Panel {
-                    name: "Correlation".to_string(),
-                    kind: PanelKind::CorrHeatmap { labels, matrix },
-                },
+                Panel::new(
+                    "Correlation".to_string(),
+                    PanelKind::CorrHeatmap { labels, matrix },
+                ),
             );
             // place the drill-down panels right after the heatmap
             let mut at = 1;
@@ -4426,6 +4820,18 @@ fn smart_grid_parts(
         if let PanelKind::Geo { lats, lons } = &panel.kind {
             let geom = geoms[n].clone();
             let (projection, lonaxis, lataxis) = geo_framing(lats, lons);
+            // when drawing the extent overlay on a local (Mercator) projection — geo_framing
+            // returns fitted axes only in that case — frame the FULL extent box instead of the
+            // trimmed data, so the box and its corners aren't clipped. Whole-region projections
+            // (albers-usa / natural-earth) return no axes and already contain the box.
+            #[cfg(feature = "geocode")]
+            let (lonaxis, lataxis) = match &panel.geo_meta {
+                Some(meta) if lonaxis.is_some() || lataxis.is_some() => {
+                    let (lon, lat) = extent_geo_axes(&meta.extent);
+                    (Some(lon), Some(lat))
+                },
+                _ => (lonaxis, lataxis),
+            };
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .showland(true)
@@ -4447,6 +4853,51 @@ fn smart_grid_parts(
                     .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
                     .subplot(geo_ref(pos)),
             );
+            // spatial-extent overlay (bounding box + reverse-geocoded corner/center markers),
+            // both bound to this cell's `geo{pos}` subplot, plus a consolidated summary
+            // annotation below the cell. Hover labels are inert in static images.
+            #[cfg(feature = "geocode")]
+            if let Some(meta) = &panel.geo_meta {
+                let (blat, blon) = extent_box_latlon(&meta.extent);
+                traces.push(
+                    ScatterGeo::new(blat, blon)
+                        .name("spatial extent")
+                        .mode(Mode::Lines)
+                        .line(extent_box_line())
+                        .fill(plotly::traces::scatter_geo::Fill::ToSelf)
+                        .fill_color(GEO_EXTENT_FILL_COLOR)
+                        .hover_info(HoverInfo::Skip)
+                        .show_legend(false)
+                        .subplot(geo_ref(pos)),
+                );
+                let mlat: Vec<f64> = meta.points.iter().map(|p| p.lat).collect();
+                let mlon: Vec<f64> = meta.points.iter().map(|p| p.lon).collect();
+                let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
+                traces.push(
+                    ScatterGeo::new(mlat, mlon)
+                        .name("extent points")
+                        .mode(Mode::Markers)
+                        .marker(extent_marker_geo())
+                        .hover_text_array(htext)
+                        .hover_info(HoverInfo::Text)
+                        .show_legend(false)
+                        .subplot(geo_ref(pos)),
+                );
+                if !meta.summary.is_empty() {
+                    annotations.push(
+                        Annotation::new()
+                            .text(format!("Spatial extent: {}", meta.summary))
+                            .x(geom.title_x)
+                            .y((geom.y_domain[0] - GEO_META_OFFSET).max(0.0))
+                            .x_ref("paper")
+                            .y_ref("paper")
+                            .x_anchor(Anchor::Center)
+                            .y_anchor(Anchor::Top)
+                            .show_arrow(false)
+                            .font(ann_font(11)),
+                    );
+                }
+            }
             let mut geo_json = serde_json::to_value(&geo).unwrap_or(serde_json::Value::Null);
             if let Some(obj) = geo_json.as_object_mut() {
                 obj.insert(
@@ -4681,6 +5132,9 @@ fn smart_inline_panel_plot(
 ) -> Plot {
     // when a theme is set, its template drives backgrounds/fonts; otherwise apply qsv's look.
     let themed = theme.is_some();
+    // overview panels (map/geo, correlation, time-series, …) render a little taller than the
+    // per-column box/bar/histogram panels.
+    let row_height = panel_render_height(&panel.kind);
     // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
     // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
     if let PanelKind::Map {
@@ -4690,7 +5144,16 @@ fn smart_inline_panel_plot(
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
-        let (center, zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
+        #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
+        let (mut center, mut zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
+        // when the spatial-extent overlay is drawn, frame the FULL extent box instead of the
+        // trimmed data, so the box and its corner markers aren't clipped off-screen.
+        #[cfg(feature = "geocode")]
+        if let Some(meta) = &panel.geo_meta {
+            let (c, z) = extent_center_zoom(&meta.extent);
+            center = c;
+            zoom = z;
+        }
         let mut plot = Plot::new();
         if *density {
             // many points overplot into a solid mass as markers, so aggregate into a heatmap
@@ -4705,9 +5168,13 @@ fn smart_inline_panel_plot(
                     .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
             );
         }
+        #[cfg(feature = "geocode")]
+        if let Some(meta) = &panel.geo_meta {
+            add_extent_overlay_mapbox(&mut plot, meta);
+        }
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .mapbox(
@@ -4735,6 +5202,10 @@ fn smart_inline_panel_plot(
                 .mode(Mode::Markers)
                 .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
         );
+        #[cfg(feature = "geocode")]
+        if let Some(meta) = &panel.geo_meta {
+            add_extent_overlay_geo(&mut plot, meta);
+        }
         let geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
             .showland(true)
@@ -4746,7 +5217,7 @@ fn smart_inline_panel_plot(
             .showcountries(true);
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
@@ -4776,7 +5247,7 @@ fn smart_inline_panel_plot(
             .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
         let mut layout = Layout::new()
             .show_legend(false)
-            .height(ROW_HEIGHT_PX)
+            .height(row_height)
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .scene(scene);
@@ -4813,7 +5284,7 @@ fn smart_inline_panel_plot(
     };
     let mut layout = Layout::new()
         .show_legend(false)
-        .height(ROW_HEIGHT_PX)
+        .height(row_height)
         .title(Title::with_text(panel.name.clone()))
         .margin(
             Margin::new()
@@ -4877,8 +5348,26 @@ fn render_smart_inline(
         } else {
             cells.push_str("    <div class=\"qsv-viz-cell\">\n");
         }
+        // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
+        // a concrete height instead of expanding to fill the whole cell (which would otherwise
+        // overlap/clip any caption rendered below it).
+        let plot_height = panel_render_height(&panel.kind);
+        cells.push_str(&format!(
+            "      <div class=\"qsv-viz-plot\" style=\"height:{plot_height}px\">\n"
+        ));
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
-        cells.push_str("\n    </div>\n");
+        cells.push_str("\n      </div>\n");
+        // reverse-geocoded spatial-extent summary caption, shown below a map panel.
+        #[cfg(feature = "geocode")]
+        if let Some(meta) = &panel.geo_meta
+            && !meta.summary.is_empty()
+        {
+            cells.push_str(&format!(
+                "      <div class=\"qsv-viz-geo-meta\">Spatial extent: {}</div>\n",
+                html_escape(&meta.summary)
+            ));
+        }
+        cells.push_str("    </div>\n");
     }
 
     let js = Plot::offline_js_sources();
@@ -4891,8 +5380,9 @@ fn render_smart_inline(
          font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
          .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
          gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n  .qsv-viz-cell.full-width {{ \
-         grid-column: 1 / -1; }}\n</style>\n</head>\n<body>\n<h1 \
-         class=\"qsv-viz-title\">{title}</h1>\n<div \
+         grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}\n  .qsv-viz-geo-meta {{ \
+         font-size: 13px; color: #4b5563; text-align: center; padding: 8px 4px 4px; \
+         }}\n</style>\n</head>\n<body>\n<h1 class=\"qsv-viz-title\">{title}</h1>\n<div \
          class=\"qsv-viz-grid\">\n{cells}</div>\n</body>\n</html>\n"
     )
 }
@@ -5283,6 +5773,16 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
     }
 }
 
+/// Inline-dashboard render height (px) for a panel: overview panels get the taller
+/// `OVERVIEW_ROW_HEIGHT_PX`, everything else the standard `ROW_HEIGHT_PX`.
+fn panel_render_height(kind: &PanelKind) -> usize {
+    if is_overview_panel(kind) {
+        OVERVIEW_ROW_HEIGHT_PX
+    } else {
+        ROW_HEIGHT_PX
+    }
+}
+
 /// Compute the paper-space domains for a cell at grid position (`row`, `col`) in a `rows`×`cols`
 /// grid that occupies the vertical band `0.0..=top` (the strip above `top` is left for the
 /// dashboard title), plus the (x, y) anchor for the panel's own title, placed `title_offset` (a
@@ -5539,6 +6039,121 @@ mod tests {
             uniqueness_ratio: uniqueness,
             ..Default::default()
         }
+    }
+
+    #[cfg(feature = "geocode")]
+    fn gp(tag: &'static str, city: &str, admin1: &str, country: &str) -> GeoPoint {
+        GeoPoint {
+            tag,
+            lat: 0.0,
+            lon: 0.0,
+            label: Some(crate::cmd::geocode::GeoLabel {
+                city:    city.to_string(),
+                admin1:  admin1.to_string(),
+                country: country.to_string(),
+            }),
+        }
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_single_city() {
+        let pts = vec![
+            gp("NW", "New York City", "New York", "United States"),
+            gp("NE", "New York City", "New York", "United States"),
+            gp("Center", "New York City", "New York", "United States"),
+        ];
+        assert_eq!(
+            consolidate_geo(&pts),
+            "New York City, New York, United States"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_two_states_one_country() {
+        let pts = vec![
+            gp("NW", "Newark", "New Jersey", "United States"),
+            gp("NE", "Brooklyn", "New York", "United States"),
+        ];
+        // multiple distinct states within a single country collapse to "A & B, Country"
+        assert_eq!(
+            consolidate_geo(&pts),
+            "New Jersey & New York, United States"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_multi_country() {
+        let pts = vec![
+            gp("NW", "Seattle", "Washington", "United States"),
+            gp("NE", "Vancouver", "British Columbia", "Canada"),
+        ];
+        assert_eq!(consolidate_geo(&pts), "United States & Canada");
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_all_unresolved_is_empty() {
+        let pts = vec![
+            GeoPoint {
+                tag:   "NW",
+                lat:   0.0,
+                lon:   0.0,
+                label: None,
+            },
+            GeoPoint {
+                tag:   "Center",
+                lat:   0.0,
+                lon:   0.0,
+                label: None,
+            },
+        ];
+        assert!(consolidate_geo(&pts).is_empty());
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn map_extent_min_max() {
+        let e = map_extent(&[1.0, 3.0, 2.0], &[-5.0, 10.0, 2.0]);
+        assert_eq!(
+            (e.min_lat, e.max_lat, e.min_lon, e.max_lon),
+            (1.0, 3.0, -5.0, 10.0)
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn extent_box_is_closed_loop_nw_ne_se_sw() {
+        let e = MapExtent {
+            min_lat: 1.0,
+            max_lat: 3.0,
+            min_lon: -5.0,
+            max_lon: 10.0,
+        };
+        let (lats, lons) = extent_box_latlon(&e);
+        assert_eq!(lats, vec![3.0, 3.0, 1.0, 1.0, 3.0]);
+        assert_eq!(lons, vec![-5.0, 10.0, 10.0, -5.0, -5.0]);
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn antimeridian_guard() {
+        let crossing = MapExtent {
+            min_lat: -10.0,
+            max_lat: 10.0,
+            min_lon: -179.0,
+            max_lon: 179.0,
+        };
+        let local = MapExtent {
+            min_lat: 40.0,
+            max_lat: 41.0,
+            min_lon: -74.5,
+            max_lon: -73.5,
+        };
+        assert!(extent_spans_antimeridian(&crossing));
+        assert!(!extent_spans_antimeridian(&local));
     }
 
     #[test]
@@ -6088,25 +6703,16 @@ mod tests {
         // one overview panel (correlation heatmap) followed by three distribution bars, 2 columns:
         // the heatmap takes a full-width row, the three bars pack into 2 rows below (2 + 1).
         let panels = vec![
-            Panel {
-                name: "corr".to_string(),
-                kind: PanelKind::CorrHeatmap {
+            Panel::new(
+                "corr".to_string(),
+                PanelKind::CorrHeatmap {
                     labels: vec!["a".to_string(), "b".to_string()],
                     matrix: vec![vec![1.0, 0.5], vec![0.5, 1.0]],
                 },
-            },
-            Panel {
-                name: "c1".to_string(),
-                kind: PanelKind::FreqBar { idx: 0 },
-            },
-            Panel {
-                name: "c2".to_string(),
-                kind: PanelKind::FreqBar { idx: 1 },
-            },
-            Panel {
-                name: "c3".to_string(),
-                kind: PanelKind::FreqBar { idx: 2 },
-            },
+            ),
+            Panel::new("c1".to_string(), PanelKind::FreqBar { idx: 0 }),
+            Panel::new("c2".to_string(), PanelKind::FreqBar { idx: 1 }),
+            Panel::new("c3".to_string(), PanelKind::FreqBar { idx: 2 }),
         ];
         let (geoms, rows) = smart_grid_layout(&panels, 2);
         // 1 full-width overview row + ceil(3/2) = 2 grid rows

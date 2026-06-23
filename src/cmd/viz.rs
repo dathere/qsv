@@ -474,13 +474,16 @@ const MAP_PANEL_USABLE_HEIGHT_PX: f64 = OVERVIEW_ROW_HEIGHT_PX as f64 - 48.0 - 2
 
 /// Assumed mapbox draw width (px) for the smart MAP panel longitude fit. The panel spans the full
 /// grid (`grid-column: 1 / -1`) and its real width is responsive/unknown when the HTML is
-/// generated, so we assume a typical desktop content width (a measured full-width map canvas is
-/// ~1440px on a 1512px window). This is deliberately realistic rather than tiny: for a WIDE full
-/// extent (a far east/west outlier stretching longitude), the longitude term is the binding
-/// constraint, and under-assuming the width would under-zoom it — the very "Full extent not zoomed
-/// in enough" symptom this fix targets. ~square/tall extents are latitude-bound, so the width term
-/// doesn't affect them; a slightly-under-real value keeps a small margin on narrower windows.
-const MAP_PANEL_ASSUMED_WIDTH_PX: f64 = 1280.0;
+/// generated. The reliable `MAP_PANEL_USABLE_HEIGHT_PX` term binds the common case (a ~square or
+/// tall extent is latitude-bound, so this width is irrelevant to it); the width term only matters
+/// for a genuinely WIDE extent (a far east/west outlier stretching longitude). For those, over-
+/// assuming the width would *over*-zoom and clip the extent on a narrower viewport — and silently
+/// hiding points (especially the strays the Full extent exists to reveal) is worse than leaving
+/// horizontal map context. So this is tied to a conservative minimum desktop content width (~960px,
+/// safe for windows down to ~1024px): no over-zoom/clipping on supported viewports, at the cost of
+/// some horizontal margin for wide extents on larger screens. A truly exact fit would recompute
+/// from the live plot-div width in the browser (a possible follow-up).
+const MAP_PANEL_ASSUMED_WIDTH_PX: f64 = 960.0;
 
 /// Soft qualitative palette (Vega/Tableau-10) for coloring dashboard panels — distinct
 /// but harmonious, and friendlier than plotly's saturated defaults.
@@ -1672,13 +1675,16 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
         );
     }
 
-    // standalone `viz map`: frame the full extent — its edge coordinates are intentional
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. Frame
+    // for the actual export dimensions (an explicit --width/--height wins, else the fallback), so a
+    // non-default aspect ratio is fit correctly instead of clipping — matching how `run` sizes the
+    // static export.
     let (center, zoom) = map_center_zoom(
         &lats,
         &lons,
         0.0,
-        DEFAULT_IMG_WIDTH as f64,
-        DEFAULT_IMG_HEIGHT as f64,
+        args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH) as f64,
+        args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT) as f64,
     );
 
     let mut plot = Plot::new();

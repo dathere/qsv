@@ -459,6 +459,32 @@ const SMART_COL_WIDTH_PX: usize = 500;
 const DEFAULT_IMG_WIDTH: usize = 1000;
 const DEFAULT_IMG_HEIGHT: usize = 600;
 
+/// Web-Mercator tile size (px): mapbox zoom z fits 360° of longitude across `512 * 2^z` px.
+/// The unit the slippy-tile zoom math in `fitbounds_zoom` is defined against.
+const MAPBOX_TILE_SIZE_PX: f64 = 512.0;
+
+/// Anti-clip margin for the `fitbounds_zoom` framing (a 1.15× span pad ≈ a 0.20 zoom reduction).
+const MAP_FIT_PAD: f64 = 1.15;
+
+/// Usable mapbox draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
+/// (420) minus the map layout's top (48) + bottom (20) margins = 352. This is the *reliable*
+/// dimension at HTML-generation time (width is `responsive`/unknown) and, for the wide-short map
+/// panel, the binding constraint — so the latitude fit is computed against it.
+const MAP_PANEL_USABLE_HEIGHT_PX: f64 = OVERVIEW_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
+
+/// Assumed mapbox draw width (px) for the smart MAP panel longitude fit. The panel spans the full
+/// grid (`grid-column: 1 / -1`) and its real width is responsive/unknown when the HTML is
+/// generated. The reliable `MAP_PANEL_USABLE_HEIGHT_PX` term binds the common case (a ~square or
+/// tall extent is latitude-bound, so this width is irrelevant to it); the width term only matters
+/// for a genuinely WIDE extent (a far east/west outlier stretching longitude). For those, over-
+/// assuming the width would *over*-zoom and clip the extent on a narrower viewport — and silently
+/// hiding points (especially the strays the Full extent exists to reveal) is worse than leaving
+/// horizontal map context. So this is tied to a conservative minimum desktop content width (~960px,
+/// safe for windows down to ~1024px): no over-zoom/clipping on supported viewports, at the cost of
+/// some horizontal margin for wide extents on larger screens. A truly exact fit would recompute
+/// from the live plot-div width in the browser (a possible follow-up).
+const MAP_PANEL_ASSUMED_WIDTH_PX: f64 = 960.0;
+
 /// Soft qualitative palette (Vega/Tableau-10) for coloring dashboard panels — distinct
 /// but harmonious, and friendlier than plotly's saturated defaults.
 const PALETTE: [&str; 8] = [
@@ -731,7 +757,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             SmartRender::Grid { plot, dims } => (plot, Some(dims)),
         }
     } else {
-        (Box::new(build_plot(&args)?), None)
+        (Box::new(build_plot(&args, out_format)?), None)
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -808,7 +834,7 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 }
 
 /// Build a `Plot` for the requested chart subcommand.
-fn build_plot(args: &Args) -> CliResult<Plot> {
+fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
@@ -833,7 +859,7 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
     // maps use a `mapbox` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
     // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
     if matches!(chart_kind(args), Chart::Map) {
-        return build_map_plot(args);
+        return build_map_plot(args, out_format);
     }
 
     // `geo` uses a `geo` layout (projection basemap) and `scatter3d` a `scene` layout (3D
@@ -1376,6 +1402,49 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
     out
 }
 
+/// Web-Mercator normalized Y for a latitude (0 at +85.05°N, 1 at 85.05°S) — the vertical analogue
+/// of `lon / 360`. Latitude is clamped to the Web-Mercator limit (±85.05°) so `tan`/`ln` can't blow
+/// up. Used by `fitbounds_zoom` to size a latitude span in the same projected units mapbox zoom is
+/// defined in.
+fn mercator_y(lat: f64) -> f64 {
+    const MERCATOR_MAX_LAT: f64 = 85.05;
+    let lat_rad = lat.clamp(-MERCATOR_MAX_LAT, MERCATOR_MAX_LAT).to_radians();
+    (1.0 - (std::f64::consts::FRAC_PI_4 + lat_rad / 2.0).tan().ln() / std::f64::consts::PI) / 2.0
+}
+
+/// Aspect-aware Web-Mercator `fitBounds` zoom: fits the longitude and latitude spans SEPARATELY
+/// against the panel's pixel width/height and takes the tighter (smaller) zoom, so a wide-short map
+/// panel frames a square core box by its (binding) height and a wide full-extent box by its width —
+/// instead of the naive `floor(log2(360 / max(latSpan, lonSpan)))` that compared the larger span to
+/// the 360°-wide world and ignored the panel aspect (over-zooming square boxes, under-zooming wide
+/// ones).
+///   zoom_lon = log2( (width_px  / 512) / (lon_span / 360) )
+///   zoom_lat = log2( (height_px / 512) / (mercator_y(min_lat) - mercator_y(max_lat)) )
+///   zoom     = floor( min(zoom_lon, zoom_lat) - log2(MAP_FIT_PAD) ).clamp(1, 16)
+/// A degenerate (single-point) box returns a street-level zoom of 10. Callers never pass an
+/// antimeridian-crossing extent, so `lon_span` is non-wrapping and < 180.
+fn fitbounds_zoom(min_lat: f64, max_lat: f64, lon_span: f64, width_px: f64, height_px: f64) -> u8 {
+    let lon_frac = lon_span / 360.0;
+    let lat_frac = mercator_y(min_lat) - mercator_y(max_lat);
+    if lon_frac <= 0.0 && lat_frac <= 0.0 {
+        // degenerate (single point) box: sensible street-level default
+        return 10;
+    }
+    let zoom_lon = if lon_frac > 0.0 {
+        ((width_px / MAPBOX_TILE_SIZE_PX) / lon_frac).log2()
+    } else {
+        f64::INFINITY
+    };
+    let zoom_lat = if lat_frac > 0.0 {
+        ((height_px / MAPBOX_TILE_SIZE_PX) / lat_frac).log2()
+    } else {
+        f64::INFINITY
+    };
+    (zoom_lon.min(zoom_lat) - MAP_FIT_PAD.log2())
+        .floor()
+        .clamp(1.0, 16.0) as u8
+}
+
 /// Compute a map center and a zoom level that frames the data, so the basemap doesn't default to
 /// plotly's whole-world view centered at (0, 0). Longitude is handled with antimeridian wrap so a
 /// cluster straddling the 180° line (e.g. 179 and -179) frames as the small arc across the date
@@ -1385,25 +1454,28 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
 /// so a few outlier coordinates can't dominate the center/zoom. `viz smart`'s auto panel passes
 /// `MAP_FRAME_TRIM_FRAC`; the standalone `viz map` command passes `0.0` to frame the full extent
 /// of every valid coordinate (its edge points are intentional, not noise).
-fn map_center_zoom(lats: &[f64], lons: &[f64], trim_frac: f64) -> (Center, u8) {
+///
+/// `width_px`/`height_px` are the panel's pixel dimensions, used by the aspect-aware
+/// `fitbounds_zoom`: the smart inline panel is wide and short (`MAP_PANEL_ASSUMED_WIDTH_PX` ×
+/// `MAP_PANEL_USABLE_HEIGHT_PX`), the standalone `viz map` export is `DEFAULT_IMG_WIDTH` ×
+/// `DEFAULT_IMG_HEIGHT`.
+fn map_center_zoom(
+    lats: &[f64],
+    lons: &[f64],
+    trim_frac: f64,
+    width_px: f64,
+    height_px: f64,
+) -> (Center, u8) {
     let mut sorted_lats = lats.to_vec();
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let min_lat = sorted_quantile(&sorted_lats, trim_frac);
     let max_lat = sorted_quantile(&sorted_lats, 1.0 - trim_frac);
     let lat_center = (min_lat + max_lat) / 2.0;
-    let lat_span = max_lat - min_lat;
 
     let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let center = Center::new(lat_center, lon_center);
 
-    // the larger of the two degree-spans drives the zoom; halving the visible span ≈ +1 zoom.
-    // single-point (zero span) datasets get a sensible street-level zoom.
-    let span = lat_span.max(lon_span);
-    let zoom = if span <= 0.0 {
-        10
-    } else {
-        ((360.0 / span).log2().floor() as i32 - 1).clamp(1, 16) as u8
-    };
+    let zoom = fitbounds_zoom(min_lat, max_lat, lon_span, width_px, height_px);
     (center, zoom)
 }
 
@@ -1513,7 +1585,7 @@ fn map_series_traces(
 /// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
 /// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
-fn build_map_plot(args: &Args) -> CliResult<Plot> {
+fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let style_name = args.flag_style.as_deref().unwrap_or("open-street-map");
     let (style, needs_token) = parse_map_style(style_name)?;
     if needs_token && args.flag_mapbox_token.is_none() {
@@ -1603,8 +1675,19 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
         );
     }
 
-    // standalone `viz map`: frame the full extent — its edge coordinates are intentional
-    let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. --width/
+    // --height size the static image export but are NOT applied to the responsive HTML layout, so
+    // only honor them when exporting an image (fit the actual export aspect instead of clipping);
+    // HTML frames for the representative default aspect, matching how `run` sizes each output.
+    let (fit_w, fit_h) = if out_format.is_image() {
+        (
+            args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
+            args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
+        )
+    } else {
+        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+    };
+    let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, fit_w as f64, fit_h as f64);
 
     let mut plot = Plot::new();
     if args.flag_density {
@@ -3915,21 +3998,25 @@ fn extent_marker_geo() -> Marker {
     extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
-/// Mapbox (center lat, center lon, zoom) that frames an extent bounding box as TIGHTLY as possible
-/// while keeping the whole box inside the viewport. `floor(log2(360/span))` is the largest integer
-/// zoom at which the box still fits a full-width map; mapbox zoom is pixel/subplot-dependent (a
-/// panel is narrower than the whole page), so `GEO_EXTENT_FIT_PAD` keeps a thin safety margin
-/// against clipping. Verify visually if the panel sizing changes.
+/// Mapbox (center lat, center lon, zoom) that frames an extent bounding box as tightly as possible
+/// while keeping the whole box inside the panel, via the aspect-aware `fitbounds_zoom`. A `viz
+/// smart` MAP panel is full grid width but a FIXED short height (`MAP_PANEL_USABLE_HEIGHT_PX`),
+/// i.e. wide and short, so the latitude (height) fit and longitude (width) fit are computed
+/// separately and the tighter one wins — replacing the old `floor(log2(360/max(latSpan, lonSpan)))`
+/// that ignored the panel aspect (over-zooming square core boxes so they clipped, under-zooming
+/// wide full extents). Width is `responsive`/unknown at generation time, so a conservative-small
+/// `MAP_PANEL_ASSUMED_WIDTH_PX` is assumed; verify visually if the panel sizing changes.
 #[cfg(feature = "geocode")]
 fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
     let lat_center = (e.min_lat + e.max_lat) / 2.0;
     let lon_center = (e.min_lon + e.max_lon) / 2.0;
-    let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon) * GEO_EXTENT_FIT_PAD;
-    let zoom = if span <= 0.0 {
-        10
-    } else {
-        (360.0 / span).log2().floor().clamp(1.0, 16.0) as u8
-    };
+    let zoom = fitbounds_zoom(
+        e.min_lat,
+        e.max_lat,
+        e.max_lon - e.min_lon,
+        MAP_PANEL_ASSUMED_WIDTH_PX,
+        MAP_PANEL_USABLE_HEIGHT_PX,
+    );
     (lat_center, lon_center, zoom)
 }
 
@@ -4307,11 +4394,6 @@ const GEO_FULL_EXTENT_LINE_WIDTH: f64 = 2.5;
 /// outliers.
 #[cfg(feature = "geocode")]
 const GEO_FULL_EXTENT_LINE_COLOR: &str = "#e6007e";
-/// Padding multiplier applied to the (core) extent span when computing the tight mapbox fit zoom.
-/// Kept just above 1.0 — only a thin safety margin so the box isn't clipped on a narrower-than-full
-/// subplot — so the default view stays as zoomed-in as possible on the core cluster.
-#[cfg(feature = "geocode")]
-const GEO_EXTENT_FIT_PAD: f64 = 1.15;
 /// Fractional padding added to each side of the (core) extent box for the `ScatterGeo` exact-range
 /// fit. Small, so the projection map frames the core cluster tightly.
 #[cfg(feature = "geocode")]
@@ -5689,7 +5771,13 @@ fn smart_inline_panel_plot(
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
         #[cfg_attr(not(feature = "geocode"), expect(unused_mut))]
-        let (mut center, mut zoom) = map_center_zoom(lats, lons, MAP_FRAME_TRIM_FRAC);
+        let (mut center, mut zoom) = map_center_zoom(
+            lats,
+            lons,
+            MAP_FRAME_TRIM_FRAC,
+            MAP_PANEL_ASSUMED_WIDTH_PX,
+            MAP_PANEL_USABLE_HEIGHT_PX,
+        );
         // frame the tight CORE extent (outliers are drawn distinctly and reachable via the "Full
         // extent" zoom button below).
         #[cfg(feature = "geocode")]
@@ -7651,13 +7739,13 @@ mod tests {
         // a tight cluster around (40, -75) centers there and zooms in
         let lats = [39.9, 40.1, 40.0];
         let lons = [-75.1, -74.9, -75.0];
-        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
+        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, 1000.0, 600.0);
         let v = serde_json::to_value(&center).unwrap();
         assert!((v["lat"].as_f64().unwrap() - 40.0).abs() < 1e-9);
         assert!((v["lon"].as_f64().unwrap() - (-75.0)).abs() < 1e-9);
         // small span -> high zoom; large span -> low zoom. Use a genuinely wide (non-wrapping)
         // longitude range so this exercises the plain bounding-box path, not antimeridian wrap.
-        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-80.0, 80.0], 0.0);
+        let (_, world_zoom) = map_center_zoom(&[-60.0, 70.0], &[-80.0, 80.0], 0.0, 1000.0, 600.0);
         assert!(
             zoom > world_zoom,
             "tight cluster should zoom in more than world"
@@ -7667,7 +7755,7 @@ mod tests {
     #[test]
     fn map_center_zoom_single_point() {
         // a zero-span (single point) dataset gets a sensible non-extreme zoom
-        let (_, zoom) = map_center_zoom(&[51.5], &[-0.12], 0.0);
+        let (_, zoom) = map_center_zoom(&[51.5], &[-0.12], 0.0, 1000.0, 600.0);
         assert!((1..=16).contains(&zoom));
     }
 
@@ -7677,7 +7765,7 @@ mod tests {
         // centers near the date line and zooms in rather than framing the whole globe at lon 0.
         let lats = [18.0, 16.0];
         let lons = [179.0, -179.0];
-        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0);
+        let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, 1000.0, 600.0);
         let lon = serde_json::to_value(&center).unwrap()["lon"]
             .as_f64()
             .unwrap();
@@ -7825,7 +7913,7 @@ mod tests {
     fn map_center_zoom_trimmed_ignores_outliers() {
         // robust (percentile-trimmed) framing must center on the cluster, not the outliers.
         let (lats, lons) = nyc_cluster_with_outliers();
-        let (center, _zoom) = map_center_zoom(&lats, &lons, MAP_FRAME_TRIM_FRAC);
+        let (center, _zoom) = map_center_zoom(&lats, &lons, MAP_FRAME_TRIM_FRAC, 1000.0, 600.0);
         let lon = serde_json::to_value(&center).unwrap()["lon"]
             .as_f64()
             .unwrap();
@@ -7843,7 +7931,7 @@ mod tests {
         // far-west outliers pull the center toward the raw midpoint (regression guard for the fix
         // that kept the trimming scoped to `viz smart`).
         let (lats, lons) = nyc_cluster_with_outliers();
-        let (center, _zoom) = map_center_zoom(&lats, &lons, 0.0);
+        let (center, _zoom) = map_center_zoom(&lats, &lons, 0.0, 1000.0, 600.0);
         let lon = serde_json::to_value(&center).unwrap()["lon"]
             .as_f64()
             .unwrap();

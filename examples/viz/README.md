@@ -42,6 +42,7 @@ as `text/plain`, so a browser won't render it):
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
+| `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with a `zone` categorical | `smart` (geographic outlier markers + spatial-extent call-out) |
 
 ## The smart dashboard
 
@@ -62,16 +63,24 @@ a **time-series trend** panel of that column over time is added too. When a
 latitude/longitude column pair is detected, a **geographic map** panel leads the
 dashboard — drawn on mapbox tiles for local extents, or as an offline
 **projection world-overview** (ScatterGeo, no tiles or token) when the
-coordinates span a continental/global area. ID-like and high-cardinality text
-columns are skipped.
+coordinates span a continental/global area. Points far from the cluster centroid
+(beyond the Tukey far-out fence of their distances) are flagged as **geographic
+outliers**: they're drawn with a distinct marker, excluded from the spatial
+extent (so a few bad geocodes can't inflate it), and excluded from the auto-zoom
+(so the default view stays tight on the core cluster). When qsv is built with the
+`geocode` feature, the (core) extent is reverse-geocoded into a one-line location
+summary, and any outliers in a *different* jurisdiction are called out beside it
+(e.g. `Colorado, United States — 4 outliers (Wyoming, Kansas & Nebraska)`);
+outliers within the core's own jurisdiction are folded in silently. ID-like and
+high-cardinality text columns are skipped.
 
 On large datasets `viz smart` keeps the page light and interactive: each
 data-heavy panel (map, time-series, correlated-pair scatter, 3D scatter) is
 uniformly downsampled to at most 50,000 points (the correlated-pair density
 contour instead embeds only a fixed bin grid, so it stays compact at any row
-count), and the map view is framed to the bulk of
-the coordinates (a 2.5% trim on each axis) so a few stray geocodes can't zoom it
-out to nothing. The map panel also adapts to volume — at ~20,000+ mappable rows
+count), and the map view is framed to the core extent (geographic outliers
+excluded) so a few stray geocodes can't zoom it out to nothing. The map panel
+also adapts to volume — at ~20,000+ mappable rows
 it renders as a **density heatmap** (individual markers would overplot into a
 solid blob), and below that as semi-transparent point markers. (These caps apply
 only to the `smart` dashboard; the standalone chart commands below plot every
@@ -120,6 +129,11 @@ qsv viz smart stock_prices.csv -o stocks_dashboard.html
 
 # quakes has lat/lon, so the dashboard leads with a geographic map panel
 qsv viz smart quakes.csv -o quakes_dashboard.html
+
+# delivery_stops clusters in metro Denver with a few bad-geocode strays: the map flags them as
+# distinct outlier markers, keeps the auto-zoom tight on the core, and (with the geocode feature)
+# calls them out in the spatial-extent label, e.g. "... — 4 outliers (Wyoming, Kansas & Nebraska)"
+qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 
 # the full geospatial dashboard: a map, a time-series, a correlation heatmap + drill-down
 # scatter, a bimodal-depth histogram, annotated boxes and frequency bars — all auto-chosen.

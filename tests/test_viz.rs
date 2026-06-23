@@ -2998,5 +2998,7 @@ fn viz_smart_map_outlier_extent_callout() {
         assert!(html.contains("outlier"));
         // the second (no-fill) bounding box covering core + outliers
         assert!(html.contains("full extent (incl. outliers)"));
+        // the Core/Full extent zoom buttons
+        assert!(html.contains("Core extent") && html.contains("Full extent"));
     }
 }

@@ -757,7 +757,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             SmartRender::Grid { plot, dims } => (plot, Some(dims)),
         }
     } else {
-        (Box::new(build_plot(&args)?), None)
+        (Box::new(build_plot(&args, out_format)?), None)
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -834,7 +834,7 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 }
 
 /// Build a `Plot` for the requested chart subcommand.
-fn build_plot(args: &Args) -> CliResult<Plot> {
+fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
@@ -859,7 +859,7 @@ fn build_plot(args: &Args) -> CliResult<Plot> {
     // maps use a `mapbox` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
     // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
     if matches!(chart_kind(args), Chart::Map) {
-        return build_map_plot(args);
+        return build_map_plot(args, out_format);
     }
 
     // `geo` uses a `geo` layout (projection basemap) and `scatter3d` a `scene` layout (3D
@@ -1585,7 +1585,7 @@ fn map_series_traces(
 /// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
 /// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
-fn build_map_plot(args: &Args) -> CliResult<Plot> {
+fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let style_name = args.flag_style.as_deref().unwrap_or("open-street-map");
     let (style, needs_token) = parse_map_style(style_name)?;
     if needs_token && args.flag_mapbox_token.is_none() {
@@ -1675,17 +1675,19 @@ fn build_map_plot(args: &Args) -> CliResult<Plot> {
         );
     }
 
-    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. Frame
-    // for the actual export dimensions (an explicit --width/--height wins, else the fallback), so a
-    // non-default aspect ratio is fit correctly instead of clipping — matching how `run` sizes the
-    // static export.
-    let (center, zoom) = map_center_zoom(
-        &lats,
-        &lons,
-        0.0,
-        args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH) as f64,
-        args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT) as f64,
-    );
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. --width/
+    // --height size the static image export but are NOT applied to the responsive HTML layout, so
+    // only honor them when exporting an image (fit the actual export aspect instead of clipping);
+    // HTML frames for the representative default aspect, matching how `run` sizes each output.
+    let (fit_w, fit_h) = if out_format.is_image() {
+        (
+            args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
+            args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
+        )
+    } else {
+        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+    };
+    let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, fit_w as f64, fit_h as f64);
 
     let mut plot = Plot::new();
     if args.flag_density {

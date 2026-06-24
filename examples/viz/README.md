@@ -17,6 +17,13 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
+The five **smart dashboards** are embedded as `<iframe>`s of their genuine
+`qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
+the full-width overview panels (map, correlation heatmap, time-series), themes and
+map zoom buttons render exactly as the CLI produces them. Those iframe sources are
+the real output with the inline plotly bundle swapped for the same CDN tag (so they
+stay a few KB each); they need a network connection to render.
+
 **▶ View it rendered** (via githack, which serves the file with the correct
 `text/html` type — one-click "External Content Notice" the first time):
 
@@ -42,7 +49,7 @@ as `text/plain`, so a browser won't render it):
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
-| `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with a `zone` categorical | `smart` (geographic outlier markers; + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`) |
+| `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
 
 ## The smart dashboard
 

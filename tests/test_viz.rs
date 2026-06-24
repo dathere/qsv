@@ -3164,5 +3164,8 @@ fn viz_smart_map_outlier_extent_callout() {
         assert!(html.contains("full extent (incl. outliers)"));
         // the Core/Full extent zoom buttons
         assert!(html.contains("Core extent") && html.contains("Full extent"));
+        // the buttons pin an explicit ink label color (white pill over light tiles) so the
+        // dark-mode toggle / a dark --theme can't flip the label to a light, invisible color.
+        assert!(html.contains(r##""size":11,"color":"#2A3F5F""##));
     }
 }

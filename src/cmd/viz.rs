@@ -4305,7 +4305,10 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         .background_color(NamedColor::White)
         .border_color(NamedColor::Gray)
         .border_width(1)
-        .font(Font::new().size(11))
+        // the button pill is always white (over the light map tiles), so pin the label color to
+        // ink rather than inheriting `layout.font.color` — otherwise the dark-mode toggle (or a
+        // dark `--theme`) flips the label to a light color and it vanishes on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as

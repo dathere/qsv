@@ -5867,18 +5867,20 @@ fn render_smart_grid(
     })
 }
 
-/// Wrap the single typed-subplot `Plot` (≤ `MAX_SUBPLOTS` panels) in qsv's own HTML page so it
-/// gets the shared light/dark toggle — plotly's `to_html()` builds its own standalone document
-/// with no injection point. Mirrors the inline-grid page shell via `smart_html_page`. Only used
-/// for HTML output; static image export keeps using the typed `Plot` directly.
 fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_text: &str) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
-    let extra_style = "  .qsv-viz-grid { width: 100%; }\n  .qsv-viz-plot { width: 100%; }";
+    // raw strings (actual newlines, real quotes) so rustfmt's `format_strings` can't split a `\n`
+    // or `\"` escape across a line wrap and corrupt the markup (see `smart_html_page`).
+    let extra_style = r#"  .qsv-viz-grid { width: 100%; }
+  .qsv-viz-plot { width: 100%; }"#;
     let inner = plot.to_inline_html(Some("qsv-viz-smart-grid"));
     let body = format!(
-        "<div class=\"qsv-viz-grid\">\n      <div class=\"qsv-viz-plot\">\n{inner}\n      \
-         </div>\n</div>"
+        r#"<div class="qsv-viz-grid">
+      <div class="qsv-viz-plot">
+{inner}
+      </div>
+</div>"#
     );
     // the typed plot already carries the dashboard title in its layout, so suppress the page <h1>.
     smart_html_page(title_text, theme, extra_style, &body, false)
@@ -6235,6 +6237,8 @@ fn render_smart_inline(
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
 
+    // raw strings (actual newlines, real quotes) throughout so rustfmt's `format_strings` can't
+    // split a `\n`/`\"` escape across a line wrap and corrupt the markup (see `smart_html_page`).
     let mut cells = String::new();
     for (n, panel) in panels.iter().enumerate() {
         let color = PALETTE[n % PALETTE.len()];
@@ -6251,7 +6255,8 @@ fn render_smart_inline(
         // overlap/clip any caption rendered below it).
         let plot_height = panel_render_height(&panel.kind);
         cells.push_str(&format!(
-            "      <div class=\"qsv-viz-plot\" style=\"height:{plot_height}px\">\n"
+            r#"      <div class="qsv-viz-plot" style="height:{plot_height}px">
+"#
         ));
         cells.push_str(&plot.to_inline_html(Some(&div_id)));
         cells.push_str("\n      </div>\n");
@@ -6261,7 +6266,8 @@ fn render_smart_inline(
             && !meta.summary.is_empty()
         {
             cells.push_str(&format!(
-                "      <div class=\"qsv-viz-geo-meta\">Spatial extent: {}</div>\n",
+                r#"      <div class="qsv-viz-geo-meta">Spatial extent: {}</div>
+"#,
                 html_escape(&meta.summary)
             ));
         }
@@ -6269,11 +6275,15 @@ fn render_smart_inline(
     }
 
     let extra_style = format!(
-        "  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
-         gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n  .qsv-viz-cell.full-width {{ \
-         grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}"
+        r#"  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); gap: 16px; }}
+  .qsv-viz-cell {{ min-width: 0; }}
+  .qsv-viz-cell.full-width {{ grid-column: 1 / -1; }}
+  .qsv-viz-plot {{ width: 100%; }}"#
     );
-    let body = format!("<div class=\"qsv-viz-grid\">\n{cells}</div>");
+    let body = format!(
+        r#"<div class="qsv-viz-grid">
+{cells}</div>"#
+    );
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
     smart_html_page(title_text, theme, &extra_style, &body, true)
 }

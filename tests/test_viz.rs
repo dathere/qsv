@@ -2949,6 +2949,10 @@ fn viz_smart_grid_has_theme_toggle() {
     // suppressed (no double title); the document <title> tab is still set.
     assert!(!html.contains(r#"<h1 class="qsv-viz-title""#));
     assert!(html.contains("<title>people.csv \u{2014} data overview</title>"));
+    // regression (roborev #3176): the page shell must not split the `\n{script}` escape into a
+    // literal `\` + `n` before the toggle script. The toggle <script> follows clean markup.
+    assert!(html.contains("<script>\n(function () {"));
+    assert!(!html.contains("n<script>\n(function () {"));
 }
 
 #[test]
@@ -3046,6 +3050,9 @@ fn viz_smart_inline_has_theme_toggle() {
     // inline panels carry no overall title, so the dashboard title IS shown as the page <h1>
     // (unlike the typed-grid path, which suppresses it because the plot bakes the title in).
     assert!(html.contains(r#"<h1 class="qsv-viz-title""#));
+    // regression (roborev #3176): no split `\n{script}` escape (stray `\` + `n`) before the toggle.
+    assert!(html.contains("<script>\n(function () {"));
+    assert!(!html.contains("n<script>\n(function () {"));
 }
 
 #[test]

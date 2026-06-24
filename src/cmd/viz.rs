@@ -2955,20 +2955,38 @@ fn smart_html_page(
     // into its layout (needed for static image export), so its wrapper suppresses the `<h1>` to
     // avoid rendering the title twice. The `<title>` (browser tab) is always set either way.
     let heading = if show_heading {
-        format!("<h1 class=\"qsv-viz-title\">{title}</h1>\n")
+        format!("<h1 class=\"qsv-viz-title\">{title}</h1>")
     } else {
         String::new()
     };
+    // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
+    // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
+    // a stray `\` + `n` in every page. `format!` still doubles the literal CSS braces (`{{`/`}}`)
+    // and substitutes each placeholder in a single pass.
     format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
-         name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
-         />\n<title>{title}</title>\n{js}\n<style>\n  body {{ font-family: {FONT_FAMILY}; color: \
-         var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}\n  \
-         h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 \
-         20px; }}\n  .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); \
-         text-align: center; padding: 8px 4px 4px; \
-         }}\n{toggle_style}\n{extra_style}\n</style>\n</head>\n<body>\n{button}\n{heading}{body}\\
-         n{script}\n</body>\n</html>\n"
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>{title}</title>
+{js}
+<style>
+  body {{ font-family: {FONT_FAMILY}; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}
+  h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
+  .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
+{toggle_style}
+{extra_style}
+</style>
+</head>
+<body>
+{button}
+{heading}
+{body}
+{script}
+</body>
+</html>
+"#
     )
 }
 

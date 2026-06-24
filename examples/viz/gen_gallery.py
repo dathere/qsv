@@ -268,21 +268,17 @@ def run_fig(qsv, args):
 
 
 def cdnify(html):
-    """Shrink a self-contained `qsv viz smart` page (~6.8MB) to a few KB for committing as an
-    iframe source: swap the inline plotly bundle for a CDN <script src> and drop the MathJax/LaTeX
-    helper plotly-rs ships alongside it (the dashboards use no LaTeX). The genuine layout, theme
-    and interactivity are preserved. Output structure is stable: script[0]=plotly bundle,
-    script[1]=MathJax helper, script[2:]=per-panel newPlot calls."""
+    """Shrink a self-contained `qsv viz smart` page (~4.5MB) to a few KB for committing as an
+    iframe source: swap the inline plotly bundle for a CDN <script src>. The genuine layout,
+    theme, light/dark toggle and interactivity are preserved. `qsv viz smart` itself now embeds
+    only the plotly bundle (it drops the MathJax/LaTeX helper that plotly-rs ships alongside it,
+    since the dashboards use no LaTeX), so the plotly bundle is the sole `<script>` to replace —
+    it's at script[0] (head); the per-panel `newPlot` calls and the toggle script follow it."""
     blocks = list(re.finditer(r"<script\b[^>]*>.*?</script>", html, flags=re.S))
-    if len(blocks) < 3 or "plotly.js v" not in blocks[0].group(0):
+    if not blocks or "plotly.js v" not in blocks[0].group(0):
         raise ValueError("unexpected viz smart HTML structure (plotly bundle not at script[0])")
-    bundle, helper = blocks[0], blocks[1]
-    if "newPlot" in helper.group(0):
-        raise ValueError("unexpected viz smart HTML structure (no MathJax helper at script[1])")
-    # splice from the back so the earlier (bundle) offsets stay valid
-    out = html[: helper.start()] + html[helper.end():]
-    out = out[: bundle.start()] + PLOTLY_CDN + out[bundle.end():]
-    return out
+    bundle = blocks[0]
+    return html[: bundle.start()] + PLOTLY_CDN + html[bundle.end():]
 
 
 def inject_resize_reporter(html):

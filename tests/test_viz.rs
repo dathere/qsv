@@ -2736,10 +2736,13 @@ fn viz_smart_theme_drives_dashboard() {
     assert!(html.contains(r#""template":{"layout""#));
     assert!(html.contains(r##""paper_bgcolor":"#111111""##));
     assert!(!html.contains(r##""paper_bgcolor":"#FFFFFF""##));
-    // qsv's hardcoded ink color must not leak into a themed dashboard (e.g. the bar
+    // qsv's hardcoded ink color must not leak into a themed dashboard's plots (e.g. the bar
     // value-labels) — it would be near-invisible on the dark background. (This dataset
     // has no correlation panel, the one place ink is intentionally kept for cell contrast.)
-    assert!(!html.contains("#2A3F5F"));
+    // Scoped to the JSON color form: the light/dark toggle script legitimately embeds the ink
+    // as its LIGHT-mode font (`font: "#2A3F5F"`), which is theme-independent page chrome, not
+    // part of the serialized plot.
+    assert!(!html.contains(r##""color":"#2A3F5F""##));
 }
 
 #[test]
@@ -2896,11 +2899,172 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     let html = wrk.read_to_string("wide.html").unwrap();
     // inline-div grid renderer ...
     assert!(html.contains(r#"class="qsv-viz-grid""#));
-    // ... with a dark page body matching the theme (not qsv's white chrome)
-    assert!(html.contains("background: #111111"));
-    assert!(!html.contains("background: #FFFFFF"));
+    // ... page chrome is now CSS-variable driven (so the light/dark toggle can flip it): the
+    // body references the var, and a dark theme seeds the var with its dark page color and
+    // opens the toggle in dark mode by default.
+    assert!(html.contains("background: var(--qsv-page-bg)"));
+    assert!(html.contains("--qsv-page-bg: #111111"));
+    assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
+}
+
+#[test]
+fn viz_smart_grid_has_theme_toggle() {
+    // the common ≤8-panel case: the single typed-Plot grid is now wrapped in qsv's own HTML
+    // page so it carries the always-on light/dark toggle (plotly's to_html() has no hook).
+    let wrk = Workdir::new("viz_smart_grid_has_theme_toggle");
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the toggle button, its re-theming script, and the CSS-variable page chrome are present
+    assert!(html.contains(r#"id="qsv-theme-toggle""#));
+    assert!(html.contains("qsv-viz-theme")); // localStorage key
+    assert!(html.contains(".js-plotly-plot")); // script enumerates live plots
+    assert!(html.contains("Plotly.relayout"));
+    assert!(html.contains("--qsv-page-bg"));
+    assert!(html.contains("body.qsv-dark"));
+    // the typed grid is now embedded inline in qsv's page (not plotly's own to_html document)
+    assert!(html.contains(r#"id="qsv-viz-smart-grid""#));
+    // no --theme given -> the toggle defers to the viewer's prefers-color-scheme
+    assert!(html.contains(r#"var themeDefaultMode = "system""#));
+    // the actual subplot grid is still there (typed-Layout multi-axis)
+    assert!(html.contains(r#""xaxis2":{"#));
+    // the typed plot already bakes the dashboard title into its layout, so the page <h1> is
+    // suppressed (no double title); the document <title> tab is still set.
+    assert!(!html.contains(r#"<h1 class="qsv-viz-title""#));
+    assert!(html.contains("<title>people.csv \u{2014} data overview</title>"));
+    // regression (roborev #3176): the page shell must not split the `\n{script}` escape into a
+    // literal `\` + `n` before the toggle script. The toggle <script> follows clean markup.
+    assert!(html.contains("<script>\n(function () {"));
+    assert!(!html.contains("n<script>\n(function () {"));
+    // the qsv/datHere logo links to the qsv site and embeds both theme variants (CSS-swapped).
+    assert!(html.contains(r#"id="qsv-logo""#));
+    assert!(html.contains(r#"href="https://qsv.dathere.com/""#));
+    assert!(html.contains("qsv-logo-light"));
+    assert!(html.contains("qsv-logo-dark"));
+    assert!(html.contains("data:image/png;base64,"));
+}
+
+#[test]
+fn viz_smart_explicit_light_theme_opens_light() {
+    // an explicit light --theme must open light, NOT defer to a dark-mode OS
+    // (prefers-color-scheme). Only the absence of --theme falls back to "system".
+    let wrk = Workdir::new("viz_smart_explicit_light_theme_opens_light");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "small.csv",
+        "--theme",
+        "plotly_white",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#"var themeDefaultMode = "light""#));
+    assert!(!html.contains(r#"var themeDefaultMode = "system""#));
+}
+
+#[test]
+fn viz_smart_embeds_plotly_once_without_mathjax() {
+    // smart dashboards embed plotly.js exactly once, and DROP the ~2MB tex-svg MathJax bundle
+    // that plotly's offline_js_sources() also embeds (dashboards render plain-text labels, never
+    // LaTeX). Checked on both HTML paths: the ≤8-panel typed grid and the >8-panel inline grid.
+
+    // --- ≤8-panel typed grid ---
+    let wrk = Workdir::new("viz_smart_embeds_plotly_once_without_mathjax");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+    let grid_html = wrk.path("grid.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "small.csv", "-o", &grid_html]);
+    wrk.assert_success(&mut cmd);
+    let grid = wrk.read_to_string("grid.html").unwrap();
+    // plotly.js embedded exactly once (its version banner) ...
+    assert_eq!(grid.matches("plotly.js v").count(), 1);
+    // ... and the tex-svg MathJax bundle is gone ("CommonHTML" is unique to that bundle; the
+    // residual guarded `typeof MathJax` references inside plotly.js itself are expected).
+    assert!(!grid.contains("CommonHTML"));
+
+    // --- >8-panel inline grid ---
+    let headers: Vec<String> = (0..10).map(|c| format!("c{c}")).collect();
+    let mut rows = headers.join(",");
+    rows.push('\n');
+    for r in 0..30 {
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+    let inline_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "-o", &inline_html]);
+    wrk.assert_success(&mut cmd);
+    let inline = wrk.read_to_string("wide.html").unwrap();
+    // many panels, but still ONE embedded plotly.js bundle (panels reuse the shared global)
+    assert!(inline.matches("Plotly.newPlot").count() > 8);
+    assert_eq!(inline.matches("plotly.js v").count(), 1);
+    assert!(!inline.contains("CommonHTML"));
+}
+
+#[test]
+fn viz_smart_inline_has_theme_toggle() {
+    // the >8-panel inline-div case also carries the shared toggle.
+    let wrk = Workdir::new("viz_smart_inline_has_theme_toggle");
+    let headers: Vec<String> = (0..10).map(|c| format!("c{c}")).collect();
+    let mut rows = headers.join(",");
+    rows.push('\n');
+    for r in 0..30 {
+        let cells: Vec<String> = (0..10).map(|c| format!("v{}", (r + c) % 4)).collect();
+        rows.push_str(&cells.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("wide.html").unwrap();
+    assert!(html.contains(r#"id="qsv-theme-toggle""#));
+    assert!(html.contains("qsv-viz-theme"));
+    assert!(html.contains(".js-plotly-plot"));
+    assert!(html.contains("Plotly.relayout"));
+    assert!(html.contains("--qsv-page-bg"));
+    assert!(html.contains("body.qsv-dark"));
+    assert!(html.contains(r#"class="qsv-viz-grid""#));
+    // >8 panels -> more than the typed-subplot limit, so it's the inline-div renderer
+    assert!(html.matches("Plotly.newPlot").count() > 8);
+    // inline panels carry no overall title, so the dashboard title IS shown as the page <h1>
+    // (unlike the typed-grid path, which suppresses it because the plot bakes the title in).
+    assert!(html.contains(r#"<h1 class="qsv-viz-title""#));
+    // regression (roborev #3176): no split `\n{script}` escape (stray `\` + `n`) before the toggle.
+    assert!(html.contains("<script>\n(function () {"));
+    assert!(!html.contains("n<script>\n(function () {"));
+    // the qsv/datHere logo links to the qsv site and embeds both theme variants (CSS-swapped).
+    assert!(html.contains(r#"id="qsv-logo""#));
+    assert!(html.contains(r#"href="https://qsv.dathere.com/""#));
+    assert!(html.contains("qsv-logo-light"));
+    assert!(html.contains("qsv-logo-dark"));
+    assert!(html.contains("data:image/png;base64,"));
 }
 
 #[test]

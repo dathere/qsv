@@ -754,7 +754,21 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     args.flag_scale,
                 );
             },
-            SmartRender::Grid { plot, dims } => (plot, Some(dims)),
+            SmartRender::Grid {
+                plot,
+                dims,
+                title,
+                theme,
+            } => {
+                // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
+                // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
+                // point. Static image export keeps the typed `Plot` path below.
+                if matches!(out_format, OutFormat::Html) {
+                    let html = render_smart_grid_page(*plot, theme, &title);
+                    return output_inline_html(&html, &args);
+                }
+                (plot, Some(dims))
+            },
         }
     } else {
         (Box::new(build_plot(&args, out_format)?), None)
@@ -787,8 +801,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 enum SmartRender {
     // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
     Grid {
-        plot: Box<Plot>,
-        dims: (usize, usize),
+        plot:  Box<Plot>,
+        dims:  (usize, usize),
+        // carried out so the HTML path can wrap the plot in qsv's own toggle-enabled page
+        // (`render_smart_grid_page`); the image-export path ignores both.
+        title: String,
+        theme: Option<BuiltinTheme>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -2794,6 +2812,185 @@ fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str
         Some(BuiltinTheme::Matplotlib) => ("#FFFFFF", "black"),
         Some(BuiltinTheme::Plotnine) => ("#EBEBEB", "#525252"),
     }
+}
+
+/// The CSS, button markup, and re-theming `<script>` for the `viz smart` light/dark toggle,
+/// shared by both HTML render paths (the inline-div grid and the single typed-`Plot` grid).
+/// Page chrome is driven by CSS variables (`--qsv-page-bg`/`--qsv-page-ink`/`--qsv-geo-meta`)
+/// so flipping `body.qsv-dark` recolors the page instantly, while the script calls
+/// `Plotly.relayout` on every live graph div to recolor the plots themselves. `theme` only
+/// decides the *default* mode when the viewer has no saved/OS preference (dark built-in themes
+/// open dark). Known limitation: geo/scene/polar/pie panels flip their background, font, and
+/// container color, but basemap fills, mapbox tiles, and trace marker colors do NOT re-theme
+/// (that would need a trace-type-aware `Plotly.restyle`, which is out of scope here).
+struct ToggleChrome {
+    /// CSS for the `:root`/`body.qsv-dark` variables and the toggle button; goes in `<style>`.
+    style:  String,
+    /// The fixed-position toggle button; placed right after `<body>`.
+    button: String,
+    /// The toggle `<script>`; placed just before `</body>` (after all `Plotly.newPlot` calls).
+    script: String,
+}
+
+fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
+    let (light_bg, light_ink) = theme_page_chrome(theme);
+    // A dark built-in theme should open in dark mode by default (when the viewer has no
+    // explicit preference). `theme_page_chrome` returns a dark page exactly for those themes.
+    let default_dark = matches!(
+        theme,
+        Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark)
+    );
+
+    // Raw-string templates with token placeholders, so the brace-heavy JS needs no `{{`/`}}`
+    // escaping and rustfmt's `format_strings` (regular-string-only) won't reflow/mangle them.
+    let style = STYLE_TEMPLATE
+        .replace("__LIGHT_BG__", light_bg)
+        .replace("__LIGHT_INK__", light_ink)
+        .replace("__FONT_FAMILY__", FONT_FAMILY);
+
+    let button = "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"Toggle light/dark \
+                  mode\">\u{1F313} Theme</button>"
+        .to_string();
+
+    // The light palette mirrors qsv's built-in look (INK/PAPER_BG/GRID_COLOR/AXIS_LINE); the dark
+    // palette is a fixed dark set. `buildUpdate` only sets keys present on a given graph's layout,
+    // so axis-less plots (pie) and arbitrary subplot counts both work without knowing div ids.
+    let script = SCRIPT_TEMPLATE
+        .replace(
+            "__DEFAULT_DARK__",
+            if default_dark { "true" } else { "false" },
+        )
+        .replace("__PAPER_BG__", PAPER_BG)
+        .replace("__INK__", INK)
+        .replace("__GRID_COLOR__", GRID_COLOR)
+        .replace("__AXIS_LINE__", AXIS_LINE);
+
+    ToggleChrome {
+        style,
+        button,
+        script,
+    }
+}
+
+/// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
+/// runtime; kept as a raw string so the literal CSS braces stay intact.
+const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: #4b5563; }
+  body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }
+  #qsv-theme-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
+  #qsv-theme-toggle:hover { opacity: 1; }"#;
+
+/// The light/dark toggle `<script>` for `toggle_chrome`. Token placeholders are substituted at
+/// runtime; kept as a raw string so the JS braces and regex backslashes need no escaping.
+const SCRIPT_TEMPLATE: &str = r##"<script>
+(function () {
+  var themeDefaultDark = __DEFAULT_DARK__;
+  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111" };
+  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__" };
+  function isDark() {
+    try {
+      var saved = localStorage.getItem("qsv-viz-theme");
+      if (saved === "dark") return true;
+      if (saved === "light") return false;
+    } catch (e) {}
+    if (themeDefaultDark) return true;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  }
+  function buildUpdate(gd, p) {
+    var u = { "paper_bgcolor": p.paper, "font.color": p.font };
+    var lay = gd.layout || {};
+    var hasAxis = false;
+    Object.keys(lay).forEach(function (k) {
+      if (/^xaxis\d*$/.test(k) || /^yaxis\d*$/.test(k)) {
+        hasAxis = true;
+        u[k + ".gridcolor"] = p.grid;
+        u[k + ".linecolor"] = p.line;
+        u[k + ".zerolinecolor"] = p.zero;
+      }
+      if (/^geo\d*$/.test(k) || /^polar\d*$/.test(k) || /^scene\d*$/.test(k)) u[k + ".bgcolor"] = p.bg;
+    });
+    if (hasAxis) u["plot_bgcolor"] = p.plot;
+    return u;
+  }
+  function apply(dark) {
+    document.body.classList.toggle("qsv-dark", dark);
+    var p = dark ? DARK : LIGHT;
+    document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
+      try { Plotly.relayout(gd, buildUpdate(gd, p)); } catch (e) {}
+    });
+  }
+  function init() {
+    var dark = isDark();
+    apply(dark);
+    var btn = document.getElementById("qsv-theme-toggle");
+    if (btn) btn.addEventListener("click", function () {
+      var nowDark = !document.body.classList.contains("qsv-dark");
+      try { localStorage.setItem("qsv-viz-theme", nowDark ? "dark" : "light"); } catch (e) {}
+      apply(nowDark);
+    });
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
+  else setTimeout(init, 0);
+})();
+</script>"##;
+
+/// Assemble a complete self-contained `viz smart` HTML page from already-rendered body content
+/// (the panel grid markup, where each panel/plot was emitted via `Plot::to_inline_html`). Single
+/// source of truth for the document shell, shared by the inline-div grid and the typed-`Plot`
+/// grid so they can't diverge. The plotly bundle is embedded once via `plotly_js_only` (MathJax
+/// stripped — see that fn), and the shared light/dark toggle (`toggle_chrome`) is injected.
+/// `extra_style` is page-specific layout CSS; `body` is the inner grid markup (already escaped
+/// where needed).
+fn smart_html_page(
+    title_text: &str,
+    theme: Option<BuiltinTheme>,
+    extra_style: &str,
+    body: &str,
+) -> String {
+    let js = plotly_js_only();
+    let title = html_escape(title_text);
+    let ToggleChrome {
+        style: toggle_style,
+        button,
+        script,
+    } = toggle_chrome(theme);
+    format!(
+        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
+         name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
+         />\n<title>{title}</title>\n{js}\n<style>\n  body {{ font-family: {FONT_FAMILY}; color: \
+         var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}\n  \
+         h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 \
+         20px; }}\n  .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); \
+         text-align: center; padding: 8px 4px 4px; \
+         }}\n{toggle_style}\n{extra_style}\n</style>\n</head>\n<body>\n{button}\n<h1 \
+         class=\"qsv-viz-title\">{title}</h1>\n{body}\n{script}\n</body>\n</html>\n"
+    )
+}
+
+/// The embedded plotly.js `<script>` tag for `viz smart` HTML pages, WITHOUT the MathJax
+/// (tex-svg) bundle that `Plot::offline_js_sources` also embeds.
+///
+/// `offline_js_sources` emits two consecutive `<script>` tags — plotly.js (~4.4MB) first, then
+/// the tex-svg MathJax bundle (~2.0MB). Smart dashboards only ever render plain-text titles and
+/// labels (column names + stat-derived strings), never LaTeX `$...$`, and plotly guards its only
+/// MathJax use behind `typeof MathJax != "undefined"`, so the bundle is dead weight here —
+/// dropping it shrinks each self-contained dashboard by ~31% with no visual change.
+///
+/// Neither minified payload contains the literal `</script>`, so cutting after the first close
+/// tag cleanly isolates the plotly.js tag. Guarded by a `Plotly` marker check (present only in
+/// plotly.js, never in tex-svg): if a future plotly release reorders the two tags, we fall back
+/// to the full bundle rather than risk stripping plotly.js itself.
+fn plotly_js_only() -> String {
+    const CLOSE: &str = "</script>";
+    let full = Plot::offline_js_sources();
+    if let Some(idx) = full.find(CLOSE) {
+        let first = &full[..idx + CLOSE.len()];
+        if first.contains("Plotly") {
+            return first.to_string();
+        }
+    }
+    // layout changed unexpectedly — keep the full (correct, if heavier) bundle.
+    full
 }
 
 fn build_layout(
@@ -5610,9 +5807,6 @@ fn smart_grid_parts(
     }
 }
 
-/// Render the dashboard as a single `Plot` with a typed subplot grid (≤ `MAX_SUBPLOTS` panels).
-/// Static image export of more panels goes through `render_smart_grid_json` instead, because
-/// plotly's typed `Layout` only exposes axis fields up to `x_axis8`/`y_axis8`.
 fn render_smart_grid(
     args: &Args,
     panels: &[Panel],
@@ -5647,7 +5841,25 @@ fn render_smart_grid(
     Ok(SmartRender::Grid {
         plot: Box::new(plot),
         dims,
+        title: title_text.to_string(),
+        theme,
     })
+}
+
+/// Wrap the single typed-subplot `Plot` (≤ `MAX_SUBPLOTS` panels) in qsv's own HTML page so it
+/// gets the shared light/dark toggle — plotly's `to_html()` builds its own standalone document
+/// with no injection point. Mirrors the inline-grid page shell via `smart_html_page`. Only used
+/// for HTML output; static image export keeps using the typed `Plot` directly.
+fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_text: &str) -> String {
+    // match the responsiveness the single-`Plot` HTML path applies in `run`.
+    plot.set_configuration(Configuration::new().responsive(true));
+    let extra_style = "  .qsv-viz-grid { width: 100%; }\n  .qsv-viz-plot { width: 100%; }";
+    let inner = plot.to_inline_html(Some("qsv-viz-smart-grid"));
+    let body = format!(
+        "<div class=\"qsv-viz-grid\">\n      <div class=\"qsv-viz-plot\">\n{inner}\n      \
+         </div>\n</div>"
+    );
+    smart_html_page(title_text, theme, extra_style, &body)
 }
 
 /// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
@@ -5989,11 +6201,6 @@ fn smart_inline_panel_plot(
     plot
 }
 
-/// Assemble the dashboard as a self-contained HTML page: a responsive CSS grid of independent
-/// plotly plots, one per panel. This sidesteps plotly's 8-axis typed-subplot limit so HTML
-/// dashboards can show many more panels than the single-`Plot` grid. The plotly.js bundle is
-/// embedded once in `<head>` (via `Plot::offline_js_sources`); each panel is emitted as an
-/// inline `<div>` + `<script>` that draws into the shared global `Plotly`.
 fn render_smart_inline(
     args: &Args,
     panels: &[Panel],
@@ -6005,7 +6212,6 @@ fn render_smart_inline(
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
-    let (page_bg, page_ink) = theme_page_chrome(theme);
 
     let mut cells = String::new();
     for (n, panel) in panels.iter().enumerate() {
@@ -6040,21 +6246,13 @@ fn render_smart_inline(
         cells.push_str("    </div>\n");
     }
 
-    let js = Plot::offline_js_sources();
-    let title = html_escape(title_text);
-    format!(
-        "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
-         name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
-         />\n<title>{title}</title>\n{js}\n<style>\n  body {{ font-family: {FONT_FAMILY}; color: \
-         {page_ink}; background: {page_bg}; margin: 0; padding: 16px; }}\n  h1.qsv-viz-title {{ \
-         font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}\n  \
-         .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
+    let extra_style = format!(
+        "  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); \
          gap: 16px; }}\n  .qsv-viz-cell {{ min-width: 0; }}\n  .qsv-viz-cell.full-width {{ \
-         grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}\n  .qsv-viz-geo-meta {{ \
-         font-size: 13px; color: #4b5563; text-align: center; padding: 8px 4px 4px; \
-         }}\n</style>\n</head>\n<body>\n<h1 class=\"qsv-viz-title\">{title}</h1>\n<div \
-         class=\"qsv-viz-grid\">\n{cells}</div>\n</body>\n</html>\n"
-    )
+         grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}"
+    );
+    let body = format!("<div class=\"qsv-viz-grid\">\n{cells}</div>");
+    smart_html_page(title_text, theme, &extra_style, &body)
 }
 
 /// Minimal HTML-escaping for text interpolated into the inline dashboard page.

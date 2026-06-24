@@ -447,8 +447,9 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 # use latest upstream now that our PR has been merged while awaiting a new release
 self_update = { git = "https://github.com/jaemk/self_update", rev = "cad8bb9" }
 
-# use our patched fork of sled to get rid of unmaintained instant
-sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-bumped-parking_lot_to_0.12" }
+# use our patched fork of sled to get rid of unmaintained instant (parking_lot
+# bump) and unmaintained fxhash (RUSTSEC-2025-0057; replaced with rustc-hash)
+sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash" }
 
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }

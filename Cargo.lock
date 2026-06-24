@@ -3089,15 +3089,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fxhash"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c31b6d751ae2c7f11320402d34e41349dd1016f8d5d45e48c4312bc8625af50c"
-dependencies = [
- "byteorder",
-]
-
-[[package]]
 name = "gender_guesser"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8580,16 +8571,16 @@ checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
 [[package]]
 name = "sled"
 version = "0.34.7"
-source = "git+https://github.com/dathere/sled?branch=v0.34.7-bumped-parking_lot_to_0.12#83015b27d515a71d280a2d615bbb1b2db9cc739e"
+source = "git+https://github.com/dathere/sled?branch=v0.34.7-drop-fxhash#113a14ffdd8ff061d4244bbdc119d7bc9c1696b0"
 dependencies = [
  "crc32fast",
  "crossbeam-epoch",
  "crossbeam-utils",
  "fs2",
- "fxhash",
  "libc",
  "log",
  "parking_lot",
+ "rustc-hash",
 ]
 
 [[package]]

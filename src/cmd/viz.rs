@@ -2906,6 +2906,7 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
         u[k + ".gridcolor"] = p.grid;
         u[k + ".linecolor"] = p.line;
         u[k + ".zerolinecolor"] = p.zero;
+        u[k + ".tickcolor"] = p.line;
       }
       if (/^geo\d*$/.test(k) || /^polar\d*$/.test(k) || /^scene\d*$/.test(k)) u[k + ".bgcolor"] = p.bg;
     });
@@ -5243,14 +5244,15 @@ fn panel_trace(
 ) -> (Box<dyn Trace>, Option<f64>, bool) {
     let mut bar_max: Option<f64> = None;
     let mut log_y = false;
-    // bar value-label font: in the unthemed look use qsv's ink color; when themed, omit the
-    // color so the label inherits the template's font color (legible on dark backgrounds).
+    // bar value-label font: omit the explicit color so the label inherits the layout font color
+    // (qsv's ink in the unthemed look, the template's font when themed) -- this lets the dark/light
+    // toggle's `font.color` relayout flip the labels instead of leaving them dark on a dark page.
     let label_font = {
         let f = Font::new().size(9);
         if theme.is_some() {
             f
         } else {
-            f.family(FONT_FAMILY).color(INK)
+            f.family(FONT_FAMILY)
         }
     };
     let trace: Box<dyn Trace> = match &panel.kind {
@@ -5523,15 +5525,12 @@ fn smart_grid_parts(
     // otherwise apply qsv's built-in look. `themed` gates the explicit overrides below.
     let theme = args.theme();
     let themed = theme.is_some();
-    // a dashboard text font: only set family/ink color in the unthemed look, so themed
-    // text inherits the template's font (legible on dark backgrounds).
+    // a dashboard text font: set the family but never an explicit color, so the text inherits the
+    // layout font color (qsv's ink unthemed, the template's font when themed). Inheriting -- rather
+    // than baking in ink -- lets the dark/light toggle's `font.color` relayout flip these labels.
     let ann_font = |size: usize| {
         let f = Font::new().size(size);
-        if themed {
-            f
-        } else {
-            f.family(FONT_FAMILY).color(INK)
-        }
+        if themed { f } else { f.family(FONT_FAMILY) }
     };
 
     let mut base_layout = Layout::new()
@@ -6791,7 +6790,8 @@ fn styled_x_axis(
         a = a
             .line_color(AXIS_LINE)
             .tick_color(AXIS_LINE)
-            .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+            // no explicit font color: inherit the layout font (ink) so the toggle can flip it.
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
     }
     if is_box {
         a = a.show_tick_labels(false).show_line(false);
@@ -6831,7 +6831,8 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         a = a
             .grid_color(GRID_COLOR)
             .tick_color(AXIS_LINE)
-            .tick_font(Font::new().family(FONT_FAMILY).color(INK).size(10));
+            // no explicit font color: inherit the layout font (ink) so the toggle can flip it.
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
     }
     match (log, headroom_max) {
         // log axis: plotly ranges are in log10 units. Start a hair below 1 (counts are >= 1) so
@@ -6854,7 +6855,8 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         // for linear. Linear panels stay title-less to keep the cells compact.
         let mut title_font = Font::new().size(11);
         if theme.is_none() {
-            title_font = title_font.family(FONT_FAMILY).color(INK);
+            // no explicit color: inherit the layout font (ink) so the toggle can flip it.
+            title_font = title_font.family(FONT_FAMILY);
         }
         a = a.title(Title::with_text(LOG_AXIS_TITLE).font(title_font));
     }

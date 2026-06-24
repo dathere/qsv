@@ -621,7 +621,7 @@ to = ["csvs_convert"]
 # (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
 # interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`
 # reuses qsv's in-process stats + frequency caches. See `qsv viz --help` and #302.
-viz = ["dep:plotly", "dep:opener", "plotly/plotly_embed_js"]
+viz = ["dep:plotly", "dep:opener", "plotly/plotly_embed_js", "base64-simd"]
 # viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
 # which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a
 # browser at runtime; keep out of big-endian / headless-only publish targets.

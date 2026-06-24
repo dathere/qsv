@@ -2953,6 +2953,12 @@ fn viz_smart_grid_has_theme_toggle() {
     // literal `\` + `n` before the toggle script. The toggle <script> follows clean markup.
     assert!(html.contains("<script>\n(function () {"));
     assert!(!html.contains("n<script>\n(function () {"));
+    // the qsv/datHere logo links to the qsv site and embeds both theme variants (CSS-swapped).
+    assert!(html.contains(r#"id="qsv-logo""#));
+    assert!(html.contains(r#"href="https://qsv.dathere.com/""#));
+    assert!(html.contains("qsv-logo-light"));
+    assert!(html.contains("qsv-logo-dark"));
+    assert!(html.contains("data:image/png;base64,"));
 }
 
 #[test]
@@ -3053,6 +3059,12 @@ fn viz_smart_inline_has_theme_toggle() {
     // regression (roborev #3176): no split `\n{script}` escape (stray `\` + `n`) before the toggle.
     assert!(html.contains("<script>\n(function () {"));
     assert!(!html.contains("n<script>\n(function () {"));
+    // the qsv/datHere logo links to the qsv site and embeds both theme variants (CSS-swapped).
+    assert!(html.contains(r#"id="qsv-logo""#));
+    assert!(html.contains(r#"href="https://qsv.dathere.com/""#));
+    assert!(html.contains("qsv-logo-light"));
+    assert!(html.contains("qsv-logo-dark"));
+    assert!(html.contains("data:image/png;base64,"));
 }
 
 #[test]

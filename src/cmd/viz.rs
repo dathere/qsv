@@ -2872,6 +2872,20 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
     }
 }
 
+/// The fixed-position qsv/datHere logo (bottom-right) for `viz smart` HTML pages, linking to
+/// the qsv site. Two theme variants are embedded as base64 PNG data URIs (so the page stays
+/// self-contained) and CSS-swapped via the `body.qsv-dark` class the toggle already manages: the
+/// dark-text logo shows in light mode, the light-text (dark-background) logo in dark mode. The
+/// accompanying CSS lives inline in `smart_html_page`'s `<style>`.
+fn logo_markup() -> String {
+    use base64_simd::STANDARD as BASE64;
+    let light = BASE64.encode_to_string(include_bytes!("assets/qsv_logo_light.png"));
+    let dark = BASE64.encode_to_string(include_bytes!("assets/qsv_logo_dark.png"));
+    format!(
+        r#"<a id="qsv-logo" href="https://qsv.dathere.com/" target="_blank" rel="noopener" aria-label="qsv by datHere"><img class="qsv-logo-light" alt="qsv by datHere" src="data:image/png;base64,{light}" /><img class="qsv-logo-dark" alt="qsv by datHere" src="data:image/png;base64,{dark}" /></a>"#
+    )
+}
+
 /// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
 const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: #4b5563; }
@@ -2950,6 +2964,7 @@ fn smart_html_page(
         button,
         script,
     } = toggle_chrome(theme);
+    let logo = logo_markup();
     // The inline-div grid has no overall plot title (panels carry only their own), so it shows the
     // dashboard title as a page `<h1>`. The typed-`Plot` grid already bakes the dashboard title
     // into its layout (needed for static image export), so its wrapper suppresses the `<h1>` to
@@ -2962,7 +2977,8 @@ fn smart_html_page(
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
     // a stray `\` + `n` in every page. `format!` still doubles the literal CSS braces (`{{`/`}}`)
-    // and substitutes each placeholder in a single pass.
+    // and substitutes each placeholder in a single pass. The `#qsv-logo` rules mirror the toggle's
+    // fixed-position pattern (bottom-right) and CSS-swap the two logo variants off `body.qsv-dark`.
     format!(
         r#"<!doctype html>
 <html lang="en">
@@ -2975,12 +2991,19 @@ fn smart_html_page(
   body {{ font-family: {FONT_FAMILY}; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}
   h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
+  #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.85; line-height: 0; }}
+  #qsv-logo:hover {{ opacity: 1; }}
+  #qsv-logo img {{ height: 28px; width: auto; display: block; }}
+  #qsv-logo .qsv-logo-dark {{ display: none; }}
+  body.qsv-dark #qsv-logo .qsv-logo-light {{ display: none; }}
+  body.qsv-dark #qsv-logo .qsv-logo-dark {{ display: block; }}
 {toggle_style}
 {extra_style}
 </style>
 </head>
 <body>
 {button}
+{logo}
 {heading}
 {body}
 {script}

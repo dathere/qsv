@@ -1,0 +1,33 @@
+# cargo-audit configuration (read by the daily `security-audit.yml` workflow
+# via rustsec/audit-check, and by local `cargo audit` runs).
+
+# All entries below are "unmaintained" advisories (not vulnerabilities) for
+# transitive dependencies that qsv cannot upgrade directly; each clears once the
+# named upstream crate updates. Re-evaluate periodically and drop entries as
+# upstreams migrate.
+[advisories]
+ignore = [
+    # RUSTSEC-2026-0173: proc-macro-error2 is unmaintained.
+    # Transitive, build-only (proc-macro) dep, and NOT actually compiled by qsv:
+    #   qsv -> jaq-std/jaq-json -> jiff -> defmt (optional) -> defmt-macros -> proc-macro-error2
+    # jiff's `defmt` feature is never enabled in qsv, so the crate only appears in
+    # Cargo.lock and is never built or linked. Drops out once jaq/jiff update.
+    # See dathere/qsv#4072.
+    "RUSTSEC-2026-0173",
+
+    # RUSTSEC-2025-0141: bincode is unmaintained.
+    #   qsv -> polars -> polars-utils -> bincode
+    # Pulled in transitively by polars; clears when polars updates.
+    "RUSTSEC-2025-0141",
+
+    # RUSTSEC-2024-0436: paste is unmaintained.
+    #   qsv -> tikv-jemalloc-ctl -> paste
+    # Clears when tikv-jemalloc-ctl updates.
+    "RUSTSEC-2024-0436",
+
+    # RUSTSEC-2025-0134: rustls-pemfile is unmaintained.
+    #   qsv -> plotly -> plotly_static -> webdriver-downloader -> reqwest 0.11 -> rustls-pemfile
+    # Build/runtime path for static viz export; clears when plotly's deps move to
+    # reqwest 0.12 (which dropped rustls-pemfile 1.x).
+    "RUSTSEC-2025-0134",
+]

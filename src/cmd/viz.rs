@@ -4227,6 +4227,7 @@ fn outlier_summary(core: &str, n_outliers: usize, jurisdictions: &str) -> String
     } else {
         "outliers"
     };
+    let n_outliers = HumanCount(n_outliers as u64);
     if jurisdictions.is_empty() {
         format!("{core} \u{2014} {n_outliers} {noun}")
     } else {
@@ -6904,6 +6905,15 @@ mod tests {
         assert_eq!(
             outlier_summary(core, 2, ""),
             "New York & New Jersey, United States \u{2014} 2 outliers"
+        );
+        // large counts are humanized with thousands separators
+        assert_eq!(
+            outlier_summary(core, 1_234, "Pennsylvania"),
+            "New York & New Jersey, United States \u{2014} 1,234 outliers (Pennsylvania)"
+        );
+        assert_eq!(
+            outlier_summary(core, 12_345, ""),
+            "New York & New Jersey, United States \u{2014} 12,345 outliers"
         );
     }
 

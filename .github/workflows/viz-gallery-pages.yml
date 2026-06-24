@@ -1,0 +1,41 @@
+name: Deploy viz gallery to Pages
+
+# Publishes examples/viz/ (the interactive viz gallery + its smart-dashboard
+# iframes and sample datasets) to GitHub Pages so the charts render with the
+# correct text/html content type — no third-party proxy needed.
+# Gallery URL: https://dathere.github.io/qsv/gallery.html
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'examples/viz/**'
+      - '.github/workflows/viz-gallery-pages.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; don't cancel an in-progress run.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          # serve the gallery directory as the site root, so the gallery's
+          # relative iframe srcs (smart_*.html) and dataset links resolve
+          path: examples/viz
+      - id: deployment
+        uses: actions/deploy-pages@v4

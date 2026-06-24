@@ -24,19 +24,19 @@ map zoom buttons render exactly as the CLI produces them. Those iframe sources a
 the real output with the inline plotly bundle swapped for the same CDN tag (so they
 stay a few KB each); they need a network connection to render.
 
-**▶ View it rendered** (via githack, which serves the file with the correct
-`text/html` type — one-click "External Content Notice" the first time):
+**▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 
-<https://raw.githack.com/dathere/qsv/master/examples/viz/gallery.html>
+<https://dathere.github.io/qsv/gallery.html>
+
+This directory is published to GitHub Pages by
+[`.github/workflows/viz-gallery-pages.yml`](../../.github/workflows/viz-gallery-pages.yml)
+on every push to `master`, so the gallery — and its embedded `smart_*.html`
+iframes — render directly, no third-party proxy needed.
 
 **Raw file** (downloads / shows source — `raw.githubusercontent.com` serves HTML
 as `text/plain`, so a browser won't render it):
 
 <https://raw.githubusercontent.com/dathere/qsv/master/examples/viz/gallery.html>
-
-> Note: the GitHub `htmlpreview.github.io` wrapper does **not** work for this page
-> — it drops external CDN scripts and can't handle Plotly, so charts render blank.
-> Use the githack link above, or open the downloaded file in a browser.
 
 ## Datasets
 

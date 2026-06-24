@@ -78,5 +78,5 @@ Plotly.newPlot("g21", FIGS[21].data, FIGS[21].layout || {}, Object.assign({respo
 Plotly.newPlot("g22", FIGS[22].data, FIGS[22].layout || {}, Object.assign({responsive:true}, FIGS[22].config || {}));
 Plotly.newPlot("g23", FIGS[23].data, FIGS[23].layout || {}, Object.assign({responsive:true}, FIGS[23].config || {}));
 </script>
-<script>addEventListener("message",function(e){var h=e.data&&e.data.qsvVizHeight;if(typeof h!=="number")return;var f=document.getElementsByClassName("dash");for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){f[i].style.height=(h+4)+"px";break;}});</script>
+<script>addEventListener("message",function(e){var h=e.data&&e.data.qsvVizHeight;if(typeof h!=="number")return;var f=document.getElementsByClassName("dash");for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+"px";break;}});</script>
 </body></html>

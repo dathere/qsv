@@ -2904,7 +2904,7 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     // opens the toggle in dark mode by default.
     assert!(html.contains("background: var(--qsv-page-bg)"));
     assert!(html.contains("--qsv-page-bg: #111111"));
-    assert!(html.contains("var themeDefaultDark = true"));
+    assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
 }
@@ -2941,10 +2941,36 @@ fn viz_smart_grid_has_theme_toggle() {
     assert!(html.contains("body.qsv-dark"));
     // the typed grid is now embedded inline in qsv's page (not plotly's own to_html document)
     assert!(html.contains(r#"id="qsv-viz-smart-grid""#));
-    // no --theme given -> the toggle opens light by default
-    assert!(html.contains("var themeDefaultDark = false"));
+    // no --theme given -> the toggle defers to the viewer's prefers-color-scheme
+    assert!(html.contains(r#"var themeDefaultMode = "system""#));
     // the actual subplot grid is still there (typed-Layout multi-axis)
     assert!(html.contains(r#""xaxis2":{"#));
+    // the typed plot already bakes the dashboard title into its layout, so the page <h1> is
+    // suppressed (no double title); the document <title> tab is still set.
+    assert!(!html.contains(r#"<h1 class="qsv-viz-title""#));
+    assert!(html.contains("<title>people.csv \u{2014} data overview</title>"));
+}
+
+#[test]
+fn viz_smart_explicit_light_theme_opens_light() {
+    // an explicit light --theme must open light, NOT defer to a dark-mode OS
+    // (prefers-color-scheme). Only the absence of --theme falls back to "system".
+    let wrk = Workdir::new("viz_smart_explicit_light_theme_opens_light");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "small.csv",
+        "--theme",
+        "plotly_white",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#"var themeDefaultMode = "light""#));
+    assert!(!html.contains(r#"var themeDefaultMode = "system""#));
 }
 
 #[test]
@@ -3017,6 +3043,9 @@ fn viz_smart_inline_has_theme_toggle() {
     assert!(html.contains(r#"class="qsv-viz-grid""#));
     // >8 panels -> more than the typed-subplot limit, so it's the inline-div renderer
     assert!(html.matches("Plotly.newPlot").count() > 8);
+    // inline panels carry no overall title, so the dashboard title IS shown as the page <h1>
+    // (unlike the typed-grid path, which suppresses it because the plot bakes the title in).
+    assert!(html.contains(r#"<h1 class="qsv-viz-title""#));
 }
 
 #[test]

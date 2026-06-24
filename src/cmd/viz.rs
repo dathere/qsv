@@ -2834,12 +2834,15 @@ struct ToggleChrome {
 
 fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
     let (light_bg, light_ink) = theme_page_chrome(theme);
-    // A dark built-in theme should open in dark mode by default (when the viewer has no
-    // explicit preference). `theme_page_chrome` returns a dark page exactly for those themes.
-    let default_dark = matches!(
-        theme,
-        Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark)
-    );
+    // Three-state initial mode (overridable by a saved localStorage choice). An EXPLICIT
+    // `--theme` opens in that theme's implied mode — dark for the dark built-ins, light for every
+    // other (light) built-in — so e.g. `--theme plotly_white` is NOT overridden by a dark-mode OS.
+    // Only with no `--theme` at all do we defer to the viewer's `prefers-color-scheme`.
+    let default_mode = match theme {
+        None => "system",
+        Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark) => "dark",
+        Some(_) => "light",
+    };
 
     // Raw-string templates with token placeholders, so the brace-heavy JS needs no `{{`/`}}`
     // escaping and rustfmt's `format_strings` (regular-string-only) won't reflow/mangle them.
@@ -2856,10 +2859,7 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
     // palette is a fixed dark set. `buildUpdate` only sets keys present on a given graph's layout,
     // so axis-less plots (pie) and arbitrary subplot counts both work without knowing div ids.
     let script = SCRIPT_TEMPLATE
-        .replace(
-            "__DEFAULT_DARK__",
-            if default_dark { "true" } else { "false" },
-        )
+        .replace("__DEFAULT_MODE__", default_mode)
         .replace("__PAPER_BG__", PAPER_BG)
         .replace("__INK__", INK)
         .replace("__GRID_COLOR__", GRID_COLOR)
@@ -2883,7 +2883,7 @@ const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-pag
 /// runtime; kept as a raw string so the JS braces and regex backslashes need no escaping.
 const SCRIPT_TEMPLATE: &str = r##"<script>
 (function () {
-  var themeDefaultDark = __DEFAULT_DARK__;
+  var themeDefaultMode = "__DEFAULT_MODE__";
   var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111" };
   var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__" };
   function isDark() {
@@ -2892,7 +2892,8 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
       if (saved === "dark") return true;
       if (saved === "light") return false;
     } catch (e) {}
-    if (themeDefaultDark) return true;
+    if (themeDefaultMode === "dark") return true;
+    if (themeDefaultMode === "light") return false;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
   function buildUpdate(gd, p) {
@@ -2934,18 +2935,12 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
 })();
 </script>"##;
 
-/// Assemble a complete self-contained `viz smart` HTML page from already-rendered body content
-/// (the panel grid markup, where each panel/plot was emitted via `Plot::to_inline_html`). Single
-/// source of truth for the document shell, shared by the inline-div grid and the typed-`Plot`
-/// grid so they can't diverge. The plotly bundle is embedded once via `plotly_js_only` (MathJax
-/// stripped — see that fn), and the shared light/dark toggle (`toggle_chrome`) is injected.
-/// `extra_style` is page-specific layout CSS; `body` is the inner grid markup (already escaped
-/// where needed).
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
     extra_style: &str,
     body: &str,
+    show_heading: bool,
 ) -> String {
     let js = plotly_js_only();
     let title = html_escape(title_text);
@@ -2954,6 +2949,15 @@ fn smart_html_page(
         button,
         script,
     } = toggle_chrome(theme);
+    // The inline-div grid has no overall plot title (panels carry only their own), so it shows the
+    // dashboard title as a page `<h1>`. The typed-`Plot` grid already bakes the dashboard title
+    // into its layout (needed for static image export), so its wrapper suppresses the `<h1>` to
+    // avoid rendering the title twice. The `<title>` (browser tab) is always set either way.
+    let heading = if show_heading {
+        format!("<h1 class=\"qsv-viz-title\">{title}</h1>\n")
+    } else {
+        String::new()
+    };
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\" />\n<meta \
          name=\"viewport\" content=\"width=device-width, initial-scale=1\" \
@@ -2962,8 +2966,8 @@ fn smart_html_page(
          h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 \
          20px; }}\n  .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); \
          text-align: center; padding: 8px 4px 4px; \
-         }}\n{toggle_style}\n{extra_style}\n</style>\n</head>\n<body>\n{button}\n<h1 \
-         class=\"qsv-viz-title\">{title}</h1>\n{body}\n{script}\n</body>\n</html>\n"
+         }}\n{toggle_style}\n{extra_style}\n</style>\n</head>\n<body>\n{button}\n{heading}{body}\\
+         n{script}\n</body>\n</html>\n"
     )
 }
 
@@ -5859,7 +5863,8 @@ fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_tex
         "<div class=\"qsv-viz-grid\">\n      <div class=\"qsv-viz-plot\">\n{inner}\n      \
          </div>\n</div>"
     );
-    smart_html_page(title_text, theme, extra_style, &body)
+    // the typed plot already carries the dashboard title in its layout, so suppress the page <h1>.
+    smart_html_page(title_text, theme, extra_style, &body, false)
 }
 
 /// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
@@ -6252,7 +6257,8 @@ fn render_smart_inline(
          grid-column: 1 / -1; }}\n  .qsv-viz-plot {{ width: 100%; }}"
     );
     let body = format!("<div class=\"qsv-viz-grid\">\n{cells}</div>");
-    smart_html_page(title_text, theme, &extra_style, &body)
+    // panels carry no overall title, so the dashboard title is shown as the page <h1>.
+    smart_html_page(title_text, theme, &extra_style, &body, true)
 }
 
 /// Minimal HTML-escaping for text interpolated into the inline dashboard page.

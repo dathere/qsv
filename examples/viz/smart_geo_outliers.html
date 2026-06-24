@@ -112,10 +112,10 @@
 </script>
       </div>
     </div>
-</div>
-<script>
+</div>\
+         n<script>
 (function () {
-  var themeDefaultDark = false;
+  var themeDefaultMode = "system";
   var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111" };
   var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF" };
   function isDark() {
@@ -124,7 +124,8 @@
       if (saved === "dark") return true;
       if (saved === "light") return false;
     } catch (e) {}
-    if (themeDefaultDark) return true;
+    if (themeDefaultMode === "dark") return true;
+    if (themeDefaultMode === "light") return false;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
   function buildUpdate(gd, p) {

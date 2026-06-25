@@ -121,11 +121,11 @@ pub(super) fn format_dictionary_json(
 /// Standard JSON Schema keywords (`type`, `title`, `description`, `minimum`,
 /// `maximum`, `enum`, `const`, `format`, `examples`) come from the deterministic
 /// stats data plus the LLM-inferred Label/Description. qsv- and LLM-specific data
-/// that doesn't map to standard keywords (`content_type`, `cardinality`,
-/// `null_count`, weighted example counts, additional stats columns) is preserved
-/// via a single `x-qsv` annotation object per property. Per draft 2020-12,
-/// unknown keywords are ignored by validators, so this flows through validation
-/// cleanly.
+/// that doesn't map to standard keywords (`content_type`, `role`, `concept`,
+/// `cardinality`, `null_count`, weighted example counts, additional stats columns)
+/// is preserved via a single `x-qsv` annotation object per property; the dataset
+/// `grain` rides in the top-level `x-qsv`. Per draft 2020-12, unknown keywords are
+/// ignored by validators, so this flows through validation cleanly.
 ///
 /// `allow_extra_cols` toggles the schema-root `additionalProperties` between
 /// `false` (strict, the default) and `true` (permissive).
@@ -134,7 +134,10 @@ pub(super) fn format_dictionary_json(
 /// emit `format: "date"` / `"date-time"`. Off by default because qsv's
 /// `--infer-dates` accepts many non-RFC-3339 strings (e.g. "June 27, 1968")
 /// that would fail JSON Schema format validation. Mirrors
-/// `src/cmd/schema.rs`'s `--strict-dates` flag (lines 462,469).
+/// `src/cmd/schema.rs`'s `--strict-dates` flag.
+///
+/// `grain` is the dataset-level "one row = one X" statement (when inferred);
+/// emitted as `x-qsv.grain` only when `infer_content_type` is set.
 ///
 /// The schema's top-level `x-qsv.generated_by` is left as the literal
 /// `{GENERATED_BY_SIGNATURE}` placeholder; the caller substitutes the resolved
@@ -150,6 +153,7 @@ pub(super) fn format_dictionary_jsonschema(
     infer_content_type: bool,
     allow_extra_cols: bool,
     strict_dates: bool,
+    grain: Option<&str>,
 ) -> Value {
     let mut properties = serde_json::Map::with_capacity(entries.len());
     // Every column is listed in `required`, matching `qsv schema`'s behavior.
@@ -167,7 +171,7 @@ pub(super) fn format_dictionary_jsonschema(
         );
     }
 
-    json!({
+    let mut doc = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "title": format!("Data Dictionary for {input_filename}"),
         "description": format!("JSON Schema (draft 2020-12) Data Dictionary inferred from {input_filename} by qsv describegpt --dictionary."),
@@ -183,7 +187,20 @@ pub(super) fn format_dictionary_jsonschema(
             "infer_content_type": infer_content_type,
             "strict_dates": strict_dates,
         },
-    })
+    });
+
+    // Dataset-level grain ("one row = one X"), gated on the same --infer-content-type path that
+    // produces role/concept. Emitted in the top-level x-qsv so the schema stays a valid draft
+    // 2020-12 document and a dictionary built without the flag stays byte-identical.
+    if infer_content_type
+        && let Some(g) = grain
+        && !g.is_empty()
+        && let Some(x_qsv) = doc.get_mut("x-qsv").and_then(Value::as_object_mut)
+    {
+        x_qsv.insert("grain".to_string(), Value::String(g.to_string()));
+    }
+
+    doc
 }
 
 /// Build the per-property JSON Schema for one `DictionaryEntry`.
@@ -360,7 +377,9 @@ fn build_property_schema(
 }
 
 /// Build the per-property `x-qsv` annotation object. Extracted so the NULL
-/// short-circuit path can reuse it without duplicating the field map.
+/// short-circuit path can reuse it without duplicating the field map. Carries the
+/// LLM-inferred `role`/`concept` (gated on `infer_content_type`, like `content_type`)
+/// so `viz smart --dictionary` can route columns semantically.
 fn build_x_qsv(
     entry: &DictionaryEntry,
     infer_content_type: bool,
@@ -397,6 +416,19 @@ fn build_x_qsv(
                     ),
                 );
             }
+        }
+    }
+    // Analytical role + catalog concept ride the same `--infer-content-type` gate as
+    // content_type (they are only inferred in that path). Emitted only when non-empty so a
+    // dictionary built without the flag stays byte-identical. These power semantic routing in
+    // `viz smart --dictionary` (role = dimension/measure/identifier/timestamp; concept =
+    // a namespaced identity like geo.census_tract / time.created_at / measure.amount).
+    if infer_content_type {
+        if !entry.role.is_empty() {
+            x_qsv.insert("role".to_string(), Value::String(entry.role.clone()));
+        }
+        if !entry.concept.is_empty() {
+            x_qsv.insert("concept".to_string(), Value::String(entry.concept.clone()));
         }
     }
     if !entry.examples.is_empty() {
@@ -1142,8 +1174,17 @@ mod tests {
         );
         date.examples = "01/24/2013 12:00:00 AM [5]\n01/07/2014 12:00:00 AM [3]".to_string();
         let bare = date_entry("plain", "date", "Date", "2013-01-24", "2013-12-31");
-        let schema =
-            format_dictionary_jsonschema(&[date, bare], "test.csv", 10, 5, 25, true, false, false);
+        let schema = format_dictionary_jsonschema(
+            &[date, bare],
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+        );
         let xq = &schema["properties"]["created"]["x-qsv"];
         assert_eq!(xq["min"], "01/24/2013");
         assert_eq!(xq["max"], "12/31/2013");
@@ -1155,6 +1196,77 @@ mod tests {
         assert!(
             xq_bare.get("min").is_none() && xq_bare.get("max").is_none(),
             "bare date token must not add x-qsv min/max: {xq_bare}"
+        );
+    }
+
+    #[test]
+    fn jsonschema_x_qsv_carries_role_concept_grain() {
+        // role/concept ride the --infer-content-type gate (like content_type); grain is a
+        // top-level x-qsv annotation. These feed `viz smart --dictionary` semantic routing.
+        let mut tract = sample_entry("census_tract", "category");
+        tract.r#type = "Integer".to_string();
+        tract.role = "dimension".to_string();
+        tract.concept = "geo.census_tract".to_string();
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&tract),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            Some("one row = one 311 service request"),
+        );
+        let xq = &schema["properties"]["census_tract"]["x-qsv"];
+        assert_eq!(xq["role"], "dimension");
+        assert_eq!(xq["concept"], "geo.census_tract");
+        assert_eq!(
+            schema["x-qsv"]["grain"],
+            "one row = one 311 service request"
+        );
+
+        // flag off: role/concept/grain all absent (legacy schema stays byte-identical).
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&tract),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            Some("one row = one 311 service request"),
+        );
+        let xq_off = &off["properties"]["census_tract"]["x-qsv"];
+        assert!(xq_off.get("role").is_none(), "role leaked when flag off");
+        assert!(
+            xq_off.get("concept").is_none(),
+            "concept leaked when flag off"
+        );
+        assert!(
+            off["x-qsv"].get("grain").is_none(),
+            "grain leaked when flag off"
+        );
+
+        // empty role/concept are not emitted even with the flag on; grain None is omitted.
+        let bare = sample_entry("plain", "");
+        let schema2 = format_dictionary_jsonschema(
+            std::slice::from_ref(&bare),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+        );
+        let xq2 = &schema2["properties"]["plain"]["x-qsv"];
+        assert!(xq2.get("role").is_none() && xq2.get("concept").is_none());
+        assert!(
+            schema2["x-qsv"].get("grain").is_none(),
+            "grain must be absent when None"
         );
     }
 
@@ -1215,6 +1327,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
         let examples = schema["properties"]["created"]["examples"]
             .as_array()
@@ -1255,6 +1368,7 @@ mod tests {
             false,
             false,
             false,
+            None,
         );
         let examples = schema["properties"]["X Coordinate"]["examples"]
             .as_array()
@@ -1285,6 +1399,7 @@ mod tests {
             false,
             false,
             false,
+            None,
         );
         let examples = schema["properties"]["name"]["examples"]
             .as_array()

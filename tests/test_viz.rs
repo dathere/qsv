@@ -2020,6 +2020,332 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(!html.contains(r#""type":"scattermapbox""#));
 }
 
+// A numeric administrative code (40 distinct values, > the categorical cardinality threshold) is
+// charted as a box plot by the statistical heuristic, because it looks like a continuous measure.
+// A describegpt dictionary that tags it `content_type: category` routes it to a frequency bar
+// instead — and being categorical, it's also excluded from the numeric/correlation pool.
+#[test]
+fn viz_smart_dictionary_recodes_numeric_to_bar() {
+    let wrk = Workdir::new("viz_smart_dictionary_recodes_numeric_to_bar");
+    let mut rows = String::from("zone,status\n");
+    for i in 0..200 {
+        let zone = i % 40; // 40 distinct integer codes
+        let status = match i % 3 {
+            0 => "Open",
+            1 => "Closed",
+            _ => "Pending",
+        };
+        rows.push_str(&format!("{zone},{status}\n"));
+    }
+    wrk.create_from_string("codes.csv", &rows);
+
+    // WITHOUT a dictionary: the heuristic treats `zone` as a continuous numeric -> box plot.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"box""#),
+        "zone should be a box without a dictionary"
+    );
+
+    // WITH a dictionary tagging `zone` as a category: it becomes a frequency bar, no box.
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"Dictionary":{"response":{"fields":[
+            {"name":"zone","type":"Integer","content_type":"category"},
+            {"name":"status","type":"String","content_type":"category"}
+        ]}}}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "zone should be a bar (not a box) with the dictionary"
+    );
+    assert!(html.contains(r#""type":"bar""#));
+}
+
+// A bad/missing --dictionary path must not abort: it warns and degrades to the stats-only
+// dashboard.
+#[test]
+fn viz_smart_dictionary_missing_file_soft_falls_back() {
+    let wrk = Workdir::new("viz_smart_dictionary_missing_file_soft_falls_back");
+    let mut rows = String::from("status\n");
+    for i in 0..30 {
+        rows.push_str(if i % 2 == 0 { "Open\n" } else { "Closed\n" });
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "--dictionary", "does_not_exist.json"]);
+    let out = wrk.output(&mut cmd);
+    // soft fallback: still produces a dashboard
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"bar""#));
+}
+
+// A describegpt --format jsonschema dictionary (the channel `--dictionary infer` produces): a
+// numeric admin code tagged `x-qsv.concept = geo.census_tract` routes to a bar (not a box), and the
+// human `title` becomes the panel title.
+#[test]
+fn viz_smart_dictionary_jsonschema_routes_and_labels() {
+    let wrk = Workdir::new("viz_smart_dictionary_jsonschema_routes_and_labels");
+    let mut rows = String::from("census_tract,status\n");
+    for i in 0..200 {
+        let tract = i % 40; // 40 distinct integer codes -> a box without semantics
+        let status = match i % 3 {
+            0 => "Open",
+            1 => "Closed",
+            _ => "Pending",
+        };
+        rows.push_str(&format!("{tract},{status}\n"));
+    }
+    wrk.create_from_string("codes.csv", &rows);
+
+    // WITHOUT a dictionary: census_tract (40 distinct ints) -> box plot
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"box""#),
+        "census_tract should be a box without a dictionary"
+    );
+
+    // WITH a jsonschema dictionary: concept geo.census_tract (a place key) -> bar, label via
+    // `title`
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Case Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          },
+          "x-qsv": { "grain": "one row = one service request" }
+        }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "census_tract should be a bar (not a box) with the jsonschema dictionary"
+    );
+    assert!(html.contains(r#""type":"bar""#));
+    // the human labels from `title` become panel titles
+    assert!(
+        html.contains("Census Tract"),
+        "label should title the panel"
+    );
+    assert!(html.contains("Case Status"));
+}
+
+// `--dictionary-context` only applies to `--dictionary infer` (it's forwarded to describegpt as
+// --context-file). When reading an existing dictionary file it's ignored with a warning, and the
+// file dictionary still drives the dashboard. (The infer passthrough itself needs a live LLM.)
+#[test]
+fn viz_smart_dictionary_context_ignored_with_file_dict() {
+    let wrk = Workdir::new("viz_smart_dictionary_context_ignored_with_file_dict");
+    let mut rows = String::from("zone,status\n");
+    for i in 0..200 {
+        let zone = i % 40;
+        let status = if i % 2 == 0 { "Open" } else { "Closed" };
+        rows.push_str(&format!("{zone},{status}\n"));
+    }
+    wrk.create_from_string("codes.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zone": { "type": ["integer","null"], "title": "Zone",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+    wrk.create_from_string("ctx.md", "Zone is an administrative district code.\n");
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .arg("--dictionary-context")
+        .arg(wrk.path("ctx.md"))
+        .args(["-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    // context is ignored (with a warning) when reading an existing dictionary file
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--dictionary-context"),
+        "expected an ignore warning on stderr; got: {stderr}"
+    );
+    // the file dictionary still routes zone -> bar (not a box)
+    let html = wrk.read_to_string("d.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(!html.contains(r#""type":"box""#));
+}
+
+// Coordinates with non-standard headers (`X Coordinate` / `Y Coordinate`) aren't found by the
+// header-name heuristic, so without a dictionary no map renders and they're charted as numeric
+// distributions. A jsonschema dictionary tagging them geo.latitude/geo.longitude must render the
+// map (and so NOT chart them as box/histogram distributions).
+#[test]
+fn viz_smart_dictionary_maps_nonstandard_coord_names() {
+    let wrk = Workdir::new("viz_smart_dictionary_maps_nonstandard_coord_names");
+    let mut rows = String::from("Y Coordinate,X Coordinate,category\n");
+    for i in 0..60 {
+        let lat = 34.00 + (i as f64) * 0.01; // local LA-ish cluster, all in-range
+        let lon = -118.40 + (i as f64) * 0.01;
+        let cat = match i % 3 {
+            0 => "A",
+            1 => "B",
+            _ => "C",
+        };
+        rows.push_str(&format!("{lat:.4},{lon:.4},{cat}\n"));
+    }
+    wrk.create_from_string("xy.csv", &rows);
+
+    // WITHOUT a dictionary: names unknown -> no map; the coordinates fall through to box panels.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "xy.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#""type":"scattermapbox""#),
+        "no map should render for non-standard coord names without a dictionary"
+    );
+    assert!(
+        html.contains(r#""type":"box""#),
+        "without a dictionary the coords are charted as distributions"
+    );
+
+    // WITH a jsonschema dictionary tagging them geo.latitude/geo.longitude: the map renders and the
+    // coordinates are consumed by it (not charted as their own distributions).
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "Y Coordinate": { "type": "number", "title": "Y Coordinate",
+              "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.latitude" } },
+            "X Coordinate": { "type": "number", "title": "X Coordinate",
+              "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.longitude" } },
+            "category": { "type": "string", "title": "Category",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.type" } }
+          }
+        }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "xy.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"scattermapbox""#),
+        "map should render from the dictionary geo.latitude/geo.longitude tags; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"histogram""#),
+        "dictionary-mapped coords must not also be charted as distributions; html: {html}"
+    );
+}
+
+// A date column with NO numeric measure yields a count-over-time line (records per period) — the
+// "volume over time" overview. Works without a dictionary.
+#[test]
+fn viz_smart_count_over_time_without_measure() {
+    let wrk = Workdir::new("viz_smart_count_over_time_without_measure");
+    let mut rows = String::from("created_date,status\n");
+    for i in 0..60 {
+        let day = (i % 28) + 1;
+        let status = if i % 2 == 0 { "Open" } else { "Closed" };
+        rows.push_str(&format!("2021-03-{day:02},{status}\n"));
+    }
+    wrk.create_from_string("events.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a count line over the date axis, titled "records over <date>"
+    assert!(html.contains(r#""mode":"lines""#));
+    assert!(html.contains(r#""type":"date""#));
+    assert!(
+        html.contains("records over created_date"),
+        "count-over-time should be titled 'records over created_date'; html: {html}"
+    );
+}
+
+// The dataset `grain` from a jsonschema dictionary names the count-over-time unit ("permit
+// application" instead of "records"), and a `time.created_at` concept selects the canonical x-axis.
+#[test]
+fn viz_smart_dictionary_grain_labels_count() {
+    let wrk = Workdir::new("viz_smart_dictionary_grain_labels_count");
+    let mut rows = String::from("requested_on,status\n");
+    for i in 0..60 {
+        let day = (i % 28) + 1;
+        let status = if i % 2 == 0 { "Submitted" } else { "Approved" };
+        rows.push_str(&format!("2021-03-{day:02},{status}\n"));
+    }
+    wrk.create_from_string("permits.csv", &rows);
+
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "requested_on": { "type": "string", "title": "Requested On",
+              "x-qsv": { "qsv_type": "Date", "role": "timestamp", "concept": "time.created_at" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          },
+          "x-qsv": { "grain": "one row = one permit application" }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "permits.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .args(["-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""mode":"lines""#));
+    // grain names the count unit; the date axis uses the dictionary label ("Requested On"), not the
+    // raw header.
+    assert!(
+        html.contains("permit application over Requested On"),
+        "grain should name the count unit and the date label should be the dictionary title; \
+         html: {html}"
+    );
+}
+
 #[test]
 fn viz_smart_antimeridian_cluster_stays_local_map() {
     // A tight cluster straddling the +/-180 antimeridian has a small TRUE longitude span but a huge

@@ -27,6 +27,7 @@ mis           = "mis"
 nd            = "nd"
 Pn            = "Pn"
 tripel        = "tripel"
+sems          = "sems"
 
 [files]
 extend-exclude = [

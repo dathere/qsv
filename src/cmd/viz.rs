@@ -264,6 +264,20 @@ smart options:
                            manually). Only affects `smart`. Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
+    --dictionary <src>     EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel
+                           selection from each field's semantic role/concept (falling back to
+                           its content type) instead of relying on column statistics alone:
+                           dimensions and numeric codes (ward, census_tract, zone) become bars,
+                           measures get box/correlation/trend panels, date/datetime columns feed
+                           the time-series panel (not noisy frequency bars), identifiers / PII /
+                           free-text are skipped, and lat/lon feed the map. Field labels become
+                           panel titles. Columns the dictionary cannot classify still use the
+                           statistical heuristic. <src> is one of:
+                           "infer" to run describegpt on the input now (with infer-content-type,
+                           two-pass and jsonschema output; requires an LLM configured) and use
+                           its output; or a path to an existing describegpt dictionary file
+                           (jsonschema or json). Generation/read failures soft-fall back to the
+                           stats-only dashboard. Only affects `smart`.
     --log-scale <mode>     Use a logarithmic y-axis for frequency bar panels whose
                            tallest bar dwarfs the rest (e.g. a large "(NULL)" or
                            "Other (N)" bucket), so the small categories stay visible.
@@ -637,6 +651,7 @@ struct Args {
     flag_no_nulls:     bool,
     flag_no_other:     bool,
     flag_smarter:      bool,
+    flag_dictionary:   Option<String>,
     flag_log_scale:    String,
     flag_title:        Option<String>,
     flag_x_title:      Option<String>,
@@ -3227,7 +3242,7 @@ fn parse_f64(cell: Option<&[u8]>) -> Option<f64> {
     s.parse::<f64>().ok()
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Agg {
     Sum,
     Mean,
@@ -3685,6 +3700,400 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
     (core_lats, core_lons, out_lats, out_lons)
 }
 
+/// The panel a column is routed to once a describegpt Data Dictionary's semantic signals are
+/// folded into `viz smart`. Distilled from `role` / `concept` / `content_type` by
+/// `derive_semantics`. `Defer` (no usable signal, or any column absent from the dictionary) falls
+/// back to the statistical `classify`, so a dashboard built without `--dictionary` is unchanged.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+enum Route {
+    /// No semantic signal -> defer to the statistical heuristic (`classify`).
+    #[default]
+    Defer,
+    /// A categorical/code field -> frequency bar, even when stored as a numeric code or when its
+    /// cardinality exceeds the usual bar threshold. This is what lets administrative codes stored
+    /// as numbers (ward, police_zone, census_tract, ...) become bars instead of being misread as
+    /// continuous measures.
+    Dimension,
+    /// A genuine continuous measure -> box / histogram / correlation / time-series y. This is the
+    /// positive "this IS a measure" signal the statistical heuristic cannot express.
+    Measure,
+    /// A date/datetime field -> handled by the time-series overview panel; no per-column
+    /// distribution panel. Stops high-cardinality timestamps from becoming top-N frequency bars.
+    Temporal,
+    /// A latitude/longitude coordinate -> consumed by the map panel; never boxed/barred.
+    MapCoord,
+    /// An identifier / PII / free-text field -> not a meaningful distribution to chart; skipped.
+    Skip,
+}
+
+/// A column's resolved charting verdict: where it goes (`route`), how to aggregate it over time
+/// (`agg`: `Some(Sum)` for additive counts/amounts, `Some(Mean)` for rates/ratios, `None` for the
+/// trend panel's default raw value), its dictionary `concept` (kept for map-pairing / dedup / the
+/// guardrail), and its human `label` (kept for panel titles). Built per column by
+/// `derive_semantics`; `Agg` is the existing chart-aggregation enum, reused here.
+#[derive(Clone, PartialEq, Eq, Debug, Default)]
+struct ColSemantics {
+    route:   Route,
+    agg:     Option<Agg>,
+    concept: String,
+    label:   String,
+}
+
+/// One column's semantic signals parsed from a describegpt Data Dictionary.
+#[derive(Clone, Debug, Default)]
+struct DictRow {
+    content_type: String,
+    role:         String,
+    concept:      String,
+    label:        String,
+}
+
+/// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
+/// dataset `grain` ("one row = one X"). Drives `viz smart` semantic routing.
+#[derive(Clone, Debug, Default)]
+struct DictData {
+    rows:  HashMap<String, DictRow>,
+    grain: Option<String>,
+}
+
+/// Map a `concept` token (the most specific, highest-confidence signal) to a route. Returns `None`
+/// for an unrecognized namespace so the caller falls through to `role`. Concepts are namespaced
+/// `ns.leaf` (see `describegpt::dictionary::CONCEPT_VOCAB`).
+fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
+    let (ns, leaf) = concept.split_once('.').unwrap_or((concept, ""));
+    let routed = match ns {
+        "geo" => match leaf {
+            "latitude" | "longitude" | "coordinate_pair" => (Route::MapCoord, None),
+            // geo *keys* (zip, census_tract, city, state, country, street_address) name a place;
+            // they are dimensions to bar, never continuous measures. This is the signal that fixes
+            // census_tract even when describegpt defaulted its numeric `role` to `measure`.
+            _ => (Route::Dimension, None),
+        },
+        "time" => (Route::Temporal, None),
+        "id" | "pii" => (Route::Skip, None),
+        "org" | "category" | "nyc" => (Route::Dimension, None),
+        "measure" => match leaf {
+            // ratios/percentages average over time; counts/amounts are additive.
+            "ratio" => (Route::Measure, Some(Agg::Mean)),
+            _ => (Route::Measure, Some(Agg::Sum)),
+        },
+        // unknown namespace (or the bare "unknown" token) -> defer to role
+        _ => return None,
+    };
+    Some(routed)
+}
+
+/// Map a `role` token (the coarse fallback when no concept resolves) to a route.
+fn route_from_role(role: &str) -> Option<(Route, Option<Agg>)> {
+    let routed = match role {
+        "timestamp" => (Route::Temporal, None),
+        "identifier" => (Route::Skip, None),
+        "dimension" => (Route::Dimension, None),
+        // additive by default; a measure.* concept refines this to Mean for ratios.
+        "measure" => (Route::Measure, Some(Agg::Sum)),
+        _ => return None,
+    };
+    Some(routed)
+}
+
+/// Map a describegpt `content_type` token to a route (the legacy fallback). Date/datetime/duration
+/// tokens may carry a `:<suffix>`, so match on the base token before the first `:`. Unknown/empty
+/// yields `Defer` so the column falls back to statistics.
+fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
+    let base = content_type
+        .split_once(':')
+        .map_or(content_type, |(b, _)| b)
+        .trim();
+    let route = match base {
+        "category" | "state" | "state_abbr" | "country" | "country_code" | "currency_code"
+        | "mime_type" | "color_hex" | "industry" | "job_title" | "profession" | "time_zone" => {
+            Route::Dimension
+        },
+        "latitude" | "longitude" => Route::MapCoord,
+        "date" | "datetime" | "time" | "duration" => Route::Temporal,
+        "unknown" | "" => Route::Defer,
+        // identifier / PII / address / technical / free-text -> not a meaningful distribution
+        _ => Route::Skip,
+    };
+    (route, None)
+}
+
+/// Defend against describegpt's numeric `role` defaulting to `measure` (see
+/// `describegpt::dictionary::coerce_role_concept`): downgrade a `Measure` verdict to a `Dimension`
+/// (bar) when the column looks like an integer *code* — few distinct values spread over many rows
+/// — rather than a quantity. Only ever touches `Measure`; an explicit `measure.*` concept, a
+/// non-integer, or a (near-)unique column is trusted as-is. Reuses `CATEGORICAL_MAX_CARDINALITY`
+/// so "is it categorical?" means the same here as in `classify`.
+fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
+    if sem.route != Route::Measure
+        || sem.concept.starts_with("measure.")
+        || s.r#type.as_str() != "Integer"
+    {
+        return sem;
+    }
+    let ratio = s.uniqueness_ratio;
+    if ratio.is_some_and(|r| r > 0.95) {
+        return sem; // genuinely (near-)continuous, e.g. a monetary integer
+    }
+    if s.cardinality <= CATEGORICAL_MAX_CARDINALITY && ratio.is_some_and(|r| r < 0.05) {
+        sem.route = Route::Dimension;
+    }
+    sem
+}
+
+/// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
+///
+/// Precedence: **concept -> role -> content_type -> statistics**. `concept` is the most specific,
+/// highest-confidence signal (it fixes a numeric admin code that describegpt defaulted to
+/// `role: measure`); `role` is the coarse fallback; `content_type` is the legacy mapping; and a
+/// column with no usable signal `Defer`s to `classify`. A guardrail wraps every `Measure` verdict.
+/// With no dictionary `row`, returns the default (`Defer`) so stats-only behavior is unchanged.
+fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> ColSemantics {
+    let Some(row) = row else {
+        return ColSemantics::default();
+    };
+    let label = row.label.trim().to_string();
+    let concept = row.concept.trim();
+    let make = |route: Route, agg: Option<Agg>| {
+        guardrail(
+            ColSemantics {
+                route,
+                agg,
+                concept: concept.to_string(),
+                label: label.clone(),
+            },
+            s,
+        )
+    };
+
+    // 1. concept — most specific
+    if !concept.is_empty()
+        && concept != "unknown"
+        && let Some((route, agg)) = route_from_concept(concept)
+    {
+        return make(route, agg);
+    }
+    // 2. role — coarse fallback
+    if let Some((route, agg)) = route_from_role(row.role.trim()) {
+        return make(route, agg);
+    }
+    // 3. content_type — legacy mapping
+    let ct = row.content_type.trim();
+    if !ct.is_empty() && ct != "unknown" {
+        let (route, agg) = route_from_content_type(ct);
+        return make(route, agg);
+    }
+    // 4. statistics floor — carry the label so panel titles still benefit
+    ColSemantics {
+        route: Route::Defer,
+        agg: None,
+        concept: String::new(),
+        label,
+    }
+}
+
+/// The continuous-measure arm of `classify`: a box plot from precomputed quartiles, or a histogram
+/// when moarstats flagged the column bimodal/multimodal. Shared by `classify` (stats path) and
+/// `classify_with_semantics` (a dictionary `measure` verdict) so a measure is charted the same way
+/// however it was identified. Returns `None` when the column lacks quartiles.
+fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
+    let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3) else {
+        return None;
+    };
+    if s.cardinality <= 1 {
+        return None;
+    }
+    // moarstats refinement: a box plot hides multiple peaks; when flagged bimodal/multimodal a
+    // histogram tells the truth. Absent moarstats, `bimodality_coefficient` is None -> box plot.
+    if s.bimodality_coefficient
+        .is_some_and(|bc| bc >= BIMODALITY_COEFFICIENT_THRESHOLD)
+    {
+        return Some(PanelKind::Histogram { idx });
+    }
+    // Observed min/max as whisker endpoints (NOT Tukey fences, which are computed thresholds that
+    // need not be observed values) — honest for a precomputed, no-rescan box.
+    let lower = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+    let upper = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+    Some(PanelKind::BoxStats {
+        q1,
+        median,
+        q3,
+        lower,
+        upper,
+        mean: s.mean,
+    })
+}
+
+/// Combine a column's `ColSemantics` verdict with the statistical `classify`. The dictionary
+/// verdict wins for the routes it speaks to; `Defer` falls back to `classify` — also the path for
+/// every column when no `--dictionary` is given, so stats-only behavior is unchanged.
+fn classify_with_semantics(
+    idx: usize,
+    s: &crate::cmd::stats::StatsData,
+    sem: &ColSemantics,
+) -> Option<PanelKind> {
+    match sem.route {
+        Route::Defer => classify(idx, s),
+        // a categorical/code with no observed values is still nothing to chart
+        Route::Dimension => (s.r#type.as_str() != "NULL" && s.cardinality >= 1)
+            .then_some(PanelKind::FreqBar { idx }),
+        Route::Measure => classify_measure(idx, s),
+        Route::Temporal | Route::MapCoord | Route::Skip => None,
+    }
+}
+
+/// Parse a describegpt Data Dictionary into per-column semantic rows + the dataset grain.
+///
+/// Accepts BOTH shapes so `--dictionary <path>` works with either:
+///   * a `--format jsonschema` document — `properties.<col>` carries the human label as `title` and
+///     the semantic tokens in `x-qsv.{content_type,role,concept}`; the dataset grain is the
+///     top-level `x-qsv.grain`. (This is what `--dictionary infer` produces.)
+///   * a legacy `--format json` dictionary — `{"Dictionary":{"response":{"fields":[...]}}}` (or a
+///     bare `{"fields":[...]}`); fields carry `name`/`content_type`/`label` (and role/concept if a
+///     future emitter adds them). No grain.
+///
+/// Returns `None` when neither shape yields a usable column, so the caller degrades to the
+/// statistical heuristic rather than erroring.
+fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
+    let v: serde_json::Value = serde_json::from_str(json_text).ok()?;
+
+    // JSON Schema shape: a top-level `properties` object keyed by column name.
+    if let Some(props) = v.get("properties").and_then(serde_json::Value::as_object) {
+        let mut rows = HashMap::with_capacity(props.len());
+        for (name, prop) in props {
+            if name.is_empty() {
+                continue;
+            }
+            let xq = prop.get("x-qsv");
+            let from_xq = |k: &str| {
+                xq.and_then(|x| x.get(k))
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+                    .to_string()
+            };
+            let label = prop
+                .get("title")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
+            rows.insert(
+                name.clone(),
+                DictRow {
+                    content_type: from_xq("content_type"),
+                    role: from_xq("role"),
+                    concept: from_xq("concept"),
+                    label,
+                },
+            );
+        }
+        if rows.is_empty() {
+            return None;
+        }
+        let grain = v
+            .get("x-qsv")
+            .and_then(|x| x.get("grain"))
+            .and_then(serde_json::Value::as_str)
+            .filter(|g| !g.is_empty())
+            .map(ToString::to_string);
+        return Some(DictData { rows, grain });
+    }
+
+    // Legacy plain-json dictionary shape.
+    let fields = v
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .and_then(|r| r.get("fields"))
+        .or_else(|| v.get("fields"))
+        .and_then(serde_json::Value::as_array)?;
+    let mut rows = HashMap::with_capacity(fields.len());
+    for f in fields {
+        let Some(name) = f.get("name").and_then(serde_json::Value::as_str) else {
+            continue;
+        };
+        if name.is_empty() {
+            continue;
+        }
+        let from_field = |k: &str| {
+            f.get(k)
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string()
+        };
+        rows.insert(
+            name.to_string(),
+            DictRow {
+                content_type: from_field("content_type"),
+                role:         from_field("role"),
+                concept:      from_field("concept"),
+                label:        from_field("label"),
+            },
+        );
+    }
+    (!rows.is_empty()).then_some(DictData { rows, grain: None })
+}
+
+/// Resolve the `--dictionary` source into a parsed `DictData` for `viz smart`:
+///   * `infer` -> run `qsv describegpt --dictionary --infer-content-type --two-pass --format
+///     jsonschema` on the input now (requires an LLM configured) and parse its stdout. The
+///     jsonschema format carries role/concept (in each property's `x-qsv`) and the dataset grain,
+///     and — unlike `--format json` — does not perturb describegpt's two-pass refine cache.
+///   * any other value -> a path to an existing describegpt dictionary file (jsonschema or json).
+///
+/// Soft-fails (warns, returns `Ok(None)`) when generation or reading fails, so a missing LLM or a
+/// stray path degrades to the plain stats-driven dashboard instead of aborting.
+fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
+    let Some(spec) = args.flag_dictionary.as_deref() else {
+        return Ok(None);
+    };
+    let Some(input) = args.arg_input.as_deref() else {
+        return Ok(None);
+    };
+
+    let json_text = if spec.eq_ignore_ascii_case("infer") {
+        match util::run_qsv_cmd(
+            "describegpt",
+            &[
+                "--dictionary",
+                "--infer-content-type",
+                "--two-pass",
+                "--format",
+                "jsonschema",
+            ],
+            input,
+            "Generated a Data Dictionary via describegpt for `viz smart --dictionary infer`",
+        ) {
+            Ok((stdout, _stderr)) => stdout,
+            Err(e) => {
+                eprintln!(
+                    "viz smart --dictionary infer: describegpt failed ({e}); building the \
+                     dashboard from statistics alone (no semantic hints)."
+                );
+                return Ok(None);
+            },
+        }
+    } else {
+        match std::fs::read_to_string(spec) {
+            Ok(text) => text,
+            Err(e) => {
+                eprintln!(
+                    "viz smart --dictionary: could not read dictionary file '{spec}' ({e}); \
+                     building the dashboard from statistics alone (no semantic hints)."
+                );
+                return Ok(None);
+            },
+        }
+    };
+
+    let data = parse_dictionary_semantics(&json_text);
+    if data.is_none() {
+        eprintln!(
+            "viz smart --dictionary: '{spec}' is not a recognizable describegpt dictionary (JSON \
+             Schema or JSON); building the dashboard from statistics alone."
+        );
+    }
+    Ok(data)
+}
+
 /// Decide which chart (if any) suits a column, from its computed statistics.
 fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
     let ty = s.r#type.as_str();
@@ -3708,40 +4117,10 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         if low_cardinality {
             return Some(PanelKind::FreqBar { idx });
         }
-        // continuous numeric -> box plot from precomputed quartiles
-        if let (Some(q1), Some(median), Some(q3)) = (s.q1, s.q2_median, s.q3)
-            && s.cardinality > 1
-        {
-            // moarstats refinement: a box plot summarizes a column by its quartiles, which hides
-            // multiple peaks. When moarstats has flagged this column as bimodal/multimodal, a
-            // histogram tells the truth instead. This is the one smart panel that needs the raw
-            // values (gathered later in a single batched pass), taken only for the few columns
-            // actually flagged bimodal — the same "selective extra pass" cost as the correlation
-            // and time-series panels. Absent moarstats, `bimodality_coefficient` is None and we
-            // fall through to the cache-only box plot (today's behavior).
-            if s.bimodality_coefficient
-                .is_some_and(|bc| bc >= BIMODALITY_COEFFICIENT_THRESHOLD)
-            {
-                return Some(PanelKind::Histogram { idx });
-            }
-            // Use the actual observed min/max as the whisker endpoints. We intentionally do
-            // NOT use the Tukey inner fences: a fence is a computed threshold (Q1-1.5*IQR /
-            // Q3+1.5*IQR) that need not coincide with any value in the dataset, so plotting
-            // it as a whisker endpoint would fabricate a data point. min/max ARE observed
-            // values, and since this is a precomputed box (no raw points / outlier markers),
-            // min-to-max whiskers honestly convey the column's full range without re-scanning.
-            let lower = s.min.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
-            let upper = s.max.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
-            return Some(PanelKind::BoxStats {
-                q1,
-                median,
-                q3,
-                lower,
-                upper,
-                mean: s.mean,
-            });
-        }
-        return None;
+        // continuous numeric -> box plot / histogram from precomputed quartiles. Shared with the
+        // dictionary `measure` verdict (see `classify_measure`) so a measure is charted the same
+        // way however it was identified; returns None when the column lacks quartiles.
+        return classify_measure(idx, s);
     }
 
     // String / Date / DateTime -> frequency bar when low-cardinality
@@ -3796,34 +4175,188 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     }
 }
 
+/// If `name` (already lower-cased) is a key/code twin of a sibling — ending in `_code`/`_id`/`_key`
+/// — return the base name it twins (e.g. "subject_code" -> "subject"); otherwise None.
+fn code_twin_base(name: &str) -> Option<&str> {
+    for suffix in ["_code", "_id", "_key"] {
+        if let Some(base) = name.strip_suffix(suffix)
+            && !base.is_empty()
+        {
+            return Some(base);
+        }
+    }
+    None
+}
+
+/// Identify "key twin" columns to suppress so a code/label pair (subject + subject_code, street +
+/// street_id) charts only the human-readable member. A column is suppressed when it routes to a
+/// frequency bar (`Dimension`) AND its name is `<base>_code`/`_id`/`_key` AND a sibling column
+/// named `<base>` ALSO routes to a Dimension bar. Conservative on purpose: it only fires between
+/// two charted dimensions, so a lone `*_code` (whose label isn't itself charted) is kept; and the
+/// caller applies it only when a dictionary is present, so a stats-only dashboard is unchanged.
+fn dimension_code_twins(
+    stats: &[crate::cmd::stats::StatsData],
+    sems: &[ColSemantics],
+) -> std::collections::HashSet<usize> {
+    use std::collections::{HashMap, HashSet};
+
+    let dim_names: HashMap<String, usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| sems.get(*i).is_some_and(|s| s.route == Route::Dimension))
+        .map(|(i, s)| (s.field.to_lowercase(), i))
+        .collect();
+
+    let mut suppress = HashSet::new();
+    for (lname, &i) in &dim_names {
+        if let Some(base) = code_twin_base(lname)
+            && dim_names.contains_key(base)
+        {
+            suppress.insert(i);
+        }
+    }
+    suppress
+}
+
+/// Canonical-timestamp priority for a date column's dictionary concept: a smaller rank wins as the
+/// time-series x-axis. Event/created timestamps lead; closed/updated/due are secondary; a bare date
+/// or no concept is last. Lets `viz smart` trend "requests over created_date" rather than over a
+/// modified timestamp. Columns without a dictionary all rank 3, so selection falls back to the
+/// first date column, exactly as before.
+fn timestamp_rank(concept: &str) -> u8 {
+    match concept {
+        "time.event_timestamp" => 0,
+        "time.created_at" => 1,
+        "time.closed_at" | "time.updated_at" | "time.due_at" => 2,
+        _ => 3,
+    }
+}
+
+/// Time bucket granularity for the trend panel, widened as the date span grows so a multi-year
+/// dataset doesn't render thousands of daily points.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum TsBucket {
+    Day,
+    Week,
+    Month,
+}
+
+/// Pick a bucket granularity from the span (in days) between the date column's observed min and
+/// max.
+fn ts_bucket_for_span(span_days: i64) -> TsBucket {
+    if span_days <= 370 {
+        TsBucket::Day
+    } else if span_days <= 1825 {
+        TsBucket::Week
+    } else {
+        TsBucket::Month
+    }
+}
+
+/// Truncate a date to its bucket's representative day (the day itself, its ISO-week Monday, or the
+/// first of its month) so rows in the same period share one key.
+fn ts_bucket_key(date: chrono::NaiveDate, bucket: TsBucket) -> chrono::NaiveDate {
+    use chrono::{Datelike, Duration};
+    match bucket {
+        TsBucket::Day => date,
+        TsBucket::Week => date - Duration::days(i64::from(date.weekday().num_days_from_monday())),
+        TsBucket::Month => date.with_day(1).unwrap_or(date),
+    }
+}
+
+/// Display label for a bucket key: ISO date for Day/Week, `YYYY-MM` for Month.
+fn ts_bucket_label(key: chrono::NaiveDate, bucket: TsBucket) -> String {
+    match bucket {
+        TsBucket::Day | TsBucket::Week => key.format("%Y-%m-%d").to_string(),
+        TsBucket::Month => key.format("%Y-%m").to_string(),
+    }
+}
+
+/// A short word for the bucket granularity, used in axis titles ("records per day").
+fn ts_bucket_word(bucket: TsBucket) -> &'static str {
+    match bucket {
+        TsBucket::Day => "day",
+        TsBucket::Week => "week",
+        TsBucket::Month => "month",
+    }
+}
+
+/// Best-effort entity name for a count-over-time panel, distilled from the dataset `grain`
+/// ("one row = one 311 service request" -> "311 service request"). Falls back to "records" when
+/// grain is absent or doesn't fit the "... one <X>" shape, so the label is always sensible.
+fn count_unit_from_grain(grain: Option<&str>) -> String {
+    const FALLBACK: &str = "records";
+    let Some(g) = grain else {
+        return FALLBACK.to_string();
+    };
+    // describegpt phrases grain as "one row = one <X>" / "each row is one <X>"; take the text after
+    // the last " one ".
+    let entity = g
+        .rsplit_once(" one ")
+        .map(|(_, tail)| tail)
+        .unwrap_or("")
+        .trim()
+        .trim_end_matches('.')
+        .trim();
+    if entity.is_empty() || entity.len() > 40 {
+        FALLBACK.to_string()
+    } else {
+        entity.to_string()
+    }
+}
+
+/// Parse a row's date cell into a `NaiveDateTime`, honoring the DMY preference stats used to infer
+/// the column. Returns `None` for a missing/blank/unparseable cell.
+fn parse_record_date(
+    record: &csv::ByteRecord,
+    idx: usize,
+    prefer_dmy: bool,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    let text = std::str::from_utf8(record.get(idx)?).ok()?.trim();
+    if text.is_empty() {
+        return None;
+    }
+    qsv_dateparser::parse_with_preference(text, prefer_dmy).ok()
+}
+
 fn build_timeseries_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     prefer_dmy: bool,
     map_cols: Option<(usize, usize)>,
+    sems: &[ColSemantics],
+    grain: Option<&str>,
 ) -> CliResult<Option<Panel>> {
+    use std::collections::BTreeMap;
+
     use qsv_dateparser::parse_with_preference;
 
-    // first date/datetime column (stats emits "Date" / "DateTime" once dates are inferred)
-    let Some((date_idx, is_datetime)) =
-        stats
-            .iter()
-            .enumerate()
-            .find_map(|(i, s)| match s.r#type.as_str() {
-                "Date" => Some((i, false)),
-                "DateTime" => Some((i, true)),
-                _ => None,
-            })
+    // pick the canonical date/datetime column: when a dictionary tagged timestamps, prefer the
+    // event/created one (timestamp_rank); otherwise the first date column (rank ties break on
+    // column order). stats emits "Date"/"DateTime" once dates are inferred.
+    let Some((date_idx, is_datetime)) = stats
+        .iter()
+        .enumerate()
+        .filter_map(|(i, s)| match s.r#type.as_str() {
+            "Date" => Some((i, false)),
+            "DateTime" => Some((i, true)),
+            _ => None,
+        })
+        .min_by_key(|&(i, _)| {
+            (
+                timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                i,
+            )
+        })
     else {
         return Ok(None);
     };
 
-    // y-axis: the first continuous numeric column (high-cardinality or near-unique, i.e. NOT a
-    // low-cardinality categorical), preferring a Float over an Integer. Near-unique columns are
-    // deliberately allowed here — a measurement like revenue or temperature is often near-unique
-    // yet makes the most meaningful trend — unlike the box/correlation panels, which treat
-    // near-unique integers as ID-like and skip them. Coordinate columns claimed by the map panel
-    // are excluded so the trend doesn't end up plotting e.g. latitude over time.
+    // y-axis candidate: the first continuous numeric column (preferring Float), excluding map
+    // coordinates and any dictionary-tagged non-measure. Near-unique columns are deliberately
+    // allowed — a measurement like revenue is often near-unique yet makes the most meaningful
+    // trend. A confirmed Measure or an un-tagged (Defer) column qualifies; without a dictionary
+    // every column is Defer, exactly as before.
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
     let continuous_numeric = |s: &crate::cmd::stats::StatsData| {
         if !matches!(s.r#type.as_str(), "Integer" | "Float") || s.cardinality <= 1 {
@@ -3833,77 +4366,180 @@ fn build_timeseries_panel(
         let low_cardinality = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
         !low_cardinality
     };
-    let Some(y_idx) = stats
+    let y_eligible = |i: usize| {
+        sems.get(i)
+            .is_none_or(|s| matches!(s.route, Route::Defer | Route::Measure))
+    };
+    let y_idx = stats
         .iter()
         .enumerate()
-        .filter(|(i, s)| !is_map_col(*i) && continuous_numeric(s))
+        .filter(|(i, s)| {
+            *i != date_idx && !is_map_col(*i) && y_eligible(*i) && continuous_numeric(s)
+        })
         .min_by_key(|(_, s)| usize::from(s.r#type != "Float"))
-        .map(|(i, _)| i)
-    else {
-        return Ok(None);
+        .map(|(i, _)| i);
+
+    // Aggregation mode:
+    //   * a dictionary `measure` (route == Measure) carries an additive/mean `agg`: bucket the
+    //     value by calendar period and sum (counts/amounts) or average (ratios) it.
+    //   * an un-tagged (Defer) numeric: plot the raw values over time (today's behavior, LTTB).
+    //   * no eligible numeric at all: count records per period — the "volume over time" overview,
+    //     the single most valuable view for event datasets (e.g. 311 requests per day).
+    enum Mode {
+        Raw(usize),
+        AggValue(usize, Agg),
+        Count,
+    }
+    let mode = match y_idx {
+        Some(i) => match sems.get(i).and_then(|s| s.agg) {
+            Some(agg) => Mode::AggValue(i, agg),
+            None => Mode::Raw(i),
+        },
+        None => Mode::Count,
     };
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
-
-    // collect (timestamp_ms, formatted_date, y), skipping rows missing either field. dates are
-    // parsed with the same DMY preference stats used to infer the column, so DMY-formatted
-    // dates (e.g. with QSV_PREFER_DMY set) sort and render correctly.
-    let mut points: Vec<(i64, String, f64)> = Vec::new();
+    let date_label = col_label(&headers, date_idx, nh);
     let mut record = csv::ByteRecord::new();
-    while rdr.read_byte_record(&mut record)? {
-        // skip non-finite y (NaN/inf): parse_f64 accepts "NaN"/"inf", but a single non-finite
-        // value would poison LTTB's bucket averages and area comparisons (and render as a gap)
-        let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
-            continue;
-        };
-        let Some(raw) = record.get(date_idx) else {
-            continue;
-        };
-        let Ok(text) = std::str::from_utf8(raw) else {
-            continue;
-        };
-        let text = text.trim();
-        if text.is_empty() {
-            continue;
+
+    // The raw path plots individual points (chronologically sorted) over time, exactly as before.
+    if let Mode::Raw(y_idx) = mode {
+        let y_label = col_label(&headers, y_idx, nh);
+        let mut points: Vec<(i64, String, f64)> = Vec::new();
+        while rdr.read_byte_record(&mut record)? {
+            // skip non-finite y (NaN/inf): parse_f64 accepts "NaN"/"inf", but a single non-finite
+            // value would poison LTTB's bucket averages and area comparisons (and render as a gap)
+            let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
+                continue;
+            };
+            let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+                continue;
+            };
+            let label = if is_datetime {
+                dt.format("%Y-%m-%dT%H:%M:%S").to_string()
+            } else {
+                dt.format("%Y-%m-%d").to_string()
+            };
+            points.push((dt.timestamp_millis(), label, y));
         }
-        let Ok(dt) = parse_with_preference(text, prefer_dmy) else {
+        // a line needs at least two points
+        if points.len() < 2 {
+            return Ok(None);
+        }
+        points.sort_by_key(|p| p.0);
+        // points are chronologically sorted (monotonic x), so LTTB can downsample by triangle area,
+        // preserving spikes/peaks a uniform stride would step over.
+        let (xs, ys) = if points.len() > MAX_SMART_POINTS {
+            let ts: Vec<f64> = points.iter().map(|p| p.0 as f64).collect();
+            let yv: Vec<f64> = points.iter().map(|p| p.2).collect();
+            let keep = lttb_indices(&ts, &yv, MAX_SMART_POINTS);
+            let xs = keep.iter().map(|&i| points[i].1.clone()).collect();
+            let ys = keep.iter().map(|&i| points[i].2).collect();
+            (xs, ys)
+        } else {
+            (
+                points.iter().map(|p| p.1.clone()).collect(),
+                points.iter().map(|p| p.2).collect(),
+            )
+        };
+        return Ok(Some(Panel::new(
+            format!("{y_label} over {date_label}"),
+            PanelKind::TimeSeries { y_label, xs, ys },
+        )));
+    }
+
+    // Bucketed paths (AggValue / Count): group rows by calendar period. The granularity widens
+    // with the date column's observed span (from the stats cache, no extra scan) so a multi-year
+    // dataset stays readable.
+    let bucket = {
+        let parse_bound = |o: &Option<String>| {
+            o.as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .and_then(|t| parse_with_preference(t, prefer_dmy).ok())
+        };
+        match (
+            parse_bound(&stats[date_idx].min),
+            parse_bound(&stats[date_idx].max),
+        ) {
+            (Some(lo), Some(hi)) => ts_bucket_for_span((hi - lo).num_days().max(0)),
+            _ => TsBucket::Day,
+        }
+    };
+
+    // accumulate (sum, n) per period; Count ignores the sum and uses n.
+    let value_idx = if let Mode::AggValue(i, _) = mode {
+        Some(i)
+    } else {
+        None
+    };
+    let mut buckets: BTreeMap<chrono::NaiveDate, (f64, u64)> = BTreeMap::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
             continue;
         };
-        let label = if is_datetime {
-            dt.format("%Y-%m-%dT%H:%M:%S").to_string()
-        } else {
-            dt.format("%Y-%m-%d").to_string()
+        let y = match value_idx {
+            Some(i) => match parse_f64(record.get(i)).filter(|v| v.is_finite()) {
+                Some(v) => v,
+                // a row whose value is missing/non-finite contributes to neither sum nor count
+                None => continue,
+            },
+            None => 0.0,
         };
-        points.push((dt.timestamp_millis(), label, y));
+        let entry = buckets
+            .entry(ts_bucket_key(dt.date_naive(), bucket))
+            .or_insert((0.0, 0));
+        entry.0 += y;
+        entry.1 += 1;
     }
-    // a line needs at least two points
-    if points.len() < 2 {
+    // a line needs at least two periods
+    if buckets.len() < 2 {
         return Ok(None);
     }
-    points.sort_by_key(|p| p.0);
+    let word = ts_bucket_word(bucket);
+    let xs: Vec<String> = buckets
+        .keys()
+        .map(|k| ts_bucket_label(*k, bucket))
+        .collect();
 
-    let y_label = col_label(&headers, y_idx, nh);
-    let date_label = col_label(&headers, date_idx, nh);
-    // points are chronologically sorted (monotonic x), so LTTB can downsample by triangle area,
-    // preserving spikes/peaks a uniform stride would step over. Timestamps give LTTB its numeric
-    // x-axis; the display labels are gathered alongside the selected indices.
-    let (xs, ys) = if points.len() > MAX_SMART_POINTS {
-        let ts: Vec<f64> = points.iter().map(|p| p.0 as f64).collect();
-        let yv: Vec<f64> = points.iter().map(|p| p.2).collect();
-        let keep = lttb_indices(&ts, &yv, MAX_SMART_POINTS);
-        let xs = keep.iter().map(|&i| points[i].1.clone()).collect();
-        let ys = keep.iter().map(|&i| points[i].2).collect();
-        (xs, ys)
-    } else {
-        (
-            points.iter().map(|p| p.1.clone()).collect(),
-            points.iter().map(|p| p.2).collect(),
-        )
-    };
-    Ok(Some(Panel::new(
-        format!("{y_label} over {date_label}"),
-        PanelKind::TimeSeries { y_label, xs, ys },
-    )))
+    match mode {
+        Mode::AggValue(y_idx, agg) => {
+            let y_label = col_label(&headers, y_idx, nh);
+            let (agg_word, ys): (&str, Vec<f64>) = if agg == Agg::Mean {
+                (
+                    "mean",
+                    buckets
+                        .values()
+                        .map(|&(s, n)| if n > 0 { s / n as f64 } else { 0.0 })
+                        .collect(),
+                )
+            } else {
+                // counts/amounts are additive -> sum per period
+                ("sum", buckets.values().map(|&(s, _)| s).collect())
+            };
+            Ok(Some(Panel::new(
+                format!("{y_label} ({agg_word}) over {date_label}"),
+                PanelKind::TimeSeries {
+                    y_label: format!("{y_label} ({agg_word}/{word})"),
+                    xs,
+                    ys,
+                },
+            )))
+        },
+        // Count: one point per period = number of records (rows with a parseable date).
+        _ => {
+            let unit = count_unit_from_grain(grain);
+            let ys: Vec<f64> = buckets.values().map(|&(_, n)| n as f64).collect();
+            Ok(Some(Panel::new(
+                format!("{unit} over {date_label}"),
+                PanelKind::TimeSeries {
+                    y_label: format!("{unit} per {word}"),
+                    xs,
+                    ys,
+                },
+            )))
+        },
+    }
 }
 
 /// Detect the latitude/longitude column index pair by header name + numeric stats type. Shared by
@@ -4861,6 +5497,25 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
+    // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts (concept ->
+    // role -> content_type -> stats) that override the statistical guess for the cases they speak
+    // to. When --dictionary is absent, dict_data is None and every column's route resolves to
+    // Defer, so classification is identical to today's stats-only behavior.
+    let dict_data = load_dictionary_semantics(args)?;
+    let col_sems: Vec<ColSemantics> = stats
+        .iter()
+        .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
+        .collect();
+
+    // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on a
+    // dictionary being present so a stats-only dashboard is byte-identical; timezone twins and IDs
+    // are already de-duplicated by the Temporal/Skip routing above.
+    let twin_suppress = if dict_data.is_some() {
+        dimension_code_twins(&stats, &col_sems)
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // Build the geographic map panel up front (one data pass) so we can learn which lat/lon columns
     // it ACTUALLY consumed. Those columns are charted on the map only — excluded from per-column
     // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
@@ -4930,12 +5585,22 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         if is_map_col(idx) {
             continue;
         }
-        let name = if s.field.is_empty() {
+        let sem = &col_sems[idx];
+        // prefer the dictionary's human label for the panel title, falling back to the header
+        // (or a positional name when headerless).
+        let name = if !sem.label.is_empty() {
+            sem.label.clone()
+        } else if s.field.is_empty() {
             format!("col {}", idx + 1)
         } else {
             s.field.clone()
         };
-        match classify(idx, s) {
+        // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
+        if twin_suppress.contains(&idx) {
+            skipped.push(name);
+            continue;
+        }
+        match classify_with_semantics(idx, s, sem) {
             Some(mut kind) => {
                 // a cache-only quartile box becomes a raw box (with an overlay mode) when the
                 // explicit flag or the size heuristic calls for points (<= SMART_BOX_OUTLIERS_MAX
@@ -5000,6 +5665,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         .enumerate()
         .filter(|(i, s)| {
             !is_map_col(*i)
+                // a dictionary-tagged dimension/geo/temporal/id numeric is NOT a continuous
+                // measure, so exclude it from the Pearson matrix (and thus from the corr drill-down
+                // and the implicit box-plot pool). A confirmed Measure, or an un-tagged (Defer)
+                // numeric, still qualifies — without a dictionary every column is Defer, exactly
+                // as before.
+                && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
                 && s.cardinality > 1
                 && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
@@ -5092,7 +5763,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // effective preference is the env flag. Parse dates the same way here so DMY-formatted dates
     // are ordered correctly rather than misparsed/dropped.
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-    if let Some(panel) = build_timeseries_panel(args, &stats, prefer_dmy, map_cols)? {
+    let grain = dict_data.as_ref().and_then(|d| d.grain.as_deref());
+    if let Some(panel) =
+        build_timeseries_panel(args, &stats, prefer_dmy, map_cols, &col_sems, grain)?
+    {
         panels.insert(0, panel);
     }
 
@@ -7377,6 +8051,416 @@ mod tests {
         s.min = Some("0.5".to_string());
         s.max = Some("3.5".to_string());
         assert!(matches!(classify(1, &s), Some(PanelKind::BoxStats { .. })));
+    }
+
+    fn dict_row(content_type: &str, role: &str, concept: &str, label: &str) -> DictRow {
+        DictRow {
+            content_type: content_type.to_string(),
+            role:         role.to_string(),
+            concept:      concept.to_string(),
+            label:        label.to_string(),
+        }
+    }
+
+    #[test]
+    fn route_from_concept_maps_namespaces() {
+        // coordinates -> map; other geo keys (census_tract, zip, ...) -> dimension bar
+        assert_eq!(
+            route_from_concept("geo.latitude"),
+            Some((Route::MapCoord, None))
+        );
+        assert_eq!(
+            route_from_concept("geo.coordinate_pair"),
+            Some((Route::MapCoord, None))
+        );
+        assert_eq!(
+            route_from_concept("geo.census_tract"),
+            Some((Route::Dimension, None))
+        );
+        assert_eq!(
+            route_from_concept("nyc.bbl"),
+            Some((Route::Dimension, None))
+        );
+        // temporal
+        assert_eq!(
+            route_from_concept("time.created_at"),
+            Some((Route::Temporal, None))
+        );
+        // identifiers / PII -> skip
+        assert_eq!(
+            route_from_concept("id.surrogate_key"),
+            Some((Route::Skip, None))
+        );
+        assert_eq!(route_from_concept("pii.email"), Some((Route::Skip, None)));
+        // measures: amount/count additive (Sum), ratio averaged (Mean)
+        assert_eq!(
+            route_from_concept("measure.amount"),
+            Some((Route::Measure, Some(Agg::Sum)))
+        );
+        assert_eq!(
+            route_from_concept("measure.count"),
+            Some((Route::Measure, Some(Agg::Sum)))
+        );
+        assert_eq!(
+            route_from_concept("measure.ratio"),
+            Some((Route::Measure, Some(Agg::Mean)))
+        );
+        // unknown namespace / bare unknown -> None (fall through to role)
+        assert_eq!(route_from_concept("weather.temp"), None);
+        assert_eq!(route_from_concept("unknown"), None);
+    }
+
+    #[test]
+    fn route_from_content_type_legacy_mapping() {
+        assert_eq!(route_from_content_type("category").0, Route::Dimension);
+        assert_eq!(route_from_content_type("state_abbr").0, Route::Dimension);
+        assert_eq!(route_from_content_type("latitude").0, Route::MapCoord);
+        // temporal tokens, with/without an strftime or length suffix
+        assert_eq!(route_from_content_type("date").0, Route::Temporal);
+        assert_eq!(
+            route_from_content_type("datetime:%Y-%m-%dT%H:%M:%S").0,
+            Route::Temporal
+        );
+        assert_eq!(route_from_content_type("duration:3600").0, Route::Temporal);
+        // identifiers / PII / free-text -> skip
+        assert_eq!(route_from_content_type("unique_id").0, Route::Skip);
+        assert_eq!(route_from_content_type("email").0, Route::Skip);
+        assert_eq!(route_from_content_type("free_text").0, Route::Skip);
+        // explicit / empty -> defer to stats
+        assert_eq!(route_from_content_type("unknown").0, Route::Defer);
+        assert_eq!(route_from_content_type("").0, Route::Defer);
+    }
+
+    #[test]
+    fn derive_semantics_precedence_and_label() {
+        // no dictionary row -> Defer (stats-only behavior unchanged)
+        assert_eq!(
+            derive_semantics(&stat("Integer", 5, None), None).route,
+            Route::Defer
+        );
+
+        // concept beats a defaulted `measure` role: a numeric census_tract that describegpt left
+        // role=measure is still routed to a Dimension bar by its geo.census_tract concept.
+        let tract = stat("Integer", 33, Some(0.00003));
+        let row = dict_row("", "measure", "geo.census_tract", "Census Tract");
+        let sem = derive_semantics(&tract, Some(&row));
+        assert_eq!(sem.route, Route::Dimension);
+        assert_eq!(sem.label, "Census Tract"); // label carried for the panel title
+
+        // role used when concept is absent/unknown
+        let r = derive_semantics(
+            &stat("String", 8, Some(0.01)),
+            Some(&dict_row("", "dimension", "", "")),
+        );
+        assert_eq!(r.route, Route::Dimension);
+
+        // content_type used when neither concept nor role resolve
+        let c = derive_semantics(
+            &stat("Float", 99, Some(0.5)),
+            Some(&dict_row("latitude", "", "", "")),
+        );
+        assert_eq!(c.route, Route::MapCoord);
+
+        // all-empty dictionary row -> Defer, but the label still rides along
+        let d = derive_semantics(
+            &stat("String", 9, Some(0.02)),
+            Some(&dict_row("", "", "", "Notes")),
+        );
+        assert_eq!(d.route, Route::Defer);
+        assert_eq!(d.label, "Notes");
+    }
+
+    #[test]
+    fn guardrail_downgrades_only_code_like_measures() {
+        // a low-cardinality integer over many rows, role-defaulted to measure with no concept ->
+        // downgraded to a Dimension bar (the fact-#2 defense).
+        let code = stat("Integer", 6, Some(0.00001));
+        assert_eq!(
+            derive_semantics(&code, Some(&dict_row("", "measure", "", ""))).route,
+            Route::Dimension
+        );
+        // an EXPLICIT measure.* concept is trusted even when low-card -> stays Measure
+        assert_eq!(
+            derive_semantics(&code, Some(&dict_row("", "measure", "measure.count", ""))).route,
+            Route::Measure
+        );
+        // a float is ~never a code -> stays Measure
+        assert_eq!(
+            derive_semantics(
+                &stat("Float", 6, Some(0.00001)),
+                Some(&dict_row("", "measure", "", ""))
+            )
+            .route,
+            Route::Measure
+        );
+        // a near-unique integer (genuine continuous) -> stays Measure
+        assert_eq!(
+            derive_semantics(
+                &stat("Integer", 100_000, Some(0.99)),
+                Some(&dict_row("", "measure", "", ""))
+            )
+            .route,
+            Route::Measure
+        );
+        // residual gap (documented): cardinality above CATEGORICAL_MAX_CARDINALITY is left to the
+        // concept layer, NOT the guardrail -> stays Measure.
+        assert_eq!(
+            derive_semantics(
+                &stat("Integer", 50, Some(0.00001)),
+                Some(&dict_row("", "measure", "", ""))
+            )
+            .route,
+            Route::Measure
+        );
+    }
+
+    #[test]
+    fn classify_with_semantics_routes() {
+        // Defer falls back to classify (low-card string -> frequency bar)
+        let sem_defer = ColSemantics::default();
+        assert!(matches!(
+            classify_with_semantics(0, &stat("String", 5, Some(0.001)), &sem_defer),
+            Some(PanelKind::FreqBar { idx: 0 })
+        ));
+        // Dimension -> frequency bar even for a many-distinct integer code
+        let sem_dim = ColSemantics {
+            route: Route::Dimension,
+            ..Default::default()
+        };
+        assert!(matches!(
+            classify_with_semantics(2, &stat("Integer", 500, Some(0.4)), &sem_dim),
+            Some(PanelKind::FreqBar { idx: 2 })
+        ));
+        // Measure -> box plot from quartiles (via classify_measure)
+        let mut m = stat("Integer", 500, Some(0.4));
+        m.q1 = Some(10.0);
+        m.q2_median = Some(20.0);
+        m.q3 = Some(30.0);
+        let sem_meas = ColSemantics {
+            route: Route::Measure,
+            ..Default::default()
+        };
+        assert!(matches!(
+            classify_with_semantics(3, &m, &sem_meas),
+            Some(PanelKind::BoxStats { .. })
+        ));
+        // Temporal / MapCoord / Skip draw no per-column panel
+        for route in [Route::Temporal, Route::MapCoord, Route::Skip] {
+            let sem = ColSemantics {
+                route,
+                ..Default::default()
+            };
+            assert!(classify_with_semantics(0, &stat("DateTime", 9, Some(0.6)), &sem).is_none());
+        }
+    }
+
+    #[test]
+    fn classify_measure_box_histogram_none() {
+        // quartiles present -> box plot
+        let mut s = stat("Float", 500, Some(0.9));
+        s.q1 = Some(1.0);
+        s.q2_median = Some(2.0);
+        s.q3 = Some(3.0);
+        assert!(matches!(
+            classify_measure(1, &s),
+            Some(PanelKind::BoxStats { .. })
+        ));
+        // moarstats flagged bimodal -> histogram
+        s.bimodality_coefficient = Some(BIMODALITY_COEFFICIENT_THRESHOLD + 0.01);
+        assert!(matches!(
+            classify_measure(1, &s),
+            Some(PanelKind::Histogram { .. })
+        ));
+        // no quartiles -> nothing to chart
+        assert!(classify_measure(1, &stat("Integer", 500, Some(0.9))).is_none());
+    }
+
+    #[test]
+    fn parse_dictionary_semantics_jsonschema_shape() {
+        // a describegpt --format jsonschema doc: label rides as `title`, semantic tokens in
+        // x-qsv, dataset grain at the top-level x-qsv.
+        let schema = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "x-qsv": { "qsv_type": "Integer", "content_type": "category",
+                         "role": "dimension", "concept": "geo.census_tract" } },
+            "amount": { "type": "number", "title": "Amount",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } },
+            "notes": { "type": "string", "x-qsv": { "qsv_type": "String" } }
+          },
+          "x-qsv": { "grain": "one row = one 311 service request" }
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("schema should parse");
+        let tract = data.rows.get("census_tract").expect("census_tract row");
+        assert_eq!(tract.role, "dimension");
+        assert_eq!(tract.concept, "geo.census_tract");
+        assert_eq!(tract.content_type, "category");
+        assert_eq!(tract.label, "Census Tract");
+        let amount = data.rows.get("amount").expect("amount row");
+        assert_eq!(amount.concept, "measure.amount");
+        // a property with a bare x-qsv (no role/concept) still parses with empty signals
+        let notes = data.rows.get("notes").expect("notes row");
+        assert!(notes.role.is_empty() && notes.concept.is_empty());
+        assert_eq!(
+            data.grain.as_deref(),
+            Some("one row = one 311 service request")
+        );
+
+        // end-to-end: the parsed census_tract row routes to a Dimension bar.
+        assert_eq!(
+            derive_semantics(&stat("Integer", 33, Some(0.00003)), Some(tract)).route,
+            Route::Dimension
+        );
+    }
+
+    #[test]
+    fn parse_dictionary_semantics_legacy_and_garbage() {
+        // legacy --format json dictionary (content_type only, no role/concept/grain)
+        let json = r#"{
+          "Dictionary": { "response": { "fields": [
+            { "name": "status", "type": "String", "content_type": "category", "label": "Status" },
+            { "name": "id", "type": "String" }
+          ] } }
+        }"#;
+        let data = parse_dictionary_semantics(json).expect("legacy json should parse");
+        let status = data.rows.get("status").expect("status row");
+        assert_eq!(status.content_type, "category");
+        assert_eq!(status.label, "Status");
+        assert!(status.role.is_empty() && status.concept.is_empty());
+        // a field with no content_type is still present (carries empty signals)
+        assert!(data.rows.contains_key("id"));
+        assert!(data.grain.is_none());
+
+        // a bare {"fields":[...]} envelope also works
+        let bare = r#"{"fields":[{"name":"x","content_type":"category"}]}"#;
+        assert!(parse_dictionary_semantics(bare).is_some());
+
+        // garbage / wrong-shaped JSON yields None (caller degrades gracefully)
+        assert!(parse_dictionary_semantics("not json").is_none());
+        assert!(parse_dictionary_semantics(r#"{"foo":1}"#).is_none());
+    }
+
+    #[test]
+    fn timestamp_rank_prefers_event_and_created() {
+        // event/created lead; closed/updated/due secondary; bare date or no concept last
+        assert!(timestamp_rank("time.event_timestamp") < timestamp_rank("time.created_at"));
+        assert!(timestamp_rank("time.created_at") < timestamp_rank("time.closed_at"));
+        assert!(timestamp_rank("time.closed_at") < timestamp_rank("time.date"));
+        assert_eq!(
+            timestamp_rank("time.updated_at"),
+            timestamp_rank("time.due_at")
+        );
+        assert_eq!(timestamp_rank(""), timestamp_rank("time.date")); // no concept == bare date
+    }
+
+    #[test]
+    fn ts_bucket_span_thresholds_and_keys() {
+        use chrono::NaiveDate;
+        assert_eq!(ts_bucket_for_span(0), TsBucket::Day);
+        assert_eq!(ts_bucket_for_span(370), TsBucket::Day);
+        assert_eq!(ts_bucket_for_span(371), TsBucket::Week);
+        assert_eq!(ts_bucket_for_span(1825), TsBucket::Week);
+        assert_eq!(ts_bucket_for_span(1826), TsBucket::Month);
+
+        // a Wednesday truncates to its ISO-week Monday, and to the 1st of its month
+        let wed = NaiveDate::from_ymd_opt(2024, 5, 1).unwrap(); // 2024-05-01 is a Wednesday
+        assert_eq!(ts_bucket_key(wed, TsBucket::Day), wed);
+        assert_eq!(
+            ts_bucket_key(wed, TsBucket::Week),
+            NaiveDate::from_ymd_opt(2024, 4, 29).unwrap() // Monday
+        );
+        assert_eq!(
+            ts_bucket_key(wed, TsBucket::Month),
+            NaiveDate::from_ymd_opt(2024, 5, 1).unwrap()
+        );
+        // labels: ISO date for day/week, YYYY-MM for month
+        assert_eq!(ts_bucket_label(wed, TsBucket::Day), "2024-05-01");
+        assert_eq!(ts_bucket_label(wed, TsBucket::Month), "2024-05");
+    }
+
+    #[test]
+    fn count_unit_from_grain_extracts_or_falls_back() {
+        assert_eq!(
+            count_unit_from_grain(Some("one row = one 311 service request")),
+            "311 service request"
+        );
+        assert_eq!(
+            count_unit_from_grain(Some("each row is one order.")),
+            "order"
+        );
+        // no " one " pattern -> fallback
+        assert_eq!(
+            count_unit_from_grain(Some("each row represents a person")),
+            "records"
+        );
+        // absent grain -> fallback
+        assert_eq!(count_unit_from_grain(None), "records");
+        // implausibly long tail -> fallback (guards against a runaway grain sentence)
+        let long = format!("one row = one {}", "x".repeat(60));
+        assert_eq!(count_unit_from_grain(Some(&long)), "records");
+    }
+
+    #[test]
+    fn code_twin_base_strips_key_suffixes() {
+        assert_eq!(code_twin_base("subject_code"), Some("subject"));
+        assert_eq!(code_twin_base("street_id"), Some("street"));
+        assert_eq!(code_twin_base("region_key"), Some("region"));
+        // no key suffix, or suffix-only -> None
+        assert_eq!(code_twin_base("subject"), None);
+        assert_eq!(code_twin_base("_code"), None);
+        // bare "id"/"code" (no underscore) is NOT a twin suffix
+        assert_eq!(code_twin_base("zipcode"), None);
+    }
+
+    #[test]
+    fn dimension_code_twins_suppresses_only_paired_keys() {
+        // build a 4-column frame: subject (dim) + subject_code (dim) + street (dim) + lonely_id
+        // (dim)
+        let stats = [
+            {
+                let mut s = stat("String", 20, Some(0.01));
+                s.field = "subject".to_string();
+                s
+            },
+            {
+                let mut s = stat("Integer", 20, Some(0.01));
+                s.field = "subject_code".to_string();
+                s
+            },
+            {
+                let mut s = stat("String", 20, Some(0.01));
+                s.field = "street".to_string();
+                s
+            },
+            {
+                let mut s = stat("Integer", 20, Some(0.01));
+                s.field = "lonely_id".to_string();
+                s
+            },
+        ];
+        let dim = ColSemantics {
+            route: Route::Dimension,
+            ..Default::default()
+        };
+        let sems = [dim.clone(), dim.clone(), dim.clone(), dim.clone()];
+        let suppress = dimension_code_twins(&stats, &sems);
+        // subject_code is suppressed (its label sibling `subject` is charted) ...
+        assert!(suppress.contains(&1));
+        // ... but subject, street, and lonely_id (no `lonely` sibling) are kept
+        assert!(!suppress.contains(&0));
+        assert!(!suppress.contains(&2));
+        assert!(!suppress.contains(&3));
+
+        // a *_code with no charted label sibling is NOT suppressed
+        let orphan_stats = [{
+            let mut s = stat("Integer", 20, Some(0.01));
+            s.field = "ward_code".to_string();
+            s
+        }];
+        let orphan_sems = [dim];
+        assert!(dimension_code_twins(&orphan_stats, &orphan_sems).is_empty());
     }
 
     #[test]

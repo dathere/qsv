@@ -2155,6 +2155,74 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
     assert!(html.contains("Case Status"));
 }
 
+// Coordinates with non-standard headers (`X Coordinate` / `Y Coordinate`) aren't found by the
+// header-name heuristic, so without a dictionary no map renders and they're charted as numeric
+// distributions. A jsonschema dictionary tagging them geo.latitude/geo.longitude must render the
+// map (and so NOT chart them as box/histogram distributions).
+#[test]
+fn viz_smart_dictionary_maps_nonstandard_coord_names() {
+    let wrk = Workdir::new("viz_smart_dictionary_maps_nonstandard_coord_names");
+    let mut rows = String::from("Y Coordinate,X Coordinate,category\n");
+    for i in 0..60 {
+        let lat = 34.00 + (i as f64) * 0.01; // local LA-ish cluster, all in-range
+        let lon = -118.40 + (i as f64) * 0.01;
+        let cat = match i % 3 {
+            0 => "A",
+            1 => "B",
+            _ => "C",
+        };
+        rows.push_str(&format!("{lat:.4},{lon:.4},{cat}\n"));
+    }
+    wrk.create_from_string("xy.csv", &rows);
+
+    // WITHOUT a dictionary: names unknown -> no map; the coordinates fall through to box panels.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "xy.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#""type":"scattermapbox""#),
+        "no map should render for non-standard coord names without a dictionary"
+    );
+    assert!(
+        html.contains(r#""type":"box""#),
+        "without a dictionary the coords are charted as distributions"
+    );
+
+    // WITH a jsonschema dictionary tagging them geo.latitude/geo.longitude: the map renders and the
+    // coordinates are consumed by it (not charted as their own distributions).
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "Y Coordinate": { "type": "number", "title": "Y Coordinate",
+              "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.latitude" } },
+            "X Coordinate": { "type": "number", "title": "X Coordinate",
+              "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.longitude" } },
+            "category": { "type": "string", "title": "Category",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.type" } }
+          }
+        }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "xy.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"scattermapbox""#),
+        "map should render from the dictionary geo.latitude/geo.longitude tags; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"histogram""#),
+        "dictionary-mapped coords must not also be charted as distributions; html: {html}"
+    );
+}
+
 // A date column with NO numeric measure yields a count-over-time line (records per period) — the
 // "volume over time" overview. Works without a dictionary.
 #[test]
@@ -2220,9 +2288,12 @@ fn viz_smart_dictionary_grain_labels_count() {
 
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(html.contains(r#""mode":"lines""#));
+    // grain names the count unit; the date axis uses the dictionary label ("Requested On"), not the
+    // raw header.
     assert!(
-        html.contains("permit application over requested_on"),
-        "grain should name the count unit; html: {html}"
+        html.contains("permit application over Requested On"),
+        "grain should name the count unit and the date label should be the dictionary title; \
+         html: {html}"
     );
 }
 

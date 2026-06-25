@@ -3927,18 +3927,24 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<Pane
 /// Combine a column's `ColSemantics` verdict with the statistical `classify`. The dictionary
 /// verdict wins for the routes it speaks to; `Defer` falls back to `classify` — also the path for
 /// every column when no `--dictionary` is given, so stats-only behavior is unchanged.
+///
+/// Note on `MapCoord`: the caller already skips coordinates that the map panel ACTUALLY consumed
+/// (via `is_map_col`) before reaching here, so a `MapCoord` column that arrives was NOT mapped
+/// (e.g. only one of lat/lon present, out-of-range values, or no map rendered). Rather than let it
+/// vanish, fall back to `classify` so it's still charted as a distribution — matching the
+/// no-dictionary behavior for named-but-unmappable coordinates.
 fn classify_with_semantics(
     idx: usize,
     s: &crate::cmd::stats::StatsData,
     sem: &ColSemantics,
 ) -> Option<PanelKind> {
     match sem.route {
-        Route::Defer => classify(idx, s),
+        Route::Defer | Route::MapCoord => classify(idx, s),
         // a categorical/code with no observed values is still nothing to chart
         Route::Dimension => (s.r#type.as_str() != "NULL" && s.cardinality >= 1)
             .then_some(PanelKind::FreqBar { idx }),
         Route::Measure => classify_measure(idx, s),
-        Route::Temporal | Route::MapCoord | Route::Skip => None,
+        Route::Temporal | Route::Skip => None,
     }
 }
 
@@ -4399,12 +4405,20 @@ fn build_timeseries_panel(
     };
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
-    let date_label = col_label(&headers, date_idx, nh);
+    // prefer the dictionary's human label for axis/panel titles (like the per-column panels),
+    // falling back to the raw header.
+    let label_for = |idx: usize| {
+        sems.get(idx)
+            .map(|s| s.label.as_str())
+            .filter(|l| !l.is_empty())
+            .map_or_else(|| col_label(&headers, idx, nh), ToString::to_string)
+    };
+    let date_label = label_for(date_idx);
     let mut record = csv::ByteRecord::new();
 
     // The raw path plots individual points (chronologically sorted) over time, exactly as before.
     if let Mode::Raw(y_idx) = mode {
-        let y_label = col_label(&headers, y_idx, nh);
+        let y_label = label_for(y_idx);
         let mut points: Vec<(i64, String, f64)> = Vec::new();
         while rdr.read_byte_record(&mut record)? {
             // skip non-finite y (NaN/inf): parse_f64 accepts "NaN"/"inf", but a single non-finite
@@ -4504,7 +4518,7 @@ fn build_timeseries_panel(
 
     match mode {
         Mode::AggValue(y_idx, agg) => {
-            let y_label = col_label(&headers, y_idx, nh);
+            let y_label = label_for(y_idx);
             let (agg_word, ys): (&str, Vec<f64>) = if agg == Agg::Mean {
                 (
                     "mean",
@@ -4642,18 +4656,63 @@ fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<Axis>, Opt
     (ProjectionType::Mercator, Some(lonaxis), Some(lataxis))
 }
 
-/// Detect a latitude/longitude column pair (by header name + numeric stats type) and, if a usable
-/// pair exists, build a `viz smart` map panel. Does one extra data pass to collect the in-range
-/// coordinates (the stats cache holds no geometry). Returns `None` when no pair is found, the
-/// columns aren't numeric, or no row has valid coordinates. On success returns the panel together
-/// with the (lat, lon) column indices it consumed, so the caller can exclude exactly those columns
-/// from the other panels — and only when a map is actually rendered. Name detection needs headers,
-/// so this is a no-op under `--no-headers`.
+/// Detect the latitude/longitude column pair from describegpt dictionary signals — concept
+/// `geo.latitude`/`geo.longitude`, or `content_type` `latitude`/`longitude` — so coordinates with
+/// non-standard headers (e.g. `X Coordinate`/`Y Coordinate`) still drive the map panel. Each must
+/// be a numeric stats type. Returns None unless BOTH a latitude and a longitude column are found,
+/// so the caller falls back to the header-name heuristic (`latlon_indices`).
+fn semantic_latlon(
+    stats: &[crate::cmd::stats::StatsData],
+    dict: &DictData,
+) -> Option<(usize, usize)> {
+    // Some(true) = latitude, Some(false) = longitude, None = not a coordinate
+    let axis_of = |row: &DictRow| -> Option<bool> {
+        let concept = row.concept.trim();
+        let ct = row
+            .content_type
+            .split_once(':')
+            .map_or(row.content_type.as_str(), |(b, _)| b)
+            .trim();
+        if concept == "geo.latitude" || ct == "latitude" {
+            Some(true)
+        } else if concept == "geo.longitude" || ct == "longitude" {
+            Some(false)
+        } else {
+            None
+        }
+    };
+    let mut lat = None;
+    let mut lon = None;
+    for (i, s) in stats.iter().enumerate() {
+        if !matches!(s.r#type.as_str(), "Integer" | "Float") {
+            continue;
+        }
+        let Some(row) = dict.rows.get(&s.field) else {
+            continue;
+        };
+        match axis_of(row) {
+            Some(true) if lat.is_none() => lat = Some(i),
+            Some(false) if lon.is_none() => lon = Some(i),
+            _ => {},
+        }
+    }
+    Some((lat?, lon?))
+}
+
+/// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
+/// panel. The pair comes from `coord_hint` (dictionary `geo.latitude`/`geo.longitude` signals) when
+/// supplied, else the header-name heuristic (`latlon_indices`). Does one extra data pass to collect
+/// the in-range coordinates (the stats cache holds no geometry). Returns `None` when no pair is
+/// found, the columns aren't numeric, or no row has valid coordinates. On success returns the panel
+/// together with the (lat, lon) column indices it consumed, so the caller can exclude exactly those
+/// columns from the other panels — and only when a map is actually rendered. Without a dictionary
+/// hint, name detection needs headers, so this is a no-op under `--no-headers`.
 fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
+    coord_hint: Option<(usize, usize)>,
 ) -> CliResult<Option<(Panel, (usize, usize))>> {
-    let Some((lat_idx, lon_idx)) = latlon_indices(stats) else {
+    let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
 
@@ -5528,7 +5587,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
     // None (no usable lat/lon pair), map_cols stays None and those columns are charted normally.
     let map_panel = {
-        let panel = build_map_panel(args, &stats)?;
+        // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
+        // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
+        let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+        let panel = build_map_panel(args, &stats, coord_hint)?;
         if out_format.is_image() {
             panel.map(|(p, cols)| {
                 let kind = match p.kind {
@@ -8244,14 +8306,29 @@ mod tests {
             classify_with_semantics(3, &m, &sem_meas),
             Some(PanelKind::BoxStats { .. })
         ));
-        // Temporal / MapCoord / Skip draw no per-column panel
-        for route in [Route::Temporal, Route::MapCoord, Route::Skip] {
+        // Temporal / Skip draw no per-column panel
+        for route in [Route::Temporal, Route::Skip] {
             let sem = ColSemantics {
                 route,
                 ..Default::default()
             };
             assert!(classify_with_semantics(0, &stat("DateTime", 9, Some(0.6)), &sem).is_none());
         }
+        // MapCoord falls back to classify: a coordinate the map did NOT consume (the caller already
+        // skips consumed ones via is_map_col) must still be charted, not vanish. A near-unique
+        // float with quartiles -> box.
+        let mut coord = stat("Float", 5000, Some(0.99));
+        coord.q1 = Some(1.0);
+        coord.q2_median = Some(2.0);
+        coord.q3 = Some(3.0);
+        let sem_coord = ColSemantics {
+            route: Route::MapCoord,
+            ..Default::default()
+        };
+        assert!(matches!(
+            classify_with_semantics(7, &coord, &sem_coord),
+            Some(PanelKind::BoxStats { .. })
+        ));
     }
 
     #[test]

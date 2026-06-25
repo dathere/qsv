@@ -278,6 +278,13 @@ smart options:
                            its output; or a path to an existing describegpt dictionary file
                            (jsonschema or json). Generation/read failures soft-fall back to the
                            stats-only dashboard. Only affects `smart`.
+    --dictionary-context <file>  EXPERIMENTAL. Path to a file with extra context about the dataset
+                           (a glossary, README, data dictionary, PDF, etc.) forwarded to
+                           describegpt as --context-file when `--dictionary infer` generates the
+                           dictionary. Better context yields better role/concept/label/grain
+                           tags, hence a better dashboard. Ignored unless `--dictionary infer`
+                           is used (it does not apply when reading an existing dictionary file).
+                           Only affects `smart`.
     --log-scale <mode>     Use a logarithmic y-axis for frequency bar panels whose
                            tallest bar dwarfs the rest (e.g. a large "(NULL)" or
                            "Other (N)" bucket), so the small categories stay visible.
@@ -597,77 +604,78 @@ type FreqMap = HashMap<usize, Vec<FreqBar>>;
 
 #[derive(Deserialize)]
 struct Args {
-    cmd_smart:         bool,
-    cmd_bar:           bool,
-    cmd_line:          bool,
-    cmd_scatter:       bool,
-    cmd_scatter3d:     bool,
-    cmd_histogram:     bool,
-    cmd_box:           bool,
-    cmd_pie:           bool,
-    cmd_heatmap:       bool,
-    cmd_contour:       bool,
-    cmd_candlestick:   bool,
-    cmd_ohlc:          bool,
-    cmd_sankey:        bool,
-    cmd_radar:         bool,
-    cmd_map:           bool,
-    cmd_geo:           bool,
-    arg_input:         Option<String>,
-    flag_x:            Option<SelectColumns>,
-    flag_y:            Option<SelectColumns>,
-    flag_z:            Option<SelectColumns>,
-    flag_cols:         Option<SelectColumns>,
-    flag_series:       Option<SelectColumns>,
-    flag_donut:        bool,
+    cmd_smart:               bool,
+    cmd_bar:                 bool,
+    cmd_line:                bool,
+    cmd_scatter:             bool,
+    cmd_scatter3d:           bool,
+    cmd_histogram:           bool,
+    cmd_box:                 bool,
+    cmd_pie:                 bool,
+    cmd_heatmap:             bool,
+    cmd_contour:             bool,
+    cmd_candlestick:         bool,
+    cmd_ohlc:                bool,
+    cmd_sankey:              bool,
+    cmd_radar:               bool,
+    cmd_map:                 bool,
+    cmd_geo:                 bool,
+    arg_input:               Option<String>,
+    flag_x:                  Option<SelectColumns>,
+    flag_y:                  Option<SelectColumns>,
+    flag_z:                  Option<SelectColumns>,
+    flag_cols:               Option<SelectColumns>,
+    flag_series:             Option<SelectColumns>,
+    flag_donut:              bool,
     // scatter encodings: map a numeric column to per-point marker color (continuous
     // colorscale) and/or marker size (bubble chart). Mutually exclusive with --series.
-    flag_color:        Option<SelectColumns>,
-    flag_size:         Option<SelectColumns>,
+    flag_color:              Option<SelectColumns>,
+    flag_size:               Option<SelectColumns>,
     // candlestick / ohlc columns (--open is already taken by the browser-open flag below,
     // so the open-price column is selected with --ohlc-open)
-    flag_ohlc_open:    Option<SelectColumns>,
-    flag_high:         Option<SelectColumns>,
-    flag_low:          Option<SelectColumns>,
-    flag_close:        Option<SelectColumns>,
+    flag_ohlc_open:          Option<SelectColumns>,
+    flag_high:               Option<SelectColumns>,
+    flag_low:                Option<SelectColumns>,
+    flag_close:              Option<SelectColumns>,
     // sankey columns
-    flag_source:       Option<SelectColumns>,
-    flag_target:       Option<SelectColumns>,
-    flag_value:        Option<SelectColumns>,
+    flag_source:             Option<SelectColumns>,
+    flag_target:             Option<SelectColumns>,
+    flag_value:              Option<SelectColumns>,
     // map columns/options
-    flag_lat:          Option<SelectColumns>,
-    flag_lon:          Option<SelectColumns>,
-    flag_text:         Option<SelectColumns>,
-    flag_density:      bool,
-    flag_style:        Option<String>,
-    flag_mapbox_token: Option<String>,
-    flag_projection:   Option<String>,
-    flag_bins:         Option<usize>,
-    flag_agg:          Option<String>,
-    flag_box_points:   Option<String>,
-    flag_max_charts:   usize,
-    flag_grid_cols:    usize,
-    flag_limit:        usize,
-    flag_no_nulls:     bool,
-    flag_no_other:     bool,
-    flag_smarter:      bool,
-    flag_dictionary:   Option<String>,
-    flag_log_scale:    String,
-    flag_title:        Option<String>,
-    flag_x_title:      Option<String>,
-    flag_y_title:      Option<String>,
-    flag_theme:        Option<String>,
+    flag_lat:                Option<SelectColumns>,
+    flag_lon:                Option<SelectColumns>,
+    flag_text:               Option<SelectColumns>,
+    flag_density:            bool,
+    flag_style:              Option<String>,
+    flag_mapbox_token:       Option<String>,
+    flag_projection:         Option<String>,
+    flag_bins:               Option<usize>,
+    flag_agg:                Option<String>,
+    flag_box_points:         Option<String>,
+    flag_max_charts:         usize,
+    flag_grid_cols:          usize,
+    flag_limit:              usize,
+    flag_no_nulls:           bool,
+    flag_no_other:           bool,
+    flag_smarter:            bool,
+    flag_dictionary:         Option<String>,
+    flag_dictionary_context: Option<String>,
+    flag_log_scale:          String,
+    flag_title:              Option<String>,
+    flag_x_title:            Option<String>,
+    flag_y_title:            Option<String>,
+    flag_theme:              Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
     // and height are optional: when unset, `viz smart` derives them from its grid shape and
     // other charts fall back to the defaults below.
-    flag_width:        Option<usize>,
-    flag_height:       Option<usize>,
+    flag_width:              Option<usize>,
+    flag_height:             Option<usize>,
     #[cfg_attr(not(feature = "viz_static"), allow(dead_code))]
-    flag_scale:        f64,
-    flag_open:         bool,
-    flag_output:       Option<String>,
-    flag_delimiter:    Option<Delimiter>,
-    flag_no_headers:   bool,
+    flag_scale:              f64,
+    flag_open:               bool,
+    flag_output:             Option<String>,
+    flag_delimiter:          Option<Delimiter>,
+    flag_no_headers:         bool,
 }
 
 /// The chart image format, derived from the --output extension.
@@ -4043,28 +4051,50 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
 ///     jsonschema` on the input now (requires an LLM configured) and parse its stdout. The
 ///     jsonschema format carries role/concept (in each property's `x-qsv`) and the dataset grain,
 ///     and — unlike `--format json` — does not perturb describegpt's two-pass refine cache.
+///     `--dictionary-context <file>` is forwarded as describegpt's `--context-file` so a glossary /
+///     README / data dictionary conditions the role/concept/label/grain inference.
 ///   * any other value -> a path to an existing describegpt dictionary file (jsonschema or json).
+///     `--dictionary-context` does not apply here (the dictionary is already built) and is ignored
+///     with a warning.
 ///
 /// Soft-fails (warns, returns `Ok(None)`) when generation or reading fails, so a missing LLM or a
 /// stray path degrades to the plain stats-driven dashboard instead of aborting.
 fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
     let Some(spec) = args.flag_dictionary.as_deref() else {
+        if args.flag_dictionary_context.is_some() {
+            eprintln!("viz smart --dictionary-context: ignored without --dictionary infer.");
+        }
         return Ok(None);
     };
     let Some(input) = args.arg_input.as_deref() else {
         return Ok(None);
     };
 
-    let json_text = if spec.eq_ignore_ascii_case("infer") {
+    let is_infer = spec.eq_ignore_ascii_case("infer");
+    if args.flag_dictionary_context.is_some() && !is_infer {
+        eprintln!(
+            "viz smart --dictionary-context: only applies to `--dictionary infer` (a generated \
+             dictionary); ignored when reading an existing dictionary file."
+        );
+    }
+
+    let json_text = if is_infer {
+        // forward --dictionary-context to describegpt as --context-file when present, so the LLM's
+        // role/concept/label/grain inference is conditioned on the user's domain context.
+        let mut dg_args: Vec<&str> = vec![
+            "--dictionary",
+            "--infer-content-type",
+            "--two-pass",
+            "--format",
+            "jsonschema",
+        ];
+        if let Some(ctx) = args.flag_dictionary_context.as_deref() {
+            dg_args.push("--context-file");
+            dg_args.push(ctx);
+        }
         match util::run_qsv_cmd(
             "describegpt",
-            &[
-                "--dictionary",
-                "--infer-content-type",
-                "--two-pass",
-                "--format",
-                "jsonschema",
-            ],
+            &dg_args,
             input,
             "Generated a Data Dictionary via describegpt for `viz smart --dictionary infer`",
         ) {

@@ -84,6 +84,11 @@
         "description": "EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels become panel titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: \"infer\" to run describegpt on the input now (with infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). Generation/read failures soft-fall back to the stats-only dashboard. Only affects `smart`."
       },
       {
+        "flag": "--dictionary-context",
+        "type": "string",
+        "description": "EXPERIMENTAL. Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label/grain tags, hence a better dashboard. Ignored unless `--dictionary infer` is used (it does not apply when reading an existing dictionary file). Only affects `smart`."
+      },
+      {
         "flag": "--donut",
         "type": "flag",
         "description": "Render a pie chart as a donut (with a center hole)."

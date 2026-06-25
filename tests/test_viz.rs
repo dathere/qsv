@@ -2155,6 +2155,55 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
     assert!(html.contains("Case Status"));
 }
 
+// `--dictionary-context` only applies to `--dictionary infer` (it's forwarded to describegpt as
+// --context-file). When reading an existing dictionary file it's ignored with a warning, and the
+// file dictionary still drives the dashboard. (The infer passthrough itself needs a live LLM.)
+#[test]
+fn viz_smart_dictionary_context_ignored_with_file_dict() {
+    let wrk = Workdir::new("viz_smart_dictionary_context_ignored_with_file_dict");
+    let mut rows = String::from("zone,status\n");
+    for i in 0..200 {
+        let zone = i % 40;
+        let status = if i % 2 == 0 { "Open" } else { "Closed" };
+        rows.push_str(&format!("{zone},{status}\n"));
+    }
+    wrk.create_from_string("codes.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "zone": { "type": ["integer","null"], "title": "Zone",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+    wrk.create_from_string("ctx.md", "Zone is an administrative district code.\n");
+
+    let out_html = wrk.path("d.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .arg("--dictionary-context")
+        .arg(wrk.path("ctx.md"))
+        .args(["-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    // context is ignored (with a warning) when reading an existing dictionary file
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--dictionary-context"),
+        "expected an ignore warning on stderr; got: {stderr}"
+    );
+    // the file dictionary still routes zone -> bar (not a box)
+    let html = wrk.read_to_string("d.html").unwrap();
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(!html.contains(r#""type":"box""#));
+}
+
 // Coordinates with non-standard headers (`X Coordinate` / `Y Coordinate`) aren't found by the
 // header-name heuristic, so without a dictionary no map renders and they're charted as numeric
 // distributions. A jsonschema dictionary tagging them geo.latitude/geo.longitude must render the

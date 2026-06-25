@@ -526,7 +526,13 @@ pub fn create_reqwest_async_client(
         .retry(retries);
 
     if timeout_secs > 0 {
-        builder = builder.timeout(Duration::from_secs(timeout_secs.into()));
+        // bound the total request AND the connect/TLS handshake separately.
+        // a stalled connect is not reliably caught by the total timeout alone
+        // (e.g. flaky windows-arm64 CI runners), so set connect_timeout too.
+        let timeout_duration = Duration::from_secs(timeout_secs.into());
+        builder = builder
+            .timeout(timeout_duration)
+            .connect_timeout(timeout_duration);
     }
 
     Ok(builder.build()?)
@@ -561,7 +567,7 @@ pub fn create_reqwest_blocking_client(
         }
     });
 
-    let client = reqwest::blocking::Client::builder()
+    let mut builder = reqwest::blocking::Client::builder()
         .user_agent(set_user_agent(user_agent)?)
         .brotli(true)
         .gzip(true)
@@ -570,15 +576,18 @@ pub fn create_reqwest_blocking_client(
         .use_rustls_tls()
         .http2_adaptive_window(true)
         .connection_verbose(log_enabled!(log::Level::Debug) || log_enabled!(log::Level::Trace))
-        .timeout(if timeout_secs == 0 {
-            None
-        } else {
-            Some(timeout_duration)
-        })
-        .retry(retries)
-        .build()?;
+        .retry(retries);
 
-    Ok(client)
+    if timeout_secs > 0 {
+        // bound the total request AND the connect/TLS handshake separately.
+        // a stalled connect is not reliably caught by the total timeout alone
+        // (e.g. flaky windows-arm64 CI runners), so set connect_timeout too.
+        builder = builder
+            .timeout(timeout_duration)
+            .connect_timeout(timeout_duration);
+    }
+
+    Ok(builder.build()?)
 }
 
 /// Transforms a GitHub blob URL to a raw.githubusercontent.com URL.

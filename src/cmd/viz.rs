@@ -2512,6 +2512,26 @@ fn mask_to_lower_triangle(mut matrix: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
     matrix
 }
 
+/// Pick the least-redundant third axis for a 3D scatter, given the two columns `i`/`j` already
+/// chosen as the strongest-correlated pair. "Least redundant" = the candidate `k` whose strongest
+/// correlation to either chosen axis (`max(|r_ik|, |r_jk|)`) is smallest, so the third dimension
+/// adds the most new information.
+///
+/// Candidates are restricted to those with DEFINED correlations to both chosen axes. A numeric
+/// column can become constant (zero-variance) on the listwise-complete rows even though column
+/// stats admitted it, leaving NaN correlations; `NaN.partial_cmp(..)` falls back to `Equal`, so an
+/// unfiltered `min_by` could select such a degenerate column as "least redundant" and render a
+/// flat, meaningless 3D axis. Returns `None` when no finite candidate remains (caller skips 3D).
+fn least_redundant_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usize> {
+    (0..matrix.len())
+        .filter(|&k| k != i && k != j && matrix[i][k].is_finite() && matrix[j][k].is_finite())
+        .min_by(|&a, &b| {
+            let ra = matrix[i][a].abs().max(matrix[j][a].abs());
+            let rb = matrix[i][b].abs().max(matrix[j][b].abs());
+            ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
 /// Pearson correlation matrix for equal-length numeric columns: NxN symmetric. The diagonal
 /// is computed from `pearson` (rather than hard-coded to 1.0) so a degenerate column — zero
 /// variance or too few observations — surfaces as `NaN` instead of a fabricated 1.0. Cells for
@@ -6231,14 +6251,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
                 .filter(|_| columns.len() >= 3 && !out_format.is_image())
                 .and_then(|(i, j, _)| {
-                    let third =
-                        (0..columns.len())
-                            .filter(|&k| k != i && k != j)
-                            .min_by(|&a, &b| {
-                                let ra = matrix[i][a].abs().max(matrix[j][a].abs());
-                                let rb = matrix[i][b].abs().max(matrix[j][b].abs());
-                                ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
-                            });
+                    let third = least_redundant_third(&matrix, i, j);
                     third.map(|k| {
                         // both downsamples share (n, cap) so they pick the same row indices ->
                         // aligned
@@ -9733,6 +9746,39 @@ mod tests {
 
         // fewer than two columns => no pair
         assert_eq!(strongest_pair(&[vec![1.0]]), None);
+    }
+
+    #[test]
+    fn least_redundant_third_skips_undefined_correlations() {
+        // Pair (0,1) is chosen. Candidates are cols 2 and 3.
+        // col 2: max(|r02|,|r12|) = max(0.8, 0.7) = 0.8
+        // col 3: max(|r03|,|r13|) = max(0.1, 0.2) = 0.2  <- least redundant
+        let m = vec![
+            vec![1.0, 0.9, 0.8, 0.1],
+            vec![0.9, 1.0, 0.7, 0.2],
+            vec![0.8, 0.7, 1.0, 0.3],
+            vec![0.1, 0.2, 0.3, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m, 0, 1), Some(3));
+
+        // col 3 became constant on the complete rows => NaN correlations.
+        // Even though it would score "lowest" via the Equal fallback, it must be
+        // excluded; the only finite candidate (col 2) is picked instead.
+        let m_nan = vec![
+            vec![1.0, 0.9, 0.8, f64::NAN],
+            vec![0.9, 1.0, 0.7, f64::NAN],
+            vec![0.8, 0.7, 1.0, f64::NAN],
+            vec![f64::NAN, f64::NAN, f64::NAN, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m_nan, 0, 1), Some(2));
+
+        // Every third-axis candidate is undefined => no usable third axis.
+        let m_all_nan = vec![
+            vec![1.0, 0.9, f64::NAN],
+            vec![0.9, 1.0, f64::NAN],
+            vec![f64::NAN, f64::NAN, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m_all_nan, 0, 1), None);
     }
 
     #[test]

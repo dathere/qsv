@@ -7849,7 +7849,10 @@ fn accumulate_hierarchy_counts(
 /// The Bergsma bias correction matters here precisely because the joint table can be sparse (the
 /// product of cardinalities): the naive V is upward-biased for large, sparse tables, so the
 /// correction subtracts the expected-under-independence inflation and shrinks the effective table
-/// size. Returns 0.0 when there are fewer than two dimensions or no pair yields a defined V.
+/// size. When the correction is undefined for a tiny table (n close to the table size), the pair
+/// falls back to the uncorrected Cramér's V so a small-but-associated hierarchy isn't wrongly read
+/// as independent. Returns 0.0 only when there are fewer than two dimensions or no pair has a
+/// 2x2-or-larger table with n > 1.
 fn max_pairwise_cramers_v(leaves: &HashMap<Vec<String>, f64>, ndims: usize) -> f64 {
     if ndims < 2 {
         return 0.0;
@@ -7900,9 +7903,18 @@ fn max_pairwise_cramers_v(leaves: &HashMap<Vec<String>, f64>, ndims: usize) -> f
             let r_corr = rf - (rf - 1.0) * (rf - 1.0) / (n - 1.0);
             let c_corr = cf - (cf - 1.0) * (cf - 1.0) / (n - 1.0);
             let denom = (r_corr - 1.0).min(c_corr - 1.0);
-            if denom > 0.0 {
-                max_v = max_v.max((phi2_corr / denom).sqrt());
-            }
+            let v = if denom > 0.0 {
+                (phi2_corr / denom).sqrt()
+            } else {
+                // The bias correction is undefined for a tiny table (n close to the table size
+                // shrinks the effective dimensions to <= 1). Falling through here would leave a
+                // perfectly-associated small hierarchy reading as V=0 (independent) and wrongly
+                // skip it, so fall back to the UNCORRECTED Cramér's V, which is
+                // always defined for r,c >= 2 and n > 1 (denom_raw >= 1.0).
+                let denom_raw = (rf - 1.0).min(cf - 1.0);
+                (phi2 / denom_raw).sqrt()
+            };
+            max_v = max_v.max(v);
         }
     }
     max_v
@@ -10311,6 +10323,22 @@ mod tests {
         assert!(
             v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
             "nested V={v} should be high"
+        );
+    }
+
+    #[test]
+    fn cramers_v_tiny_table_falls_back_to_uncorrected() {
+        // 3x3 perfectly one-to-one table with only 3 rows: the Bergsma correction is undefined
+        // (r_corr/c_corr collapse to 1.0, denom 0), but the dims ARE perfectly associated. The
+        // uncorrected fallback must report a high V so this small hierarchy isn't wrongly skipped.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["a1".into(), "b1".into()], 1.0);
+        leaves.insert(vec!["a2".into(), "b2".into()], 1.0);
+        leaves.insert(vec!["a3".into(), "b3".into()], 1.0);
+        let v = max_pairwise_cramers_v(&leaves, 2);
+        assert!(
+            v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
+            "tiny perfectly-associated table V={v} should not read as independent"
         );
     }
 

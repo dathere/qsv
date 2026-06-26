@@ -434,6 +434,27 @@ const LOG_SCALE_MIN_RATIO: f64 = 50.0;
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
 
+/// `viz smart` skips the 3D scatter drill-down when the strongest numeric pair is at or above this
+/// absolute correlation. The 3D is built ON that pair plus a third axis; when the pair is
+/// near-collinear (|r| ~ 1) the two axes are effectively the same variable, so the cloud collapses
+/// onto a plane and the "3D" adds nothing the 2D pair drill-down doesn't already show. The third
+/// axis is otherwise chosen to be the LEAST redundant with the pair so the panel uses all three
+/// dimensions.
+const SMART_3D_COLLINEAR_MAX_ABS_R: f64 = 0.97;
+
+/// `viz smart` flags the correlation drill-down pair as nonlinear when its Spearman |rho| exceeds
+/// its Pearson |r| by at least this much. A large gap means the relationship is monotonic but
+/// curved, so the single Pearson number understates it — the panel title notes the rho so the
+/// reader doesn't read the cloud as merely linear. Pearson alone can't see this.
+const SMART_NONLINEAR_MIN_GAP: f64 = 0.15;
+
+/// `viz pie` prints a non-fatal advisory (suggesting a bar chart) when it has at least
+/// `PIE_NEAR_EQUAL_MIN_SLICES` slices whose coefficient of variation is below this: near-equal
+/// slices are the worst case for a pie (the eye can't compare similar angles/areas), and a bar
+/// chart is strictly easier to read. The explicit `viz pie` request is still honored.
+const PIE_NEAR_EQUAL_MAX_CV: f64 = 0.35;
+const PIE_NEAR_EQUAL_MIN_SLICES: usize = 4;
+
 /// At or above this many complete rows, `viz smart` draws the strongest-correlated numeric pair as
 /// a 2D density contour instead of a scatter: past this point a scatter overplots into a solid
 /// mass, while a binned contour embeds only a fixed grid (so it's both more readable and far
@@ -2443,6 +2464,74 @@ fn pearson(x: &[f64], y: &[f64]) -> f64 {
     }
 }
 
+/// Tie-averaged (fractional) ranks of `v`, 1-based, for Spearman's rho. Equal values share the
+/// mean of the ranks they span, so tied data isn't biased by an arbitrary ordering.
+fn average_ranks(v: &[f64]) -> Vec<f64> {
+    let n = v.len();
+    let mut idx: Vec<usize> = (0..n).collect();
+    idx.sort_by(|&a, &b| v[a].partial_cmp(&v[b]).unwrap_or(std::cmp::Ordering::Equal));
+    let mut ranks = vec![0.0_f64; n];
+    let mut i = 0;
+    while i < n {
+        let mut j = i + 1;
+        while j < n && v[idx[j]] == v[idx[i]] {
+            j += 1;
+        }
+        // mean of the 1-based ranks (i+1)..=j spanned by this tie group.
+        #[allow(clippy::cast_precision_loss)]
+        let avg = (i + 1 + j) as f64 / 2.0;
+        for &k in &idx[i..j] {
+            ranks[k] = avg;
+        }
+        i = j;
+    }
+    ranks
+}
+
+/// Spearman's rank correlation: Pearson on the (tie-averaged) ranks of each column. It measures
+/// MONOTONIC association, so a large `|spearman| - |pearson|` gap signals a monotonic-but-curved
+/// (nonlinear) relationship — one a single Pearson r understates. Returns `NaN` when undefined
+/// (propagated from `pearson`).
+fn spearman_rho(x: &[f64], y: &[f64]) -> f64 {
+    pearson(&average_ranks(x), &average_ranks(y))
+}
+
+/// Blank out the upper triangle AND the diagonal of a symmetric correlation matrix (set to `NaN`,
+/// which serializes to JSON `null` so plotly draws no cell and `corr_incell_annotations` skips it),
+/// leaving only the lower triangle. A correlation matrix mirrors across the diagonal and the
+/// diagonal is a trivial 1.0, so the full square wastes half the panel on redundant cells; the
+/// lower triangle is the standard, less-cluttered presentation.
+fn mask_to_lower_triangle(mut matrix: Vec<Vec<f64>>) -> Vec<Vec<f64>> {
+    for (r, row) in matrix.iter_mut().enumerate() {
+        for (c, cell) in row.iter_mut().enumerate() {
+            if c >= r {
+                *cell = f64::NAN;
+            }
+        }
+    }
+    matrix
+}
+
+/// Pick the least-redundant third axis for a 3D scatter, given the two columns `i`/`j` already
+/// chosen as the strongest-correlated pair. "Least redundant" = the candidate `k` whose strongest
+/// correlation to either chosen axis (`max(|r_ik|, |r_jk|)`) is smallest, so the third dimension
+/// adds the most new information.
+///
+/// Candidates are restricted to those with DEFINED correlations to both chosen axes. A numeric
+/// column can become constant (zero-variance) on the listwise-complete rows even though column
+/// stats admitted it, leaving NaN correlations; `NaN.partial_cmp(..)` falls back to `Equal`, so an
+/// unfiltered `min_by` could select such a degenerate column as "least redundant" and render a
+/// flat, meaningless 3D axis. Returns `None` when no finite candidate remains (caller skips 3D).
+fn least_redundant_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usize> {
+    (0..matrix.len())
+        .filter(|&k| k != i && k != j && matrix[i][k].is_finite() && matrix[j][k].is_finite())
+        .min_by(|&a, &b| {
+            let ra = matrix[i][a].abs().max(matrix[j][a].abs());
+            let rb = matrix[i][b].abs().max(matrix[j][b].abs());
+            ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
 /// Pearson correlation matrix for equal-length numeric columns: NxN symmetric. The diagonal
 /// is computed from `pearson` (rather than hard-coded to 1.0) so a degenerate column — zero
 /// variance or too few observations — surfaces as `NaN` instead of a fabricated 1.0. Cells for
@@ -2553,11 +2642,39 @@ fn build_pie(args: &Args) -> CliResult<Box<dyn Trace>> {
         return fail_clierror!("No data found for the pie chart.");
     }
     let values: Vec<f64> = order.iter().map(|l| acc[l]).collect();
+    advise_if_pie_hard_to_read(&values);
     let mut pie = Pie::new(values).labels(order).text_info("label+percent");
     if args.flag_donut {
         pie = pie.hole(0.4);
     }
     Ok(pie)
+}
+
+/// Non-fatal advisory: a pie of many NEAR-EQUAL slices is the worst case for a pie chart — humans
+/// compare angles/areas poorly, so similar slices are nearly indistinguishable and a bar chart is
+/// strictly easier to read. Measured by the coefficient of variation (stddev / mean) of the slice
+/// values: low CV across enough slices means no slice dominates. Only nudges (prints to stderr);
+/// the explicit `viz pie` request is still rendered.
+fn advise_if_pie_hard_to_read(values: &[f64]) {
+    if values.len() < PIE_NEAR_EQUAL_MIN_SLICES {
+        return;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let n = values.len() as f64;
+    let mean = values.iter().sum::<f64>() / n;
+    if mean <= 0.0 {
+        return;
+    }
+    let variance = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n;
+    let cv = variance.sqrt() / mean;
+    if cv < PIE_NEAR_EQUAL_MAX_CV {
+        eprintln!(
+            "viz pie: {} slices are near-equal (coefficient of variation {cv:.2} < \
+             {PIE_NEAR_EQUAL_MAX_CV:.2}); a pie makes near-equal slices hard to compare. Consider \
+             `viz bar` for an easier read.",
+            values.len()
+        );
+    }
 }
 
 /// Heatmap: a correlation matrix of numeric columns (default), or a category x category
@@ -6099,9 +6216,19 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
 
             // pair drill-down beside the heatmap: a 2D density contour for large datasets (a
             // scatter would overplot into a solid mass, and the contour embeds only a fixed grid),
-            // or a scatter otherwise.
+            // or a scatter otherwise. The title carries Pearson r, plus Spearman rho when the two
+            // diverge enough to mean the relationship is monotonic-but-curved (nonlinear) — so the
+            // reader doesn't take the single r as proof of a linear relationship.
             let pair_panel = pair.map(|(i, j, r)| {
-                let name = format!("{} vs {} (r={r:.2})", labels[i], labels[j]);
+                let rho = spearman_rho(&columns[i], &columns[j]);
+                let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                    format!(
+                        "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
+                        labels[i], labels[j]
+                    )
+                } else {
+                    format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                };
                 if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
                     let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
                     Panel::new(name, PanelKind::ContourPair { x, y, z })
@@ -6111,22 +6238,20 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 }
             });
 
-            // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest-correlation
-            // triple — the strongest pair plus the third column most correlated with that pair.
+            // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
+            // third axis chosen to be the LEAST redundant with that pair (minimizing
+            // max(|r_ik|, |r_jk|)), so the cloud genuinely uses all three dimensions instead of
+            // collapsing onto the pair's plane. Skipped entirely when the strongest pair is itself
+            // near-collinear (|r| >= SMART_3D_COLLINEAR_MAX_ABS_R): two near-identical axes can't
+            // form a non-degenerate 3D, and the 2D pair drill-down already shows that relationship.
             // A 3D scene can't share the typed x/y subplot grid, so it's built ONLY for HTML output
             // (which uses the inline render path, like the map panel). Static image export goes
             // through the typed grid, where a 3D panel would hit `panel_trace`'s unreachable arm.
             let scatter3d_panel = pair
+                .filter(|&(_, _, r)| r.abs() < SMART_3D_COLLINEAR_MAX_ABS_R)
                 .filter(|_| columns.len() >= 3 && !out_format.is_image())
                 .and_then(|(i, j, _)| {
-                    let third =
-                        (0..columns.len())
-                            .filter(|&k| k != i && k != j)
-                            .max_by(|&a, &b| {
-                                let sa = matrix[i][a].abs() + matrix[j][a].abs();
-                                let sb = matrix[i][b].abs() + matrix[j][b].abs();
-                                sa.partial_cmp(&sb).unwrap_or(std::cmp::Ordering::Equal)
-                            });
+                    let third = least_redundant_third(&matrix, i, j);
                     third.map(|k| {
                         // both downsamples share (n, cap) so they pick the same row indices ->
                         // aligned
@@ -6144,11 +6269,18 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     })
                 });
 
+            // Show only the lower triangle: a correlation matrix mirrors across the diagonal (and
+            // the diagonal is a trivial 1.0), so masking the upper half + diagonal drops redundant
+            // cells. `matrix` was already consumed by `strongest_pair`/the 3D third-axis pick above
+            // (which need the full square), so masking here only affects the rendered panel.
             panels.insert(
                 0,
                 Panel::new(
                     "Correlation".to_string(),
-                    PanelKind::CorrHeatmap { labels, matrix },
+                    PanelKind::CorrHeatmap {
+                        labels,
+                        matrix: mask_to_lower_triangle(matrix),
+                    },
                 ),
             );
             // place the drill-down panels right after the heatmap
@@ -9614,6 +9746,90 @@ mod tests {
 
         // fewer than two columns => no pair
         assert_eq!(strongest_pair(&[vec![1.0]]), None);
+    }
+
+    #[test]
+    fn least_redundant_third_skips_undefined_correlations() {
+        // Pair (0,1) is chosen. Candidates are cols 2 and 3.
+        // col 2: max(|r02|,|r12|) = max(0.8, 0.7) = 0.8
+        // col 3: max(|r03|,|r13|) = max(0.1, 0.2) = 0.2  <- least redundant
+        let m = vec![
+            vec![1.0, 0.9, 0.8, 0.1],
+            vec![0.9, 1.0, 0.7, 0.2],
+            vec![0.8, 0.7, 1.0, 0.3],
+            vec![0.1, 0.2, 0.3, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m, 0, 1), Some(3));
+
+        // col 3 became constant on the complete rows => NaN correlations.
+        // Even though it would score "lowest" via the Equal fallback, it must be
+        // excluded; the only finite candidate (col 2) is picked instead.
+        let m_nan = vec![
+            vec![1.0, 0.9, 0.8, f64::NAN],
+            vec![0.9, 1.0, 0.7, f64::NAN],
+            vec![0.8, 0.7, 1.0, f64::NAN],
+            vec![f64::NAN, f64::NAN, f64::NAN, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m_nan, 0, 1), Some(2));
+
+        // Every third-axis candidate is undefined => no usable third axis.
+        let m_all_nan = vec![
+            vec![1.0, 0.9, f64::NAN],
+            vec![0.9, 1.0, f64::NAN],
+            vec![f64::NAN, f64::NAN, 1.0],
+        ];
+        assert_eq!(least_redundant_third(&m_all_nan, 0, 1), None);
+    }
+
+    #[test]
+    fn mask_to_lower_triangle_blanks_upper_and_diagonal() {
+        let m = vec![
+            vec![1.0, 0.5, 0.2],
+            vec![0.5, 1.0, 0.9],
+            vec![0.2, 0.9, 1.0],
+        ];
+        let masked = mask_to_lower_triangle(m);
+        for r in 0..3 {
+            for c in 0..3 {
+                if c >= r {
+                    assert!(
+                        masked[r][c].is_nan(),
+                        "upper/diagonal cell ({r},{c}) should be NaN"
+                    );
+                } else {
+                    assert!(
+                        masked[r][c].is_finite(),
+                        "lower cell ({r},{c}) should be kept"
+                    );
+                }
+            }
+        }
+        // a kept lower-triangle value is preserved unchanged
+        assert!((masked[2][1] - 0.9).abs() < 1e-9);
+    }
+
+    #[test]
+    fn spearman_rho_sees_monotonic_curve_pearson_misses() {
+        // y = x^5 is perfectly monotonic but strongly curved: Spearman = 1.0 while Pearson ~0.82,
+        // so the |rho| - |r| gap flags the nonlinearity a single Pearson number hides.
+        let x: Vec<f64> = (0..20).map(f64::from).collect();
+        let y: Vec<f64> = x.iter().map(|v| v.powi(5)).collect();
+        let rho = spearman_rho(&x, &y);
+        let r = pearson(&x, &y);
+        assert!(
+            (rho - 1.0).abs() < 1e-9,
+            "spearman should be 1.0, got {rho}"
+        );
+        assert!(
+            r < 0.95,
+            "pearson should trail spearman for a curve, got {r}"
+        );
+        assert!(rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP);
+
+        // tie-averaging: equal values share the mean of the ranks they span.
+        let ranks = average_ranks(&[10.0, 10.0, 20.0]);
+        assert!((ranks[0] - 1.5).abs() < 1e-9 && (ranks[1] - 1.5).abs() < 1e-9);
+        assert!((ranks[2] - 3.0).abs() < 1e-9);
     }
 
     #[test]

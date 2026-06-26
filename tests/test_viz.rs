@@ -209,6 +209,62 @@ fn viz_box_tukey_outliers_default() {
 }
 
 #[test]
+fn viz_pie_advises_bar_for_near_equal_slices() {
+    let wrk = Workdir::new("viz_pie_advises_bar_for_near_equal_slices");
+
+    // 5 near-equal categories (each ~20%): a pie is hard to read, so the advisory fires.
+    let mut near = String::from("cat\n");
+    for i in 0..100 {
+        let cat = match i % 5 {
+            0 => "A",
+            1 => "B",
+            2 => "C",
+            3 => "D",
+            _ => "E",
+        };
+        near.push_str(&format!("{cat}\n"));
+    }
+    wrk.create_from_string("near.csv", &near);
+    let out_html = wrk.path("near.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["pie", "near.csv", "--x", "cat", "-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("near-equal"),
+        "near-equal slices should trigger the pie advisory; stderr: {stderr}"
+    );
+
+    // a dominant-slice distribution (A ~80%): a pie reads fine here, so NO advisory.
+    let mut dom = String::from("cat\n");
+    for i in 0..100 {
+        let cat = if i < 80 {
+            "A"
+        } else {
+            match i % 4 {
+                0 => "B",
+                1 => "C",
+                2 => "D",
+                _ => "E",
+            }
+        };
+        dom.push_str(&format!("{cat}\n"));
+    }
+    wrk.create_from_string("dom.csv", &dom);
+    let out_html2 = wrk.path("dom.html").to_string_lossy().to_string();
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args(["pie", "dom.csv", "--x", "cat", "-o", &out_html2]);
+    let out2 = wrk.output(&mut cmd_2);
+    assert!(out2.status.success());
+    let stderr2 = String::from_utf8_lossy(&out2.stderr);
+    assert!(
+        !stderr2.contains("near-equal"),
+        "a dominant-slice pie should NOT trigger the advisory; stderr: {stderr2}"
+    );
+}
+
+#[test]
 fn viz_box_points_all() {
     let wrk = Workdir::new("viz_box_points_all");
     fruits(&wrk);
@@ -1384,7 +1440,7 @@ fn viz_smart_correlation_panel() {
     let mut rows = String::from("metric_a,metric_b,city\n");
     for i in 0..60 {
         let a = i % 9;
-        let b = (i % 9) + (i % 3);
+        let b = (i % 9) * 2; // perfectly linear in a => corr(metric_a, metric_b) = 1.00
         let city = match i % 3 {
             0 => "NYC",
             1 => "LA",
@@ -1404,7 +1460,9 @@ fn viz_smart_correlation_panel() {
     assert!(html.contains(r#""type":"heatmap""#));
     // polish: a clean hovertemplate (drops plotly's default "trace 0") ...
     assert!(html.contains("hovertemplate"));
-    // ... in-cell r value labels as annotations (metric_a vs metric_a is a perfect 1.00) ...
+    // ... in-cell r value labels as annotations: metric_b vs metric_a is a perfect 1.00, shown in
+    // the kept LOWER triangle (the redundant upper triangle and the trivial 1.0 diagonal are masked
+    // to NaN / blank, so this 1.00 is the off-diagonal cell, not a self-correlation) ...
     assert!(html.contains(r#""text":"1.00""#));
     // ... and a widened left margin (> the default 60) so long y tick labels aren't clipped.
     // "metric_a" is 8 chars => 8*7 + 24 = 80px.
@@ -1444,13 +1502,15 @@ fn viz_smart_scatter_pair_panel() {
 #[test]
 fn viz_smart_scatter3d_triple_panel() {
     let wrk = Workdir::new("viz_smart_scatter3d_triple_panel");
-    // three strongly-correlated, non-near-unique numeric columns => beyond the correlation heatmap
-    // and the pair scatter, `viz smart` adds a 3D scatter of the strongest-correlation triple.
+    // a moderately-correlated pair (a,b: r~0.78, below the collinear cutoff) plus a third column c
+    // that is nearly independent of both => `viz smart` adds a 3D scatter of the strongest pair
+    // (a,b) and the LEAST-redundant third axis (c), so the cloud genuinely uses all three
+    // dimensions instead of collapsing onto the a-b plane.
     let mut rows = String::from("a,b,c,city\n");
     for i in 0..120 {
-        let a = i % 10;
-        let b = a * 2 + (i % 2);
-        let c = a * 3 - (i % 3);
+        let a = i % 20;
+        let b = (i % 20) as f64 + (i % 11) as f64 * 1.5;
+        let c = (i * 7) % 13;
         let city = match i % 3 {
             0 => "NYC",
             1 => "LA",
@@ -1471,6 +1531,39 @@ fn viz_smart_scatter3d_triple_panel() {
     assert!(html.contains("<!doctype html>"));
     assert!(html.contains(r#""type":"scatter3d""#));
     assert!(html.contains("a / b / c (3D)"));
+}
+
+#[test]
+fn viz_smart_no_scatter3d_when_strongest_pair_collinear() {
+    // The strongest numeric pair (a,b) is perfectly collinear (b = 2a, r=1.0). A 3D built on it
+    // would be a degenerate plane, so `viz smart` skips the 3D drill-down even though there are 3+
+    // numeric columns. The 2D pair drill-down (and the heatmap) still render.
+    let wrk = Workdir::new("viz_smart_no_scatter3d_when_strongest_pair_collinear");
+    let mut rows = String::from("a,b,c,city\n");
+    for i in 0..120 {
+        let a = i % 20;
+        let b = a * 2; // perfectly collinear with a (r = 1.0)
+        let c = (i * 7) % 13; // nearly independent
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{a},{b},{c},{city}\n"));
+    }
+    wrk.create_from_string("metrics.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "metrics.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"heatmap""#));
+    assert!(
+        !html.contains(r#""type":"scatter3d""#),
+        "a near-collinear strongest pair should NOT get a 3D drill-down; html: {html}"
+    );
 }
 
 #[test]
@@ -1734,6 +1827,34 @@ fn viz_smart_no_scatter_pair_when_weakly_correlated() {
     assert!(html.contains(r#""type":"heatmap""#)); // correlation panel present
     assert!(!html.contains(r#""type":"scatter""#)); // but no drill-down scatter
     assert!(!html.contains(" vs metric_")); // and no scatter-pair title
+}
+
+#[test]
+fn viz_smart_flags_nonlinear_correlation_pair() {
+    let wrk = Workdir::new("viz_smart_flags_nonlinear_correlation_pair");
+    // y = x^6: a perfectly monotonic but strongly curved relationship. Spearman rho ~1.0 far
+    // exceeds Pearson r (~0.78), so the drill-down pair title flags it as nonlinear and shows the
+    // rho — the single Pearson number alone would read as merely "moderately linear".
+    let mut rows = String::from("x,y\n");
+    for i in 0..120 {
+        let x = i % 30;
+        let y = i64::from(x).pow(6);
+        rows.push_str(&format!("{x},{y}\n"));
+    }
+    wrk.create_from_string("curve.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "curve.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("nonlinear"),
+        "a monotonic-but-curved pair should be flagged nonlinear; html: {html}"
+    );
+    // the drill-down scatter is still rendered (the pair clears the |r| >= 0.5 threshold)
+    assert!(html.contains(r#""type":"scatter""#));
 }
 
 #[test]

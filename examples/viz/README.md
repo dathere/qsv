@@ -17,12 +17,14 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The five **smart dashboards** are embedded as `<iframe>`s of their genuine
+The seven **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
-the full-width overview panels (map, correlation heatmap, time-series), themes and
-map zoom buttons render exactly as the CLI produces them. Those iframe sources are
-the real output with the inline plotly bundle swapped for the same CDN tag (so they
-stay a few KB each); they need a network connection to render.
+the full-width overview panels (map, correlation heatmap, time-series, treemap/sunburst
+hierarchy), themes and map zoom buttons render exactly as the CLI produces them. Those
+iframe sources are the real output with the inline plotly bundle swapped for the same CDN
+tag (so they stay a few KB each); they need a network connection to render. Two of them
+(`smart_dict_*.html`) are `--dictionary infer` examples that need a local LLM to regenerate,
+so `gen_gallery.py` reuses the committed copies instead of re-running the LLM.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 
@@ -156,6 +158,33 @@ qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 -o seismic_dashboard.html
 ```
 
+### dictionary-guided hierarchy panels (treemap / sunburst)
+
+When the dataset has **2+ low-cardinality categorical dimensions**, `viz smart` adds a
+part-to-whole **hierarchy** panel nesting them (the chosen dimensions still keep their own
+frequency bars). The chart type is auto-selected by depth, following visualization best practice:
+a **treemap** for a shallow 2-level hierarchy (area encodes size, for accurate comparison) and a
+**sunburst** for a deeper 3-level one (concentric rings emphasize parent-child structure). Override
+with `--hierarchy-style auto|treemap|sunburst`.
+
+Pairing this with **`--dictionary infer`** lets a local LLM (via
+[`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md), default
+endpoint LM Studio at `http://localhost:1234/v1`) infer each field's semantic role and a friendly
+label first, so the dimensions are picked from semantics (not just statistics) and the panels are
+nicely titled:
+
+```bash
+# two dimensions (plan, region) -> a TREEMAP, with LLM-inferred field labels
+qsv viz smart customer_spend.csv --dictionary infer -o spend_dashboard.html
+
+# three dimensions -> a SUNBURST (deeper hierarchy)
+qsv viz smart sales_sample.csv --dictionary infer -o sales_dashboard.html
+```
+
+> `--dictionary infer` needs a reachable LLM endpoint; set `QSV_LLM_MODEL` (and
+> `QSV_LLM_BASE_URL` / `QSV_LLM_APIKEY` as needed). Without a dictionary, the same hierarchy is
+> still built from column statistics — only the dimension labels and semantic routing differ.
+
 ## Individual chart types
 
 ```bash
@@ -209,6 +238,12 @@ qsv viz sankey web_flows.csv --source source --target target --value sessions -o
 
 # radar — multi-axis brand comparison (one polygon per --series value, per-axis mean)
 qsv viz radar product_ratings.csv --cols battery,camera,performance,display,value,design --series brand -o radar.html
+
+# treemap — part-to-whole hierarchy (--cols are the levels, outer first); sized by a --value sum
+qsv viz treemap customer_spend.csv --cols plan,region --value monthly_spend --agg sum -o treemap.html
+
+# sunburst — deeper hierarchy as concentric rings; sized by row count when --value is omitted
+qsv viz sunburst sales_sample.csv --cols region,product_category,payment_method -o sunburst.html
 
 # map — point map on token-free OpenStreetMap tiles; color by magnitude, size by depth
 qsv viz map quakes.csv --lat lat --lon lon --color magnitude --size depth_km -o map.html

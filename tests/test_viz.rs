@@ -3495,3 +3495,169 @@ fn viz_smart_map_outlier_extent_callout() {
         assert!(html.contains(r##""size":11,"color":"#2A3F5F""##));
     }
 }
+
+// ---- treemap / sunburst hierarchy panels ----
+
+/// id (near-unique, skipped) + two low-cardinality categorical dimensions.
+fn two_dim_hierarchy(wrk: &Workdir) {
+    let mut rows = String::from("id,region,category\n");
+    for i in 1..=90 {
+        let region = match i % 3 {
+            0 => "East",
+            1 => "West",
+            _ => "North",
+        };
+        let category = match i % 4 {
+            0 => "Widgets",
+            1 => "Gadgets",
+            2 => "Gizmos",
+            _ => "Doohickeys",
+        };
+        rows.push_str(&format!("{i},{region},{category}\n"));
+    }
+    wrk.create_from_string("two_dim.csv", &rows);
+}
+
+/// id (skipped) + three low-cardinality categorical dimensions.
+fn three_dim_hierarchy(wrk: &Workdir) {
+    let mut rows = String::from("id,region,category,channel\n");
+    for i in 1..=120 {
+        let region = match i % 3 {
+            0 => "East",
+            1 => "West",
+            _ => "North",
+        };
+        let category = match i % 4 {
+            0 => "Widgets",
+            1 => "Gadgets",
+            2 => "Gizmos",
+            _ => "Doohickeys",
+        };
+        let channel = match i % 5 {
+            0 => "Web",
+            1 => "Retail",
+            2 => "Phone",
+            3 => "Partner",
+            _ => "Other",
+        };
+        rows.push_str(&format!("{i},{region},{category},{channel}\n"));
+    }
+    wrk.create_from_string("three_dim.csv", &rows);
+}
+
+#[test]
+fn viz_smart_hierarchy_treemap_for_two_dims() {
+    let wrk = Workdir::new("viz_smart_hierarchy_treemap_for_two_dims");
+    two_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "two_dim.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a shallow (2-level) hierarchy auto-selects a treemap with rolled-up totals
+    assert!(html.contains(r#""type":"treemap""#));
+    assert!(html.contains(r#""branchvalues":"total""#));
+    // and not a sunburst
+    assert!(!html.contains(r#""type":"sunburst""#));
+}
+
+#[test]
+fn viz_smart_hierarchy_sunburst_for_three_dims() {
+    let wrk = Workdir::new("viz_smart_hierarchy_sunburst_for_three_dims");
+    three_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "three_dim.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a deep (3-level) hierarchy auto-selects a sunburst
+    assert!(html.contains(r#""type":"sunburst""#));
+}
+
+#[test]
+fn viz_smart_hierarchy_style_override() {
+    let wrk = Workdir::new("viz_smart_hierarchy_style_override");
+    three_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "three_dim.csv",
+        "--hierarchy-style",
+        "treemap",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // explicit override beats the depth-based auto rule
+    assert!(html.contains(r#""type":"treemap""#));
+    assert!(!html.contains(r#""type":"sunburst""#));
+}
+
+#[test]
+fn viz_treemap_standalone() {
+    let wrk = Workdir::new("viz_treemap_standalone");
+    two_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("tm.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "treemap",
+        "two_dim.csv",
+        "--cols",
+        "region,category",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("tm.html").unwrap();
+    assert!(html.contains(r#""type":"treemap""#));
+    assert!(html.contains(r#""branchvalues":"total""#));
+}
+
+#[test]
+fn viz_sunburst_standalone() {
+    let wrk = Workdir::new("viz_sunburst_standalone");
+    three_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("sb.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "sunburst",
+        "three_dim.csv",
+        "--cols",
+        "region,category,channel",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("sb.html").unwrap();
+    assert!(html.contains(r#""type":"sunburst""#));
+}
+
+#[test]
+fn viz_treemap_requires_two_cols() {
+    let wrk = Workdir::new("viz_treemap_requires_two_cols");
+    two_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("tm.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "treemap",
+        "two_dim.csv",
+        "--cols",
+        "region",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_err(&mut cmd);
+}

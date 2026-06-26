@@ -215,6 +215,18 @@ qsv viz contour data.csv --x height --y weight --bins 40 -o contour.html
 qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
 ```
 
+> Treemap of part-to-whole sales by region then category, sized by amount
+
+```console
+qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o treemap.html
+```
+
+> Sunburst of a deep 3-level web-traffic hierarchy, sized by row count
+
+```console
+qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 See also <https://github.com/dathere/qsv/wiki/Visualization>
@@ -240,6 +252,8 @@ qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
 qsv viz map         [options] <input>
 qsv viz geo         [options] <input>
+qsv viz treemap     [options] <input>
+qsv viz sunburst    [options] <input>
 qsv viz --help
 ```
 
@@ -252,7 +266,7 @@ qsv viz --help
 | &nbsp;`‑x,`<br>`‑‑x`&nbsp; | string | Column for the x-axis / category / bin / group. |  |
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d. |  |
-| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. |  |
+| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). |  |
 | &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo. |  |
 | &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. In map density mode, this column is the heatmap weight. |  |
@@ -263,9 +277,9 @@ qsv viz --help
 | &nbsp;`‑‑close`&nbsp; | string | Close-price column for candlestick/ohlc charts. |  |
 | &nbsp;`‑‑source`&nbsp; | string | Source node column for a sankey diagram. |  |
 | &nbsp;`‑‑target`&nbsp; | string | Target node column for a sankey diagram. |  |
-| &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. |  |
+| &nbsp;`‑‑value`&nbsp; | string | Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst: a numeric measure summed per sector (when omitted, each row counts as 1). |  |
 | &nbsp;`‑‑bins`&nbsp; | integer | Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20). |  |
-| &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. |  |
+| &nbsp;`‑‑agg`&nbsp; | string | For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst, only additive aggregations apply: count (default) or sum (requires --value). |  |
 | &nbsp;`‑‑box‑points`&nbsp; | string | Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points for small data (<=1,000 rows) and only the outliers for medium data (<=10,000 rows). Above that, a column that HAS outliers shows them as points on a precomputed quartile box (a single pass collects only the out-of-fence values, capped); a column with no outliers stays a fast cache-only quartile summary with no data re-scan. An explicit mode is applied to every box panel (one batched pass to read the values), except `none`, which always keeps the cache-only box. |  |
 
 <a name="map-options"></a>
@@ -301,6 +315,7 @@ qsv viz --help
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Omit the "(NULL)" bar (empty cells) from frequency bar charts. By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`. |  |
 | &nbsp;`‑‑no‑other`&nbsp; | flag | Omit the "Other (N)" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default. |  |
 | &nbsp;`‑‑smarter`&nbsp; | flag | Before building the dashboard, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, and skew/outlier hints on box panels. Costs one extra pass over the data and writes <stem>.stats.csv, its sidecars, and an .idx index (like running `qsv moarstats` manually). Only affects `smart`. Applied only with default parsing; inputs using --no-headers or a custom --delimiter fall back to the standard dashboard. |  |
+| &nbsp;`‑‑hierarchy‑style`&nbsp; | string | For `smart`, the chart used for the categorical part-to-whole hierarchy panel (built when 2+ low-cardinality dimensions exist). One of: auto (default), treemap, sunburst. auto follows best practice — a treemap for a shallow 2-level hierarchy (accurate size comparison) and a sunburst for a deep 3-level one (parent child structure). Only affects `smart`. |  |
 | &nbsp;`‑‑dictionary`&nbsp; | string | EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels become panel titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: "infer" to run describegpt on the input now (with infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). Generation/read failures soft-fall back to the stats-only dashboard. Only affects `smart`. |  |
 | &nbsp;`‑‑dictionary‑context`&nbsp; | string | EXPERIMENTAL. Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label/grain tags, hence a better dashboard. Ignored unless `--dictionary infer` is used (it does not apply when reading an existing dictionary file). Only affects `smart`. |  |
 | &nbsp;`‑‑log‑scale`&nbsp; | string | Use a logarithmic y-axis for frequency bar panels whose tallest bar dwarfs the rest (e.g. a large "(NULL)" or "Other (N)" bucket), so the small categories stay visible. One of: auto, on, off. "auto" (the default) switches a panel to a log y-axis only when its dynamic range is high; "on" forces a log y-axis on every frequency panel; "off" keeps the linear axes. Only affects `smart`. | `auto` |

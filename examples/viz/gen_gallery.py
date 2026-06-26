@@ -47,6 +47,17 @@ SMART_IFRAME = {
     "smart dashboard (--smarter, geospatial)":  "smart_geospatial.html",
     "smart dashboard (geographic outliers)":    "smart_geo_outliers.html",
     "smart dashboard (time-series)":            "smart_timeseries.html",
+    "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
+    "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
+}
+
+# Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
+# local LM Studio / Ollama endpoint). Their committed HTML is REUSED as-is rather than regenerated,
+# so a normal `gen_gallery.py` run stays LLM-free and deterministic. To refresh them, run the
+# `qsv viz smart ... --dictionary infer` commands from README.md (with your LLM up) and re-cdnify.
+PREGENERATED = {
+    "smart_dict_treemap.html",
+    "smart_dict_sunburst.html",
 }
 
 # CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
@@ -182,6 +193,18 @@ FIGURES = [
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads, alongside box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
+    ("smart dashboard (--dictionary infer, treemap)",
+     "Auto dashboard for customer_spend with a describegpt-inferred Data Dictionary "
+     "(--dictionary infer) guiding panel selection & field labels. Two categorical dimensions "
+     "(plan, region) form a shallow part-to-whole hierarchy, auto-rendered as a TREEMAP "
+     "(area = size). Requires a local LLM; the committed HTML is reused on regen.",
+     True, ["smart", "customer_spend.csv", "--dictionary", "infer"]),
+    ("smart dashboard (--dictionary infer, sunburst)",
+     "Auto dashboard for sales_sample with a describegpt-inferred Data Dictionary. Three "
+     "categorical dimensions form a deeper hierarchy, auto-rendered as a SUNBURST (concentric "
+     "rings emphasize parent-child structure). Requires a local LLM; the committed HTML is "
+     "reused on regen.",
+     True, ["smart", "sales_sample.csv", "--dictionary", "infer"]),
 ]
 
 
@@ -325,10 +348,15 @@ def main():
         if iframe_name:
             # embed the genuine `qsv viz smart` output (CDN-slimmed) as a full-width iframe so the
             # real full-width overview panels, theme and map buttons render as the CLI produces them
-            sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
-            html = inject_resize_reporter(cdnify(run_html(qsv, args)))
-            with open(os.path.join(VIZ_DIR, iframe_name), "w", encoding="utf-8") as fh:
-                fh.write(html)
+            if iframe_name in PREGENERATED:
+                # LLM-dependent (`--dictionary infer`): reuse the committed, already-cdnified HTML so
+                # regen stays offline & deterministic (refresh it manually — see README commands).
+                sys.stderr.write(f"[{idx}] {title}: reusing pre-generated {iframe_name}\n")
+            else:
+                sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
+                html = inject_resize_reporter(cdnify(run_html(qsv, args)))
+                with open(os.path.join(VIZ_DIR, iframe_name), "w", encoding="utf-8") as fh:
+                    fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
                 f'<figure class="cell full"><figcaption><span class="t">{title}</span>'

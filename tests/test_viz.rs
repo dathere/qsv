@@ -3724,3 +3724,37 @@ fn viz_treemap_value_all_invalid_errors() {
     ]);
     wrk.assert_err(&mut cmd);
 }
+
+#[test]
+fn viz_treemap_value_mixed_invalid_errors() {
+    let wrk = Workdir::new("viz_treemap_value_mixed_invalid_errors");
+    // `amount` is numeric except for two non-numeric cells. A part-to-whole chart would silently
+    // drop those rows and misstate every proportion, so a partially-invalid measure must error
+    // (not just warn) rather than produce a deceptively "successful" chart.
+    let mut rows = String::from("region,category,amount\n");
+    for i in 1..=20 {
+        let region = if i % 2 == 0 { "East" } else { "West" };
+        let category = if i % 3 == 0 { "A" } else { "B" };
+        let amount = if i == 5 || i == 12 {
+            "n/a".to_string()
+        } else {
+            (i * 10).to_string()
+        };
+        rows.push_str(&format!("{region},{category},{amount}\n"));
+    }
+    wrk.create_from_string("m.csv", &rows);
+
+    let out = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "treemap",
+        "m.csv",
+        "--cols",
+        "region,category",
+        "--value",
+        "amount",
+        "-o",
+        &out,
+    ]);
+    wrk.assert_err(&mut cmd);
+}

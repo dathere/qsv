@@ -7634,8 +7634,9 @@ fn accumulate_hierarchy_counts(
             None => *leaves.entry(path).or_insert(0.0) += 1.0,
             // value mode: sum a finite, non-negative measure. An empty cell is a benign missing
             // measure (skipped, no leaf created); a non-numeric / negative / non-finite cell can't
-            // size an area/angle, so it's skipped and tallied (reported after the pass). This
-            // avoids silently coercing bad data to 0 and rendering a blank/misleading sector.
+            // size an area/angle, so it's tallied and the pass errors afterwards. This avoids
+            // silently dropping rows (which would misstate every part-to-whole proportion) or
+            // coercing bad data to 0 and rendering a blank/misleading sector.
             Some(vi) => {
                 let cell = record
                     .get(vi)
@@ -7659,9 +7660,12 @@ fn accumulate_hierarchy_counts(
     }
     if value_idx.is_some() {
         if invalid_values > 0 {
-            eprintln!(
-                "viz: skipped {invalid_values} row(s) whose --value cell was non-numeric, \
-                 negative, or non-finite."
+            // A part-to-whole chart that silently dropped these rows would misstate every
+            // proportion, so any unusable measure cell is a hard error (not a warning).
+            return fail_clierror!(
+                "the --value column has {invalid_values} cell(s) that are non-numeric, negative, \
+                 or non-finite; a treemap/sunburst would drop them and misstate the totals. Clean \
+                 or filter the data first."
             );
         }
         if valid_values == 0 {

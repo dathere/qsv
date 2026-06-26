@@ -167,6 +167,12 @@ a **treemap** for a shallow 2-level hierarchy (area encodes size, for accurate c
 **sunburst** for a deeper 3-level one (concentric rings emphasize parent-child structure). Override
 with `--hierarchy-style auto|treemap|sunburst`.
 
+The auto path also checks that the candidate dimensions are **statistically associated** (bias-
+corrected Cramér's V): nesting *independent* categoricals just replicates each level's marginal at
+every branch and tells you nothing the separate frequency bars don't, so that hierarchy is skipped
+(with a note on stderr). Pass an explicit `--hierarchy-style treemap|sunburst` to force the panel
+anyway.
+
 Pairing this with **`--dictionary infer`** lets a local LLM (via
 [`describegpt`](https://github.com/dathere/qsv/blob/master/docs/help/describegpt.md), default
 endpoint LM Studio at `http://localhost:1234/v1`) infer each field's semantic role and a friendly
@@ -174,11 +180,12 @@ label first, so the dimensions are picked from semantics (not just statistics) a
 nicely titled:
 
 ```bash
-# two dimensions (plan, region) -> a TREEMAP, with LLM-inferred field labels
+# two associated dimensions (plan, region) -> a TREEMAP, with LLM-inferred field labels
 qsv viz smart customer_spend.csv --dictionary infer -o spend_dashboard.html
 
-# three dimensions -> a SUNBURST (deeper hierarchy)
-qsv viz smart sales_sample.csv --dictionary infer -o sales_dashboard.html
+# sales_sample's three dimensions are independent, so the auto hierarchy is skipped; force a
+# SUNBURST to showcase the deeper-hierarchy chart anyway
+qsv viz smart sales_sample.csv --dictionary infer --hierarchy-style sunburst -o sales_dashboard.html
 ```
 
 > `--dictionary infer` needs a reachable LLM endpoint; set `QSV_LLM_MODEL` (and

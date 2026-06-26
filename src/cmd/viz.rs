@@ -415,6 +415,13 @@ const HIER_ROOT_ID: &str = "\u{001F}root";
 /// Inline render height (px) for a hierarchy panel — taller than a normal overview cell so
 /// nested treemap rectangles / sunburst rings stay legible.
 const HIER_ROW_HEIGHT_PX: usize = 520;
+/// Minimum (bias-corrected) Cramér's V — across every pair of the candidate hierarchy dimensions —
+/// for `viz smart` to AUTO-build a treemap/sunburst. Nesting statistically independent categoricals
+/// just replicates each level's marginal at every branch, conveying no structure that the separate
+/// per-column frequency bars don't already show more legibly; below this association the panel is
+/// skipped (a note is printed). 0.10 is Cohen's "small effect" floor for V. An explicit
+/// `--hierarchy-style treemap|sunburst` bypasses the screen (the user asked for it deliberately).
+const HIER_MIN_ASSOCIATION_CRAMERS_V: f64 = 0.10;
 
 /// `viz smart --log-scale auto`: a frequency bar panel switches to a logarithmic y-axis when
 /// its tallest bar is at least this many times the shortest positive bar. A dominating
@@ -458,11 +465,17 @@ const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
 const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
 
-/// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose moarstats
-/// `bimodality_coefficient` reaches this is treated as bimodal/multimodal, so `viz smart` draws
-/// a histogram (which shows the separate peaks) instead of a box plot (which hides them).
-/// The 0.555 cutoff is the standard uniform-distribution reference value.
-const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.555;
+/// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose
+/// `bimodality_coefficient` reaches this AND is platykurtic (see `classify_measure`) is treated as
+/// bimodal/multimodal, so `viz smart` draws a histogram (which shows the separate peaks) instead of
+/// a box plot (which hides them). The coefficient is supplied by moarstats under `--smarter`, or
+/// computed in one streaming pass by `enrich_bimodality` for plain `viz smart`.
+///
+/// Sarle's textbook cutoff is 5/9 (~0.5556) — the value for a UNIFORM distribution. But finite
+/// samples of a uniform (or near-uniform) column scatter just ABOVE 5/9, so a strict cutoff
+/// over-flags flat-but-unimodal data as "bimodal". A small margin (0.60) keeps genuinely two-peaked
+/// columns (BC typically 0.7-1.0) while letting near-uniform columns stay box plots.
+const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 
 /// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
 /// only when moarstats says its distribution is concentrated rather than near-uniform: a
@@ -4087,10 +4100,17 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<Pane
     if s.cardinality <= 1 {
         return None;
     }
-    // moarstats refinement: a box plot hides multiple peaks; when flagged bimodal/multimodal a
-    // histogram tells the truth. Absent moarstats, `bimodality_coefficient` is None -> box plot.
+    // a box plot hides multiple peaks; a histogram tells the truth — but only flag bimodal when
+    // Sarle's BC clears the threshold AND the distribution is PLATYKURTIC (negative excess
+    // kurtosis). The kurtosis guard rejects BC's well-known false positive on heavily skewed
+    // UNIMODAL data: a long tail inflates BC through skewness, yet such columns are leptokurtic and
+    // are far better shown as a box with its outlier points than as a one-tall-bar histogram. A
+    // genuine two-peaked column is flat-topped (negative excess kurtosis), so it still becomes a
+    // histogram. `bimodality_coefficient`/`kurtosis` come from moarstats (`--smarter`) or
+    // `enrich_bimodality` (plain smart); when either is absent (e.g. too few rows) it's a box plot.
     if s.bimodality_coefficient
         .is_some_and(|bc| bc >= BIMODALITY_COEFFICIENT_THRESHOLD)
+        && s.kurtosis.is_some_and(|k| k < 0.0)
     {
         return Some(PanelKind::Histogram { idx });
     }
@@ -4106,6 +4126,112 @@ fn classify_measure(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<Pane
         upper,
         mean: s.mean,
     })
+}
+
+/// Populate `bimodality_coefficient` for continuous-numeric columns that don't already have one —
+/// the plain `viz smart` path, where the stats cache carries `skewness` but not the moarstats-only
+/// `kurtosis`/`bimodality_coefficient`. Without it a bimodal column (two separated peaks) renders
+/// as a box plot whose median can sit in the empty gap BETWEEN the peaks — actively misleading;
+/// `classify_measure` upgrades a flagged column to a histogram instead, which shows the peaks.
+///
+/// Sarle's bimodality coefficient is computed EXACTLY as moarstats does — `BC = (skewness² + 1) /
+/// (kurtosis + 3)` with the same qsv-stats sample excess-kurtosis definition and the SAME cached
+/// `mean`/`variance`/`skewness` inputs — so a column classifies identically with or without
+/// `--smarter`. The 4th central moment is accumulated in a single streaming pass (O(1) memory per
+/// column, no value buffering) using each column's cached mean. Columns moarstats already enriched
+/// (BC present) are skipped, so this is a no-op — with no data pass at all — under `--smarter` or
+/// when no column qualifies.
+fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) -> CliResult<()> {
+    // candidates: columns that would become a box plot (continuous numeric with quartiles) and lack
+    // a bimodality coefficient. Mirrors classify()/classify_measure()'s box-vs-bar conditions so we
+    // don't pay for columns that chart as frequency bars or are skipped as ID-like.
+    let candidates: Vec<usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| {
+            let near_unique = s.uniqueness_ratio.is_some_and(|r| r > 0.95);
+            let low_card = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
+            s.bimodality_coefficient.is_none()
+                && matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.cardinality > 1
+                && !low_card
+                && s.q1.is_some()
+                && s.q2_median.is_some()
+                && s.q3.is_some()
+                && s.skewness.is_some()
+                && s.mean.is_some()
+                && s.variance.is_some_and(|v| v > 0.0)
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if candidates.is_empty() {
+        return Ok(());
+    }
+
+    let means: Vec<f64> = candidates
+        .iter()
+        .map(|&i| stats[i].mean.unwrap_or_default())
+        .collect();
+    let mut counts = vec![0_u64; candidates.len()];
+    let mut sum4 = vec![0.0_f64; candidates.len()]; // Σ(x - mean)⁴ per candidate column
+
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        for (k, &col) in candidates.iter().enumerate() {
+            let Some(cell) = record.get(col) else {
+                continue;
+            };
+            let cell = crate::cmd::frequency::trim_bs_whitespace(cell);
+            if cell.is_empty() {
+                continue;
+            }
+            if let Some(x) = std::str::from_utf8(cell)
+                .ok()
+                .and_then(|s| s.parse::<f64>().ok())
+                && x.is_finite()
+            {
+                let d2 = (x - means[k]) * (x - means[k]);
+                sum4[k] = d2.mul_add(d2, sum4[k]);
+                counts[k] += 1;
+            }
+        }
+    }
+
+    for (k, &col) in candidates.iter().enumerate() {
+        let n = counts[k];
+        // qsv-stats requires >= 4 observations for a defined sample excess kurtosis.
+        if n < 4 {
+            continue;
+        }
+        let (Some(skew), Some(variance)) = (stats[col].skewness, stats[col].variance) else {
+            continue;
+        };
+        let variance_sq = variance * variance;
+        if variance_sq == 0.0 {
+            continue;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let nf = n as f64;
+        // sample excess kurtosis, matching qsv-stats `kurtosis` with precalc mean+variance:
+        // (n(n+1) Σ(x-mean)⁴) / ((n-1)(n-2)(n-3) variance²) - 3(n-1)²/((n-2)(n-3))
+        let denominator = (nf - 1.0) * (nf - 2.0) * (nf - 3.0);
+        let adjustment = 3.0 * (nf - 1.0) * (nf - 1.0) / ((nf - 2.0) * (nf - 3.0));
+        let kurtosis =
+            (nf * (nf + 1.0) * sum4[k]).mul_add(1.0 / (denominator * variance_sq), -adjustment);
+        // Sarle's bimodality coefficient (moarstats `compute_bimodality_coefficient`).
+        let bc = skew.mul_add(skew, 1.0) / (kurtosis + 3.0);
+        if bc.is_finite() && kurtosis.is_finite() {
+            // store both so classify_measure's platykurtic guard (BC high AND excess kurtosis < 0)
+            // sees the same pair moarstats would have written under `--smarter`.
+            stats[col].kurtosis = Some(kurtosis);
+            stats[col].bimodality_coefficient = Some(bc);
+        }
+    }
+    Ok(())
 }
 
 /// Combine a column's `ColSemantics` verdict with the statistical `classify`. The dictionary
@@ -5754,11 +5880,25 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         flag_output:          None,
     };
 
-    let (_headers, stats) = util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
+    let (_headers, mut stats) =
+        util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
     if stats.is_empty() {
         return fail_clierror!(
             "Could not compute statistics for `viz smart`. The input must be a regular CSV/TSV \
              file (not stdin or a compressed/special format)."
+        );
+    }
+
+    // Plain `viz smart` (no `--smarter`): the stats cache has `skewness` but not the moarstats-only
+    // `kurtosis`/`bimodality_coefficient`, so a bimodal column would render as a box plot that
+    // hides its peaks. Compute Sarle's bimodality coefficient in one streaming pass so
+    // `classify_measure` can upgrade such a column to a histogram WITHOUT requiring
+    // `--smarter`. No-op (and no pass) when moarstats already enriched the cache or no column
+    // qualifies. Soft-fail to a box plot.
+    if let Err(e) = enrich_bimodality(args, &mut stats) {
+        eprintln!(
+            "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
+             plots. Use --smarter for moarstats-based enrichment."
         );
     }
 
@@ -6055,14 +6195,35 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             let style = resolve_hierarchy_style(args.flag_hierarchy_style.as_deref(), depth)?;
             let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
             let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
-            if let Some((labels, parents, values, ids)) =
+            let title = dims
+                .iter()
+                .map(|(.., name)| name.as_str())
+                .collect::<Vec<_>>()
+                .join(" › ");
+            // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
+            // independent categoricals just replicates each level's marginal at every branch,
+            // conveying nothing the separate frequency bars don't already show more legibly. An
+            // explicit `--hierarchy-style treemap|sunburst` is a deliberate request, so it bypasses
+            // the screen. The association is read off the joint counts already in hand (no
+            // re-scan).
+            let explicit_style = matches!(
+                args.flag_hierarchy_style
+                    .as_deref()
+                    .map(str::to_ascii_lowercase)
+                    .as_deref(),
+                Some("treemap" | "sunburst")
+            );
+            let assoc = max_pairwise_cramers_v(&leaves, depth);
+            if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
+                eprintln!(
+                    "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
+                     statistically independent (max Cramér's V={assoc:.2} < \
+                     {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars convey \
+                     the same information. Use --hierarchy-style treemap|sunburst to force it."
+                );
+            } else if let Some((labels, parents, values, ids)) =
                 hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
             {
-                let title = dims
-                    .iter()
-                    .map(|(.., name)| name.as_str())
-                    .collect::<Vec<_>>()
-                    .join(" › ");
                 panels.insert(
                     0,
                     Panel::new(
@@ -7678,6 +7839,87 @@ fn accumulate_hierarchy_counts(
     Ok(leaves)
 }
 
+/// Maximum bias-corrected (Bergsma 2013) Cramér's V across every pair of the `ndims` hierarchy
+/// dimensions, computed by marginalizing the joint leaf counts to each 2-way contingency table — so
+/// it needs NO extra data pass (the counts are already in hand). `viz smart` uses this to avoid
+/// auto-nesting statistically independent dimensions: when no pair of levels is associated, a
+/// treemap/sunburst merely repeats each level's marginal at every branch and a set of separate bars
+/// says the same thing far more legibly.
+///
+/// The Bergsma bias correction matters here precisely because the joint table can be sparse (the
+/// product of cardinalities): the naive V is upward-biased for large, sparse tables, so the
+/// correction subtracts the expected-under-independence inflation and shrinks the effective table
+/// size. When the correction is undefined for a tiny table (n close to the table size), the pair
+/// falls back to the uncorrected Cramér's V so a small-but-associated hierarchy isn't wrongly read
+/// as independent. Returns 0.0 only when there are fewer than two dimensions or no pair has a
+/// 2x2-or-larger table with n > 1.
+fn max_pairwise_cramers_v(leaves: &HashMap<Vec<String>, f64>, ndims: usize) -> f64 {
+    if ndims < 2 {
+        return 0.0;
+    }
+    let mut max_v = 0.0_f64;
+    for a in 0..ndims {
+        for b in (a + 1)..ndims {
+            // marginalize the joint counts down to the (a, b) contingency table.
+            let mut cell: HashMap<(&str, &str), f64> = HashMap::new();
+            let mut row_tot: HashMap<&str, f64> = HashMap::new();
+            let mut col_tot: HashMap<&str, f64> = HashMap::new();
+            let mut n = 0.0_f64;
+            for (path, &v) in leaves {
+                if path.len() != ndims {
+                    continue; // defensive: ignore malformed paths
+                }
+                let ra = path[a].as_str();
+                let cb = path[b].as_str();
+                *cell.entry((ra, cb)).or_insert(0.0) += v;
+                *row_tot.entry(ra).or_insert(0.0) += v;
+                *col_tot.entry(cb).or_insert(0.0) += v;
+                n += v;
+            }
+            let (r, c) = (row_tot.len(), col_tot.len());
+            // need a 2x2 table and at least as many observations as df+1 for a defined corrected V.
+            if r < 2 || c < 2 || n <= 1.0 {
+                continue;
+            }
+            // Pearson chi-square — summed over ALL r*c cells, including structural zeros (an
+            // observed-0 cell still contributes (0 - e)^2 / e = e), so iterate the label cross
+            // product rather than just the observed cells.
+            let mut chi2 = 0.0_f64;
+            for (&ra, &rt) in &row_tot {
+                for (&cb, &ct) in &col_tot {
+                    let e = rt * ct / n;
+                    if e > 0.0 {
+                        let o = cell.get(&(ra, cb)).copied().unwrap_or(0.0);
+                        let d = o - e;
+                        chi2 += d * d / e;
+                    }
+                }
+            }
+            // Bergsma (2013) bias-corrected Cramér's V.
+            #[allow(clippy::cast_precision_loss)]
+            let (rf, cf) = (r as f64, c as f64);
+            let phi2 = chi2 / n;
+            let phi2_corr = (phi2 - (rf - 1.0) * (cf - 1.0) / (n - 1.0)).max(0.0);
+            let r_corr = rf - (rf - 1.0) * (rf - 1.0) / (n - 1.0);
+            let c_corr = cf - (cf - 1.0) * (cf - 1.0) / (n - 1.0);
+            let denom = (r_corr - 1.0).min(c_corr - 1.0);
+            let v = if denom > 0.0 {
+                (phi2_corr / denom).sqrt()
+            } else {
+                // The bias correction is undefined for a tiny table (n close to the table size
+                // shrinks the effective dimensions to <= 1). Falling through here would leave a
+                // perfectly-associated small hierarchy reading as V=0 (independent) and wrongly
+                // skip it, so fall back to the UNCORRECTED Cramér's V, which is
+                // always defined for r,c >= 2 and n > 1 (denom_raw >= 1.0).
+                let denom_raw = (rf - 1.0).min(cf - 1.0);
+                (phi2 / denom_raw).sqrt()
+            };
+            max_v = max_v.max(v);
+        }
+    }
+    max_v
+}
+
 /// Turn a map of full-depth `leaf path → value` into the flat
 /// `(labels, parents, values, ids)` arrays plotly's `Treemap`/`Sunburst` consume.
 ///
@@ -8896,11 +9138,18 @@ mod tests {
             classify_measure(1, &s),
             Some(PanelKind::BoxStats { .. })
         ));
-        // moarstats flagged bimodal -> histogram
+        // flagged bimodal AND platykurtic (negative excess kurtosis) -> histogram
         s.bimodality_coefficient = Some(BIMODALITY_COEFFICIENT_THRESHOLD + 0.01);
+        s.kurtosis = Some(-1.0);
         assert!(matches!(
             classify_measure(1, &s),
             Some(PanelKind::Histogram { .. })
+        ));
+        // high BC but LEPTOKURTIC (skewed unimodal, e.g. a long-tailed/outlier column) stays a box
+        s.kurtosis = Some(5.0);
+        assert!(matches!(
+            classify_measure(1, &s),
+            Some(PanelKind::BoxStats { .. })
         ));
         // no quartiles -> nothing to chart
         assert!(classify_measure(1, &stat("Integer", 500, Some(0.9))).is_none());
@@ -9164,8 +9413,8 @@ mod tests {
 
     #[test]
     fn classify_bimodal_continuous_is_histogram_not_box() {
-        // a continuous column moarstats flagged as bimodal (BC >= 0.555) should become a
-        // histogram (which shows the two peaks), not a box plot (which hides them).
+        // a continuous column flagged bimodal (BC >= 0.555) AND platykurtic (excess kurtosis < 0)
+        // should become a histogram (which shows the two peaks), not a box plot (which hides them).
         let mut s = stat("Float", 500, Some(0.9));
         s.q1 = Some(1.0);
         s.q2_median = Some(2.0);
@@ -9173,10 +9422,27 @@ mod tests {
         s.min = Some("0.0".to_string());
         s.max = Some("4.0".to_string());
         s.bimodality_coefficient = Some(0.7); // >= 0.555 threshold
+        s.kurtosis = Some(-1.5); // platykurtic (two-peaked / flat-topped)
         assert!(matches!(
             classify(4, &s),
             Some(PanelKind::Histogram { idx: 4 })
         ));
+    }
+
+    #[test]
+    fn classify_skewed_high_bc_leptokurtic_stays_box() {
+        // a heavily-skewed UNIMODAL column (long tail / outliers) can have a high BC purely from
+        // skewness, but it's leptokurtic — the platykurtic guard keeps it a box (with outlier
+        // points) rather than a misleading one-tall-bar histogram.
+        let mut s = stat("Float", 500, Some(0.9));
+        s.q1 = Some(1.0);
+        s.q2_median = Some(2.0);
+        s.q3 = Some(3.0);
+        s.min = Some("0.0".to_string());
+        s.max = Some("9999.0".to_string());
+        s.bimodality_coefficient = Some(0.98); // high, but driven by skew
+        s.kurtosis = Some(10.0); // leptokurtic (heavy tail)
+        assert!(matches!(classify(0, &s), Some(PanelKind::BoxStats { .. })));
     }
 
     #[test]
@@ -10025,5 +10291,75 @@ mod tests {
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
         leaves.insert(vec!["only".into(), "one".into()], 5.0);
         assert!(hierarchy_arrays(&leaves, 2, 12, 200, "All").is_none());
+    }
+
+    #[test]
+    fn cramers_v_zero_for_independent_dims() {
+        // Perfectly independent 2x2 joint (cell = row_tot*col_tot/n): chi-square is 0, so the
+        // (bias-corrected) V is 0 — below HIER_MIN_ASSOCIATION_CRAMERS_V, so `viz smart` would
+        // SKIP the hierarchy (this is exactly the sales_sample region/payment/category case).
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["a1".into(), "b1".into()], 30.0);
+        leaves.insert(vec!["a1".into(), "b2".into()], 30.0);
+        leaves.insert(vec!["a2".into(), "b1".into()], 20.0);
+        leaves.insert(vec!["a2".into(), "b2".into()], 20.0);
+        let v = max_pairwise_cramers_v(&leaves, 2);
+        assert!(
+            v < HIER_MIN_ASSOCIATION_CRAMERS_V,
+            "independent V={v} should be ~0"
+        );
+    }
+
+    #[test]
+    fn cramers_v_high_for_nested_dims() {
+        // Perfect nesting: each child category lives under exactly one parent (a real hierarchy),
+        // so association is near-total and V clears the threshold — `viz smart` builds the panel.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["a1".into(), "b1".into()], 25.0);
+        leaves.insert(vec!["a1".into(), "b2".into()], 25.0);
+        leaves.insert(vec!["a2".into(), "b3".into()], 25.0);
+        leaves.insert(vec!["a2".into(), "b4".into()], 25.0);
+        let v = max_pairwise_cramers_v(&leaves, 2);
+        assert!(
+            v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
+            "nested V={v} should be high"
+        );
+    }
+
+    #[test]
+    fn cramers_v_tiny_table_falls_back_to_uncorrected() {
+        // 3x3 perfectly one-to-one table with only 3 rows: the Bergsma correction is undefined
+        // (r_corr/c_corr collapse to 1.0, denom 0), but the dims ARE perfectly associated. The
+        // uncorrected fallback must report a high V so this small hierarchy isn't wrongly skipped.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["a1".into(), "b1".into()], 1.0);
+        leaves.insert(vec!["a2".into(), "b2".into()], 1.0);
+        leaves.insert(vec!["a3".into(), "b3".into()], 1.0);
+        let v = max_pairwise_cramers_v(&leaves, 2);
+        assert!(
+            v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
+            "tiny perfectly-associated table V={v} should not read as independent"
+        );
+    }
+
+    #[test]
+    fn cramers_v_max_over_pairs_and_guards() {
+        // fewer than two dims is undefined -> 0.0
+        let mut single: HashMap<Vec<String>, f64> = HashMap::new();
+        single.insert(vec!["x".into()], 10.0);
+        assert_eq!(max_pairwise_cramers_v(&single, 1), 0.0);
+
+        // 3 dims: levels 0&1 independent, but level 2 is perfectly nested under level 0; the MAX
+        // over all pairs must surface that association so the panel isn't wrongly skipped.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["a1".into(), "b1".into(), "c1".into()], 25.0);
+        leaves.insert(vec!["a1".into(), "b2".into(), "c1".into()], 25.0);
+        leaves.insert(vec!["a2".into(), "b1".into(), "c2".into()], 25.0);
+        leaves.insert(vec!["a2".into(), "b2".into(), "c2".into()], 25.0);
+        let v = max_pairwise_cramers_v(&leaves, 3);
+        assert!(
+            v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
+            "max-pair V={v} should catch nested level"
+        );
     }
 }

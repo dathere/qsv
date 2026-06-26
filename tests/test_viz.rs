@@ -500,6 +500,70 @@ fn viz_smart_smarter_promotes_bimodal_to_histogram() {
 }
 
 #[test]
+fn viz_smart_plain_promotes_bimodal_to_histogram() {
+    // Plain `viz smart` (NO --smarter) must ALSO detect a clearly-bimodal column and render a
+    // histogram, not a misleading box (whose median sits in the empty gap between the two peaks).
+    // `enrich_bimodality` computes Sarle's BC in one streaming pass — no moarstats required.
+    let wrk = Workdir::new("viz_smart_plain_promotes_bimodal_to_histogram");
+    // two well-separated symmetric clusters (0..39 and 1000..1039), 150 rows each: cardinality 80
+    // (continuous) and a flat-topped two-peak shape -> high BC and platykurtic -> histogram.
+    let mut rows = String::from("id,measure\n");
+    let mut id = 1;
+    for v in 0..150 {
+        rows.push_str(&format!("{id},{}\n", v % 40));
+        id += 1;
+    }
+    for v in 0..150 {
+        rows.push_str(&format!("{id},{}\n", 1000 + v % 40));
+        id += 1;
+    }
+    wrk.create_from_string("bimodal.csv", &rows);
+
+    let out_html = wrk.path("bimodal.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "bimodal.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("bimodal.html").unwrap();
+    assert!(
+        html.contains(r#""type":"histogram""#),
+        "plain viz smart should detect bimodality and render a histogram; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "the bimodal column should NOT be a box plot; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_plain_skewed_outliers_stay_box_not_histogram() {
+    // A heavily right-skewed UNIMODAL column (long tail of large values) has a high Sarle BC purely
+    // from skewness, but it's leptokurtic — plain `viz smart`'s platykurtic guard must keep it a
+    // box (with outlier points), NOT a one-tall-bar histogram. Guards against Sarle's BC skew
+    // false positive in the plain path.
+    let wrk = Workdir::new("viz_smart_plain_skewed_outliers_stay_box_not_histogram");
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=280 {
+        rows.push_str(&format!("{i},{}\n", i % 40 + 1)); // tight bulk 1..40
+    }
+    for i in 281..=300 {
+        rows.push_str(&format!("{i},5000\n")); // heavy right tail (leptokurtic)
+    }
+    wrk.create_from_string("skewed.csv", &rows);
+
+    let out_html = wrk.path("skewed.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "skewed.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("skewed.html").unwrap();
+    assert!(
+        html.contains(r#""type":"box""#),
+        "a skewed/long-tailed unimodal column should stay a box; html: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_smarter_matches_manual_moarstats() {
     // `viz smart --smarter` is a drop-in for the manual `moarstats` + `viz smart` two-step: the
     // box-panel skew/outlier hints appear without a prior moarstats run.
@@ -1574,9 +1638,10 @@ fn viz_smart_box_no_outliers_large() {
 #[test]
 fn viz_smart_box_outliers_capped() {
     // 6000 outliers but only SMART_BOX_OUTLIERS_CAP (5000) are embedded, keeping the HTML bounded.
-    // bulk (20k) >> outliers (6k) so q3 stays inside the cluster and 99999 reads as an outlier.
+    // bulk (60k) >> outliers (6k) so q3 stays inside the cluster, 99999 reads as a heavy-tailed
+    // outlier (leptokurtic -> stays a box, not flagged bimodal), and the column stays a box plot.
     let wrk = Workdir::new("viz_smart_box_outliers_capped");
-    wrk.create_from_string("d.csv", &box_with_outliers_csv(20_000, 6_000, 99999.0));
+    wrk.create_from_string("d.csv", &box_with_outliers_csv(60_000, 6_000, 99999.0));
 
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
@@ -3499,50 +3564,64 @@ fn viz_smart_map_outlier_extent_callout() {
 // ---- treemap / sunburst hierarchy panels ----
 
 /// id (near-unique, skipped) + two low-cardinality categorical dimensions.
+/// id (skipped) + two ASSOCIATED categorical dimensions: category nests under region (East and
+/// West sell different products), so the dims are statistically dependent — a genuine hierarchy
+/// that clears `viz smart`'s independence screen (corrected Cramér's V ~0.69).
 fn two_dim_hierarchy(wrk: &Workdir) {
     let mut rows = String::from("id,region,category\n");
     for i in 1..=90 {
-        let region = match i % 3 {
-            0 => "East",
-            1 => "West",
-            _ => "North",
-        };
-        let category = match i % 4 {
-            0 => "Widgets",
-            1 => "Gadgets",
-            2 => "Gizmos",
-            _ => "Doohickeys",
+        let (region, category) = match i % 6 {
+            0 => ("East", "Widgets"),
+            1 => ("East", "Gadgets"),
+            2 => ("West", "Gizmos"),
+            3 => ("West", "Doohickeys"),
+            4 => ("North", "Widgets"),
+            _ => ("North", "Gizmos"),
         };
         rows.push_str(&format!("{i},{region},{category}\n"));
     }
     wrk.create_from_string("two_dim.csv", &rows);
 }
 
-/// id (skipped) + three low-cardinality categorical dimensions.
+/// id (skipped) + three ASSOCIATED low-cardinality categorical dimensions (region → category →
+/// channel all co-vary), so every pair is dependent and the hierarchy clears the independence
+/// screen (max corrected Cramér's V ~0.86).
 fn three_dim_hierarchy(wrk: &Workdir) {
     let mut rows = String::from("id,region,category,channel\n");
+    for i in 1..=120 {
+        let (region, category, channel) = match i % 6 {
+            0 => ("East", "Widgets", "Web"),
+            1 => ("East", "Gadgets", "Retail"),
+            2 => ("West", "Gizmos", "Phone"),
+            3 => ("West", "Doohickeys", "Partner"),
+            4 => ("North", "Widgets", "Web"),
+            _ => ("North", "Gizmos", "Retail"),
+        };
+        rows.push_str(&format!("{i},{region},{category},{channel}\n"));
+    }
+    wrk.create_from_string("three_dim.csv", &rows);
+}
+
+/// id (skipped) + two INDEPENDENT categorical dimensions (region = i%3, payment = i%4; coprime
+/// moduli make them statistically independent), so `viz smart` should NOT auto-build a hierarchy —
+/// the per-column bars already say everything the nested chart would.
+fn independent_dims(wrk: &Workdir) {
+    let mut rows = String::from("id,region,payment\n");
     for i in 1..=120 {
         let region = match i % 3 {
             0 => "East",
             1 => "West",
             _ => "North",
         };
-        let category = match i % 4 {
-            0 => "Widgets",
-            1 => "Gadgets",
-            2 => "Gizmos",
-            _ => "Doohickeys",
+        let payment = match i % 4 {
+            0 => "Cash",
+            1 => "Card",
+            2 => "PayPal",
+            _ => "Wire",
         };
-        let channel = match i % 5 {
-            0 => "Web",
-            1 => "Retail",
-            2 => "Phone",
-            3 => "Partner",
-            _ => "Other",
-        };
-        rows.push_str(&format!("{i},{region},{category},{channel}\n"));
+        rows.push_str(&format!("{i},{region},{payment}\n"));
     }
-    wrk.create_from_string("three_dim.csv", &rows);
+    wrk.create_from_string("independent.csv", &rows);
 }
 
 #[test]
@@ -3599,6 +3678,53 @@ fn viz_smart_hierarchy_style_override() {
     // explicit override beats the depth-based auto rule
     assert!(html.contains(r#""type":"treemap""#));
     assert!(!html.contains(r#""type":"sunburst""#));
+}
+
+#[test]
+fn viz_smart_skips_hierarchy_for_independent_dims() {
+    // Two statistically INDEPENDENT categoricals must NOT auto-build a treemap/sunburst — nesting
+    // them just replicates each level's marginal, so the per-column bars say it all.
+    let wrk = Workdir::new("viz_smart_skips_hierarchy_for_independent_dims");
+    independent_dims(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "independent.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""type":"treemap""#) && !html.contains(r#""type":"sunburst""#),
+        "independent dims should NOT auto-build a hierarchy; html: {html}"
+    );
+    // but the per-column frequency bars are still there
+    assert!(html.contains(r#""type":"bar""#));
+}
+
+#[test]
+fn viz_smart_independent_dims_hierarchy_forced_by_style() {
+    // An explicit --hierarchy-style is a deliberate request, so it bypasses the independence screen
+    // and builds the chart even though the dims are independent.
+    let wrk = Workdir::new("viz_smart_independent_dims_hierarchy_forced_by_style");
+    independent_dims(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "independent.csv",
+        "--hierarchy-style",
+        "treemap",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""type":"treemap""#),
+        "explicit --hierarchy-style should force the panel despite independence; html: {html}"
+    );
 }
 
 #[test]

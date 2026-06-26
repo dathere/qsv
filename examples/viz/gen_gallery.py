@@ -100,8 +100,13 @@ BANNER = (
 # (title, description, full_width, [viz args]). Order matters: the full-width smart dashboards
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
-    ("smart dashboard", "Auto-profiled overview: correlation heatmap + box plots + frequency bars.",
-     True, ["smart", "sales_sample.csv", "--max-charts", "8"]),
+    ("smart dashboard",
+     "Auto-profiled overview: correlation heatmap + box plots + frequency bars, led by a "
+     "drill-down sunburst. `viz smart` now SKIPS an auto hierarchy when the candidate dimensions "
+     "are statistically independent (nesting them would just replicate each level's marginal); "
+     "sales_sample's region/payment_method/product_category are independent, so "
+     "`--hierarchy-style sunburst` is passed to deliberately showcase the interactive sunburst.",
+     True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
     ("smart dashboard (--smarter)",
      "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
      "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "
@@ -208,11 +213,12 @@ FIGURES = [
      "(area = size). Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "customer_spend.csv", "--dictionary", "infer"]),
     ("smart dashboard (--dictionary infer, sunburst)",
-     "Auto dashboard for sales_sample with a describegpt-inferred Data Dictionary. Three "
-     "categorical dimensions form a deeper hierarchy, auto-rendered as a SUNBURST (concentric "
-     "rings emphasize parent-child structure). Requires a local LLM; the committed HTML is "
-     "reused on regen.",
-     True, ["smart", "sales_sample.csv", "--dictionary", "infer"]),
+     "Auto dashboard for sales_sample with a describegpt-inferred Data Dictionary. Its three "
+     "categorical dimensions are statistically independent, so the auto-profiler skips the "
+     "hierarchy by default; `--hierarchy-style sunburst` forces a SUNBURST here (concentric rings "
+     "emphasize parent-child structure) to showcase the chart. Requires a local LLM; the committed "
+     "HTML is reused on regen.",
+     True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
 ]
 
 

@@ -8179,10 +8179,14 @@ fn hierarchy_trace(
             .branch_values(BranchValues::Total)
             // treemap-specific marker (plotly.rs#406): rounded corners + a thin white tile
             // outline and inner padding so nested rectangles read as distinct, legible tiles.
+            // NOTE: the top pad is intentionally left UNSET. plotly draws each parent's label in
+            // the tile's top padding band; pinning `top` to a few px collapses that band so the
+            // top-level grouping (e.g. plan: Basic/Plus/Pro) renders as bare color with no header.
+            // Omitting `top` lets plotly auto-size a header band that fits the label.
             .marker(
                 TreemapMarker::new()
                     .corner_radius(4.0)
-                    .pad(Pad::new().top(3.0).left(3.0).right(3.0).bottom(3.0))
+                    .pad(Pad::new().left(3.0).right(3.0).bottom(3.0))
                     .line(Line::new().width(1.0).color(NamedColor::White)),
             )
             .sort(true)

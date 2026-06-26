@@ -7608,6 +7608,10 @@ fn accumulate_hierarchy_counts(
     value_idx: Option<usize>,
 ) -> CliResult<HashMap<Vec<String>, f64>> {
     let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+    // value mode (--value): track usable vs unusable measure cells so a typo'd / non-numeric
+    // measure column fails loudly instead of silently producing a blank or misleading chart.
+    let mut valid_values = 0_usize;
+    let mut invalid_values = 0_usize;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let mut path = Vec::with_capacity(dims.len());
@@ -7625,19 +7629,47 @@ fn accumulate_hierarchy_counts(
             };
             path.push(seg);
         }
-        let v = match value_idx {
-            None => 1.0,
-            Some(vi) => record
-                .get(vi)
-                .map(crate::cmd::frequency::trim_bs_whitespace)
-                .and_then(|cell| {
-                    std::str::from_utf8(cell)
-                        .ok()
-                        .and_then(|s| s.parse::<f64>().ok())
-                })
-                .unwrap_or(0.0),
-        };
-        *leaves.entry(path).or_insert(0.0) += v;
+        match value_idx {
+            // count mode: every row contributes 1 to its leaf.
+            None => *leaves.entry(path).or_insert(0.0) += 1.0,
+            // value mode: sum a finite, non-negative measure. An empty cell is a benign missing
+            // measure (skipped, no leaf created); a non-numeric / negative / non-finite cell can't
+            // size an area/angle, so it's skipped and tallied (reported after the pass). This
+            // avoids silently coercing bad data to 0 and rendering a blank/misleading sector.
+            Some(vi) => {
+                let cell = record
+                    .get(vi)
+                    .map(crate::cmd::frequency::trim_bs_whitespace)
+                    .unwrap_or_default();
+                if cell.is_empty() {
+                    continue;
+                }
+                match std::str::from_utf8(cell)
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
+                    Some(v) if v.is_finite() && v >= 0.0 => {
+                        valid_values += 1;
+                        *leaves.entry(path).or_insert(0.0) += v;
+                    },
+                    _ => invalid_values += 1,
+                }
+            },
+        }
+    }
+    if value_idx.is_some() {
+        if invalid_values > 0 {
+            eprintln!(
+                "viz: skipped {invalid_values} row(s) whose --value cell was non-numeric, \
+                 negative, or non-finite."
+            );
+        }
+        if valid_values == 0 {
+            return fail_clierror!(
+                "the --value column has no usable values (need finite, non-negative numbers) — \
+                 cannot size the chart."
+            );
+        }
     }
     Ok(leaves)
 }

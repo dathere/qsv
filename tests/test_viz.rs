@@ -3661,3 +3661,66 @@ fn viz_treemap_requires_two_cols() {
     ]);
     wrk.assert_err(&mut cmd);
 }
+
+/// region/category dims + a numeric `amount` measure and an all-text `label` column, for
+/// exercising `--value` validation on the hierarchy subcommands.
+fn value_hierarchy(wrk: &Workdir) {
+    let mut rows = String::from("region,category,amount,label\n");
+    for i in 1..=30 {
+        let region = if i % 2 == 0 { "East" } else { "West" };
+        let category = match i % 3 {
+            0 => "A",
+            1 => "B",
+            _ => "C",
+        };
+        rows.push_str(&format!("{region},{category},{},lbl{i}\n", i * 10));
+    }
+    wrk.create_from_string("v.csv", &rows);
+}
+
+#[test]
+fn viz_treemap_value_sum() {
+    let wrk = Workdir::new("viz_treemap_value_sum");
+    value_hierarchy(&wrk);
+
+    let out = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "treemap",
+        "v.csv",
+        "--cols",
+        "region,category",
+        "--value",
+        "amount",
+        "--agg",
+        "sum",
+        "-o",
+        &out,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("t.html").unwrap();
+    assert!(html.contains(r#""type":"treemap""#));
+}
+
+#[test]
+fn viz_treemap_value_all_invalid_errors() {
+    let wrk = Workdir::new("viz_treemap_value_all_invalid_errors");
+    value_hierarchy(&wrk);
+
+    let out = wrk.path("t.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    // `label` is entirely non-numeric, so there's no usable measure to size the chart -> error
+    // (rather than silently coercing every cell to 0 and emitting a blank treemap).
+    cmd.args([
+        "treemap",
+        "v.csv",
+        "--cols",
+        "region,category",
+        "--value",
+        "label",
+        "-o",
+        &out,
+    ]);
+    wrk.assert_err(&mut cmd);
+}

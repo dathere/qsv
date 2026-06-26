@@ -3868,6 +3868,12 @@ fn viz_treemap_standalone() {
     let html = wrk.read_to_string("tm.html").unwrap();
     assert!(html.contains(r#""type":"treemap""#));
     assert!(html.contains(r#""branchvalues":"total""#));
+    // Regression guard (PR #4083): the treemap marker pad must keep left/right/bottom inner
+    // padding but OMIT `top`, so plotly auto-sizes a header band tall enough to render each
+    // parent's label. Pinning `top` to a few px collapses the header and the top hierarchy level
+    // shows as bare color. Catch a `top(..)` being reintroduced into the pad.
+    assert!(html.contains(r#""pad":{"l":3.0,"r":3.0,"b":3.0}"#));
+    assert!(!html.contains(r#""pad":{"t":"#));
 }
 
 #[test]

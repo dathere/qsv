@@ -181,6 +181,14 @@ FIGURES = [
     ("radar", "Multi-axis brand comparison (per-axis mean per series).",
      False, ["radar", "product_ratings.csv", "--cols", "battery,camera,performance,display,value,design",
              "--series", "brand"]),
+    ("treemap", "Part-to-whole spend by plan then region, sized by summed monthly_spend. Rounded "
+     "tiles + white separators come from the treemap-specific marker; non-numeric/negative measure "
+     "cells are rejected so proportions can't silently misstate.",
+     False, ["treemap", "customer_spend.csv", "--cols", "plan,region", "--value", "monthly_spend",
+             "--agg", "sum"]),
+    ("sunburst", "Three-level hierarchy (region -> product_category -> payment_method) as concentric "
+     "rings, sized by row count; inner rings are parents, outer rings their children.",
+     False, ["sunburst", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
     ("map (density)", "DensityMapbox heatmap of the same points on a light Carto basemap.",

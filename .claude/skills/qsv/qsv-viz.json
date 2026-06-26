@@ -10,7 +10,7 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: bar, box, candlestick, contour, geo, heatmap, histogram, line, map, ohlc, pie, radar, sankey, scatter, scatter3d, smart",
+        "description": "Subcommand to execute. Valid values: bar, box, candlestick, contour, geo, heatmap, histogram, line, map, ohlc, pie, radar, sankey, scatter, scatter3d, smart, sunburst, treemap",
         "enum": [
           "bar",
           "box",
@@ -27,7 +27,9 @@
           "sankey",
           "scatter",
           "scatter3d",
-          "smart"
+          "smart",
+          "sunburst",
+          "treemap"
         ]
       },
       {
@@ -41,7 +43,7 @@
       {
         "flag": "--agg",
         "type": "string",
-        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max."
+        "description": "For bar/line, aggregate the y values when the x value repeats. One of: sum, mean, count, min, max. For treemap/sunburst, only additive aggregations apply: count (default) or sum (requires --value)."
       },
       {
         "flag": "--bins",
@@ -66,7 +68,7 @@
       {
         "flag": "--cols",
         "type": "string",
-        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot."
+        "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory)."
       },
       {
         "flag": "--delimiter",
@@ -103,6 +105,11 @@
         "flag": "--height",
         "type": "string",
         "description": "Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows."
+      },
+      {
+        "flag": "--hierarchy-style",
+        "type": "string",
+        "description": "For `smart`, the chart used for the categorical part-to-whole hierarchy panel (built when 2+ low-cardinality dimensions exist). One of: auto (default), treemap, sunburst. auto follows best practice — a treemap for a shallow 2-level hierarchy (accurate size comparison) and a sunburst for a deep 3-level one (parent child structure). Only affects `smart`."
       },
       {
         "flag": "--high",
@@ -238,7 +245,7 @@
       {
         "flag": "--value",
         "type": "string",
-        "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1."
+        "description": "Flow value column for a sankey diagram. When omitted, each row counts as a flow of 1. For treemap/sunburst: a numeric measure summed per sector (when omitted, each row counts as 1)."
       },
       {
         "flag": "--width",
@@ -355,6 +362,14 @@
     {
       "description": "Projection map of earthquakes (token-free), marker color by magnitude",
       "command": "qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html"
+    },
+    {
+      "description": "Treemap of part-to-whole sales by region then category, sized by amount",
+      "command": "qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o treemap.html"
+    },
+    {
+      "description": "Sunburst of a deep 3-level web-traffic hierarchy, sized by row count",
+      "command": "qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html"
     }
   ]
 }

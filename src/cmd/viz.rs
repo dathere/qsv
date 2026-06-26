@@ -136,6 +136,12 @@ Examples:
   # Projection map of earthquakes (token-free), marker color by magnitude
   qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
 
+  # Treemap of part-to-whole sales by region then category, sized by amount
+  qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o treemap.html
+
+  # Sunburst of a deep 3-level web-traffic hierarchy, sized by row count
+  qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 See also https://github.com/dathere/qsv/wiki/Visualization
 
@@ -156,6 +162,8 @@ Usage:
     qsv viz radar       [options] <input>
     qsv viz map         [options] <input>
     qsv viz geo         [options] <input>
+    qsv viz treemap     [options] <input>
+    qsv viz sunburst    [options] <input>
     qsv viz --help
 
 viz options:
@@ -165,7 +173,9 @@ viz options:
                            the third numeric axis for scatter3d.
     --cols <cols>          Columns to use. For heatmap: numeric columns for the
                            correlation matrix (default: all numeric). For radar:
-                           the numeric axes to plot.
+                           the numeric axes to plot. For treemap/sunburst: the
+                           categorical dimensions that form the hierarchy levels,
+                           outermost first (e.g. region,category,subcategory).
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
                            radar, map and geo.
@@ -186,12 +196,16 @@ viz options:
     --source <col>         Source node column for a sankey diagram.
     --target <col>         Target node column for a sankey diagram.
     --value <col>          Flow value column for a sankey diagram. When omitted,
-                           each row counts as a flow of 1.
+                           each row counts as a flow of 1. For treemap/sunburst:
+                           a numeric measure summed per sector (when omitted, each
+                           row counts as 1).
     --bins <n>             Number of bins. For histogram: bins along the x-axis
                            (default: auto). For contour: the per-axis resolution of
                            the density grid (default: 20).
     --agg <fn>             For bar/line, aggregate the y values when the x value
                            repeats. One of: sum, mean, count, min, max.
+                           For treemap/sunburst, only additive aggregations apply:
+                           count (default) or sum (requires --value).
     --box-points <mode>    Which sample points to draw alongside a box. Reading the
                            raw values lets plotly render true Tukey whiskers (1.5*IQR)
                            with the points beyond the fences as outliers. One of:
@@ -264,6 +278,12 @@ smart options:
                            manually). Only affects `smart`. Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
+    --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
+                           hierarchy panel (built when 2+ low-cardinality dimensions exist).
+                           One of: auto (default), treemap, sunburst. auto follows best
+                           practice — a treemap for a shallow 2-level hierarchy (accurate
+                           size comparison) and a sunburst for a deep 3-level one (parent
+                           child structure). Only affects `smart`.
     --dictionary <src>     EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel
                            selection from each field's semantic role/concept (falling back to
                            its content type) instead of relying on column statistics alone:
@@ -333,7 +353,8 @@ use plotly::layout::update_menu::{
 };
 use plotly::{
     Bar, BoxPlot, Candlestick, Configuration, Contour, DensityMapbox, HeatMap, Histogram, Ohlc,
-    Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox, ScatterPolar, Trace,
+    Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox, ScatterPolar, Sunburst,
+    Trace, Treemap,
     box_plot::{BoxPoints, QuartileMethod},
     color::NamedColor,
     common::{
@@ -345,6 +366,7 @@ use plotly::{
         Margin, Projection, ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
+    treemap::{BranchValues, Marker as TreemapMarker, Pad},
 };
 use serde::Deserialize;
 
@@ -367,6 +389,32 @@ const MAX_PANELS_INLINE: usize = 64;
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
+
+/// `viz smart` categorical part-to-whole (treemap/sunburst) panel tuning.
+/// Maximum nesting levels (root excluded): with 3+ eligible low-cardinality dimensions a
+/// 3-level hierarchy is built (rendered as a sunburst per best practice for deep paths),
+/// otherwise a 2-level hierarchy (rendered as a treemap for shallow size comparison).
+const HIER_MAX_DEPTH: usize = 3;
+/// Per parent, only the top-N children (by value desc, label asc) are kept; the remainder
+/// collapse into a single "Other (k)" sibling (mirrors `finalize_freq_bars`).
+const HIER_TOP_N_PER_LEVEL: usize = 12;
+/// Global safety cap on emitted hierarchy nodes; once reached, deeper expansion stops
+/// (capped nodes render as leaves). Keeps a pathological column combo from exploding.
+const HIER_MAX_NODES: usize = 200;
+/// Minimum eligible categorical dimensions required to build a hierarchy panel at all.
+const HIER_MIN_DIMS: usize = 2;
+/// A dimension needs at least this many distinct values to be worth a hierarchy level: a 2-value
+/// (boolean-like) column is a trivial split better shown as a single bar, and nesting by it would
+/// needlessly force the whole dashboard onto the inline (non-typed-grid) render path.
+const HIER_MIN_DIM_CARDINALITY: u64 = 3;
+/// Path separator used to build collision-free plotly node `ids` (US control char, which
+/// cannot occur in trimmed cell text).
+const HIER_PATH_SEP: char = '\u{001F}';
+/// Synthetic root node id for the hierarchy (parent of the level-1 categories).
+const HIER_ROOT_ID: &str = "\u{001F}root";
+/// Inline render height (px) for a hierarchy panel — taller than a normal overview cell so
+/// nested treemap rectangles / sunburst rings stay legible.
+const HIER_ROW_HEIGHT_PX: usize = 520;
 
 /// `viz smart --log-scale auto`: a frequency bar panel switches to a logarithmic y-axis when
 /// its tallest bar is at least this many times the shortest positive bar. A dominating
@@ -620,6 +668,8 @@ struct Args {
     cmd_radar:               bool,
     cmd_map:                 bool,
     cmd_geo:                 bool,
+    cmd_treemap:             bool,
+    cmd_sunburst:            bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
     flag_y:                  Option<SelectColumns>,
@@ -658,6 +708,7 @@ struct Args {
     flag_no_nulls:           bool,
     flag_no_other:           bool,
     flag_smarter:            bool,
+    flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
     flag_log_scale:          String,
@@ -912,6 +963,12 @@ fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         return build_scatter3d_plot(args);
     }
 
+    // treemap / sunburst are domain-based (no cartesian x/y axes), like pie — they own their whole
+    // `Plot` as well.
+    if matches!(chart_kind(args), Chart::Treemap | Chart::Sunburst) {
+        return build_hierarchy_plot(args);
+    }
+
     let mut plot = Plot::new();
 
     // default axis titles, derived from the selected column names
@@ -993,6 +1050,8 @@ enum Chart {
     Radar,
     Map,
     Geo,
+    Treemap,
+    Sunburst,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -1026,6 +1085,10 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Map
     } else if args.cmd_geo {
         Chart::Geo
+    } else if args.cmd_treemap {
+        Chart::Treemap
+    } else if args.cmd_sunburst {
+        Chart::Sunburst
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -2117,6 +2180,73 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
         .y_axis(Axis::new().title(Title::with_text(y_title)))
         .z_axis(Axis::new().title(Title::with_text(z_title)));
     let mut layout = Layout::new().scene(scene).show_legend(series_idx.is_some());
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Build the `Plot` for `viz treemap` / `viz sunburst`: a domain-based hierarchical part-to-whole
+/// chart over the `--cols` dimensions (outer level first), sized by row count (default) or by a
+/// summed `--value` measure. Owns its whole `Plot` (no cartesian axes), like `pie`.
+fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let dims = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
+    if dims.len() < HIER_MIN_DIMS {
+        return fail_incorrectusage_clierror!(
+            "treemap/sunburst needs at least {HIER_MIN_DIMS} --cols (hierarchy levels, outer \
+             first)."
+        );
+    }
+
+    // hierarchy areas must be ADDITIVE so a parent equals the sum of its children: only `count`
+    // (default; no --value) and `sum` (with --value) are valid. mean/min/max don't roll up a tree.
+    let value_idx = match args
+        .flag_agg
+        .as_deref()
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        // a --value with no explicit --agg sums it (matches `viz bar`'s --value semantics)
+        None => match args.flag_value.as_ref() {
+            Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+            None => None,
+        },
+        Some("count") => None,
+        Some("sum") => {
+            let Some(s) = args.flag_value.as_ref() else {
+                return fail_incorrectusage_clierror!("--agg sum requires a --value column.");
+            };
+            Some(resolve_one(Some(s), &headers, nh, "value")?)
+        },
+        Some(other) => {
+            return fail_incorrectusage_clierror!(
+                "treemap/sunburst only supports additive --agg (count or sum); got '{other}'."
+            );
+        },
+    };
+
+    let leaves = accumulate_hierarchy_counts(&mut rdr, &dims, value_idx)?;
+    let depth = dims.len();
+    let top_n = args.flag_limit.max(1);
+    let style = if args.cmd_sunburst {
+        HierStyle::Sunburst
+    } else {
+        HierStyle::Treemap
+    };
+    let Some((labels, parents, values, ids)) =
+        hierarchy_arrays(&leaves, depth, top_n, HIER_MAX_NODES, "All")
+    else {
+        return fail_clierror!(
+            "No hierarchy to chart from --cols (need at least one level that splits into 2+ \
+             groups)."
+        );
+    };
+
+    let mut plot = Plot::new();
+    plot.add_trace(hierarchy_trace(style, &labels, &parents, &values, &ids));
+    let mut layout = Layout::new().show_legend(false);
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
@@ -3277,6 +3407,31 @@ fn parse_agg(agg: Option<&str>) -> CliResult<Option<Agg>> {
     }
 }
 
+/// Best-practice auto-selection for a categorical hierarchy of `depth` levels: a **treemap** for
+/// shallow hierarchies (≤2 levels), where area encodes value for accurate size comparison; a
+/// **sunburst** for deeper ones (3+ levels), which emphasizes parent-child structure / path
+/// tracing and keeps many small leaves legible as ring segments.
+fn auto_hierarchy_style(depth: usize) -> HierStyle {
+    if depth >= 3 {
+        HierStyle::Sunburst
+    } else {
+        HierStyle::Treemap
+    }
+}
+
+/// Resolve the `--hierarchy-style` flag (`auto` | `treemap` | `sunburst`; default `auto`) to a
+/// concrete chart for a `depth`-level hierarchy. `auto` applies `auto_hierarchy_style`.
+fn resolve_hierarchy_style(flag: Option<&str>, depth: usize) -> CliResult<HierStyle> {
+    match flag.map(|s| s.to_ascii_lowercase()).as_deref() {
+        None | Some("auto") => Ok(auto_hierarchy_style(depth)),
+        Some("treemap") => Ok(HierStyle::Treemap),
+        Some("sunburst") => Ok(HierStyle::Sunburst),
+        Some(other) => fail_incorrectusage_clierror!(
+            "Unknown --hierarchy-style '{other}'. Use auto, treemap, or sunburst."
+        ),
+    }
+}
+
 /// Resolved `--log-scale` mode for `viz smart` frequency bar panels.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum LogScale {
@@ -3516,6 +3671,15 @@ struct GeoMeta {
     summary:     String,
 }
 
+/// Which hierarchical part-to-whole chart a `Hierarchy` panel renders as. Auto-selected by
+/// depth (shallow → `Treemap` for accurate size comparison, deep → `Sunburst` for tracing
+/// structural paths), or forced via the standalone subcommands / `--hierarchy-style`.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum HierStyle {
+    Treemap,
+    Sunburst,
+}
+
 enum PanelKind {
     /// Box plot drawn from precomputed quartiles (no raw data).
     BoxStats {
@@ -3614,6 +3778,18 @@ enum PanelKind {
         lons:         Vec<f64>,
         outlier_lats: Vec<f64>,
         outlier_lons: Vec<f64>,
+    },
+    /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
+    /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
+    /// (`labels`/`parents`/`values` keyed by path-joined `ids`) so the render loop stays a pure
+    /// assembly step. Like `Map`/`Scatter3D`, a domain-based trace doesn't compose with the typed
+    /// x/y subplot grid, so a dashboard containing this panel always renders via the inline path.
+    Hierarchy {
+        style:   HierStyle,
+        labels:  Vec<String>,
+        parents: Vec<String>,
+        values:  Vec<f64>,
+        ids:     Vec<String>,
     },
 }
 
@@ -5847,6 +6023,63 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         }
     }
 
+    // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
+    // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with the
+    // typed x/y subplot grid, so it forces the inline render path. The chosen dimensions also keep
+    // their individual frequency-bar panels — the hierarchy is a cross-dimensional overview, not a
+    // replacement. The chart type is auto-selected by depth (treemap for shallow, sunburst for
+    // deep) unless --hierarchy-style forces one. Prepended so it survives the panel cap.
+    if !out_format.is_image() {
+        // eligible dims = genuine categorical (String) freq-bar columns with enough distinct
+        // values to be worth nesting (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).
+        // Restricting to String type excludes numeric codes (low-card Integer/Float also become
+        // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
+        // ascending by cardinality so the coarsest grouping is the outermost level/ring.
+        let mut dims: Vec<(usize, u64, String)> = panels
+            .iter()
+            .filter_map(|p| match p.kind {
+                PanelKind::FreqBar { idx } => {
+                    let s = &stats[idx];
+                    let card = s.cardinality;
+                    (s.r#type == "String"
+                        && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card))
+                    .then(|| (idx, card, p.name.clone()))
+                },
+                _ => None,
+            })
+            .collect();
+        if dims.len() >= HIER_MIN_DIMS {
+            dims.sort_by_key(|&(idx, card, _)| (card, idx));
+            dims.truncate(HIER_MAX_DEPTH);
+            let depth = dims.len();
+            let style = resolve_hierarchy_style(args.flag_hierarchy_style.as_deref(), depth)?;
+            let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
+            let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
+            if let Some((labels, parents, values, ids)) =
+                hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
+            {
+                let title = dims
+                    .iter()
+                    .map(|(.., name)| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" › ");
+                panels.insert(
+                    0,
+                    Panel::new(
+                        title,
+                        PanelKind::Hierarchy {
+                            style,
+                            labels,
+                            parents,
+                            values,
+                            ids,
+                        },
+                    ),
+                );
+            }
+        }
+    }
+
     // prepend a time-series trend panel when the data has a date/datetime column and a
     // continuous numeric column. Like the correlation panel, it does one extra data pass and
     // is prepended so it survives the panel cap.
@@ -5884,7 +6117,10 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let has_noncartesian = panels.iter().any(|p| {
         matches!(
             p.kind,
-            PanelKind::Map { .. } | PanelKind::Geo { .. } | PanelKind::Scatter3D { .. }
+            PanelKind::Map { .. }
+                | PanelKind::Geo { .. }
+                | PanelKind::Scatter3D { .. }
+                | PanelKind::Hierarchy { .. }
         )
     });
 
@@ -5940,7 +6176,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
-            | PanelKind::Geo { .. } => None,
+            | PanelKind::Geo { .. }
+            | PanelKind::Hierarchy { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -6249,11 +6486,17 @@ fn panel_trace(
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
         ),
-        // map / geo / 3D panels use a non-cartesian layout (mapbox, geo projection, or 3D scene)
-        // that can't share the typed x/y subplot grid, so they are rendered entirely by
-        // `smart_inline_panel_plot` and never reach this assembler.
-        PanelKind::Map { .. } | PanelKind::Geo { .. } | PanelKind::Scatter3D { .. } => {
-            unreachable!("map/geo/3D panels are rendered via the inline path, not panel_trace")
+        // map / geo / 3D / hierarchy panels use a non-cartesian layout (mapbox, geo projection,
+        // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
+        // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
+        // assembler.
+        PanelKind::Map { .. }
+        | PanelKind::Geo { .. }
+        | PanelKind::Scatter3D { .. }
+        | PanelKind::Hierarchy { .. } => {
+            unreachable!(
+                "map/geo/3D/hierarchy panels are rendered via the inline path, not panel_trace"
+            )
         },
     };
     (trace, bar_max, log_y)
@@ -6313,7 +6556,8 @@ fn smart_grid_parts(
             | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
-            | PanelKind::Geo { .. } => None,
+            | PanelKind::Geo { .. }
+            | PanelKind::Hierarchy { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
             let longest = labels
@@ -6959,6 +7203,33 @@ fn smart_inline_panel_plot(
         return plot;
     }
 
+    // hierarchy (treemap/sunburst) panels are domain-based — no cartesian x/y axes — so, like the
+    // map/geo/3D panels above, they own their whole Plot here.
+    if let PanelKind::Hierarchy {
+        style,
+        labels,
+        parents,
+        values,
+        ids,
+    } = &panel.kind
+    {
+        let mut plot = Plot::new();
+        plot.add_trace(hierarchy_trace(*style, labels, parents, values, ids));
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
     let is_box = matches!(
         panel.kind,
         PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
@@ -7301,6 +7572,255 @@ fn count_values(args: &Args, indices: &[usize], top_n: usize) -> CliResult<FreqM
     Ok(out)
 }
 
+/// Single-pass accumulation of leaf-path values for a categorical hierarchy (treemap/sunburst).
+///
+/// For each row, the `dims` columns (outer level first) are read, ASCII-whitespace-trimmed, and
+/// empty cells mapped to `(NULL)` — matching the freq-bar panels — to form a `dims.len()`-segment
+/// path. The path's accumulator is incremented by `1.0` when `value_idx` is `None` (count of rows)
+/// or by the parsed numeric `value_idx` cell otherwise (sum; unparseable/empty cells contribute 0).
+/// Returns a map of full-depth path → aggregated value, which `hierarchy_arrays` turns into the
+/// flat plotly arrays.
+///
+/// Hierarchy values must be ADDITIVE (count or sum) so a parent equals the sum of its children
+/// under plotly's `branchvalues="total"`; mean/min/max don't roll up a tree and are rejected by the
+/// caller. Memory is bounded by the product of the `dims` cardinalities — safe for `viz smart`
+/// (each dim ≤ `CATEGORICAL_MAX_CARDINALITY`); the standalone subcommands trust the user's column
+/// choice.
+fn collect_hierarchy_counts(
+    args: &Args,
+    dims: &[usize],
+    value_idx: Option<usize>,
+) -> CliResult<HashMap<Vec<String>, f64>> {
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers_flag(args.flag_no_headers);
+    let mut rdr = rconfig.reader()?;
+    accumulate_hierarchy_counts(&mut rdr, dims, value_idx)
+}
+
+/// Accumulate leaf-path values from an already-open reader (positioned past the header). Split out
+/// from `collect_hierarchy_counts` so the standalone `viz treemap`/`viz sunburst` subcommands can
+/// reuse the single reader from `reader_and_headers` (the header is needed first to resolve
+/// `--cols`/`--value`), reading streamed stdin exactly once.
+fn accumulate_hierarchy_counts(
+    rdr: &mut csv::Reader<Box<dyn std::io::Read + Send>>,
+    dims: &[usize],
+    value_idx: Option<usize>,
+) -> CliResult<HashMap<Vec<String>, f64>> {
+    let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+    // value mode (--value): track usable vs unusable measure cells so a typo'd / non-numeric
+    // measure column fails loudly instead of silently producing a blank or misleading chart.
+    let mut valid_values = 0_usize;
+    let mut invalid_values = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let mut path = Vec::with_capacity(dims.len());
+        for &d in dims {
+            let seg = match record.get(d) {
+                Some(cell) => {
+                    let cell = crate::cmd::frequency::trim_bs_whitespace(cell);
+                    if cell.is_empty() {
+                        NULL_TEXT.to_string()
+                    } else {
+                        String::from_utf8_lossy(cell).into_owned()
+                    }
+                },
+                None => NULL_TEXT.to_string(),
+            };
+            path.push(seg);
+        }
+        match value_idx {
+            // count mode: every row contributes 1 to its leaf.
+            None => *leaves.entry(path).or_insert(0.0) += 1.0,
+            // value mode: sum a finite, non-negative measure. An empty cell is a benign missing
+            // measure (skipped, no leaf created); a non-numeric / negative / non-finite cell can't
+            // size an area/angle, so it's tallied and the pass errors afterwards. This avoids
+            // silently dropping rows (which would misstate every part-to-whole proportion) or
+            // coercing bad data to 0 and rendering a blank/misleading sector.
+            Some(vi) => {
+                let cell = record
+                    .get(vi)
+                    .map(crate::cmd::frequency::trim_bs_whitespace)
+                    .unwrap_or_default();
+                if cell.is_empty() {
+                    continue;
+                }
+                match std::str::from_utf8(cell)
+                    .ok()
+                    .and_then(|s| s.parse::<f64>().ok())
+                {
+                    Some(v) if v.is_finite() && v >= 0.0 => {
+                        valid_values += 1;
+                        *leaves.entry(path).or_insert(0.0) += v;
+                    },
+                    _ => invalid_values += 1,
+                }
+            },
+        }
+    }
+    if value_idx.is_some() {
+        if invalid_values > 0 {
+            // A part-to-whole chart that silently dropped these rows would misstate every
+            // proportion, so any unusable measure cell is a hard error (not a warning).
+            return fail_clierror!(
+                "the --value column has {invalid_values} cell(s) that are non-numeric, negative, \
+                 or non-finite; a treemap/sunburst would drop them and misstate the totals. Clean \
+                 or filter the data first."
+            );
+        }
+        if valid_values == 0 {
+            return fail_clierror!(
+                "the --value column has no usable values (need finite, non-negative numbers) — \
+                 cannot size the chart."
+            );
+        }
+    }
+    Ok(leaves)
+}
+
+/// Turn a map of full-depth `leaf path → value` into the flat
+/// `(labels, parents, values, ids)` arrays plotly's `Treemap`/`Sunburst` consume.
+///
+/// A synthetic root (`HIER_ROOT_ID`, label `root_label`, value = grand total) parents the level-1
+/// categories. Subtree totals are rolled up to every ancestor (so parent = sum of children, valid
+/// under `branchvalues="total"`). Per parent, only the top `top_n` children (value desc, then label
+/// asc — same comparator as `count_values`) are kept; any remainder collapses into a single
+/// `Other (k)` leaf so the kept children plus `Other` still sum to the parent. `ids` are
+/// path-joined with `HIER_PATH_SEP`, so the same child label under two different parents never
+/// collides (plotly keys `parents` on `ids`). Expansion stops once `max_nodes` nodes are emitted
+/// (capped nodes render as leaves). Returns `None` for degenerate input (no real split anywhere).
+fn hierarchy_arrays(
+    leaves: &HashMap<Vec<String>, f64>,
+    depth: usize,
+    top_n: usize,
+    max_nodes: usize,
+    root_label: &str,
+) -> Option<(Vec<String>, Vec<String>, Vec<f64>, Vec<String>)> {
+    if leaves.is_empty() || depth == 0 {
+        return None;
+    }
+
+    // tree[parent_prefix][child_segment] = subtree total under that child.
+    let mut tree: HashMap<Vec<String>, HashMap<String, f64>> = HashMap::new();
+    for (path, &v) in leaves {
+        if path.len() != depth {
+            continue; // defensive: ignore malformed paths
+        }
+        for l in 0..path.len() {
+            *tree
+                .entry(path[..l].to_vec())
+                .or_default()
+                .entry(path[l].clone())
+                .or_insert(0.0) += v;
+        }
+    }
+
+    // a meaningful breakdown needs at least one node that actually splits into 2+ children.
+    if !tree.values().any(|children| children.len() >= 2) {
+        return None;
+    }
+
+    let root_children = tree.get(&Vec::<String>::new())?;
+    let total: f64 = root_children.values().sum();
+
+    let mut labels = vec![root_label.to_string()];
+    let mut parents = vec![String::new()];
+    let mut values = vec![total];
+    let mut ids = vec![HIER_ROOT_ID.to_string()];
+    let mut node_count = 1_usize;
+
+    let mut queue: std::collections::VecDeque<(Vec<String>, String, usize)> =
+        std::collections::VecDeque::new();
+    queue.push_back((Vec::new(), HIER_ROOT_ID.to_string(), 0));
+
+    while let Some((prefix, prefix_id, level)) = queue.pop_front() {
+        if level >= depth || node_count >= max_nodes {
+            continue; // leaf level reached, or global cap hit → leave as a leaf
+        }
+        let Some(children) = tree.get(&prefix) else {
+            continue;
+        };
+
+        let mut ranked: Vec<(&String, f64)> = children.iter().map(|(k, &v)| (k, v)).collect();
+        ranked.sort_by(|a, b| {
+            b.1.partial_cmp(&a.1)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.0.cmp(b.0))
+        });
+
+        let keep = top_n.min(ranked.len());
+        let mut other_value = 0.0;
+        let mut other_drops = 0_usize;
+        for (i, (seg, v)) in ranked.into_iter().enumerate() {
+            if i < keep {
+                let child_id = format!("{prefix_id}{HIER_PATH_SEP}{seg}");
+                let mut child_path = prefix.clone();
+                child_path.push(seg.clone());
+                labels.push(seg.clone());
+                parents.push(prefix_id.clone());
+                values.push(v);
+                ids.push(child_id.clone());
+                node_count += 1;
+                queue.push_back((child_path, child_id, level + 1));
+            } else {
+                other_value += v;
+                other_drops += 1;
+            }
+        }
+        // always emit the Other bucket when dropping, so kept children + Other == parent
+        // (keeps `branchvalues="total"` consistent; otherwise plotly shows a phantom gap).
+        if other_drops > 0 {
+            labels.push(format!("{OTHER_TEXT} ({})", HumanCount(other_drops as u64)));
+            parents.push(prefix_id.clone());
+            values.push(other_value);
+            // prefix_id is unique per parent, so a sentinel suffix is collision-free.
+            ids.push(format!("{prefix_id}{HIER_PATH_SEP}{AGG_KEY_SENTINEL}other"));
+            node_count += 1;
+        }
+    }
+
+    // root + at least two real nodes, else it's not worth a panel.
+    if node_count < 3 {
+        return None;
+    }
+    Some((labels, parents, values, ids))
+}
+
+/// Construct the plotly domain-based trace for a hierarchy panel/chart from its precomputed flat
+/// arrays. A treemap is sorted largest-first (best practice for size comparison via area); a
+/// sunburst relies on plotly's lineage colorway for deep paths. Both show
+/// `label+value+percent parent` and use `branchvalues="total"`, matching the rolled-up subtree
+/// totals `hierarchy_arrays` emits.
+fn hierarchy_trace(
+    style: HierStyle,
+    labels: &[String],
+    parents: &[String],
+    values: &[f64],
+    ids: &[String],
+) -> Box<dyn Trace> {
+    match style {
+        HierStyle::Treemap => Treemap::new(labels.to_vec(), parents.to_vec())
+            .ids(ids.to_vec())
+            .values(values.to_vec())
+            .branch_values(BranchValues::Total)
+            // treemap-specific marker (plotly.rs#406): rounded corners + a thin white tile
+            // outline and inner padding so nested rectangles read as distinct, legible tiles.
+            .marker(
+                TreemapMarker::new()
+                    .corner_radius(4.0)
+                    .pad(Pad::new().top(3.0).left(3.0).right(3.0).bottom(3.0))
+                    .line(Line::new().width(1.0).color(NamedColor::White)),
+            )
+            .sort(true)
+            .text_info("label+value+percent parent"),
+        HierStyle::Sunburst => Sunburst::new(labels.to_vec(), parents.to_vec())
+            .ids(ids.to_vec())
+            .values(values.to_vec())
+            .branch_values(BranchValues::Total)
+            .text_info("label+value+percent parent"),
+    }
+}
+
 /// Per-column result for a `BoxOutliers` panel, produced by the single `collect_smart_values`
 /// pass: the out-of-fence outlier values (capped, rendered as native box points), the most
 /// extreme IN-fence values (the honest Tukey whisker endpoints), and the true uncapped outlier
@@ -7457,7 +7977,8 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::Scatter3D { .. }
         | PanelKind::TimeSeries { .. }
         | PanelKind::Map { .. }
-        | PanelKind::Geo { .. } => true,
+        | PanelKind::Geo { .. }
+        | PanelKind::Hierarchy { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -7466,10 +7987,13 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
     }
 }
 
-/// Inline-dashboard render height (px) for a panel: overview panels get the taller
-/// `OVERVIEW_ROW_HEIGHT_PX`, everything else the standard `ROW_HEIGHT_PX`.
+/// Inline-dashboard render height (px) for a panel: hierarchy panels get the tallest
+/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings need the room), other overview panels get
+/// `OVERVIEW_ROW_HEIGHT_PX`, and everything else the standard `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
-    if is_overview_panel(kind) {
+    if matches!(kind, PanelKind::Hierarchy { .. }) {
+        HIER_ROW_HEIGHT_PX
+    } else if is_overview_panel(kind) {
         OVERVIEW_ROW_HEIGHT_PX
     } else {
         ROW_HEIGHT_PX
@@ -9400,5 +9924,106 @@ mod tests {
             lon < -75.0,
             "full-extent framing must include the western outliers, got lon {lon}"
         );
+    }
+
+    #[test]
+    fn auto_hierarchy_style_by_depth() {
+        // best-practice rule: shallow (≤2 levels) → treemap, deep (3+ levels) → sunburst.
+        assert_eq!(auto_hierarchy_style(2), HierStyle::Treemap);
+        assert_eq!(auto_hierarchy_style(3), HierStyle::Sunburst);
+        assert_eq!(auto_hierarchy_style(4), HierStyle::Sunburst);
+    }
+
+    #[test]
+    fn resolve_hierarchy_style_flag() {
+        assert_eq!(
+            resolve_hierarchy_style(None, 2).unwrap(),
+            HierStyle::Treemap
+        );
+        assert_eq!(
+            resolve_hierarchy_style(Some("auto"), 3).unwrap(),
+            HierStyle::Sunburst
+        );
+        // case-insensitive explicit override wins over the depth rule
+        assert_eq!(
+            resolve_hierarchy_style(Some("Treemap"), 3).unwrap(),
+            HierStyle::Treemap
+        );
+        assert_eq!(
+            resolve_hierarchy_style(Some("sunburst"), 2).unwrap(),
+            HierStyle::Sunburst
+        );
+        assert!(resolve_hierarchy_style(Some("pie"), 2).is_err());
+    }
+
+    #[test]
+    fn hierarchy_arrays_rolls_up_and_keeps_ids_unique() {
+        // 2-level hierarchy; "Widgets"/"Gadgets" repeat under two regions to exercise id
+        // uniqueness.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["East".into(), "Widgets".into()], 150.0);
+        leaves.insert(vec!["East".into(), "Gadgets".into()], 30.0);
+        leaves.insert(vec!["West".into(), "Widgets".into()], 80.0);
+        leaves.insert(vec!["West".into(), "Gadgets".into()], 20.0);
+        leaves.insert(vec!["West".into(), "Gizmos".into()], 10.0);
+
+        let (labels, parents, values, ids) =
+            hierarchy_arrays(&leaves, 2, 12, 200, "All").expect("hierarchy");
+
+        // synthetic root: parentless, labeled, value == grand total.
+        assert_eq!(ids[0], HIER_ROOT_ID);
+        assert_eq!(parents[0], "");
+        assert_eq!(labels[0], "All");
+        let total: f64 = leaves.values().sum();
+        assert!((values[0] - total).abs() < 1e-9);
+
+        // every non-root parent reference resolves to a real id.
+        let id_set: std::collections::HashSet<&String> = ids.iter().collect();
+        for (i, p) in parents.iter().enumerate().skip(1) {
+            assert!(
+                id_set.contains(p),
+                "parent {p} of node {} not in ids",
+                ids[i]
+            );
+        }
+        // path-joined ids are unique despite repeated child labels.
+        assert_eq!(id_set.len(), ids.len(), "ids must be unique");
+
+        // a level-1 node's value == sum of its level-2 children (East = 150 + 30).
+        let east_id = format!("{HIER_ROOT_ID}{HIER_PATH_SEP}East");
+        let east_val = values[ids.iter().position(|x| *x == east_id).unwrap()];
+        assert!((east_val - 180.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hierarchy_arrays_folds_remainder_into_other() {
+        // parent "R" has 4 children; top_n = 2 keeps a,b and folds c,d into "Other (2)".
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        for (seg, v) in [("a", 40.0), ("b", 30.0), ("c", 20.0), ("d", 10.0)] {
+            leaves.insert(vec!["R".into(), seg.into()], v);
+        }
+        // a second top-level category so the root itself splits (required for a real hierarchy).
+        leaves.insert(vec!["S".into(), "x".into()], 5.0);
+
+        let (labels, _parents, values, _ids) =
+            hierarchy_arrays(&leaves, 2, 2, 200, "All").expect("hierarchy");
+
+        let other_pos = labels
+            .iter()
+            .position(|l| l == "Other (2)")
+            .expect("Other bucket");
+        assert!((values[other_pos] - 30.0).abs() < 1e-9); // 20 + 10 dropped
+
+        // kept children (40 + 30) + Other (30) == R's rolled-up value (100).
+        let r_pos = labels.iter().position(|l| l == "R").unwrap();
+        assert!((values[r_pos] - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn hierarchy_arrays_degenerate_returns_none() {
+        // a single chain (no node splits into 2+) isn't worth a panel.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec!["only".into(), "one".into()], 5.0);
+        assert!(hierarchy_arrays(&leaves, 2, 12, 200, "All").is_none());
     }
 }

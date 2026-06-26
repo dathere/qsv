@@ -454,6 +454,12 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash"
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
+# plotly fork adding Treemap/Sunburst trace types (with a treemap-specific Marker) used by the
+# `viz smart` hierarchy panels and the `viz treemap`/`viz sunburst` subcommands. Tracks the
+# upstream PR https://github.com/plotly/plotly.rs/pull/406; drop this patch once it's merged &
+# released. For local iteration, swap in `path = "../plotly/plotly"`.
+plotly = { git = "https://github.com/dathere/plotly", branch = "feat/treemap-sunburst-traces" }
+
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #
 # Polars upstream (rev d60ecb0+) patches object_store to this fork to add the

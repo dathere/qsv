@@ -253,9 +253,9 @@ fn viz_pie_advises_bar_for_near_equal_slices() {
     }
     wrk.create_from_string("dom.csv", &dom);
     let out_html2 = wrk.path("dom.html").to_string_lossy().to_string();
-    let mut cmd2 = wrk.command("viz");
-    cmd2.args(["pie", "dom.csv", "--x", "cat", "-o", &out_html2]);
-    let out2 = wrk.output(&mut cmd2);
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args(["pie", "dom.csv", "--x", "cat", "-o", &out_html2]);
+    let out2 = wrk.output(&mut cmd_2);
     assert!(out2.status.success());
     let stderr2 = String::from_utf8_lossy(&out2.stderr);
     assert!(

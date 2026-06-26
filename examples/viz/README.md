@@ -56,17 +56,22 @@ as `text/plain`, so a browser won't render it):
 ## The smart dashboard
 
 `viz smart` auto-profiles the dataset (from qsv's stats cache) and picks a panel
-per column: a **correlation heatmap** over the numeric columns, **box plots** for
-continuous numerics, and **frequency bars** for low-cardinality categoricals,
-booleans, and ratings. The box plots overlay sample points based on the dataset
-size — every point for small data, just the Tukey outliers for medium data, and
-none for large data (where the box stays a fast cache-only quartile summary);
-pass `--box-points <outliers|all|suspected|none>` to force a mode. When the
-numeric columns have a strongly correlated pair,
+per column: a **correlation heatmap** over the numeric columns (shown as the
+lower triangle only — the mirror half and the trivial 1.0 diagonal are dropped),
+**box plots** for continuous numerics, and **frequency bars** for low-cardinality
+categoricals, booleans, and ratings. The box plots overlay sample points based on
+the dataset size — every point for small data, just the Tukey outliers for medium
+data, and none for large data (where the box stays a fast cache-only quartile
+summary); pass `--box-points <outliers|all|suspected|none>` to force a mode. When
+the numeric columns have a strongly correlated pair,
 a **scatter** of that pair is added next to the heatmap as a drill-down — or, for
 large datasets where a scatter would overplot, a **2D density contour** of the
-pair instead. With three or more numeric columns, a **3D scatter** of the
-strongest-correlation triple is added as well. When the data has a date/datetime
+pair instead. The drill-down title also reports Spearman's rho when it diverges
+from Pearson's r enough to mean the relationship is monotonic but **nonlinear**
+(so the single r isn't read as proof of linearity). With three or more numeric
+columns, a **3D scatter** of the strongest pair plus the *least-redundant* third
+axis is added as well — unless the strongest pair is itself near-collinear, in
+which case the 3D would collapse to a plane and is skipped. When the data has a date/datetime
 column (auto-detected via stats date inference) plus a continuous numeric column,
 a **time-series trend** panel of that column over time is added too. When a
 latitude/longitude column pair is detected, a **geographic map** panel leads the

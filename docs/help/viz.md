@@ -44,6 +44,10 @@ candlestick Financial OHLC.   --x = date column, plus --ohlc-open/--high/--low/-
 ohlc        Financial OHLC bars (same inputs as candlestick).
 sankey      Flow diagram.     --source, --target, optional --value column.
 radar       Polar/radar chart of numeric --cols, optional --series per trace.
+treemap     Part-to-whole hierarchy as nested tiles. --cols = 2+ dimension
+            columns (levels), optional --value and --agg.
+sunburst    Part-to-whole hierarchy as concentric rings (same inputs as
+            treemap). Better for deeper hierarchies.
 map         Geographic point map (or --density heatmap) on tile basemaps.
             Pick the coordinate columns with the lat/lon options below.
 geo         Geographic point map on a projection basemap (coastlines/land/

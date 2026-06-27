@@ -2404,6 +2404,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         plot.set_layout(apply_theme(layout, args.theme()));
     } else {
         // Choropleth on the projection `geo` subplot (token-free built-in geometries).
+        let usa_states = matches!(mode, LocationMode::UsaStates);
         let mut trace = Choropleth::new(locations, z)
             .location_mode(mode)
             .color_scale(ColorScale::Palette(palette))
@@ -2414,6 +2415,12 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
+        // usa-states built-in geometries need the albers-usa projection to frame the US (CONUS +
+        // AK/HI insets); without it plotly draws the states tiny on the default whole-world view. A
+        // --geojson source (handled below) frames itself, so let that override.
+        if usa_states {
+            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+        }
         if let Some(spec) = args.flag_geojson.as_deref() {
             let geojson = load_geojson(spec)?;
             // plotly only auto-scopes its BUILT-IN location modes (iso3 world / usa-states); a
@@ -5695,41 +5702,76 @@ fn semantic_latlon(
     Some((lat?, lon?))
 }
 
-/// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
-/// geocode the points to ISO-3 country codes (reusing qsv's geocode engine) and color each country
-/// by its point count. Returns `None` unless at least 2 distinct countries resolve (a
-/// single-country or metro dataset stays point-only). Geocode-gated.
+/// Which regional breakdown a `viz smart` choropleth panel aggregates into.
 #[cfg(feature = "geocode")]
-fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
+#[derive(Clone, Copy)]
+enum ChoroplethScope {
+    /// Per-country fill keyed by ISO-3 code (`LocationMode::Iso3`).
+    Country,
+    /// Per-US-state fill keyed by 2-letter postal code (`LocationMode::UsaStates`) — the
+    /// informative view when the data is US-only (where a per-country fill would be a single blob).
+    UsStates,
+}
+
+/// True when the core extent lies entirely within the US bounding box (CONUS + AK/HI), so a US
+/// dataset drives a per-STATE choropleth instead of a single-country fill. A cheap min/max-extent
+/// check — no geocoding — mirroring `geo_framing`'s `within_us` framing test.
+#[cfg(feature = "geocode")]
+fn extent_within_us(lats: &[f64], lons: &[f64]) -> bool {
+    let e = map_extent(lats, lons);
+    e.min_lon >= US_LON_MIN
+        && e.max_lon <= US_LON_MAX
+        && e.min_lat >= US_LAT_MIN
+        && e.max_lat <= US_LAT_MAX
+}
+
+/// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
+/// geocode the points (reusing qsv's geocode engine) and color each region by its point count,
+/// keyed per `scope` — ISO-3 country, or 2-letter US state. Returns `None` unless at least 2
+/// distinct regions resolve (a single-region or metro dataset stays point-only). Geocode-gated.
+#[cfg(feature = "geocode")]
+fn build_smart_choropleth_panel(
+    lats: &[f64],
+    lons: &[f64],
+    scope: ChoroplethScope,
+) -> Option<Panel> {
     let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
     let regions = crate::cmd::geocode::reverse_geocode_regions(&points, None).ok()?;
 
-    // count points per ISO-3 country, preserving first-seen order (matches `aggregate` semantics).
+    // count points per region key, preserving first-seen order (matches `aggregate` semantics).
     let mut order: Vec<String> = Vec::new();
     let mut counts: HashMap<String, f64> = HashMap::new();
     for region in regions.into_iter().flatten() {
-        if region.iso3.is_empty() {
+        let key = match scope {
+            ChoroplethScope::Country => region.iso3,
+            ChoroplethScope::UsStates => region.us_state_code.unwrap_or_default(),
+        };
+        if key.is_empty() {
             continue;
         }
         counts
-            .entry(region.iso3.clone())
+            .entry(key.clone())
             .and_modify(|c| *c += 1.0)
             .or_insert_with(|| {
-                order.push(region.iso3.clone());
+                order.push(key);
                 1.0
             });
     }
-    // a choropleth of one filled country tells you nothing a point map doesn't; require 2+.
+    // a choropleth of one filled region tells you nothing a point map doesn't; require 2+.
     if order.len() < 2 {
         return None;
     }
-    let z: Vec<f64> = order.iter().map(|iso3| counts[iso3]).collect();
+    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    let (name, location_mode) = match scope {
+        ChoroplethScope::Country => ("Countries", LocationMode::Iso3),
+        ChoroplethScope::UsStates => ("US states", LocationMode::UsaStates),
+    };
     Some(Panel::new(
-        "Countries".to_string(),
+        name.to_string(),
         PanelKind::Choropleth {
             locations: order,
             z,
-            location_mode: LocationMode::Iso3,
+            location_mode,
         },
     ))
 }
@@ -5824,7 +5866,19 @@ fn build_map_panel(
     #[cfg(feature = "geocode")]
     let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
         || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+        .then(|| {
+            // a US-only extent gets a per-STATE breakdown (the informative view for US data, where
+            // a per-country fill would be a single blob); anything else a per-country
+            // breakdown. Decided from the cheap extent bounds — the per-state path
+            // turns the otherwise-wasted "all USA → 1 country → no panel" case into a
+            // useful state map.
+            let scope = if extent_within_us(&core_lats, &core_lons) {
+                ChoroplethScope::UsStates
+            } else {
+                ChoroplethScope::Country
+            };
+            build_smart_choropleth_panel(&core_lats, &core_lons, scope)
+        })
         .flatten();
     #[cfg(not(feature = "geocode"))]
     let choropleth_panel: Option<Panel> = None;
@@ -8105,8 +8159,15 @@ fn smart_inline_panel_plot(
                 .color_bar(ColorBar::new().title("count"))
                 .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
         );
+        // a US-states panel frames itself with the albers-usa projection (CONUS + AK/HI insets);
+        // a country panel uses the whole-world natural-earth projection.
+        let projection = if matches!(location_mode, LocationMode::UsaStates) {
+            ProjectionType::AlbersUsa
+        } else {
+            ProjectionType::NaturalEarth
+        };
         let geo = LayoutGeo::new()
-            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+            .projection(Projection::new().projection_type(projection))
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
@@ -9340,6 +9401,22 @@ mod tests {
             "wide-short panel should frame a wide extent tighter than a tall-narrow one \
              (zoom_wide={zoom_wide}, zoom_tall={zoom_tall})"
         );
+    }
+
+    // a US-only extent drives the smart choropleth into per-US-state mode; anything reaching
+    // outside the US bounding box falls back to the per-country breakdown.
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn extent_within_us_detects_us_only() {
+        // coast-to-coast CONUS + a point near Alaska/Hawaii latitudes — all inside the US box
+        assert!(extent_within_us(
+            &[25.8, 47.6, 21.3, 61.2],
+            &[-80.2, -122.3, -157.8, -149.9]
+        ));
+        // a point in southern Brazil (lat -23.5, below the box's 18° floor) pushes the extent out
+        assert!(!extent_within_us(&[40.7, -23.5], &[-74.0, -46.6]));
+        // a European cluster (positive longitudes, east of the box) is plainly not US
+        assert!(!extent_within_us(&[48.85, 52.52], &[2.35, 13.40]));
     }
 
     #[cfg(feature = "geocode")]

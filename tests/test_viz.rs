@@ -4153,6 +4153,9 @@ fn viz_choropleth_usa_states() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"choropleth""#));
     assert!(html.contains(r#""locationmode":"USA-states""#));
+    // usa-states frames itself with the albers-usa projection (CONUS + AK/HI insets), not the
+    // default whole-world view where the states would be tiny
+    assert!(html.contains(r#""projection":{"type":"albers usa""#));
 }
 
 #[test]

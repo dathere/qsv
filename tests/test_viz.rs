@@ -4187,6 +4187,55 @@ fn viz_choropleth_map() {
     assert!(html.contains(r#""featureidkey":"id""#));
     assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
     assert!(html.contains(r#""map":{"#));
+    // the basemap is framed to the geojson extent (center + zoom), not left at plotly's default
+    // whole-world view where local regions would be invisible
+    assert!(html.contains(r#""center":{"#));
+    assert!(html.contains(r#""zoom":"#));
+}
+
+// the geojson-extent framing must read coordinates ONLY from geometry, never from numeric arrays in
+// feature `properties` — otherwise a stray property array would drag the map center off the data.
+#[test]
+fn viz_choropleth_map_frames_ignore_properties() {
+    let wrk = Workdir::new("viz_choropleth_map_frames_ignore_properties");
+    wrk.create_from_string("rg.csv", "region,val\nCA,40\nNY,30\n");
+    // two boxes firmly in the US (lon ~ -120 / -75); a decoy property array near lon/lat 0
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"CA","properties":{"decoy":[0.0,0.0]},"geometry":{"type":"Polygon","coordinates":[[[-124,32],[-124,42],[-114,42],[-114,32],[-124,32]]]}},{"type":"Feature","id":"NY","properties":{},"geometry":{"type":"Polygon","coordinates":[[[-79,40],[-79,45],[-72,45],[-72,40],[-79,40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // center longitude must be a US value (west of -70), proving the (0,0) decoy in `properties`
+    // was not folded into the bounds.
+    let i = html.find(r#""center":{"#).expect("center present");
+    let lon_at = html[i..].find(r#""lon":"#).expect("lon present") + i + 6;
+    let lon_str: String = html[lon_at..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    let lon: f64 = lon_str.parse().expect("parse center lon");
+    assert!(
+        lon < -70.0,
+        "center lon {lon} should be in the US (decoy property coord leaked into framing?)"
+    );
 }
 
 #[test]

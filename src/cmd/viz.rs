@@ -2248,6 +2248,51 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
         .map_err(|e| crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}")))
 }
 
+/// Collect every `[lon, lat]` vertex from a GeoJSON value into parallel `(lats, lons)` vectors, so
+/// a `--map` choropleth can frame the MapLibre basemap to its regions instead of opening at
+/// plotly's whole-world default (where county/city polygons are effectively invisible). Descends
+/// only through GeoJSON's geometry-bearing keys (`features`/`geometry`/`geometries`/`coordinates`)
+/// so numeric arrays inside feature `properties` (e.g. a stray `bbox` or data array) can't be
+/// mistaken for coordinates. Out-of-range pairs are dropped. GeoJSON positions are `[lon, lat]`.
+fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
+    fn walk(v: &serde_json::Value, lats: &mut Vec<f64>, lons: &mut Vec<f64>) {
+        match v {
+            serde_json::Value::Array(arr) => {
+                // a leaf position is `[lon, lat, ...]`: the first two entries are bare numbers
+                // (nested coordinate arrays have arrays, not numbers, in those slots).
+                if arr.len() >= 2 && arr[0].is_number() && arr[1].is_number() {
+                    if let (Some(lon), Some(lat)) = (arr[0].as_f64(), arr[1].as_f64())
+                        && (-180.0..=180.0).contains(&lon)
+                        && (-90.0..=90.0).contains(&lat)
+                    {
+                        lons.push(lon);
+                        lats.push(lat);
+                    }
+                } else {
+                    for item in arr {
+                        walk(item, lats, lons);
+                    }
+                }
+            },
+            serde_json::Value::Object(map) => {
+                for (k, val) in map {
+                    if matches!(
+                        k.as_str(),
+                        "features" | "geometry" | "geometries" | "coordinates"
+                    ) {
+                        walk(val, lats, lons);
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+    let mut lats = Vec::new();
+    let mut lons = Vec::new();
+    walk(geojson, &mut lats, &mut lons);
+    (lats, lons)
+}
+
 /// Build the complete `Plot` for `viz choropleth`: fill whole geographic regions colored by an
 /// aggregated value. Defaults to a token-free `Choropleth` on the projection `geo` subplot; `--map`
 /// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
@@ -2307,6 +2352,8 @@ fn build_choropleth_plot(args: &Args) -> CliResult<Plot> {
     if args.flag_map {
         // ChoroplethMap on the MapLibre `map` subplot (GeoJSON-only).
         let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+        // collect the GeoJSON extent BEFORE the value is moved into the trace below.
+        let (g_lats, g_lons) = geojson_lat_lons(&geojson);
         let trace = ChoroplethMap::new(locations, z)
             .geojson(geojson)
             .feature_id_key(args.flag_feature_id_key.as_deref().unwrap())
@@ -2318,7 +2365,22 @@ fn build_choropleth_plot(args: &Args) -> CliResult<Plot> {
         // --style carries a global docopt default of open-street-map (a token-free MapLibre style).
         let style =
             parse_choropleth_map_style(args.flag_style.as_deref().unwrap_or("open-street-map"))?;
-        let mut layout = Layout::new().map(LayoutMap::new().style(style));
+        let mut layout_map = LayoutMap::new().style(style);
+        // frame the basemap to the GeoJSON extent so local/custom regions (counties, cities) are
+        // visible instead of being lost at plotly's default whole-world view centered at (0, 0).
+        // Falls back to that default only when the GeoJSON has no usable coordinates. Uses the
+        // representative HTML aspect for framing (the builder doesn't know the output format).
+        if !g_lats.is_empty() {
+            let (center, zoom) = map_center_zoom(
+                &g_lats,
+                &g_lons,
+                0.0,
+                DEFAULT_IMG_WIDTH as f64,
+                DEFAULT_IMG_HEIGHT as f64,
+            );
+            layout_map = layout_map.center(center).zoom(f64::from(zoom));
+        }
+        let mut layout = Layout::new().map(layout_map);
         if let Some(title) = &args.flag_title {
             layout = layout.title(Title::with_text(title));
         }
@@ -5714,13 +5776,17 @@ fn build_map_panel(
     let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
     let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
 
-    // geocode-gated companion: aggregate the sampled core points into a per-country choropleth
-    // overview drawn beside the point map. This is a SECOND reverse-geocode pass over the sampled
-    // points (build_geo_meta above only geocodes the 5 bounding-box corners); the engine is already
-    // loaded/cached, so it's one extra batched lookup loop, not a second index load. None when the
-    // points resolve to fewer than 2 countries, or the geocode feature is off.
+    // geocode-gated companion: aggregate the FULL core set (pre-downsampling) into a per-country
+    // choropleth overview drawn beside the point map. Counting the full population — not the
+    // downsampled `lats`/`lons` — keeps the per-country tallies accurate for datasets above
+    // `MAX_SMART_POINTS` (the panel labels them "count", so sampled tallies would mislabel). The
+    // panel embeds only the per-country aggregates, never the raw points, so the full-set pass adds
+    // no HTML weight. This is a SECOND reverse-geocode pass (build_geo_meta above only geocodes the
+    // 5 bounding-box corners); the engine is already loaded/cached, so it's one extra batched
+    // lookup loop, not a second index load. None when the points resolve to fewer than 2
+    // countries, or the geocode feature is off.
     #[cfg(feature = "geocode")]
-    let choropleth_panel = build_smart_choropleth_panel(&lats, &lons);
+    let choropleth_panel = build_smart_choropleth_panel(&core_lats, &core_lons);
     #[cfg(not(feature = "geocode"))]
     let choropleth_panel: Option<Panel> = None;
 

@@ -423,6 +423,14 @@ const HIER_ROW_HEIGHT_PX: usize = 520;
 /// `--hierarchy-style treemap|sunburst` bypasses the screen (the user asked for it deliberately).
 const HIER_MIN_ASSOCIATION_CRAMERS_V: f64 = 0.10;
 
+/// Plotly `maxdepth` for sunburst panels: the number of levels rendered at once from the current
+/// root, counting the center as one. 3 = center + 2 data rings. A 3-level sunburst fanned out to
+/// ~100 tiny outer sectors whose labels were unreadable; capping the initial view to two rings
+/// keeps every visible label legible, and clicking a sector rescales its subtree to the full ring
+/// so the deeper level (with its now-large labels) is revealed on drill-down. For 2-level
+/// hierarchies this is a no-op (both rings already fit within the cap).
+const SUNBURST_MAXDEPTH: i32 = 3;
+
 /// `viz smart --log-scale auto`: a frequency bar panel switches to a logarithmic y-axis when
 /// its tallest bar is at least this many times the shortest positive bar. A dominating
 /// "(NULL)"/"Other (N)" bucket flattens the real categories to invisible slivers on a linear
@@ -8162,9 +8170,11 @@ fn hierarchy_arrays(
 
 /// Construct the plotly domain-based trace for a hierarchy panel/chart from its precomputed flat
 /// arrays. A treemap is sorted largest-first (best practice for size comparison via area); a
-/// sunburst relies on plotly's lineage colorway for deep paths. Both show
-/// `label+value+percent parent` and use `branchvalues="total"`, matching the rolled-up subtree
-/// totals `hierarchy_arrays` emits.
+/// sunburst relies on plotly's lineage colorway for deep paths. Both use `branchvalues="total"`,
+/// matching the rolled-up subtree totals `hierarchy_arrays` emits. Labeling differs: the treemap
+/// shows the richer `label+value+percent parent` (its tiles have room), while the sunburst shows
+/// label-only text and caps the initial view to two rings (see the per-branch comments below for
+/// why) — value/percent stay on hover there.
 fn hierarchy_trace(
     style: HierStyle,
     labels: &[String],
@@ -8191,11 +8201,22 @@ fn hierarchy_trace(
             )
             .sort(true)
             .text_info("label+value+percent parent"),
+        // Declutter deep sunbursts on two fronts, both DYNAMIC so detail returns on drill-down (a
+        // static per-node blank would stay blank even when a sector is zoomed to fill the ring):
+        //   * `max_depth(SUNBURST_MAXDEPTH)` renders only the center + 2 rings at a time, so a
+        //     3-level chart's ~100-sector outer ring isn't drawn until you click into a sector
+        //     (which rescales that subtree to the full ring, making its labels large and legible).
+        //   * `text_info("label")` (vs the old `label+value+percent parent`) keeps each label
+        //     short, so plotly's fit test cleanly HIDES any that still don't fit rather than
+        //     cramming overlapping rotated fragments; value/percent remain on hover.
+        // The treemap keeps the richer text — its tiles have room, and plotly hides any that don't
+        // fit there too.
         HierStyle::Sunburst => Sunburst::new(labels.to_vec(), parents.to_vec())
             .ids(ids.to_vec())
             .values(values.to_vec())
             .branch_values(BranchValues::Total)
-            .text_info("label+value+percent parent"),
+            .max_depth(SUNBURST_MAXDEPTH)
+            .text_info("label"),
     }
 }
 

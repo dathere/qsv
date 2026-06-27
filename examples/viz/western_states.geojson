@@ -1,0 +1,19 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {"type": "Feature", "id": "CO", "properties": {"name": "Colorado"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-109.06,37.00],[-102.04,37.00],[-102.04,41.00],[-109.06,41.00],[-109.06,37.00]]]}},
+    {"type": "Feature", "id": "WY", "properties": {"name": "Wyoming"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-111.06,41.00],[-104.05,41.00],[-104.05,45.00],[-111.06,45.00],[-111.06,41.00]]]}},
+    {"type": "Feature", "id": "UT", "properties": {"name": "Utah"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-114.05,37.00],[-109.05,37.00],[-109.05,42.00],[-114.05,42.00],[-114.05,37.00]]]}},
+    {"type": "Feature", "id": "NM", "properties": {"name": "New Mexico"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-109.05,31.33],[-103.00,31.33],[-103.00,37.00],[-109.05,37.00],[-109.05,31.33]]]}},
+    {"type": "Feature", "id": "AZ", "properties": {"name": "Arizona"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-114.81,31.33],[-109.05,31.33],[-109.05,37.00],[-114.81,37.00],[-114.81,31.33]]]}},
+    {"type": "Feature", "id": "KS", "properties": {"name": "Kansas"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-102.05,37.00],[-94.59,37.00],[-94.59,40.00],[-102.05,40.00],[-102.05,37.00]]]}},
+    {"type": "Feature", "id": "NE", "properties": {"name": "Nebraska"},
+     "geometry": {"type": "Polygon", "coordinates": [[[-104.05,40.00],[-95.31,40.00],[-95.31,43.00],[-104.05,43.00],[-104.05,40.00]]]}}
+  ]
+}

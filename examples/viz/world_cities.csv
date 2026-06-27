@@ -1,0 +1,28 @@
+city,country,continent,lat,lon,metro_population_m,elevation_m,avg_annual_temp_c
+New York,United States,North America,40.7128,-74.0060,18.8,10,12.9
+Los Angeles,United States,North America,34.0522,-118.2437,12.5,93,18.6
+Chicago,United States,North America,41.8781,-87.6298,8.9,182,9.8
+Toronto,Canada,North America,43.6532,-79.3832,6.4,76,9.4
+Mexico City,Mexico,North America,19.4326,-99.1332,21.8,2240,16.7
+Sao Paulo,Brazil,South America,-23.5505,-46.6333,22.4,760,19.2
+Rio de Janeiro,Brazil,South America,-22.9068,-43.1729,13.5,2,23.7
+Buenos Aires,Argentina,South America,-34.6037,-58.3816,15.4,25,17.9
+London,United Kingdom,Europe,51.5074,-0.1278,9.5,11,11.3
+Paris,France,Europe,48.8566,2.3522,11.1,35,12.3
+Berlin,Germany,Europe,52.5200,13.4050,4.5,34,9.6
+Madrid,Spain,Europe,40.4168,-3.7038,6.7,667,15.0
+Rome,Italy,Europe,41.9028,12.4964,4.3,21,15.7
+Moscow,Russia,Europe,55.7558,37.6173,12.6,156,5.8
+Istanbul,Turkey,Europe,41.0082,28.9784,15.5,40,14.0
+Cairo,Egypt,Africa,30.0444,31.2357,21.3,23,21.7
+Lagos,Nigeria,Africa,6.5244,3.3792,15.4,41,27.0
+Johannesburg,South Africa,Africa,-26.2041,28.0473,9.6,1753,16.2
+Beijing,China,Asia,39.9042,116.4074,21.9,44,12.9
+Shanghai,China,Asia,31.2304,121.4737,29.2,4,17.1
+Tokyo,Japan,Asia,35.6762,139.6503,37.3,40,16.0
+Seoul,South Korea,Asia,37.5665,126.9780,25.6,38,12.8
+Mumbai,India,Asia,19.0760,72.8777,21.3,14,27.2
+Delhi,India,Asia,28.6139,77.2090,32.2,216,25.3
+Jakarta,Indonesia,Asia,-6.2088,106.8456,11.2,8,27.6
+Riyadh,Saudi Arabia,Asia,24.7136,46.6753,7.7,612,26.0
+Sydney,Australia,Oceania,-33.8688,151.2093,5.3,58,18.2

@@ -5818,7 +5818,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#e727790db9833874583e84fc54e684e25a4fb2cb"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#44029e7e02fbaca1a041de9a59d08bbd663c0d18"
 dependencies = [
  "askama",
  "async-trait",
@@ -5841,7 +5841,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#e727790db9833874583e84fc54e684e25a4fb2cb"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#44029e7e02fbaca1a041de9a59d08bbd663c0d18"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5852,7 +5852,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#e727790db9833874583e84fc54e684e25a4fb2cb"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#44029e7e02fbaca1a041de9a59d08bbd663c0d18"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

@@ -4464,11 +4464,12 @@ madrid,40.42,-3.70
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // a per-country ("Countries") choropleth, framed to Western Europe rather than the world
+    // a per-country ("Countries") choropleth framed to the filled region GEOMETRIES (not the source
+    // points, which would clip the countries) via `fitbounds: "locations"` on a natural-earth geo
     assert!(html.contains(r#""type":"choropleth""#));
     assert!(html.contains(r#""locationmode":"ISO-3""#));
-    assert!(html.contains(r#""projection":{"type":"mercator""#));
-    assert!(html.contains(r#""lonaxis":{"range":["#));
+    assert!(html.contains(r#""fitbounds":"locations""#));
+    assert!(html.contains(r#""projection":{"type":"natural earth""#));
 }
 
 // the smart choropleth scope is chosen from the reverse-geocoded countries, NOT the broad US

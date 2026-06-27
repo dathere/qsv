@@ -413,8 +413,9 @@ use plotly::{
         Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
-        Annotation, Axis, AxisType, Center, HoverMode, Layout, LayoutGeo, LayoutMap, LayoutScene,
-        MapStyle, Mapbox, MapboxStyle, Margin, Projection, ProjectionType, themes::BuiltinTheme,
+        Annotation, Axis, AxisType, Center, GeoFitBounds, HoverMode, Layout, LayoutGeo, LayoutMap,
+        LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection, ProjectionType,
+        themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -4464,11 +4465,6 @@ enum PanelKind {
         locations:     Vec<String>,
         z:             Vec<f64>,
         location_mode: LocationMode,
-        /// Bounding-box corners of the source points (lat/lon), fed to `geo_framing` at render
-        /// time so the panel frames to its own extent — a US dataset to albers-usa, a
-        /// European/Asian dataset to that region, global data to the world projection.
-        frame_lats:    Vec<f64>,
-        frame_lons:    Vec<f64>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -5785,32 +5781,12 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
-    // carry the bounding-box corners so the render frames the panel to its extent via geo_framing
-    // (US → albers-usa, a regional cluster → that region, global → world). Corners — not the raw
-    // points — so geo_framing's quantile trim can't shrink the true extent.
-    let ext = map_extent(lats, lons);
-    let frame_lats = vec![
-        ext.max_lat,
-        ext.max_lat,
-        ext.min_lat,
-        ext.min_lat,
-        ext.max_lat,
-    ];
-    let frame_lons = vec![
-        ext.min_lon,
-        ext.max_lon,
-        ext.max_lon,
-        ext.min_lon,
-        ext.min_lon,
-    ];
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
             locations: order,
             z,
             location_mode,
-            frame_lats,
-            frame_lons,
         },
     ))
 }
@@ -8175,8 +8151,6 @@ fn smart_inline_panel_plot(
         locations,
         z,
         location_mode,
-        frame_lats,
-        frame_lons,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -8188,21 +8162,23 @@ fn smart_inline_panel_plot(
                 .color_bar(ColorBar::new().title("count"))
                 .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
         );
-        // frame to the panel's own extent (same helper as the geo point map): a US extent → the
-        // albers-usa composite (CONUS + AK/HI insets), a regional cluster (e.g. Europe/Asia) →
-        // mercator fitted to that region, global/multi-continent data → the natural-earth world.
-        // corners ARE the exact extent (no stray points to trim), so frame the full extent.
-        let (projection, lonaxis, lataxis) = geo_framing(frame_lats, frame_lons, 0.0);
+        // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
+        // the countries/states at the edges — e.g. a city near a country's center).
+        // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
+        // the US; everything else uses natural-earth with `fitbounds: "locations"`, so
+        // Plotly fits the view to the union of the rendered region polygons — a
+        // European/Asian/etc. cluster zooms to those countries, global data stays
+        // world-scale.
         let mut geo = LayoutGeo::new()
-            .projection(Projection::new().projection_type(projection))
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
-        if let Some(lonaxis) = lonaxis {
-            geo = geo.lonaxis(lonaxis);
-        }
-        if let Some(lataxis) = lataxis {
-            geo = geo.lataxis(lataxis);
+        if matches!(location_mode, LocationMode::UsaStates) {
+            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+        } else {
+            geo = geo
+                .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+                .fitbounds(GeoFitBounds::Locations);
         }
         let mut layout = Layout::new()
             .show_legend(false)

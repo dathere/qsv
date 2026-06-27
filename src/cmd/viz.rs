@@ -8170,9 +8170,11 @@ fn hierarchy_arrays(
 
 /// Construct the plotly domain-based trace for a hierarchy panel/chart from its precomputed flat
 /// arrays. A treemap is sorted largest-first (best practice for size comparison via area); a
-/// sunburst relies on plotly's lineage colorway for deep paths. Both show
-/// `label+value+percent parent` and use `branchvalues="total"`, matching the rolled-up subtree
-/// totals `hierarchy_arrays` emits.
+/// sunburst relies on plotly's lineage colorway for deep paths. Both use `branchvalues="total"`,
+/// matching the rolled-up subtree totals `hierarchy_arrays` emits. Labeling differs: the treemap
+/// shows the richer `label+value+percent parent` (its tiles have room), while the sunburst shows
+/// label-only text and caps the initial view to two rings (see the per-branch comments below for
+/// why) — value/percent stay on hover there.
 fn hierarchy_trace(
     style: HierStyle,
     labels: &[String],

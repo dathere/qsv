@@ -49,6 +49,7 @@ as `text/plain`, so a browser won't render it):
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
+| `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
@@ -265,6 +266,10 @@ qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o m
 
 # geo — offline projection map (no tiles/token); viz smart auto-uses this for global coordinates
 qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
+
+# choropleth — fill countries by a value, matched by ISO-3 code (also: usa-states, country-names,
+# geojson-id; --map for a MapLibre basemap; --geocode to derive codes from lat/lon or place names)
+qsv viz choropleth country_stats.csv --locations iso3 --value gdp_usd_tn --color-scale viridis -o choropleth.html
 ```
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means

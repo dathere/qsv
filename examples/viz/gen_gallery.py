@@ -204,6 +204,12 @@ FIGURES = [
      "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",
      False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude",
              "--projection", "natural-earth"]),
+    ("choropleth", "Filled-region map coloring countries by GDP, matched by ISO-3 code on a "
+     "token-free projection basemap. Use --location-mode usa-states / country-names / geojson-id "
+     "for other region keys, --map for a MapLibre tile basemap, or --geocode to derive codes from "
+     "lat/lon or place names.",
+     False, ["choropleth", "country_stats.csv", "--locations", "iso3", "--value", "gdp_usd_tn",
+             "--color-scale", "viridis"]),
     ("smart dashboard (time-series)",
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads, alongside box-plot summaries of the OHLC columns.",

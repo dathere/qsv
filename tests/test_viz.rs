@@ -4053,3 +4053,238 @@ fn viz_treemap_value_mixed_invalid_errors() {
     ]);
     wrk.assert_err(&mut cmd);
 }
+
+// ---- choropleth ----
+
+fn countries(wrk: &Workdir) {
+    wrk.create_from_string(
+        "countries.csv",
+        "country,value\nUSA,10\nCAN,5\nMEX,7\nUSA,3\n",
+    );
+}
+
+#[test]
+fn viz_choropleth_basic() {
+    let wrk = Workdir::new("viz_choropleth_basic");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--value",
+        "value",
+        "--agg",
+        "sum",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    // USA's two rows are summed (10 + 3 = 13); regions are deduplicated in first-seen order
+    assert!(html.contains(r#""locations":["USA","CAN","MEX"]"#));
+    assert!(html.contains(r#""z":[13.0,5.0,7.0]"#));
+    // the colorbar is titled by the measure column
+    assert!(html.contains(r#""colorbar":{"title":{"text":"value"#));
+}
+
+#[test]
+fn viz_choropleth_count_default() {
+    let wrk = Workdir::new("viz_choropleth_count_default");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "countries.csv", "--locations", "country"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // no --value: z is the per-region row count (USA appears twice)
+    assert!(html.contains(r#""z":[2.0,1.0,1.0]"#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"count"#));
+}
+
+#[test]
+fn viz_choropleth_color_scale() {
+    let wrk = Workdir::new("viz_choropleth_color_scale");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--color-scale",
+        "cividis",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""colorscale":"Cividis""#));
+}
+
+#[test]
+fn viz_choropleth_usa_states() {
+    let wrk = Workdir::new("viz_choropleth_usa_states");
+    wrk.create_from_string("states.csv", "st,n\nNY,5\nCA,9\nTX,4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "states.csv",
+        "--locations",
+        "st",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"USA-states""#));
+}
+
+#[test]
+fn viz_choropleth_map() {
+    let wrk = Workdir::new("viz_choropleth_map");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"A","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},{"type":"Feature","id":"B","properties":{},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // MapLibre ChoroplethMap on a `map` subplot, matched by the geojson feature id
+    assert!(html.contains(r#""type":"choroplethmap""#));
+    assert!(html.contains(r#""featureidkey":"id""#));
+    assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
+    assert!(html.contains(r#""map":{"#));
+}
+
+#[test]
+fn viz_choropleth_map_requires_geojson_errors() {
+    let wrk = Workdir::new("viz_choropleth_map_requires_geojson_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "rg.csv", "--locations", "region", "--map"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_choropleth_geojson_id_requires_geojson_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_id_requires_geojson_errors");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--location-mode",
+        "geojson-id",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_choropleth_color_rejected() {
+    let wrk = Workdir::new("viz_choropleth_color_rejected");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--color",
+        "value",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// geocode-dependent: the source-conflict guard fires inside the geocode-gated resolver, before any
+// index lookup, so it needs no network/index — but it only exists in a geocode build.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_source_conflict_errors() {
+    let wrk = Workdir::new("viz_choropleth_geocode_source_conflict_errors");
+    wrk.create_from_string("pts.csv", "name,lat,lon\nnyc,40.71,-74.01\n");
+
+    let mut cmd = wrk.command("viz");
+    // --geocode with BOTH a lat/lon source and a --locations name column is ambiguous
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--locations",
+        "name",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// actual reverse-geocoding needs the Geonames index (downloaded on first use); skipped in CI like
+// the webdriver-dependent static-export tests.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_choropleth_geocode_reverse() {
+    let wrk = Workdir::new("viz_choropleth_geocode_reverse");
+    wrk.create_from_string(
+        "pts.csv",
+        "name,lat,lon\nnyc,40.71,-74.01\nla,34.05,-118.24\nlondon,51.51,-0.13\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // NYC + LA reverse-geocode to the USA (count 2); London to GBR
+    assert!(html.contains("USA"));
+    assert!(html.contains("GBR"));
+}

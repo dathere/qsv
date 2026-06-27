@@ -3614,6 +3614,146 @@ pub fn reverse_geocode_points(
     Ok(results)
 }
 
+/// Structured region identifiers for a single geocoded location, used by callers outside
+/// `geocode` (e.g. `viz choropleth`) that need region CODES — ISO-3 country and US state codes —
+/// to drive a choropleth, which the name-only [`GeoLabel`] does not expose.
+///
+/// This is a complete region-identifier surface; current callers read only `iso3`/`us_state_code`,
+/// but the country/admin name and admin1 code fields are populated for reuse by future callers.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct GeoRegion {
+    /// ISO-3166-1 alpha-2 country code, e.g. "US".
+    pub iso2:          String,
+    /// ISO-3166-1 alpha-3 country code, e.g. "USA". Empty if the country record is unavailable.
+    pub iso3:          String,
+    /// Localized country name when available, otherwise the 2-letter code.
+    pub country_name:  String,
+    /// Localized admin1 (state/province) name.
+    pub admin1_name:   String,
+    /// admin1 code in Geonames format, e.g. "US.NY"; `None` if the record has no admin1.
+    pub admin1_code:   Option<String>,
+    /// 2-letter US state code (e.g. "NY"), `Some` only when the country is the US.
+    pub us_state_code: Option<String>,
+}
+
+/// Load the shared Geonames engine (downloading the index on first use), run `f` against it, and
+/// return its owned result. Centralizes the index-resolution + tokio + `as_engine` boilerplate so
+/// the engine (which borrows `EngineData`) stays alive for the whole batch and is dropped after
+/// `f` returns. Returns `Err` only on a hard setup failure (tokio runtime, index download/load).
+fn with_geocode_engine<F, R>(f: F) -> CliResult<R>
+where
+    F: FnOnce(&Engine) -> R,
+{
+    let geocode_cache_dir = resolve_geocode_cache_dir("~/.qsv-cache")?;
+    let geocode_index_filename = std::env::var("QSV_GEOCODE_INDEX_FILENAME")
+        .unwrap_or_else(|_| DEFAULT_GEOCODE_INDEX_FILENAME.to_string());
+    let geocode_index_file = PathBuf::from(format!(
+        "{}/{geocode_index_filename}",
+        geocode_cache_dir.display()
+    ));
+    let rt = tokio::runtime::Runtime::new()?;
+    let progressbar = ProgressBar::hidden();
+    let engine_data = rt.block_on(load_engine_data(geocode_index_file, &progressbar))?;
+    let engine = engine_data
+        .as_engine()
+        .map_err(|e| CliError::Other(format!("Error initializing geocode Engine: {e}")))?;
+    Ok(f(&engine))
+}
+
+/// Derive a [`GeoRegion`] from a matched `CitiesRecord`. Returns `None` when the record has no
+/// country (the minimum needed for a region code). `iso3` is resolved via a country-info lookup;
+/// `us_state_code` is the 2-letter state code only when the country is the US.
+fn cityrecord_to_region(
+    engine: &Engine,
+    cityrecord: &CitiesRecord,
+    lang_lookup: &str,
+) -> Option<GeoRegion> {
+    let iso2 = cityrecord.country.as_ref()?.code.as_str().to_string();
+    let nameslang = get_cityrecord_name_in_lang(cityrecord, lang_lookup);
+    let country_name = if nameslang.countryname.is_empty() {
+        iso2.clone()
+    } else {
+        nameslang.countryname.clone()
+    };
+    let iso3 = engine
+        .country_info(&iso2)
+        .map(|cr| cr.info.iso3.to_string())
+        .unwrap_or_default();
+    let admin1_code = cityrecord
+        .admin_division
+        .as_ref()
+        .map(|a| a.code.to_string());
+    let us_state_code = if iso2 == "US" {
+        admin1_code
+            .as_deref()
+            .and_then(|c| c.strip_prefix("US."))
+            .map(str::to_string)
+    } else {
+        None
+    };
+    Some(GeoRegion {
+        iso2,
+        iso3,
+        country_name,
+        admin1_name: nameslang.admin1name.clone(),
+        admin1_code,
+        us_state_code,
+    })
+}
+
+/// Reverse-geocode a batch of `(lat, lon)` points to region codes (see [`GeoRegion`]), loading the
+/// engine ONCE. Returns one `Option<GeoRegion>` per input point (in order); `None` where no city
+/// matched or the match lacks a country. `Err` only on a hard setup failure — callers degrade
+/// gracefully, exactly like [`reverse_geocode_points`]. `lang` selects the localized-name language
+/// (defaults to `"en"`).
+#[allow(clippy::cast_possible_truncation)]
+pub fn reverse_geocode_regions(
+    points: &[(f64, f64)],
+    lang: Option<&str>,
+) -> CliResult<Vec<Option<GeoRegion>>> {
+    let lang_lookup = lang.unwrap_or("en");
+    with_geocode_engine(|engine| {
+        points
+            .iter()
+            .map(|&(lat, lon)| {
+                if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+                    return None;
+                }
+                // turbofish pins the unused `countries` filter's element type (both filters None).
+                let search_result =
+                    engine.reverse::<String>((lat as f32, lon as f32), 1, None, None);
+                let cityrecord = search_result?.into_iter().next().map(|ri| ri.city)?;
+                cityrecord_to_region(engine, cityrecord, lang_lookup)
+            })
+            .collect()
+    })
+}
+
+/// Forward-geocode a batch of place names to region codes (see [`GeoRegion`]) via the same fuzzy
+/// `suggest` engine the `geocode suggest` subcommand uses, loading the engine ONCE. Returns one
+/// `Option<GeoRegion>` per input name (in order); `None` where no city matched or the match lacks
+/// a country. `Err` only on a hard setup failure. `lang` selects the localized-name language.
+pub fn forward_geocode_regions(
+    names: &[&str],
+    lang: Option<&str>,
+) -> CliResult<Vec<Option<GeoRegion>>> {
+    let lang_lookup = lang.unwrap_or("en");
+    with_geocode_engine(|engine| {
+        names
+            .iter()
+            .map(|name| {
+                // turbofish pins the unused `countries` filter's element type.
+                let cityrecord = engine
+                    .suggest::<String>(name, 1, None, None)
+                    .into_iter()
+                    .next()?;
+                cityrecord_to_region(engine, cityrecord, lang_lookup)
+            })
+            .collect()
+    })
+}
+
 #[inline]
 fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
     US_STATES_FIPS_CODES.get(state).copied()

@@ -5,7 +5,7 @@
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 
 <a name="nav"></a>
-[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Geo Options](#geo-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
+[Description](#description) | [Examples](#examples) | [Usage](#usage) | [Viz Options](#viz-options) | [Map Options](#map-options) | [Geo Options](#geo-options) | [Choropleth Options](#choropleth-options) | [Smart Options](#smart-options) | [Common Options](#common-options)
 
 <a name="description"></a>
 
@@ -53,6 +53,10 @@ map         Geographic point map (or --density heatmap) on tile basemaps.
 geo         Geographic point map on a projection basemap (coastlines/land/
             countries; no tiles, no token). Uses the same lat/lon options
             as `map`, plus --projection. Good for global/country-scale data.
+choropleth  Filled-region map: color whole regions (countries, US states, or
+            custom GeoJSON areas) by a value. --locations names the region-code
+            column, --value/--agg the measure (row counts if omitted). Defaults
+            to a token-free projection basemap; --map switches to MapLibre tiles.
 ```
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
@@ -231,6 +235,30 @@ qsv viz treemap sales.csv --cols region,category --value amount --agg sum -o tre
 qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
 ```
 
+> Choropleth coloring countries (ISO-3 codes) by a summed measure
+
+```console
+qsv viz choropleth gdp.csv --locations iso3 --value gdp --agg sum -o choropleth.html
+```
+
+> US-state choropleth of row counts per state (2-letter state codes)
+
+```console
+qsv viz choropleth orders.csv --locations state --location-mode usa-states -o states.html
+```
+
+> Custom GeoJSON regions on a MapLibre basemap, matched by a feature id
+
+```console
+qsv viz choropleth counties.csv --locations fips --value pop --map --geojson counties.json --feature-id-key id -o counties.html
+```
+
+> Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)
+
+```console
+qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 See also <https://github.com/dathere/qsv/wiki/Visualization>
@@ -256,6 +284,7 @@ qsv viz sankey      [options] <input>
 qsv viz radar       [options] <input>
 qsv viz map         [options] <input>
 qsv viz geo         [options] <input>
+qsv viz choropleth  [options] <input>
 qsv viz treemap     [options] <input>
 qsv viz sunburst    [options] <input>
 qsv viz --help
@@ -306,6 +335,20 @@ qsv viz --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑projection`&nbsp; | string | Map projection for `viz geo`. One of: natural-earth (the default), mercator, orthographic, equirectangular, albers-usa, robinson, winkel-tripel, mollweide, hammer, azimuthal-equal-area. `viz geo` also reuses the lat, lon, text, color, size and series options from `map`. | `natural-earth` |
+
+<a name="choropleth-options"></a>
+
+## Choropleth Options [↩](#nav)
+
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+|--------|------|-------------|--------|
+| &nbsp;`‑‑locations`&nbsp; | string | Column holding the region key for each row (an ISO-3 country code, a 2-letter US state code, a country name, or a GeoJSON feature id, per --location-mode). With --geocode, this instead names a place-name column to forward-geocode into region codes. |  |
+| &nbsp;`‑‑location‑mode`&nbsp; | string | How --locations values are matched to regions. One of: iso3 (the default, ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id). | `iso3` |
+| &nbsp;`‑‑color‑scale`&nbsp; | string | Colorscale for the region fill. One of: viridis (the default), cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered, rdbu, portland, electric, jet, hot, blackbody, earth, picnic, rainbow. | `viridis` |
+| &nbsp;`‑‑map`&nbsp; | flag | Render on a token-free MapLibre tile basemap (a ChoroplethMap) instead of the default projection basemap. Requires --geojson and --feature-id-key. Reuses --style for the basemap. |  |
+| &nbsp;`‑‑geojson`&nbsp; | string | Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode. |  |
+| &nbsp;`‑‑feature‑id‑key`&nbsp; | string | Property path in each GeoJSON feature whose value matches an entry in the locations column (e.g. id, properties.fips). | `id` |
+| &nbsp;`‑‑geocode`&nbsp; | flag | Derive the region codes by reusing qsv's geocode engine (needs a build with the geocode feature). Either reverse-geocode the lat/lon points, or forward-geocode the locations name column. Only valid with location modes iso3 or usa-states. `viz choropleth` also reuses --value, --agg, --style and the lat/lon options. |  |
 
 <a name="smart-options"></a>
 

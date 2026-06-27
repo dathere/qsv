@@ -1,0 +1,21 @@
+city,lat,lon,census_region,population_m,median_age
+New York,40.7128,-74.0060,Northeast,8.3,38.2
+Los Angeles,34.0522,-118.2437,West,3.8,35.8
+Chicago,41.8781,-87.6298,Midwest,2.7,35.2
+Houston,29.7604,-95.3698,South,2.3,33.4
+Phoenix,33.4484,-112.0740,West,1.6,34.1
+Philadelphia,39.9526,-75.1652,Northeast,1.6,34.7
+San Antonio,29.4241,-98.4936,South,1.5,34.0
+Denver,39.7392,-104.9903,West,0.7,34.6
+Seattle,47.6062,-122.3321,West,0.7,35.5
+Boston,42.3601,-71.0589,Northeast,0.7,32.1
+Atlanta,33.7490,-84.3880,South,0.5,33.2
+Miami,25.7617,-80.1918,South,0.4,40.1
+Minneapolis,44.9778,-93.2650,Midwest,0.4,32.4
+Detroit,42.3314,-83.0458,Midwest,0.6,34.6
+Portland,45.5152,-122.6784,West,0.7,37.6
+Nashville,36.1627,-86.7816,South,0.7,34.3
+Las Vegas,36.1699,-115.1398,West,0.6,38.0
+Kansas City,39.0997,-94.5786,Midwest,0.5,34.9
+Salt Lake City,40.7608,-111.8910,West,0.2,32.0
+Charlotte,35.2271,-80.8431,South,0.9,34.5

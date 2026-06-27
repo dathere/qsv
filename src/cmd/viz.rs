@@ -39,6 +39,10 @@ Chart types (subcommands):
     geo         Geographic point map on a projection basemap (coastlines/land/
                 countries; no tiles, no token). Uses the same lat/lon options
                 as `map`, plus --projection. Good for global/country-scale data.
+    choropleth  Filled-region map: color whole regions (countries, US states, or
+                custom GeoJSON areas) by a value. --locations names the region-code
+                column, --value/--agg the measure (row counts if omitted). Defaults
+                to a token-free projection basemap; --map switches to MapLibre tiles.
 
 `qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
 frequency caches. Continuous numeric columns become box plots (quartiles from the stats
@@ -146,6 +150,18 @@ Examples:
   # Sunburst of a deep 3-level web-traffic hierarchy, sized by row count
   qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html
 
+  # Choropleth coloring countries (ISO-3 codes) by a summed measure
+  qsv viz choropleth gdp.csv --locations iso3 --value gdp --agg sum -o choropleth.html
+
+  # US-state choropleth of row counts per state (2-letter state codes)
+  qsv viz choropleth orders.csv --locations state --location-mode usa-states -o states.html
+
+  # Custom GeoJSON regions on a MapLibre basemap, matched by a feature id
+  qsv viz choropleth counties.csv --locations fips --value pop --map --geojson counties.json --feature-id-key id -o counties.html
+
+  # Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)
+  qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 See also https://github.com/dathere/qsv/wiki/Visualization
 
@@ -166,6 +182,7 @@ Usage:
     qsv viz radar       [options] <input>
     qsv viz map         [options] <input>
     qsv viz geo         [options] <input>
+    qsv viz choropleth  [options] <input>
     qsv viz treemap     [options] <input>
     qsv viz sunburst    [options] <input>
     qsv viz --help
@@ -252,6 +269,35 @@ geo options:
                            azimuthal-equal-area. `viz geo` also reuses the lat, lon,
                            text, color, size and series options from `map`.
                            [default: natural-earth]
+
+choropleth options:
+    --locations <col>      Column holding the region key for each row (an ISO-3 country
+                           code, a 2-letter US state code, a country name, or a GeoJSON
+                           feature id, per --location-mode). With --geocode, this instead
+                           names a place-name column to forward-geocode into region codes.
+    --location-mode <m>    How --locations values are matched to regions. One of: iso3
+                           (the default, ISO-3166-1 alpha-3 country codes), usa-states
+                           (2-letter US state codes), country-names (full country names),
+                           geojson-id (match a --geojson feature id). [default: iso3]
+    --color-scale <name>   Colorscale for the region fill. One of: viridis (the default),
+                           cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered,
+                           rdbu, portland, electric, jet, hot, blackbody, earth, picnic,
+                           rainbow. [default: viridis]
+    --map                  Render on a token-free MapLibre tile basemap (a ChoroplethMap)
+                           instead of the default projection basemap. Requires --geojson
+                           and --feature-id-key. Reuses --style for the basemap.
+    --geojson <src>        Custom region polygons as a local file path or an http(s) URL
+                           to a GeoJSON FeatureCollection. Required for --map, and for
+                           the geojson-id location mode.
+    --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
+                           entry in the locations column (e.g. id, properties.fips).
+                           [default: id]
+    --geocode              Derive the region codes by reusing qsv's geocode engine
+                           (needs a build with the geocode feature). Either reverse-geocode
+                           the lat/lon points, or forward-geocode the locations name
+                           column. Only valid with location modes iso3 or usa-states.
+                           `viz choropleth` also reuses --value, --agg, --style and the
+                           lat/lon options.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -356,18 +402,20 @@ use plotly::layout::update_menu::{
     Button, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
 };
 use plotly::{
-    Bar, BoxPlot, Candlestick, Configuration, Contour, DensityMapbox, HeatMap, Histogram, Ohlc,
-    Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox, ScatterPolar, Sunburst,
-    Trace, Treemap,
+    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMapbox,
+    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox,
+    ScatterPolar, Sunburst, Trace, Treemap,
     box_plot::{BoxPoints, QuartileMethod},
+    choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, HoverInfo, Line, Marker, Mode,
         Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
-        Annotation, Axis, AxisType, Center, HoverMode, Layout, LayoutGeo, LayoutScene, Mapbox,
-        MapboxStyle, Margin, Projection, ProjectionType, themes::BuiltinTheme,
+        Annotation, Axis, AxisType, Center, GeoFitBounds, HoverMode, Layout, LayoutGeo, LayoutMap,
+        LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection, ProjectionType,
+        themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -498,6 +546,17 @@ const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 /// gives better context than tiles framed to a wide bounding box. Local extents keep the tile map.
 const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
 const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
+
+/// Minimum spatial extent (in degrees of longitude AND latitude) before `viz smart` attempts the
+/// per-country choropleth overview. A per-country breakdown is only meaningful at country scale, so
+/// when the data's extent is smaller than this in BOTH dimensions it is treated as a single
+/// metro/region cluster and skipped — which avoids the expensive all-row reverse-geocode pass (and
+/// its index load) entirely for the common case of a high-row-count city/metro dataset. Anything
+/// wider in either axis runs the pass, and `build_smart_choropleth_panel`'s own 2-country check has
+/// the final say (a wide single-country dataset still resolves to one country → no panel). This is
+/// a cheap min/max-extent gate that, unlike the geocoded bounding-box corners, also works for
+/// global extents that wrap the antimeridian (where the corner metadata is suppressed).
+const SMART_CHOROPLETH_MIN_SPAN_DEG: f64 = 8.0;
 
 /// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose
 /// `bimodality_coefficient` reaches this AND is platykurtic (see `classify_measure`) is treated as
@@ -717,6 +776,7 @@ struct Args {
     cmd_geo:                 bool,
     cmd_treemap:             bool,
     cmd_sunburst:            bool,
+    cmd_choropleth:          bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
     flag_y:                  Option<SelectColumns>,
@@ -746,6 +806,14 @@ struct Args {
     flag_style:              Option<String>,
     flag_mapbox_token:       Option<String>,
     flag_projection:         Option<String>,
+    // choropleth columns/options
+    flag_locations:          Option<SelectColumns>,
+    flag_location_mode:      Option<String>,
+    flag_color_scale:        Option<String>,
+    flag_map:                bool,
+    flag_geojson:            Option<String>,
+    flag_feature_id_key:     Option<String>,
+    flag_geocode:            bool,
     flag_bins:               Option<usize>,
     flag_agg:                Option<String>,
     flag_box_points:         Option<String>,
@@ -1006,6 +1074,12 @@ fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     if matches!(chart_kind(args), Chart::Geo) {
         return build_geo_plot(args);
     }
+
+    // choropleth fills whole regions on a `geo` (projection) or `map` (MapLibre) subplot — never
+    // cartesian — so it owns its whole `Plot` like the maps above.
+    if matches!(chart_kind(args), Chart::Choropleth) {
+        return build_choropleth_plot(args, out_format);
+    }
     if matches!(chart_kind(args), Chart::Scatter3D) {
         return build_scatter3d_plot(args);
     }
@@ -1108,6 +1182,7 @@ enum Chart {
     Radar,
     Map,
     Geo,
+    Choropleth,
     Treemap,
     Sunburst,
 }
@@ -1143,6 +1218,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Map
     } else if args.cmd_geo {
         Chart::Geo
+    } else if args.cmd_choropleth {
+        Chart::Choropleth
     } else if args.cmd_treemap {
         Chart::Treemap
     } else if args.cmd_sunburst {
@@ -1744,6 +1821,26 @@ fn map_series_traces(
         .collect()
 }
 
+/// Pixel dimensions to frame a map / choropleth basemap against (fed to `map_center_zoom`'s
+/// aspect-aware fit). `--width`/`--height` size the static image export but are NOT applied to the
+/// responsive HTML layout, so honor them only when exporting an image — so a narrow/tall or
+/// wide/short export frames its own aspect instead of cropping the extent — while HTML frames for
+/// the representative default aspect, matching how `run` sizes each output.
+fn fit_dims(
+    flag_width: Option<usize>,
+    flag_height: Option<usize>,
+    out_format: OutFormat,
+) -> (usize, usize) {
+    if out_format.is_image() {
+        (
+            flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
+            flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
+        )
+    } else {
+        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+    }
+}
+
 /// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
 /// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
@@ -1837,18 +1934,8 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         );
     }
 
-    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. --width/
-    // --height size the static image export but are NOT applied to the responsive HTML layout, so
-    // only honor them when exporting an image (fit the actual export aspect instead of clipping);
-    // HTML frames for the representative default aspect, matching how `run` sizes each output.
-    let (fit_w, fit_h) = if out_format.is_image() {
-        (
-            args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
-            args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
-        )
-    } else {
-        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
-    };
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional.
+    let (fit_w, fit_h) = fit_dims(args.flag_width, args.flag_height, out_format);
     let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, fit_w as f64, fit_h as f64);
 
     let mut plot = Plot::new();
@@ -2096,6 +2183,428 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
     }
     plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
+}
+
+/// Map a `--location-mode` name to a plotly [`LocationMode`].
+fn parse_location_mode(name: &str) -> CliResult<LocationMode> {
+    match name.to_ascii_lowercase().as_str() {
+        "iso3" | "iso-3" => Ok(LocationMode::Iso3),
+        "usa-states" | "usa_states" | "us-states" => Ok(LocationMode::UsaStates),
+        "country-names" | "country_names" | "names" => Ok(LocationMode::CountryNames),
+        "geojson-id" | "geojson_id" | "geojson" => Ok(LocationMode::GeoJsonId),
+        other => fail_incorrectusage_clierror!(
+            "Unknown --location-mode '{other}'. Use iso3, usa-states, country-names, or \
+             geojson-id."
+        ),
+    }
+}
+
+/// Map a `--color-scale` name to a plotly [`ColorScalePalette`].
+fn parse_color_scale(name: &str) -> CliResult<ColorScalePalette> {
+    match name.to_ascii_lowercase().as_str() {
+        "viridis" => Ok(ColorScalePalette::Viridis),
+        "cividis" => Ok(ColorScalePalette::Cividis),
+        "greys" | "grays" => Ok(ColorScalePalette::Greys),
+        "greens" => Ok(ColorScalePalette::Greens),
+        "blues" => Ok(ColorScalePalette::Blues),
+        "reds" => Ok(ColorScalePalette::Reds),
+        "ylgnbu" => Ok(ColorScalePalette::YlGnBu),
+        "ylorrd" => Ok(ColorScalePalette::YlOrRd),
+        "bluered" => Ok(ColorScalePalette::Bluered),
+        "rdbu" => Ok(ColorScalePalette::RdBu),
+        "portland" => Ok(ColorScalePalette::Portland),
+        "electric" => Ok(ColorScalePalette::Electric),
+        "jet" => Ok(ColorScalePalette::Jet),
+        "hot" => Ok(ColorScalePalette::Hot),
+        "blackbody" => Ok(ColorScalePalette::Blackbody),
+        "earth" => Ok(ColorScalePalette::Earth),
+        "picnic" => Ok(ColorScalePalette::Picnic),
+        "rainbow" => Ok(ColorScalePalette::Rainbow),
+        other => fail_incorrectusage_clierror!(
+            "Unknown --color-scale '{other}'. Use viridis, cividis, greys, greens, blues, reds, \
+             ylgnbu, ylorrd, bluered, rdbu, portland, electric, jet, hot, blackbody, earth, \
+             picnic, or rainbow."
+        ),
+    }
+}
+
+/// Map a `--style` name to a token-free MapLibre [`MapStyle`] for `viz choropleth --map`.
+fn parse_choropleth_map_style(name: &str) -> CliResult<MapStyle> {
+    match name.to_ascii_lowercase().as_str() {
+        "carto-positron" => Ok(MapStyle::CartoPositron),
+        "carto-darkmatter" | "carto-dark-matter" => Ok(MapStyle::CartoDarkMatter),
+        "carto-voyager" => Ok(MapStyle::CartoVoyager),
+        "open-street-map" | "osm" => Ok(MapStyle::OpenStreetMap),
+        "dark" => Ok(MapStyle::Dark),
+        "light" => Ok(MapStyle::Light),
+        "white-bg" => Ok(MapStyle::WhiteBg),
+        "satellite" => Ok(MapStyle::Satellite),
+        "basic" => Ok(MapStyle::Basic),
+        other => fail_incorrectusage_clierror!(
+            "Unknown --style '{other}' for `viz choropleth --map`. Use carto-positron, \
+             carto-darkmatter, carto-voyager, open-street-map, dark, light, white-bg, satellite, \
+             or basic."
+        ),
+    }
+}
+
+/// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
+fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
+    let bytes = if spec.starts_with("http://") || spec.starts_with("https://") {
+        let resp = reqwest::blocking::get(spec)
+            .and_then(reqwest::blocking::Response::error_for_status)
+            .map_err(|e| {
+                crate::CliError::Other(format!("Failed to fetch --geojson URL '{spec}': {e}"))
+            })?;
+        resp.bytes()
+            .map_err(|e| {
+                crate::CliError::Other(format!("Failed to read --geojson body from '{spec}': {e}"))
+            })?
+            .to_vec()
+    } else {
+        std::fs::read(spec).map_err(|e| {
+            crate::CliError::Other(format!("Failed to read --geojson '{spec}': {e}"))
+        })?
+    };
+    serde_json::from_slice(&bytes)
+        .map_err(|e| crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}")))
+}
+
+/// Collect every `[lon, lat]` vertex from a GeoJSON value into parallel `(lats, lons)` vectors, so
+/// a `--map` choropleth can frame the MapLibre basemap to its regions instead of opening at
+/// plotly's whole-world default (where county/city polygons are effectively invisible). Descends
+/// only through GeoJSON's geometry-bearing keys (`features`/`geometry`/`geometries`/`coordinates`)
+/// so numeric arrays inside feature `properties` (e.g. a stray `bbox` or data array) can't be
+/// mistaken for coordinates. Out-of-range pairs are dropped. GeoJSON positions are `[lon, lat]`.
+fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
+    fn walk(v: &serde_json::Value, lats: &mut Vec<f64>, lons: &mut Vec<f64>) {
+        match v {
+            serde_json::Value::Array(arr) => {
+                // a leaf position is `[lon, lat, ...]`: the first two entries are bare numbers
+                // (nested coordinate arrays have arrays, not numbers, in those slots).
+                if arr.len() >= 2 && arr[0].is_number() && arr[1].is_number() {
+                    if let (Some(lon), Some(lat)) = (arr[0].as_f64(), arr[1].as_f64())
+                        && (-180.0..=180.0).contains(&lon)
+                        && (-90.0..=90.0).contains(&lat)
+                    {
+                        lons.push(lon);
+                        lats.push(lat);
+                    }
+                } else {
+                    for item in arr {
+                        walk(item, lats, lons);
+                    }
+                }
+            },
+            serde_json::Value::Object(map) => {
+                for (k, val) in map {
+                    if matches!(
+                        k.as_str(),
+                        "features" | "geometry" | "geometries" | "coordinates"
+                    ) {
+                        walk(val, lats, lons);
+                    }
+                }
+            },
+            _ => {},
+        }
+    }
+    let mut lats = Vec::new();
+    let mut lons = Vec::new();
+    walk(geojson, &mut lats, &mut lons);
+    (lats, lons)
+}
+
+/// Build the complete `Plot` for `viz choropleth`: fill whole geographic regions colored by an
+/// aggregated value. Defaults to a token-free `Choropleth` on the projection `geo` subplot; `--map`
+/// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
+/// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
+/// (forward) by reusing qsv's geocode engine.
+fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
+    let mode = parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?;
+    let palette = parse_color_scale(args.flag_color_scale.as_deref().unwrap_or("viridis"))?;
+
+    // --value drives the colored measure; aggregation defaults to sum when a --value is given,
+    // else per-region row counts. Non-count aggs require a --value column.
+    let agg = match (
+        parse_agg(args.flag_agg.as_deref())?,
+        args.flag_value.is_some(),
+    ) {
+        (Some(a), _) => a,
+        (None, true) => Agg::Sum,
+        (None, false) => Agg::Count,
+    };
+    if agg != Agg::Count && args.flag_value.is_none() {
+        return fail_incorrectusage_clierror!("--agg sum/mean/min/max requires a --value column.");
+    }
+
+    // --map (ChoroplethMap) is MapLibre + GeoJSON-only; the default geo Choropleth has built-in
+    // country/state geometries and needs a GeoJSON only for the geojson-id location mode.
+    if args.flag_map && (args.flag_geojson.is_none() || args.flag_feature_id_key.is_none()) {
+        return fail_incorrectusage_clierror!(
+            "--map (ChoroplethMap) requires both --geojson and --feature-id-key."
+        );
+    }
+    if matches!(mode, LocationMode::GeoJsonId) && args.flag_geojson.is_none() {
+        return fail_incorrectusage_clierror!(
+            "--location-mode geojson-id requires a --geojson source."
+        );
+    }
+    if args.flag_map && args.flag_geocode {
+        return fail_incorrectusage_clierror!(
+            "--map cannot be combined with --geocode: geocode yields ISO-3/US-state codes, which \
+             won't match a GeoJSON feature id. Use the default geo basemap with --geocode."
+        );
+    }
+
+    let (locations, z, measure_label) = if args.flag_geocode {
+        choropleth_geocoded_locations(args, mode.clone(), agg)?
+    } else {
+        choropleth_literal_locations(args, agg)?
+    };
+
+    if locations.is_empty() {
+        return fail_clierror!(
+            "No choropleth regions resolved (check --locations / --geocode inputs and \
+             --location-mode)."
+        );
+    }
+
+    let mut plot = Plot::new();
+    if args.flag_map {
+        // ChoroplethMap on the MapLibre `map` subplot (GeoJSON-only).
+        let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+        // collect the GeoJSON extent BEFORE the value is moved into the trace below.
+        let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+        let trace = ChoroplethMap::new(locations, z)
+            .geojson(geojson)
+            .feature_id_key(args.flag_feature_id_key.as_deref().unwrap())
+            .color_scale(ColorScale::Palette(palette))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title(measure_label))
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+        plot.add_trace(trace);
+        // --style carries a global docopt default of open-street-map (a token-free MapLibre style).
+        let style =
+            parse_choropleth_map_style(args.flag_style.as_deref().unwrap_or("open-street-map"))?;
+        let mut layout_map = LayoutMap::new().style(style);
+        // frame the basemap to the GeoJSON extent so local/custom regions (counties, cities) are
+        // visible instead of being lost at plotly's default whole-world view centered at (0, 0).
+        // Falls back to that default only when the GeoJSON has no usable coordinates. `fit_dims`
+        // honors --width/--height for image exports (so a non-default static aspect frames its
+        // extent instead of cropping) and the default aspect for HTML — matching `build_map_plot`.
+        if !g_lats.is_empty() {
+            let (fit_w, fit_h) = fit_dims(args.flag_width, args.flag_height, out_format);
+            let (center, zoom) = map_center_zoom(&g_lats, &g_lons, 0.0, fit_w as f64, fit_h as f64);
+            layout_map = layout_map.center(center).zoom(f64::from(zoom));
+        }
+        let mut layout = Layout::new().map(layout_map);
+        if let Some(title) = &args.flag_title {
+            layout = layout.title(Title::with_text(title));
+        }
+        plot.set_layout(apply_theme(layout, args.theme()));
+    } else {
+        // Choropleth on the projection `geo` subplot (token-free built-in geometries).
+        let usa_states = matches!(mode, LocationMode::UsaStates);
+        let mut trace = Choropleth::new(locations, z)
+            .location_mode(mode)
+            .color_scale(ColorScale::Palette(palette))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title(measure_label))
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+        let mut geo = LayoutGeo::new()
+            .showland(true)
+            .landcolor(NamedColor::LightGray)
+            .showcountries(true);
+        // usa-states built-in geometries need the albers-usa projection to frame the US (CONUS +
+        // AK/HI insets); without it plotly draws the states tiny on the default whole-world view. A
+        // --geojson source (handled below) frames itself, so let that override.
+        if usa_states {
+            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+        }
+        if let Some(spec) = args.flag_geojson.as_deref() {
+            let geojson = load_geojson(spec)?;
+            // plotly only auto-scopes its BUILT-IN location modes (iso3 world / usa-states); a
+            // custom GeoJSON has no built-in scope, so without framing its polygons sit tiny on the
+            // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
+            // the smart panel's geo_framing (albers-usa / natural-earth / mercator fit, padded and
+            // antimeridian-aware). Collect the extent BEFORE the value is moved into the trace.
+            let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+            if !g_lats.is_empty() {
+                // trim_frac 0.0: every GeoJSON vertex is intentional, so frame the FULL extent —
+                // trimming would crop edge/island polygons.
+                let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
+                geo = geo.projection(Projection::new().projection_type(proj));
+                if let Some(lonaxis) = lonaxis {
+                    geo = geo.lonaxis(lonaxis);
+                }
+                if let Some(lataxis) = lataxis {
+                    geo = geo.lataxis(lataxis);
+                }
+            }
+            trace = trace
+                .geojson(geojson)
+                .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"));
+        }
+        plot.add_trace(trace);
+        let mut layout = Layout::new().geo(geo);
+        if let Some(title) = &args.flag_title {
+            layout = layout.title(Title::with_text(title));
+        }
+        plot.set_layout(apply_theme(layout, args.theme()));
+    }
+    Ok(plot)
+}
+
+/// Resolve choropleth `(locations, z, measure_label)` from a literal `--locations` region-key
+/// column, aggregating the `--value` measure (or row counts) per region.
+fn choropleth_literal_locations(
+    args: &Args,
+    agg: Agg,
+) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
+    let value_idx = match args.flag_value.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+        None => None,
+    };
+    let measure_label = match value_idx {
+        Some(i) => col_label(&headers, i, nh),
+        None => "count".to_string(),
+    };
+
+    let mut raw_locs: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let loc = cell_to_string(record.get(loc_idx));
+        if loc.is_empty() {
+            continue;
+        }
+        let value = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        raw_locs.push(loc);
+        values.push(value);
+    }
+    let (locs, z) = aggregate(raw_locs, values, agg);
+    Ok((locs, z, measure_label))
+}
+
+/// Resolve choropleth `(locations, z)` via qsv's geocode engine: reverse-geocode `--lat`/`--lon`
+/// points, or forward-geocode a `--locations` name column, into ISO-3 / US-state codes per
+/// `--location-mode`, then aggregate the `--value` measure (or row counts) per region.
+#[cfg(feature = "geocode")]
+fn choropleth_geocoded_locations(
+    args: &Args,
+    mode: LocationMode,
+    agg: Agg,
+) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+    if !matches!(mode, LocationMode::Iso3 | LocationMode::UsaStates) {
+        return fail_incorrectusage_clierror!(
+            "--geocode only resolves --location-mode iso3 or usa-states (the codes geocode can \
+             produce)."
+        );
+    }
+    let has_latlon = args.flag_lat.is_some() && args.flag_lon.is_some();
+    let has_names = args.flag_locations.is_some();
+    if has_latlon == has_names {
+        return fail_incorrectusage_clierror!(
+            "--geocode needs exactly one source: --lat/--lon points (reverse) OR a --locations \
+             name column (forward)."
+        );
+    }
+
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let value_idx = match args.flag_value.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+        None => None,
+    };
+    let measure_label = match value_idx {
+        Some(i) => col_label(&headers, i, nh),
+        None => "count".to_string(),
+    };
+
+    // Collect the per-row geocode query + aligned measure, skipping rows missing inputs.
+    let mut values: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    let regions = if has_latlon {
+        let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+        let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+        let mut points: Vec<(f64, f64)> = Vec::new();
+        while rdr.read_byte_record(&mut record)? {
+            let (Some(lat), Some(lon)) = (
+                parse_f64(record.get(lat_idx)),
+                parse_f64(record.get(lon_idx)),
+            ) else {
+                continue;
+            };
+            let value = match value_idx {
+                Some(i) => match parse_f64(record.get(i)) {
+                    Some(v) => v,
+                    None => continue,
+                },
+                None => 1.0,
+            };
+            points.push((lat, lon));
+            values.push(value);
+        }
+        crate::cmd::geocode::reverse_geocode_regions(&points, None)?
+    } else {
+        let name_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
+        let mut names: Vec<String> = Vec::new();
+        while rdr.read_byte_record(&mut record)? {
+            let name = cell_to_string(record.get(name_idx));
+            if name.is_empty() {
+                continue;
+            }
+            let value = match value_idx {
+                Some(i) => match parse_f64(record.get(i)) {
+                    Some(v) => v,
+                    None => continue,
+                },
+                None => 1.0,
+            };
+            names.push(name);
+            values.push(value);
+        }
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        crate::cmd::geocode::forward_geocode_regions(&name_refs, None)?
+    };
+
+    // Map each resolved region to the code for the requested mode; drop rows that didn't resolve.
+    let mut locations: Vec<String> = Vec::with_capacity(regions.len());
+    let mut kept_values: Vec<f64> = Vec::with_capacity(regions.len());
+    for (region, value) in regions.into_iter().zip(values) {
+        let code = region.and_then(|r| match mode {
+            LocationMode::Iso3 => (!r.iso3.is_empty()).then_some(r.iso3),
+            LocationMode::UsaStates => r.us_state_code,
+            _ => None,
+        });
+        if let Some(code) = code {
+            locations.push(code);
+            kept_values.push(value);
+        }
+    }
+    let (locs, z) = aggregate(locations, kept_values, agg);
+    Ok((locs, z, measure_label))
+}
+
+/// Non-geocode build: `--geocode` is unsupported, so reject it with an actionable message.
+#[cfg(not(feature = "geocode"))]
+fn choropleth_geocoded_locations(
+    _args: &Args,
+    _mode: LocationMode,
+    _agg: Agg,
+) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+    fail_incorrectusage_clierror!(
+        "--geocode requires a qsv build with the `geocode` feature (or a prebuilt qsv binary). \
+         Supply ready-made region codes via --locations instead."
+    )
 }
 
 /// Split row-aligned (x, y, z) numeric triples into one `Scatter3D` trace per `--series` category,
@@ -3947,6 +4456,16 @@ enum PanelKind {
         outlier_lats: Vec<f64>,
         outlier_lons: Vec<f64>,
     },
+    /// Filled-region `Choropleth` aggregate drawn on the projection `geo` subplot — added beside
+    /// the point Map/Geo panel when geocode resolves the coordinates to 2+ distinct countries,
+    /// coloring each country by its row count. Carries precomputed `locations` (ISO-3 codes)
+    /// and `z` (counts). Like `Geo`, the `geo` subplot doesn't compose with the typed x/y grid,
+    /// so a dashboard containing this panel always renders via the inline path.
+    Choropleth {
+        locations:     Vec<String>,
+        z:             Vec<f64>,
+        location_mode: LocationMode,
+    },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
     /// (`labels`/`parents`/`values` keyed by path-joined `ids`) so the render loop stays a pure
@@ -5092,12 +5611,20 @@ const GEO_FIT_PAD_MIN_DEG: f64 = 0.5;
 /// extent that wraps the antimeridian can still fit latitude while leaving longitude full-width.
 /// Mirrors the antimeridian-aware, trimmed framing semantics that `build_map_panel`/the map view
 /// use.
-fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<Axis>, Option<Axis>) {
-    let (lon_center, lon_span) = lon_center_and_span(lons, MAP_FRAME_TRIM_FRAC);
+fn geo_framing(
+    lats: &[f64],
+    lons: &[f64],
+    trim_frac: f64,
+) -> (ProjectionType, Option<Axis>, Option<Axis>) {
+    // `trim_frac` is how much of each tail to drop before framing: `MAP_FRAME_TRIM_FRAC` for
+    // point data (a stray coordinate shouldn't dominate the view), but `0.0` for custom GeoJSON,
+    // whose every vertex is intentional geometry — trimming there would clip legitimate edge or
+    // island polygons out of the rendered choropleth.
+    let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let mut lats_sorted = lats.to_vec();
     lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let lat_lo = sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
-    let lat_hi = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
+    let lat_lo = sorted_quantile(&lats_sorted, trim_frac);
+    let lat_hi = sorted_quantile(&lats_sorted, 1.0 - trim_frac);
     let lat_span = lat_hi - lat_lo;
 
     let lon_lo = lon_center - lon_span / 2.0;
@@ -5186,6 +5713,88 @@ fn semantic_latlon(
     Some((lat?, lon?))
 }
 
+/// Count occurrences of each non-empty key, returning them in first-seen order alongside the count
+/// map (matches `aggregate`'s first-seen ordering).
+#[cfg(feature = "geocode")]
+fn tally(keys: impl Iterator<Item = String>) -> (Vec<String>, HashMap<String, f64>) {
+    let mut order: Vec<String> = Vec::new();
+    let mut counts: HashMap<String, f64> = HashMap::new();
+    for key in keys {
+        if key.is_empty() {
+            continue;
+        }
+        counts
+            .entry(key.clone())
+            .and_modify(|c| *c += 1.0)
+            .or_insert_with(|| {
+                order.push(key);
+                1.0
+            });
+    }
+    (order, counts)
+}
+
+/// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
+/// geocode the points (reusing qsv's geocode engine), then choose the breakdown from what actually
+/// resolved — when every resolved point is in the USA, a per-US-state fill (the informative view,
+/// needs 2+ states); otherwise a per-ISO-3-country fill (needs 2+ countries). Returns `None` when
+/// neither has 2+ regions (a single-region or metro dataset stays point-only). Deciding from the
+/// resolved countries — not the broad US bounding box — keeps multi-country datasets that happen to
+/// fall inside that box (e.g. US + Mexico/Canada/Caribbean) on the per-country panel.
+/// Geocode-gated.
+#[cfg(feature = "geocode")]
+fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
+    let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
+    let regions: Vec<crate::cmd::geocode::GeoRegion> =
+        crate::cmd::geocode::reverse_geocode_regions(&points, None)
+            .ok()?
+            .into_iter()
+            .flatten()
+            .collect();
+
+    // decide the all-USA case from every resolved region's ISO-2 country code, NOT from the ISO-3
+    // tally: a GeoRegion can carry a valid `iso2` ("MX") yet an empty `iso3` when the country-info
+    // lookup fails, and the ISO-3 tally skips empties — so a non-US point could vanish and leave an
+    // all-"USA" set that wrongly renders US states (silently dropping that point). `iso2` is set
+    // straight from the matched record, so it's the reliable signal.
+    let all_usa = !regions.is_empty() && regions.iter().all(|r| r.iso2 == "US");
+    let (name, location_mode, order, counts) = if all_usa {
+        let (state_order, state_counts) =
+            tally(regions.iter().filter_map(|r| r.us_state_code.clone()));
+        if state_order.len() < 2 {
+            // all-USA but a single state: nothing a point map doesn't already show.
+            return None;
+        }
+        (
+            "US states",
+            LocationMode::UsaStates,
+            state_order,
+            state_counts,
+        )
+    } else {
+        let (country_order, country_counts) = tally(regions.iter().map(|r| r.iso3.clone()));
+        if country_order.len() < 2 {
+            return None;
+        }
+        (
+            "Countries",
+            LocationMode::Iso3,
+            country_order,
+            country_counts,
+        )
+    };
+
+    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    Some(Panel::new(
+        name.to_string(),
+        PanelKind::Choropleth {
+            locations: order,
+            z,
+            location_mode,
+        },
+    ))
+}
+
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
 /// panel. The pair comes from `coord_hint` (dictionary `geo.latitude`/`geo.longitude` signals) when
 /// supplied, else the header-name heuristic (`latlon_indices`). Does one extra data pass to collect
@@ -5198,7 +5807,7 @@ fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     coord_hint: Option<(usize, usize)>,
-) -> CliResult<Option<(Panel, (usize, usize))>> {
+) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize))>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
@@ -5260,6 +5869,26 @@ fn build_map_panel(
 
     let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
     let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
+
+    // geocode-gated companion: a per-region choropleth overview drawn beside the point map. Gate it
+    // on the cheap min/max-extent SPAN (already computed above) — a per-region breakdown only makes
+    // sense at country scale, so a cluster smaller than `SMART_CHOROPLETH_MIN_SPAN_DEG` in BOTH
+    // axes is treated as a single metro/region and skipped, short-circuiting the expensive
+    // all-row reverse-geocode pass (and its index load) for the common high-row-count city
+    // dataset. Unlike gating on the geocoded bounding-box corners, this still fires for global
+    // extents that wrap the antimeridian. When the gate passes, build_smart_choropleth_panel
+    // reverse-geocodes the FULL core set (pre-downsampling) and picks per-US-state vs
+    // per-country from what actually resolved — accurate even above `MAX_SMART_POINTS`,
+    // embedding only the aggregates (never the raw points), and its own 2-region check drops
+    // single-region data.
+    #[cfg(feature = "geocode")]
+    let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
+        || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+        .flatten();
+    #[cfg(not(feature = "geocode"))]
+    let choropleth_panel: Option<Panel> = None;
+
     let kind = if global {
         PanelKind::Geo {
             lats,
@@ -5283,6 +5912,7 @@ fn build_map_panel(
             #[cfg(feature = "geocode")]
             geo_meta,
         },
+        choropleth_panel,
         (lat_idx, lon_idx),
     )))
 }
@@ -6087,40 +6717,44 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
     // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
     // None (no usable lat/lon pair), map_cols stays None and those columns are charted normally.
-    let map_panel = {
+    // (map_panel, choropleth_panel): the point map plus an optional geocode-derived per-country
+    // choropleth overview. The choropleth is non-cartesian and HTML-only, so it's dropped for image
+    // export; the point map is coerced from Map -> Geo for image export (only the offline
+    // ScatterGeo basemap can be statically exported).
+    let (map_panel, choropleth_panel) = {
         // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
-        let panel = build_map_panel(args, &stats, coord_hint)?;
-        if out_format.is_image() {
-            panel.map(|(p, cols)| {
-                let kind = match p.kind {
-                    PanelKind::Map {
-                        lats,
-                        lons,
-                        outlier_lats,
-                        outlier_lons,
-                        ..
-                    } => PanelKind::Geo {
-                        lats,
-                        lons,
-                        outlier_lats,
-                        outlier_lons,
-                    },
-                    other => other,
-                };
-                (
-                    Panel {
+        match build_map_panel(args, &stats, coord_hint)? {
+            None => (None, None),
+            Some((p, choro, cols)) => {
+                if out_format.is_image() {
+                    let kind = match p.kind {
+                        PanelKind::Map {
+                            lats,
+                            lons,
+                            outlier_lats,
+                            outlier_lons,
+                            ..
+                        } => PanelKind::Geo {
+                            lats,
+                            lons,
+                            outlier_lats,
+                            outlier_lons,
+                        },
+                        other => other,
+                    };
+                    let p = Panel {
                         name: p.name,
                         kind,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
-                    },
-                    cols,
-                )
-            })
-        } else {
-            panel
+                    };
+                    (Some((p, cols)), None)
+                } else {
+                    (Some((p, cols)), choro)
+                }
+            },
         }
     };
     let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
@@ -6426,8 +7060,13 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         panels.insert(0, panel);
     }
 
-    // prepend the geographic map panel (built up front, above) so it leads the dashboard as a
-    // geographic overview and survives the panel cap.
+    // prepend the geographic overview panels (built up front, above) so they lead the dashboard and
+    // survive the panel cap. Insert the per-country choropleth first, then the point map at index
+    // 0, yielding [map, choropleth, ...] — the point map for spatial detail, the choropleth
+    // beside it for the per-jurisdiction aggregate.
+    if let Some(panel) = choropleth_panel {
+        panels.insert(0, panel);
+    }
     if let Some((panel, _)) = map_panel {
         panels.insert(0, panel);
     }
@@ -6450,6 +7089,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             p.kind,
             PanelKind::Map { .. }
                 | PanelKind::Geo { .. }
+                | PanelKind::Choropleth { .. }
                 | PanelKind::Scatter3D { .. }
                 | PanelKind::Hierarchy { .. }
         )
@@ -6508,6 +7148,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
+            | PanelKind::Choropleth { .. }
             | PanelKind::Hierarchy { .. } => None,
         })
         .collect();
@@ -6823,10 +7464,12 @@ fn panel_trace(
         // assembler.
         PanelKind::Map { .. }
         | PanelKind::Geo { .. }
+        | PanelKind::Choropleth { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::Hierarchy { .. } => {
             unreachable!(
-                "map/geo/3D/hierarchy panels are rendered via the inline path, not panel_trace"
+                "map/geo/choropleth/3D/hierarchy panels are rendered via the inline path, not \
+                 panel_trace"
             )
         },
     };
@@ -6888,6 +7531,7 @@ fn smart_grid_parts(
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
+            | PanelKind::Choropleth { .. }
             | PanelKind::Hierarchy { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
@@ -6994,7 +7638,8 @@ fn smart_grid_parts(
                     vec![min_lon, max_lon, max_lon, min_lon, min_lon],
                 )
             };
-            let (projection, lonaxis, lataxis) = geo_framing(&frame_lats, &frame_lons);
+            let (projection, lonaxis, lataxis) =
+                geo_framing(&frame_lats, &frame_lons, MAP_FRAME_TRIM_FRAC);
             // for a fitted (Mercator) extent, refine the axis ranges with the tighter extent-fit
             // padding — but only from a concrete extent that already covers everything plotted: the
             // full extent if we have it, else the core extent ONLY when there are no outliers. With
@@ -7488,6 +8133,57 @@ fn smart_inline_panel_plot(
             .showlakes(true)
             .lakecolor(NamedColor::LightBlue)
             .showcountries(true);
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .geo(geo);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // choropleth panels fill whole regions on a `geo` projection layout (no tiles), colored by the
+    // per-region point count; assembled here like the geo point map above.
+    if let PanelKind::Choropleth {
+        locations,
+        z,
+        location_mode,
+    } = &panel.kind
+    {
+        let mut plot = Plot::new();
+        plot.add_trace(
+            Choropleth::new(locations.clone(), z.clone())
+                .location_mode(location_mode.clone())
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title("count"))
+                .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
+        );
+        // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
+        // the countries/states at the edges — e.g. a city near a country's center).
+        // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
+        // the US; everything else uses natural-earth with `fitbounds: "locations"`, so
+        // Plotly fits the view to the union of the rendered region polygons — a
+        // European/Asian/etc. cluster zooms to those countries, global data stays
+        // world-scale.
+        let mut geo = LayoutGeo::new()
+            .showland(true)
+            .landcolor(NamedColor::LightGray)
+            .showcountries(true);
+        if matches!(location_mode, LocationMode::UsaStates) {
+            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+        } else {
+            geo = geo
+                .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+                .fitbounds(GeoFitBounds::Locations);
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -8403,6 +9099,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::TimeSeries { .. }
         | PanelKind::Map { .. }
         | PanelKind::Geo { .. }
+        | PanelKind::Choropleth { .. }
         | PanelKind::Hierarchy { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
@@ -8684,6 +9381,39 @@ mod tests {
             uniqueness_ratio: uniqueness,
             ..Default::default()
         }
+    }
+
+    // map / choropleth basemap framing must honor --width/--height for static image exports but use
+    // the default aspect for responsive HTML, so a non-default static aspect doesn't crop the
+    // GeoJSON extent (the wiring shared by build_map_plot and build_choropleth_plot).
+    #[test]
+    fn fit_dims_honors_image_aspect_only() {
+        // HTML ignores --width/--height and always frames for the representative default aspect
+        assert_eq!(
+            fit_dims(Some(400), Some(900), OutFormat::Html),
+            (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+        );
+        // image exports honor an explicit (here narrow/tall) aspect ...
+        assert_eq!(fit_dims(Some(400), Some(900), OutFormat::Png), (400, 900));
+        // ... and a wide/short one ...
+        assert_eq!(fit_dims(Some(1600), Some(300), OutFormat::Svg), (1600, 300));
+        // ... falling back to the defaults for whichever dimension is omitted
+        assert_eq!(
+            fit_dims(None, Some(900), OutFormat::Jpeg),
+            (DEFAULT_IMG_WIDTH, 900)
+        );
+
+        // the aspect actually changes the fit zoom: a wide extent frames tighter (higher zoom) in a
+        // wide-short panel than in a tall-narrow one, so passing the wrong dims would mis-zoom.
+        let lats = [30.0, 45.0];
+        let lons = [-124.0, -72.0];
+        let (_, zoom_wide) = map_center_zoom(&lats, &lons, 0.0, 1600.0, 300.0);
+        let (_, zoom_tall) = map_center_zoom(&lats, &lons, 0.0, 300.0, 1600.0);
+        assert!(
+            zoom_wide > zoom_tall,
+            "wide-short panel should frame a wide extent tighter than a tall-narrow one \
+             (zoom_wide={zoom_wide}, zoom_tall={zoom_tall})"
+        );
     }
 
     #[cfg(feature = "geocode")]
@@ -9888,7 +10618,7 @@ mod tests {
         // a tight local cluster (LA area, ~1 deg span) -> Mercator fit to padded bounds
         let lats: Vec<f64> = (0..20).map(|i| 34.0 + i as f64 * 0.05).collect();
         let lons: Vec<f64> = (0..20).map(|i| -118.0 + i as f64 * 0.05).collect();
-        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::Mercator));
         assert!(
             lonaxis.is_some() && lataxis.is_some(),
@@ -9898,7 +10628,7 @@ mod tests {
         // coordinates spanning the continental US -> albers usa, no fitted ranges
         let us_lats = [40.7_f64, 34.0, 41.9, 29.8, 47.6, 25.8, 39.7];
         let us_lons = [-74.0_f64, -118.2, -87.6, -95.4, -122.3, -80.2, -105.0];
-        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::AlbersUsa));
         assert!(
             lonaxis.is_none() && lataxis.is_none(),
@@ -9910,7 +10640,7 @@ mod tests {
         // NaturalEarth.
         let akhi_lats = [21.3_f64, 61.2, 34.0, 41.9, 40.7, 42.4];
         let akhi_lons = [-157.8_f64, -149.9, -118.2, -87.6, -74.0, -168.0];
-        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons);
+        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons, MAP_FRAME_TRIM_FRAC);
         assert!(
             matches!(proj, ProjectionType::AlbersUsa),
             "a US extent with Alaska/Hawaii should still use albers usa"
@@ -9919,7 +10649,7 @@ mod tests {
         // a global spread -> NaturalEarth world overview, no fitted ranges
         let g_lats = [-40.0_f64, 51.5, 35.7, -33.9, 1.3, 64.1];
         let g_lons = [174.8_f64, -0.1, 139.7, 151.2, 103.8, -21.9];
-        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::NaturalEarth));
         assert!(lonaxis.is_none() && lataxis.is_none());
 
@@ -9928,7 +10658,7 @@ mod tests {
         // unfit (full width) while latitude is still fit.
         let am_lats = [10.0_f64, 10.5, 11.0, 11.5];
         let am_lons = [179.0_f64, 179.5, -179.5, -179.0];
-        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::Mercator));
         assert!(
             lonaxis.is_none(),
@@ -9951,7 +10681,7 @@ mod tests {
         let (min_lat, max_lat, min_lon, max_lon) = (10.0, 47.6, -122.3, -74.0);
         let flat = vec![max_lat, max_lat, min_lat, min_lat, max_lat];
         let flon = vec![min_lon, max_lon, max_lon, min_lon, min_lon];
-        let (proj, ..) = geo_framing(&flat, &flon);
+        let (proj, ..) = geo_framing(&flat, &flon, MAP_FRAME_TRIM_FRAC);
         assert!(
             !matches!(proj, ProjectionType::AlbersUsa),
             "a full extent reaching outside the US must not use albers-usa"

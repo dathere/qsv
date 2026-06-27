@@ -1,7 +1,7 @@
 {
   "name": "qsv-viz",
   "version": "21.1.0",
-  "description": "Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using plotly. `viz smart` \"automagically\" picks an appropriate chart per column from the dataset's statistics & frequency distributions (box plots for continuous columns from precomputed quartiles; frequency bars for low-cardinality/boolean columns; a correlation heatmap when there are 2+ eligible continuous numeric columns; a map panel when a lat/lon column pair is detected). Outputs self-contained, interactive HTML (charts work offline; map basemaps fetch their tiles over the network unless the `white-bg` style is used) - or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature - and can `--open` the result in your browser.",
+  "description": "Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using plotly. `viz smart` \"automagically\" picks an appropriate chart per column from the dataset's statistics & frequency distributions. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature.",
   "category": "utility",
   "command": {
     "subcommand": "viz",
@@ -10,11 +10,12 @@
         "name": "subcommand",
         "type": "string",
         "required": true,
-        "description": "Subcommand to execute. Valid values: bar, box, candlestick, contour, geo, heatmap, histogram, line, map, ohlc, pie, radar, sankey, scatter, scatter3d, smart, sunburst, treemap",
+        "description": "Subcommand to execute. Valid values: bar, box, candlestick, choropleth, contour, geo, heatmap, histogram, line, map, ohlc, pie, radar, sankey, scatter, scatter3d, smart, sunburst, treemap",
         "enum": [
           "bar",
           "box",
           "candlestick",
+          "choropleth",
           "contour",
           "geo",
           "heatmap",
@@ -66,6 +67,12 @@
         "description": "For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight."
       },
       {
+        "flag": "--color-scale",
+        "type": "string",
+        "description": "Colorscale for the region fill. One of: viridis (the default), cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered, rdbu, portland, electric, jet, hot, blackbody, earth, picnic, rainbow.",
+        "default": "viridis"
+      },
+      {
         "flag": "--cols",
         "type": "string",
         "description": "Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory)."
@@ -88,12 +95,28 @@
       {
         "flag": "--dictionary-context",
         "type": "string",
-        "description": "EXPERIMENTAL. Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label/grain tags, hence a better dashboard. Ignored unless `--dictionary infer` is used (it does not apply when reading an existing dictionary file). Only affects `smart`."
+        "description": "Path to a file with extra context about the dataset (a glossary, README, data dictionary, PDF, etc.) forwarded to describegpt as --context-file when `--dictionary infer` generates the dictionary. Better context yields better role/concept/label/grain tags, hence a better dashboard. Ignored unless `--dictionary infer` is used (it does not apply when reading an existing dictionary file). Only affects `smart`."
       },
       {
         "flag": "--donut",
         "type": "flag",
         "description": "Render a pie chart as a donut (with a center hole)."
+      },
+      {
+        "flag": "--feature-id-key",
+        "type": "string",
+        "description": "Property path in each GeoJSON feature whose value matches an entry in the locations column (e.g. id, properties.fips).",
+        "default": "id"
+      },
+      {
+        "flag": "--geocode",
+        "type": "flag",
+        "description": "Derive the region codes by reusing qsv's geocode engine (needs a build with the geocode feature). Either reverse-geocode the lat/lon points, or forward-geocode the locations name column. Only valid with location modes iso3 or usa-states. `viz choropleth` also reuses --value, --agg, --style and the lat/lon options."
+      },
+      {
+        "flag": "--geojson",
+        "type": "string",
+        "description": "Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode."
       },
       {
         "flag": "--grid-cols",
@@ -128,6 +151,17 @@
         "default": "10"
       },
       {
+        "flag": "--location-mode",
+        "type": "string",
+        "description": "How --locations values are matched to regions. One of: iso3 (the default, ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id).",
+        "default": "iso3"
+      },
+      {
+        "flag": "--locations",
+        "type": "string",
+        "description": "Column holding the region key for each row (an ISO-3 country code, a 2-letter US state code, a country name, or a GeoJSON feature id, per --location-mode). With --geocode, this instead names a place-name column to forward-geocode into region codes."
+      },
+      {
         "flag": "--log-scale",
         "type": "string",
         "description": "Use a logarithmic y-axis for frequency bar panels whose tallest bar dwarfs the rest (e.g. a large \"(NULL)\" or \"Other (N)\" bucket), so the small categories stay visible. One of: auto, on, off. \"auto\" (the default) switches a panel to a log y-axis only when its dynamic range is high; \"on\" forces a log y-axis on every frequency panel; \"off\" keeps the linear axes. Only affects `smart`.",
@@ -142,6 +176,11 @@
         "flag": "--low",
         "type": "string",
         "description": "Low-price column for candlestick/ohlc charts."
+      },
+      {
+        "flag": "--map",
+        "type": "flag",
+        "description": "Render on a token-free MapLibre tile basemap (a ChoroplethMap) instead of the default projection basemap. Requires --geojson and --feature-id-key. Reuses --style for the basemap."
       },
       {
         "flag": "--mapbox-token",
@@ -370,6 +409,22 @@
     {
       "description": "Sunburst of a deep 3-level web-traffic hierarchy, sized by row count",
       "command": "qsv viz sunburst web.csv --cols source,campaign,landing_page -o sunburst.html"
+    },
+    {
+      "description": "Choropleth coloring countries (ISO-3 codes) by a summed measure",
+      "command": "qsv viz choropleth gdp.csv --locations iso3 --value gdp --agg sum -o choropleth.html"
+    },
+    {
+      "description": "US-state choropleth of row counts per state (2-letter state codes)",
+      "command": "qsv viz choropleth orders.csv --locations state --location-mode usa-states -o states.html"
+    },
+    {
+      "description": "Custom GeoJSON regions on a MapLibre basemap, matched by a feature id",
+      "command": "qsv viz choropleth counties.csv --locations fips --value pop --map --geojson counties.json --feature-id-key id -o counties.html"
+    },
+    {
+      "description": "Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)",
+      "command": "qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html"
     }
   ]
 }

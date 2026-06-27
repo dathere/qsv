@@ -17,14 +17,15 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The seven **smart dashboards** are embedded as `<iframe>`s of their genuine
+The nine **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
-the full-width overview panels (map, correlation heatmap, time-series, treemap/sunburst
-hierarchy), themes and map zoom buttons render exactly as the CLI produces them. Those
-iframe sources are the real output with the inline plotly bundle swapped for the same CDN
-tag (so they stay a few KB each); they need a network connection to render. Two of them
-(`smart_dict_*.html`) are `--dictionary infer` examples that need a local LLM to regenerate,
-so `gen_gallery.py` reuses the committed copies instead of re-running the LLM.
+the full-width overview panels (map, choropleth, correlation heatmap, time-series,
+treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
+them. Those iframe sources are the real output with the inline plotly bundle swapped for the
+same CDN tag (so they stay a few KB each); they need a network connection to render. Three of
+them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_choropleth.html`) are
+`--dictionary infer` examples that need a local LLM to regenerate, so `gen_gallery.py` reuses the
+committed copies instead of re-running the LLM.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 
@@ -49,6 +50,11 @@ as `text/plain`, so a browser won't render it):
 | `web_flows.csv` | `source,target,sessions` funnel edges | `sankey` |
 | `product_ratings.csv` | `brand` + 6 numeric score axes (multiple reviews per brand) | `radar` |
 | `quakes.csv` | 40 world cities with `lat,lon,magnitude,depth_km,region` | `smart` (auto geo panel — global extent), `map` (points & density), `geo` (projection) |
+| `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
+| `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
+| `western_states.csv` + `western_states.geojson` | 7 near-rectangular western states with `state,wind_capacity_gw`, plus a tiny custom GeoJSON keyed by 2-letter `id` | `choropleth --map --geojson … --feature-id-key id` (filled regions on a MapLibre tile basemap) |
+| `world_cities.csv` | 27 major cities across 22 countries: `lat`/`lon`, `continent`, `metro_population_m`, `elevation_m`, `avg_annual_temp_c` | `smart --dictionary infer` (global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + box/bar panels) |
+| `us_cities.csv` | 20 US cities: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
@@ -265,6 +271,36 @@ qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o m
 
 # geo — offline projection map (no tiles/token); viz smart auto-uses this for global coordinates
 qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
+
+# choropleth — fill countries by a value, matched by ISO-3 code (also: usa-states, country-names,
+# geojson-id; --map for a MapLibre basemap; --geocode to derive codes from lat/lon or place names)
+qsv viz choropleth country_stats.csv --locations iso3 --value gdp_usd_tn --color-scale viridis -o choropleth.html
+
+# choropleth (US states) — built-in state geometry on the albers-usa projection, no GeoJSON needed
+qsv viz choropleth us_state_stats.csv --locations state --value renewable_electricity_pct \
+    --location-mode usa-states -o choropleth_states.html
+
+# choropleth (--map) — filled regions on a MapLibre tile basemap from a custom GeoJSON, matched by
+# --feature-id-key; the view auto-centers/zooms to the GeoJSON extent
+qsv viz choropleth western_states.csv --locations state --value wind_capacity_gw \
+    --geojson western_states.geojson --feature-id-key id --map --style carto-positron \
+    -o choropleth_map.html
+```
+
+`viz smart` also adds a choropleth panel on its own whenever it detects lat/lon columns that
+reverse-geocode to **two or more regions** — a per-US-**state** fill when every point resolves to
+the United States, otherwise a per-**country** (ISO-3) fill framed to the filled-region geometries
+via Plotly `fitbounds` (so the regions are never clipped). This auto-panel needs the **`geocode`**
+feature (included in the prebuilt `qsv`/`qsvpy` binaries and any `all_features` build); a minimal
+`viz`-only build shows just the point map. Pairing it with `--dictionary infer` adds LLM-inferred
+field labels (see the [smart dashboard](#the-smart-dashboard) section):
+
+```bash
+# US point map + per-US-STATE choropleth, derived purely from the lat/lon columns (no flags)
+qsv viz smart us_cities.csv -o us_dashboard.html
+
+# global geo map + per-COUNTRY choropleth, with describegpt-inferred field labels (needs a local LLM)
+qsv viz smart world_cities.csv --dictionary infer -o world_dashboard.html
 ```
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means

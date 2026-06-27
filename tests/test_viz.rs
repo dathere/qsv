@@ -4053,3 +4053,455 @@ fn viz_treemap_value_mixed_invalid_errors() {
     ]);
     wrk.assert_err(&mut cmd);
 }
+
+// ---- choropleth ----
+
+fn countries(wrk: &Workdir) {
+    wrk.create_from_string(
+        "countries.csv",
+        "country,value\nUSA,10\nCAN,5\nMEX,7\nUSA,3\n",
+    );
+}
+
+#[test]
+fn viz_choropleth_basic() {
+    let wrk = Workdir::new("viz_choropleth_basic");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--value",
+        "value",
+        "--agg",
+        "sum",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains("Plotly.newPlot"));
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    // USA's two rows are summed (10 + 3 = 13); regions are deduplicated in first-seen order
+    assert!(html.contains(r#""locations":["USA","CAN","MEX"]"#));
+    assert!(html.contains(r#""z":[13.0,5.0,7.0]"#));
+    // the colorbar is titled by the measure column
+    assert!(html.contains(r#""colorbar":{"title":{"text":"value"#));
+}
+
+#[test]
+fn viz_choropleth_count_default() {
+    let wrk = Workdir::new("viz_choropleth_count_default");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "countries.csv", "--locations", "country"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // no --value: z is the per-region row count (USA appears twice)
+    assert!(html.contains(r#""z":[2.0,1.0,1.0]"#));
+    assert!(html.contains(r#""colorbar":{"title":{"text":"count"#));
+}
+
+#[test]
+fn viz_choropleth_color_scale() {
+    let wrk = Workdir::new("viz_choropleth_color_scale");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--color-scale",
+        "cividis",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""colorscale":"Cividis""#));
+}
+
+#[test]
+fn viz_choropleth_usa_states() {
+    let wrk = Workdir::new("viz_choropleth_usa_states");
+    wrk.create_from_string("states.csv", "st,n\nNY,5\nCA,9\nTX,4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "states.csv",
+        "--locations",
+        "st",
+        "--value",
+        "n",
+        "--location-mode",
+        "usa-states",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"USA-states""#));
+    // usa-states frames itself with the albers-usa projection (CONUS + AK/HI insets), not the
+    // default whole-world view where the states would be tiny
+    assert!(html.contains(r#""projection":{"type":"albers usa""#));
+}
+
+#[test]
+fn viz_choropleth_map() {
+    let wrk = Workdir::new("viz_choropleth_map");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"A","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},{"type":"Feature","id":"B","properties":{},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // MapLibre ChoroplethMap on a `map` subplot, matched by the geojson feature id
+    assert!(html.contains(r#""type":"choroplethmap""#));
+    assert!(html.contains(r#""featureidkey":"id""#));
+    assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
+    assert!(html.contains(r#""map":{"#));
+    // the basemap is framed to the geojson extent (center + zoom), not left at plotly's default
+    // whole-world view where local regions would be invisible
+    assert!(html.contains(r#""center":{"#));
+    assert!(html.contains(r#""zoom":"#));
+}
+
+// the geojson-extent framing must read coordinates ONLY from geometry, never from numeric arrays in
+// feature `properties` — otherwise a stray property array would drag the map center off the data.
+#[test]
+fn viz_choropleth_map_frames_ignore_properties() {
+    let wrk = Workdir::new("viz_choropleth_map_frames_ignore_properties");
+    wrk.create_from_string("rg.csv", "region,val\nCA,40\nNY,30\n");
+    // two boxes firmly in the US (lon ~ -120 / -75); a decoy property array near lon/lat 0
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"CA","properties":{"decoy":[0.0,0.0]},"geometry":{"type":"Polygon","coordinates":[[[-124,32],[-124,42],[-114,42],[-114,32],[-124,32]]]}},{"type":"Feature","id":"NY","properties":{},"geometry":{"type":"Polygon","coordinates":[[[-79,40],[-79,45],[-72,45],[-72,40],[-79,40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // center longitude must be a US value (west of -70), proving the (0,0) decoy in `properties`
+    // was not folded into the bounds.
+    let i = html.find(r#""center":{"#).expect("center present");
+    let lon_at = html[i..].find(r#""lon":"#).expect("lon present") + i + 6;
+    let lon_str: String = html[lon_at..]
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '-' || *c == '.')
+        .collect();
+    let lon: f64 = lon_str.parse().expect("parse center lon");
+    assert!(
+        lon < -70.0,
+        "center lon {lon} should be in the US (decoy property coord leaked into framing?)"
+    );
+}
+
+// the projection (non-`--map`) path must frame the `geo` subplot to a custom GeoJSON extent —
+// plotly only auto-scopes its built-in location modes, so without framing the polygons would sit
+// tiny on the default whole-world view.
+#[test]
+fn viz_choropleth_geojson_id_geo_framed() {
+    let wrk = Workdir::new("viz_choropleth_geojson_id_geo_framed");
+    wrk.create_from_string("rg.csv", "region,val\nFR,10\nDE,25\n");
+    // two boxes over France/Germany (a local, non-US extent → mercator fit with lon/lat ranges)
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"FR","properties":{},"geometry":{"type":"Polygon","coordinates":[[[2,45],[2,49],[6,49],[6,45],[2,45]]]}},{"type":"Feature","id":"DE","properties":{},"geometry":{"type":"Polygon","coordinates":[[[8,48],[8,52],[13,52],[13,48],[8,48]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // framed to the GeoJSON extent: a fitted projection plus lon/lat axis ranges (a local European
+    // extent fits with mercator), not the unframed default whole-world view
+    assert!(html.contains(r#""projection":{"type":"mercator""#));
+    assert!(html.contains(r#""lonaxis":{"range":["#));
+    assert!(html.contains(r#""lataxis":{"range":["#));
+}
+
+// custom GeoJSON is framed from its FULL vertex extent (no outlier trimming) — every vertex is
+// intentional geometry, so a far edge/island vertex must not be clipped out of the fitted view.
+#[test]
+fn viz_choropleth_geojson_framing_keeps_edge_vertices() {
+    let wrk = Workdir::new("viz_choropleth_geojson_framing_keeps_edge_vertices");
+    wrk.create_from_string("rg.csv", "region,val\nR,5\n");
+    // one polygon: 39 vertices densely packed near lon 0 plus a lone far vertex at lon 50. With
+    // 2.5% outlier trimming the lone far vertex is dropped (lon range stops near 0); full-extent
+    // framing keeps it, so the fitted lon range must reach well past 40.
+    let mut coords = String::new();
+    for i in 0..39 {
+        coords.push_str(&format!("[{:.3},0.0],", f64::from(i) * 0.02));
+    }
+    coords.push_str("[50.0,0.0],[50.0,1.0],[0.0,1.0],[0.0,0.0]");
+    let geojson = format!(
+        r#"{{"type":"FeatureCollection","features":[{{"type":"Feature","id":"R","properties":{{}},"geometry":{{"type":"Polygon","coordinates":[[{coords}]]}}}}]}}"#
+    );
+    wrk.create_from_string("regions.geojson", &geojson);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the fitted longitude range's max must include the far (lon 50) vertex, not a trimmed ~0
+    let marker = r#""lonaxis":{"range":["#;
+    let i = html.find(marker).expect("lonaxis range present");
+    let tail = &html[i + marker.len()..];
+    let max_str: String = tail
+        .split(',')
+        .nth(1)
+        .unwrap()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .collect();
+    let lon_max: f64 = max_str.parse().expect("parse lon max");
+    assert!(
+        lon_max > 40.0,
+        "full-extent framing must keep the far vertex (lon_max={lon_max})"
+    );
+}
+
+#[test]
+fn viz_choropleth_map_requires_geojson_errors() {
+    let wrk = Workdir::new("viz_choropleth_map_requires_geojson_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "rg.csv", "--locations", "region", "--map"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_choropleth_geojson_id_requires_geojson_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_id_requires_geojson_errors");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--location-mode",
+        "geojson-id",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_choropleth_color_rejected() {
+    let wrk = Workdir::new("viz_choropleth_color_rejected");
+    countries(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "countries.csv",
+        "--locations",
+        "country",
+        "--color",
+        "value",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// geocode-dependent: the source-conflict guard fires inside the geocode-gated resolver, before any
+// index lookup, so it needs no network/index — but it only exists in a geocode build.
+#[cfg(feature = "geocode")]
+#[test]
+fn viz_choropleth_geocode_source_conflict_errors() {
+    let wrk = Workdir::new("viz_choropleth_geocode_source_conflict_errors");
+    wrk.create_from_string("pts.csv", "name,lat,lon\nnyc,40.71,-74.01\n");
+
+    let mut cmd = wrk.command("viz");
+    // --geocode with BOTH a lat/lon source and a --locations name column is ambiguous
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--locations",
+        "name",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// actual reverse-geocoding needs the Geonames index (downloaded on first use); skipped in CI like
+// the webdriver-dependent static-export tests.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_choropleth_geocode_reverse() {
+    let wrk = Workdir::new("viz_choropleth_geocode_reverse");
+    wrk.create_from_string(
+        "pts.csv",
+        "name,lat,lon\nnyc,40.71,-74.01\nla,34.05,-118.24\nlondon,51.51,-0.13\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--geocode",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // NYC + LA reverse-geocode to the USA (count 2); London to GBR
+    assert!(html.contains("USA"));
+    assert!(html.contains("GBR"));
+}
+
+// `viz smart` frames the per-country choropleth to its own extent, so a region-confined multi-
+// country dataset (here Western Europe) zooms to that region (mercator + fitted lon/lat axes)
+// instead of sitting tiny on the world projection. Requires the geonames index.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_smart_choropleth_frames_to_region() {
+    let wrk = Workdir::new("viz_smart_choropleth_frames_to_region");
+    // real newlines (not "\n" escapes) so rustfmt's string wrapping can't corrupt an escape at a
+    // line boundary
+    wrk.create_from_string(
+        "eu.csv",
+        "name,lat,lon
+london,51.51,-0.13
+paris,48.85,2.35
+berlin,52.52,13.40
+rome,41.90,12.50
+madrid,40.42,-3.70
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "eu.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a per-country ("Countries") choropleth framed to the filled region GEOMETRIES (not the source
+    // points, which would clip the countries) via `fitbounds: "locations"` on a natural-earth geo
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    assert!(html.contains(r#""fitbounds":"locations""#));
+    assert!(html.contains(r#""projection":{"type":"natural earth""#));
+}
+
+// the smart choropleth scope is chosen from the reverse-geocoded countries, NOT the broad US
+// bounding box: a US + Mexico dataset (both inside that box) must render the per-COUNTRY panel,
+// not a US-states panel that silently drops the Mexican points. Requires the geonames index.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_smart_choropleth_us_bbox_multicountry_is_per_country() {
+    let wrk = Workdir::new("viz_smart_choropleth_us_bbox_multicountry_is_per_country");
+    // real newlines so rustfmt's string wrapping can't corrupt an escape at a line boundary
+    wrk.create_from_string(
+        "pts.csv",
+        "n,lat,lon
+nyc,40.71,-74.01
+la,34.05,-118.24
+chicago,41.88,-87.63
+mexicocity,19.43,-99.13
+guadalajara,20.67,-103.35
+monterrey,25.69,-100.32
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // per-country (ISO-3) choropleth covering the USA and Mexico — not a US-states panel
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    assert!(html.contains("MEX"));
+    assert!(!html.contains(r#""locationmode":"USA-states""#));
+}

@@ -47,8 +47,10 @@ SMART_IFRAME = {
     "smart dashboard (--smarter, geospatial)":  "smart_geospatial.html",
     "smart dashboard (geographic outliers)":    "smart_geo_outliers.html",
     "smart dashboard (time-series)":            "smart_timeseries.html",
+    "smart dashboard (per-US-state choropleth)":      "smart_us_choropleth.html",
     "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
+    "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -58,6 +60,7 @@ SMART_IFRAME = {
 PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",
+    "smart_world_choropleth.html",
 }
 
 # CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
@@ -204,10 +207,38 @@ FIGURES = [
      "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",
      False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude",
              "--projection", "natural-earth"]),
+    ("choropleth", "Filled-region map coloring countries by GDP, matched by ISO-3 code on a "
+     "token-free projection basemap. Use --location-mode usa-states / country-names / geojson-id "
+     "for other region keys, --map for a MapLibre tile basemap, or --geocode to derive codes from "
+     "lat/lon or place names.",
+     False, ["choropleth", "country_stats.csv", "--locations", "iso3", "--value", "gdp_usd_tn",
+             "--color-scale", "viridis"]),
+    ("choropleth (US states)", "Same chart, <code>--location-mode usa-states</code>: state codes "
+     "matched to Plotly's built-in US-state geometry on the token-free albers-usa projection "
+     "(CONUS + Alaska/Hawaii insets) — no GeoJSON needed. States are colored by renewable-electricity "
+     "share.",
+     False, ["choropleth", "us_state_stats.csv", "--locations", "state", "--value",
+             "renewable_electricity_pct", "--location-mode", "usa-states"]),
+    ("choropleth (MapLibre + GeoJSON)", "<code>--map</code> draws the filled regions on an "
+     "interactive MapLibre <b>tile</b> basemap (token-free carto-positron) instead of a projection. "
+     "The regions come from a custom GeoJSON (<code>--geojson</code> local file or URL) matched to "
+     "the data by <code>--feature-id-key</code> — here the near-rectangular western states, colored "
+     "by installed wind capacity. The view auto-centers and zooms to the GeoJSON extent.",
+     False, ["choropleth", "western_states.csv", "--locations", "state", "--value",
+             "wind_capacity_gw", "--geojson", "western_states.geojson", "--feature-id-key", "id",
+             "--map", "--style", "carto-positron"]),
     ("smart dashboard (time-series)",
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
      "date) leads, alongside box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
+    ("smart dashboard (per-US-state choropleth)",
+     "`qsv viz smart us_cities.csv` — `viz smart` reverse-geocodes each point; because every city "
+     "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "
+     "beside the point map, alongside the usual box plots, frequency bars and the strongest-pair "
+     "scatter. (The point map's <i>spatial extent</i> caption counts the data's bounding-box corners, "
+     "which spill into neighboring countries and ocean — the choropleth instead resolves each city to "
+     "its own state.) No flags, no LLM — the state fill is derived purely from the lat/lon columns.",
+     True, ["smart", "us_cities.csv"]),
     ("smart dashboard (--dictionary infer, treemap)",
      "Auto dashboard for customer_spend with a describegpt-inferred Data Dictionary "
      "(--dictionary infer) guiding panel selection & field labels. Two categorical dimensions "
@@ -221,6 +252,15 @@ FIGURES = [
      "emphasize parent-child structure) to showcase the chart. Requires a local LLM; the committed "
      "HTML is reused on regen.",
      True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
+    ("smart dashboard (--dictionary infer, world choropleth)",
+     "`qsv viz smart world_cities.csv --dictionary infer` — global coordinates spanning many "
+     "countries: `viz smart` reverse-geocodes the points and adds a per-<b>country</b> choropleth "
+     "(cities-per-country, ISO-3) <b>framed to the filled-country geometries</b> via Plotly "
+     "<code>fitbounds</code> — so the regions are never clipped at the viewport edge — beside the "
+     "natural-earth point map. A describegpt-inferred Data Dictionary supplies the friendly field "
+     "labels (e.g. <i>Metro Population</i>, <i>Avg Annual Temp</i>). Requires a local LLM; the "
+     "committed HTML is reused on regen.",
+     True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
 ]
 
 

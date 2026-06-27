@@ -1066,7 +1066,7 @@ fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     // choropleth fills whole regions on a `geo` (projection) or `map` (MapLibre) subplot — never
     // cartesian — so it owns its whole `Plot` like the maps above.
     if matches!(chart_kind(args), Chart::Choropleth) {
-        return build_choropleth_plot(args);
+        return build_choropleth_plot(args, out_format);
     }
     if matches!(chart_kind(args), Chart::Scatter3D) {
         return build_scatter3d_plot(args);
@@ -1809,6 +1809,26 @@ fn map_series_traces(
         .collect()
 }
 
+/// Pixel dimensions to frame a map / choropleth basemap against (fed to `map_center_zoom`'s
+/// aspect-aware fit). `--width`/`--height` size the static image export but are NOT applied to the
+/// responsive HTML layout, so honor them only when exporting an image — so a narrow/tall or
+/// wide/short export frames its own aspect instead of cropping the extent — while HTML frames for
+/// the representative default aspect, matching how `run` sizes each output.
+fn fit_dims(
+    flag_width: Option<usize>,
+    flag_height: Option<usize>,
+    out_format: OutFormat,
+) -> (usize, usize) {
+    if out_format.is_image() {
+        (
+            flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
+            flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
+        )
+    } else {
+        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+    }
+}
+
 /// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
 /// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
@@ -1902,18 +1922,8 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         );
     }
 
-    // standalone `viz map`: frame the full extent — its edge coordinates are intentional. --width/
-    // --height size the static image export but are NOT applied to the responsive HTML layout, so
-    // only honor them when exporting an image (fit the actual export aspect instead of clipping);
-    // HTML frames for the representative default aspect, matching how `run` sizes each output.
-    let (fit_w, fit_h) = if out_format.is_image() {
-        (
-            args.flag_width.unwrap_or(DEFAULT_IMG_WIDTH),
-            args.flag_height.unwrap_or(DEFAULT_IMG_HEIGHT),
-        )
-    } else {
-        (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
-    };
+    // standalone `viz map`: frame the full extent — its edge coordinates are intentional.
+    let (fit_w, fit_h) = fit_dims(args.flag_width, args.flag_height, out_format);
     let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, fit_w as f64, fit_h as f64);
 
     let mut plot = Plot::new();
@@ -2298,7 +2308,7 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
 /// switches to a MapLibre `ChoroplethMap` (GeoJSON-only). Region keys come from `--locations`, or
 /// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
 /// (forward) by reusing qsv's geocode engine.
-fn build_choropleth_plot(args: &Args) -> CliResult<Plot> {
+fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let mode = parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?;
     let palette = parse_color_scale(args.flag_color_scale.as_deref().unwrap_or("viridis"))?;
 
@@ -2368,16 +2378,12 @@ fn build_choropleth_plot(args: &Args) -> CliResult<Plot> {
         let mut layout_map = LayoutMap::new().style(style);
         // frame the basemap to the GeoJSON extent so local/custom regions (counties, cities) are
         // visible instead of being lost at plotly's default whole-world view centered at (0, 0).
-        // Falls back to that default only when the GeoJSON has no usable coordinates. Uses the
-        // representative HTML aspect for framing (the builder doesn't know the output format).
+        // Falls back to that default only when the GeoJSON has no usable coordinates. `fit_dims`
+        // honors --width/--height for image exports (so a non-default static aspect frames its
+        // extent instead of cropping) and the default aspect for HTML — matching `build_map_plot`.
         if !g_lats.is_empty() {
-            let (center, zoom) = map_center_zoom(
-                &g_lats,
-                &g_lons,
-                0.0,
-                DEFAULT_IMG_WIDTH as f64,
-                DEFAULT_IMG_HEIGHT as f64,
-            );
+            let (fit_w, fit_h) = fit_dims(args.flag_width, args.flag_height, out_format);
+            let (center, zoom) = map_center_zoom(&g_lats, &g_lons, 0.0, fit_w as f64, fit_h as f64);
             layout_map = layout_map.center(center).zoom(f64::from(zoom));
         }
         let mut layout = Layout::new().map(layout_map);
@@ -9268,6 +9274,39 @@ mod tests {
             uniqueness_ratio: uniqueness,
             ..Default::default()
         }
+    }
+
+    // map / choropleth basemap framing must honor --width/--height for static image exports but use
+    // the default aspect for responsive HTML, so a non-default static aspect doesn't crop the
+    // GeoJSON extent (the wiring shared by build_map_plot and build_choropleth_plot).
+    #[test]
+    fn fit_dims_honors_image_aspect_only() {
+        // HTML ignores --width/--height and always frames for the representative default aspect
+        assert_eq!(
+            fit_dims(Some(400), Some(900), OutFormat::Html),
+            (DEFAULT_IMG_WIDTH, DEFAULT_IMG_HEIGHT)
+        );
+        // image exports honor an explicit (here narrow/tall) aspect ...
+        assert_eq!(fit_dims(Some(400), Some(900), OutFormat::Png), (400, 900));
+        // ... and a wide/short one ...
+        assert_eq!(fit_dims(Some(1600), Some(300), OutFormat::Svg), (1600, 300));
+        // ... falling back to the defaults for whichever dimension is omitted
+        assert_eq!(
+            fit_dims(None, Some(900), OutFormat::Jpeg),
+            (DEFAULT_IMG_WIDTH, 900)
+        );
+
+        // the aspect actually changes the fit zoom: a wide extent frames tighter (higher zoom) in a
+        // wide-short panel than in a tall-narrow one, so passing the wrong dims would mis-zoom.
+        let lats = [30.0, 45.0];
+        let lons = [-124.0, -72.0];
+        let (_, zoom_wide) = map_center_zoom(&lats, &lons, 0.0, 1600.0, 300.0);
+        let (_, zoom_tall) = map_center_zoom(&lats, &lons, 0.0, 300.0, 1600.0);
+        assert!(
+            zoom_wide > zoom_tall,
+            "wide-short panel should frame a wide extent tighter than a tall-narrow one \
+             (zoom_wide={zoom_wide}, zoom_tall={zoom_tall})"
+        );
     }
 
     #[cfg(feature = "geocode")]

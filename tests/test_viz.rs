@@ -4281,6 +4281,62 @@ fn viz_choropleth_geojson_id_geo_framed() {
     assert!(html.contains(r#""lataxis":{"range":["#));
 }
 
+// custom GeoJSON is framed from its FULL vertex extent (no outlier trimming) — every vertex is
+// intentional geometry, so a far edge/island vertex must not be clipped out of the fitted view.
+#[test]
+fn viz_choropleth_geojson_framing_keeps_edge_vertices() {
+    let wrk = Workdir::new("viz_choropleth_geojson_framing_keeps_edge_vertices");
+    wrk.create_from_string("rg.csv", "region,val\nR,5\n");
+    // one polygon: 39 vertices densely packed near lon 0 plus a lone far vertex at lon 50. With
+    // 2.5% outlier trimming the lone far vertex is dropped (lon range stops near 0); full-extent
+    // framing keeps it, so the fitted lon range must reach well past 40.
+    let mut coords = String::new();
+    for i in 0..39 {
+        coords.push_str(&format!("[{:.3},0.0],", f64::from(i) * 0.02));
+    }
+    coords.push_str("[50.0,0.0],[50.0,1.0],[0.0,1.0],[0.0,0.0]");
+    let geojson = format!(
+        r#"{{"type":"FeatureCollection","features":[{{"type":"Feature","id":"R","properties":{{}},"geometry":{{"type":"Polygon","coordinates":[[{coords}]]}}}}]}}"#
+    );
+    wrk.create_from_string("regions.geojson", &geojson);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the fitted longitude range's max must include the far (lon 50) vertex, not a trimmed ~0
+    let marker = r#""lonaxis":{"range":["#;
+    let i = html.find(marker).expect("lonaxis range present");
+    let tail = &html[i + marker.len()..];
+    let max_str: String = tail
+        .split(',')
+        .nth(1)
+        .unwrap()
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+        .collect();
+    let lon_max: f64 = max_str.parse().expect("parse lon max");
+    assert!(
+        lon_max > 40.0,
+        "full-extent framing must keep the far vertex (lon_max={lon_max})"
+    );
+}
+
 #[test]
 fn viz_choropleth_map_requires_geojson_errors() {
     let wrk = Workdir::new("viz_choropleth_map_requires_geojson_errors");
@@ -4413,4 +4469,38 @@ madrid,40.42,-3.70
     assert!(html.contains(r#""locationmode":"ISO-3""#));
     assert!(html.contains(r#""projection":{"type":"mercator""#));
     assert!(html.contains(r#""lonaxis":{"range":["#));
+}
+
+// the smart choropleth scope is chosen from the reverse-geocoded countries, NOT the broad US
+// bounding box: a US + Mexico dataset (both inside that box) must render the per-COUNTRY panel,
+// not a US-states panel that silently drops the Mexican points. Requires the geonames index.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_smart_choropleth_us_bbox_multicountry_is_per_country() {
+    let wrk = Workdir::new("viz_smart_choropleth_us_bbox_multicountry_is_per_country");
+    // real newlines so rustfmt's string wrapping can't corrupt an escape at a line boundary
+    wrk.create_from_string(
+        "pts.csv",
+        "n,lat,lon
+nyc,40.71,-74.01
+la,34.05,-118.24
+chicago,41.88,-87.63
+mexicocity,19.43,-99.13
+guadalajara,20.67,-103.35
+monterrey,25.69,-100.32
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // per-country (ISO-3) choropleth covering the USA and Mexico — not a US-states panel
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    assert!(html.contains("MEX"));
+    assert!(!html.contains(r#""locationmode":"USA-states""#));
 }

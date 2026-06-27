@@ -2430,7 +2430,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             // antimeridian-aware). Collect the extent BEFORE the value is moved into the trace.
             let (g_lats, g_lons) = geojson_lat_lons(&geojson);
             if !g_lats.is_empty() {
-                let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
+                // trim_frac 0.0: every GeoJSON vertex is intentional, so frame the FULL extent —
+                // trimming would crop edge/island polygons.
+                let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, 0.0);
                 geo = geo.projection(Projection::new().projection_type(proj));
                 if let Some(lonaxis) = lonaxis {
                     geo = geo.lonaxis(lonaxis);
@@ -5613,12 +5615,20 @@ const GEO_FIT_PAD_MIN_DEG: f64 = 0.5;
 /// extent that wraps the antimeridian can still fit latitude while leaving longitude full-width.
 /// Mirrors the antimeridian-aware, trimmed framing semantics that `build_map_panel`/the map view
 /// use.
-fn geo_framing(lats: &[f64], lons: &[f64]) -> (ProjectionType, Option<Axis>, Option<Axis>) {
-    let (lon_center, lon_span) = lon_center_and_span(lons, MAP_FRAME_TRIM_FRAC);
+fn geo_framing(
+    lats: &[f64],
+    lons: &[f64],
+    trim_frac: f64,
+) -> (ProjectionType, Option<Axis>, Option<Axis>) {
+    // `trim_frac` is how much of each tail to drop before framing: `MAP_FRAME_TRIM_FRAC` for
+    // point data (a stray coordinate shouldn't dominate the view), but `0.0` for custom GeoJSON,
+    // whose every vertex is intentional geometry — trimming there would clip legitimate edge or
+    // island polygons out of the rendered choropleth.
+    let (lon_center, lon_span) = lon_center_and_span(lons, trim_frac);
     let mut lats_sorted = lats.to_vec();
     lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    let lat_lo = sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
-    let lat_hi = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC);
+    let lat_lo = sorted_quantile(&lats_sorted, trim_frac);
+    let lat_hi = sorted_quantile(&lats_sorted, 1.0 - trim_frac);
     let lat_span = lat_hi - lat_lo;
 
     let lon_lo = lon_center - lon_span / 2.0;
@@ -5707,50 +5717,13 @@ fn semantic_latlon(
     Some((lat?, lon?))
 }
 
-/// Which regional breakdown a `viz smart` choropleth panel aggregates into.
+/// Count occurrences of each non-empty key, returning them in first-seen order alongside the count
+/// map (matches `aggregate`'s first-seen ordering).
 #[cfg(feature = "geocode")]
-#[derive(Clone, Copy)]
-enum ChoroplethScope {
-    /// Per-country fill keyed by ISO-3 code (`LocationMode::Iso3`).
-    Country,
-    /// Per-US-state fill keyed by 2-letter postal code (`LocationMode::UsaStates`) — the
-    /// informative view when the data is US-only (where a per-country fill would be a single blob).
-    UsStates,
-}
-
-/// True when the core extent lies entirely within the US bounding box (CONUS + AK/HI), so a US
-/// dataset drives a per-STATE choropleth instead of a single-country fill. A cheap min/max-extent
-/// check — no geocoding — mirroring `geo_framing`'s `within_us` framing test.
-#[cfg(feature = "geocode")]
-fn extent_within_us(lats: &[f64], lons: &[f64]) -> bool {
-    let e = map_extent(lats, lons);
-    e.min_lon >= US_LON_MIN
-        && e.max_lon <= US_LON_MAX
-        && e.min_lat >= US_LAT_MIN
-        && e.max_lat <= US_LAT_MAX
-}
-
-/// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
-/// geocode the points (reusing qsv's geocode engine) and color each region by its point count,
-/// keyed per `scope` — ISO-3 country, or 2-letter US state. Returns `None` unless at least 2
-/// distinct regions resolve (a single-region or metro dataset stays point-only). Geocode-gated.
-#[cfg(feature = "geocode")]
-fn build_smart_choropleth_panel(
-    lats: &[f64],
-    lons: &[f64],
-    scope: ChoroplethScope,
-) -> Option<Panel> {
-    let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
-    let regions = crate::cmd::geocode::reverse_geocode_regions(&points, None).ok()?;
-
-    // count points per region key, preserving first-seen order (matches `aggregate` semantics).
+fn tally(keys: impl Iterator<Item = String>) -> (Vec<String>, HashMap<String, f64>) {
     let mut order: Vec<String> = Vec::new();
     let mut counts: HashMap<String, f64> = HashMap::new();
-    for region in regions.into_iter().flatten() {
-        let key = match scope {
-            ChoroplethScope::Country => region.iso3,
-            ChoroplethScope::UsStates => region.us_state_code.unwrap_or_default(),
-        };
+    for key in keys {
         if key.is_empty() {
             continue;
         }
@@ -5762,15 +5735,56 @@ fn build_smart_choropleth_panel(
                 1.0
             });
     }
-    // a choropleth of one filled region tells you nothing a point map doesn't; require 2+.
-    if order.len() < 2 {
+    (order, counts)
+}
+
+/// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
+/// geocode the points (reusing qsv's geocode engine), then choose the breakdown from what actually
+/// resolved — when every resolved point is in the USA, a per-US-state fill (the informative view,
+/// needs 2+ states); otherwise a per-ISO-3-country fill (needs 2+ countries). Returns `None` when
+/// neither has 2+ regions (a single-region or metro dataset stays point-only). Deciding from the
+/// resolved countries — not the broad US bounding box — keeps multi-country datasets that happen to
+/// fall inside that box (e.g. US + Mexico/Canada/Caribbean) on the per-country panel.
+/// Geocode-gated.
+#[cfg(feature = "geocode")]
+fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
+    let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
+    let regions: Vec<crate::cmd::geocode::GeoRegion> =
+        crate::cmd::geocode::reverse_geocode_regions(&points, None)
+            .ok()?
+            .into_iter()
+            .flatten()
+            .collect();
+
+    let (country_order, country_counts) = tally(regions.iter().map(|r| r.iso3.clone()));
+
+    // every resolved country is the USA → per-state fill; anything multi-country stays per-country.
+    let all_usa = !country_order.is_empty() && country_order.iter().all(|c| c == "USA");
+    let (name, location_mode, order, counts) = if all_usa {
+        let (state_order, state_counts) =
+            tally(regions.iter().filter_map(|r| r.us_state_code.clone()));
+        if state_order.len() < 2 {
+            // all-USA but a single state: nothing a point map doesn't already show.
+            return None;
+        }
+        (
+            "US states",
+            LocationMode::UsaStates,
+            state_order,
+            state_counts,
+        )
+    } else if country_order.len() >= 2 {
+        (
+            "Countries",
+            LocationMode::Iso3,
+            country_order,
+            country_counts,
+        )
+    } else {
         return None;
-    }
-    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
-    let (name, location_mode) = match scope {
-        ChoroplethScope::Country => ("Countries", LocationMode::Iso3),
-        ChoroplethScope::UsStates => ("US states", LocationMode::UsaStates),
     };
+
+    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     // carry the bounding-box corners so the render frames the panel to its extent via geo_framing
     // (US → albers-usa, a regional cluster → that region, global → world). Corners — not the raw
     // points — so geo_framing's quantile trim can't shrink the true extent.
@@ -5876,34 +5890,21 @@ fn build_map_panel(
     let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
     let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
 
-    // geocode-gated companion: a per-country choropleth overview drawn beside the point map. Gate
-    // it on the cheap min/max-extent SPAN (already computed above) — a per-country breakdown
-    // only makes sense at country scale, so a cluster smaller than
-    // `SMART_CHOROPLETH_MIN_SPAN_DEG` in BOTH axes is treated as a single metro/region and
-    // skipped, short-circuiting the expensive all-row reverse-geocode pass (and its index load)
-    // for the common high-row-count city dataset. Unlike gating on the geocoded bounding-box
-    // corners, this still fires for global extents that wrap the antimeridian (where that
-    // corner metadata is suppressed). When the gate passes, build_smart_choropleth_panel
-    // aggregates the FULL core set (pre-downsampling, not the downsampled `lats`/`lons`) so
-    // per-country tallies stay accurate even above `MAX_SMART_POINTS` (it labels them "count"),
-    // and embeds only the aggregates — never the raw points — so the full-set pass adds no HTML
-    // weight; its own 2-country check drops wide single-country data.
+    // geocode-gated companion: a per-region choropleth overview drawn beside the point map. Gate it
+    // on the cheap min/max-extent SPAN (already computed above) — a per-region breakdown only makes
+    // sense at country scale, so a cluster smaller than `SMART_CHOROPLETH_MIN_SPAN_DEG` in BOTH
+    // axes is treated as a single metro/region and skipped, short-circuiting the expensive
+    // all-row reverse-geocode pass (and its index load) for the common high-row-count city
+    // dataset. Unlike gating on the geocoded bounding-box corners, this still fires for global
+    // extents that wrap the antimeridian. When the gate passes, build_smart_choropleth_panel
+    // reverse-geocodes the FULL core set (pre-downsampling) and picks per-US-state vs
+    // per-country from what actually resolved — accurate even above `MAX_SMART_POINTS`,
+    // embedding only the aggregates (never the raw points), and its own 2-region check drops
+    // single-region data.
     #[cfg(feature = "geocode")]
     let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
         || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-        .then(|| {
-            // a US-only extent gets a per-STATE breakdown (the informative view for US data, where
-            // a per-country fill would be a single blob); anything else a per-country
-            // breakdown. Decided from the cheap extent bounds — the per-state path
-            // turns the otherwise-wasted "all USA → 1 country → no panel" case into a
-            // useful state map.
-            let scope = if extent_within_us(&core_lats, &core_lons) {
-                ChoroplethScope::UsStates
-            } else {
-                ChoroplethScope::Country
-            };
-            build_smart_choropleth_panel(&core_lats, &core_lons, scope)
-        })
+        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
         .flatten();
     #[cfg(not(feature = "geocode"))]
     let choropleth_panel: Option<Panel> = None;
@@ -7657,7 +7658,8 @@ fn smart_grid_parts(
                     vec![min_lon, max_lon, max_lon, min_lon, min_lon],
                 )
             };
-            let (projection, lonaxis, lataxis) = geo_framing(&frame_lats, &frame_lons);
+            let (projection, lonaxis, lataxis) =
+                geo_framing(&frame_lats, &frame_lons, MAP_FRAME_TRIM_FRAC);
             // for a fitted (Mercator) extent, refine the axis ranges with the tighter extent-fit
             // padding — but only from a concrete extent that already covers everything plotted: the
             // full extent if we have it, else the core extent ONLY when there are no outliers. With
@@ -8189,7 +8191,8 @@ fn smart_inline_panel_plot(
         // frame to the panel's own extent (same helper as the geo point map): a US extent → the
         // albers-usa composite (CONUS + AK/HI insets), a regional cluster (e.g. Europe/Asia) →
         // mercator fitted to that region, global/multi-continent data → the natural-earth world.
-        let (projection, lonaxis, lataxis) = geo_framing(frame_lats, frame_lons);
+        // corners ARE the exact extent (no stray points to trim), so frame the full extent.
+        let (projection, lonaxis, lataxis) = geo_framing(frame_lats, frame_lons, 0.0);
         let mut geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(projection))
             .showland(true)
@@ -9433,22 +9436,6 @@ mod tests {
         );
     }
 
-    // a US-only extent drives the smart choropleth into per-US-state mode; anything reaching
-    // outside the US bounding box falls back to the per-country breakdown.
-    #[cfg(feature = "geocode")]
-    #[test]
-    fn extent_within_us_detects_us_only() {
-        // coast-to-coast CONUS + a point near Alaska/Hawaii latitudes — all inside the US box
-        assert!(extent_within_us(
-            &[25.8, 47.6, 21.3, 61.2],
-            &[-80.2, -122.3, -157.8, -149.9]
-        ));
-        // a point in southern Brazil (lat -23.5, below the box's 18° floor) pushes the extent out
-        assert!(!extent_within_us(&[40.7, -23.5], &[-74.0, -46.6]));
-        // a European cluster (positive longitudes, east of the box) is plainly not US
-        assert!(!extent_within_us(&[48.85, 52.52], &[2.35, 13.40]));
-    }
-
     #[cfg(feature = "geocode")]
     fn gp(tag: &'static str, city: &str, admin1: &str, country: &str) -> GeoPoint {
         GeoPoint {
@@ -10651,7 +10638,7 @@ mod tests {
         // a tight local cluster (LA area, ~1 deg span) -> Mercator fit to padded bounds
         let lats: Vec<f64> = (0..20).map(|i| 34.0 + i as f64 * 0.05).collect();
         let lons: Vec<f64> = (0..20).map(|i| -118.0 + i as f64 * 0.05).collect();
-        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&lats, &lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::Mercator));
         assert!(
             lonaxis.is_some() && lataxis.is_some(),
@@ -10661,7 +10648,7 @@ mod tests {
         // coordinates spanning the continental US -> albers usa, no fitted ranges
         let us_lats = [40.7_f64, 34.0, 41.9, 29.8, 47.6, 25.8, 39.7];
         let us_lons = [-74.0_f64, -118.2, -87.6, -95.4, -122.3, -80.2, -105.0];
-        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&us_lats, &us_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::AlbersUsa));
         assert!(
             lonaxis.is_none() && lataxis.is_none(),
@@ -10673,7 +10660,7 @@ mod tests {
         // NaturalEarth.
         let akhi_lats = [21.3_f64, 61.2, 34.0, 41.9, 40.7, 42.4];
         let akhi_lons = [-157.8_f64, -149.9, -118.2, -87.6, -74.0, -168.0];
-        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons);
+        let (proj, ..) = geo_framing(&akhi_lats, &akhi_lons, MAP_FRAME_TRIM_FRAC);
         assert!(
             matches!(proj, ProjectionType::AlbersUsa),
             "a US extent with Alaska/Hawaii should still use albers usa"
@@ -10682,7 +10669,7 @@ mod tests {
         // a global spread -> NaturalEarth world overview, no fitted ranges
         let g_lats = [-40.0_f64, 51.5, 35.7, -33.9, 1.3, 64.1];
         let g_lons = [174.8_f64, -0.1, 139.7, 151.2, 103.8, -21.9];
-        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::NaturalEarth));
         assert!(lonaxis.is_none() && lataxis.is_none());
 
@@ -10691,7 +10678,7 @@ mod tests {
         // unfit (full width) while latitude is still fit.
         let am_lats = [10.0_f64, 10.5, 11.0, 11.5];
         let am_lons = [179.0_f64, 179.5, -179.5, -179.0];
-        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons);
+        let (proj, lonaxis, lataxis) = geo_framing(&am_lats, &am_lons, MAP_FRAME_TRIM_FRAC);
         assert!(matches!(proj, ProjectionType::Mercator));
         assert!(
             lonaxis.is_none(),
@@ -10714,7 +10701,7 @@ mod tests {
         let (min_lat, max_lat, min_lon, max_lon) = (10.0, 47.6, -122.3, -74.0);
         let flat = vec![max_lat, max_lat, min_lat, min_lat, max_lat];
         let flon = vec![min_lon, max_lon, max_lon, min_lon, min_lon];
-        let (proj, ..) = geo_framing(&flat, &flon);
+        let (proj, ..) = geo_framing(&flat, &flon, MAP_FRAME_TRIM_FRAC);
         assert!(
             !matches!(proj, ProjectionType::AlbersUsa),
             "a full extent reaching outside the US must not use albers-usa"

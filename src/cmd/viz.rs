@@ -298,7 +298,7 @@ smart options:
                            its output; or a path to an existing describegpt dictionary file
                            (jsonschema or json). Generation/read failures soft-fall back to the
                            stats-only dashboard. Only affects `smart`.
-    --dictionary-context <file>  EXPERIMENTAL. Path to a file with extra context about the dataset
+    --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
                            describegpt as --context-file when `--dictionary infer` generates the
                            dictionary. Better context yields better role/concept/label/grain
@@ -8201,22 +8201,16 @@ fn hierarchy_trace(
             )
             .sort(true)
             .text_info("label+value+percent parent"),
-        // Declutter deep sunbursts on two fronts, both DYNAMIC so detail returns on drill-down (a
-        // static per-node blank would stay blank even when a sector is zoomed to fill the ring):
-        //   * `max_depth(SUNBURST_MAXDEPTH)` renders only the center + 2 rings at a time, so a
-        //     3-level chart's ~100-sector outer ring isn't drawn until you click into a sector
-        //     (which rescales that subtree to the full ring, making its labels large and legible).
-        //   * `text_info("label")` (vs the old `label+value+percent parent`) keeps each label
-        //     short, so plotly's fit test cleanly HIDES any that still don't fit rather than
-        //     cramming overlapping rotated fragments; value/percent remain on hover.
-        // The treemap keeps the richer text — its tiles have room, and plotly hides any that don't
-        // fit there too.
+        // sunburst-specific marker: a thin white outline around each ring segment so the rings read
+        // as distinct, legible sectors. The top ring is capped to two levels (the first ring is the root,
+        // the second ring is the top-level categories) so the initial view isn't overwhelming;
+        // deeper levels are still accessible via click-to-zoom.
         HierStyle::Sunburst => Sunburst::new(labels.to_vec(), parents.to_vec())
             .ids(ids.to_vec())
             .values(values.to_vec())
             .branch_values(BranchValues::Total)
+            .text_info("label+value+percent parent")
             .max_depth(SUNBURST_MAXDEPTH)
-            .text_info("label"),
     }
 }
 

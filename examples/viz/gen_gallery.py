@@ -35,8 +35,8 @@ GALLERY = os.path.join(VIZ_DIR, "gallery.html")
 MARKER = "Plotly.newPlot(graph_div, "
 
 # CDN plotly tag substituted for the ~4.6MB inline bundle in the smart-dashboard iframes.
-# Keep the version in sync with the gallery head's <script src> (plotly.js v3.0.1).
-PLOTLY_CDN = '<script src="https://cdn.plot.ly/plotly-3.0.1.min.js" charset="utf-8"></script>'
+# Keep the version in sync with the gallery head's <script src> (plotly.js v3.6.0).
+PLOTLY_CDN = '<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>'
 
 # Smart dashboards are embedded as iframes of the *genuine* `qsv viz smart` HTML output (so the
 # full-width overview panels, themes and map buttons render exactly as the CLI produces them),

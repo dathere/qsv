@@ -1345,6 +1345,11 @@ fn viz_candlestick() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"candlestick""#));
+    // plotly.js 3.6 hover_template (O/H/L/C readout) + defensive fallback
+    assert!(html.contains("Open: %{open}"));
+    assert!(html.contains(r#""hovertemplatefallback":"-""#));
+    // x-unified hover scoped to ordered-x chart kinds (line/candlestick/ohlc)
+    assert!(html.contains(r#""hovermode":"x unified""#));
 }
 
 #[test]
@@ -1375,6 +1380,35 @@ fn viz_ohlc() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"ohlc""#));
+    // plotly.js 3.6 hover_template (O/H/L/C readout)
+    assert!(html.contains("Open: %{open}"));
+    assert!(html.contains(r#""hovertemplatefallback":"-""#));
+}
+
+#[test]
+fn viz_line_unified_hover() {
+    // a line chart has an ordered x-axis, so build_layout opts it into `x unified` hover
+    // (one tooltip per x across series). Unordered charts (scatter/bar/box) must NOT get it.
+    let wrk = Workdir::new("viz_line_unified_hover");
+    wrk.create_from_string(
+        "t.csv",
+        "date,close\n2024-01-01,10\n2024-01-02,12\n2024-01-03,11\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["line", "t.csv", "--x", "date", "--y", "close"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let line_html = String::from_utf8_lossy(&out.stdout);
+    assert!(line_html.contains(r#""hovermode":"x unified""#));
+
+    // a scatter of the same data must not carry the unified hover mode
+    let mut scmd = wrk.command("viz");
+    scmd.args(["scatter", "t.csv", "--x", "date", "--y", "close"]);
+    let sout = wrk.output(&mut scmd);
+    assert!(sout.status.success());
+    let scatter_html = String::from_utf8_lossy(&sout.stdout);
+    assert!(!scatter_html.contains(r#""hovermode":"x unified""#));
 }
 
 #[test]
@@ -3901,6 +3935,8 @@ fn viz_sunburst_standalone() {
     // share of parent.
     assert!(html.contains(r#""maxdepth":3"#));
     assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
+    // plotly.js 3.6 radial in-sector text keeps deep-ring labels legible along each spoke
+    assert!(html.contains(r#""insidetextorientation":"r""#));
 }
 
 #[test]

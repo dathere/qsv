@@ -455,9 +455,9 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash"
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
 # plotly fork adding Treemap/Sunburst trace types (with a treemap-specific Marker) used by the
-# `viz smart` hierarchy panels and the `viz treemap`/`viz sunburst` subcommands. Tracks the
-# upstream PR https://github.com/plotly/plotly.rs/pull/406; drop this patch once it's merged &
-# released. For local iteration, swap in `path = "../plotly/plotly"`.
+# `viz smart` hierarchy panels and the `viz treemap`/`viz sunburst` subcommands.
+# Upgraded plotly.js from 3.0.1 to 3.6.0. Tracks the upstream PR https://github.com/plotly/plotly.rs/pull/406;
+# drop this patch once it's merged & released.
 plotly = { git = "https://github.com/dathere/plotly", branch = "feat/treemap-sunburst-traces" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).

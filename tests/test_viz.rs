@@ -4380,3 +4380,37 @@ fn viz_choropleth_geocode_reverse() {
     assert!(html.contains("USA"));
     assert!(html.contains("GBR"));
 }
+
+// `viz smart` frames the per-country choropleth to its own extent, so a region-confined multi-
+// country dataset (here Western Europe) zooms to that region (mercator + fitted lon/lat axes)
+// instead of sitting tiny on the world projection. Requires the geonames index.
+#[cfg(feature = "geocode")]
+#[test]
+#[ignore = "requires the Geonames geocode index (downloaded on first use)"]
+fn viz_smart_choropleth_frames_to_region() {
+    let wrk = Workdir::new("viz_smart_choropleth_frames_to_region");
+    // real newlines (not "\n" escapes) so rustfmt's string wrapping can't corrupt an escape at a
+    // line boundary
+    wrk.create_from_string(
+        "eu.csv",
+        "name,lat,lon
+london,51.51,-0.13
+paris,48.85,2.35
+berlin,52.52,13.40
+rome,41.90,12.50
+madrid,40.42,-3.70
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "eu.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a per-country ("Countries") choropleth, framed to Western Europe rather than the world
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"ISO-3""#));
+    assert!(html.contains(r#""projection":{"type":"mercator""#));
+    assert!(html.contains(r#""lonaxis":{"range":["#));
+}

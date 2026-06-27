@@ -4462,6 +4462,11 @@ enum PanelKind {
         locations:     Vec<String>,
         z:             Vec<f64>,
         location_mode: LocationMode,
+        /// Bounding-box corners of the source points (lat/lon), fed to `geo_framing` at render
+        /// time so the panel frames to its own extent — a US dataset to albers-usa, a
+        /// European/Asian dataset to that region, global data to the world projection.
+        frame_lats:    Vec<f64>,
+        frame_lons:    Vec<f64>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -5766,12 +5771,32 @@ fn build_smart_choropleth_panel(
         ChoroplethScope::Country => ("Countries", LocationMode::Iso3),
         ChoroplethScope::UsStates => ("US states", LocationMode::UsaStates),
     };
+    // carry the bounding-box corners so the render frames the panel to its extent via geo_framing
+    // (US → albers-usa, a regional cluster → that region, global → world). Corners — not the raw
+    // points — so geo_framing's quantile trim can't shrink the true extent.
+    let ext = map_extent(lats, lons);
+    let frame_lats = vec![
+        ext.max_lat,
+        ext.max_lat,
+        ext.min_lat,
+        ext.min_lat,
+        ext.max_lat,
+    ];
+    let frame_lons = vec![
+        ext.min_lon,
+        ext.max_lon,
+        ext.max_lon,
+        ext.min_lon,
+        ext.min_lon,
+    ];
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
             locations: order,
             z,
             location_mode,
+            frame_lats,
+            frame_lons,
         },
     ))
 }
@@ -8142,12 +8167,14 @@ fn smart_inline_panel_plot(
         return plot;
     }
 
-    // choropleth panels fill whole countries on a `geo` projection layout (no tiles), colored by
-    // the per-country point count; assembled here like the geo point map above.
+    // choropleth panels fill whole regions on a `geo` projection layout (no tiles), colored by the
+    // per-region point count; assembled here like the geo point map above.
     if let PanelKind::Choropleth {
         locations,
         z,
         location_mode,
+        frame_lats,
+        frame_lons,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -8159,18 +8186,21 @@ fn smart_inline_panel_plot(
                 .color_bar(ColorBar::new().title("count"))
                 .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
         );
-        // a US-states panel frames itself with the albers-usa projection (CONUS + AK/HI insets);
-        // a country panel uses the whole-world natural-earth projection.
-        let projection = if matches!(location_mode, LocationMode::UsaStates) {
-            ProjectionType::AlbersUsa
-        } else {
-            ProjectionType::NaturalEarth
-        };
-        let geo = LayoutGeo::new()
+        // frame to the panel's own extent (same helper as the geo point map): a US extent → the
+        // albers-usa composite (CONUS + AK/HI insets), a regional cluster (e.g. Europe/Asia) →
+        // mercator fitted to that region, global/multi-continent data → the natural-earth world.
+        let (projection, lonaxis, lataxis) = geo_framing(frame_lats, frame_lons);
+        let mut geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(projection))
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
+        if let Some(lonaxis) = lonaxis {
+            geo = geo.lonaxis(lonaxis);
+        }
+        if let Some(lataxis) = lataxis {
+            geo = geo.lataxis(lataxis);
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)

@@ -5990,8 +5990,9 @@ fn dashed_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     ];
     let (mut lats, mut lons) = (Vec::new(), Vec::new());
     for edge in corners.windows(2) {
-        let (la0, lo0) = edge[0];
-        let (la1, lo1) = edge[1];
+        let &[(la0, lo0), (la1, lo1)] = edge else {
+            unreachable!("windows(2) always yields exactly two elements")
+        };
         let len = ((la1 - la0).powi(2) + (lo1 - lo0).powi(2)).sqrt();
         // even cell count so each edge ends on a gap, not a dash bleeding into the corner
         let mut cells = ((len / cell).round() as usize).max(2);
@@ -8105,10 +8106,19 @@ fn smart_inline_panel_plot(
     } = &panel.kind
     {
         let mut plot = Plot::new();
+        // a fixed high-contrast marker (warm fill + thin white outline) instead of the palette
+        // accent: the `geo` projection paints a light-blue ocean and light-gray land, and the
+        // palette's first color is a blue that disappears against the ocean (e.g. coastal/island
+        // points on a world overview). Crimson reads on both land and water and in dark themes.
         plot.add_trace(
             ScatterGeo::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
-                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+                .marker(
+                    Marker::new()
+                        .color(NamedColor::Crimson)
+                        .opacity(MAP_POINT_OPACITY)
+                        .line(Line::new().color(NamedColor::White).width(0.5)),
+                ),
         );
         // geographic outliers as a distinct amber/X marker trace on top of the core points
         if !outlier_lats.is_empty() {

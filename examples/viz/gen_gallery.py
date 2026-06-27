@@ -223,8 +223,10 @@ FIGURES = [
      "interactive MapLibre <b>tile</b> basemap (token-free carto-positron) instead of a projection. "
      "The regions come from a custom GeoJSON (<code>--geojson</code> local file or URL) matched to "
      "the data by <code>--feature-id-key</code> — here the near-rectangular western states, colored "
-     "by installed wind capacity. The view auto-centers and zooms to the GeoJSON extent.",
-     False, ["choropleth", "western_states.csv", "--locations", "state", "--value",
+     "by installed wind capacity. The view auto-centers and zooms to the GeoJSON extent (shown "
+     "full-width so the computed zoom frames the regions as the CLI does — a tile map's zoom is "
+     "fixed, so a narrow grid cell would crop it).",
+     True, ["choropleth", "western_states.csv", "--locations", "state", "--value",
              "wind_capacity_gw", "--geojson", "western_states.geojson", "--feature-id-key", "id",
              "--map", "--style", "carto-positron"]),
     ("smart dashboard (time-series)",
@@ -253,13 +255,14 @@ FIGURES = [
      "HTML is reused on regen.",
      True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
     ("smart dashboard (--dictionary infer, world choropleth)",
-     "`qsv viz smart world_cities.csv --dictionary infer` — global coordinates spanning many "
-     "countries: `viz smart` reverse-geocodes the points and adds a per-<b>country</b> choropleth "
-     "(cities-per-country, ISO-3) <b>framed to the filled-country geometries</b> via Plotly "
-     "<code>fitbounds</code> — so the regions are never clipped at the viewport edge — beside the "
-     "natural-earth point map. A describegpt-inferred Data Dictionary supplies the friendly field "
-     "labels (e.g. <i>Metro Population</i>, <i>Avg Annual Temp</i>). Requires a local LLM; the "
-     "committed HTML is reused on regen.",
+     "`qsv viz smart world_cities.csv --dictionary infer` — cities across all <b>seven "
+     "continents</b>: `viz smart` reverse-geocodes the points and adds a per-<b>country</b> "
+     "choropleth (cities-per-country, ISO-3) <b>framed to the filled-country geometries</b> via "
+     "Plotly <code>fitbounds</code> — so the regions are never clipped at the viewport edge — "
+     "beside the natural-earth point map (crimson markers so coastal/island points read against "
+     "the ocean), plus a seven-continent frequency bar. A describegpt-inferred Data Dictionary "
+     "supplies the friendly field labels (e.g. <i>Metro Population</i>, <i>Avg Annual Temp</i>). "
+     "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
 ]
 

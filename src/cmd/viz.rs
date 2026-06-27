@@ -366,10 +366,11 @@ use plotly::{
         Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
-        Annotation, Axis, AxisType, Center, Layout, LayoutGeo, LayoutScene, Mapbox, MapboxStyle,
-        Margin, Projection, ProjectionType, themes::BuiltinTheme,
+        Annotation, Axis, AxisType, Center, HoverMode, Layout, LayoutGeo, LayoutScene, Mapbox,
+        MapboxStyle, Margin, Projection, ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
+    sunburst::InsideTextOrientation,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
 };
 use serde::Deserialize;
@@ -1074,7 +1075,18 @@ fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         },
     };
 
-    plot.set_layout(build_layout(args, default_x, default_y));
+    let mut layout = build_layout(args, default_x, default_y);
+    // `x unified` (plotly.js) shows one tooltip per x across every trace — ideal for an ordered
+    // x-axis (line trends, OHLC sessions) but wrong for unordered clouds, so it's scoped to those
+    // chart kinds. The smart dashboard builds its own layout and never calls build_layout, so this
+    // can't leak onto its heterogeneous panels.
+    if matches!(
+        chart_kind(args),
+        Chart::Line | Chart::Candlestick | Chart::Ohlc
+    ) {
+        layout = layout.hover_mode(HoverMode::XUnified);
+    }
+    plot.set_layout(layout);
     Ok(plot)
 }
 
@@ -2880,10 +2892,24 @@ fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, Stri
         );
     }
     let x_label = col_label(&headers, x_idx, nh);
+    // Plotly's default OHLC/candlestick hover label leads with the trace name; a custom
+    // template gives a clean O/H/L/C readout. The x (date) is omitted on purpose — the
+    // `x unified` hover mode (build_layout) already renders x as the tooltip header.
+    // `hover_template_fallback` is defensive: financial traces have known gaps resolving
+    // the per-point %{open|high|low|close} variables.
+    let hover = "Open: %{open}<br>High: %{high}<br>Low: %{low}<br>Close: %{close}<extra></extra>";
     let trace: Box<dyn Trace> = if ohlc {
-        Ohlc::new(xs, open, high, low, close)
+        Box::new(
+            Ohlc::new(xs, open, high, low, close)
+                .hover_template(hover)
+                .hover_template_fallback("-"),
+        )
     } else {
-        Candlestick::new(xs, open, high, low, close)
+        Box::new(
+            Candlestick::new(xs, open, high, low, close)
+                .hover_template(hover)
+                .hover_template_fallback("-"),
+        )
     };
     Ok((trace, x_label, "price".to_string()))
 }
@@ -8213,6 +8239,9 @@ fn hierarchy_trace(
             .values(values.to_vec())
             .branch_values(BranchValues::Total)
             .text_info("label+value+percent parent")
+            // radial in-sector text (plotly.js 3.6) lets the label+value+percent run along each
+            // ring's spoke, so deep-path sectors stay legible instead of clipping tangential text.
+            .inside_text_orientation(InsideTextOrientation::Radial)
             .max_depth(SUNBURST_MAXDEPTH),
     }
 }

@@ -303,5 +303,11 @@ qsv viz smart us_cities.csv -o us_dashboard.html
 qsv viz smart world_cities.csv --dictionary infer -o world_dashboard.html
 ```
 
+> The smart per-country choropleth is **reverse-geocoded from coordinates**, so points with no
+> sovereign country snap to the nearest administering territory — `world_cities.csv`'s two Antarctic
+> stations land on New Zealand's Ross Dependency (McMurdo) and the Argentine Antarctic sector
+> (Rothera) rather than an "Antarctica" fill. The seven-continent grouping comes from the dataset's
+> own `continent` column, which is unaffected.
+
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means
 > "open the result in a browser".

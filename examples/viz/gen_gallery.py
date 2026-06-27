@@ -260,9 +260,13 @@ FIGURES = [
      "choropleth (cities-per-country, ISO-3) <b>framed to the filled-country geometries</b> via "
      "Plotly <code>fitbounds</code> — so the regions are never clipped at the viewport edge — "
      "beside the natural-earth point map (crimson markers so coastal/island points read against "
-     "the ocean), plus a seven-continent frequency bar. A describegpt-inferred Data Dictionary "
+     "the ocean), plus a seven-continent breakdown. A describegpt-inferred Data Dictionary "
      "supplies the friendly field labels (e.g. <i>Metro Population</i>, <i>Avg Annual Temp</i>). "
-     "Requires a local LLM; the committed HTML is reused on regen.",
+     "<b>Note:</b> the choropleth is <i>reverse-geocoded</i> from lat/lon, so the two Antarctic "
+     "stations — which have no sovereign country — snap to the nearest administering territory "
+     "(McMurdo&nbsp;&rarr;&nbsp;NZ&apos;s Ross Dependency, Rothera&nbsp;&rarr;&nbsp;the Argentine "
+     "sector); the seven-continent grouping instead comes from the dataset&apos;s own "
+     "<code>continent</code> column. Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
 ]
 

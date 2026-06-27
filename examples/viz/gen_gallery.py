@@ -100,19 +100,6 @@ BANNER = (
 # (title, description, full_width, [viz args]). Order matters: the full-width smart dashboards
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
-    ("smart dashboard",
-     "Auto-profiled overview: correlation heatmap + box plots + frequency bars, led by a "
-     "drill-down sunburst. `viz smart` now SKIPS an auto hierarchy when the candidate dimensions "
-     "are statistically independent (nesting them would just replicate each level's marginal); "
-     "sales_sample's region/payment_method/product_category are independent, so "
-     "`--hierarchy-style sunburst` is passed to deliberately showcase the interactive sunburst.",
-     True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
-    ("smart dashboard (--smarter)",
-     "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
-     "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "
-     "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
-     "skew direction and outlier share.",
-     True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("smart dashboard (--smarter, geospatial)",
      "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3` command, "
      "10 auto-chosen panels — nearly every "
@@ -144,6 +131,19 @@ FIGURES = [
      "box plots, frequency bars, a correlation heatmap, the strongest-pair scatter "
      "(packages vs weight_kg) and a delivered-over-time trend — all without <code>--smarter</code>.",
      True, ["smart", "delivery_stops.csv"]),
+    ("smart dashboard",
+     "Auto-profiled overview: correlation heatmap + box plots + frequency bars, led by a "
+     "drill-down sunburst. `viz smart` now SKIPS an auto hierarchy when the candidate dimensions "
+     "are statistically independent (nesting them would just replicate each level's marginal); "
+     "sales_sample's region/payment_method/product_category are independent, so "
+     "`--hierarchy-style sunburst` is passed to deliberately showcase the interactive sunburst.",
+     True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
+    ("smart dashboard (--smarter)",
+     "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
+     "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "
+     "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
+     "skew direction and outlier share.",
+     True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("line", "Closing price over time.",
@@ -192,7 +192,9 @@ FIGURES = [
      False, ["treemap", "customer_spend.csv", "--cols", "plan,region", "--value", "monthly_spend",
              "--agg", "sum"]),
     ("sunburst", "Three-level hierarchy (region -> product_category -> payment_method) as concentric "
-     "rings, sized by row count; inner rings are parents, outer rings their children.",
+     "rings, sized by row count; inner rings are parents, outer rings their children. Opens at two "
+     "rings (maxdepth) so labels stay legible instead of crowding a ~100-sector outer ring; click a "
+     "sector to drill in and the deeper ring's labels grow back. Hover always shows value + percent.",
      False, ["sunburst", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),

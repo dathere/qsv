@@ -5752,10 +5752,12 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             .flatten()
             .collect();
 
-    let (country_order, country_counts) = tally(regions.iter().map(|r| r.iso3.clone()));
-
-    // every resolved country is the USA → per-state fill; anything multi-country stays per-country.
-    let all_usa = !country_order.is_empty() && country_order.iter().all(|c| c == "USA");
+    // decide the all-USA case from every resolved region's ISO-2 country code, NOT from the ISO-3
+    // tally: a GeoRegion can carry a valid `iso2` ("MX") yet an empty `iso3` when the country-info
+    // lookup fails, and the ISO-3 tally skips empties — so a non-US point could vanish and leave an
+    // all-"USA" set that wrongly renders US states (silently dropping that point). `iso2` is set
+    // straight from the matched record, so it's the reliable signal.
+    let all_usa = !regions.is_empty() && regions.iter().all(|r| r.iso2 == "US");
     let (name, location_mode, order, counts) = if all_usa {
         let (state_order, state_counts) =
             tally(regions.iter().filter_map(|r| r.us_state_code.clone()));
@@ -5769,15 +5771,17 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             state_order,
             state_counts,
         )
-    } else if country_order.len() >= 2 {
+    } else {
+        let (country_order, country_counts) = tally(regions.iter().map(|r| r.iso3.clone()));
+        if country_order.len() < 2 {
+            return None;
+        }
         (
             "Countries",
             LocationMode::Iso3,
             country_order,
             country_counts,
         )
-    } else {
-        return None;
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();

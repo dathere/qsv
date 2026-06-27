@@ -3895,13 +3895,12 @@ fn viz_sunburst_standalone() {
 
     let html = wrk.read_to_string("sb.html").unwrap();
     assert!(html.contains(r#""type":"sunburst""#));
-    // Declutter guards (PR #5 sunburst cleanup): a deep sunburst caps the initial view to two rings
-    // (`maxdepth`) so the outer ring isn't drawn until drill-down, and uses the short `label`
-    // textinfo (not `label+value+percent parent`) so plotly hides labels that don't fit instead of
-    // cramming them. Both are dynamic — drilling rescales a subtree and its labels reappear.
+    // A deep sunburst still caps the initial view to two rings (`maxdepth`) so the outer ring isn't
+    // drawn until drill-down, but renders the richer `label+value+percent parent` textinfo
+    // (restored to match the smart-viz sunburst panels) so each sector exposes its value and
+    // share of parent.
     assert!(html.contains(r#""maxdepth":3"#));
-    assert!(html.contains(r#""textinfo":"label""#));
-    assert!(!html.contains(r#""textinfo":"label+value+percent parent""#));
+    assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
 }
 
 #[test]

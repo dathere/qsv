@@ -8171,10 +8171,10 @@ fn hierarchy_arrays(
 /// Construct the plotly domain-based trace for a hierarchy panel/chart from its precomputed flat
 /// arrays. A treemap is sorted largest-first (best practice for size comparison via area); a
 /// sunburst relies on plotly's lineage colorway for deep paths. Both use `branchvalues="total"`,
-/// matching the rolled-up subtree totals `hierarchy_arrays` emits. Labeling differs: the treemap
-/// shows the richer `label+value+percent parent` (its tiles have room), while the sunburst shows
-/// label-only text and caps the initial view to two rings (see the per-branch comments below for
-/// why) — value/percent stay on hover there.
+/// matching the rolled-up subtree totals `hierarchy_arrays` emits. Both label their tiles/rings
+/// with the richer `label+value+percent parent`; the sunburst additionally caps the initial view to
+/// two rings (see the per-branch comment below for why), with deeper levels reachable via
+/// click-to-zoom.
 fn hierarchy_trace(
     style: HierStyle,
     labels: &[String],
@@ -8201,16 +8201,15 @@ fn hierarchy_trace(
             )
             .sort(true)
             .text_info("label+value+percent parent"),
-        // sunburst-specific marker: a thin white outline around each ring segment so the rings read
-        // as distinct, legible sectors. The top ring is capped to two levels (the first ring is the root,
-        // the second ring is the top-level categories) so the initial view isn't overwhelming;
-        // deeper levels are still accessible via click-to-zoom.
+        // the sunburst's initial view is capped to two rings (the first ring is the root, the
+        // second ring is the top-level categories) so it isn't overwhelming; deeper levels are
+        // still accessible via click-to-zoom.
         HierStyle::Sunburst => Sunburst::new(labels.to_vec(), parents.to_vec())
             .ids(ids.to_vec())
             .values(values.to_vec())
             .branch_values(BranchValues::Total)
             .text_info("label+value+percent parent")
-            .max_depth(SUNBURST_MAXDEPTH)
+            .max_depth(SUNBURST_MAXDEPTH),
     }
 }
 

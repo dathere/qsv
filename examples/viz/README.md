@@ -53,8 +53,8 @@ as `text/plain`, so a browser won't render it):
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
 | `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
 | `western_states.csv` + `western_states.geojson` | 7 near-rectangular western states with `state,wind_capacity_gw`, plus a tiny custom GeoJSON keyed by 2-letter `id` | `choropleth --map --geojson … --feature-id-key id` (filled regions on a MapLibre tile basemap) |
-| `world_cities.csv` | 27 major cities across 22 countries: `lat`/`lon`, `continent`, `metro_population_m`, `elevation_m`, `avg_annual_temp_c` | `smart --dictionary infer` (global geo map + per-COUNTRY choropleth via `fitbounds` + box/bar panels) |
-| `us_cities.csv` | 20 US cities: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth + box/bar/correlation panels) |
+| `world_cities.csv` | 27 major cities across 22 countries: `lat`/`lon`, `continent`, `metro_population_m`, `elevation_m`, `avg_annual_temp_c` | `smart --dictionary infer` (global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + box/bar panels) |
+| `us_cities.csv` | 20 US cities: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
@@ -290,8 +290,10 @@ qsv viz choropleth western_states.csv --locations state --value wind_capacity_gw
 `viz smart` also adds a choropleth panel on its own whenever it detects lat/lon columns that
 reverse-geocode to **two or more regions** — a per-US-**state** fill when every point resolves to
 the United States, otherwise a per-**country** (ISO-3) fill framed to the filled-region geometries
-via Plotly `fitbounds` (so the regions are never clipped). Pairing it with `--dictionary infer`
-adds LLM-inferred field labels (see the [smart dashboard](#the-smart-dashboard) section):
+via Plotly `fitbounds` (so the regions are never clipped). This auto-panel needs the **`geocode`**
+feature (included in the prebuilt `qsv`/`qsvpy` binaries and any `all_features` build); a minimal
+`viz`-only build shows just the point map. Pairing it with `--dictionary infer` adds LLM-inferred
+field labels (see the [smart dashboard](#the-smart-dashboard) section):
 
 ```bash
 # US point map + per-US-STATE choropleth, derived purely from the lat/lon columns (no flags)

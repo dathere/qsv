@@ -546,6 +546,17 @@ const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
 const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
 
+/// Minimum spatial extent (in degrees of longitude AND latitude) before `viz smart` attempts the
+/// per-country choropleth overview. A per-country breakdown is only meaningful at country scale, so
+/// when the data's extent is smaller than this in BOTH dimensions it is treated as a single
+/// metro/region cluster and skipped — which avoids the expensive all-row reverse-geocode pass (and
+/// its index load) entirely for the common case of a high-row-count city/metro dataset. Anything
+/// wider in either axis runs the pass, and `build_smart_choropleth_panel`'s own 2-country check has
+/// the final say (a wide single-country dataset still resolves to one country → no panel). This is
+/// a cheap min/max-extent gate that, unlike the geocoded bounding-box corners, also works for
+/// global extents that wrap the antimeridian (where the corner metadata is suppressed).
+const SMART_CHOROPLETH_MIN_SPAN_DEG: f64 = 8.0;
+
 /// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose
 /// `bimodality_coefficient` reaches this AND is platykurtic (see `classify_measure`) is treated as
 /// bimodal/multimodal, so `viz smart` draws a histogram (which shows the separate peaks) instead of
@@ -2399,16 +2410,33 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
-        if let Some(spec) = args.flag_geojson.as_deref() {
-            trace = trace
-                .geojson(load_geojson(spec)?)
-                .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"));
-        }
-        plot.add_trace(trace);
-        let geo = LayoutGeo::new()
+        let mut geo = LayoutGeo::new()
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
+        if let Some(spec) = args.flag_geojson.as_deref() {
+            let geojson = load_geojson(spec)?;
+            // plotly only auto-scopes its BUILT-IN location modes (iso3 world / usa-states); a
+            // custom GeoJSON has no built-in scope, so without framing its polygons sit tiny on the
+            // default whole-world projection. Frame the projection to the GeoJSON extent, reusing
+            // the smart panel's geo_framing (albers-usa / natural-earth / mercator fit, padded and
+            // antimeridian-aware). Collect the extent BEFORE the value is moved into the trace.
+            let (g_lats, g_lons) = geojson_lat_lons(&geojson);
+            if !g_lats.is_empty() {
+                let (proj, lonaxis, lataxis) = geo_framing(&g_lats, &g_lons);
+                geo = geo.projection(Projection::new().projection_type(proj));
+                if let Some(lonaxis) = lonaxis {
+                    geo = geo.lonaxis(lonaxis);
+                }
+                if let Some(lataxis) = lataxis {
+                    geo = geo.lataxis(lataxis);
+                }
+            }
+            trace = trace
+                .geojson(geojson)
+                .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"));
+        }
+        plot.add_trace(trace);
         let mut layout = Layout::new().geo(geo);
         if let Some(title) = &args.flag_title {
             layout = layout.title(Title::with_text(title));
@@ -5670,8 +5698,7 @@ fn semantic_latlon(
 /// Build a `viz smart` choropleth overview panel from already-collected map coordinates: reverse-
 /// geocode the points to ISO-3 country codes (reusing qsv's geocode engine) and color each country
 /// by its point count. Returns `None` unless at least 2 distinct countries resolve (a
-/// single-country or metro dataset stays point-only). Geocode-gated; the engine load is
-/// shared/cached.
+/// single-country or metro dataset stays point-only). Geocode-gated.
 #[cfg(feature = "geocode")]
 fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     let points: Vec<(f64, f64)> = lats.iter().copied().zip(lons.iter().copied()).collect();
@@ -5782,17 +5809,23 @@ fn build_map_panel(
     let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
     let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
 
-    // geocode-gated companion: aggregate the FULL core set (pre-downsampling) into a per-country
-    // choropleth overview drawn beside the point map. Counting the full population — not the
-    // downsampled `lats`/`lons` — keeps the per-country tallies accurate for datasets above
-    // `MAX_SMART_POINTS` (the panel labels them "count", so sampled tallies would mislabel). The
-    // panel embeds only the per-country aggregates, never the raw points, so the full-set pass adds
-    // no HTML weight. This is a SECOND reverse-geocode pass (build_geo_meta above only geocodes the
-    // 5 bounding-box corners); the engine is already loaded/cached, so it's one extra batched
-    // lookup loop, not a second index load. None when the points resolve to fewer than 2
-    // countries, or the geocode feature is off.
+    // geocode-gated companion: a per-country choropleth overview drawn beside the point map. Gate
+    // it on the cheap min/max-extent SPAN (already computed above) — a per-country breakdown
+    // only makes sense at country scale, so a cluster smaller than
+    // `SMART_CHOROPLETH_MIN_SPAN_DEG` in BOTH axes is treated as a single metro/region and
+    // skipped, short-circuiting the expensive all-row reverse-geocode pass (and its index load)
+    // for the common high-row-count city dataset. Unlike gating on the geocoded bounding-box
+    // corners, this still fires for global extents that wrap the antimeridian (where that
+    // corner metadata is suppressed). When the gate passes, build_smart_choropleth_panel
+    // aggregates the FULL core set (pre-downsampling, not the downsampled `lats`/`lons`) so
+    // per-country tallies stay accurate even above `MAX_SMART_POINTS` (it labels them "count"),
+    // and embeds only the aggregates — never the raw points — so the full-set pass adds no HTML
+    // weight; its own 2-country check drops wide single-country data.
     #[cfg(feature = "geocode")]
-    let choropleth_panel = build_smart_choropleth_panel(&core_lats, &core_lons);
+    let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
+        || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+        .flatten();
     #[cfg(not(feature = "geocode"))]
     let choropleth_panel: Option<Panel> = None;
 

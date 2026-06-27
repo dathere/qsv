@@ -4238,6 +4238,46 @@ fn viz_choropleth_map_frames_ignore_properties() {
     );
 }
 
+// the projection (non-`--map`) path must frame the `geo` subplot to a custom GeoJSON extent —
+// plotly only auto-scopes its built-in location modes, so without framing the polygons would sit
+// tiny on the default whole-world view.
+#[test]
+fn viz_choropleth_geojson_id_geo_framed() {
+    let wrk = Workdir::new("viz_choropleth_geojson_id_geo_framed");
+    wrk.create_from_string("rg.csv", "region,val\nFR,10\nDE,25\n");
+    // two boxes over France/Germany (a local, non-US extent → mercator fit with lon/lat ranges)
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"FR","properties":{},"geometry":{"type":"Polygon","coordinates":[[[2,45],[2,49],[6,49],[6,45],[2,45]]]}},{"type":"Feature","id":"DE","properties":{},"geometry":{"type":"Polygon","coordinates":[[[8,48],[8,52],[13,52],[13,48],[8,48]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    // framed to the GeoJSON extent: a fitted projection plus lon/lat axis ranges (a local European
+    // extent fits with mercator), not the unframed default whole-world view
+    assert!(html.contains(r#""projection":{"type":"mercator""#));
+    assert!(html.contains(r#""lonaxis":{"range":["#));
+    assert!(html.contains(r#""lataxis":{"range":["#));
+}
+
 #[test]
 fn viz_choropleth_map_requires_geojson_errors() {
     let wrk = Workdir::new("viz_choropleth_map_requires_geojson_errors");

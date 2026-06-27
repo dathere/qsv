@@ -5818,7 +5818,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#aeb1e59e3f4cb4a94d0191ff26e3158c42967f5f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#3c185f881575668e710384df3b2828868ad81f54"
 dependencies = [
  "askama",
  "async-trait",
@@ -5841,7 +5841,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#aeb1e59e3f4cb4a94d0191ff26e3158c42967f5f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#3c185f881575668e710384df3b2828868ad81f54"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5852,7 +5852,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#aeb1e59e3f4cb4a94d0191ff26e3158c42967f5f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Ftreemap-sunburst-traces#3c185f881575668e710384df3b2828868ad81f54"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

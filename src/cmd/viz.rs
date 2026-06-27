@@ -363,13 +363,14 @@ use plotly::{
     color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, HoverInfo, Line, Marker, Mode,
-        Orientation, Pattern, PatternShape, TextPosition, TickMode, Title,
+        Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
         Annotation, Axis, AxisType, Center, HoverMode, Layout, LayoutGeo, LayoutScene, Mapbox,
         MapboxStyle, Margin, Projection, ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
+    sunburst::InsideTextOrientation,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
 };
 use serde::Deserialize;
@@ -8240,7 +8241,7 @@ fn hierarchy_trace(
             .text_info("label+value+percent parent")
             // radial in-sector text (plotly.js 3.6) lets the label+value+percent run along each
             // ring's spoke, so deep-path sectors stay legible instead of clipping tangential text.
-            .inside_text_orientation(Orientation::Radial)
+            .inside_text_orientation(InsideTextOrientation::Radial)
             .max_depth(SUNBURST_MAXDEPTH),
     }
 }

@@ -3936,7 +3936,7 @@ fn viz_sunburst_standalone() {
     assert!(html.contains(r#""maxdepth":3"#));
     assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
     // plotly.js 3.6 radial in-sector text keeps deep-ring labels legible along each spoke
-    assert!(html.contains(r#""insidetextorientation":"r""#));
+    assert!(html.contains(r#""insidetextorientation":"radial""#));
 }
 
 #[test]

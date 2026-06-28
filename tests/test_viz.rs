@@ -3563,6 +3563,11 @@ fn viz_smart_grid_has_theme_toggle() {
     assert!(html.contains("qsv-logo-light"));
     assert!(html.contains("qsv-logo-dark"));
     assert!(html.contains("data:image/png;base64,"));
+    // the toggle palette includes Carto mapbox styles for both modes so the tile basemap tracks
+    // the theme button (mapbox*.style is relayout-ed on each toggle click)
+    assert!(html.contains(r#"mapbox: "carto-positron""#));
+    assert!(html.contains(r#"mapbox: "carto-darkmatter""#));
+    assert!(html.contains(r#"/^mapbox\d*$/.test(k)"#));
 }
 
 #[test]
@@ -3731,6 +3736,11 @@ fn viz_smart_map_outlier_markers() {
     assert!(
         html.contains("geographic outliers"),
         "outliers should be drawn as a distinct marker trace; html: {html}"
+    );
+    // smart map panels use Carto tiles (no Referer policy); OSM blocks local-file requests
+    assert!(
+        html.contains("carto-positron"),
+        "light-theme smart map panel must use carto-positron, not open-street-map"
     );
 }
 
@@ -4214,6 +4224,9 @@ fn viz_choropleth_usa_states() {
     // usa-states frames itself with the albers-usa projection (CONUS + AK/HI insets), not the
     // default whole-world view where the states would be tiny
     assert!(html.contains(r#""projection":{"type":"albers usa""#));
+    // scope:"usa" restricts the basemap to the US extent so neighbouring land (e.g. British
+    // Columbia) does not bleed above the northern US border in the albers-usa composite canvas
+    assert!(html.contains(r#""scope":"usa""#));
 }
 
 #[test]

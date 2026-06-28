@@ -162,6 +162,9 @@ Examples:
   # Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)
   qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
 
+  # Point-in-polygon: bin lat/lon points into custom GeoJSON regions by count (no geocode)
+  qsv viz choropleth quakes.csv --lat lat --lon lon --geojson prefectures.geojson --feature-id-key properties.id -o by_pref.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 See also https://github.com/dathere/qsv/wiki/Visualization
 
@@ -288,16 +291,27 @@ choropleth options:
                            and --feature-id-key. Reuses --style for the basemap.
     --geojson <src>        Custom region polygons as a local file path or an http(s) URL
                            to a GeoJSON FeatureCollection. Required for --map, and for
-                           the geojson-id location mode.
+                           the geojson-id location mode. Also enables point-in-polygon
+                           binning: with --lat/--lon (and without --geocode), each row's
+                           point is binned into the region whose polygon contains it
+                           (exact, no geocoding) and colored by --value/--agg or counts.
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
-                           entry in the locations column (e.g. id, properties.fips).
-                           [default: id]
+                           entry in the locations column, or that labels each binned
+                           region (e.g. id, properties.fips). [default: id]
+    --feature-name-key <k>  GeoJSON property path whose value is shown as the
+                           human-readable region label in choropleth hover (e.g.
+                           properties.name). When omitted, common name keys are
+                           auto-detected; falls back to the feature id when absent.
     --geocode              Derive the region codes by reusing qsv's geocode engine
                            (needs a build with the geocode feature). Either reverse-geocode
                            the lat/lon points, or forward-geocode the locations name
                            column. Only valid with location modes iso3 or usa-states.
                            `viz choropleth` also reuses --value, --agg, --style and the
                            lat/lon options.
+    --no-snap              For point-in-polygon binning (lat/lon points binned into a
+                           custom GeoJSON without geocoding): drop points that fall
+                           outside every region instead of snapping each to its nearest
+                           region (the default). A stderr note reports coverage either way.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -673,6 +687,16 @@ const PAPER_BG: &str = "#FFFFFF";
 const GRID_COLOR: &str = "#ECECEC";
 const AXIS_LINE: &str = "#BCC4CE";
 
+/// `geo` subplot fill palette (land / water / background), shared by the Rust initial render and
+/// the `viz smart` light/dark toggle JS so choropleth & geo maps match the active theme instead of
+/// always rendering light land/ocean. Light mirrors qsv's built-in look (`lightgray`/`lightblue`);
+/// dark harmonizes with the dark toggle palette (paper `#111111`, line `#506784`).
+const GEO_LAND_LIGHT: &str = "#d3d3d3";
+const GEO_WATER_LIGHT: &str = "#add8e6";
+const GEO_LAND_DARK: &str = "#2a3138";
+const GEO_WATER_DARK: &str = "#16202b";
+const GEO_BG_DARK: &str = "#111111";
+
 /// Dashboard plot margins (pixels). Kept as named constants because the title-band math
 /// below needs the plot-area height (total height minus these margins).
 const TOP_MARGIN_PX: usize = 80;
@@ -813,7 +837,9 @@ struct Args {
     flag_map:                bool,
     flag_geojson:            Option<String>,
     flag_feature_id_key:     Option<String>,
+    flag_feature_name_key:   Option<String>,
     flag_geocode:            bool,
+    flag_no_snap:            bool,
     flag_bins:               Option<usize>,
     flag_agg:                Option<String>,
     flag_box_points:         Option<String>,
@@ -2168,16 +2194,18 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         plot.add_trace(scatter_geo_with_marker(lats, lons, marker, text));
     }
 
+    let (geo_land, geo_water, geo_bg) = geo_palette(args.theme());
     let geo = LayoutGeo::new()
         .projection(Projection::new().projection_type(projection))
         .resolution(GeoResolution::OneOverFiftyMillion)
         .showland(true)
-        .landcolor(NamedColor::LightGray)
+        .landcolor(geo_land)
         .showocean(true)
-        .oceancolor(NamedColor::LightBlue)
+        .oceancolor(geo_water)
         .showlakes(true)
-        .lakecolor(NamedColor::LightBlue)
-        .showcountries(true);
+        .lakecolor(geo_water)
+        .showcountries(true)
+        .bgcolor(geo_bg);
     let mut layout = Layout::new().geo(geo).show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -2271,6 +2299,379 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
         .map_err(|e| crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}")))
 }
 
+/// One GeoJSON feature reduced to its polygon rings for point-in-polygon binning. `polygons` holds
+/// one entry per polygon (a MultiPolygon yields several); each polygon is a list of linear rings
+/// (ring 0 is the exterior, the rest are holes); each ring is a closed list of `[lon, lat]`
+/// vertices. `bbox` is `[min_lon, min_lat, max_lon, max_lat]` over all vertices, for cheap
+/// candidate prefiltering.
+struct PipFeature {
+    id:       String,
+    /// Human-readable region label (e.g. `properties.name` → "Kagoshima") for hover, when a name
+    /// key is given or auto-detected; HTML-escaped at construction. `None` when no name resolves.
+    name:     Option<String>,
+    polygons: Vec<Vec<Vec<[f64; 2]>>>,
+    bbox:     [f64; 4],
+}
+
+/// Resolve a GeoJSON feature's id by a dotted `--feature-id-key` path. Supports the top-level
+/// `"id"` and `"properties.<...>"` paths (mirroring plotly's `featureidkey` convention). Strings
+/// and numbers both coerce to `String` (CSV cells and plotly match feature ids as strings).
+/// Returns `None` when the path is absent or the value isn't a string/number.
+fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
+    let coerce = |v: &serde_json::Value| -> Option<String> {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    };
+    if key == "id" {
+        return feature.id.as_ref().map(|id| match id {
+            geojson::feature::Id::String(s) => s.clone(),
+            geojson::feature::Id::Number(n) => n.to_string(),
+        });
+    }
+    let rest = key.strip_prefix("properties.")?;
+    let props = feature.properties.as_ref()?;
+    let mut segs = rest.split('.');
+    let mut cur = props.get(segs.next()?)?;
+    for seg in segs {
+        cur = cur.get(seg)?;
+    }
+    coerce(cur)
+}
+
+/// HTML-escape a string for use inside a plotly hover label (which renders `<b>`/`<br>` as markup).
+/// Escapes `&` first so region names/measure labels with `&`, `<`, `>` show as literal text instead
+/// of being parsed as tags. Note: this does not neutralize a pathological `%{...}` in a label (out
+/// of scope — choropleth hover here is pre-rendered text, not a plotly template).
+fn escape_hover(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Format a measure value for a hover label: a whole number prints without a decimal point
+/// (`65`), otherwise up to 3 decimals with trailing zeros trimmed (`12.5`, `0.333`).
+fn fmt_measure(v: f64) -> String {
+    if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{v:.0}")
+    } else {
+        let s = format!("{v:.3}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+/// Build the per-region hover text for a choropleth trace, aligned 1:1 to `locs`. Each label has:
+/// a bold region name + id (`<b>Kagoshima</b> (JP46)`) when `names[i]` is non-empty, else the bold
+/// id alone; the value labeled with its measure (`count: 65`); the share of the total
+/// (`15.6% of total`) when `include_pct` (count/sum aggregations only); and the rank by descending
+/// value (`rank 1 of 47`). `names` (when given) and `measure_label` are HTML-escaped by the caller
+/// / here respectively; ids are escaped here. Attached via `.hover_text_array(..)` +
+/// `HoverInfo::Text`, so the whole string is pre-rendered (no plotly template tokens).
+fn choropleth_hover_text(
+    locs: &[String],
+    z: &[f64],
+    names: Option<&[String]>,
+    measure_label: &str,
+    include_pct: bool,
+) -> Vec<String> {
+    let n = locs.len();
+    let label = escape_hover(measure_label);
+    let total: f64 = if include_pct {
+        z.iter().copied().filter(|v| v.is_finite()).sum()
+    } else {
+        0.0
+    };
+    // rank by descending z (positional, 1-based; ties break by position).
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| z[b].partial_cmp(&z[a]).unwrap_or(std::cmp::Ordering::Equal));
+    let mut rank = vec![0_usize; n];
+    for (pos, &i) in order.iter().enumerate() {
+        rank[i] = pos + 1;
+    }
+    (0..n)
+        .map(|i| {
+            let id = escape_hover(&locs[i]);
+            let name = names
+                .and_then(|ns| ns.get(i))
+                .map(String::as_str)
+                .filter(|s| !s.is_empty());
+            let mut lines: Vec<String> = Vec::with_capacity(4);
+            match name {
+                Some(name) => lines.push(format!("<b>{name}</b> ({id})")),
+                None => lines.push(format!("<b>{id}</b>")),
+            }
+            lines.push(format!("{label}: {}", fmt_measure(z[i])));
+            if include_pct && total > 0.0 {
+                lines.push(format!("{:.1}% of total", z[i] / total * 100.0));
+            }
+            lines.push(format!("rank {} of {n}", rank[i]));
+            lines.join("<br>")
+        })
+        .collect()
+}
+
+/// Build per-location region names aligned 1:1 to `locs` from binned/matched GeoJSON features: the
+/// feature `name` for each location id, or `""` when that region has no name (so
+/// [`choropleth_hover_text`] falls back to the bold id). Returns `None` when NO feature carries a
+/// name, so the caller uses the universal id-only hover.
+fn aligned_region_names(features: &[PipFeature], locs: &[String]) -> Option<Vec<String>> {
+    if !features.iter().any(|f| f.name.is_some()) {
+        return None;
+    }
+    let map: std::collections::HashMap<&str, &str> = features
+        .iter()
+        .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
+        .collect();
+    Some(
+        locs.iter()
+            .map(|id| {
+                map.get(id.as_str())
+                    .map_or(String::new(), |n| (*n).to_string())
+            })
+            .collect(),
+    )
+}
+
+/// Convert a `geojson::Value::Polygon` ring set to closed `[lon, lat]` rings (appending the first
+/// vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers every
+/// edge). Rings with fewer than 3 distinct vertices are dropped.
+fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>> {
+    poly.iter()
+        .filter_map(|ring| {
+            let mut pts: Vec<[f64; 2]> = ring
+                .iter()
+                .filter(|p| p.len() >= 2)
+                .map(|p| [p[0], p[1]])
+                .collect();
+            if pts.len() < 3 {
+                return None;
+            }
+            if pts.first() != pts.last() {
+                pts.push(pts[0]);
+            }
+            Some(pts)
+        })
+        .collect()
+}
+
+/// Flatten a `geojson::Value` into a list of polygons (each = exterior + hole rings). Handles
+/// Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield nothing.
+fn geojson_value_to_polygons(value: &geojson::Value) -> Vec<Vec<Vec<[f64; 2]>>> {
+    match value {
+        geojson::Value::Polygon(poly) => {
+            let rings = geojson_rings_to_closed(poly);
+            if rings.is_empty() {
+                vec![]
+            } else {
+                vec![rings]
+            }
+        },
+        geojson::Value::MultiPolygon(mp) => mp
+            .iter()
+            .map(|poly| geojson_rings_to_closed(poly))
+            .filter(|rings| !rings.is_empty())
+            .collect(),
+        geojson::Value::GeometryCollection(geoms) => geoms
+            .iter()
+            .flat_map(|g| geojson_value_to_polygons(&g.value))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Parse a GeoJSON FeatureCollection into [`PipFeature`]s keyed by `feature_id_key`. Features
+/// missing the id key or lacking a Polygon/MultiPolygon geometry are skipped (and counted in a
+/// stderr note). Errors when the input isn't a FeatureCollection or yields no usable features.
+fn build_pip_features(
+    geojson: &serde_json::Value,
+    feature_id_key: &str,
+    feature_name_key: Option<&str>,
+) -> CliResult<Vec<PipFeature>> {
+    let fc = geojson::FeatureCollection::from_json_value(geojson.clone()).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson is not a valid GeoJSON FeatureCollection: {e}"
+        ))
+    })?;
+    // Resolve the name key once: an explicit --feature-name-key, else auto-detect by probing common
+    // name properties on the FIRST feature (a heterogeneous collection whose first feature lacks
+    // the property won't auto-detect — use --feature-name-key to force it).
+    let name_key: Option<String> = feature_name_key.map(str::to_string).or_else(|| {
+        let first = fc.features.first()?;
+        [
+            "properties.name",
+            "properties.NAME",
+            "properties.Name",
+            "properties.NAME_1",
+            "name",
+        ]
+        .into_iter()
+        .find(|k| feature_id_by_path(first, k).is_some())
+        .map(str::to_string)
+    });
+    let mut out: Vec<PipFeature> = Vec::with_capacity(fc.features.len());
+    let mut skipped = 0_usize;
+    for feature in &fc.features {
+        let Some(id) = feature_id_by_path(feature, feature_id_key) else {
+            skipped += 1;
+            continue;
+        };
+        let name = name_key
+            .as_deref()
+            .and_then(|k| feature_id_by_path(feature, k))
+            .map(|n| escape_hover(&n));
+        let polygons = match &feature.geometry {
+            Some(g) => geojson_value_to_polygons(&g.value),
+            None => Vec::new(),
+        };
+        if polygons.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        let mut bbox = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for ring in polygons.iter().flatten() {
+            for &[lon, lat] in ring {
+                bbox[0] = bbox[0].min(lon);
+                bbox[1] = bbox[1].min(lat);
+                bbox[2] = bbox[2].max(lon);
+                bbox[3] = bbox[3].max(lat);
+            }
+        }
+        out.push(PipFeature {
+            id,
+            name,
+            polygons,
+            bbox,
+        });
+    }
+    if out.is_empty() {
+        return fail_clierror!(
+            "--geojson has no usable Polygon/MultiPolygon features with a '{feature_id_key}' id. \
+             Check --feature-id-key (e.g. 'id' or 'properties.<name>')."
+        );
+    }
+    if skipped > 0 {
+        eprintln!(
+            "viz: skipped {skipped} GeoJSON feature(s) lacking a '{feature_id_key}' id or polygon \
+             geometry."
+        );
+    }
+    Ok(out)
+}
+
+/// Even-odd ray-casting test: is `(lon, lat)` inside this single polygon (exterior + holes)? A
+/// point in a hole crosses an even number of edges and is correctly reported as outside. Rings are
+/// pre-closed by [`geojson_rings_to_closed`], so `windows(2)` enumerates every edge.
+fn point_in_polygon(polygon: &[Vec<[f64; 2]>], lon: f64, lat: f64) -> bool {
+    let mut inside = false;
+    for ring in polygon {
+        for edge in ring.windows(2) {
+            let &[[xi, yi], [xj, yj]] = edge else {
+                continue;
+            };
+            if ((yi > lat) != (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+/// Is `(lon, lat)` inside this feature (bbox prefilter, then any constituent polygon)?
+fn feature_contains(feature: &PipFeature, lon: f64, lat: f64) -> bool {
+    if lon < feature.bbox[0]
+        || lon > feature.bbox[2]
+        || lat < feature.bbox[1]
+        || lat > feature.bbox[3]
+    {
+        return false;
+    }
+    feature
+        .polygons
+        .iter()
+        .any(|poly| point_in_polygon(poly, lon, lat))
+}
+
+/// Squared Euclidean (degree-space) distance from a point to a line segment.
+fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 <= f64::EPSILON {
+        0.0
+    } else {
+        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+    };
+    let (cx, cy) = (ax + t * dx, ay + t * dy);
+    let (ex, ey) = (px - cx, py - cy);
+    ex * ex + ey * ey
+}
+
+/// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings.
+fn feature_dist2(feature: &PipFeature, lon: f64, lat: f64) -> f64 {
+    let mut best = f64::INFINITY;
+    for ring in feature.polygons.iter().flatten() {
+        for edge in ring.windows(2) {
+            let &[[ax, ay], [bx, by]] = edge else {
+                continue;
+            };
+            let d = point_seg_dist2(lon, lat, ax, ay, bx, by);
+            if d < best {
+                best = d;
+            }
+        }
+    }
+    best
+}
+
+/// Lower-bound squared distance from `(lon, lat)` to a feature's bbox (0 when inside the bbox).
+fn bbox_dist2(bbox: &[f64; 4], lon: f64, lat: f64) -> f64 {
+    let dx = (bbox[0] - lon).max(0.0).max(lon - bbox[2]);
+    let dy = (bbox[1] - lat).max(0.0).max(lat - bbox[3]);
+    dx * dx + dy * dy
+}
+
+/// Result of binning one point into a GeoJSON feature set.
+#[derive(Debug, PartialEq, Eq)]
+enum PipOutcome {
+    /// Contained by feature at this index.
+    Inside(usize),
+    /// Outside every polygon; snapped to the nearest feature at this index.
+    Snapped(usize),
+    /// Outside every polygon and not snapped (dropped).
+    Outside,
+}
+
+/// Assign a point to a feature: exact containment first; if none and `snap`, the nearest feature by
+/// edge distance (bbox lower-bound pruned); if none and `!snap`, [`PipOutcome::Outside`]. The
+/// `Inside`/`Snapped` distinction lets callers report how many points missed every polygon.
+fn pip_assign(features: &[PipFeature], lat: f64, lon: f64, snap: bool) -> PipOutcome {
+    if let Some(i) = features.iter().position(|f| feature_contains(f, lon, lat)) {
+        return PipOutcome::Inside(i);
+    }
+    if !snap {
+        return PipOutcome::Outside;
+    }
+    let mut best_i = None;
+    let mut best_d2 = f64::INFINITY;
+    for (i, f) in features.iter().enumerate() {
+        if bbox_dist2(&f.bbox, lon, lat) >= best_d2 {
+            continue;
+        }
+        let d2 = feature_dist2(f, lon, lat);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best_i = Some(i);
+        }
+    }
+    best_i.map_or(PipOutcome::Outside, PipOutcome::Snapped)
+}
+
 /// Collect every `[lon, lat]` vertex from a GeoJSON value into parallel `(lats, lons)` vectors, so
 /// a `--map` choropleth can frame the MapLibre basemap to its regions instead of opening at
 /// plotly's whole-world default (where county/city polygons are effectively invisible). Descends
@@ -2322,7 +2723,37 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
 /// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
 /// (forward) by reusing qsv's geocode engine.
 fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
-    let mode = parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?;
+    // Point-in-polygon binning: lat/lon points + a custom --geojson, without --geocode. It colors
+    // regions by the GeoJSON feature that CONTAINS each point, so it always uses the geojson-id
+    // location mode regardless of any --location-mode default. --geocode (when also present) takes
+    // precedence — it is an explicit request for the geocode engine.
+    //
+    // lat/lon (point-in-polygon) and --locations (a pre-keyed region column) are two different
+    // ways to identify regions; supplying both (without --geocode) is ambiguous, so fail rather
+    // than silently ignore one. With --geocode, the geocode resolver enforces its own
+    // exactly-one-source rule (lat/lon reverse OR --locations forward).
+    if args.flag_geojson.is_some()
+        && args.flag_lat.is_some()
+        && args.flag_lon.is_some()
+        && args.flag_locations.is_some()
+        && !args.flag_geocode
+    {
+        return fail_incorrectusage_clierror!(
+            "Ambiguous choropleth inputs: --lat/--lon bin each point into the --geojson region \
+             that contains it (point-in-polygon), while --locations names a pre-keyed region \
+             column. Supply one or the other (or add --geocode to reverse-geocode the points)."
+        );
+    }
+    let pip = args.flag_geojson.is_some()
+        && args.flag_lat.is_some()
+        && args.flag_lon.is_some()
+        && !args.flag_geocode;
+    let snap = !args.flag_no_snap;
+    let mode = if pip {
+        LocationMode::GeoJsonId
+    } else {
+        parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?
+    };
     let palette = parse_color_scale(args.flag_color_scale.as_deref().unwrap_or("viridis"))?;
 
     // --value drives the colored measure; aggregation defaults to sum when a --value is given,
@@ -2357,8 +2788,16 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
              won't match a GeoJSON feature id. Use the default geo basemap with --geocode."
         );
     }
+    if args.flag_no_snap && !pip {
+        return fail_incorrectusage_clierror!(
+            "--no-snap only applies to point-in-polygon binning (--lat/--lon + --geojson without \
+             --geocode)."
+        );
+    }
 
-    let (locations, z, measure_label) = if args.flag_geocode {
+    let (locations, z, measure_label, hover_text) = if pip {
+        choropleth_pip_locations(args, agg, snap)?
+    } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
         choropleth_literal_locations(args, agg)?
@@ -2383,7 +2822,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text)
+            .hover_info(HoverInfo::Text);
         plot.add_trace(trace);
         // --style carries a global docopt default of open-street-map (a token-free MapLibre style).
         let style =
@@ -2412,12 +2853,19 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text)
+            .hover_info(HoverInfo::Text);
+        let (geo_land, _geo_water, geo_bg) = geo_palette(args.theme());
         let mut geo = LayoutGeo::new()
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
-            .landcolor(NamedColor::LightGray)
-            .showcountries(true);
+            .landcolor(geo_land)
+            .showcountries(true)
+            // a choropleth paints no ocean, so geo.bgcolor IS the sea (and the area outside the
+            // projection); it carries the theme so a dark map has a dark sea, not the default
+            // white.
+            .bgcolor(geo_bg);
         // usa-states built-in geometries need the albers-usa projection to frame the US (CONUS +
         // AK/HI insets); without it plotly draws the states tiny on the default whole-world view. A
         // --geojson source (handled below) frames itself, so let that override.
@@ -2458,12 +2906,12 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     Ok(plot)
 }
 
-/// Resolve choropleth `(locations, z, measure_label)` from a literal `--locations` region-key
-/// column, aggregating the `--value` measure (or row counts) per region.
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` from a literal `--locations`
+/// region-key column, aggregating the `--value` measure (or row counts) per region.
 fn choropleth_literal_locations(
     args: &Args,
     agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
     let value_idx = match args.flag_value.as_ref() {
@@ -2494,18 +2942,119 @@ fn choropleth_literal_locations(
         values.push(value);
     }
     let (locs, z) = aggregate(raw_locs, values, agg);
-    Ok((locs, z, measure_label))
+    // when a custom --geojson is supplied (geojson-id / --map paths), resolve region names from its
+    // features so hover shows human-readable labels — matching the point-in-polygon path. Without a
+    // --geojson (ISO-3 / US-state built-in geometries) there are no feature names, so hover uses
+    // the location id.
+    let names = match args.flag_geojson.as_deref() {
+        Some(spec) => {
+            let geojson = load_geojson(spec)?;
+            let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+            let features =
+                build_pip_features(&geojson, key, args.flag_feature_name_key.as_deref())?;
+            aligned_region_names(&features, &locs)
+        },
+        None => None,
+    };
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text =
+        choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
 }
 
-/// Resolve choropleth `(locations, z)` via qsv's geocode engine: reverse-geocode `--lat`/`--lon`
-/// points, or forward-geocode a `--locations` name column, into ISO-3 / US-state codes per
-/// `--location-mode`, then aggregate the `--value` measure (or row counts) per region.
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` by point-in-polygon binning: each
+/// row's `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon contains it (or,
+/// unless `snap` is false, to the nearest region), and the `--value` measure (or row counts) is
+/// aggregated per region id. Emits a stderr coverage note when points fall outside every region.
+fn choropleth_pip_locations(
+    args: &Args,
+    agg: Agg,
+    snap: bool,
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+    let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+    let value_idx = match args.flag_value.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+        None => None,
+    };
+    let measure_label = match value_idx {
+        Some(i) => col_label(&headers, i, nh),
+        None => "count".to_string(),
+    };
+
+    let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+    let features = build_pip_features(
+        &geojson,
+        feature_id_key,
+        args.flag_feature_name_key.as_deref(),
+    )?;
+
+    let mut raw_locs: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    let mut total = 0_usize;
+    let mut outside = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+            continue;
+        }
+        let value = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        total += 1;
+        match pip_assign(&features, lat, lon, snap) {
+            PipOutcome::Inside(fi) => {
+                raw_locs.push(features[fi].id.clone());
+                values.push(value);
+            },
+            PipOutcome::Snapped(fi) => {
+                raw_locs.push(features[fi].id.clone());
+                values.push(value);
+                outside += 1;
+            },
+            PipOutcome::Outside => outside += 1,
+        }
+    }
+
+    if outside > 0 {
+        let how = if snap {
+            "snapped to nearest region"
+        } else {
+            "dropped"
+        };
+        eprintln!("viz choropleth: {outside} of {total} points fell outside every region ({how}).");
+    }
+
+    let (locs, z) = aggregate(raw_locs, values, agg);
+    let names = aligned_region_names(&features, &locs);
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text =
+        choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
+}
+
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` via qsv's geocode engine:
+/// reverse-geocode `--lat`/`--lon` points, or forward-geocode a `--locations` name column, into
+/// ISO-3 / US-state codes per `--location-mode`, then aggregate the `--value` measure (or row
+/// counts) per region.
 #[cfg(feature = "geocode")]
 fn choropleth_geocoded_locations(
     args: &Args,
     mode: LocationMode,
     agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     if !matches!(mode, LocationMode::Iso3 | LocationMode::UsaStates) {
         return fail_incorrectusage_clierror!(
             "--geocode only resolves --location-mode iso3 or usa-states (the codes geocode can \
@@ -2593,7 +3142,9 @@ fn choropleth_geocoded_locations(
         }
     }
     let (locs, z) = aggregate(locations, kept_values, agg);
-    Ok((locs, z, measure_label))
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text = choropleth_hover_text(&locs, &z, None, &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
 }
 
 /// Non-geocode build: `--geocode` is unsupported, so reject it with an actionable message.
@@ -2602,7 +3153,7 @@ fn choropleth_geocoded_locations(
     _args: &Args,
     _mode: LocationMode,
     _agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     fail_incorrectusage_clierror!(
         "--geocode requires a qsv build with the `geocode` feature (or a prebuilt qsv binary). \
          Supply ready-made region codes via --locations instead."
@@ -3629,6 +4180,27 @@ fn apply_theme(layout: Layout, theme: Option<BuiltinTheme>) -> Layout {
     }
 }
 
+/// Whether the given theme renders on a dark page (so `geo` maps should use dark land/water fills).
+fn is_dark_theme(theme: Option<BuiltinTheme>) -> bool {
+    matches!(
+        theme,
+        Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark)
+    )
+}
+
+/// The `(land, water, background)` colors for a `geo` subplot under the given theme. Light returns
+/// qsv's built-in look (so unthemed/light renders are visually unchanged); dark returns the dark
+/// fills so choropleth/geo maps are legible on a dark page. `background` is the subplot's
+/// `geo.bgcolor` — it fills the sea on a choropleth (which paints no ocean) and the area outside
+/// the projection (e.g. the corners around a non-rectangular globe).
+fn geo_palette(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'static str) {
+    if is_dark_theme(theme) {
+        (GEO_LAND_DARK, GEO_WATER_DARK, GEO_BG_DARK)
+    } else {
+        (GEO_LAND_LIGHT, GEO_WATER_LIGHT, PAPER_BG)
+    }
+}
+
 /// The `(page background, text color)` to use for the inline `viz smart` HTML page chrome
 /// (the `<body>` around the panel grid), matching each built-in theme's paper/font colors so
 /// a dark theme gets a dark page rather than dark plots floating on white. Mirrors the values
@@ -3695,7 +4267,11 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
         .replace("__PAPER_BG__", PAPER_BG)
         .replace("__INK__", INK)
         .replace("__GRID_COLOR__", GRID_COLOR)
-        .replace("__AXIS_LINE__", AXIS_LINE);
+        .replace("__AXIS_LINE__", AXIS_LINE)
+        .replace("__GEO_LAND_LIGHT__", GEO_LAND_LIGHT)
+        .replace("__GEO_WATER_LIGHT__", GEO_WATER_LIGHT)
+        .replace("__GEO_LAND_DARK__", GEO_LAND_DARK)
+        .replace("__GEO_WATER_DARK__", GEO_WATER_DARK);
 
     ToggleChrome {
         style,
@@ -3730,8 +4306,8 @@ const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-pag
 const SCRIPT_TEMPLATE: &str = r##"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111" };
-  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__" };
+  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__" };
+  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__" };
   function isDark() {
     try {
       var saved = localStorage.getItem("qsv-viz-theme");
@@ -3754,7 +4330,14 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
         u[k + ".zerolinecolor"] = p.zero;
         u[k + ".tickcolor"] = p.line;
       }
-      if (/^geo\d*$/.test(k) || /^polar\d*$/.test(k) || /^scene\d*$/.test(k)) u[k + ".bgcolor"] = p.bg;
+      if (/^geo\d*$/.test(k)) {
+        u[k + ".bgcolor"] = p.bg;
+        u[k + ".landcolor"] = p.land;
+        u[k + ".oceancolor"] = p.water;
+        u[k + ".lakecolor"] = p.water;
+      } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
+        u[k + ".bgcolor"] = p.bg;
+      }
     });
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
@@ -4464,9 +5047,16 @@ enum PanelKind {
     /// and `z` (counts). Like `Geo`, the `geo` subplot doesn't compose with the typed x/y grid,
     /// so a dashboard containing this panel always renders via the inline path.
     Choropleth {
-        locations:     Vec<String>,
-        z:             Vec<f64>,
-        location_mode: LocationMode,
+        locations:      Vec<String>,
+        z:              Vec<f64>,
+        location_mode:  LocationMode,
+        /// User GeoJSON for a point-in-polygon (`geojson-id`) panel; `None` for the built-in
+        /// geocode-derived iso3/usa-states path. Carried as a value so render does no I/O.
+        geojson:        Option<serde_json::Value>,
+        feature_id_key: Option<String>,
+        /// Pre-rendered per-region hover label (aligned to `locations`): name+id, labeled count,
+        /// share of total, rank. Attached via `hover_text_array` + `HoverInfo::Text` at render.
+        hover_text:     Vec<String>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -5787,14 +6377,94 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    let hover_text = choropleth_hover_text(&order, &z, None, "count", true);
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
             locations: order,
             z,
             location_mode,
+            geojson: None,
+            feature_id_key: None,
+            hover_text,
         },
     ))
+}
+
+/// Build a `viz smart` choropleth panel by point-in-polygon binning the core lat/lon points into a
+/// user-supplied GeoJSON (`--geojson`). Each point is assigned to the region whose polygon contains
+/// it (or, unless `snap` is false, the nearest region); the panel is colored by per-region counts.
+/// Unlike [`build_smart_choropleth_panel`] this needs no geocode engine. Errors when the explicit
+/// `--geojson` can't be loaded/parsed or the `--feature-id-key` matches nothing; returns `Ok(None)`
+/// only when valid input yields fewer than 2 regions with points.
+fn build_smart_pip_choropleth_panel(
+    geojson_spec: &str,
+    feature_id_key: &str,
+    feature_name_key: Option<&str>,
+    lats: &[f64],
+    lons: &[f64],
+    snap: bool,
+) -> CliResult<Option<Panel>> {
+    // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
+    // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
+    // valid inputs that simply don't yield enough regions (the <2 check below).
+    let geojson = load_geojson(geojson_spec)?;
+    let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
+    let mut order: Vec<String> = Vec::new();
+    let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut total = 0_usize;
+    let mut outside = 0_usize;
+    for (&lat, &lon) in lats.iter().zip(lons.iter()) {
+        if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+            continue;
+        }
+        total += 1;
+        let fi = match pip_assign(&features, lat, lon, snap) {
+            PipOutcome::Inside(fi) => fi,
+            PipOutcome::Snapped(fi) => {
+                outside += 1;
+                fi
+            },
+            PipOutcome::Outside => {
+                outside += 1;
+                continue;
+            },
+        };
+        let id = &features[fi].id;
+        if let Some(c) = counts.get_mut(id) {
+            *c += 1.0;
+        } else {
+            counts.insert(id.clone(), 1.0);
+            order.push(id.clone());
+        }
+    }
+    if order.len() < 2 {
+        return Ok(None);
+    }
+    // only report after we know a panel will actually render, so the note never describes a map the
+    // dashboard drops.
+    if outside > 0 {
+        let how = if snap {
+            "snapped to nearest region"
+        } else {
+            "dropped"
+        };
+        eprintln!("viz smart: {outside} of {total} points fell outside every region ({how}).");
+    }
+    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    let names = aligned_region_names(&features, &order);
+    let hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
+    Ok(Some(Panel::new(
+        "Regions".to_string(),
+        PanelKind::Choropleth {
+            locations: order,
+            z,
+            location_mode: LocationMode::GeoJsonId,
+            geojson: Some(geojson),
+            feature_id_key: Some(feature_id_key.to_string()),
+            hover_text,
+        },
+    )))
 }
 
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
@@ -5883,13 +6553,28 @@ fn build_map_panel(
     // per-country from what actually resolved — accurate even above `MAX_SMART_POINTS`,
     // embedding only the aggregates (never the raw points), and its own 2-region check drops
     // single-region data.
-    #[cfg(feature = "geocode")]
-    let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
-        || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
-        .flatten();
-    #[cfg(not(feature = "geocode"))]
-    let choropleth_panel: Option<Panel> = None;
+    // A user `--geojson` switches the companion to a point-in-polygon choropleth (ungated — no
+    // geocode engine needed). It bypasses the span gate: an explicit `--geojson` is explicit
+    // intent, so a small custom-district file shouldn't be span-suppressed. Without
+    // `--geojson`, fall back to the geocode-derived iso3/US-state panel (gated, span-gated as
+    // before).
+    let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
+        let snap = !args.flag_no_snap;
+        let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+        let name_key = args.flag_feature_name_key.as_deref();
+        build_smart_pip_choropleth_panel(spec, key, name_key, &core_lats, &core_lons, snap)?
+    } else {
+        #[cfg(feature = "geocode")]
+        {
+            (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+                .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+                .flatten()
+        }
+        #[cfg(not(feature = "geocode"))]
+        {
+            None
+        }
+    };
 
     let kind = if global {
         PanelKind::Geo {
@@ -7666,16 +8351,18 @@ fn smart_grid_parts(
                 },
                 _ => (lonaxis, lataxis),
             };
+            let (geo_land, geo_water, geo_bg) = geo_palette(theme);
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .resolution(GeoResolution::OneOverFiftyMillion)
                 .showland(true)
-                .landcolor(NamedColor::LightGray)
+                .landcolor(geo_land)
                 .showocean(true)
-                .oceancolor(NamedColor::LightBlue)
+                .oceancolor(geo_water)
                 .showlakes(true)
-                .lakecolor(NamedColor::LightBlue)
-                .showcountries(true);
+                .lakecolor(geo_water)
+                .showcountries(true)
+                .bgcolor(geo_bg);
             if let Some(lonaxis) = lonaxis {
                 geo = geo.lonaxis(lonaxis);
             }
@@ -8137,16 +8824,18 @@ fn smart_inline_panel_plot(
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_geo(&mut plot, meta);
         }
+        let (geo_land, geo_water, geo_bg) = geo_palette(theme);
         let geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
-            .landcolor(NamedColor::LightGray)
+            .landcolor(geo_land)
             .showocean(true)
-            .oceancolor(NamedColor::LightBlue)
+            .oceancolor(geo_water)
             .showlakes(true)
-            .lakecolor(NamedColor::LightBlue)
-            .showcountries(true);
+            .lakecolor(geo_water)
+            .showcountries(true)
+            .bgcolor(geo_bg);
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -8169,17 +8858,26 @@ fn smart_inline_panel_plot(
         locations,
         z,
         location_mode,
+        geojson,
+        feature_id_key,
+        hover_text,
     } = &panel.kind
     {
         let mut plot = Plot::new();
-        plot.add_trace(
-            Choropleth::new(locations.clone(), z.clone())
-                .location_mode(location_mode.clone())
-                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(true)
-                .color_bar(ColorBar::new().title("count"))
-                .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
-        );
+        let mut trace = Choropleth::new(locations.clone(), z.clone())
+            .location_mode(location_mode.clone())
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title("count"))
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text.clone())
+            .hover_info(HoverInfo::Text);
+        // a point-in-polygon panel carries its own GeoJSON polygons (geojson-id mode); the
+        // built-in geocode-derived panels (iso3 / usa-states) carry neither.
+        if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
+            trace = trace.geojson(gj.clone()).feature_id_key(key.clone());
+        }
+        plot.add_trace(trace);
         // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
         // the countries/states at the edges — e.g. a city near a country's center).
         // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
@@ -8187,11 +8885,16 @@ fn smart_inline_panel_plot(
         // Plotly fits the view to the union of the rendered region polygons — a
         // European/Asian/etc. cluster zooms to those countries, global data stays
         // world-scale.
+        let (geo_land, _geo_water, geo_bg) = geo_palette(theme);
         let mut geo = LayoutGeo::new()
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
-            .landcolor(NamedColor::LightGray)
-            .showcountries(true);
+            .landcolor(geo_land)
+            .showcountries(true)
+            // the choropleth paints no ocean, so geo.bgcolor is the sea; it carries the theme so a
+            // dark map has a dark sea. The smart toggle also relayouts geo.bgcolor for live
+            // switching.
+            .bgcolor(geo_bg);
         if matches!(location_mode, LocationMode::UsaStates) {
             geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
         } else {
@@ -11373,5 +12076,190 @@ mod tests {
             v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
             "max-pair V={v} should catch nested level"
         );
+    }
+
+    #[test]
+    fn pip_inside_outside_and_snap() {
+        // one 0..10 square keyed by properties.id
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats.len(), 1);
+        assert_eq!(feats[0].id, "A");
+        // (lat, lon) inside the square
+        assert_eq!(pip_assign(&feats, 5.0, 5.0, false), PipOutcome::Inside(0));
+        // far outside, no snap -> dropped
+        assert_eq!(pip_assign(&feats, 50.0, 50.0, false), PipOutcome::Outside);
+        // far outside, snap -> nearest (the only) feature
+        assert_eq!(pip_assign(&feats, 50.0, 50.0, true), PipOutcome::Snapped(0));
+    }
+
+    #[test]
+    fn pip_multipolygon_and_holes() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"id": "M"}, "geometry": {
+                    "type": "MultiPolygon", "coordinates": [
+                        [[[0.0, 0.0], [0.0, 2.0], [2.0, 2.0], [2.0, 0.0], [0.0, 0.0]]],
+                        [[[10.0, 10.0], [10.0, 12.0], [12.0, 12.0], [12.0, 10.0], [10.0, 10.0]]]
+                    ]}},
+                {"type": "Feature", "properties": {"id": "H"}, "geometry": {
+                    "type": "Polygon", "coordinates": [
+                        [[20.0, 20.0], [20.0, 30.0], [30.0, 30.0], [30.0, 20.0], [20.0, 20.0]],
+                        [[23.0, 23.0], [23.0, 27.0], [27.0, 27.0], [27.0, 23.0], [23.0, 23.0]]
+                    ]}}
+            ]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        let m = feats.iter().position(|f| f.id == "M").unwrap();
+        let h = feats.iter().position(|f| f.id == "H").unwrap();
+        // inside the SECOND polygon of the MultiPolygon
+        assert_eq!(pip_assign(&feats, 11.0, 11.0, false), PipOutcome::Inside(m));
+        // inside H's filled band (between exterior and hole)
+        assert_eq!(pip_assign(&feats, 21.0, 21.0, false), PipOutcome::Inside(h));
+        // inside H's HOLE -> not contained; no snap -> dropped
+        assert_eq!(pip_assign(&feats, 25.0, 25.0, false), PipOutcome::Outside);
+        // same hole point, snap -> snaps back to H (nearest boundary)
+        assert_eq!(pip_assign(&feats, 25.0, 25.0, true), PipOutcome::Snapped(h));
+    }
+
+    #[test]
+    fn pip_feature_id_top_level_numeric_and_missing_skipped() {
+        // first feature has a numeric top-level id; second has no top-level id (skipped under "id")
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "id": 7, "properties": {}, "geometry": {
+                    "type": "Polygon", "coordinates":
+                        [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}},
+                {"type": "Feature", "properties": {"name": "x"}, "geometry": {
+                    "type": "Polygon", "coordinates":
+                        [[[5.0, 5.0], [5.0, 6.0], [6.0, 6.0], [6.0, 5.0], [5.0, 5.0]]]}}
+            ]
+        });
+        let feats = build_pip_features(&gj, "id", None).unwrap();
+        assert_eq!(feats.len(), 1, "feature without a top-level id is skipped");
+        assert_eq!(feats[0].id, "7", "numeric id coerces to string");
+        assert_eq!(pip_assign(&feats, 0.5, 0.5, false), PipOutcome::Inside(0));
+    }
+
+    #[test]
+    fn pip_build_errors_when_no_feature_matches_key() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"name": "x"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        // no feature has properties.id -> usable set is empty -> error
+        assert!(build_pip_features(&gj, "properties.id", None).is_err());
+    }
+
+    #[test]
+    fn escape_hover_escapes_markup() {
+        assert_eq!(escape_hover("A & <B>"), "A &amp; &lt;B&gt;");
+        // & must be escaped first so an already-escaped entity isn't double-escaped wrongly
+        assert_eq!(escape_hover("<b>"), "&lt;b&gt;");
+    }
+
+    #[test]
+    fn fmt_measure_whole_vs_decimal() {
+        assert_eq!(fmt_measure(65.0), "65");
+        assert_eq!(fmt_measure(3.27), "3.27");
+        assert_eq!(fmt_measure(3.3630), "3.363");
+        assert_eq!(fmt_measure(0.5), "0.5");
+    }
+
+    #[test]
+    fn build_pip_features_autodetects_and_overrides_name() {
+        // properties.name is auto-detected when no key is given
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A", "name": "Alpha", "label": "Other"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Alpha"));
+        // explicit --feature-name-key overrides auto-detect
+        let feats = build_pip_features(&gj, "properties.id", Some("properties.label")).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Other"));
+        // no name property anywhere -> None (universal hover, no name line)
+        let gj2 = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj2, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name, None);
+    }
+
+    #[test]
+    fn build_pip_features_escapes_name() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A", "name": "R&D <x>"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("R&amp;D &lt;x&gt;"));
+    }
+
+    #[test]
+    fn choropleth_hover_text_content_and_alignment() {
+        // z deliberately unsorted so rank (by descending z) differs from index order
+        let locs = vec!["JP01".to_string(), "JP02".to_string(), "JP03".to_string()];
+        let z = vec![10.0, 30.0, 60.0];
+        let names = vec!["Hokkaido".to_string(), String::new(), "Okinawa".to_string()];
+        let h = choropleth_hover_text(&locs, &z, Some(&names), "count", true);
+        assert_eq!(h.len(), 3);
+        // named region: name (id), labeled count, share, rank (10/100 = 10%, lowest -> rank 3)
+        assert_eq!(
+            h[0],
+            "<b>Hokkaido</b> (JP01)<br>count: 10<br>10.0% of total<br>rank 3 of 3"
+        );
+        // empty name -> bold id fallback; 30/100 = 30%, rank 2
+        assert_eq!(
+            h[1],
+            "<b>JP02</b><br>count: 30<br>30.0% of total<br>rank 2 of 3"
+        );
+        // highest z -> rank 1
+        assert_eq!(
+            h[2],
+            "<b>Okinawa</b> (JP03)<br>count: 60<br>60.0% of total<br>rank 1 of 3"
+        );
+    }
+
+    #[test]
+    fn choropleth_hover_text_no_pct_when_not_count_or_sum() {
+        let locs = vec!["A".to_string(), "B".to_string()];
+        let z = vec![3.5, 1.5];
+        // include_pct = false (mean/min/max): no "% of total" line, value still labeled + ranked
+        let h = choropleth_hover_text(&locs, &z, None, "magnitude", false);
+        assert_eq!(h[0], "<b>A</b><br>magnitude: 3.5<br>rank 1 of 2");
+        assert_eq!(h[1], "<b>B</b><br>magnitude: 1.5<br>rank 2 of 2");
+        assert!(!h[0].contains("% of total"));
     }
 }

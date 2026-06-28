@@ -98,8 +98,8 @@
 <script>
 (function () {
   var themeDefaultMode = "system";
-  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111" };
-  var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF" };
+  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "#2a3138", water: "#16202b" };
+  var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF", land: "#d3d3d3", water: "#add8e6" };
   function isDark() {
     try {
       var saved = localStorage.getItem("qsv-viz-theme");
@@ -122,7 +122,14 @@
         u[k + ".zerolinecolor"] = p.zero;
         u[k + ".tickcolor"] = p.line;
       }
-      if (/^geo\d*$/.test(k) || /^polar\d*$/.test(k) || /^scene\d*$/.test(k)) u[k + ".bgcolor"] = p.bg;
+      if (/^geo\d*$/.test(k)) {
+        u[k + ".bgcolor"] = p.bg;
+        u[k + ".landcolor"] = p.land;
+        u[k + ".oceancolor"] = p.water;
+        u[k + ".lakecolor"] = p.water;
+      } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
+        u[k + ".bgcolor"] = p.bg;
+      }
     });
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;

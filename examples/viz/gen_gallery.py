@@ -104,18 +104,24 @@ BANNER = (
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart dashboard (--smarter, geospatial)",
-     "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3` command, "
-     "10 auto-chosen panels — nearly every "
+     "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 "
+     "--geojson japan_prefectures.geojson --feature-id-key properties.id` command, 11 auto-chosen "
+     "panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
      "draws a histogram, not a box that would average the peaks away); the points trace Japan's "
-     "subduction arcs on the map; magnitude vs felt_reports is almost perfectly correlated "
+     "subduction arcs on the map; and a <b>prefecture choropleth</b> bins each quake into the "
+     "GeoJSON region that contains it (point-in-polygon, no geocoding) — most of this catalog is "
+     "offshore Pacific seismicity, so each such quake is snapped to its nearest prefecture "
+     "(coloring the Tōhoku/Hokkaidō coast; pass <code>--no-snap</code> for an on-land-only view). "
+     "magnitude vs felt_reports is almost perfectly correlated "
      "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
      "magnitude-over-time trend spikes during a September aftershock sequence. Coordinate columns "
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
      "<code>plotly_dark</code> theme.",
-     True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3"]),
+     True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3",
+            "--geojson", "japan_prefectures.geojson", "--feature-id-key", "properties.id"]),
     ("smart dashboard (geographic outliers)",
      "`qsv viz smart delivery_stops.csv` — delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "

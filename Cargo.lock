@@ -5818,7 +5818,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#f4f9f3a4f184b459a3e7bddb271ff08aa5f6eb68"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#c933b51fba05b77893201daa61bf06d2ac50e38f"
 dependencies = [
  "askama",
  "async-trait",
@@ -5841,7 +5841,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#f4f9f3a4f184b459a3e7bddb271ff08aa5f6eb68"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#c933b51fba05b77893201daa61bf06d2ac50e38f"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5852,7 +5852,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#f4f9f3a4f184b459a3e7bddb271ff08aa5f6eb68"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#c933b51fba05b77893201daa61bf06d2ac50e38f"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -6841,6 +6841,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gender_guesser",
+ "geojson",
  "geosuggest-core",
  "geosuggest-utils",
  "geozero",

@@ -3211,6 +3211,62 @@ fn viz_theme_dark_applies_template() {
     assert!(html.contains(r##""plot_bgcolor":"#111111""##));
 }
 
+// a choropleth's geo subplot is theme-aware: a dark theme uses dark land + a dark geo background
+// (the sea) so the map is legible on a dark page, while the default/light look stays light gray.
+#[test]
+fn viz_choropleth_geo_theme_aware() {
+    let wrk = Workdir::new("viz_choropleth_geo_theme_aware");
+    wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\nMEX,3\n");
+
+    // dark theme -> dark land + painted dark ocean
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "iso3",
+        "--value",
+        "val",
+        "--theme",
+        "plotly_dark",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let dark = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        dark.contains(r##""landcolor":"#2a3138""##),
+        "dark land missing"
+    );
+    // a choropleth paints no ocean; the sea is geo.bgcolor, which carries the dark theme
+    assert!(
+        dark.contains(r##""bgcolor":"#111111""##),
+        "dark geo background missing"
+    );
+
+    // default (no theme) -> built-in light gray land + white geo background
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "iso3",
+        "--value",
+        "val",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let light = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        light.contains(r##""landcolor":"#d3d3d3""##),
+        "light land missing"
+    );
+    // the dark palette must not bleed into the light/default render
+    assert!(
+        !light.contains("#16202b") && !light.contains("#2a3138"),
+        "light path must not use the dark geo palette"
+    );
+}
+
 #[test]
 fn viz_no_theme_has_no_template() {
     let wrk = Workdir::new("viz_no_theme_has_no_template");
@@ -4241,6 +4297,352 @@ fn viz_choropleth_map_frames_ignore_properties() {
         lon < -70.0,
         "center lon {lon} should be in the US (decoy property coord leaked into framing?)"
     );
+}
+
+// point-in-polygon binning: lat/lon points + a custom --geojson (no --geocode) bins each point into
+// the region whose polygon contains it; the location IS the feature id (exact, no name/code match).
+#[test]
+fn viz_choropleth_pip_bins_points() {
+    let wrk = Workdir::new("viz_choropleth_pip_bins_points");
+    // A = lon 0..10, B = lon 10..20 (both lat 0..10); one point far outside
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n50,50\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a geo Choropleth in geojson-id mode, matched on properties.id, with the geojson embedded
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"geojson-id""#));
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+    assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
+    // A gets the one (5,5) point; B gets two (5,15) + the snapped (50,50) outlier (snap is default)
+    assert!(html.contains(r#""locations":["A","B"]"#));
+    assert!(html.contains(r#""z":[1.0,3.0]"#));
+    // the snapped outlier is reported on stderr so the user knows a point missed every polygon
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 of 4 points fell outside every region (snapped to nearest region)"),
+        "missing snap coverage note; stderr was: {stderr}"
+    );
+}
+
+// --no-snap drops points outside every region (instead of snapping to nearest) and reports coverage
+// on stderr.
+#[test]
+fn viz_choropleth_pip_no_snap_drops_and_reports() {
+    let wrk = Workdir::new("viz_choropleth_pip_no_snap_drops_and_reports");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n50,50\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the (50,50) point is dropped: B keeps only its two contained points
+    assert!(html.contains(r#""z":[1.0,2.0]"#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 of 4 points fell outside every region (dropped)"),
+        "missing coverage note; stderr was: {stderr}"
+    );
+}
+
+// --no-snap is only meaningful on the point-in-polygon path; reject it otherwise.
+#[test]
+fn viz_choropleth_no_snap_requires_pip() {
+    let wrk = Workdir::new("viz_choropleth_no_snap_requires_pip");
+    wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "rg.csv", "--locations", "iso3", "--no-snap"]);
+    wrk.assert_err(&mut cmd);
+}
+
+// --lat/--lon + --geojson (point-in-polygon) and --locations (pre-keyed regions) are mutually
+// exclusive without --geocode; supplying both must error rather than silently ignore --locations.
+#[test]
+fn viz_choropleth_pip_and_locations_is_ambiguous() {
+    let wrk = Workdir::new("viz_choropleth_pip_and_locations_is_ambiguous");
+    wrk.create_from_string("pts.csv", "lat,lon,region\n5,5,A\n5,15,B\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// `viz smart --geojson` with an explicit-but-broken GeoJSON (here a --feature-id-key that matches
+// no feature) must error, not silently produce a dashboard without the Regions panel.
+#[test]
+fn viz_smart_pip_bad_feature_id_key_errors() {
+    let wrk = Workdir::new("viz_smart_pip_bad_feature_id_key_errors");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n6,16\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.nonexistent",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// `viz smart` builds a point-in-polygon prefecture/region choropleth panel when given a --geojson,
+// with no geocode engine involved.
+#[test]
+fn viz_smart_pip_choropleth_panel() {
+    let wrk = Workdir::new("viz_smart_pip_choropleth_panel");
+    wrk.create_from_string("pts.csv", "lat,lon,mag\n5,5,1\n6,6,2\n5,15,3\n6,16,4\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"geojson-id""#));
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+}
+
+// PIP choropleth hover shows the human-readable region name (auto-detected from properties.name),
+// the labeled count, the share of total, and the rank.
+#[test]
+fn viz_choropleth_pip_hover_names() {
+    let wrk = Workdir::new("viz_choropleth_pip_hover_names");
+    // 1 point in A, 3 in B
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n6,16\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains(r#""hoverinfo":"text""#),
+        "hoverinfo:text missing"
+    );
+    // names auto-detected from properties.name; labeled count, share, and rank present
+    assert!(html.contains("Alpha"), "region name Alpha missing");
+    assert!(html.contains("Bravo"), "region name Bravo missing");
+    assert!(html.contains("count: 1"), "labeled count missing");
+    assert!(html.contains("% of total"), "share-of-total missing");
+    assert!(html.contains("rank 1 of 2"), "rank missing");
+}
+
+// literal choropleth with a non-count aggregation (mean): hover is labeled and ranked, but the
+// share-of-total line is suppressed (a share is meaningless for a mean).
+#[test]
+fn viz_choropleth_literal_hover_labeled() {
+    let wrk = Workdir::new("viz_choropleth_literal_hover_labeled");
+    wrk.create_from_string("rg.csv", "region,mag\nUSA,2\nUSA,4\nCAN,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "mag",
+        "--agg",
+        "mean",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(html.contains("mag: 3"), "labeled mean value missing");
+    assert!(html.contains("rank "), "rank missing");
+    assert!(
+        !html.contains("% of total"),
+        "share-of-total must be suppressed for mean agg"
+    );
+}
+
+// a literal --locations choropleth backed by a custom --geojson resolves region names from the
+// GeoJSON (auto-detected properties.name) into the hover, same as the point-in-polygon path.
+#[test]
+fn viz_choropleth_literal_geojson_hover_names() {
+    let wrk = Workdir::new("viz_choropleth_literal_geojson_hover_names");
+    wrk.create_from_string("rg.csv", "state,val\nA,10\nB,30\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "state",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    // names auto-detected from the GeoJSON properties.name, shown as "<name> (<id>)"
+    assert!(html.contains("Alpha"), "region name Alpha missing");
+    assert!(html.contains("Bravo"), "region name Bravo missing");
+    assert!(html.contains("val: 10"), "labeled value missing");
+}
+
+// the --map (MapLibre ChoroplethMap) path also carries the enriched hover.
+#[test]
+fn viz_choropleth_map_hover() {
+    let wrk = Workdir::new("viz_choropleth_map_hover");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--map",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choroplethmap""#),
+        "not a choroplethmap"
+    );
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains("Alpha") || html.contains("Bravo"),
+        "region name missing"
+    );
+    assert!(html.contains("rank "), "rank missing");
+}
+
+// `viz smart` PIP choropleth panel carries the enriched hover (names + count + share + rank).
+#[test]
+fn viz_smart_pip_choropleth_hover_names() {
+    let wrk = Workdir::new("viz_smart_pip_choropleth_hover_names");
+    wrk.create_from_string("pts.csv", "lat,lon,mag\n5,5,1\n6,6,2\n5,15,3\n6,16,4\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains(r#""hoverinfo":"text""#),
+        "hoverinfo:text missing"
+    );
+    assert!(
+        html.contains("Alpha") && html.contains("Bravo"),
+        "region names missing"
+    );
+    assert!(html.contains("% of total"), "share-of-total missing");
+    assert!(html.contains("rank "), "rank missing");
 }
 
 // the projection (non-`--map`) path must frame the `geo` subplot to a custom GeoJSON extent —

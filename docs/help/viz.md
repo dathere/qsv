@@ -259,6 +259,12 @@ qsv viz choropleth counties.csv --locations fips --value pop --map --geojson cou
 qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
 ```
 
+> Point-in-polygon: bin lat/lon points into custom GeoJSON regions by count (no geocode)
+
+```console
+qsv viz choropleth quakes.csv --lat lat --lon lon --geojson prefectures.geojson --feature-id-key properties.id -o by_pref.html
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_viz.rs).
 
 See also <https://github.com/dathere/qsv/wiki/Visualization>
@@ -340,15 +346,17 @@ qsv viz --help
 
 ## Choropleth Options [↩](#nav)
 
-| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
+| &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑locations`&nbsp; | string | Column holding the region key for each row (an ISO-3 country code, a 2-letter US state code, a country name, or a GeoJSON feature id, per --location-mode). With --geocode, this instead names a place-name column to forward-geocode into region codes. |  |
 | &nbsp;`‑‑location‑mode`&nbsp; | string | How --locations values are matched to regions. One of: iso3 (the default, ISO-3166-1 alpha-3 country codes), usa-states (2-letter US state codes), country-names (full country names), geojson-id (match a --geojson feature id). | `iso3` |
 | &nbsp;`‑‑color‑scale`&nbsp; | string | Colorscale for the region fill. One of: viridis (the default), cividis, greys, greens, blues, reds, ylgnbu, ylorrd, bluered, rdbu, portland, electric, jet, hot, blackbody, earth, picnic, rainbow. | `viridis` |
 | &nbsp;`‑‑map`&nbsp; | flag | Render on a token-free MapLibre tile basemap (a ChoroplethMap) instead of the default projection basemap. Requires --geojson and --feature-id-key. Reuses --style for the basemap. |  |
-| &nbsp;`‑‑geojson`&nbsp; | string | Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode. |  |
-| &nbsp;`‑‑feature‑id‑key`&nbsp; | string | Property path in each GeoJSON feature whose value matches an entry in the locations column (e.g. id, properties.fips). | `id` |
+| &nbsp;`‑‑geojson`&nbsp; | string | Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode. Also enables point-in-polygon binning: with --lat/--lon (and without --geocode), each row's point is binned into the region whose polygon contains it (exact, no geocoding) and colored by --value/--agg or counts. |  |
+| &nbsp;`‑‑feature‑id‑key`&nbsp; | string | Property path in each GeoJSON feature whose value matches an entry in the locations column, or that labels each binned region (e.g. id, properties.fips). | `id` |
+| &nbsp;`‑‑feature‑name‑key`&nbsp; | string | GeoJSON property path whose value is shown as the human-readable region label in choropleth hover (e.g. properties.name). When omitted, common name keys are auto-detected; falls back to the feature id when absent. |  |
 | &nbsp;`‑‑geocode`&nbsp; | flag | Derive the region codes by reusing qsv's geocode engine (needs a build with the geocode feature). Either reverse-geocode the lat/lon points, or forward-geocode the locations name column. Only valid with location modes iso3 or usa-states. `viz choropleth` also reuses --value, --agg, --style and the lat/lon options. |  |
+| &nbsp;`‑‑no‑snap`&nbsp; | flag | For point-in-polygon binning (lat/lon points binned into a custom GeoJSON without geocoding): drop points that fall outside every region instead of snapping each to its nearest region (the default). A stderr note reports coverage either way. |  |
 
 <a name="smart-options"></a>
 

@@ -56,7 +56,7 @@ as `text/plain`, so a browser won't render it):
 | `world_cities.csv` | 33 major cities spanning all **seven continents** (incl. two Antarctic stations): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m`, `avg_annual_temp_c` | `smart --dictionary infer` (global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a seven-continent bar + box panels) |
 | `us_cities.csv` | 54 US cities across ~35 states: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
-| `seismic_events.csv` | 417 synthetic Japanese earthquakes: `timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID | `smart --smarter` (the full geospatial dashboard: map + time-series + correlation + scatter + histogram + boxes + bars) |
+| `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2) | `smart --smarter --geojson japan_prefectures.geojson --feature-id-key properties.id` (the full geospatial dashboard: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
 
 ## The smart dashboard
@@ -162,11 +162,16 @@ qsv viz smart quakes.csv -o quakes_dashboard.html
 # them out in the spatial-extent label, e.g. "... — 4 outliers (Wyoming, Kansas & Nebraska)"
 qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 
-# the full geospatial dashboard: a map, a time-series, a correlation heatmap + drill-down
-# scatter, a bimodal-depth histogram, annotated boxes and frequency bars — all auto-chosen.
+# the full geospatial dashboard: a map, a prefecture choropleth, a time-series, a correlation
+# heatmap + drill-down scatter, a bimodal-depth histogram, annotated boxes and frequency bars —
+# all auto-chosen. --geojson + --feature-id-key add a point-in-polygon prefecture choropleth: each
+# quake is binned into the GeoJSON region that contains it (no geocoding). This catalog is mostly
+# offshore, so each such quake snaps to its nearest prefecture; add --no-snap to drop offshore
+# points and color on-land prefectures only. A stderr note reports coverage either way.
 # Recognized lat/lon columns are charted on the map only, not as redundant distribution panels.
 # Rendered with the built-in plotly_dark theme (--theme works on every chart type, incl. smart).
-qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 -o seismic_dashboard.html
+qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 \
+    --geojson japan_prefectures.geojson --feature-id-key properties.id -o seismic_dashboard.html
 ```
 
 ### dictionary-guided hierarchy panels (treemap / sunburst)

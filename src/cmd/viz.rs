@@ -2555,17 +2555,28 @@ fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64
     }
 }
 
-/// Does any ring edge jump more than 180° in longitude? Adjacent vertices of a real boundary are
-/// never that far apart, so such a jump means the ring crosses the ±180° antimeridian (the GeoJSON
-/// seam) and the feature must be normalized into a `[0, 360)` longitude frame before planar
-/// point-in-polygon tests, which can't reason across the seam.
+/// Does any ring edge make a genuine ±180° antimeridian jump? True only when an edge spans more
+/// than 180° of longitude AND both of its endpoints lie near the seam (opposite sides) — the
+/// signature of a dateline crossing (e.g. 179° -> -179°). A wide but non-crossing polygon (whose
+/// long edges are centered away from the seam) is deliberately NOT flagged, so its planar interior
+/// is binned correctly. When true, the feature is normalized into a `[0, 360)` longitude frame
+/// before planar point-in-polygon tests, which can't reason across the seam.
 fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
+    // A real dateline jump connects two vertices that BOTH sit near the ±180° seam on opposite
+    // sides (e.g. 179° -> -179°): the edge spans >180° AND both endpoints are within
+    // NEAR_ANTIMERIDIAN_DEG of the meridian. Requiring both endpoints near the seam (not just a
+    // >180° span) avoids misclassifying a wide but non-crossing polygon — e.g. a coarse
+    // -100°..100° rectangle whose horizontal edge spans 200° but is centered on the prime
+    // meridian; normalizing that would wrongly push its prime-meridian interior outside the bbox.
+    const NEAR_ANTIMERIDIAN_DEG: f64 = 170.0;
     polygons.iter().flatten().any(|ring| {
         ring.windows(2).any(|edge| {
             let &[[lon_a, _], [lon_b, _]] = edge else {
                 return false;
             };
             (lon_a - lon_b).abs() > 180.0
+                && lon_a.abs() >= NEAR_ANTIMERIDIAN_DEG
+                && lon_b.abs() >= NEAR_ANTIMERIDIAN_DEG
         })
     })
 }
@@ -5338,6 +5349,47 @@ fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
 /// distribution's edge points stay core rather than swamping the map.
 const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
 
+/// Antimeridian-aware median longitude. Mirrors the largest-gap unwrapping of
+/// [`lon_center_and_span`] but takes the median (robust to strays) rather than a trimmed midpoint.
+/// A plain nearest-rank median can land on a NON-cluster stray: a dateline cluster split across
+/// +179°/-179° plus a lone point near 0° makes 0° the middle element, so the real cluster then
+/// reads as ~180° away (and the stray as central) and outlier detection inverts. Unwrapping around
+/// the largest empty gap places the centroid inside the cluster. Input must be ascending-sorted;
+/// returns a longitude in (-180, 180]. Reduces to a plain median when the data doesn't cross the
+/// antimeridian (the common case, including all single-hemisphere data).
+fn circular_median_lon(sorted: &[f64]) -> f64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    // largest gap between adjacent longitudes (the empty wedge the data does NOT cover)
+    let mut max_gap = 0.0_f64;
+    let mut gap_idx = 0; // gap lies between sorted[gap_idx] and sorted[gap_idx + 1]
+    for i in 0..n.saturating_sub(1) {
+        let gap = sorted[i + 1] - sorted[i];
+        if gap > max_gap {
+            max_gap = gap;
+            gap_idx = i;
+        }
+    }
+    // the wrap gap closes the circle from the easternmost point back to the westernmost
+    let wrap_gap = (sorted[0] + 360.0) - sorted[n - 1];
+    if wrap_gap >= max_gap {
+        // doesn't cross the antimeridian -> plain median
+        return sorted_quantile(sorted, 0.5);
+    }
+    // crosses the seam: unwrap the cluster into a contiguous ascending range (the arc east of the
+    // gap, then the points west of it shifted +360), take the median, normalize back to (-180, 180]
+    let mut unwrapped: Vec<f64> = Vec::with_capacity(n);
+    unwrapped.extend_from_slice(&sorted[gap_idx + 1..]);
+    unwrapped.extend(sorted[..=gap_idx].iter().map(|v| v + 360.0));
+    let mut med = sorted_quantile(&unwrapped, 0.5);
+    if med > 180.0 {
+        med -= 360.0;
+    }
+    med
+}
+
 /// Partition row-aligned (lat, lon) pairs into a core set and a geographic-outlier set by distance
 /// from the cluster centroid: a point is an outlier when its distance from the (robust, per-axis
 /// median) centroid exceeds the Tukey far-out fence `q3 + 3*IQR` of all points' distances. Distance
@@ -5361,7 +5413,10 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     sorted_lons.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let c_lat = sorted_quantile(&sorted_lats, 0.5);
-    let c_lon = sorted_quantile(&sorted_lons, 0.5);
+    // antimeridian-aware median: a plain median can land on a non-cluster stray near 0° when the
+    // real cluster straddles ±180°, inverting outlier detection. circular_median_lon places the
+    // centroid inside the cluster; it's a no-op for single-hemisphere data.
+    let c_lon = circular_median_lon(&sorted_lons);
     // scale longitude so a degree of lon counts like a degree of lat at this latitude
     let lon_scale = c_lat.to_radians().cos().abs().max(0.01);
 
@@ -12767,6 +12822,30 @@ mod tests {
     }
 
     #[test]
+    fn partition_geo_outliers_centroid_ignores_stray_across_seam() {
+        // a dateline cluster split across +179°/-179° plus ONE stray near 0°. A plain median lon
+        // picks the stray (0°) as the centroid, making the real cluster read ~180° away and the
+        // stray look central -> the cluster would be flagged and the stray kept. The circular
+        // centroid sits in the cluster, so only the stray is flagged.
+        let lats = [10.0, 10.1, 9.9, 10.2, 9.8, 10.1, 9.9, 10.0, 10.0];
+        let lons = [
+            179.0, 179.2, 179.4, 179.6, -179.6, -179.4, -179.2, -179.0, 0.5,
+        ];
+        let (core_lats, _core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(
+            out_lons.len(),
+            1,
+            "exactly the lone mid-ocean stray should be flagged, got {out_lons:?}"
+        );
+        assert!(
+            out_lons[0].abs() < 1.0,
+            "the flagged outlier should be the ~0° stray, got {}",
+            out_lons[0]
+        );
+        assert_eq!(core_lats.len(), 8);
+    }
+
+    #[test]
     fn pip_assign_handles_antimeridian_crossing_feature() {
         // a Polygon spanning lon 170° .. -170° (crossing +180°), lat 0° .. 10°, in raw unsplit
         // GeoJSON coordinates (a 170->-170 edge jumps 340° => detected as antimeridian-crossing).
@@ -12808,6 +12887,41 @@ mod tests {
         assert_eq!(
             pip_assign(&features, 15.0, -175.0, true, 2_000.0),
             PipOutcome::Snapped(0)
+        );
+    }
+
+    #[test]
+    fn pip_assign_wide_polygon_is_not_treated_as_crossing() {
+        // a coarse rectangle spanning lon -100°..100°, lat 0°..10°: its horizontal edges span 200°
+        // but are centered on the prime meridian, NOT the antimeridian. It must NOT be normalized,
+        // so a Greenwich point (lon 0°) inside the rectangle still bins inside it.
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "WIDE",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-100.0, 0.0], [100.0, 0.0], [100.0, 10.0], [-100.0, 10.0], [-100.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            !features[0].wraps_antimeridian,
+            "a prime-meridian-centered wide polygon must not be flagged as antimeridian-crossing"
+        );
+        // Greenwich (lon 0°) is inside the -100..100 rectangle
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        // a point well east of +100° is outside
+        assert_eq!(
+            pip_assign(&features, 5.0, 150.0, false, f64::INFINITY),
+            PipOutcome::Outside
         );
     }
 

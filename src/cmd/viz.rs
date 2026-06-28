@@ -1654,10 +1654,11 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
 }
 
 /// Largest-Triangle-Three-Buckets downsampling. Returns the indices (into `xs`/`ys`) of at most
-/// `cap` points that best preserve the visual shape of a `y = f(x)` series. Unlike uniform stride
-/// sampling (`downsample_pair`), this selects by triangle area in (x, y) space, so spikes/peaks
-/// between strides survive instead of being stepped over. Requires `xs` sorted ascending
-/// (monotonic) and finite `ys`. First and last points are always retained.
+/// `cap` points that best preserve the visual shape of a `y = f(x)` series (all `n` indices
+/// unchanged when `n <= cap` or `cap == 0`). Unlike uniform stride sampling (`downsample_pair`),
+/// this selects by triangle area in (x, y) space, so spikes/peaks between strides survive instead
+/// of being stepped over. Requires `xs` sorted ascending (monotonic) and finite `ys`. First and
+/// last points are always retained.
 fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
     let n = xs.len();
     if cap == 0 || n <= cap {
@@ -1720,8 +1721,10 @@ fn mercator_y(lat: f64) -> f64 {
 ///   zoom_lon = log2( (width_px  / 512) / (lon_span / 360) )
 ///   zoom_lat = log2( (height_px / 512) / (mercator_y(min_lat) - mercator_y(max_lat)) )
 ///   zoom     = floor( min(zoom_lon, zoom_lat) - log2(MAP_FIT_PAD) ).clamp(1, 16)
-/// A degenerate (single-point) box returns a street-level zoom of 10. Callers never pass an
-/// antimeridian-crossing extent, so `lon_span` is non-wrapping and < 180.
+/// A degenerate (single-point) box returns a street-level zoom of 10. `lon_span` is the already-
+/// resolved (antimeridian-aware) span from `lon_center_and_span`, so for a global or dateline-
+/// crossing extent it can approach 360; the math handles that (it just yields a lower zoom, then
+/// `clamp(1, 16)`).
 fn fitbounds_zoom(min_lat: f64, max_lat: f64, lon_span: f64, width_px: f64, height_px: f64) -> u8 {
     let lon_frac = lon_span / 360.0;
     let lat_frac = mercator_y(min_lat) - mercator_y(max_lat);
@@ -1788,6 +1791,10 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
     let mut sorted: Vec<f64> = lons.to_vec();
     sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let n = sorted.len();
+    if n == 0 {
+        // no points -> degenerate center/span (guards the sorted[0]/sorted[n - 1] indexing below)
+        return (0.0, 0.0);
+    }
     // largest gap between adjacent longitudes (the empty wedge the data does NOT cover)
     let mut max_gap = 0.0_f64;
     let mut gap_idx = 0; // gap lies between sorted[gap_idx] and sorted[gap_idx + 1]
@@ -2339,12 +2346,31 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
 /// vertices. `bbox` is `[min_lon, min_lat, max_lon, max_lat]` over all vertices, for cheap
 /// candidate prefiltering.
 struct PipFeature {
-    id:       String,
+    id:                 String,
     /// Human-readable region label (e.g. `properties.name` → "Kagoshima") for hover, when a name
     /// key is given or auto-detected; HTML-escaped at construction. `None` when no name resolves.
-    name:     Option<String>,
-    polygons: Vec<Vec<Vec<[f64; 2]>>>,
-    bbox:     [f64; 4],
+    name:               Option<String>,
+    polygons:           Vec<Vec<Vec<[f64; 2]>>>,
+    bbox:               [f64; 4],
+    /// True when this feature crosses the ±180° antimeridian. Such features store their vertices
+    /// (and `bbox`) in a `[0, 360)` longitude frame (negative lons shifted by +360) so the
+    /// planar ray-cast and bbox prefilter stay contiguous across the dateline seam; a western-
+    /// hemisphere query longitude must be shifted the same way via [`PipFeature::frame_lon`]
+    /// before any containment or distance test against this feature.
+    wraps_antimeridian: bool,
+}
+
+impl PipFeature {
+    /// Map a query longitude into this feature's coordinate frame: antimeridian-crossing features
+    /// store vertices in `[0, 360)`, so a negative query lon is shifted by +360 to match. A no-op
+    /// for features that don't wrap.
+    fn frame_lon(&self, lon: f64) -> f64 {
+        if self.wraps_antimeridian && lon < 0.0 {
+            lon + 360.0
+        } else {
+            lon
+        }
+    }
 }
 
 /// Resolve a GeoJSON feature's id by a dotted `--feature-id-key` path. Supports the top-level
@@ -2470,7 +2496,8 @@ fn aligned_region_names(features: &[PipFeature], locs: &[String]) -> Option<Vec<
 
 /// Convert a `geojson::GeometryValue::Polygon` ring set to closed `[lon, lat]` rings (appending the
 /// first vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers
-/// every edge). Rings with fewer than 3 distinct vertices are dropped.
+/// every edge). Rings with fewer than 3 distinct vertices are dropped (degenerate point/line
+/// rings).
 fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>> {
     poly.iter()
         .filter_map(|ring| {
@@ -2479,7 +2506,19 @@ fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>
                 .filter(|p| p.len() >= 2)
                 .map(|p| [p[0], p[1]])
                 .collect();
-            if pts.len() < 3 {
+            // require at least 3 DISTINCT vertices: a ring with fewer is degenerate (a point or a
+            // line segment, zero area) — it contributes no even-odd crossings and would only serve
+            // as a phantom nearest-feature snap target. Short-circuits once 3 distinct points seen.
+            let mut distinct: Vec<[f64; 2]> = Vec::with_capacity(3);
+            for &p in &pts {
+                if !distinct.contains(&p) {
+                    distinct.push(p);
+                    if distinct.len() >= 3 {
+                        break;
+                    }
+                }
+            }
+            if distinct.len() < 3 {
                 return None;
             }
             if pts.first() != pts.last() {
@@ -2514,6 +2553,34 @@ fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64
             .collect(),
         _ => vec![],
     }
+}
+
+/// Does any ring edge make a genuine ±180° antimeridian jump? True when an edge's endpoints are
+/// far apart in raw longitude but CLOSE the short way across the seam (within `MAX_SEAM_GAP_DEG`) —
+/// the signature of a dateline crossing (e.g. 179° -> -179°, or a wider Pacific box 160° -> -160°).
+/// A genuinely wide but non-crossing polygon (e.g. a -100°..100° span centered on the prime
+/// meridian) has a large short-way gap and is deliberately NOT flagged, so its planar interior is
+/// binned correctly. When true, the feature is normalized into a `[0, 360)` longitude frame before
+/// planar point-in-polygon tests, which can't reason across the seam.
+fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
+    // A dateline crossing connects two vertices that are far apart in raw longitude (>180°) but
+    // CLOSE the short way across the ±180° seam. We key off that short-way gap: `360 - |Δlon|`. A
+    // real crossing like 179° -> -179° has a 2° seam gap; a wide Pacific box 160° -> -160° has a
+    // 40° gap (still a crossing). A prime-meridian-centered wide polygon like -100° -> 100° spans
+    // 200° but its short-way gap is 160° — it is a genuinely wide non-crossing region and must NOT
+    // be normalized (that would push its prime-meridian interior outside the bbox). The
+    // MAX_SEAM_GAP_DEG cutoff (90°) separates the two: normalize when the edge's endpoints are
+    // within 90° of each other across the seam (inclusive), i.e. |Δlon| >= 360 - 90 = 270°. The
+    // boundary is inclusive so an exactly-90°-gap box (135° -> -135°) is still treated as crossing.
+    const MAX_SEAM_GAP_DEG: f64 = 90.0;
+    polygons.iter().flatten().any(|ring| {
+        ring.windows(2).any(|edge| {
+            let &[[lon_a, _], [lon_b, _]] = edge else {
+                return false;
+            };
+            (lon_a - lon_b).abs() >= 360.0 - MAX_SEAM_GAP_DEG
+        })
+    })
 }
 
 /// Parse a GeoJSON FeatureCollection into [`PipFeature`]s keyed by `feature_id_key`. Features
@@ -2557,13 +2624,26 @@ fn build_pip_features(
             .as_deref()
             .and_then(|k| feature_id_by_path(feature, k))
             .map(|n| escape_hover(&n));
-        let polygons = match &feature.geometry {
+        let mut polygons = match &feature.geometry {
             Some(g) => geojson_value_to_polygons(&g.value),
             None => Vec::new(),
         };
         if polygons.is_empty() {
             skipped += 1;
             continue;
+        }
+        // Normalize antimeridian-crossing features into a [0, 360) longitude frame so their bbox
+        // and the planar ray-cast stay contiguous across the ±180° seam. Query longitudes
+        // are shifted to match per-feature in PipFeature::frame_lon.
+        let wraps_antimeridian = polygons_cross_antimeridian(&polygons);
+        if wraps_antimeridian {
+            for ring in polygons.iter_mut().flatten() {
+                for v in ring.iter_mut() {
+                    if v[0] < 0.0 {
+                        v[0] += 360.0;
+                    }
+                }
+            }
         }
         let mut bbox = [
             f64::INFINITY,
@@ -2584,6 +2664,7 @@ fn build_pip_features(
             name,
             polygons,
             bbox,
+            wraps_antimeridian,
         });
     }
     if out.is_empty() {
@@ -2621,6 +2702,9 @@ fn point_in_polygon(polygon: &[Vec<[f64; 2]>], lon: f64, lat: f64) -> bool {
 
 /// Is `(lon, lat)` inside this feature (bbox prefilter, then any constituent polygon)?
 fn feature_contains(feature: &PipFeature, lon: f64, lat: f64) -> bool {
+    // shift the query into this feature's frame so antimeridian-crossing features (stored in
+    // [0, 360)) are tested consistently with their normalized vertices/bbox.
+    let lon = feature.frame_lon(lon);
     if lon < feature.bbox[0]
         || lon > feature.bbox[2]
         || lat < feature.bbox[1]
@@ -2722,10 +2806,13 @@ fn pip_assign(
     let mut best_i = None;
     let mut best_d2 = f64::INFINITY;
     for (i, f) in features.iter().enumerate() {
-        if bbox_dist2(&f.bbox, lon, lat, sx, sy) >= best_d2 {
+        // shift the query into each feature's frame so antimeridian-crossing features (stored in
+        // [0, 360)) measure distance consistently with their normalized vertices/bbox.
+        let flon = f.frame_lon(lon);
+        if bbox_dist2(&f.bbox, flon, lat, sx, sy) >= best_d2 {
             continue;
         }
-        let d2 = feature_dist2(f, lon, lat, sx, sy);
+        let d2 = feature_dist2(f, flon, lat, sx, sy);
         if d2 < best_d2 {
             best_d2 = d2;
             best_i = Some(i);
@@ -4806,7 +4893,10 @@ fn parse_f64(cell: Option<&[u8]>) -> Option<f64> {
     if s.is_empty() {
         return None;
     }
-    s.parse::<f64>().ok()
+    // reject non-finite literals: Rust's f64::from_str accepts "inf"/"-inf"/"infinity"/"nan", which
+    // would poison min/max folds (e.g. an infinite axis span collapses a contour grid into one bin)
+    // and emit bogus ±inf aggregate bars. Treat them as unparseable.
+    s.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -5261,16 +5351,58 @@ fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
 /// distribution's edge points stay core rather than swamping the map.
 const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
 
+/// Antimeridian-aware median longitude. Mirrors the largest-gap unwrapping of
+/// [`lon_center_and_span`] but takes the median (robust to strays) rather than a trimmed midpoint.
+/// A plain nearest-rank median can land on a NON-cluster stray: a dateline cluster split across
+/// +179°/-179° plus a lone point near 0° makes 0° the middle element, so the real cluster then
+/// reads as ~180° away (and the stray as central) and outlier detection inverts. Unwrapping around
+/// the largest empty gap places the centroid inside the cluster. Input must be ascending-sorted;
+/// returns a longitude in (-180, 180]. Reduces to a plain median when the data doesn't cross the
+/// antimeridian (the common case, including all single-hemisphere data).
+fn circular_median_lon(sorted: &[f64]) -> f64 {
+    let n = sorted.len();
+    if n == 0 {
+        return 0.0;
+    }
+    // largest gap between adjacent longitudes (the empty wedge the data does NOT cover)
+    let mut max_gap = 0.0_f64;
+    let mut gap_idx = 0; // gap lies between sorted[gap_idx] and sorted[gap_idx + 1]
+    for i in 0..n.saturating_sub(1) {
+        let gap = sorted[i + 1] - sorted[i];
+        if gap > max_gap {
+            max_gap = gap;
+            gap_idx = i;
+        }
+    }
+    // the wrap gap closes the circle from the easternmost point back to the westernmost
+    let wrap_gap = (sorted[0] + 360.0) - sorted[n - 1];
+    if wrap_gap >= max_gap {
+        // doesn't cross the antimeridian -> plain median
+        return sorted_quantile(sorted, 0.5);
+    }
+    // crosses the seam: unwrap the cluster into a contiguous ascending range (the arc east of the
+    // gap, then the points west of it shifted +360), take the median, normalize back to (-180, 180]
+    let mut unwrapped: Vec<f64> = Vec::with_capacity(n);
+    unwrapped.extend_from_slice(&sorted[gap_idx + 1..]);
+    unwrapped.extend(sorted[..=gap_idx].iter().map(|v| v + 360.0));
+    let mut med = sorted_quantile(&unwrapped, 0.5);
+    if med > 180.0 {
+        med -= 360.0;
+    }
+    med
+}
+
 /// Partition row-aligned (lat, lon) pairs into a core set and a geographic-outlier set by distance
 /// from the cluster centroid: a point is an outlier when its distance from the (robust, per-axis
 /// median) centroid exceeds the Tukey far-out fence `q3 + 3*IQR` of all points' distances. Distance
 /// is an equirectangular approximation with longitude scaled by `cos(centroid_lat)` so it's roughly
-/// isotropic in degrees. Unlike a per-axis percentile, this flags only points genuinely far from
-/// the bulk (true strays), not the distribution's tails. When the distance IQR is zero (a
-/// point-mass core, e.g. many duplicate coordinates) the fence falls back to the point-mass band
-/// itself (`d > q3`), so a lone far stray is flagged even with very few duplicates; with too few
-/// points (< 4) or a fully degenerate (all-identical) distance spread, nothing is flagged and the
-/// whole set is core. Returns `(core_lats, core_lons, outlier_lats, outlier_lons)`.
+/// isotropic in degrees, and longitude deltas are wrapped across the ±180° antimeridian so a
+/// dateline-straddling cluster isn't split. Unlike a per-axis percentile, this flags only points
+/// genuinely far from the bulk (true strays), not the distribution's tails. When the distance IQR
+/// is zero (a point-mass core, e.g. many duplicate coordinates) the fence falls back to the
+/// point-mass band itself (`d > q3`), so a lone far stray is flagged even with very few duplicates;
+/// with too few points (< 4) or a fully degenerate (all-identical) distance spread, nothing is
+/// flagged and the whole set is core. Returns `(core_lats, core_lons, outlier_lats, outlier_lons)`.
 fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
     let n = lats.len();
     if n < 4 {
@@ -5283,13 +5415,19 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
     sorted_lats.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     sorted_lons.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     let c_lat = sorted_quantile(&sorted_lats, 0.5);
-    let c_lon = sorted_quantile(&sorted_lons, 0.5);
+    // antimeridian-aware median: a plain median can land on a non-cluster stray near 0° when the
+    // real cluster straddles ±180°, inverting outlier detection. circular_median_lon places the
+    // centroid inside the cluster; it's a no-op for single-hemisphere data.
+    let c_lon = circular_median_lon(&sorted_lons);
     // scale longitude so a degree of lon counts like a degree of lat at this latitude
     let lon_scale = c_lat.to_radians().cos().abs().max(0.01);
 
     let dist = |lat: f64, lon: f64| -> f64 {
         let dlat = lat - c_lat;
-        let dlon = (lon - c_lon) * lon_scale;
+        // wrap the longitude delta into (-180, 180] so points on opposite sides of the ±180°
+        // antimeridian are measured as physically adjacent (e.g. +179° and -179° are 2° apart, not
+        // 358°) — otherwise a dateline-straddling cluster's minority lobe is spuriously flagged.
+        let dlon = ((lon - c_lon + 180.0).rem_euclid(360.0) - 180.0) * lon_scale;
         (dlat * dlat + dlon * dlon).sqrt()
     };
 
@@ -6859,8 +6997,10 @@ fn extent_including(core: MapExtent, lats: &[f64], lons: &[f64]) -> MapExtent {
     e
 }
 
-/// Whether a map extent spans the antimeridian (>180 degrees of longitude), in which case the
-/// box corners + center are meaningless and reverse-geocoding is skipped.
+/// Whether a map extent is too wide to box meaningfully — more than 180° of longitude. This fires
+/// for any extent wider than a hemisphere (the dataset is effectively global), the most common
+/// cause being an antimeridian crossing; in either case the box corners + center are meaningless
+/// and reverse-geocoding is skipped.
 #[cfg(feature = "geocode")]
 fn extent_spans_antimeridian(e: &MapExtent) -> bool {
     e.max_lon - e.min_lon > 180.0
@@ -11983,6 +12123,12 @@ mod tests {
     }
 
     #[test]
+    fn lon_center_and_span_empty_is_degenerate() {
+        // empty input must not panic on the sorted[0]/sorted[n - 1] indexing -> degenerate (0, 0)
+        assert_eq!(lon_center_and_span(&[], 0.0), (0.0, 0.0));
+    }
+
+    #[test]
     fn lon_center_and_span_crossing_trims_outlier() {
         // a tight cluster straddling +/-180 plus one far in-range longitude outlier (80). The
         // crossing branch must trim like the non-crossing one: untrimmed, the unwrapped span runs
@@ -12641,5 +12787,236 @@ mod tests {
         assert_eq!(h[0], "<b>A</b><br>magnitude: 3.5<br>rank 1 of 2");
         assert_eq!(h[1], "<b>B</b><br>magnitude: 1.5<br>rank 2 of 2");
         assert!(!h[0].contains("% of total"));
+    }
+
+    #[test]
+    fn parse_f64_rejects_non_finite() {
+        // finite values parse, with surrounding whitespace trimmed
+        assert_eq!(parse_f64(Some(b"3.5")), Some(3.5));
+        assert_eq!(parse_f64(Some(b"  -2.0 ")), Some(-2.0));
+        // Rust's f64::from_str accepts these; viz must reject them so they can't poison min/max
+        // folds (infinite axis spans, ±inf aggregate bars)
+        for bad in ["inf", "-inf", "+inf", "infinity", "Infinity", "NaN", "nan"] {
+            assert_eq!(
+                parse_f64(Some(bad.as_bytes())),
+                None,
+                "should reject {bad:?}"
+            );
+        }
+        // empty / non-numeric still None
+        assert_eq!(parse_f64(Some(b"")), None);
+        assert_eq!(parse_f64(Some(b"abc")), None);
+    }
+
+    #[test]
+    fn partition_geo_outliers_ignores_antimeridian_wrap() {
+        // a single cluster straddling the ±180° antimeridian: 5 points just east of +179°, 3 just
+        // west of -179°. They are all physically within ~3° of each other, so none is a geographic
+        // outlier. Before the wrap fix, the minority lobe measured ~358° away and was mis-flagged.
+        let lats = [10.0, 10.1, 9.9, 10.2, 9.8, 10.0, 10.1, 9.9];
+        let lons = [179.0, 179.2, 179.4, 179.6, 179.8, -179.8, -179.6, -179.4];
+        let (core_lats, _core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
+        assert!(
+            out_lats.is_empty() && out_lons.is_empty(),
+            "dateline-straddling cluster must yield zero geographic outliers, got {out_lons:?}"
+        );
+        assert_eq!(core_lats.len(), lats.len());
+    }
+
+    #[test]
+    fn partition_geo_outliers_centroid_ignores_stray_across_seam() {
+        // a dateline cluster split across +179°/-179° plus ONE stray near 0°. A plain median lon
+        // picks the stray (0°) as the centroid, making the real cluster read ~180° away and the
+        // stray look central -> the cluster would be flagged and the stray kept. The circular
+        // centroid sits in the cluster, so only the stray is flagged.
+        let lats = [10.0, 10.1, 9.9, 10.2, 9.8, 10.1, 9.9, 10.0, 10.0];
+        let lons = [
+            179.0, 179.2, 179.4, 179.6, -179.6, -179.4, -179.2, -179.0, 0.5,
+        ];
+        let (core_lats, _core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(
+            out_lons.len(),
+            1,
+            "exactly the lone mid-ocean stray should be flagged, got {out_lons:?}"
+        );
+        assert!(
+            out_lons[0].abs() < 1.0,
+            "the flagged outlier should be the ~0° stray, got {}",
+            out_lons[0]
+        );
+        assert_eq!(core_lats.len(), 8);
+    }
+
+    #[test]
+    fn pip_assign_handles_antimeridian_crossing_feature() {
+        // a Polygon spanning lon 170° .. -170° (crossing +180°), lat 0° .. 10°, in raw unsplit
+        // GeoJSON coordinates (a 170->-170 edge jumps 340° => detected as antimeridian-crossing).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "PACIFIC",
+                "properties": {"name": "Pacific"},
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [170.0, 0.0], [-170.0, 0.0], [-170.0, 10.0], [170.0, 10.0], [170.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            features[0].wraps_antimeridian,
+            "feature crossing ±180° must be flagged as wrapping"
+        );
+        // points on BOTH sides of the seam fall inside; a point far away (Greenwich) does not
+        assert_eq!(
+            pip_assign(&features, 5.0, 175.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, -175.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+        // snap path: just north of the box (lat 0..10) on the negative-lon side — outside every
+        // polygon but ~555 km from the top edge, within the 2000 km cap -> Snapped. Exercises
+        // frame_lon in the distance loop (#4092 snap code), not just the containment path.
+        assert_eq!(
+            pip_assign(&features, 15.0, -175.0, true, 2_000.0),
+            PipOutcome::Snapped(0)
+        );
+    }
+
+    #[test]
+    fn pip_assign_wide_polygon_is_not_treated_as_crossing() {
+        // a coarse rectangle spanning lon -100°..100°, lat 0°..10°: its horizontal edges span 200°
+        // but are centered on the prime meridian, NOT the antimeridian. It must NOT be normalized,
+        // so a Greenwich point (lon 0°) inside the rectangle still bins inside it.
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "WIDE",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-100.0, 0.0], [100.0, 0.0], [100.0, 10.0], [-100.0, 10.0], [-100.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            !features[0].wraps_antimeridian,
+            "a prime-meridian-centered wide polygon must not be flagged as antimeridian-crossing"
+        );
+        // Greenwich (lon 0°) is inside the -100..100 rectangle
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        // a point well east of +100° is outside
+        assert_eq!(
+            pip_assign(&features, 5.0, 150.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_handles_wide_antimeridian_crossing_feature() {
+        // a WIDER Pacific box spanning lon 160° .. -160° (crossing +180°), lat 0°..10°. Its
+        // endpoints are 20° off the seam, but only 40° apart across it, so it IS a dateline
+        // crossing and must be normalized — unlike the -100..100 case (160° across the seam).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "PACIFIC",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [160.0, 0.0], [-160.0, 0.0], [-160.0, 10.0], [160.0, 10.0], [160.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            features[0].wraps_antimeridian,
+            "a 160°->-160° box (40° across the seam) must be flagged as antimeridian-crossing"
+        );
+        // points on both sides of the seam are inside; Greenwich is not
+        assert_eq!(
+            pip_assign(&features, 5.0, 175.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, -170.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_handles_exact_90deg_seam_gap_feature() {
+        // boundary case: a box spanning lon 135° .. -135° has EXACTLY a 90° short-way seam gap,
+        // matching the inclusive "within 90°" rule, so it must be treated as crossing (the cutoff
+        // is >=, not >). A point near the seam bins inside; Greenwich does not.
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "PACIFIC",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [135.0, 0.0], [-135.0, 0.0], [-135.0, 10.0], [135.0, 10.0], [135.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            features[0].wraps_antimeridian,
+            "a 135°->-135° box (exactly 90° across the seam) must be flagged as crossing"
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 180.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, -150.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn geojson_rings_to_closed_drops_degenerate_rings() {
+        // documented contract: rings with fewer than 3 DISTINCT vertices are dropped. A valid
+        // (open) triangle is kept and auto-closed; a 2-distinct ring ([[0,0],[1,1],[0,0]]) and a
+        // 1-distinct point ring are degenerate (zero area) and dropped.
+        let p = |x: f64, y: f64| -> geojson::Position { vec![x, y].into() };
+        let poly: Vec<Vec<geojson::Position>> = vec![
+            vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0)], // 3 distinct -> kept
+            vec![p(5.0, 5.0), p(6.0, 6.0), p(5.0, 5.0)], // 2 distinct -> dropped
+            vec![p(9.0, 9.0), p(9.0, 9.0), p(9.0, 9.0)], // 1 distinct -> dropped
+        ];
+        let rings = geojson_rings_to_closed(&poly);
+        assert_eq!(rings.len(), 1, "only the non-degenerate ring survives");
+        // the kept ring is closed (first == last) so windows(2) enumerates every edge
+        assert_eq!(rings[0].first(), rings[0].last());
+        assert_eq!(rings[0].len(), 4); // 3 vertices + the appended closing vertex
     }
 }

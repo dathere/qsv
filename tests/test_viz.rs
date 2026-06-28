@@ -3009,6 +3009,8 @@ fn viz_geo_basic() {
     // default projection is natural-earth, with land/countries drawn
     assert!(html.contains(r#""type":"natural earth""#));
     assert!(html.contains(r#""showcountries":true"#));
+    // higher-detail 1:50,000,000 base layers (coastlines/borders) via GeoResolution
+    assert!(html.contains(r#""resolution":50"#));
 }
 
 #[test]

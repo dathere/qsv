@@ -6,16 +6,50 @@ Houston,29.7604,-95.3698,South,2.3,33.4
 Phoenix,33.4484,-112.0740,West,1.6,34.1
 Philadelphia,39.9526,-75.1652,Northeast,1.6,34.7
 San Antonio,29.4241,-98.4936,South,1.5,34.0
-Denver,39.7392,-104.9903,West,0.7,34.6
-Seattle,47.6062,-122.3321,West,0.7,35.5
-Boston,42.3601,-71.0589,Northeast,0.7,32.1
-Atlanta,33.7490,-84.3880,South,0.5,33.2
-Miami,25.7617,-80.1918,South,0.4,40.1
-Minneapolis,44.9778,-93.2650,Midwest,0.4,32.4
-Detroit,42.3314,-83.0458,Midwest,0.6,34.6
-Portland,45.5152,-122.6784,West,0.7,37.6
-Nashville,36.1627,-86.7816,South,0.7,34.3
-Las Vegas,36.1699,-115.1398,West,0.6,38.0
-Kansas City,39.0997,-94.5786,Midwest,0.5,34.9
-Salt Lake City,40.7608,-111.8910,West,0.2,32.0
+San Diego,32.7157,-117.1611,West,1.4,35.1
+Dallas,32.7767,-96.7970,South,1.3,32.9
+San Jose,37.3382,-121.8863,West,1.0,37.0
+Austin,30.2672,-97.7431,South,1.0,34.0
+Jacksonville,30.3322,-81.6557,South,0.95,36.0
+Fort Worth,32.7555,-97.3308,South,0.92,33.5
+Columbus,39.9612,-82.9988,Midwest,0.9,32.6
+Indianapolis,39.7684,-86.1581,Midwest,0.88,34.3
 Charlotte,35.2271,-80.8431,South,0.9,34.5
+Seattle,47.6062,-122.3321,West,0.74,35.5
+Denver,39.7392,-104.9903,West,0.71,34.6
+Washington,38.9072,-77.0369,South,0.69,34.0
+Boston,42.3601,-71.0589,Northeast,0.65,32.1
+Nashville,36.1627,-86.7816,South,0.69,34.3
+Portland,45.5152,-122.6784,West,0.65,37.6
+Las Vegas,36.1699,-115.1398,West,0.64,38.0
+Detroit,42.3314,-83.0458,Midwest,0.63,34.6
+Memphis,35.1495,-90.0490,South,0.63,34.0
+Louisville,38.2527,-85.7585,South,0.62,38.4
+Milwaukee,43.0389,-87.9065,Midwest,0.57,31.5
+Albuquerque,35.0844,-106.6504,West,0.56,36.0
+Tucson,32.2226,-110.9747,West,0.54,33.9
+Sacramento,38.5816,-121.4944,West,0.52,34.6
+Kansas City,39.0997,-94.5786,Midwest,0.51,34.9
+Atlanta,33.7490,-84.3880,South,0.5,33.2
+Omaha,41.2565,-95.9345,Midwest,0.49,34.4
+Raleigh,35.7796,-78.6382,South,0.47,33.8
+Minneapolis,44.9778,-93.2650,Midwest,0.43,32.4
+Tulsa,36.1540,-95.9928,South,0.41,34.5
+New Orleans,29.9511,-90.0715,South,0.38,38.0
+Wichita,37.6872,-97.3301,Midwest,0.39,35.0
+Cleveland,41.4993,-81.6944,Midwest,0.37,36.1
+Tampa,27.9506,-82.4572,South,0.4,35.6
+St. Louis,38.6270,-90.1994,Midwest,0.3,35.5
+Pittsburgh,40.4406,-79.9959,Northeast,0.3,32.9
+Cincinnati,39.1031,-84.5120,Midwest,0.31,32.1
+Salt Lake City,40.7608,-111.8910,West,0.2,32.0
+Birmingham,33.5186,-86.8104,South,0.2,35.6
+Boise,43.6150,-116.2023,West,0.24,36.6
+Richmond,37.5407,-77.4360,South,0.23,34.0
+Des Moines,41.5868,-93.6250,Midwest,0.21,34.0
+Hartford,41.7658,-72.6734,Northeast,0.12,30.5
+Providence,41.8240,-71.4128,Northeast,0.19,29.8
+Charleston,32.7765,-79.9311,South,0.15,34.5
+Anchorage,61.2181,-149.9003,West,0.29,34.5
+Honolulu,21.3069,-157.8583,West,0.35,43.0
+Miami,25.7617,-80.1918,South,0.44,40.1

@@ -298,6 +298,10 @@ choropleth options:
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
                            entry in the locations column, or that labels each binned
                            region (e.g. id, properties.fips). [default: id]
+    --feature-name-key <k>  GeoJSON property path whose value is shown as the
+                           human-readable region label in choropleth hover (e.g.
+                           properties.name). When omitted, common name keys are
+                           auto-detected; falls back to the feature id when absent.
     --geocode              Derive the region codes by reusing qsv's geocode engine
                            (needs a build with the geocode feature). Either reverse-geocode
                            the lat/lon points, or forward-geocode the locations name
@@ -823,6 +827,7 @@ struct Args {
     flag_map:                bool,
     flag_geojson:            Option<String>,
     flag_feature_id_key:     Option<String>,
+    flag_feature_name_key:   Option<String>,
     flag_geocode:            bool,
     flag_no_snap:            bool,
     flag_bins:               Option<usize>,
@@ -2289,6 +2294,9 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
 /// candidate prefiltering.
 struct PipFeature {
     id:       String,
+    /// Human-readable region label (e.g. `properties.name` → "Kagoshima") for hover, when a name
+    /// key is given or auto-detected; HTML-escaped at construction. `None` when no name resolves.
+    name:     Option<String>,
     polygons: Vec<Vec<Vec<[f64; 2]>>>,
     bbox:     [f64; 4],
 }
@@ -2319,6 +2327,77 @@ fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
         cur = cur.get(seg)?;
     }
     coerce(cur)
+}
+
+/// HTML-escape a string for use inside a plotly hover label (which renders `<b>`/`<br>` as markup).
+/// Escapes `&` first so region names/measure labels with `&`, `<`, `>` show as literal text instead
+/// of being parsed as tags. Note: this does not neutralize a pathological `%{...}` in a label (out
+/// of scope — choropleth hover here is pre-rendered text, not a plotly template).
+fn escape_hover(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// Format a measure value for a hover label: a whole number prints without a decimal point
+/// (`65`), otherwise up to 3 decimals with trailing zeros trimmed (`12.5`, `0.333`).
+fn fmt_measure(v: f64) -> String {
+    if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+        format!("{v:.0}")
+    } else {
+        let s = format!("{v:.3}");
+        s.trim_end_matches('0').trim_end_matches('.').to_string()
+    }
+}
+
+/// Build the per-region hover text for a choropleth trace, aligned 1:1 to `locs`. Each label has:
+/// a bold region name + id (`<b>Kagoshima</b> (JP46)`) when `names[i]` is non-empty, else the bold
+/// id alone; the value labeled with its measure (`count: 65`); the share of the total
+/// (`15.6% of total`) when `include_pct` (count/sum aggregations only); and the rank by descending
+/// value (`rank 1 of 47`). `names` (when given) and `measure_label` are HTML-escaped by the caller
+/// / here respectively; ids are escaped here. Attached via `.hover_text_array(..)` +
+/// `HoverInfo::Text`, so the whole string is pre-rendered (no plotly template tokens).
+fn choropleth_hover_text(
+    locs: &[String],
+    z: &[f64],
+    names: Option<&[String]>,
+    measure_label: &str,
+    include_pct: bool,
+) -> Vec<String> {
+    let n = locs.len();
+    let label = escape_hover(measure_label);
+    let total: f64 = if include_pct {
+        z.iter().copied().filter(|v| v.is_finite()).sum()
+    } else {
+        0.0
+    };
+    // rank by descending z (positional, 1-based; ties break by position).
+    let mut order: Vec<usize> = (0..n).collect();
+    order.sort_by(|&a, &b| z[b].partial_cmp(&z[a]).unwrap_or(std::cmp::Ordering::Equal));
+    let mut rank = vec![0_usize; n];
+    for (pos, &i) in order.iter().enumerate() {
+        rank[i] = pos + 1;
+    }
+    (0..n)
+        .map(|i| {
+            let id = escape_hover(&locs[i]);
+            let name = names
+                .and_then(|ns| ns.get(i))
+                .map(String::as_str)
+                .filter(|s| !s.is_empty());
+            let mut lines: Vec<String> = Vec::with_capacity(4);
+            match name {
+                Some(name) => lines.push(format!("<b>{name}</b> ({id})")),
+                None => lines.push(format!("<b>{id}</b>")),
+            }
+            lines.push(format!("{label}: {}", fmt_measure(z[i])));
+            if include_pct && total > 0.0 {
+                lines.push(format!("{:.1}% of total", z[i] / total * 100.0));
+            }
+            lines.push(format!("rank {} of {n}", rank[i]));
+            lines.join("<br>")
+        })
+        .collect()
 }
 
 /// Convert a `geojson::Value::Polygon` ring set to closed `[lon, lat]` rings (appending the first
@@ -2374,12 +2453,29 @@ fn geojson_value_to_polygons(value: &geojson::Value) -> Vec<Vec<Vec<[f64; 2]>>> 
 fn build_pip_features(
     geojson: &serde_json::Value,
     feature_id_key: &str,
+    feature_name_key: Option<&str>,
 ) -> CliResult<Vec<PipFeature>> {
     let fc = geojson::FeatureCollection::from_json_value(geojson.clone()).map_err(|e| {
         crate::CliError::Other(format!(
             "--geojson is not a valid GeoJSON FeatureCollection: {e}"
         ))
     })?;
+    // Resolve the name key once: an explicit --feature-name-key, else auto-detect by probing common
+    // name properties on the FIRST feature (a heterogeneous collection whose first feature lacks
+    // the property won't auto-detect — use --feature-name-key to force it).
+    let name_key: Option<String> = feature_name_key.map(str::to_string).or_else(|| {
+        let first = fc.features.first()?;
+        [
+            "properties.name",
+            "properties.NAME",
+            "properties.Name",
+            "properties.NAME_1",
+            "name",
+        ]
+        .into_iter()
+        .find(|k| feature_id_by_path(first, k).is_some())
+        .map(str::to_string)
+    });
     let mut out: Vec<PipFeature> = Vec::with_capacity(fc.features.len());
     let mut skipped = 0_usize;
     for feature in &fc.features {
@@ -2387,6 +2483,10 @@ fn build_pip_features(
             skipped += 1;
             continue;
         };
+        let name = name_key
+            .as_deref()
+            .and_then(|k| feature_id_by_path(feature, k))
+            .map(|n| escape_hover(&n));
         let polygons = match &feature.geometry {
             Some(g) => geojson_value_to_polygons(&g.value),
             None => Vec::new(),
@@ -2409,7 +2509,12 @@ fn build_pip_features(
                 bbox[3] = bbox[3].max(lat);
             }
         }
-        out.push(PipFeature { id, polygons, bbox });
+        out.push(PipFeature {
+            id,
+            name,
+            polygons,
+            bbox,
+        });
     }
     if out.is_empty() {
         return fail_clierror!(
@@ -2639,7 +2744,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         );
     }
 
-    let (locations, z, measure_label) = if pip {
+    let (locations, z, measure_label, hover_text) = if pip {
         choropleth_pip_locations(args, agg, snap)?
     } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
@@ -2666,7 +2771,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text)
+            .hover_info(HoverInfo::Text);
         plot.add_trace(trace);
         // --style carries a global docopt default of open-street-map (a token-free MapLibre style).
         let style =
@@ -2695,7 +2802,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text)
+            .hover_info(HoverInfo::Text);
         let mut geo = LayoutGeo::new()
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
@@ -2741,12 +2850,12 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     Ok(plot)
 }
 
-/// Resolve choropleth `(locations, z, measure_label)` from a literal `--locations` region-key
-/// column, aggregating the `--value` measure (or row counts) per region.
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` from a literal `--locations`
+/// region-key column, aggregating the `--value` measure (or row counts) per region.
 fn choropleth_literal_locations(
     args: &Args,
     agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let loc_idx = resolve_one(args.flag_locations.as_ref(), &headers, nh, "locations")?;
     let value_idx = match args.flag_value.as_ref() {
@@ -2777,18 +2886,20 @@ fn choropleth_literal_locations(
         values.push(value);
     }
     let (locs, z) = aggregate(raw_locs, values, agg);
-    Ok((locs, z, measure_label))
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text = choropleth_hover_text(&locs, &z, None, &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
 }
 
-/// Resolve choropleth `(locations, z, measure_label)` by point-in-polygon binning: each row's
-/// `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon contains it (or, unless
-/// `snap` is false, to the nearest region), and the `--value` measure (or row counts) is
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` by point-in-polygon binning: each
+/// row's `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon contains it (or,
+/// unless `snap` is false, to the nearest region), and the `--value` measure (or row counts) is
 /// aggregated per region id. Emits a stderr coverage note when points fall outside every region.
 fn choropleth_pip_locations(
     args: &Args,
     agg: Agg,
     snap: bool,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
     let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
@@ -2803,7 +2914,11 @@ fn choropleth_pip_locations(
 
     let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
     let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
-    let features = build_pip_features(&geojson, feature_id_key)?;
+    let features = build_pip_features(
+        &geojson,
+        feature_id_key,
+        args.flag_feature_name_key.as_deref(),
+    )?;
 
     let mut raw_locs: Vec<String> = Vec::new();
     let mut values: Vec<f64> = Vec::new();
@@ -2852,18 +2967,40 @@ fn choropleth_pip_locations(
     }
 
     let (locs, z) = aggregate(raw_locs, values, agg);
-    Ok((locs, z, measure_label))
+    // realign region names to aggregate's output order; "" (empty) where a region has no name, so
+    // choropleth_hover_text falls back to the bold id. `None` overall when NO region has a name.
+    let names: Option<Vec<String>> = if features.iter().any(|f| f.name.is_some()) {
+        let map: std::collections::HashMap<&str, &str> = features
+            .iter()
+            .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
+            .collect();
+        Some(
+            locs.iter()
+                .map(|id| {
+                    map.get(id.as_str())
+                        .map_or(String::new(), |n| (*n).to_string())
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text =
+        choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
 }
 
-/// Resolve choropleth `(locations, z)` via qsv's geocode engine: reverse-geocode `--lat`/`--lon`
-/// points, or forward-geocode a `--locations` name column, into ISO-3 / US-state codes per
-/// `--location-mode`, then aggregate the `--value` measure (or row counts) per region.
+/// Resolve choropleth `(locations, z, measure_label, hover_text)` via qsv's geocode engine:
+/// reverse-geocode `--lat`/`--lon` points, or forward-geocode a `--locations` name column, into
+/// ISO-3 / US-state codes per `--location-mode`, then aggregate the `--value` measure (or row
+/// counts) per region.
 #[cfg(feature = "geocode")]
 fn choropleth_geocoded_locations(
     args: &Args,
     mode: LocationMode,
     agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     if !matches!(mode, LocationMode::Iso3 | LocationMode::UsaStates) {
         return fail_incorrectusage_clierror!(
             "--geocode only resolves --location-mode iso3 or usa-states (the codes geocode can \
@@ -2951,7 +3088,9 @@ fn choropleth_geocoded_locations(
         }
     }
     let (locs, z) = aggregate(locations, kept_values, agg);
-    Ok((locs, z, measure_label))
+    let include_pct = matches!(agg, Agg::Count | Agg::Sum);
+    let hover_text = choropleth_hover_text(&locs, &z, None, &measure_label, include_pct);
+    Ok((locs, z, measure_label, hover_text))
 }
 
 /// Non-geocode build: `--geocode` is unsupported, so reject it with an actionable message.
@@ -2960,7 +3099,7 @@ fn choropleth_geocoded_locations(
     _args: &Args,
     _mode: LocationMode,
     _agg: Agg,
-) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
     fail_incorrectusage_clierror!(
         "--geocode requires a qsv build with the `geocode` feature (or a prebuilt qsv binary). \
          Supply ready-made region codes via --locations instead."
@@ -4829,6 +4968,9 @@ enum PanelKind {
         /// geocode-derived iso3/usa-states path. Carried as a value so render does no I/O.
         geojson:        Option<serde_json::Value>,
         feature_id_key: Option<String>,
+        /// Pre-rendered per-region hover label (aligned to `locations`): name+id, labeled count,
+        /// share of total, rank. Attached via `hover_text_array` + `HoverInfo::Text` at render.
+        hover_text:     Vec<String>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -6149,6 +6291,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
     };
 
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    let hover_text = choropleth_hover_text(&order, &z, None, "count", true);
     Some(Panel::new(
         name.to_string(),
         PanelKind::Choropleth {
@@ -6157,6 +6300,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             location_mode,
             geojson: None,
             feature_id_key: None,
+            hover_text,
         },
     ))
 }
@@ -6169,12 +6313,13 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
 fn build_smart_pip_choropleth_panel(
     geojson_spec: &str,
     feature_id_key: &str,
+    feature_name_key: Option<&str>,
     lats: &[f64],
     lons: &[f64],
     snap: bool,
 ) -> Option<Panel> {
     let geojson = load_geojson(geojson_spec).ok()?;
-    let features = build_pip_features(&geojson, feature_id_key).ok()?;
+    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let mut total = 0_usize;
@@ -6217,6 +6362,25 @@ fn build_smart_pip_choropleth_panel(
         eprintln!("viz smart: {outside} of {total} points fell outside every region ({how}).");
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    // realign region names to the panel's location order; "" where a region has no name.
+    let names: Option<Vec<String>> = if features.iter().any(|f| f.name.is_some()) {
+        let map: std::collections::HashMap<&str, &str> = features
+            .iter()
+            .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
+            .collect();
+        Some(
+            order
+                .iter()
+                .map(|id| {
+                    map.get(id.as_str())
+                        .map_or(String::new(), |n| (*n).to_string())
+                })
+                .collect(),
+        )
+    } else {
+        None
+    };
+    let hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
     Some(Panel::new(
         "Regions".to_string(),
         PanelKind::Choropleth {
@@ -6225,6 +6389,7 @@ fn build_smart_pip_choropleth_panel(
             location_mode: LocationMode::GeoJsonId,
             geojson: Some(geojson),
             feature_id_key: Some(feature_id_key.to_string()),
+            hover_text,
         },
     ))
 }
@@ -6323,7 +6488,8 @@ fn build_map_panel(
     let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
-        build_smart_pip_choropleth_panel(spec, key, &core_lats, &core_lons, snap)
+        let name_key = args.flag_feature_name_key.as_deref();
+        build_smart_pip_choropleth_panel(spec, key, name_key, &core_lats, &core_lons, snap)
     } else {
         #[cfg(feature = "geocode")]
         {
@@ -8617,6 +8783,7 @@ fn smart_inline_panel_plot(
         location_mode,
         geojson,
         feature_id_key,
+        hover_text,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -8625,7 +8792,9 @@ fn smart_inline_panel_plot(
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(true)
             .color_bar(ColorBar::new().title("count"))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .hover_text_array(hover_text.clone())
+            .hover_info(HoverInfo::Text);
         // a point-in-polygon panel carries its own GeoJSON polygons (geojson-id mode); the
         // built-in geocode-derived panels (iso3 / usa-states) carry neither.
         if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
@@ -11839,7 +12008,7 @@ mod tests {
                     [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0], [0.0, 0.0]]]}
             }]
         });
-        let feats = build_pip_features(&gj, "properties.id").unwrap();
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
         assert_eq!(feats.len(), 1);
         assert_eq!(feats[0].id, "A");
         // (lat, lon) inside the square
@@ -11867,7 +12036,7 @@ mod tests {
                     ]}}
             ]
         });
-        let feats = build_pip_features(&gj, "properties.id").unwrap();
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
         let m = feats.iter().position(|f| f.id == "M").unwrap();
         let h = feats.iter().position(|f| f.id == "H").unwrap();
         // inside the SECOND polygon of the MultiPolygon
@@ -11894,7 +12063,7 @@ mod tests {
                         [[[5.0, 5.0], [5.0, 6.0], [6.0, 6.0], [6.0, 5.0], [5.0, 5.0]]]}}
             ]
         });
-        let feats = build_pip_features(&gj, "id").unwrap();
+        let feats = build_pip_features(&gj, "id", None).unwrap();
         assert_eq!(feats.len(), 1, "feature without a top-level id is skipped");
         assert_eq!(feats[0].id, "7", "numeric id coerces to string");
         assert_eq!(pip_assign(&feats, 0.5, 0.5, false), PipOutcome::Inside(0));
@@ -11912,6 +12081,103 @@ mod tests {
             }]
         });
         // no feature has properties.id -> usable set is empty -> error
-        assert!(build_pip_features(&gj, "properties.id").is_err());
+        assert!(build_pip_features(&gj, "properties.id", None).is_err());
+    }
+
+    #[test]
+    fn escape_hover_escapes_markup() {
+        assert_eq!(escape_hover("A & <B>"), "A &amp; &lt;B&gt;");
+        // & must be escaped first so an already-escaped entity isn't double-escaped wrongly
+        assert_eq!(escape_hover("<b>"), "&lt;b&gt;");
+    }
+
+    #[test]
+    fn fmt_measure_whole_vs_decimal() {
+        assert_eq!(fmt_measure(65.0), "65");
+        assert_eq!(fmt_measure(3.27), "3.27");
+        assert_eq!(fmt_measure(3.3630), "3.363");
+        assert_eq!(fmt_measure(0.5), "0.5");
+    }
+
+    #[test]
+    fn build_pip_features_autodetects_and_overrides_name() {
+        // properties.name is auto-detected when no key is given
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A", "name": "Alpha", "label": "Other"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Alpha"));
+        // explicit --feature-name-key overrides auto-detect
+        let feats = build_pip_features(&gj, "properties.id", Some("properties.label")).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Other"));
+        // no name property anywhere -> None (universal hover, no name line)
+        let gj2 = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj2, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name, None);
+    }
+
+    #[test]
+    fn build_pip_features_escapes_name() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A", "name": "R&D <x>"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("R&amp;D &lt;x&gt;"));
+    }
+
+    #[test]
+    fn choropleth_hover_text_content_and_alignment() {
+        // z deliberately unsorted so rank (by descending z) differs from index order
+        let locs = vec!["JP01".to_string(), "JP02".to_string(), "JP03".to_string()];
+        let z = vec![10.0, 30.0, 60.0];
+        let names = vec!["Hokkaido".to_string(), String::new(), "Okinawa".to_string()];
+        let h = choropleth_hover_text(&locs, &z, Some(&names), "count", true);
+        assert_eq!(h.len(), 3);
+        // named region: name (id), labeled count, share, rank (10/100 = 10%, lowest -> rank 3)
+        assert_eq!(
+            h[0],
+            "<b>Hokkaido</b> (JP01)<br>count: 10<br>10.0% of total<br>rank 3 of 3"
+        );
+        // empty name -> bold id fallback; 30/100 = 30%, rank 2
+        assert_eq!(
+            h[1],
+            "<b>JP02</b><br>count: 30<br>30.0% of total<br>rank 2 of 3"
+        );
+        // highest z -> rank 1
+        assert_eq!(
+            h[2],
+            "<b>Okinawa</b> (JP03)<br>count: 60<br>60.0% of total<br>rank 1 of 3"
+        );
+    }
+
+    #[test]
+    fn choropleth_hover_text_no_pct_when_not_count_or_sum() {
+        let locs = vec!["A".to_string(), "B".to_string()];
+        let z = vec![3.5, 1.5];
+        // include_pct = false (mean/min/max): no "% of total" line, value still labeled + ranked
+        let h = choropleth_hover_text(&locs, &z, None, "magnitude", false);
+        assert_eq!(h[0], "<b>A</b><br>magnitude: 3.5<br>rank 1 of 2");
+        assert_eq!(h[1], "<b>B</b><br>magnitude: 1.5<br>rank 2 of 2");
+        assert!(!h[0].contains("% of total"));
     }
 }

@@ -4362,6 +4362,148 @@ fn viz_smart_pip_choropleth_panel() {
     assert!(html.contains(r#""featureidkey":"properties.id""#));
 }
 
+// PIP choropleth hover shows the human-readable region name (auto-detected from properties.name),
+// the labeled count, the share of total, and the rank.
+#[test]
+fn viz_choropleth_pip_hover_names() {
+    let wrk = Workdir::new("viz_choropleth_pip_hover_names");
+    // 1 point in A, 3 in B
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n6,16\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains(r#""hoverinfo":"text""#),
+        "hoverinfo:text missing"
+    );
+    // names auto-detected from properties.name; labeled count, share, and rank present
+    assert!(html.contains("Alpha"), "region name Alpha missing");
+    assert!(html.contains("Bravo"), "region name Bravo missing");
+    assert!(html.contains("count: 1"), "labeled count missing");
+    assert!(html.contains("% of total"), "share-of-total missing");
+    assert!(html.contains("rank 1 of 2"), "rank missing");
+}
+
+// literal choropleth with a non-count aggregation (mean): hover is labeled and ranked, but the
+// share-of-total line is suppressed (a share is meaningless for a mean).
+#[test]
+fn viz_choropleth_literal_hover_labeled() {
+    let wrk = Workdir::new("viz_choropleth_literal_hover_labeled");
+    wrk.create_from_string("rg.csv", "region,mag\nUSA,2\nUSA,4\nCAN,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "mag",
+        "--agg",
+        "mean",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(html.contains("mag: 3"), "labeled mean value missing");
+    assert!(html.contains("rank "), "rank missing");
+    assert!(
+        !html.contains("% of total"),
+        "share-of-total must be suppressed for mean agg"
+    );
+}
+
+// the --map (MapLibre ChoroplethMap) path also carries the enriched hover.
+#[test]
+fn viz_choropleth_map_hover() {
+    let wrk = Workdir::new("viz_choropleth_map_hover");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--map",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choroplethmap""#),
+        "not a choroplethmap"
+    );
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains("Alpha") || html.contains("Bravo"),
+        "region name missing"
+    );
+    assert!(html.contains("rank "), "rank missing");
+}
+
+// `viz smart` PIP choropleth panel carries the enriched hover (names + count + share + rank).
+#[test]
+fn viz_smart_pip_choropleth_hover_names() {
+    let wrk = Workdir::new("viz_smart_pip_choropleth_hover_names");
+    wrk.create_from_string("pts.csv", "lat,lon,mag\n5,5,1\n6,6,2\n5,15,3\n6,16,4\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    assert!(
+        html.contains(r#""hoverinfo":"text""#),
+        "hoverinfo:text missing"
+    );
+    assert!(
+        html.contains("Alpha") && html.contains("Bravo"),
+        "region names missing"
+    );
+    assert!(html.contains("% of total"), "share-of-total missing");
+    assert!(html.contains("rank "), "rank missing");
+}
+
 // the projection (non-`--map`) path must frame the `geo` subplot to a custom GeoJSON extent —
 // plotly only auto-scopes its built-in location modes, so without framing the polygons would sit
 // tiny on the default whole-world view.

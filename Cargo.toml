@@ -165,7 +165,7 @@ chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
 console = { version = "0.16", optional = true }
 const_format = "0.2"
-cpc = { version = "3", optional = true }
+cpc = { version = "4", optional = true }
 crc32fast = { version = "1.4", optional = true }
 crossbeam-channel = "0.5"
 crossterm = { version = "0.29", optional = true }

@@ -2434,9 +2434,9 @@ fn aligned_region_names(features: &[PipFeature], locs: &[String]) -> Option<Vec<
     )
 }
 
-/// Convert a `geojson::GeometryValue::Polygon` ring set to closed `[lon, lat]` rings (appending the first
-/// vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers every
-/// edge). Rings with fewer than 3 distinct vertices are dropped.
+/// Convert a `geojson::GeometryValue::Polygon` ring set to closed `[lon, lat]` rings (appending the
+/// first vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers
+/// every edge). Rings with fewer than 3 distinct vertices are dropped.
 fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>> {
     poly.iter()
         .filter_map(|ring| {
@@ -2457,7 +2457,8 @@ fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>
 }
 
 /// Flatten a `geojson::GeometryValue` into a list of polygons (each = exterior + hole rings).
-/// Handles Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield nothing.
+/// Handles Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield
+/// nothing.
 fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64; 2]>>> {
     match value {
         geojson::GeometryValue::Polygon { coordinates } => {
@@ -2489,11 +2490,12 @@ fn build_pip_features(
     feature_id_key: &str,
     feature_name_key: Option<&str>,
 ) -> CliResult<Vec<PipFeature>> {
-    let fc = serde_json::from_value::<geojson::FeatureCollection>(geojson.clone()).map_err(|e| {
-        crate::CliError::Other(format!(
-            "--geojson is not a valid GeoJSON FeatureCollection: {e}"
-        ))
-    })?;
+    let fc =
+        serde_json::from_value::<geojson::FeatureCollection>(geojson.clone()).map_err(|e| {
+            crate::CliError::Other(format!(
+                "--geojson is not a valid GeoJSON FeatureCollection: {e}"
+            ))
+        })?;
     // Resolve the name key once: an explicit --feature-name-key, else auto-detect by probing common
     // name properties on the FIRST feature (a heterogeneous collection whose first feature lacks
     // the property won't auto-detect — use --feature-name-key to force it).

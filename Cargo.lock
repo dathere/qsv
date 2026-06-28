@@ -3167,6 +3167,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "geojson"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "510c094bfc76ea34d02eee00833254945b70491d79a9c0b050abed6eaa799ffb"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tinyvec",
+]
+
+[[package]]
 name = "geosuggest-core"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3208,7 +3221,7 @@ dependencies = [
  "csv",
  "dbase",
  "geo-types",
- "geojson",
+ "geojson 0.24.2",
  "log",
  "serde_json",
  "thiserror 2.0.18",
@@ -6841,7 +6854,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gender_guesser",
- "geojson",
+ "geojson 1.0.0",
  "geosuggest-core",
  "geosuggest-utils",
  "geozero",
@@ -9300,6 +9313,7 @@ version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e61e67053d25a4e82c844e8424039d9745781b3fc4f32b8d55ed50f5f667ef3"
 dependencies = [
+ "serde_core",
  "tinyvec_macros",
 ]
 

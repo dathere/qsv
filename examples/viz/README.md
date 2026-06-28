@@ -53,7 +53,7 @@ as `text/plain`, so a browser won't render it):
 | `country_stats.csv` | 20 countries with `iso3,country,gdp_usd_tn` | `choropleth` (fill countries by GDP, matched by ISO-3 code) |
 | `us_state_stats.csv` | 20 US states with `state,renewable_electricity_pct` | `choropleth --location-mode usa-states` (built-in state geometry, albers-usa) |
 | `western_states.csv` + `western_states.geojson` | 7 near-rectangular western states with `state,wind_capacity_gw`, plus a tiny custom GeoJSON keyed by 2-letter `id` | `choropleth --map --geojson … --feature-id-key id` (filled regions on a MapLibre tile basemap) |
-| `world_cities.csv` | 33 major cities spanning all **seven continents** (incl. two Antarctic stations): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m`, `avg_annual_temp_c` | `smart --dictionary infer` (global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a seven-continent bar + box panels) |
+| `world_cities.csv` | **1,179 cities** with population **over 500,000** across **six inhabited continents** (GeoNames-derived): `country`, `continent`, `lat`/`lon`, `metro_population_m`, `elevation_m` (real), `avg_annual_temp_c` (synthesized from latitude + elevation). `continent` uses the [plotly.js geo `scope`](https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope) vocabulary (`Oceania`, `North America`, …) | `smart --dictionary infer` (dense global geo map + per-COUNTRY choropleth via `fitbounds` with `geocode` + a six-continent bar + box panels) |
 | `us_cities.csv` | 54 US cities across ~35 states: `lat`/`lon`, `census_region`, `population_m`, `median_age` | `smart` (US point map + per-US-STATE choropleth with `geocode` + box/bar/correlation panels) |
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2) | `smart --smarter --geojson japan_prefectures.geojson --feature-id-key properties.id` (the full geospatial dashboard: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
@@ -310,11 +310,15 @@ qsv viz smart us_cities.csv -o us_dashboard.html
 qsv viz smart world_cities.csv --dictionary infer -o world_dashboard.html
 ```
 
-> The smart per-country choropleth is **reverse-geocoded from coordinates**, so points with no
-> sovereign country snap to the nearest administering territory — `world_cities.csv`'s two Antarctic
-> stations land on New Zealand's Ross Dependency (McMurdo) and the Argentine Antarctic sector
-> (Rothera) rather than an "Antarctica" fill. The seven-continent grouping comes from the dataset's
-> own `continent` column, which is unaffected.
+> The smart per-country choropleth is **reverse-geocoded from coordinates**: each of the 1,179
+> cities is resolved to its sovereign country (ISO-3) and counted, so the densest countries (China,
+> India, the US, Brazil, …) fill darkest. The six-continent bar comes from the dataset's own
+> `continent` column, whose values follow the
+> [plotly.js geo `scope`](https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope)
+> continent vocabulary (`Oceania`, `North America`, …). `world_cities.csv` is GeoNames-derived
+> (cities with population over 500,000); `elevation_m` is real, while `avg_annual_temp_c` is a rough
+> synthetic proxy (a latitude + elevation-lapse model — no coastal, monsoon, or ocean-current
+> effects), so treat it as illustrative, not measured.
 
 > Note: `--ohlc-open` is spelled out (not `--open`) because `--open` already means
 > "open the result in a browser".

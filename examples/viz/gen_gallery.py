@@ -263,18 +263,19 @@ FIGURES = [
      "HTML is reused on regen.",
      True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
     ("smart dashboard (--dictionary infer, world choropleth)",
-     "`qsv viz smart world_cities.csv --dictionary infer` — cities across all <b>seven "
-     "continents</b>: `viz smart` reverse-geocodes the points and adds a per-<b>country</b> "
-     "choropleth (cities-per-country, ISO-3) <b>framed to the filled-country geometries</b> via "
-     "Plotly <code>fitbounds</code> — so the regions are never clipped at the viewport edge — "
-     "beside the natural-earth point map (crimson markers so coastal/island points read against "
-     "the ocean), plus a seven-continent breakdown. A describegpt-inferred Data Dictionary "
-     "supplies the friendly field labels (e.g. <i>Metro Population</i>, <i>Avg Annual Temp</i>). "
-     "<b>Note:</b> the choropleth is <i>reverse-geocoded</i> from lat/lon, so the two Antarctic "
-     "stations — which have no sovereign country — snap to the nearest administering territory "
-     "(McMurdo&nbsp;&rarr;&nbsp;NZ&apos;s Ross Dependency, Rothera&nbsp;&rarr;&nbsp;the Argentine "
-     "sector); the seven-continent grouping instead comes from the dataset&apos;s own "
-     "<code>continent</code> column. Requires a local LLM; the committed HTML is reused on regen.",
+     "`qsv viz smart world_cities.csv --dictionary infer` — <b>1,179 cities</b> with population "
+     "over 500,000 across <b>six inhabited continents</b> (GeoNames-derived): `viz smart` "
+     "reverse-geocodes every point and adds a per-<b>country</b> choropleth (cities-per-country, "
+     "ISO-3) <b>framed to the filled-country geometries</b> via Plotly <code>fitbounds</code> — so "
+     "the regions are never clipped at the viewport edge — beside the dense natural-earth point map "
+     "(crimson markers so coastal/island points read against the ocean), plus a six-continent "
+     "breakdown. A describegpt-inferred Data Dictionary supplies the friendly field labels (e.g. "
+     "<i>Metro Population</i>, <i>Avg Annual Temp</i>). The <code>continent</code> column follows "
+     "the <a href=\"https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope\">plotly.js "
+     "geo <code>scope</code></a> continent vocabulary (<i>Oceania</i>, <i>North America</i>, …). "
+     "<b>Note:</b> <code>elevation_m</code> is real (GeoNames), while <code>avg_annual_temp_c</code> "
+     "is a rough synthetic proxy (latitude + elevation-lapse model), so treat it as illustrative. "
+     "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
 ]
 

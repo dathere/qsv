@@ -6494,6 +6494,22 @@ const US_LAT_MAX: f64 = 72.0;
 // US city renders as a fitted Mercator view rather than a US-wide composite.
 const US_SPAN_MIN_LON_DEG: f64 = 15.0;
 const US_SPAN_MIN_LAT_DEG: f64 = 8.0;
+
+// Plotly.js `layout.geo.scope` continent vocabulary and approximate (lon_min, lon_max, lat_min,
+// lat_max) bounding boxes, aligning the `viz smart` continent-framing heuristic with the enumerated
+// scopes at https://plotly.com/javascript/reference/layout/geo/#layout-geo-scope. "usa", "world"
+// and "antarctica" are intentionally omitted: US extents are handled by the `albers usa` heuristic
+// above, a world-spanning extent stays the NaturalEarth overview, and Antarctica has no `viz smart`
+// use case. Boxes overlap where continents abut (e.g. Eurasia); `continent_scope` only frames to a
+// continent when the data falls within EXACTLY one box, so a straddling extent stays the overview.
+const CONTINENT_SCOPES: &[(&str, f64, f64, f64, f64)] = &[
+    ("africa", -20.0, 52.0, -38.0, 38.0),
+    ("europe", -25.0, 45.0, 35.0, 72.0),
+    ("asia", 26.0, 180.0, -11.0, 82.0),
+    ("north america", -170.0, -50.0, 7.0, 84.0),
+    ("south america", -82.0, -34.0, -56.0, 14.0),
+    ("oceania", 110.0, 180.0, -50.0, 0.0),
+];
 // padding (as a fraction of the span, with a small floor) added around a fitted local geo map so
 // points aren't flush against the frame.
 const GEO_FIT_PAD_FRAC: f64 = 0.1;
@@ -6565,6 +6581,33 @@ fn geo_framing(
         (lon_hi + lon_pad).min(180.0),
     ]);
     (ProjectionType::Mercator, Some(lonaxis), Some(lataxis))
+}
+
+/// If every point falls within exactly one plotly.js geo `scope` continent box (see
+/// `CONTINENT_SCOPES`), returns that scope name so the `viz smart` geo panel can frame the map to
+/// that continent instead of a world overview. Returns `None` when the points span no single
+/// continent (world-spanning data) or straddle more than one (e.g. a Europe/Asia mix), leaving the
+/// existing NaturalEarth overview in place.
+fn continent_scope(lats: &[f64], lons: &[f64]) -> Option<&'static str> {
+    if lats.is_empty() || lats.len() != lons.len() {
+        return None;
+    }
+    let mut found: Option<&'static str> = None;
+    for &(scope, lon_min, lon_max, lat_min, lat_max) in CONTINENT_SCOPES {
+        let all_in = lats
+            .iter()
+            .zip(lons)
+            .all(|(&la, &lo)| la >= lat_min && la <= lat_max && lo >= lon_min && lo <= lon_max);
+        if all_in {
+            if found.is_some() {
+                // the extent fits more than one continent box (continents abut, e.g. Eurasia) —
+                // ambiguous, so keep the world overview.
+                return None;
+            }
+            found = Some(scope);
+        }
+    }
+    found
 }
 
 /// Detect the latitude/longitude column pair from describegpt dictionary signals — concept
@@ -8709,6 +8752,11 @@ fn smart_grid_parts(
                 _ => (lonaxis, lataxis),
             };
             let (geo_land, geo_water, geo_bg) = geo_palette(theme);
+            // when the world-overview framing applies but every point sits in a single plotly
+            // continent, frame the map to that continent's `scope` instead of the whole world.
+            let continent = matches!(projection, ProjectionType::NaturalEarth)
+                .then(|| continent_scope(&frame_lats, &frame_lons))
+                .flatten();
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .resolution(GeoResolution::OneOverFiftyMillion)
@@ -8720,6 +8768,9 @@ fn smart_grid_parts(
                 .lakecolor(geo_water)
                 .showcountries(true)
                 .bgcolor(geo_bg);
+            if let Some(scope) = continent {
+                geo = geo.scope(scope);
+            }
             if let Some(lonaxis) = lonaxis {
                 geo = geo.lonaxis(lonaxis);
             }
@@ -9189,7 +9240,16 @@ fn smart_inline_panel_plot(
             add_extent_overlay_geo(&mut plot, meta);
         }
         let (geo_land, geo_water, geo_bg) = geo_palette(theme);
-        let geo = LayoutGeo::new()
+        // when every plotted point (core + outliers) sits in a single plotly continent, frame the
+        // world overview to that continent's `scope` instead of showing the whole globe.
+        let continent = {
+            let mut all_lats = lats.clone();
+            all_lats.extend_from_slice(outlier_lats);
+            let mut all_lons = lons.clone();
+            all_lons.extend_from_slice(outlier_lons);
+            continent_scope(&all_lats, &all_lons)
+        };
+        let mut geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
@@ -9200,6 +9260,9 @@ fn smart_inline_panel_plot(
             .lakecolor(geo_water)
             .showcountries(true)
             .bgcolor(geo_bg);
+        if let Some(scope) = continent {
+            geo = geo.scope(scope);
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -11773,6 +11836,46 @@ mod tests {
             !matches!(proj, ProjectionType::AlbersUsa),
             "a full extent reaching outside the US must not use albers-usa"
         );
+    }
+
+    #[test]
+    fn continent_scope_frames_single_continent() {
+        // European cities (London, Paris, Berlin, Madrid, Rome) -> "europe"
+        let eu_lats = [51.5_f64, 48.9, 52.5, 40.4, 41.9];
+        let eu_lons = [-0.1_f64, 2.4, 13.4, -3.7, 12.5];
+        assert_eq!(continent_scope(&eu_lats, &eu_lons), Some("europe"));
+
+        // African cities (Cairo, Lagos, Nairobi, Johannesburg) -> "africa"
+        let af_lats = [30.0_f64, 6.5, -1.3, -26.2];
+        let af_lons = [31.2_f64, 3.4, 36.8, 28.0];
+        assert_eq!(continent_scope(&af_lats, &af_lons), Some("africa"));
+
+        // Australian/NZ cities (Sydney, Melbourne, Perth, Auckland) -> "oceania"
+        let oc_lats = [-33.9_f64, -37.8, -32.0, -36.8];
+        let oc_lons = [151.2_f64, 145.0, 115.9, 174.8];
+        assert_eq!(continent_scope(&oc_lats, &oc_lons), Some("oceania"));
+    }
+
+    #[test]
+    fn continent_scope_none_for_world_or_straddle() {
+        // a world-spanning spread sits in no single continent box -> None (NaturalEarth overview)
+        let g_lats = [-40.0_f64, 51.5, 35.7, -33.9, 1.3, 64.1];
+        let g_lons = [174.8_f64, -0.1, 139.7, 151.2, 103.8, -21.9];
+        assert_eq!(continent_scope(&g_lats, &g_lons), None);
+
+        // London + Tokyo fall in different continent boxes, so no single box holds both -> None
+        let split_lats = [51.5_f64, 35.7];
+        let split_lons = [-0.1_f64, 139.7];
+        assert_eq!(continent_scope(&split_lats, &split_lons), None);
+
+        // a point in the Europe/Asia overlap (e.g. Ankara) sits in BOTH boxes -> ambiguous -> None
+        let overlap_lats = [40.0_f64];
+        let overlap_lons = [35.0_f64];
+        assert_eq!(continent_scope(&overlap_lats, &overlap_lons), None);
+
+        // empty / mismatched inputs -> None
+        assert_eq!(continent_scope(&[], &[]), None);
+        assert_eq!(continent_scope(&[10.0], &[10.0, 20.0]), None);
     }
 
     #[test]

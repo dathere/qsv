@@ -3211,6 +3211,62 @@ fn viz_theme_dark_applies_template() {
     assert!(html.contains(r##""plot_bgcolor":"#111111""##));
 }
 
+// a choropleth's geo subplot is theme-aware: a dark theme paints dark land + ocean so the map is
+// legible on a dark page, while the default/light look stays the built-in light gray with no ocean.
+#[test]
+fn viz_choropleth_geo_theme_aware() {
+    let wrk = Workdir::new("viz_choropleth_geo_theme_aware");
+    wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\nMEX,3\n");
+
+    // dark theme -> dark land + painted dark ocean
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "iso3",
+        "--value",
+        "val",
+        "--theme",
+        "plotly_dark",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let dark = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        dark.contains(r##""landcolor":"#2a3138""##),
+        "dark land missing"
+    );
+    assert!(
+        dark.contains(r##""oceancolor":"#16202b""##),
+        "dark ocean missing"
+    );
+
+    // default (no theme) -> built-in light gray land, no painted ocean
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "iso3",
+        "--value",
+        "val",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let light = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        light.contains(r##""landcolor":"#d3d3d3""##),
+        "light land missing"
+    );
+    // the dark palette must not bleed into the light/default render (substring-safe: the embedded
+    // plotly.min.js mentions "oceancolor", but never our dark hex)
+    assert!(
+        !light.contains("#16202b") && !light.contains("#2a3138"),
+        "light path must not use the dark geo palette"
+    );
+}
+
 #[test]
 fn viz_no_theme_has_no_template() {
     let wrk = Workdir::new("viz_no_theme_has_no_template");

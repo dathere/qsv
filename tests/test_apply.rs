@@ -846,9 +846,9 @@ fn apply_calcconv_units() {
             "unit cost usd",
             "watthours",
         ],
-        svec!["20.5", "mangoes", "200", "2", "4.76830 [(WattHour, 1)]"],
-        svec!["10", "bananas", "120", "0.50", "1.3956 [(WattHour, 1)]"],
-        svec!["3", "strawberries", "20", "0.10", "0.06978 [(WattHour, 1)]"],
+        svec!["20.5", "mangoes", "200", "2", "4.76830 watt-hour"],
+        svec!["10", "bananas", "120", "0.50", "1.3956 watt-hour"],
+        svec!["3", "strawberries", "20", "0.10", "0.06978 watt-hour"],
     ];
     assert_eq!(got, expected);
 }

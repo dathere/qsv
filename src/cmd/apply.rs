@@ -875,7 +875,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                             match eval(cell_for_eval, true, false) {
                                 Ok(answer) => {
                                     if append_unit {
-                                        format!("{} {:?}", answer.value, answer.unit)
+                                        // cpc 4 changed `answer.unit` to a compound-unit vector
+                                        // (`Vec<(Unit, exponent)>`); `Number::singular()` renders
+                                        // it as a human-readable suffix (e.g. "watt-hour") instead
+                                        // of the raw debug form (`[(WattHour, 1)]`).
+                                        let unit = answer.singular();
+                                        if unit.is_empty() {
+                                            answer.value.to_string()
+                                        } else {
+                                            format!("{} {unit}", answer.value)
+                                        }
                                     } else {
                                         answer.value.to_string()
                                     }

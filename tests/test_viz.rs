@@ -3510,8 +3510,11 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     assert!(html.contains("--qsv-page-bg: #111111"));
     // dark-bg themes must seed --qsv-geo-meta with a light value in :root so the caption is
     // readable even before body.qsv-dark is applied (regression: was hardcoded #4b5563 = dark
-    // gray on dark background, nearly invisible).
-    assert!(html.contains("--qsv-geo-meta: #9aa4b2"));
+    // gray on dark background, nearly invisible). Assert the full :root block to avoid a false
+    // pass from the always-present body.qsv-dark { --qsv-geo-meta: #9aa4b2 } rule.
+    assert!(html.contains(
+        ":root { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }"
+    ));
     assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));

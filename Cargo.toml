@@ -460,7 +460,8 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 # https://github.com/plotly/plotly.rs/pull/406 (treemap/sunburst + 3.6) and
 # https://github.com/plotly/plotly.rs/pull/408 (choropleth); the feat/choropleth-maps branch is a
 # superset of feat/treemap-sunburst-traces and also adds LayoutGeo `fitbounds` (used to frame the
-# smart choropleth to its filled-region geometries; `GeoFitBounds` incl. a `False` variant) and
+# smart choropleth to its filled-region geometries; `GeoFitBounds` incl. a `False` variant),
+# `resolution` (`GeoResolution`; 50m base layers for higher-detail coastlines on the geo maps) and
 # makes LayoutGeo skip serializing unset (null) fields. Drop this patch once merged & released.
 plotly = { git = "https://github.com/dathere/plotly", branch = "feat/choropleth-maps" }
 

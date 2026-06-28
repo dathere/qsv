@@ -413,9 +413,9 @@ use plotly::{
         Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
-        Annotation, Axis, AxisType, Center, GeoFitBounds, HoverMode, Layout, LayoutGeo, LayoutMap,
-        LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection, ProjectionType,
-        themes::BuiltinTheme,
+        Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
+        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection,
+        ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -2170,6 +2170,7 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
 
     let geo = LayoutGeo::new()
         .projection(Projection::new().projection_type(projection))
+        .resolution(GeoResolution::OneOverFiftyMillion)
         .showland(true)
         .landcolor(NamedColor::LightGray)
         .showocean(true)
@@ -2413,6 +2414,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_bar(ColorBar::new().title(measure_label))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
         let mut geo = LayoutGeo::new()
+            .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);
@@ -7666,6 +7668,7 @@ fn smart_grid_parts(
             };
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
+                .resolution(GeoResolution::OneOverFiftyMillion)
                 .showland(true)
                 .landcolor(NamedColor::LightGray)
                 .showocean(true)
@@ -8136,6 +8139,7 @@ fn smart_inline_panel_plot(
         }
         let geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+            .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showocean(true)
@@ -8184,6 +8188,7 @@ fn smart_inline_panel_plot(
         // European/Asian/etc. cluster zooms to those countries, global data stays
         // world-scale.
         let mut geo = LayoutGeo::new()
+            .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
             .landcolor(NamedColor::LightGray)
             .showcountries(true);

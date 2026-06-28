@@ -4360,20 +4360,25 @@ fn geo_palette(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'st
     }
 }
 
-/// The `(page background, text color)` to use for the inline `viz smart` HTML page chrome
-/// (the `<body>` around the panel grid), matching each built-in theme's paper/font colors so
-/// a dark theme gets a dark page rather than dark plots floating on white. Mirrors the values
-/// in plotly's `layout::themes` templates. `None` keeps qsv's built-in look.
-fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str) {
+/// The `(page background, text color, geo-meta caption color)` to use for the inline `viz smart`
+/// HTML page chrome (the `<body>` around the panel grid), matching each built-in theme's
+/// paper/font colors so a dark theme gets a dark page rather than dark plots floating on white.
+/// Mirrors the values in plotly's `layout::themes` templates. `None` keeps qsv's built-in look.
+/// The geo-meta color is the caption color for "Spatial extent:" shown below map panels. It must
+/// contrast with the light-mode page background: light for dark-bg themes (PlotlyDark,
+/// SeabornDark), dark for light-bg themes.
+fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'static str) {
     match theme {
-        None => (PAPER_BG, INK),
-        Some(BuiltinTheme::Default | BuiltinTheme::PlotlyWhite) => ("#FFFFFF", "#2a3f5f"),
-        Some(BuiltinTheme::PlotlyDark) => ("#111111", "#f2f5fa"),
-        Some(BuiltinTheme::Seaborn) => ("#EAEAF2", "#333333"),
-        Some(BuiltinTheme::SeabornWhitegrid) => ("#FFFFFF", "#333333"),
-        Some(BuiltinTheme::SeabornDark) => ("#222222", "#eaeaf2"),
-        Some(BuiltinTheme::Matplotlib) => ("#FFFFFF", "black"),
-        Some(BuiltinTheme::Plotnine) => ("#EBEBEB", "#525252"),
+        None => (PAPER_BG, INK, "#4b5563"),
+        Some(BuiltinTheme::Default | BuiltinTheme::PlotlyWhite) => {
+            ("#FFFFFF", "#2a3f5f", "#4b5563")
+        },
+        Some(BuiltinTheme::PlotlyDark) => ("#111111", "#f2f5fa", "#9aa4b2"),
+        Some(BuiltinTheme::Seaborn) => ("#EAEAF2", "#333333", "#4b5563"),
+        Some(BuiltinTheme::SeabornWhitegrid) => ("#FFFFFF", "#333333", "#4b5563"),
+        Some(BuiltinTheme::SeabornDark) => ("#222222", "#eaeaf2", "#9aa4b2"),
+        Some(BuiltinTheme::Matplotlib) => ("#FFFFFF", "black", "#4b5563"),
+        Some(BuiltinTheme::Plotnine) => ("#EBEBEB", "#525252", "#4b5563"),
     }
 }
 
@@ -4396,7 +4401,7 @@ struct ToggleChrome {
 }
 
 fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
-    let (light_bg, light_ink) = theme_page_chrome(theme);
+    let (light_bg, light_ink, light_geo_meta) = theme_page_chrome(theme);
     // Three-state initial mode (overridable by a saved localStorage choice). An EXPLICIT
     // `--theme` opens in that theme's implied mode — dark for the dark built-ins, light for every
     // other (light) built-in — so e.g. `--theme plotly_white` is NOT overridden by a dark-mode OS.
@@ -4412,6 +4417,7 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
     let style = STYLE_TEMPLATE
         .replace("__LIGHT_BG__", light_bg)
         .replace("__LIGHT_INK__", light_ink)
+        .replace("__LIGHT_GEO_META__", light_geo_meta)
         .replace("__FONT_FAMILY__", FONT_FAMILY);
 
     let button = "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"Toggle light/dark \
@@ -4455,7 +4461,7 @@ fn logo_markup() -> String {
 
 /// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
-const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: #4b5563; }
+const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
   body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }
   #qsv-theme-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
   #qsv-theme-toggle:hover { opacity: 1; }"#;

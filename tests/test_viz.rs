@@ -4243,6 +4243,125 @@ fn viz_choropleth_map_frames_ignore_properties() {
     );
 }
 
+// point-in-polygon binning: lat/lon points + a custom --geojson (no --geocode) bins each point into
+// the region whose polygon contains it; the location IS the feature id (exact, no name/code match).
+#[test]
+fn viz_choropleth_pip_bins_points() {
+    let wrk = Workdir::new("viz_choropleth_pip_bins_points");
+    // A = lon 0..10, B = lon 10..20 (both lat 0..10); one point far outside
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n50,50\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a geo Choropleth in geojson-id mode, matched on properties.id, with the geojson embedded
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"geojson-id""#));
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+    assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
+    // A gets the one (5,5) point; B gets two (5,15) + the snapped (50,50) outlier (snap is default)
+    assert!(html.contains(r#""locations":["A","B"]"#));
+    assert!(html.contains(r#""z":[1.0,3.0]"#));
+    // the snapped outlier is reported on stderr so the user knows a point missed every polygon
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 of 4 points fell outside every region (snapped to nearest region)"),
+        "missing snap coverage note; stderr was: {stderr}"
+    );
+}
+
+// --no-snap drops points outside every region (instead of snapping to nearest) and reports coverage
+// on stderr.
+#[test]
+fn viz_choropleth_pip_no_snap_drops_and_reports() {
+    let wrk = Workdir::new("viz_choropleth_pip_no_snap_drops_and_reports");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n50,50\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the (50,50) point is dropped: B keeps only its two contained points
+    assert!(html.contains(r#""z":[1.0,2.0]"#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("1 of 4 points fell outside every region (dropped)"),
+        "missing coverage note; stderr was: {stderr}"
+    );
+}
+
+// --no-snap is only meaningful on the point-in-polygon path; reject it otherwise.
+#[test]
+fn viz_choropleth_no_snap_requires_pip() {
+    let wrk = Workdir::new("viz_choropleth_no_snap_requires_pip");
+    wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args(["choropleth", "rg.csv", "--locations", "iso3", "--no-snap"]);
+    wrk.assert_err(&mut cmd);
+}
+
+// `viz smart` builds a point-in-polygon prefecture/region choropleth panel when given a --geojson,
+// with no geocode engine involved.
+#[test]
+fn viz_smart_pip_choropleth_panel() {
+    let wrk = Workdir::new("viz_smart_pip_choropleth_panel");
+    wrk.create_from_string("pts.csv", "lat,lon,mag\n5,5,1\n6,6,2\n5,15,3\n6,16,4\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choropleth""#));
+    assert!(html.contains(r#""locationmode":"geojson-id""#));
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+}
+
 // the projection (non-`--map`) path must frame the `geo` subplot to a custom GeoJSON extent —
 // plotly only auto-scopes its built-in location modes, so without framing the polygons would sit
 // tiny on the default whole-world view.

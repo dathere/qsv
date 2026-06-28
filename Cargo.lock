@@ -6841,6 +6841,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gender_guesser",
+ "geojson",
  "geosuggest-core",
  "geosuggest-utils",
  "geozero",

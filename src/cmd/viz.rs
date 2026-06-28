@@ -162,6 +162,9 @@ Examples:
   # Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)
   qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html
 
+  # Point-in-polygon: bin lat/lon points into custom GeoJSON regions by count (no geocode)
+  qsv viz choropleth quakes.csv --lat lat --lon lon --geojson prefectures.geojson --feature-id-key properties.id -o by_pref.html
+
 For more examples, see https://github.com/dathere/qsv/blob/master/tests/test_viz.rs.
 See also https://github.com/dathere/qsv/wiki/Visualization
 
@@ -288,16 +291,23 @@ choropleth options:
                            and --feature-id-key. Reuses --style for the basemap.
     --geojson <src>        Custom region polygons as a local file path or an http(s) URL
                            to a GeoJSON FeatureCollection. Required for --map, and for
-                           the geojson-id location mode.
+                           the geojson-id location mode. Also enables point-in-polygon
+                           binning: with --lat/--lon (and without --geocode), each row's
+                           point is binned into the region whose polygon contains it
+                           (exact, no geocoding) and colored by --value/--agg or counts.
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
-                           entry in the locations column (e.g. id, properties.fips).
-                           [default: id]
+                           entry in the locations column, or that labels each binned
+                           region (e.g. id, properties.fips). [default: id]
     --geocode              Derive the region codes by reusing qsv's geocode engine
                            (needs a build with the geocode feature). Either reverse-geocode
                            the lat/lon points, or forward-geocode the locations name
                            column. Only valid with location modes iso3 or usa-states.
                            `viz choropleth` also reuses --value, --agg, --style and the
                            lat/lon options.
+    --no-snap              For point-in-polygon binning (lat/lon points binned into a
+                           custom GeoJSON without geocoding): drop points that fall
+                           outside every region instead of snapping each to its nearest
+                           region (the default). A stderr note reports coverage either way.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -814,6 +824,7 @@ struct Args {
     flag_geojson:            Option<String>,
     flag_feature_id_key:     Option<String>,
     flag_geocode:            bool,
+    flag_no_snap:            bool,
     flag_bins:               Option<usize>,
     flag_agg:                Option<String>,
     flag_box_points:         Option<String>,
@@ -2271,6 +2282,257 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
         .map_err(|e| crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}")))
 }
 
+/// One GeoJSON feature reduced to its polygon rings for point-in-polygon binning. `polygons` holds
+/// one entry per polygon (a MultiPolygon yields several); each polygon is a list of linear rings
+/// (ring 0 is the exterior, the rest are holes); each ring is a closed list of `[lon, lat]`
+/// vertices. `bbox` is `[min_lon, min_lat, max_lon, max_lat]` over all vertices, for cheap
+/// candidate prefiltering.
+struct PipFeature {
+    id:       String,
+    polygons: Vec<Vec<Vec<[f64; 2]>>>,
+    bbox:     [f64; 4],
+}
+
+/// Resolve a GeoJSON feature's id by a dotted `--feature-id-key` path. Supports the top-level
+/// `"id"` and `"properties.<...>"` paths (mirroring plotly's `featureidkey` convention). Strings
+/// and numbers both coerce to `String` (CSV cells and plotly match feature ids as strings).
+/// Returns `None` when the path is absent or the value isn't a string/number.
+fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
+    let coerce = |v: &serde_json::Value| -> Option<String> {
+        match v {
+            serde_json::Value::String(s) => Some(s.clone()),
+            serde_json::Value::Number(n) => Some(n.to_string()),
+            _ => None,
+        }
+    };
+    if key == "id" {
+        return feature.id.as_ref().map(|id| match id {
+            geojson::feature::Id::String(s) => s.clone(),
+            geojson::feature::Id::Number(n) => n.to_string(),
+        });
+    }
+    let rest = key.strip_prefix("properties.")?;
+    let props = feature.properties.as_ref()?;
+    let mut segs = rest.split('.');
+    let mut cur = props.get(segs.next()?)?;
+    for seg in segs {
+        cur = cur.get(seg)?;
+    }
+    coerce(cur)
+}
+
+/// Convert a `geojson::Value::Polygon` ring set to closed `[lon, lat]` rings (appending the first
+/// vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers every
+/// edge). Rings with fewer than 3 distinct vertices are dropped.
+fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>> {
+    poly.iter()
+        .filter_map(|ring| {
+            let mut pts: Vec<[f64; 2]> = ring
+                .iter()
+                .filter(|p| p.len() >= 2)
+                .map(|p| [p[0], p[1]])
+                .collect();
+            if pts.len() < 3 {
+                return None;
+            }
+            if pts.first() != pts.last() {
+                pts.push(pts[0]);
+            }
+            Some(pts)
+        })
+        .collect()
+}
+
+/// Flatten a `geojson::Value` into a list of polygons (each = exterior + hole rings). Handles
+/// Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield nothing.
+fn geojson_value_to_polygons(value: &geojson::Value) -> Vec<Vec<Vec<[f64; 2]>>> {
+    match value {
+        geojson::Value::Polygon(poly) => {
+            let rings = geojson_rings_to_closed(poly);
+            if rings.is_empty() {
+                vec![]
+            } else {
+                vec![rings]
+            }
+        },
+        geojson::Value::MultiPolygon(mp) => mp
+            .iter()
+            .map(|poly| geojson_rings_to_closed(poly))
+            .filter(|rings| !rings.is_empty())
+            .collect(),
+        geojson::Value::GeometryCollection(geoms) => geoms
+            .iter()
+            .flat_map(|g| geojson_value_to_polygons(&g.value))
+            .collect(),
+        _ => vec![],
+    }
+}
+
+/// Parse a GeoJSON FeatureCollection into [`PipFeature`]s keyed by `feature_id_key`. Features
+/// missing the id key or lacking a Polygon/MultiPolygon geometry are skipped (and counted in a
+/// stderr note). Errors when the input isn't a FeatureCollection or yields no usable features.
+fn build_pip_features(
+    geojson: &serde_json::Value,
+    feature_id_key: &str,
+) -> CliResult<Vec<PipFeature>> {
+    let fc = geojson::FeatureCollection::from_json_value(geojson.clone()).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson is not a valid GeoJSON FeatureCollection: {e}"
+        ))
+    })?;
+    let mut out: Vec<PipFeature> = Vec::with_capacity(fc.features.len());
+    let mut skipped = 0_usize;
+    for feature in &fc.features {
+        let Some(id) = feature_id_by_path(feature, feature_id_key) else {
+            skipped += 1;
+            continue;
+        };
+        let polygons = match &feature.geometry {
+            Some(g) => geojson_value_to_polygons(&g.value),
+            None => Vec::new(),
+        };
+        if polygons.is_empty() {
+            skipped += 1;
+            continue;
+        }
+        let mut bbox = [
+            f64::INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::NEG_INFINITY,
+        ];
+        for ring in polygons.iter().flatten() {
+            for &[lon, lat] in ring {
+                bbox[0] = bbox[0].min(lon);
+                bbox[1] = bbox[1].min(lat);
+                bbox[2] = bbox[2].max(lon);
+                bbox[3] = bbox[3].max(lat);
+            }
+        }
+        out.push(PipFeature { id, polygons, bbox });
+    }
+    if out.is_empty() {
+        return fail_clierror!(
+            "--geojson has no usable Polygon/MultiPolygon features with a '{feature_id_key}' id. \
+             Check --feature-id-key (e.g. 'id' or 'properties.<name>')."
+        );
+    }
+    if skipped > 0 {
+        eprintln!(
+            "viz: skipped {skipped} GeoJSON feature(s) lacking a '{feature_id_key}' id or polygon \
+             geometry."
+        );
+    }
+    Ok(out)
+}
+
+/// Even-odd ray-casting test: is `(lon, lat)` inside this single polygon (exterior + holes)? A
+/// point in a hole crosses an even number of edges and is correctly reported as outside. Rings are
+/// pre-closed by [`geojson_rings_to_closed`], so `windows(2)` enumerates every edge.
+fn point_in_polygon(polygon: &[Vec<[f64; 2]>], lon: f64, lat: f64) -> bool {
+    let mut inside = false;
+    for ring in polygon {
+        for edge in ring.windows(2) {
+            let &[[xi, yi], [xj, yj]] = edge else {
+                continue;
+            };
+            if ((yi > lat) != (yj > lat)) && (lon < (xj - xi) * (lat - yi) / (yj - yi) + xi) {
+                inside = !inside;
+            }
+        }
+    }
+    inside
+}
+
+/// Is `(lon, lat)` inside this feature (bbox prefilter, then any constituent polygon)?
+fn feature_contains(feature: &PipFeature, lon: f64, lat: f64) -> bool {
+    if lon < feature.bbox[0]
+        || lon > feature.bbox[2]
+        || lat < feature.bbox[1]
+        || lat > feature.bbox[3]
+    {
+        return false;
+    }
+    feature
+        .polygons
+        .iter()
+        .any(|poly| point_in_polygon(poly, lon, lat))
+}
+
+/// Squared Euclidean (degree-space) distance from a point to a line segment.
+fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
+    let (dx, dy) = (bx - ax, by - ay);
+    let len2 = dx * dx + dy * dy;
+    let t = if len2 <= f64::EPSILON {
+        0.0
+    } else {
+        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+    };
+    let (cx, cy) = (ax + t * dx, ay + t * dy);
+    let (ex, ey) = (px - cx, py - cy);
+    ex * ex + ey * ey
+}
+
+/// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings.
+fn feature_dist2(feature: &PipFeature, lon: f64, lat: f64) -> f64 {
+    let mut best = f64::INFINITY;
+    for ring in feature.polygons.iter().flatten() {
+        for edge in ring.windows(2) {
+            let &[[ax, ay], [bx, by]] = edge else {
+                continue;
+            };
+            let d = point_seg_dist2(lon, lat, ax, ay, bx, by);
+            if d < best {
+                best = d;
+            }
+        }
+    }
+    best
+}
+
+/// Lower-bound squared distance from `(lon, lat)` to a feature's bbox (0 when inside the bbox).
+fn bbox_dist2(bbox: &[f64; 4], lon: f64, lat: f64) -> f64 {
+    let dx = (bbox[0] - lon).max(0.0).max(lon - bbox[2]);
+    let dy = (bbox[1] - lat).max(0.0).max(lat - bbox[3]);
+    dx * dx + dy * dy
+}
+
+/// Result of binning one point into a GeoJSON feature set.
+#[derive(Debug, PartialEq, Eq)]
+enum PipOutcome {
+    /// Contained by feature at this index.
+    Inside(usize),
+    /// Outside every polygon; snapped to the nearest feature at this index.
+    Snapped(usize),
+    /// Outside every polygon and not snapped (dropped).
+    Outside,
+}
+
+/// Assign a point to a feature: exact containment first; if none and `snap`, the nearest feature by
+/// edge distance (bbox lower-bound pruned); if none and `!snap`, [`PipOutcome::Outside`]. The
+/// `Inside`/`Snapped` distinction lets callers report how many points missed every polygon.
+fn pip_assign(features: &[PipFeature], lat: f64, lon: f64, snap: bool) -> PipOutcome {
+    if let Some(i) = features.iter().position(|f| feature_contains(f, lon, lat)) {
+        return PipOutcome::Inside(i);
+    }
+    if !snap {
+        return PipOutcome::Outside;
+    }
+    let mut best_i = None;
+    let mut best_d2 = f64::INFINITY;
+    for (i, f) in features.iter().enumerate() {
+        if bbox_dist2(&f.bbox, lon, lat) >= best_d2 {
+            continue;
+        }
+        let d2 = feature_dist2(f, lon, lat);
+        if d2 < best_d2 {
+            best_d2 = d2;
+            best_i = Some(i);
+        }
+    }
+    best_i.map_or(PipOutcome::Outside, PipOutcome::Snapped)
+}
+
 /// Collect every `[lon, lat]` vertex from a GeoJSON value into parallel `(lats, lons)` vectors, so
 /// a `--map` choropleth can frame the MapLibre basemap to its regions instead of opening at
 /// plotly's whole-world default (where county/city polygons are effectively invisible). Descends
@@ -2322,7 +2584,20 @@ fn geojson_lat_lons(geojson: &serde_json::Value) -> (Vec<f64>, Vec<f64>) {
 /// — with `--geocode` — are derived from `--lat`/`--lon` (reverse) or a `--locations` name column
 /// (forward) by reusing qsv's geocode engine.
 fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
-    let mode = parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?;
+    // Point-in-polygon binning: lat/lon points + a custom --geojson, without --geocode. It colors
+    // regions by the GeoJSON feature that CONTAINS each point, so it always uses the geojson-id
+    // location mode regardless of any --location-mode default. --geocode (when also present) takes
+    // precedence — it is an explicit request for the geocode engine.
+    let pip = args.flag_geojson.is_some()
+        && args.flag_lat.is_some()
+        && args.flag_lon.is_some()
+        && !args.flag_geocode;
+    let snap = !args.flag_no_snap;
+    let mode = if pip {
+        LocationMode::GeoJsonId
+    } else {
+        parse_location_mode(args.flag_location_mode.as_deref().unwrap_or("iso3"))?
+    };
     let palette = parse_color_scale(args.flag_color_scale.as_deref().unwrap_or("viridis"))?;
 
     // --value drives the colored measure; aggregation defaults to sum when a --value is given,
@@ -2357,8 +2632,16 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
              won't match a GeoJSON feature id. Use the default geo basemap with --geocode."
         );
     }
+    if args.flag_no_snap && !pip {
+        return fail_incorrectusage_clierror!(
+            "--no-snap only applies to point-in-polygon binning (--lat/--lon + --geojson without \
+             --geocode)."
+        );
+    }
 
-    let (locations, z, measure_label) = if args.flag_geocode {
+    let (locations, z, measure_label) = if pip {
+        choropleth_pip_locations(args, agg, snap)?
+    } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
         choropleth_literal_locations(args, agg)?
@@ -2493,6 +2776,81 @@ fn choropleth_literal_locations(
         raw_locs.push(loc);
         values.push(value);
     }
+    let (locs, z) = aggregate(raw_locs, values, agg);
+    Ok((locs, z, measure_label))
+}
+
+/// Resolve choropleth `(locations, z, measure_label)` by point-in-polygon binning: each row's
+/// `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon contains it (or, unless
+/// `snap` is false, to the nearest region), and the `--value` measure (or row counts) is
+/// aggregated per region id. Emits a stderr coverage note when points fall outside every region.
+fn choropleth_pip_locations(
+    args: &Args,
+    agg: Agg,
+    snap: bool,
+) -> CliResult<(Vec<String>, Vec<f64>, String)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+    let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+    let value_idx = match args.flag_value.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "value")?),
+        None => None,
+    };
+    let measure_label = match value_idx {
+        Some(i) => col_label(&headers, i, nh),
+        None => "count".to_string(),
+    };
+
+    let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    let geojson = load_geojson(args.flag_geojson.as_deref().unwrap())?;
+    let features = build_pip_features(&geojson, feature_id_key)?;
+
+    let mut raw_locs: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    let mut total = 0_usize;
+    let mut outside = 0_usize;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+            continue;
+        }
+        let value = match value_idx {
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 1.0,
+        };
+        total += 1;
+        match pip_assign(&features, lat, lon, snap) {
+            PipOutcome::Inside(fi) => {
+                raw_locs.push(features[fi].id.clone());
+                values.push(value);
+            },
+            PipOutcome::Snapped(fi) => {
+                raw_locs.push(features[fi].id.clone());
+                values.push(value);
+                outside += 1;
+            },
+            PipOutcome::Outside => outside += 1,
+        }
+    }
+
+    if outside > 0 {
+        let how = if snap {
+            "snapped to nearest region"
+        } else {
+            "dropped"
+        };
+        eprintln!("viz choropleth: {outside} of {total} points fell outside every region ({how}).");
+    }
+
     let (locs, z) = aggregate(raw_locs, values, agg);
     Ok((locs, z, measure_label))
 }
@@ -4464,9 +4822,13 @@ enum PanelKind {
     /// and `z` (counts). Like `Geo`, the `geo` subplot doesn't compose with the typed x/y grid,
     /// so a dashboard containing this panel always renders via the inline path.
     Choropleth {
-        locations:     Vec<String>,
-        z:             Vec<f64>,
-        location_mode: LocationMode,
+        locations:      Vec<String>,
+        z:              Vec<f64>,
+        location_mode:  LocationMode,
+        /// User GeoJSON for a point-in-polygon (`geojson-id`) panel; `None` for the built-in
+        /// geocode-derived iso3/usa-states path. Carried as a value so render does no I/O.
+        geojson:        Option<serde_json::Value>,
+        feature_id_key: Option<String>,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -5793,6 +6155,76 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             locations: order,
             z,
             location_mode,
+            geojson: None,
+            feature_id_key: None,
+        },
+    ))
+}
+
+/// Build a `viz smart` choropleth panel by point-in-polygon binning the core lat/lon points into a
+/// user-supplied GeoJSON (`--geojson`). Each point is assigned to the region whose polygon contains
+/// it (or, unless `snap` is false, the nearest region); the panel is colored by per-region counts.
+/// Unlike [`build_smart_choropleth_panel`] this needs no geocode engine. Returns `None` when the
+/// GeoJSON can't be parsed/binned or fewer than 2 regions receive points.
+fn build_smart_pip_choropleth_panel(
+    geojson_spec: &str,
+    feature_id_key: &str,
+    lats: &[f64],
+    lons: &[f64],
+    snap: bool,
+) -> Option<Panel> {
+    let geojson = load_geojson(geojson_spec).ok()?;
+    let features = build_pip_features(&geojson, feature_id_key).ok()?;
+    let mut order: Vec<String> = Vec::new();
+    let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    let mut total = 0_usize;
+    let mut outside = 0_usize;
+    for (&lat, &lon) in lats.iter().zip(lons.iter()) {
+        if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
+            continue;
+        }
+        total += 1;
+        let fi = match pip_assign(&features, lat, lon, snap) {
+            PipOutcome::Inside(fi) => fi,
+            PipOutcome::Snapped(fi) => {
+                outside += 1;
+                fi
+            },
+            PipOutcome::Outside => {
+                outside += 1;
+                continue;
+            },
+        };
+        let id = &features[fi].id;
+        if let Some(c) = counts.get_mut(id) {
+            *c += 1.0;
+        } else {
+            counts.insert(id.clone(), 1.0);
+            order.push(id.clone());
+        }
+    }
+    if order.len() < 2 {
+        return None;
+    }
+    // only report after we know a panel will actually render, so the note never describes a map the
+    // dashboard drops.
+    if outside > 0 {
+        let how = if snap {
+            "snapped to nearest region"
+        } else {
+            "dropped"
+        };
+        eprintln!("viz smart: {outside} of {total} points fell outside every region ({how}).");
+    }
+    let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
+    Some(Panel::new(
+        "Regions".to_string(),
+        PanelKind::Choropleth {
+            locations: order,
+            z,
+            location_mode: LocationMode::GeoJsonId,
+            geojson: Some(geojson),
+            feature_id_key: Some(feature_id_key.to_string()),
         },
     ))
 }
@@ -5883,13 +6315,27 @@ fn build_map_panel(
     // per-country from what actually resolved — accurate even above `MAX_SMART_POINTS`,
     // embedding only the aggregates (never the raw points), and its own 2-region check drops
     // single-region data.
-    #[cfg(feature = "geocode")]
-    let choropleth_panel = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
-        || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-        .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
-        .flatten();
-    #[cfg(not(feature = "geocode"))]
-    let choropleth_panel: Option<Panel> = None;
+    // A user `--geojson` switches the companion to a point-in-polygon choropleth (ungated — no
+    // geocode engine needed). It bypasses the span gate: an explicit `--geojson` is explicit
+    // intent, so a small custom-district file shouldn't be span-suppressed. Without
+    // `--geojson`, fall back to the geocode-derived iso3/US-state panel (gated, span-gated as
+    // before).
+    let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
+        let snap = !args.flag_no_snap;
+        let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+        build_smart_pip_choropleth_panel(spec, key, &core_lats, &core_lons, snap)
+    } else {
+        #[cfg(feature = "geocode")]
+        {
+            (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+                .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+                .flatten()
+        }
+        #[cfg(not(feature = "geocode"))]
+        {
+            None
+        }
+    };
 
     let kind = if global {
         PanelKind::Geo {
@@ -8169,17 +8615,23 @@ fn smart_inline_panel_plot(
         locations,
         z,
         location_mode,
+        geojson,
+        feature_id_key,
     } = &panel.kind
     {
         let mut plot = Plot::new();
-        plot.add_trace(
-            Choropleth::new(locations.clone(), z.clone())
-                .location_mode(location_mode.clone())
-                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
-                .show_scale(true)
-                .color_bar(ColorBar::new().title("count"))
-                .marker(ChoroplethMarker::new().line(Line::new().width(0.5))),
-        );
+        let mut trace = Choropleth::new(locations.clone(), z.clone())
+            .location_mode(location_mode.clone())
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(true)
+            .color_bar(ColorBar::new().title("count"))
+            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)));
+        // a point-in-polygon panel carries its own GeoJSON polygons (geojson-id mode); the
+        // built-in geocode-derived panels (iso3 / usa-states) carry neither.
+        if let (Some(gj), Some(key)) = (geojson, feature_id_key) {
+            trace = trace.geojson(gj.clone()).feature_id_key(key.clone());
+        }
+        plot.add_trace(trace);
         // frame to the FILLED REGION GEOMETRIES, not the source points (whose bounding box clips
         // the countries/states at the edges — e.g. a city near a country's center).
         // US-states use the albers-usa composite (CONUS + AK/HI insets), which self-frames
@@ -11373,5 +11825,93 @@ mod tests {
             v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
             "max-pair V={v} should catch nested level"
         );
+    }
+
+    #[test]
+    fn pip_inside_outside_and_snap() {
+        // one 0..10 square keyed by properties.id
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 10.0], [10.0, 10.0], [10.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id").unwrap();
+        assert_eq!(feats.len(), 1);
+        assert_eq!(feats[0].id, "A");
+        // (lat, lon) inside the square
+        assert_eq!(pip_assign(&feats, 5.0, 5.0, false), PipOutcome::Inside(0));
+        // far outside, no snap -> dropped
+        assert_eq!(pip_assign(&feats, 50.0, 50.0, false), PipOutcome::Outside);
+        // far outside, snap -> nearest (the only) feature
+        assert_eq!(pip_assign(&feats, 50.0, 50.0, true), PipOutcome::Snapped(0));
+    }
+
+    #[test]
+    fn pip_multipolygon_and_holes() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "properties": {"id": "M"}, "geometry": {
+                    "type": "MultiPolygon", "coordinates": [
+                        [[[0.0, 0.0], [0.0, 2.0], [2.0, 2.0], [2.0, 0.0], [0.0, 0.0]]],
+                        [[[10.0, 10.0], [10.0, 12.0], [12.0, 12.0], [12.0, 10.0], [10.0, 10.0]]]
+                    ]}},
+                {"type": "Feature", "properties": {"id": "H"}, "geometry": {
+                    "type": "Polygon", "coordinates": [
+                        [[20.0, 20.0], [20.0, 30.0], [30.0, 30.0], [30.0, 20.0], [20.0, 20.0]],
+                        [[23.0, 23.0], [23.0, 27.0], [27.0, 27.0], [27.0, 23.0], [23.0, 23.0]]
+                    ]}}
+            ]
+        });
+        let feats = build_pip_features(&gj, "properties.id").unwrap();
+        let m = feats.iter().position(|f| f.id == "M").unwrap();
+        let h = feats.iter().position(|f| f.id == "H").unwrap();
+        // inside the SECOND polygon of the MultiPolygon
+        assert_eq!(pip_assign(&feats, 11.0, 11.0, false), PipOutcome::Inside(m));
+        // inside H's filled band (between exterior and hole)
+        assert_eq!(pip_assign(&feats, 21.0, 21.0, false), PipOutcome::Inside(h));
+        // inside H's HOLE -> not contained; no snap -> dropped
+        assert_eq!(pip_assign(&feats, 25.0, 25.0, false), PipOutcome::Outside);
+        // same hole point, snap -> snaps back to H (nearest boundary)
+        assert_eq!(pip_assign(&feats, 25.0, 25.0, true), PipOutcome::Snapped(h));
+    }
+
+    #[test]
+    fn pip_feature_id_top_level_numeric_and_missing_skipped() {
+        // first feature has a numeric top-level id; second has no top-level id (skipped under "id")
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                {"type": "Feature", "id": 7, "properties": {}, "geometry": {
+                    "type": "Polygon", "coordinates":
+                        [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}},
+                {"type": "Feature", "properties": {"name": "x"}, "geometry": {
+                    "type": "Polygon", "coordinates":
+                        [[[5.0, 5.0], [5.0, 6.0], [6.0, 6.0], [6.0, 5.0], [5.0, 5.0]]]}}
+            ]
+        });
+        let feats = build_pip_features(&gj, "id").unwrap();
+        assert_eq!(feats.len(), 1, "feature without a top-level id is skipped");
+        assert_eq!(feats[0].id, "7", "numeric id coerces to string");
+        assert_eq!(pip_assign(&feats, 0.5, 0.5, false), PipOutcome::Inside(0));
+    }
+
+    #[test]
+    fn pip_build_errors_when_no_feature_matches_key() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"name": "x"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        // no feature has properties.id -> usable set is empty -> error
+        assert!(build_pip_features(&gj, "properties.id").is_err());
     }
 }

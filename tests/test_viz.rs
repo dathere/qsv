@@ -3211,8 +3211,8 @@ fn viz_theme_dark_applies_template() {
     assert!(html.contains(r##""plot_bgcolor":"#111111""##));
 }
 
-// a choropleth's geo subplot is theme-aware: a dark theme paints dark land + ocean so the map is
-// legible on a dark page, while the default/light look stays the built-in light gray with no ocean.
+// a choropleth's geo subplot is theme-aware: a dark theme uses dark land + a dark geo background
+// (the sea) so the map is legible on a dark page, while the default/light look stays light gray.
 #[test]
 fn viz_choropleth_geo_theme_aware() {
     let wrk = Workdir::new("viz_choropleth_geo_theme_aware");
@@ -3237,12 +3237,13 @@ fn viz_choropleth_geo_theme_aware() {
         dark.contains(r##""landcolor":"#2a3138""##),
         "dark land missing"
     );
+    // a choropleth paints no ocean; the sea is geo.bgcolor, which carries the dark theme
     assert!(
-        dark.contains(r##""oceancolor":"#16202b""##),
-        "dark ocean missing"
+        dark.contains(r##""bgcolor":"#111111""##),
+        "dark geo background missing"
     );
 
-    // default (no theme) -> built-in light gray land, no painted ocean
+    // default (no theme) -> built-in light gray land + white geo background
     let mut cmd = wrk.command("viz");
     cmd.args([
         "choropleth",
@@ -3259,8 +3260,7 @@ fn viz_choropleth_geo_theme_aware() {
         light.contains(r##""landcolor":"#d3d3d3""##),
         "light land missing"
     );
-    // the dark palette must not bleed into the light/default render (substring-safe: the embedded
-    // plotly.min.js mentions "oceancolor", but never our dark hex)
+    // the dark palette must not bleed into the light/default render
     assert!(
         !light.contains("#16202b") && !light.contains("#2a3138"),
         "light path must not use the dark geo palette"

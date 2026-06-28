@@ -695,6 +695,7 @@ const GEO_LAND_LIGHT: &str = "#d3d3d3";
 const GEO_WATER_LIGHT: &str = "#add8e6";
 const GEO_LAND_DARK: &str = "#2a3138";
 const GEO_WATER_DARK: &str = "#16202b";
+const GEO_BG_DARK: &str = "#111111";
 
 /// Dashboard plot margins (pixels). Kept as named constants because the title-band math
 /// below needs the plot-area height (total height minus these margins).
@@ -2193,7 +2194,7 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         plot.add_trace(scatter_geo_with_marker(lats, lons, marker, text));
     }
 
-    let (geo_land, geo_water) = geo_palette(args.theme());
+    let (geo_land, geo_water, geo_bg) = geo_palette(args.theme());
     let geo = LayoutGeo::new()
         .projection(Projection::new().projection_type(projection))
         .resolution(GeoResolution::OneOverFiftyMillion)
@@ -2203,7 +2204,8 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         .oceancolor(geo_water)
         .showlakes(true)
         .lakecolor(geo_water)
-        .showcountries(true);
+        .showcountries(true)
+        .bgcolor(geo_bg);
     let mut layout = Layout::new().geo(geo).show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -2854,21 +2856,16 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
             .hover_text_array(hover_text)
             .hover_info(HoverInfo::Text);
-        let (geo_land, geo_water) = geo_palette(args.theme());
+        let (geo_land, _geo_water, geo_bg) = geo_palette(args.theme());
         let mut geo = LayoutGeo::new()
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
             .landcolor(geo_land)
-            .showcountries(true);
-        // a dark theme has no settable white-sea fallback (geo.bgcolor isn't exposed by the typed
-        // LayoutGeo builder), so paint the ocean/lakes dark; light keeps the built-in white sea.
-        if is_dark_theme(args.theme()) {
-            geo = geo
-                .showocean(true)
-                .oceancolor(geo_water)
-                .showlakes(true)
-                .lakecolor(geo_water);
-        }
+            .showcountries(true)
+            // a choropleth paints no ocean, so geo.bgcolor IS the sea (and the area outside the
+            // projection); it carries the theme so a dark map has a dark sea, not the default
+            // white.
+            .bgcolor(geo_bg);
         // usa-states built-in geometries need the albers-usa projection to frame the US (CONUS +
         // AK/HI insets); without it plotly draws the states tiny on the default whole-world view. A
         // --geojson source (handled below) frames itself, so let that override.
@@ -4191,16 +4188,16 @@ fn is_dark_theme(theme: Option<BuiltinTheme>) -> bool {
     )
 }
 
-/// The `(land, water)` fill colors for a `geo` subplot under the given theme. Light returns qsv's
-/// built-in look (so unthemed/light renders are visually unchanged); dark returns the dark fills so
-/// choropleth/geo maps are legible on a dark page. The geo subplot's own background (`geo.bgcolor`)
-/// can't be set via the typed `LayoutGeo` builder in the pinned plotly fork, so the sea is painted
-/// via `oceancolor` instead (and the `viz smart` toggle additionally relayouts `geo.bgcolor`).
-fn geo_palette(theme: Option<BuiltinTheme>) -> (&'static str, &'static str) {
+/// The `(land, water, background)` colors for a `geo` subplot under the given theme. Light returns
+/// qsv's built-in look (so unthemed/light renders are visually unchanged); dark returns the dark
+/// fills so choropleth/geo maps are legible on a dark page. `background` is the subplot's
+/// `geo.bgcolor` — it fills the sea on a choropleth (which paints no ocean) and the area outside
+/// the projection (e.g. the corners around a non-rectangular globe).
+fn geo_palette(theme: Option<BuiltinTheme>) -> (&'static str, &'static str, &'static str) {
     if is_dark_theme(theme) {
-        (GEO_LAND_DARK, GEO_WATER_DARK)
+        (GEO_LAND_DARK, GEO_WATER_DARK, GEO_BG_DARK)
     } else {
-        (GEO_LAND_LIGHT, GEO_WATER_LIGHT)
+        (GEO_LAND_LIGHT, GEO_WATER_LIGHT, PAPER_BG)
     }
 }
 
@@ -8354,7 +8351,7 @@ fn smart_grid_parts(
                 },
                 _ => (lonaxis, lataxis),
             };
-            let (geo_land, geo_water) = geo_palette(theme);
+            let (geo_land, geo_water, geo_bg) = geo_palette(theme);
             let mut geo = LayoutGeo::new()
                 .projection(Projection::new().projection_type(projection))
                 .resolution(GeoResolution::OneOverFiftyMillion)
@@ -8364,7 +8361,8 @@ fn smart_grid_parts(
                 .oceancolor(geo_water)
                 .showlakes(true)
                 .lakecolor(geo_water)
-                .showcountries(true);
+                .showcountries(true)
+                .bgcolor(geo_bg);
             if let Some(lonaxis) = lonaxis {
                 geo = geo.lonaxis(lonaxis);
             }
@@ -8826,7 +8824,7 @@ fn smart_inline_panel_plot(
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_geo(&mut plot, meta);
         }
-        let (geo_land, geo_water) = geo_palette(theme);
+        let (geo_land, geo_water, geo_bg) = geo_palette(theme);
         let geo = LayoutGeo::new()
             .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
             .resolution(GeoResolution::OneOverFiftyMillion)
@@ -8836,7 +8834,8 @@ fn smart_inline_panel_plot(
             .oceancolor(geo_water)
             .showlakes(true)
             .lakecolor(geo_water)
-            .showcountries(true);
+            .showcountries(true)
+            .bgcolor(geo_bg);
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -8886,21 +8885,16 @@ fn smart_inline_panel_plot(
         // Plotly fits the view to the union of the rendered region polygons — a
         // European/Asian/etc. cluster zooms to those countries, global data stays
         // world-scale.
-        let (geo_land, geo_water) = geo_palette(theme);
+        let (geo_land, _geo_water, geo_bg) = geo_palette(theme);
         let mut geo = LayoutGeo::new()
             .resolution(GeoResolution::OneOverFiftyMillion)
             .showland(true)
             .landcolor(geo_land)
-            .showcountries(true);
-        // paint the sea dark under a dark theme (geo.bgcolor isn't settable via the typed builder);
-        // the smart light/dark toggle additionally relayouts geo.bgcolor for live switching.
-        if is_dark_theme(theme) {
-            geo = geo
-                .showocean(true)
-                .oceancolor(geo_water)
-                .showlakes(true)
-                .lakecolor(geo_water);
-        }
+            .showcountries(true)
+            // the choropleth paints no ocean, so geo.bgcolor is the sea; it carries the theme so a
+            // dark map has a dark sea. The smart toggle also relayouts geo.bgcolor for live
+            // switching.
+            .bgcolor(geo_bg);
         if matches!(location_mode, LocationMode::UsaStates) {
             geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
         } else {

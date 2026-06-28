@@ -2956,7 +2956,12 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         // AK/HI insets); without it plotly draws the states tiny on the default whole-world view. A
         // --geojson source (handled below) frames itself, so let that override.
         if usa_states {
-            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+            // scope:"usa" restricts the basemap (showland, showcountries) to the US extent,
+            // preventing Canadian land (e.g. British Columbia) from bleeding into the
+            // albers-usa composite canvas above Washington State.
+            geo = geo
+                .projection(Projection::new().projection_type(ProjectionType::AlbersUsa))
+                .scope("usa");
         }
         if let Some(spec) = args.flag_geojson.as_deref() {
             let geojson = load_geojson(spec)?;
@@ -4460,8 +4465,8 @@ const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-pag
 const SCRIPT_TEMPLATE: &str = r##"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__" };
-  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__" };
+  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
+  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
   function isDark() {
     try {
       var saved = localStorage.getItem("qsv-viz-theme");
@@ -4489,6 +4494,8 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
+      } else if (/^mapbox\d*$/.test(k)) {
+        u[k + ".style"] = p.mapbox;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -8972,7 +8979,14 @@ fn smart_inline_panel_plot(
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .mapbox(
                 Mapbox::new()
-                    .style(MapboxStyle::OpenStreetMap)
+                    // Carto tiles work from local files (no Referer header required).
+                    // OSM enforces a Referer policy and returns 403 when the HTML is
+                    // opened directly from disk.
+                    .style(if is_dark_theme(theme) {
+                        MapboxStyle::CartoDarkMatter
+                    } else {
+                        MapboxStyle::CartoPositron
+                    })
                     .center(center)
                     .zoom(zoom),
             );
@@ -9100,7 +9114,12 @@ fn smart_inline_panel_plot(
             // switching.
             .bgcolor(geo_bg);
         if matches!(location_mode, LocationMode::UsaStates) {
-            geo = geo.projection(Projection::new().projection_type(ProjectionType::AlbersUsa));
+            // scope:"usa" restricts the basemap (showland, showcountries) to the US extent,
+            // preventing Canadian land (e.g. British Columbia) from bleeding into the
+            // albers-usa composite canvas above Washington State.
+            geo = geo
+                .projection(Projection::new().projection_type(ProjectionType::AlbersUsa))
+                .scope("usa");
         } else {
             geo = geo
                 .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))

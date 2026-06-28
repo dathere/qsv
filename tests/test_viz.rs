@@ -3508,6 +3508,10 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     // opens the toggle in dark mode by default.
     assert!(html.contains("background: var(--qsv-page-bg)"));
     assert!(html.contains("--qsv-page-bg: #111111"));
+    // dark-bg themes must seed --qsv-geo-meta with a light value in :root so the caption is
+    // readable even before body.qsv-dark is applied (regression: was hardcoded #4b5563 = dark
+    // gray on dark background, nearly invisible).
+    assert!(html.contains("--qsv-geo-meta: #9aa4b2"));
     assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
@@ -3543,6 +3547,9 @@ fn viz_smart_grid_has_theme_toggle() {
     assert!(html.contains("Plotly.relayout"));
     assert!(html.contains("--qsv-page-bg"));
     assert!(html.contains("body.qsv-dark"));
+    // light-bg default theme seeds --qsv-geo-meta with a dark value in :root (#4b5563), suitable
+    // for the light page background (body.qsv-dark overrides it to #9aa4b2 for dark mode).
+    assert!(html.contains("--qsv-geo-meta: #4b5563"));
     // the typed grid is now embedded inline in qsv's page (not plotly's own to_html document)
     assert!(html.contains(r#"id="qsv-viz-smart-grid""#));
     // no --theme given -> the toggle defers to the viewer's prefers-color-scheme

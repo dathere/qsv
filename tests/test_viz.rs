@@ -2308,6 +2308,40 @@ Accra,5.56,-0.20,20,Africa
     );
 }
 
+// Regression: when `--smarter` finds no identifier column, the chosen measure/category must be
+// rendered as labeled extras ("temperature: 22"), NOT promoted to the bold point identifier. A
+// dataset with only repeated numeric/category columns (no near-unique key) exercises this path.
+#[test]
+fn viz_smart_smarter_no_identifier_keeps_measure_as_extra() {
+    let wrk = Workdir::new("viz_smart_smarter_no_identifier_keeps_measure_as_extra");
+    wrk.create_from_string(
+        "obs.csv",
+        "lat,lon,temperature,zone
+35.68,139.69,22,A
+51.51,-0.13,15,B
+40.71,-74.01,22,A
+-33.87,151.21,15,B
+-1.29,36.82,22,A
+59.91,10.75,15,B
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "obs.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext""#));
+    // the measure appears as a labeled extra line; before the fix it was the bold "<b>22</b>" id,
+    // so this label line would be absent.
+    assert!(
+        html.contains("temperature: "),
+        "no-identifier measure must be a labeled extra, not the bold id"
+    );
+    assert!(html.contains("zone: "));
+}
+
 // `--smarter --dictionary` drives the combination from the dictionary: the friendly label and the
 // concept-chosen measure (magnitude, tagged measure.amount) appear in the hover.
 #[test]

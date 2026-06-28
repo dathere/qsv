@@ -7230,9 +7230,17 @@ fn build_map_panel(
     let hover_field_idxs =
         select_map_hover_fields(stats, col_sems, dict, lat_idx, lon_idx, args.flag_smarter);
     let dataset_has_fields = !hover_field_idxs.is_empty();
-    let id_idx = hover_field_idxs.first().copied();
+    // Resolve the identifier independently — `select_map_hover_fields` can return ONLY `--smarter`
+    // extras (measure/category) when no identifier exists, so the first field is not necessarily
+    // the id. Treating it as one would bold a measure and (via `has_id`) suppress the geocoded
+    // place that should serve as the identifier. Everything that isn't the id becomes an extra.
+    let id_idx = select_map_identifier(stats, col_sems, dict, lat_idx, lon_idx);
     let has_id = id_idx.is_some();
-    let extra_idxs: Vec<usize> = hover_field_idxs.iter().skip(1).copied().collect();
+    let extra_idxs: Vec<usize> = hover_field_idxs
+        .iter()
+        .copied()
+        .filter(|&i| Some(i) != id_idx)
+        .collect();
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     // friendly labels for the extra fields: dictionary label, else the column header.
@@ -7269,7 +7277,7 @@ fn build_map_panel(
                     .map(|b| String::from_utf8_lossy(b).into_owned())
                     .unwrap_or_default()
             };
-            let id_val = id_idx.map(|i| cell(i)).unwrap_or_default();
+            let id_val = id_idx.map(&cell).unwrap_or_default();
             let extra: Vec<(String, String)> = extra_idxs
                 .iter()
                 .zip(&extra_labels)

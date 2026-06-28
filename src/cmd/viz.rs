@@ -2555,28 +2555,29 @@ fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64
     }
 }
 
-/// Does any ring edge make a genuine ±180° antimeridian jump? True only when an edge spans more
-/// than 180° of longitude AND both of its endpoints lie near the seam (opposite sides) — the
-/// signature of a dateline crossing (e.g. 179° -> -179°). A wide but non-crossing polygon (whose
-/// long edges are centered away from the seam) is deliberately NOT flagged, so its planar interior
-/// is binned correctly. When true, the feature is normalized into a `[0, 360)` longitude frame
-/// before planar point-in-polygon tests, which can't reason across the seam.
+/// Does any ring edge make a genuine ±180° antimeridian jump? True when an edge's endpoints are
+/// far apart in raw longitude but CLOSE the short way across the seam (within `MAX_SEAM_GAP_DEG`) —
+/// the signature of a dateline crossing (e.g. 179° -> -179°, or a wider Pacific box 160° -> -160°).
+/// A genuinely wide but non-crossing polygon (e.g. a -100°..100° span centered on the prime
+/// meridian) has a large short-way gap and is deliberately NOT flagged, so its planar interior is
+/// binned correctly. When true, the feature is normalized into a `[0, 360)` longitude frame before
+/// planar point-in-polygon tests, which can't reason across the seam.
 fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
-    // A real dateline jump connects two vertices that BOTH sit near the ±180° seam on opposite
-    // sides (e.g. 179° -> -179°): the edge spans >180° AND both endpoints are within
-    // NEAR_ANTIMERIDIAN_DEG of the meridian. Requiring both endpoints near the seam (not just a
-    // >180° span) avoids misclassifying a wide but non-crossing polygon — e.g. a coarse
-    // -100°..100° rectangle whose horizontal edge spans 200° but is centered on the prime
-    // meridian; normalizing that would wrongly push its prime-meridian interior outside the bbox.
-    const NEAR_ANTIMERIDIAN_DEG: f64 = 170.0;
+    // A dateline crossing connects two vertices that are far apart in raw longitude (>180°) but
+    // CLOSE the short way across the ±180° seam. We key off that short-way gap: `360 - |Δlon|`. A
+    // real crossing like 179° -> -179° has a 2° seam gap; a wide Pacific box 160° -> -160° has a
+    // 40° gap (still a crossing). A prime-meridian-centered wide polygon like -100° -> 100° spans
+    // 200° but its short-way gap is 160° — it is a genuinely wide non-crossing region and must NOT
+    // be normalized (that would push its prime-meridian interior outside the bbox). The
+    // MAX_SEAM_GAP_DEG cutoff (90°) separates the two: normalize only when the edge's endpoints are
+    // within 90° of each other across the seam, i.e. |Δlon| > 360 - 90 = 270°.
+    const MAX_SEAM_GAP_DEG: f64 = 90.0;
     polygons.iter().flatten().any(|ring| {
         ring.windows(2).any(|edge| {
             let &[[lon_a, _], [lon_b, _]] = edge else {
                 return false;
             };
-            (lon_a - lon_b).abs() > 180.0
-                && lon_a.abs() >= NEAR_ANTIMERIDIAN_DEG
-                && lon_b.abs() >= NEAR_ANTIMERIDIAN_DEG
+            (lon_a - lon_b).abs() > 360.0 - MAX_SEAM_GAP_DEG
         })
     })
 }
@@ -12921,6 +12922,44 @@ mod tests {
         // a point well east of +100° is outside
         assert_eq!(
             pip_assign(&features, 5.0, 150.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_handles_wide_antimeridian_crossing_feature() {
+        // a WIDER Pacific box spanning lon 160° .. -160° (crossing +180°), lat 0°..10°. Its
+        // endpoints are 20° off the seam, but only 40° apart across it, so it IS a dateline
+        // crossing and must be normalized — unlike the -100..100 case (160° across the seam).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "PACIFIC",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [160.0, 0.0], [-160.0, 0.0], [-160.0, 10.0], [160.0, 10.0], [160.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            features[0].wraps_antimeridian,
+            "a 160°->-160° box (40° across the seam) must be flagged as antimeridian-crossing"
+        );
+        // points on both sides of the seam are inside; Greenwich is not
+        assert_eq!(
+            pip_assign(&features, 5.0, 175.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, -170.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
             PipOutcome::Outside
         );
     }

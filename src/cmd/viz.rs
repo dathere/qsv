@@ -2569,15 +2569,16 @@ fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
     // 40° gap (still a crossing). A prime-meridian-centered wide polygon like -100° -> 100° spans
     // 200° but its short-way gap is 160° — it is a genuinely wide non-crossing region and must NOT
     // be normalized (that would push its prime-meridian interior outside the bbox). The
-    // MAX_SEAM_GAP_DEG cutoff (90°) separates the two: normalize only when the edge's endpoints are
-    // within 90° of each other across the seam, i.e. |Δlon| > 360 - 90 = 270°.
+    // MAX_SEAM_GAP_DEG cutoff (90°) separates the two: normalize when the edge's endpoints are
+    // within 90° of each other across the seam (inclusive), i.e. |Δlon| >= 360 - 90 = 270°. The
+    // boundary is inclusive so an exactly-90°-gap box (135° -> -135°) is still treated as crossing.
     const MAX_SEAM_GAP_DEG: f64 = 90.0;
     polygons.iter().flatten().any(|ring| {
         ring.windows(2).any(|edge| {
             let &[[lon_a, _], [lon_b, _]] = edge else {
                 return false;
             };
-            (lon_a - lon_b).abs() > 360.0 - MAX_SEAM_GAP_DEG
+            (lon_a - lon_b).abs() >= 360.0 - MAX_SEAM_GAP_DEG
         })
     })
 }
@@ -12956,6 +12957,43 @@ mod tests {
         );
         assert_eq!(
             pip_assign(&features, 5.0, -170.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_handles_exact_90deg_seam_gap_feature() {
+        // boundary case: a box spanning lon 135° .. -135° has EXACTLY a 90° short-way seam gap,
+        // matching the inclusive "within 90°" rule, so it must be treated as crossing (the cutoff
+        // is >=, not >). A point near the seam bins inside; Greenwich does not.
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "PACIFIC",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [135.0, 0.0], [-135.0, 0.0], [-135.0, 10.0], [135.0, 10.0], [135.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            features[0].wraps_antimeridian,
+            "a 135°->-135° box (exactly 90° across the seam) must be flagged as crossing"
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, 180.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, 5.0, -150.0, false, f64::INFINITY),
             PipOutcome::Inside(0)
         );
         assert_eq!(

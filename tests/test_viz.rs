@@ -3737,10 +3737,13 @@ fn viz_smart_map_outlier_markers() {
         html.contains("geographic outliers"),
         "outliers should be drawn as a distinct marker trace; html: {html}"
     );
-    // smart map panels use Carto tiles (no Referer policy); OSM blocks local-file requests
+    // smart map panels use Carto tiles (no Referer policy); OSM blocks local-file requests.
+    // Assert the serialized Plotly layout key ("style":"carto-positron"), not just the bare
+    // string which also appears in the theme-toggle palette (mapbox: "carto-positron").
     assert!(
-        html.contains("carto-positron"),
-        "light-theme smart map panel must use carto-positron, not open-street-map"
+        html.contains(r#""style":"carto-positron""#),
+        "light-theme smart map panel must set layout.mapbox.style to carto-positron, not \
+         open-street-map"
     );
 }
 

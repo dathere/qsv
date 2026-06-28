@@ -2238,6 +2238,41 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(html.contains("<!doctype html>"));
     assert!(html.contains(r#""type":"scattergeo""#));
     assert!(!html.contains(r#""type":"scattermapbox""#));
+    // quakes span the globe, so the world-overview panel must NOT be scoped to one continent.
+    assert!(!html.contains(r#""scope":"#));
+}
+
+// A geo overview whose points all fall within a single plotly continent box is framed to that
+// continent's geo `scope` (aligning with plotly.js's layout.geo.scope vocabulary) instead of
+// showing the whole world. The African cities span ~64 deg of latitude (so the panel renders as
+// the ScatterGeo world overview, not a zoomed tile map) yet all sit inside the "africa" box.
+#[test]
+fn viz_smart_geo_panel_scopes_to_single_continent() {
+    let wrk = Workdir::new("viz_smart_geo_panel_scopes_to_single_continent");
+    wrk.create_from_string(
+        "africa.csv",
+        "city,lat,lon
+Cairo,30.06,31.25
+Cape Town,-33.92,18.42
+Lagos,6.45,3.39
+Nairobi,-1.29,36.82
+Casablanca,33.57,-7.59
+Kinshasa,-4.33,15.31
+",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "africa.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"scattergeo""#),
+        "a ~64 deg latitude extent renders as the world-overview geo panel"
+    );
+    assert!(
+        html.contains(r#""scope":"africa""#),
+        "an all-Africa extent frames the geo panel to the africa scope"
+    );
 }
 
 // A numeric administrative code (40 distinct values, > the categorical cardinality threshold) is

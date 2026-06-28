@@ -2400,6 +2400,28 @@ fn choropleth_hover_text(
         .collect()
 }
 
+/// Build per-location region names aligned 1:1 to `locs` from binned/matched GeoJSON features: the
+/// feature `name` for each location id, or `""` when that region has no name (so
+/// [`choropleth_hover_text`] falls back to the bold id). Returns `None` when NO feature carries a
+/// name, so the caller uses the universal id-only hover.
+fn aligned_region_names(features: &[PipFeature], locs: &[String]) -> Option<Vec<String>> {
+    if !features.iter().any(|f| f.name.is_some()) {
+        return None;
+    }
+    let map: std::collections::HashMap<&str, &str> = features
+        .iter()
+        .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
+        .collect();
+    Some(
+        locs.iter()
+            .map(|id| {
+                map.get(id.as_str())
+                    .map_or(String::new(), |n| (*n).to_string())
+            })
+            .collect(),
+    )
+}
+
 /// Convert a `geojson::Value::Polygon` ring set to closed `[lon, lat]` rings (appending the first
 /// vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers every
 /// edge). Rings with fewer than 3 distinct vertices are dropped.
@@ -2903,8 +2925,23 @@ fn choropleth_literal_locations(
         values.push(value);
     }
     let (locs, z) = aggregate(raw_locs, values, agg);
+    // when a custom --geojson is supplied (geojson-id / --map paths), resolve region names from its
+    // features so hover shows human-readable labels — matching the point-in-polygon path. Without a
+    // --geojson (ISO-3 / US-state built-in geometries) there are no feature names, so hover uses
+    // the location id.
+    let names = match args.flag_geojson.as_deref() {
+        Some(spec) => {
+            let geojson = load_geojson(spec)?;
+            let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+            let features =
+                build_pip_features(&geojson, key, args.flag_feature_name_key.as_deref())?;
+            aligned_region_names(&features, &locs)
+        },
+        None => None,
+    };
     let include_pct = matches!(agg, Agg::Count | Agg::Sum);
-    let hover_text = choropleth_hover_text(&locs, &z, None, &measure_label, include_pct);
+    let hover_text =
+        choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
     Ok((locs, z, measure_label, hover_text))
 }
 
@@ -2984,24 +3021,7 @@ fn choropleth_pip_locations(
     }
 
     let (locs, z) = aggregate(raw_locs, values, agg);
-    // realign region names to aggregate's output order; "" (empty) where a region has no name, so
-    // choropleth_hover_text falls back to the bold id. `None` overall when NO region has a name.
-    let names: Option<Vec<String>> = if features.iter().any(|f| f.name.is_some()) {
-        let map: std::collections::HashMap<&str, &str> = features
-            .iter()
-            .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
-            .collect();
-        Some(
-            locs.iter()
-                .map(|id| {
-                    map.get(id.as_str())
-                        .map_or(String::new(), |n| (*n).to_string())
-                })
-                .collect(),
-        )
-    } else {
-        None
-    };
+    let names = aligned_region_names(&features, &locs);
     let include_pct = matches!(agg, Agg::Count | Agg::Sum);
     let hover_text =
         choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
@@ -6383,24 +6403,7 @@ fn build_smart_pip_choropleth_panel(
         eprintln!("viz smart: {outside} of {total} points fell outside every region ({how}).");
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
-    // realign region names to the panel's location order; "" where a region has no name.
-    let names: Option<Vec<String>> = if features.iter().any(|f| f.name.is_some()) {
-        let map: std::collections::HashMap<&str, &str> = features
-            .iter()
-            .filter_map(|f| f.name.as_deref().map(|n| (f.id.as_str(), n)))
-            .collect();
-        Some(
-            order
-                .iter()
-                .map(|id| {
-                    map.get(id.as_str())
-                        .map_or(String::new(), |n| (*n).to_string())
-                })
-                .collect(),
-        )
-    } else {
-        None
-    };
+    let names = aligned_region_names(&features, &order);
     let hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
     Ok(Some(Panel::new(
         "Regions".to_string(),

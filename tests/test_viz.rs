@@ -4482,6 +4482,41 @@ fn viz_choropleth_literal_hover_labeled() {
     );
 }
 
+// a literal --locations choropleth backed by a custom --geojson resolves region names from the
+// GeoJSON (auto-detected properties.name) into the hover, same as the point-in-polygon path.
+#[test]
+fn viz_choropleth_literal_geojson_hover_names() {
+    let wrk = Workdir::new("viz_choropleth_literal_geojson_hover_names");
+    wrk.create_from_string("rg.csv", "state,val\nA,10\nB,30\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A","name":"Alpha"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B","name":"Bravo"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "state",
+        "--value",
+        "val",
+        "--location-mode",
+        "geojson-id",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext":["#), "hovertext array missing");
+    // names auto-detected from the GeoJSON properties.name, shown as "<name> (<id>)"
+    assert!(html.contains("Alpha"), "region name Alpha missing");
+    assert!(html.contains("Bravo"), "region name Bravo missing");
+    assert!(html.contains("val: 10"), "labeled value missing");
+}
+
 // the --map (MapLibre ChoroplethMap) path also carries the enriched hover.
 #[test]
 fn viz_choropleth_map_hover() {

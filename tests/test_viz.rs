@@ -4334,6 +4334,56 @@ fn viz_choropleth_no_snap_requires_pip() {
     wrk.assert_err(&mut cmd);
 }
 
+// --lat/--lon + --geojson (point-in-polygon) and --locations (pre-keyed regions) are mutually
+// exclusive without --geocode; supplying both must error rather than silently ignore --locations.
+#[test]
+fn viz_choropleth_pip_and_locations_is_ambiguous() {
+    let wrk = Workdir::new("viz_choropleth_pip_and_locations_is_ambiguous");
+    wrk.create_from_string("pts.csv", "lat,lon,region\n5,5,A\n5,15,B\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--locations",
+        "region",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// `viz smart --geojson` with an explicit-but-broken GeoJSON (here a --feature-id-key that matches
+// no feature) must error, not silently produce a dashboard without the Regions panel.
+#[test]
+fn viz_smart_pip_bad_feature_id_key_errors() {
+    let wrk = Workdir::new("viz_smart_pip_bad_feature_id_key_errors");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n6,16\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.nonexistent",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
 // `viz smart` builds a point-in-polygon prefecture/region choropleth panel when given a --geojson,
 // with no geocode engine involved.
 #[test]

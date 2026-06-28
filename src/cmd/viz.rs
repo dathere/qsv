@@ -2693,6 +2693,23 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     // regions by the GeoJSON feature that CONTAINS each point, so it always uses the geojson-id
     // location mode regardless of any --location-mode default. --geocode (when also present) takes
     // precedence — it is an explicit request for the geocode engine.
+    //
+    // lat/lon (point-in-polygon) and --locations (a pre-keyed region column) are two different
+    // ways to identify regions; supplying both (without --geocode) is ambiguous, so fail rather
+    // than silently ignore one. With --geocode, the geocode resolver enforces its own
+    // exactly-one-source rule (lat/lon reverse OR --locations forward).
+    if args.flag_geojson.is_some()
+        && args.flag_lat.is_some()
+        && args.flag_lon.is_some()
+        && args.flag_locations.is_some()
+        && !args.flag_geocode
+    {
+        return fail_incorrectusage_clierror!(
+            "Ambiguous choropleth inputs: --lat/--lon bin each point into the --geojson region \
+             that contains it (point-in-polygon), while --locations names a pre-keyed region \
+             column. Supply one or the other (or add --geocode to reverse-geocode the points)."
+        );
+    }
     let pip = args.flag_geojson.is_some()
         && args.flag_lat.is_some()
         && args.flag_lon.is_some()
@@ -6308,8 +6325,9 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
 /// Build a `viz smart` choropleth panel by point-in-polygon binning the core lat/lon points into a
 /// user-supplied GeoJSON (`--geojson`). Each point is assigned to the region whose polygon contains
 /// it (or, unless `snap` is false, the nearest region); the panel is colored by per-region counts.
-/// Unlike [`build_smart_choropleth_panel`] this needs no geocode engine. Returns `None` when the
-/// GeoJSON can't be parsed/binned or fewer than 2 regions receive points.
+/// Unlike [`build_smart_choropleth_panel`] this needs no geocode engine. Errors when the explicit
+/// `--geojson` can't be loaded/parsed or the `--feature-id-key` matches nothing; returns `Ok(None)`
+/// only when valid input yields fewer than 2 regions with points.
 fn build_smart_pip_choropleth_panel(
     geojson_spec: &str,
     feature_id_key: &str,
@@ -6317,9 +6335,12 @@ fn build_smart_pip_choropleth_panel(
     lats: &[f64],
     lons: &[f64],
     snap: bool,
-) -> Option<Panel> {
-    let geojson = load_geojson(geojson_spec).ok()?;
-    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
+) -> CliResult<Option<Panel>> {
+    // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
+    // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
+    // valid inputs that simply don't yield enough regions (the <2 check below).
+    let geojson = load_geojson(geojson_spec)?;
+    let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     let mut total = 0_usize;
@@ -6349,7 +6370,7 @@ fn build_smart_pip_choropleth_panel(
         }
     }
     if order.len() < 2 {
-        return None;
+        return Ok(None);
     }
     // only report after we know a panel will actually render, so the note never describes a map the
     // dashboard drops.
@@ -6381,7 +6402,7 @@ fn build_smart_pip_choropleth_panel(
         None
     };
     let hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
-    Some(Panel::new(
+    Ok(Some(Panel::new(
         "Regions".to_string(),
         PanelKind::Choropleth {
             locations: order,
@@ -6391,7 +6412,7 @@ fn build_smart_pip_choropleth_panel(
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
         },
-    ))
+    )))
 }
 
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
@@ -6489,7 +6510,7 @@ fn build_map_panel(
         let snap = !args.flag_no_snap;
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
-        build_smart_pip_choropleth_panel(spec, key, name_key, &core_lats, &core_lons, snap)
+        build_smart_pip_choropleth_panel(spec, key, name_key, &core_lats, &core_lons, snap)?
     } else {
         #[cfg(feature = "geocode")]
         {

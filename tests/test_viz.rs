@@ -4502,6 +4502,54 @@ fn viz_choropleth_snap_max_dist_conflicts_no_snap() {
     wrk.assert_err(&mut cmd);
 }
 
+// `viz smart` honors the same --snap-max-dist validation as the command (the constraints are
+// enforced up front in run(), before dispatch): a negative value is rejected, not silently clamped.
+#[test]
+fn viz_smart_snap_max_dist_negative_errors() {
+    let wrk = Workdir::new("viz_smart_snap_max_dist_negative_errors");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--snap-max-dist",
+        "-1",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// `viz smart` rejects --snap-max-dist combined with --no-snap, same as the command.
+#[test]
+fn viz_smart_snap_max_dist_conflicts_no_snap() {
+    let wrk = Workdir::new("viz_smart_snap_max_dist_conflicts_no_snap");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+        "--snap-max-dist",
+        "5",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
 // --lat/--lon + --geojson (point-in-polygon) and --locations (pre-keyed regions) are mutually
 // exclusive without --geocode; supplying both must error rather than silently ignore --locations.
 #[test]

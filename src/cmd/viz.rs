@@ -929,6 +929,26 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // --snap-max-dist semantics are shared by the `viz choropleth` command and the `viz smart`
+    // GeoJSON choropleth panel, so the universal constraints are validated here — before dispatch —
+    // rather than only on the command path. Otherwise the smart path would silently clamp
+    // negatives, accept a non-finite NaN/inf, or ignore the --no-snap conflict. The "only
+    // applies to point-in-polygon binning" guard stays path-specific (build_choropleth_plot).
+    if let Some(km) = args.flag_snap_max_dist {
+        if args.flag_no_snap {
+            return fail_incorrectusage_clierror!(
+                "--snap-max-dist and --no-snap are mutually exclusive: --no-snap drops every \
+                 point outside a region, while --snap-max-dist caps how far an outside point may \
+                 snap."
+            );
+        }
+        if !(km.is_finite() && km >= 0.0) {
+            return fail_incorrectusage_clierror!(
+                "--snap-max-dist must be a non-negative number of kilometers."
+            );
+        }
+    }
+
     // --mapbox-token falls back to the QSV_MAPBOX_TOKEN env var when not passed explicitly.
     if args.flag_mapbox_token.is_none()
         && let Ok(token) = std::env::var("QSV_MAPBOX_TOKEN")
@@ -2839,29 +2859,16 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
              --geocode)."
         );
     }
-    // --snap-max-dist caps the nearest-region snap distance (km). It only applies to the
-    // point-in-polygon path with snapping on; reject it elsewhere or alongside --no-snap. When
-    // omitted, the cap defaults to DEFAULT_SNAP_MAX_KM so far strays drop instead of snapping to an
-    // arbitrary distant region; pass a large value to restore unbounded snapping.
-    if let Some(km) = args.flag_snap_max_dist {
-        if !pip {
-            return fail_incorrectusage_clierror!(
-                "--snap-max-dist only applies to point-in-polygon binning (--lat/--lon + \
-                 --geojson without --geocode)."
-            );
-        }
-        if args.flag_no_snap {
-            return fail_incorrectusage_clierror!(
-                "--snap-max-dist and --no-snap are mutually exclusive: --no-snap drops every \
-                 point outside a region, while --snap-max-dist caps how far an outside point may \
-                 snap."
-            );
-        }
-        if !(km.is_finite() && km >= 0.0) {
-            return fail_incorrectusage_clierror!(
-                "--snap-max-dist must be a non-negative number of kilometers."
-            );
-        }
+    // --snap-max-dist caps the nearest-region snap distance (km). Its universal constraints
+    // (non-negative finite, not combined with --no-snap) are validated up front in run(); here we
+    // only reject it on a non-point-in-polygon path. When omitted, the cap defaults to
+    // DEFAULT_SNAP_MAX_KM so far strays drop instead of snapping to an arbitrary distant region;
+    // pass a large value to restore unbounded snapping.
+    if args.flag_snap_max_dist.is_some() && !pip {
+        return fail_incorrectusage_clierror!(
+            "--snap-max-dist only applies to point-in-polygon binning (--lat/--lon + --geojson \
+             without --geocode)."
+        );
     }
     let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
 
@@ -6744,14 +6751,11 @@ fn build_map_panel(
     // before).
     let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
-        // smart shares the command's default cap; clamp negatives since smart bypasses the
-        // command-path validation in build_choropleth_plot. Do NOT revert this to f64::INFINITY —
-        // the cap is deliberate here; the `smart_pip_panel_caps_snap` unit test guards the
-        // threading.
-        let snap_max_km = args
-            .flag_snap_max_dist
-            .unwrap_or(DEFAULT_SNAP_MAX_KM)
-            .max(0.0);
+        // smart shares the command's default cap; the value is validated up front in run()
+        // (non-negative finite, not with --no-snap), so no clamping is needed here. Do NOT revert
+        // this to f64::INFINITY — the cap is deliberate here; the `smart_pip_panel_caps_snap` unit
+        // test guards the threading.
+        let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
         build_smart_pip_choropleth_panel(

@@ -4301,11 +4301,14 @@ fn viz_choropleth_map_frames_ignore_properties() {
 
 // point-in-polygon binning: lat/lon points + a custom --geojson (no --geocode) bins each point into
 // the region whose polygon contains it; the location IS the feature id (exact, no name/code match).
+// Exercises the default 10 km snap cap: a near-boundary stray snaps, a far stray drops.
 #[test]
 fn viz_choropleth_pip_bins_points() {
     let wrk = Workdir::new("viz_choropleth_pip_bins_points");
-    // A = lon 0..10, B = lon 10..20 (both lat 0..10); one point far outside
-    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n50,50\n");
+    // A = lon 0..10, B = lon 10..20 (both lat 0..10). Points: one in A, two in B, a near stray
+    // ~5.6 km north of A's edge (snaps to A under the default 10 km cap), and one far outside
+    // (drops)
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n10.05,5\n50,50\n");
     wrk.create_from_string(
         "regions.geojson",
         r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
@@ -4332,14 +4335,31 @@ fn viz_choropleth_pip_bins_points() {
     assert!(html.contains(r#""locationmode":"geojson-id""#));
     assert!(html.contains(r#""featureidkey":"properties.id""#));
     assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
-    // A gets the one (5,5) point; B gets two (5,15) + the snapped (50,50) outlier (snap is default)
+    // A = 1 contained + 1 snapped; B = 2 contained; the far (50,50) stray drops under the 10 km cap
     assert!(html.contains(r#""locations":["A","B"]"#));
-    assert!(html.contains(r#""z":[1.0,3.0]"#));
-    // the snapped outlier is reported on stderr so the user knows a point missed every polygon
+    assert!(html.contains(r#""z":[2.0,2.0]"#));
+    // A absorbed the one snapped stray — its hover flags it as a subset of A's count
+    assert!(
+        html.contains("includes 1 snapped from outside"),
+        "missing snapped-into-region hover note; html was: {html}"
+    );
+    // the far stray was dropped by the default cap — noted beneath the map (no stderr in a saved
+    // file)
+    assert!(
+        html.contains("1 of 5 points were farther than 10 km from any region and were dropped."),
+        "missing dropped-beyond-cap note; html was: {html}"
+    );
+    // stderr reports both the snap and the cap-drop so the user knows where points went
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("1 of 4 points fell outside every region (snapped to nearest region)"),
+        stderr.contains("1 of 5 points were snapped to the nearest region."),
         "missing snap coverage note; stderr was: {stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "1 of 5 points fell outside every region and were dropped (no region within 10 km)."
+        ),
+        "missing cap-drop coverage note; stderr was: {stderr}"
     );
 }
 
@@ -4373,9 +4393,18 @@ fn viz_choropleth_pip_no_snap_drops_and_reports() {
     let html = String::from_utf8_lossy(&out.stdout);
     // the (50,50) point is dropped: B keeps only its two contained points
     assert!(html.contains(r#""z":[1.0,2.0]"#));
+    // the saved HTML carries the coverage note beneath the map as a paper-anchored annotation
+    // (a saved file has no stderr to fall back on); nothing was snapped, so no hover snap line
+    assert!(
+        html.contains(
+            "--no-snap: 1 of 4 points fell outside every GeoJSON region and were dropped."
+        ),
+        "missing below-map coverage note; html was: {html}"
+    );
+    assert!(!html.contains("snapped from outside"));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("1 of 4 points fell outside every region (dropped)"),
+        stderr.contains("1 of 4 points fell outside every region and were dropped (--no-snap)."),
         "missing coverage note; stderr was: {stderr}"
     );
 }
@@ -4387,6 +4416,89 @@ fn viz_choropleth_no_snap_requires_pip() {
     wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\n");
     let mut cmd = wrk.command("viz");
     cmd.args(["choropleth", "rg.csv", "--locations", "iso3", "--no-snap"]);
+    wrk.assert_err(&mut cmd);
+}
+
+// an explicit --snap-max-dist tightens the cap (km): a ~5.6 km stray that snaps under the default
+// 10 km cap is dropped under a 4 km cap, and the drop is noted beneath the map.
+#[test]
+fn viz_choropleth_snap_max_dist() {
+    let wrk = Workdir::new("viz_choropleth_snap_max_dist");
+    // one point in A, one ~5.6 km north of A's top edge (lat 10)
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n10.05,5\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--snap-max-dist",
+        "4",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // only the contained point counts; the stray is beyond the 4 km cap -> dropped
+    assert!(html.contains(r#""z":[1.0]"#));
+    assert!(
+        html.contains("1 of 2 points were farther than 4 km from any region and were dropped."),
+        "missing cap-drop note; html was: {html}"
+    );
+    assert!(!html.contains("snapped from outside"));
+}
+
+// --snap-max-dist only applies to point-in-polygon binning; reject it on a --locations run.
+#[test]
+fn viz_choropleth_snap_max_dist_requires_pip() {
+    let wrk = Workdir::new("viz_choropleth_snap_max_dist_requires_pip");
+    wrk.create_from_string("rg.csv", "iso3,val\nUSA,10\nCAN,5\n");
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "iso3",
+        "--snap-max-dist",
+        "5",
+    ]);
+    wrk.assert_err(&mut cmd);
+}
+
+// --snap-max-dist and --no-snap are contradictory (cap how far to snap vs. don't snap at all).
+#[test]
+fn viz_choropleth_snap_max_dist_conflicts_no_snap() {
+    let wrk = Workdir::new("viz_choropleth_snap_max_dist_conflicts_no_snap");
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}}]}"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--no-snap",
+        "--snap-max-dist",
+        "5",
+    ]);
     wrk.assert_err(&mut cmd);
 }
 

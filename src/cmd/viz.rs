@@ -309,9 +309,22 @@ choropleth options:
                            `viz choropleth` also reuses --value, --agg, --style and the
                            lat/lon options.
     --no-snap              For point-in-polygon binning (lat/lon points binned into a
-                           custom GeoJSON without geocoding): drop points that fall
-                           outside every region instead of snapping each to its nearest
-                           region (the default). A stderr note reports coverage either way.
+                           custom GeoJSON without geocoding): do not snap at all — drop
+                           every point that falls outside every region. By default an
+                           outside point instead snaps to its nearest region when within
+                           the snap-distance limit (see --snap-max-dist). Applies to both
+                           the `viz choropleth` command and the `viz smart` GeoJSON
+                           choropleth panel. A stderr note reports coverage either way;
+                           each snapping region's hover tallies the points it absorbed
+                           from outside, and dropped points are reported beneath the map
+                           (or in the smart panel's title).
+    --snap-max-dist <km>   For point-in-polygon binning: the farthest (in km) an outside
+                           point may snap to a region's boundary; points with no region
+                           within this distance are dropped. Distance is an equirectangular
+                           km approximation. Defaults to 10 km, for both the `viz choropleth`
+                           command and the `viz smart` GeoJSON choropleth panel. Pass a
+                           large value for effectively unbounded snapping. Cannot be
+                           combined with --no-snap.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -840,6 +853,7 @@ struct Args {
     flag_feature_name_key:   Option<String>,
     flag_geocode:            bool,
     flag_no_snap:            bool,
+    flag_snap_max_dist:      Option<f64>,
     flag_bins:               Option<usize>,
     flag_agg:                Option<String>,
     flag_box_points:         Option<String>,
@@ -2600,6 +2614,15 @@ fn feature_contains(feature: &PipFeature, lon: f64, lat: f64) -> bool {
         .any(|poly| point_in_polygon(poly, lon, lat))
 }
 
+/// Mean km per degree of latitude (and of longitude at the equator). Used by the point-in-polygon
+/// snap-distance cap to turn lon/lat degrees into an isotropic km metric.
+const KM_PER_DEG: f64 = 111.32;
+
+/// Default `--snap-max-dist` (km): outside points snap to the nearest region only within this many
+/// km of its boundary; farther strays are dropped. Caps the unbounded nearest-region snap so an
+/// ocean GPS error or out-of-extent point can't be attributed to an arbitrary distant region.
+const DEFAULT_SNAP_MAX_KM: f64 = 10.0;
+
 /// Squared Euclidean (degree-space) distance from a point to a line segment.
 fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
@@ -2614,15 +2637,18 @@ fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 
     ex * ex + ey * ey
 }
 
-/// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings.
-fn feature_dist2(feature: &PipFeature, lon: f64, lat: f64) -> f64 {
+/// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings, in the
+/// equirectangular km space defined by the `(sx, sy)` per-degree scale factors (see
+/// [`pip_assign`]). Passing `sx = sy = 1.0` recovers raw degree-space distance.
+fn feature_dist2(feature: &PipFeature, lon: f64, lat: f64, sx: f64, sy: f64) -> f64 {
+    let (px, py) = (lon * sx, lat * sy);
     let mut best = f64::INFINITY;
     for ring in feature.polygons.iter().flatten() {
         for edge in ring.windows(2) {
             let &[[ax, ay], [bx, by]] = edge else {
                 continue;
             };
-            let d = point_seg_dist2(lon, lat, ax, ay, bx, by);
+            let d = point_seg_dist2(px, py, ax * sx, ay * sy, bx * sx, by * sy);
             if d < best {
                 best = d;
             }
@@ -2631,10 +2657,11 @@ fn feature_dist2(feature: &PipFeature, lon: f64, lat: f64) -> f64 {
     best
 }
 
-/// Lower-bound squared distance from `(lon, lat)` to a feature's bbox (0 when inside the bbox).
-fn bbox_dist2(bbox: &[f64; 4], lon: f64, lat: f64) -> f64 {
-    let dx = (bbox[0] - lon).max(0.0).max(lon - bbox[2]);
-    let dy = (bbox[1] - lat).max(0.0).max(lat - bbox[3]);
+/// Lower-bound squared distance from `(lon, lat)` to a feature's bbox (0 when inside the bbox), in
+/// the same `(sx, sy)`-scaled space as [`feature_dist2`] so it remains a valid prune bound.
+fn bbox_dist2(bbox: &[f64; 4], lon: f64, lat: f64, sx: f64, sy: f64) -> f64 {
+    let dx = (bbox[0] - lon).max(0.0).max(lon - bbox[2]) * sx;
+    let dy = (bbox[1] - lat).max(0.0).max(lat - bbox[3]) * sy;
     dx * dx + dy * dy
 }
 
@@ -2650,28 +2677,44 @@ enum PipOutcome {
 }
 
 /// Assign a point to a feature: exact containment first; if none and `snap`, the nearest feature by
-/// edge distance (bbox lower-bound pruned); if none and `!snap`, [`PipOutcome::Outside`]. The
-/// `Inside`/`Snapped` distinction lets callers report how many points missed every polygon.
-fn pip_assign(features: &[PipFeature], lat: f64, lon: f64, snap: bool) -> PipOutcome {
+/// edge distance (bbox lower-bound pruned) provided it lies within `snap_max_km` (`f64::INFINITY`
+/// = unlimited); otherwise [`PipOutcome::Outside`]. Distances use an equirectangular km
+/// approximation centered on the query latitude (longitude degrees scaled by `cos(lat)`), so the
+/// cap means the same east-west and north-south. The `Inside`/`Snapped`/`Outside` distinction lets
+/// callers report how many points missed every polygon and how many were too far to snap.
+fn pip_assign(
+    features: &[PipFeature],
+    lat: f64,
+    lon: f64,
+    snap: bool,
+    snap_max_km: f64,
+) -> PipOutcome {
     if let Some(i) = features.iter().position(|f| feature_contains(f, lon, lat)) {
         return PipOutcome::Inside(i);
     }
     if !snap {
         return PipOutcome::Outside;
     }
+    // equirectangular km scale at the query latitude: km per degree of lat is ~constant; km per
+    // degree of lon shrinks by cos(lat). Applying both to every distance keeps the cap isotropic.
+    let sx = lat.to_radians().cos() * KM_PER_DEG;
+    let sy = KM_PER_DEG;
     let mut best_i = None;
     let mut best_d2 = f64::INFINITY;
     for (i, f) in features.iter().enumerate() {
-        if bbox_dist2(&f.bbox, lon, lat) >= best_d2 {
+        if bbox_dist2(&f.bbox, lon, lat, sx, sy) >= best_d2 {
             continue;
         }
-        let d2 = feature_dist2(f, lon, lat);
+        let d2 = feature_dist2(f, lon, lat, sx, sy);
         if d2 < best_d2 {
             best_d2 = d2;
             best_i = Some(i);
         }
     }
-    best_i.map_or(PipOutcome::Outside, PipOutcome::Snapped)
+    match best_i {
+        Some(i) if best_d2 <= snap_max_km * snap_max_km => PipOutcome::Snapped(i),
+        _ => PipOutcome::Outside,
+    }
 }
 
 /// Collect every `[lon, lat]` vertex from a GeoJSON value into parallel `(lats, lons)` vectors, so
@@ -2796,9 +2839,40 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
              --geocode)."
         );
     }
+    // --snap-max-dist caps the nearest-region snap distance (km). It only applies to the
+    // point-in-polygon path with snapping on; reject it elsewhere or alongside --no-snap. When
+    // omitted, the cap defaults to DEFAULT_SNAP_MAX_KM so far strays drop instead of snapping to an
+    // arbitrary distant region; pass a large value to restore unbounded snapping.
+    if let Some(km) = args.flag_snap_max_dist {
+        if !pip {
+            return fail_incorrectusage_clierror!(
+                "--snap-max-dist only applies to point-in-polygon binning (--lat/--lon + \
+                 --geojson without --geocode)."
+            );
+        }
+        if args.flag_no_snap {
+            return fail_incorrectusage_clierror!(
+                "--snap-max-dist and --no-snap are mutually exclusive: --no-snap drops every \
+                 point outside a region, while --snap-max-dist caps how far an outside point may \
+                 snap."
+            );
+        }
+        if !(km.is_finite() && km >= 0.0) {
+            return fail_incorrectusage_clierror!(
+                "--snap-max-dist must be a non-negative number of kilometers."
+            );
+        }
+    }
+    let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
 
+    // only the point-in-polygon path can drop points (no-snap, or no region within the cap), so
+    // only it yields a below-map coverage note; the literal/geocoded paths return the plain
+    // 4-tuple.
+    let mut below_note: Option<String> = None;
     let (locations, z, measure_label, hover_text) = if pip {
-        choropleth_pip_locations(args, agg, snap)?
+        let (locs, z, label, hover, note) = choropleth_pip_locations(args, agg, snap, snap_max_km)?;
+        below_note = note;
+        (locs, z, label, hover)
     } else if args.flag_geocode {
         choropleth_geocoded_locations(args, mode.clone(), agg)?
     } else {
@@ -2845,6 +2919,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         let mut layout = Layout::new().map(layout_map);
         if let Some(title) = &args.flag_title {
             layout = layout.title(Title::with_text(title));
+        }
+        if let Some(note) = &below_note {
+            layout = with_below_map_note(layout, note);
         }
         plot.set_layout(apply_theme(layout, args.theme()));
     } else {
@@ -2903,9 +2980,31 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         if let Some(title) = &args.flag_title {
             layout = layout.title(Title::with_text(title));
         }
+        if let Some(note) = &below_note {
+            layout = with_below_map_note(layout, note);
+        }
         plot.set_layout(apply_theme(layout, args.theme()));
     }
     Ok(plot)
+}
+
+/// Append a paper-anchored note centered just beneath the plot area, reserving bottom margin so it
+/// isn't clipped. Used for the `viz choropleth --no-snap` coverage note (points dropped because
+/// they fell outside every GeoJSON region). The font color is left to inherit so the smart
+/// light/dark toggle (and themes) flip it instead of baking in a fixed ink.
+fn with_below_map_note(layout: Layout, note: &str) -> Layout {
+    layout.margin(Margin::new().bottom(60)).annotations(vec![
+        Annotation::new()
+            .text(note)
+            .x(0.5)
+            .y(0.0)
+            .x_ref("paper")
+            .y_ref("paper")
+            .x_anchor(Anchor::Center)
+            .y_anchor(Anchor::Top)
+            .show_arrow(false)
+            .font(Font::new().size(12)),
+    ])
 }
 
 /// Resolve choropleth `(locations, z, measure_label, hover_text)` from a literal `--locations`
@@ -2964,15 +3063,20 @@ fn choropleth_literal_locations(
     Ok((locs, z, measure_label, hover_text))
 }
 
-/// Resolve choropleth `(locations, z, measure_label, hover_text)` by point-in-polygon binning: each
-/// row's `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon contains it (or,
-/// unless `snap` is false, to the nearest region), and the `--value` measure (or row counts) is
-/// aggregated per region id. Emits a stderr coverage note when points fall outside every region.
+/// Resolve choropleth `(locations, z, measure_label, hover_text, below_note)` by point-in-polygon
+/// binning: each row's `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon
+/// contains it (or, when `snap`, to the nearest region within `snap_max_km` — `f64::INFINITY` =
+/// unlimited), and the `--value` measure (or row counts) is aggregated per region id. The
+/// per-region hover gains an `includes N snapped from outside` line for regions that absorbed
+/// snapped points (the region's count already includes them). Emits stderr coverage notes, and —
+/// whenever points are dropped (no snapping, or no region within the cap) — returns a `below_note`
+/// rendered beneath the map.
 fn choropleth_pip_locations(
     args: &Args,
     agg: Agg,
     snap: bool,
-) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>)> {
+    snap_max_km: f64,
+) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
     let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
@@ -2995,8 +3099,12 @@ fn choropleth_pip_locations(
 
     let mut raw_locs: Vec<String> = Vec::new();
     let mut values: Vec<f64> = Vec::new();
+    // per-region tally of points that landed outside every polygon but were snapped into this
+    // region (keyed by feature id), surfaced in the region's hover.
+    let mut snapped_by_id: HashMap<String, usize> = HashMap::new();
     let mut total = 0_usize;
-    let mut outside = 0_usize;
+    let mut snapped = 0_usize;
+    let mut dropped = 0_usize;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -3016,7 +3124,7 @@ fn choropleth_pip_locations(
             None => 1.0,
         };
         total += 1;
-        match pip_assign(&features, lat, lon, snap) {
+        match pip_assign(&features, lat, lon, snap, snap_max_km) {
             PipOutcome::Inside(fi) => {
                 raw_locs.push(features[fi].id.clone());
                 values.push(value);
@@ -3024,27 +3132,64 @@ fn choropleth_pip_locations(
             PipOutcome::Snapped(fi) => {
                 raw_locs.push(features[fi].id.clone());
                 values.push(value);
-                outside += 1;
+                *snapped_by_id.entry(features[fi].id.clone()).or_insert(0) += 1;
+                snapped += 1;
             },
-            PipOutcome::Outside => outside += 1,
+            PipOutcome::Outside => dropped += 1,
         }
     }
 
-    if outside > 0 {
-        let how = if snap {
-            "snapped to nearest region"
-        } else {
-            "dropped"
-        };
-        eprintln!("viz choropleth: {outside} of {total} points fell outside every region ({how}).");
+    // describe where dropped points went: --no-snap drops everything outside; otherwise only points
+    // with no region within the cap are dropped (finite cap; an unlimited cap never drops).
+    let drop_reason = if snap {
+        format!("no region within {} km", fmt_measure(snap_max_km))
+    } else {
+        "--no-snap".to_string()
+    };
+    if snapped > 0 {
+        eprintln!(
+            "viz choropleth: {snapped} of {total} points were snapped to the nearest region."
+        );
+    }
+    if dropped > 0 {
+        eprintln!(
+            "viz choropleth: {dropped} of {total} points fell outside every region and were \
+             dropped ({drop_reason})."
+        );
     }
 
     let (locs, z) = aggregate(raw_locs, values, agg);
     let names = aligned_region_names(&features, &locs);
     let include_pct = matches!(agg, Agg::Count | Agg::Sum);
-    let hover_text =
+    let mut hover_text =
         choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
-    Ok((locs, z, measure_label, hover_text))
+    // annotate each region's hover with how many of its points were snapped in from outside. The
+    // region's count already includes these, so word it as a subset, not an addition.
+    for (h, loc) in hover_text.iter_mut().zip(&locs) {
+        if let Some(&c) = snapped_by_id.get(loc)
+            && c > 0
+        {
+            h.push_str(&format!("<br>includes {c} snapped from outside"));
+        }
+    }
+
+    // surface dropped points beneath the map — a saved HTML has no stderr to fall back on.
+    let below_note = (dropped > 0).then(|| {
+        if snap {
+            format!(
+                "{dropped} of {total} points were farther than {} km from any region and were \
+                 dropped.",
+                fmt_measure(snap_max_km)
+            )
+        } else {
+            format!(
+                "--no-snap: {dropped} of {total} points fell outside every GeoJSON region and \
+                 were dropped."
+            )
+        }
+    });
+
+    Ok((locs, z, measure_label, hover_text, below_note))
 }
 
 /// Resolve choropleth `(locations, z, measure_label, hover_text)` via qsv's geocode engine:
@@ -6395,10 +6540,13 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
 
 /// Build a `viz smart` choropleth panel by point-in-polygon binning the core lat/lon points into a
 /// user-supplied GeoJSON (`--geojson`). Each point is assigned to the region whose polygon contains
-/// it (or, unless `snap` is false, the nearest region); the panel is colored by per-region counts.
-/// Unlike [`build_smart_choropleth_panel`] this needs no geocode engine. Errors when the explicit
-/// `--geojson` can't be loaded/parsed or the `--feature-id-key` matches nothing; returns `Ok(None)`
-/// only when valid input yields fewer than 2 regions with points.
+/// it, or — when `snap` — to the nearest region within `snap_max_km` (`f64::INFINITY` = unlimited),
+/// else dropped; the panel is colored by per-region counts. Mirrors the `viz choropleth` command's
+/// cap: far strays are dropped (surfaced in the panel title + per-region hover) rather than snapped
+/// to an arbitrary distant region. Unlike [`build_smart_choropleth_panel`] this needs no geocode
+/// engine. Errors when the explicit `--geojson` can't be loaded/parsed or the `--feature-id-key`
+/// matches nothing; returns `Ok(None)` only when valid input yields fewer than 2 regions with
+/// points.
 fn build_smart_pip_choropleth_panel(
     geojson_spec: &str,
     feature_id_key: &str,
@@ -6406,6 +6554,7 @@ fn build_smart_pip_choropleth_panel(
     lats: &[f64],
     lons: &[f64],
     snap: bool,
+    snap_max_km: f64,
 ) -> CliResult<Option<Panel>> {
     // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
     // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
@@ -6414,21 +6563,29 @@ fn build_smart_pip_choropleth_panel(
     let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
+    // per-region tally of snapped-in points (keyed by feature id), surfaced in the region's hover.
+    let mut snapped_by_id: std::collections::HashMap<String, usize> =
+        std::collections::HashMap::new();
     let mut total = 0_usize;
-    let mut outside = 0_usize;
+    let mut snapped = 0_usize;
+    let mut dropped = 0_usize;
     for (&lat, &lon) in lats.iter().zip(lons.iter()) {
         if !((-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon)) {
             continue;
         }
         total += 1;
-        let fi = match pip_assign(&features, lat, lon, snap) {
+        // smart dashboards apply the same default snap-distance cap as the `viz choropleth`
+        // command: an outside point snaps only to a region within `snap_max_km`, else it is
+        // dropped.
+        let fi = match pip_assign(&features, lat, lon, snap, snap_max_km) {
             PipOutcome::Inside(fi) => fi,
             PipOutcome::Snapped(fi) => {
-                outside += 1;
+                *snapped_by_id.entry(features[fi].id.clone()).or_insert(0) += 1;
+                snapped += 1;
                 fi
             },
             PipOutcome::Outside => {
-                outside += 1;
+                dropped += 1;
                 continue;
             },
         };
@@ -6445,19 +6602,44 @@ fn build_smart_pip_choropleth_panel(
     }
     // only report after we know a panel will actually render, so the note never describes a map the
     // dashboard drops.
-    if outside > 0 {
-        let how = if snap {
-            "snapped to nearest region"
+    if snapped > 0 {
+        eprintln!("viz smart: {snapped} of {total} points were snapped to the nearest region.");
+    }
+    if dropped > 0 {
+        let why = if snap {
+            format!("no region within {} km", fmt_measure(snap_max_km))
         } else {
-            "dropped"
+            "--no-snap".to_string()
         };
-        eprintln!("viz smart: {outside} of {total} points fell outside every region ({how}).");
+        eprintln!(
+            "viz smart: {dropped} of {total} points fell outside every region and were dropped \
+             ({why})."
+        );
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     let names = aligned_region_names(&features, &order);
-    let hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
+    let mut hover_text = choropleth_hover_text(&order, &z, names.as_deref(), "count", true);
+    // flag each region's snapped-in points as a subset of its count (matches the command path).
+    for (h, loc) in hover_text.iter_mut().zip(&order) {
+        if let Some(&c) = snapped_by_id.get(loc)
+            && c > 0
+        {
+            h.push_str(&format!("<br>includes {c} snapped from outside"));
+        }
+    }
+    // a sub-panel can't carry a below-map annotation, so surface dropped points in the panel title.
+    let panel_name = if dropped > 0 {
+        let why = if snap {
+            format!(">{} km", fmt_measure(snap_max_km))
+        } else {
+            "--no-snap".to_string()
+        };
+        format!("Regions ({dropped} dropped, {why})")
+    } else {
+        "Regions".to_string()
+    };
     Ok(Some(Panel::new(
-        "Regions".to_string(),
+        panel_name,
         PanelKind::Choropleth {
             locations: order,
             z,
@@ -6562,9 +6744,25 @@ fn build_map_panel(
     // before).
     let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
+        // smart shares the command's default cap; clamp negatives since smart bypasses the
+        // command-path validation in build_choropleth_plot. Do NOT revert this to f64::INFINITY —
+        // the cap is deliberate here; the `smart_pip_panel_caps_snap` unit test guards the
+        // threading.
+        let snap_max_km = args
+            .flag_snap_max_dist
+            .unwrap_or(DEFAULT_SNAP_MAX_KM)
+            .max(0.0);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
-        build_smart_pip_choropleth_panel(spec, key, name_key, &core_lats, &core_lons, snap)?
+        build_smart_pip_choropleth_panel(
+            spec,
+            key,
+            name_key,
+            &core_lats,
+            &core_lons,
+            snap,
+            snap_max_km,
+        )?
     } else {
         #[cfg(feature = "geocode")]
         {
@@ -12096,11 +12294,147 @@ mod tests {
         assert_eq!(feats.len(), 1);
         assert_eq!(feats[0].id, "A");
         // (lat, lon) inside the square
-        assert_eq!(pip_assign(&feats, 5.0, 5.0, false), PipOutcome::Inside(0));
+        assert_eq!(
+            pip_assign(&feats, 5.0, 5.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
         // far outside, no snap -> dropped
-        assert_eq!(pip_assign(&feats, 50.0, 50.0, false), PipOutcome::Outside);
-        // far outside, snap -> nearest (the only) feature
-        assert_eq!(pip_assign(&feats, 50.0, 50.0, true), PipOutcome::Snapped(0));
+        assert_eq!(
+            pip_assign(&feats, 50.0, 50.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+        // far outside, snap with no distance cap -> nearest (the only) feature
+        assert_eq!(
+            pip_assign(&feats, 50.0, 50.0, true, f64::INFINITY),
+            PipOutcome::Snapped(0)
+        );
+        // same point, but a tight cap is farther than any boundary -> dropped despite snap
+        assert_eq!(
+            pip_assign(&feats, 50.0, 50.0, true, 10.0),
+            PipOutcome::Outside
+        );
+    }
+
+    // the --snap-max-dist cap is an equirectangular km distance: a point ~5.6 km outside a region
+    // snaps under a 10 km cap but drops under a 4 km cap (and always snaps when unbounded).
+    #[test]
+    fn pip_snap_distance_cap() {
+        // unit square straddling the equator, where 1 degree ~ 111.32 km.
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        // 0.05 deg east of the boundary at the equator ~ 5.6 km out
+        let (lat, lon) = (0.5, 1.05);
+        assert_eq!(
+            pip_assign(&feats, lat, lon, true, 10.0),
+            PipOutcome::Snapped(0),
+            "within the 10 km cap -> snaps"
+        );
+        assert_eq!(
+            pip_assign(&feats, lat, lon, true, 4.0),
+            PipOutcome::Outside,
+            "beyond the 4 km cap -> dropped"
+        );
+        assert_eq!(
+            pip_assign(&feats, lat, lon, true, f64::INFINITY),
+            PipOutcome::Snapped(0),
+            "unbounded cap always snaps"
+        );
+    }
+
+    // the cap is an EQUIRECTANGULAR km distance: longitude degrees shrink by cos(lat). At lat 60.5,
+    // a point 0.5 deg east of a boundary is ~27 km away (0.5 * 111.32 * cos(60.5) ~ 27.4) — NOT the
+    // ~56 km a missing-cos(lat) bug would compute. The two-sided bracket (snaps under 35 km, drops
+    // under 20 km) pins the longitude scaling: a no-cos bug would give 56 km and drop under 35.
+    #[test]
+    fn pip_snap_cap_applies_longitude_cos_scaling() {
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "properties": {"id": "A"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 60.0], [0.0, 61.0], [1.0, 61.0], [1.0, 60.0], [0.0, 60.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        // 0.5 deg east of the east edge at lat 60.5 -> ~27.4 km out
+        let (lat, lon) = (60.5, 1.5);
+        assert_eq!(
+            pip_assign(&feats, lat, lon, true, 35.0),
+            PipOutcome::Snapped(0),
+            "~27 km < 35 km cap -> snaps (would be ~56 km and DROP without cos(lat) scaling)"
+        );
+        assert_eq!(
+            pip_assign(&feats, lat, lon, true, 20.0),
+            PipOutcome::Outside,
+            "~27 km > 20 km cap -> dropped"
+        );
+    }
+
+    // the `viz smart` GeoJSON choropleth panel honors the snap-distance cap: a point in the gap
+    // between two regions (far from both) is dropped under the default cap — surfaced in the panel
+    // title — but snapped when the cap is unbounded. Exercised at the unit level because the
+    // dashboard's upstream geographic-column detection / outlier removal make an end-to-end fixture
+    // brittle; this calls the panel builder directly with explicit coordinates.
+    #[test]
+    fn smart_pip_panel_caps_snap() {
+        // two regions separated by a wide gap: A at lon 0..4, C at lon 16..20 (both lat 0..10).
+        let gj = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",
+             "coordinates":[[[0.0,0.0],[0.0,10.0],[4.0,10.0],[4.0,0.0],[0.0,0.0]]]}},
+            {"type":"Feature","properties":{"id":"C"},"geometry":{"type":"Polygon",
+             "coordinates":[[[16.0,0.0],[16.0,10.0],[20.0,10.0],[20.0,0.0],[16.0,0.0]]]}}]}"#;
+        let path = std::env::temp_dir().join("qsv_smart_pip_cap_test.geojson");
+        std::fs::write(&path, gj).unwrap();
+        let spec = path.to_str().unwrap();
+        // 2 points in A, 2 in C, 1 in the lon-10 gap (~6 deg / hundreds of km from either edge).
+        let lats = vec![5.0, 4.0, 5.0, 4.0, 5.0];
+        let lons = vec![2.0, 3.0, 18.0, 17.0, 10.0];
+
+        // default cap drops the gap point; the panel still renders (2 regions) and flags the drop.
+        let panel =
+            build_smart_pip_choropleth_panel(spec, "properties.id", None, &lats, &lons, true, 10.0)
+                .unwrap()
+                .expect("2 regions keep points, so a panel renders");
+        assert_eq!(panel.name, "Regions (1 dropped, >10 km)");
+
+        // an unbounded cap snaps the gap point instead -> nothing dropped, plain title.
+        let snapped = build_smart_pip_choropleth_panel(
+            spec,
+            "properties.id",
+            None,
+            &lats,
+            &lons,
+            true,
+            f64::INFINITY,
+        )
+        .unwrap()
+        .expect("panel renders");
+        assert_eq!(snapped.name, "Regions");
+
+        // --no-snap drops the gap point regardless of distance; the title reports the reason.
+        let no_snap = build_smart_pip_choropleth_panel(
+            spec,
+            "properties.id",
+            None,
+            &lats,
+            &lons,
+            false,
+            10.0,
+        )
+        .unwrap()
+        .expect("panel renders");
+        assert_eq!(no_snap.name, "Regions (1 dropped, --no-snap)");
+
+        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -12124,13 +12458,25 @@ mod tests {
         let m = feats.iter().position(|f| f.id == "M").unwrap();
         let h = feats.iter().position(|f| f.id == "H").unwrap();
         // inside the SECOND polygon of the MultiPolygon
-        assert_eq!(pip_assign(&feats, 11.0, 11.0, false), PipOutcome::Inside(m));
+        assert_eq!(
+            pip_assign(&feats, 11.0, 11.0, false, f64::INFINITY),
+            PipOutcome::Inside(m)
+        );
         // inside H's filled band (between exterior and hole)
-        assert_eq!(pip_assign(&feats, 21.0, 21.0, false), PipOutcome::Inside(h));
+        assert_eq!(
+            pip_assign(&feats, 21.0, 21.0, false, f64::INFINITY),
+            PipOutcome::Inside(h)
+        );
         // inside H's HOLE -> not contained; no snap -> dropped
-        assert_eq!(pip_assign(&feats, 25.0, 25.0, false), PipOutcome::Outside);
-        // same hole point, snap -> snaps back to H (nearest boundary)
-        assert_eq!(pip_assign(&feats, 25.0, 25.0, true), PipOutcome::Snapped(h));
+        assert_eq!(
+            pip_assign(&feats, 25.0, 25.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+        // same hole point, snap with no cap -> snaps back to H (nearest boundary)
+        assert_eq!(
+            pip_assign(&feats, 25.0, 25.0, true, f64::INFINITY),
+            PipOutcome::Snapped(h)
+        );
     }
 
     #[test]
@@ -12150,7 +12496,10 @@ mod tests {
         let feats = build_pip_features(&gj, "id", None).unwrap();
         assert_eq!(feats.len(), 1, "feature without a top-level id is skipped");
         assert_eq!(feats[0].id, "7", "numeric id coerces to string");
-        assert_eq!(pip_assign(&feats, 0.5, 0.5, false), PipOutcome::Inside(0));
+        assert_eq!(
+            pip_assign(&feats, 0.5, 0.5, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
     }
 
     #[test]

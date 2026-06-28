@@ -357,9 +357,9 @@ dependencies = [
 
 [[package]]
 name = "anyhow"
-version = "1.0.102"
+version = "1.0.103"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
+checksum = "2a4385e2e34eb35d6b3efe798b9eb88096925d87726c0798709bf56d9ed84af3"
 
 [[package]]
 name = "approx"
@@ -3167,6 +3167,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "geojson"
+version = "1.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "510c094bfc76ea34d02eee00833254945b70491d79a9c0b050abed6eaa799ffb"
+dependencies = [
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tinyvec",
+]
+
+[[package]]
 name = "geosuggest-core"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3208,7 +3221,7 @@ dependencies = [
  "csv",
  "dbase",
  "geo-types",
- "geojson",
+ "geojson 0.24.2",
  "log",
  "serde_json",
  "thiserror 2.0.18",
@@ -3629,9 +3642,9 @@ checksum = "135b12329e5e3ce057a9f972339ea52bc954fe1e9358ef27f95e89716fbc5424"
 
 [[package]]
 name = "hybrid-array"
-version = "0.4.12"
+version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9155a582abd142abc056962c29e3ce5ff2ad5469f4246b537ed42c5deba857da"
+checksum = "818356c5132c1fede50f837ca96afbe78ff42413047f4abb886217845e1b6c8c"
 dependencies = [
  "typenum",
 ]
@@ -4630,9 +4643,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "luau0-src"
-version = "0.20.5+luau725"
+version = "0.20.6+luau727"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a75cfccb293418d1d12a67128d582f058c9717a8f38740cb736bbc269114657d"
+checksum = "b19b9a056f359ce8def62fa543dd2373446d6820f3aec4d3aaa29d0cab7fcc93"
 dependencies = [
  "cc",
 ]
@@ -6841,7 +6854,7 @@ dependencies = [
  "futures",
  "futures-util",
  "gender_guesser",
- "geojson",
+ "geojson 1.0.0",
  "geosuggest-core",
  "geosuggest-utils",
  "geozero",
@@ -7452,9 +7465,9 @@ dependencies = [
 
 [[package]]
 name = "redis"
-version = "1.2.4"
+version = "1.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bae41a63fd0b8a5372f82b21e810e09a316f5dd7efd96bf08e678fb240fc1918"
+checksum = "2fa6f8e4b491d7a8ef3a9550a4d71969bd0064f46e32b8dbbcc7fc60dad94fed"
 dependencies = [
  "ahash 0.8.12",
  "arcstr",
@@ -9300,6 +9313,7 @@ version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3e61e67053d25a4e82c844e8424039d9745781b3fc4f32b8d55ed50f5f667ef3"
 dependencies = [
+ "serde_core",
  "tinyvec_macros",
 ]
 

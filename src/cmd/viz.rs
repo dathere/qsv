@@ -2434,7 +2434,7 @@ fn aligned_region_names(features: &[PipFeature], locs: &[String]) -> Option<Vec<
     )
 }
 
-/// Convert a `geojson::Value::Polygon` ring set to closed `[lon, lat]` rings (appending the first
+/// Convert a `geojson::GeometryValue::Polygon` ring set to closed `[lon, lat]` rings (appending the first
 /// vertex when a ring isn't already closed, so even-odd ray-casting via `windows(2)` covers every
 /// edge). Rings with fewer than 3 distinct vertices are dropped.
 fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>> {
@@ -2456,24 +2456,24 @@ fn geojson_rings_to_closed(poly: &[Vec<geojson::Position>]) -> Vec<Vec<[f64; 2]>
         .collect()
 }
 
-/// Flatten a `geojson::Value` into a list of polygons (each = exterior + hole rings). Handles
-/// Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield nothing.
-fn geojson_value_to_polygons(value: &geojson::Value) -> Vec<Vec<Vec<[f64; 2]>>> {
+/// Flatten a `geojson::GeometryValue` into a list of polygons (each = exterior + hole rings).
+/// Handles Polygon, MultiPolygon, and nested GeometryCollection; other geometry types yield nothing.
+fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64; 2]>>> {
     match value {
-        geojson::Value::Polygon(poly) => {
-            let rings = geojson_rings_to_closed(poly);
+        geojson::GeometryValue::Polygon { coordinates } => {
+            let rings = geojson_rings_to_closed(coordinates);
             if rings.is_empty() {
                 vec![]
             } else {
                 vec![rings]
             }
         },
-        geojson::Value::MultiPolygon(mp) => mp
+        geojson::GeometryValue::MultiPolygon { coordinates } => coordinates
             .iter()
             .map(|poly| geojson_rings_to_closed(poly))
             .filter(|rings| !rings.is_empty())
             .collect(),
-        geojson::Value::GeometryCollection(geoms) => geoms
+        geojson::GeometryValue::GeometryCollection { geometries } => geometries
             .iter()
             .flat_map(|g| geojson_value_to_polygons(&g.value))
             .collect(),
@@ -2489,7 +2489,7 @@ fn build_pip_features(
     feature_id_key: &str,
     feature_name_key: Option<&str>,
 ) -> CliResult<Vec<PipFeature>> {
-    let fc = geojson::FeatureCollection::from_json_value(geojson.clone()).map_err(|e| {
+    let fc = serde_json::from_value::<geojson::FeatureCollection>(geojson.clone()).map_err(|e| {
         crate::CliError::Other(format!(
             "--geojson is not a valid GeoJSON FeatureCollection: {e}"
         ))

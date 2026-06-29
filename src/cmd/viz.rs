@@ -3861,9 +3861,9 @@ fn pearson(x: &[f64], y: &[f64]) -> f64 {
     for k in 0..len {
         let dx = x[k] - mean_x;
         let dy = y[k] - mean_y;
-        cov += dx * dy;
-        var_x += dx * dx;
-        var_y += dy * dy;
+        cov = dx.mul_add(dy, cov);
+        var_x = dx.mul_add(dx, var_x);
+        var_y = dy.mul_add(dy, var_y);
     }
     let den = var_x.sqrt() * var_y.sqrt();
     if den == 0.0 || !den.is_finite() {

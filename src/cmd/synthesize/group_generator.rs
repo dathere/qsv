@@ -167,7 +167,7 @@ impl GroupGenerator {
                 for i in 0..k {
                     let mut x = 0.0;
                     for (j, &z_j) in z.iter().enumerate().take(i + 1) {
-                        x += cholesky_l[i][j] * z_j;
+                        x = cholesky_l[i][j].mul_add(z_j, x);
                     }
                     let value = quantile_value(&marginals[i], normal_cdf(x));
                     // Each member draws null independently (after the copula

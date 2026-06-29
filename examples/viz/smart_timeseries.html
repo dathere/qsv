@@ -67,7 +67,7 @@
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
-      } else if (/^mapbox\d*$/.test(k)) {
+      } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
         u[k + ".style"] = p.mapbox;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;

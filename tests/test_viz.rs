@@ -5386,3 +5386,46 @@ monterrey,25.69,-100.32
     assert!(html.contains("MEX"));
     assert!(!html.contains(r#""locationmode":"USA-states""#));
 }
+
+// The fullscreen modebar button is injected as client-side JS (the plotly-rs `Configuration` can't
+// carry a JS `click` handler). These assert the injected chrome is present in both HTML paths: the
+// plain single-chart document (`Plot::to_html`) and the hand-assembled `viz smart` dashboard.
+
+#[test]
+fn viz_single_chart_has_fullscreen_button() {
+    let wrk = Workdir::new("viz_single_chart_has_fullscreen_button");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["scatter", "fruits.csv", "--x", "Price", "--y", "Qty"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // plotly's own render is still present...
+    assert!(html.contains("Plotly.newPlot"));
+    // ...plus the injected fullscreen chrome: the custom modebar button and the toggle logic.
+    assert!(html.contains("modeBarButtonsToAdd"));
+    assert!(html.contains(r#"name: "qsv-fullscreen""#));
+    assert!(html.contains("requestFullscreen"));
+    assert!(html.contains(".js-plotly-plot:fullscreen"));
+}
+
+#[test]
+fn viz_smart_has_fullscreen_button() {
+    let wrk = Workdir::new("viz_smart_has_fullscreen_button");
+    fruits(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the smart page carries both the (pre-existing) theme toggle and the fullscreen button.
+    assert!(html.contains("qsv-theme-toggle"));
+    assert!(html.contains("modeBarButtonsToAdd"));
+    assert!(html.contains(r#"name: "qsv-fullscreen""#));
+    assert!(html.contains("requestFullscreen"));
+    assert!(html.contains(".js-plotly-plot:fullscreen"));
+}

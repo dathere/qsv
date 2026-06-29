@@ -2364,14 +2364,18 @@ fn ring_planar_area(ring: &serde_json::Value) -> f64 {
 }
 
 /// Repair one polygon's rings (a `Vec` of ring `Value`s) for plotly rendering: drop degenerate
-/// rings (fewer than 3 distinct vertices) and order the survivors largest-area-first so ring[0] is
-/// the exterior. Returns `None` when nothing renderable remains. Ring `Value`s are moved, never
-/// rebuilt, so coordinate precision is preserved exactly.
+/// rings — fewer than 3 distinct vertices, OR zero planar area (a collinear ring whose vertices are
+/// distinct but lie on a line) — and order the survivors largest-area-first so ring[0] is the
+/// exterior. A zero-area ring is non-renderable either way: as an exterior it leaves plotly's
+/// MultiPolygon centroid with no positive-area sub-polygon (the crash this fix prevents), and as a
+/// hole it encloses nothing. Returns `None` when nothing renderable remains. Ring `Value`s are
+/// moved, never rebuilt, so coordinate precision is preserved exactly.
 fn repair_polygon_rings(rings: Vec<serde_json::Value>) -> Option<Vec<serde_json::Value>> {
     let mut kept: Vec<(f64, serde_json::Value)> = rings
         .into_iter()
         .filter(|r| ring_distinct_vertices(r) >= 3)
         .map(|r| (ring_planar_area(&r), r))
+        .filter(|(area, _)| *area > 0.0)
         .collect();
     if kept.is_empty() {
         return None;
@@ -14125,6 +14129,54 @@ mod tests {
             ring_planar_area(&rings[0]),
             100.0,
             "load_geojson must promote the real boundary to the exterior"
+        );
+    }
+
+    #[test]
+    fn sanitize_geojson_drops_collinear_zero_area_rings() {
+        // a ring can have 3+ DISTINCT vertices yet zero area when they are collinear
+        // ([[0,0],[1,1],[2,2]] closed). The distinct-vertex count alone does NOT catch it, but it
+        // is just as non-renderable: as a sub-polygon's only ring it leaves plotly's
+        // MultiPolygon centroid with no positive-area sub-polygon and reproduces the
+        // blank-panel crash. So it must be dropped, and a feature left with no renderable
+        // polygon must be dropped too.
+        let collinear = serde_json::json!([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [0.0, 0.0]]);
+        let real = serde_json::json!([
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0]
+        ]);
+        let collinear_hole = serde_json::json!([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0], [3.0, 3.0]]);
+        let mut geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                // a MultiPolygon whose only ring is collinear -> no renderable polygon -> dropped.
+                {"type": "Feature", "id": "collinear_only",
+                 "geometry": {"type": "MultiPolygon", "coordinates": [[collinear]]}},
+                // a valid polygon carrying a collinear (zero-area) hole -> hole stripped, kept.
+                {"type": "Feature", "id": "valid",
+                 "geometry": {"type": "Polygon", "coordinates": [real, collinear_hole]}}
+            ]
+        });
+        sanitize_geojson_for_render(&mut geojson);
+
+        let feats = geojson["features"].as_array().expect("features array");
+        assert_eq!(
+            feats.len(),
+            1,
+            "the collinear-only feature is dropped entirely"
+        );
+        assert_eq!(feats[0]["id"], "valid", "the renderable feature survives");
+        let rings = feats[0]["geometry"]["coordinates"]
+            .as_array()
+            .expect("polygon rings array");
+        assert_eq!(rings.len(), 1, "the collinear zero-area hole is stripped");
+        assert_eq!(
+            ring_planar_area(&rings[0]),
+            100.0,
+            "the real exterior is kept"
         );
     }
 }

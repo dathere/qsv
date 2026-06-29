@@ -1,6 +1,6 @@
 # viz
 
-> Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using [plotly](https://plotly.com). `viz smart` "automagically" picks an appropriate chart per column from the dataset's statistics & frequency distributions. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature.
+> Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using [plotly](https://plotly.com). `viz smart` "neuro-symbolically" picks an appropriate chart per column from the dataset's statistics, frequency distributions, data dictionary, integrated Geonames geocoding, and optional LLM metadata inferencing. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")
 

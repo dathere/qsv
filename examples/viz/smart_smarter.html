@@ -82,13 +82,18 @@
   var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "#2a3138", water: "#16202b", mapbox: "carto-darkmatter" };
   var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF", land: "#d3d3d3", water: "#add8e6", mapbox: "carto-positron" };
   function isDark() {
+    // An explicit --theme is authoritative: it wins over a stale cross-dashboard
+    // saved preference (the localStorage key is shared across all qsv viz pages,
+    // so a "light" toggle on one dashboard must not override --theme plotly_dark
+    // on another).
+    if (themeDefaultMode === "dark") return true;
+    if (themeDefaultMode === "light") return false;
+    // No --theme: defer to the viewer's saved choice, then OS preference.
     try {
       var saved = localStorage.getItem("qsv-viz-theme");
       if (saved === "dark") return true;
       if (saved === "light") return false;
     } catch (e) {}
-    if (themeDefaultMode === "dark") return true;
-    if (themeDefaultMode === "light") return false;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
   function buildUpdate(gd, p) {

@@ -3724,6 +3724,91 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
+    // regression: an explicit --theme is authoritative. isDark() must consult themeDefaultMode
+    // BEFORE the saved localStorage value, so a stale cross-dashboard "light" preference (the
+    // key is shared across all qsv viz pages) can't override --theme plotly_dark and leave a
+    // dark page with light charts.
+    let theme_check = html
+        .find(r#"if (themeDefaultMode === "dark") return true;"#)
+        .expect("isDark() should check themeDefaultMode");
+    let saved_check = html
+        .find(r#"localStorage.getItem("qsv-viz-theme")"#)
+        .expect("isDark() should read the saved preference");
+    assert!(
+        theme_check < saved_check,
+        "isDark() must check themeDefaultMode before localStorage so an explicit --theme wins"
+    );
+}
+
+#[test]
+fn viz_smart_light_theme_palette_matches_chrome() {
+    // a light non-default theme (seaborn) must drive the runtime LIGHT palette so the on-load
+    // relayout keeps the panels consistent with the themed page chrome, instead of resetting them
+    // to qsv's generic light look (which left a #EAEAF2 seaborn page wrapping #FFFFFF charts).
+    let wrk = Workdir::new("viz_smart_light_theme_palette_matches_chrome");
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--theme", "seaborn", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the runtime LIGHT palette carries seaborn's own paper/font colors ...
+    assert!(html.contains(r##"var LIGHT = { paper: "#EAEAF2", plot: "#EAEAF2", font: "#333333""##));
+    // ... matching the seaborn page chrome (so page and charts agree), and it opens in light mode.
+    assert!(html.contains("--qsv-page-bg: #EAEAF2"));
+    assert!(html.contains(r#"var themeDefaultMode = "light""#));
+    // the dark complement (toggle target) stays the generic fixed-dark set.
+    assert!(html.contains(r##"var DARK = { paper: "#111111""##));
+}
+
+#[test]
+fn viz_smart_seaborn_dark_palette_matches_chrome() {
+    // seaborn_dark is a dark theme whose own shade is #222222, not the generic #111111. Its dark
+    // chart palette and dark page chrome must both carry #222222 so the default (dark) view honors
+    // the theme instead of collapsing to a plotly_dark look.
+    let wrk = Workdir::new("viz_smart_seaborn_dark_palette_matches_chrome");
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "people.csv",
+        "--theme",
+        "seaborn_dark",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the runtime DARK palette carries seaborn_dark's own paper/font ...
+    assert!(html.contains(r##"var DARK = { paper: "#222222", plot: "#222222", font: "#eaeaf2""##));
+    // ... and the dark page chrome matches it, opening in dark mode.
+    assert!(html.contains("body.qsv-dark { --qsv-page-bg: #222222;"));
+    assert!(html.contains(r#"var themeDefaultMode = "dark""#));
 }
 
 #[test]

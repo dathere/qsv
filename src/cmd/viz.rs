@@ -2319,6 +2319,143 @@ fn parse_choropleth_map_style(name: &str) -> CliResult<MapStyle> {
     }
 }
 
+/// Count of distinct `[x, y]` vertices in a GeoJSON ring (`serde_json` positions), ignoring the
+/// closing duplicate and any non-numeric entries. A valid polygon ring needs at least 3.
+fn ring_distinct_vertices(ring: &serde_json::Value) -> usize {
+    let Some(arr) = ring.as_array() else {
+        return 0;
+    };
+    let mut seen = std::collections::HashSet::with_capacity(arr.len());
+    for pos in arr {
+        if let Some(p) = pos.as_array()
+            && p.len() >= 2
+            && let (Some(x), Some(y)) = (p[0].as_f64(), p[1].as_f64())
+        {
+            seen.insert((x.to_bits(), y.to_bits()));
+        }
+    }
+    seen.len()
+}
+
+/// Absolute planar (shoelace) area of a GeoJSON ring in raw lon/lat degree space. Used only to
+/// decide which ring is the exterior (largest), never as a real geographic area.
+fn ring_planar_area(ring: &serde_json::Value) -> f64 {
+    let Some(arr) = ring.as_array() else {
+        return 0.0;
+    };
+    let pts: Vec<(f64, f64)> = arr
+        .iter()
+        .filter_map(|pos| {
+            let p = pos.as_array()?;
+            Some((p.first()?.as_f64()?, p.get(1)?.as_f64()?))
+        })
+        .collect();
+    if pts.len() < 3 {
+        return 0.0;
+    }
+    let mut a = 0.0;
+    for w in pts.windows(2) {
+        let [(x0, y0), (x1, y1)] = w else {
+            continue;
+        };
+        a += x0 * y1 - x1 * y0;
+    }
+    a.abs() / 2.0
+}
+
+/// Repair one polygon's rings (a `Vec` of ring `Value`s) for plotly rendering: drop degenerate
+/// rings — fewer than 3 distinct vertices, OR zero planar area (a collinear ring whose vertices are
+/// distinct but lie on a line) — and order the survivors largest-area-first so ring[0] is the
+/// exterior. A zero-area ring is non-renderable either way: as an exterior it leaves plotly's
+/// MultiPolygon centroid with no positive-area sub-polygon (the crash this fix prevents), and as a
+/// hole it encloses nothing. Returns `None` when nothing renderable remains. Ring `Value`s are
+/// moved, never rebuilt, so coordinate precision is preserved exactly.
+fn repair_polygon_rings(rings: Vec<serde_json::Value>) -> Option<Vec<serde_json::Value>> {
+    let mut kept: Vec<(f64, serde_json::Value)> = rings
+        .into_iter()
+        .filter(|r| ring_distinct_vertices(r) >= 3)
+        .map(|r| (ring_planar_area(&r), r))
+        .filter(|(area, _)| *area > 0.0)
+        .collect();
+    if kept.is_empty() {
+        return None;
+    }
+    // largest area first = exterior, holes after. Stable: equal-area rings keep input order, so a
+    // conforming polygon (exterior already first and largest, holes strictly smaller) is untouched.
+    kept.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+    Some(kept.into_iter().map(|(_, r)| r).collect())
+}
+
+/// Repair a single GeoJSON geometry in place for plotly rendering, returning the cleaned geometry
+/// or `None` when no renderable polygon survives. Recurses into `GeometryCollection`; non-areal
+/// geometries (Point/LineString/…) pass through unchanged.
+fn repair_render_geometry(geom: &mut serde_json::Value) -> Option<serde_json::Value> {
+    let gtype = geom.get("type")?.as_str()?.to_owned();
+    match gtype.as_str() {
+        "Polygon" => {
+            let rings = geom.get_mut("coordinates")?.as_array_mut()?;
+            let fixed = repair_polygon_rings(std::mem::take(rings))?;
+            Some(serde_json::json!({ "type": "Polygon", "coordinates": fixed }))
+        },
+        "MultiPolygon" => {
+            let polys = geom.get_mut("coordinates")?.as_array_mut()?;
+            let mut out = Vec::with_capacity(polys.len());
+            for poly in std::mem::take(polys) {
+                if let serde_json::Value::Array(rings) = poly
+                    && let Some(fixed) = repair_polygon_rings(rings)
+                {
+                    out.push(serde_json::Value::Array(fixed));
+                }
+            }
+            (!out.is_empty())
+                .then(|| serde_json::json!({ "type": "MultiPolygon", "coordinates": out }))
+        },
+        "GeometryCollection" => {
+            let geoms = geom.get_mut("geometries")?.as_array_mut()?;
+            let mut out = Vec::with_capacity(geoms.len());
+            for mut g in std::mem::take(geoms) {
+                if let Some(r) = repair_render_geometry(&mut g) {
+                    out.push(r);
+                }
+            }
+            (!out.is_empty())
+                .then(|| serde_json::json!({ "type": "GeometryCollection", "geometries": out }))
+        },
+        _ => Some(geom.clone()),
+    }
+}
+
+/// Sanitize a GeoJSON FeatureCollection in place so its polygons render in plotly's choropleth /
+/// choroplethmap geometry pipeline. That pipeline assumes well-formed polygons — ring[0] is the
+/// exterior and every hole lies inside it — and *throws* (blanking the WHOLE panel, not just the
+/// one region) when a feature violates this. Real-world GeoJSON does: e.g. a zero-area sliver
+/// listed first (becoming the "exterior") with the true boundary listed as a later "hole". For each
+/// Polygon/MultiPolygon we drop degenerate rings and reorder so the largest ring is the exterior
+/// (see [`repair_polygon_rings`]); features left with no renderable polygon are dropped. Both steps
+/// are no-ops for conforming GeoJSON (a hole is always strictly smaller than its exterior), and the
+/// even-odd point-in-polygon binning in [`build_pip_features`] is ring-order-independent, so this
+/// fixes only the malformed-ordering class without altering counts or valid geometry.
+fn sanitize_geojson_for_render(geojson: &mut serde_json::Value) {
+    let Some(features) = geojson.get_mut("features").and_then(|f| f.as_array_mut()) else {
+        return;
+    };
+    features.retain_mut(|feature| {
+        let Some(geom) = feature.get_mut("geometry") else {
+            return true;
+        };
+        if geom.is_null() {
+            return true;
+        }
+        match repair_render_geometry(geom) {
+            Some(repaired) => {
+                *geom = repaired;
+                true
+            },
+            None => false,
+        }
+    });
+}
+
 /// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
 fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
     let bytes = if spec.starts_with("http://") || spec.starts_with("https://") {
@@ -2337,8 +2474,14 @@ fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
             crate::CliError::Other(format!("Failed to read --geojson '{spec}': {e}"))
         })?
     };
-    serde_json::from_slice(&bytes)
-        .map_err(|e| crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}")))
+    let mut geojson: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
+        crate::CliError::Other(format!("--geojson '{spec}' is not valid JSON: {e}"))
+    })?;
+    // repair malformed polygon ring ordering before any consumer embeds the geometry into a plotly
+    // trace — a single feature whose "exterior" is a degenerate/inner ring otherwise throws in
+    // plotly's geometry pipeline and blanks the entire choropleth panel.
+    sanitize_geojson_for_render(&mut geojson);
+    Ok(geojson)
 }
 
 /// One GeoJSON feature reduced to its polygon rings for point-in-polygon binning. `polygons` holds
@@ -3861,9 +4004,9 @@ fn pearson(x: &[f64], y: &[f64]) -> f64 {
     for k in 0..len {
         let dx = x[k] - mean_x;
         let dy = y[k] - mean_y;
-        cov += dx * dy;
-        var_x += dx * dx;
-        var_y += dy * dy;
+        cov = dx.mul_add(dy, cov);
+        var_x = dx.mul_add(dx, var_x);
+        var_y = dy.mul_add(dy, var_y);
     }
     let den = var_x.sqrt() * var_y.sqrt();
     if den == 0.0 || !den.is_finite() {
@@ -13869,5 +14012,171 @@ mod tests {
         // the kept ring is closed (first == last) so windows(2) enumerates every edge
         assert_eq!(rings[0].first(), rings[0].last());
         assert_eq!(rings[0].len(), 4); // 3 vertices + the appended closing vertex
+    }
+
+    #[test]
+    fn sanitize_geojson_reorders_malformed_exterior_ring() {
+        // a real-world malformation (seen in an NYC-neighborhoods GeoJSON): a polygon whose first
+        // ring — the GeoJSON "exterior" — is a zero-area sliver (2 distinct vertices), with the
+        // true boundary listed AFTER it as a "hole". Plotly assumes ring[0] is the exterior
+        // and throws on this, blanking the whole choropleth panel. The sanitizer must drop
+        // the degenerate ring and promote the largest-area ring to ring[0].
+        let big = serde_json::json!([
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0]
+        ]);
+        let small = serde_json::json!([[2.0, 2.0], [4.0, 2.0], [4.0, 4.0], [2.0, 4.0], [2.0, 2.0]]);
+        // sliver: 2 distinct vertices (a, b, a, a) — zero area, degenerate.
+        let sliver = serde_json::json!([[1.0, 1.0], [1.5, 1.5], [1.0, 1.0], [1.0, 1.0]]);
+        let mut geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "bad",
+                "properties": {"name": "bad"},
+                // malformed order: sliver(exterior), small, big
+                "geometry": {"type": "MultiPolygon", "coordinates": [[sliver, small, big]]}
+            }]
+        });
+        sanitize_geojson_for_render(&mut geojson);
+
+        let rings = &geojson["features"][0]["geometry"]["coordinates"][0];
+        let rings = rings.as_array().expect("polygon rings array");
+        // the degenerate sliver is dropped; the two real rings survive.
+        assert_eq!(rings.len(), 2, "degenerate sliver ring dropped");
+        // ring[0] is now the largest-area ring (the true exterior), not the inner small ring.
+        assert_eq!(
+            ring_planar_area(&rings[0]),
+            100.0,
+            "largest ring promoted to exterior"
+        );
+        assert_eq!(
+            ring_planar_area(&rings[1]),
+            4.0,
+            "smaller ring becomes the hole"
+        );
+    }
+
+    #[test]
+    fn sanitize_geojson_leaves_conforming_polygon_untouched() {
+        // a well-formed polygon (exterior first and largest, hole strictly inside) must be a no-op:
+        // same ring count and same order, so valid GeoJSON is never perturbed.
+        let exterior = serde_json::json!([
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0]
+        ]);
+        let hole = serde_json::json!([[2.0, 2.0], [4.0, 2.0], [4.0, 4.0], [2.0, 4.0], [2.0, 2.0]]);
+        let mut geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "ok",
+                "geometry": {"type": "Polygon", "coordinates": [exterior.clone(), hole.clone()]}
+            }]
+        });
+        sanitize_geojson_for_render(&mut geojson);
+        let rings = geojson["features"][0]["geometry"]["coordinates"]
+            .as_array()
+            .expect("polygon rings array");
+        assert_eq!(rings.len(), 2);
+        assert_eq!(rings[0], exterior, "exterior unchanged and still first");
+        assert_eq!(rings[1], hole, "hole unchanged and still second");
+    }
+
+    #[test]
+    fn load_geojson_invokes_sanitizer() {
+        // wiring guard: this bug is invisible at qsv runtime (the binary exits 0 and writes
+        // valid-looking HTML; the crash only happens later in the browser). The unit tests above
+        // cover the sanitizer LOGIC, but nothing else asserts that `load_geojson` actually CALLS it
+        // — drop that one line in a refactor and every other test still passes while the bug
+        // returns. So load a malformed-ring file through the real entry point and assert it
+        // comes back fixed.
+        let dir = std::env::temp_dir();
+        let path = dir.join("qsv_viz_load_geojson_sanitize_wiring.geojson");
+        let malformed = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "bad",
+                "geometry": {"type": "MultiPolygon", "coordinates": [[
+                    // degenerate sliver listed first (the bogus "exterior") ...
+                    [[1.0, 1.0], [1.5, 1.5], [1.0, 1.0], [1.0, 1.0]],
+                    // ... then the real, larger boundary listed as a "hole"
+                    [[0.0, 0.0], [10.0, 0.0], [10.0, 10.0], [0.0, 10.0], [0.0, 0.0]]
+                ]]}
+            }]
+        });
+        std::fs::write(&path, serde_json::to_vec(&malformed).unwrap()).unwrap();
+
+        let loaded = load_geojson(path.to_str().unwrap()).expect("load_geojson");
+        let _ = std::fs::remove_file(&path);
+
+        let rings = loaded["features"][0]["geometry"]["coordinates"][0]
+            .as_array()
+            .expect("polygon rings array");
+        assert_eq!(
+            rings.len(),
+            1,
+            "load_geojson must drop the degenerate sliver ring"
+        );
+        assert_eq!(
+            ring_planar_area(&rings[0]),
+            100.0,
+            "load_geojson must promote the real boundary to the exterior"
+        );
+    }
+
+    #[test]
+    fn sanitize_geojson_drops_collinear_zero_area_rings() {
+        // a ring can have 3+ DISTINCT vertices yet zero area when they are collinear
+        // ([[0,0],[1,1],[2,2]] closed). The distinct-vertex count alone does NOT catch it, but it
+        // is just as non-renderable: as a sub-polygon's only ring it leaves plotly's
+        // MultiPolygon centroid with no positive-area sub-polygon and reproduces the
+        // blank-panel crash. So it must be dropped, and a feature left with no renderable
+        // polygon must be dropped too.
+        let collinear = serde_json::json!([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0], [0.0, 0.0]]);
+        let real = serde_json::json!([
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0]
+        ]);
+        let collinear_hole = serde_json::json!([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0], [3.0, 3.0]]);
+        let mut geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [
+                // a MultiPolygon whose only ring is collinear -> no renderable polygon -> dropped.
+                {"type": "Feature", "id": "collinear_only",
+                 "geometry": {"type": "MultiPolygon", "coordinates": [[collinear]]}},
+                // a valid polygon carrying a collinear (zero-area) hole -> hole stripped, kept.
+                {"type": "Feature", "id": "valid",
+                 "geometry": {"type": "Polygon", "coordinates": [real, collinear_hole]}}
+            ]
+        });
+        sanitize_geojson_for_render(&mut geojson);
+
+        let feats = geojson["features"].as_array().expect("features array");
+        assert_eq!(
+            feats.len(),
+            1,
+            "the collinear-only feature is dropped entirely"
+        );
+        assert_eq!(feats[0]["id"], "valid", "the renderable feature survives");
+        let rings = feats[0]["geometry"]["coordinates"]
+            .as_array()
+            .expect("polygon rings array");
+        assert_eq!(rings.len(), 1, "the collinear zero-area hole is stripped");
+        assert_eq!(
+            ring_planar_area(&rings[0]),
+            100.0,
+            "the real exterior is kept"
+        );
     }
 }

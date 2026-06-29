@@ -745,9 +745,9 @@ fn pearson(a: &[f64], b: &[f64]) -> f64 {
     for (x, y) in a.iter().zip(b) {
         let da = x - mean_a;
         let db = y - mean_b;
-        cov += da * db;
-        var_a += da * da;
-        var_b += db * db;
+        cov = da.mul_add(db, cov);
+        var_a = da.mul_add(da, var_a);
+        var_b = db.mul_add(db, var_b);
     }
     if var_a <= 0.0 || var_b <= 0.0 {
         0.0
@@ -799,7 +799,7 @@ fn cholesky(corr: &[Vec<f64>], ridge: f64) -> Option<Vec<Vec<f64>>> {
                 sum += ridge;
             }
             for m in 0..j {
-                sum -= l[i][m] * l[j][m];
+                sum = l[i][m].mul_add(-l[j][m], sum);
             }
             if i == j {
                 if sum <= 1e-12 {

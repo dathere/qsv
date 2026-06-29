@@ -4693,9 +4693,11 @@ fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str
 /// shared by both HTML render paths (the inline-div grid and the single typed-`Plot` grid).
 /// Page chrome is driven by CSS variables (`--qsv-page-bg`/`--qsv-page-ink`/`--qsv-geo-meta`)
 /// so flipping `body.qsv-dark` recolors the page instantly, while the script calls
-/// `Plotly.relayout` on every live graph div to recolor the plots themselves. `theme` only
-/// decides the *default* mode when the viewer has no saved/OS preference (dark built-in themes
-/// open dark). Known limitation: geo/scene/polar/pie panels flip their background, font, and
+/// `Plotly.relayout` on every live graph div to recolor the plots themselves. An explicit
+/// `theme` is authoritative — it sets the initial mode and wins over any saved/OS preference
+/// (so `--theme plotly_dark` always opens dark); only an unthemed dashboard (`theme == None`)
+/// defers to the viewer's saved choice then OS preference. Known limitation: geo/scene/polar/pie
+/// panels flip their background, font, and
 /// container color, but basemap fills, mapbox tiles, and trace marker colors do NOT re-theme
 /// (that would need a trace-type-aware `Plotly.restyle`, which is out of scope here).
 struct ToggleChrome {
@@ -4709,10 +4711,11 @@ struct ToggleChrome {
 
 fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
     let (light_bg, light_ink, light_geo_meta) = theme_page_chrome(theme);
-    // Three-state initial mode (overridable by a saved localStorage choice). An EXPLICIT
-    // `--theme` opens in that theme's implied mode — dark for the dark built-ins, light for every
-    // other (light) built-in — so e.g. `--theme plotly_white` is NOT overridden by a dark-mode OS.
-    // Only with no `--theme` at all do we defer to the viewer's `prefers-color-scheme`.
+    // Three-state initial mode. An EXPLICIT `--theme` is authoritative: it opens in that theme's
+    // implied mode — dark for the dark built-ins, light for every other (light) built-in — and is
+    // NOT overridden by a saved localStorage choice or a dark-mode OS (see `isDark()`). Only with
+    // no `--theme` at all (`"system"`) do we defer to the saved choice, then
+    // `prefers-color-scheme`.
     let default_mode = match theme {
         None => "system",
         Some(BuiltinTheme::PlotlyDark | BuiltinTheme::SeabornDark) => "dark",
@@ -4781,13 +4784,18 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
   var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
   var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
   function isDark() {
+    // An explicit --theme is authoritative: it wins over a stale cross-dashboard
+    // saved preference (the localStorage key is shared across all qsv viz pages,
+    // so a "light" toggle on one dashboard must not override --theme plotly_dark
+    // on another).
+    if (themeDefaultMode === "dark") return true;
+    if (themeDefaultMode === "light") return false;
+    // No --theme: defer to the viewer's saved choice, then OS preference.
     try {
       var saved = localStorage.getItem("qsv-viz-theme");
       if (saved === "dark") return true;
       if (saved === "light") return false;
     } catch (e) {}
-    if (themeDefaultMode === "dark") return true;
-    if (themeDefaultMode === "light") return false;
     return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
   }
   function buildUpdate(gd, p) {

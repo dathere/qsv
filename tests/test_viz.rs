@@ -3724,6 +3724,20 @@ fn viz_smart_inline_theme_drives_page_chrome() {
     assert!(html.contains(r#"var themeDefaultMode = "dark""#));
     // and the panels themselves carry the dark template
     assert!(html.contains(r#""template":{"layout""#));
+    // regression: an explicit --theme is authoritative. isDark() must consult themeDefaultMode
+    // BEFORE the saved localStorage value, so a stale cross-dashboard "light" preference (the
+    // key is shared across all qsv viz pages) can't override --theme plotly_dark and leave a
+    // dark page with light charts.
+    let theme_check = html
+        .find(r#"if (themeDefaultMode === "dark") return true;"#)
+        .expect("isDark() should check themeDefaultMode");
+    let saved_check = html
+        .find(r#"localStorage.getItem("qsv-viz-theme")"#)
+        .expect("isDark() should read the saved preference");
+    assert!(
+        theme_check < saved_check,
+        "isDark() must check themeDefaultMode before localStorage so an explicit --theme wins"
+    );
 }
 
 #[test]

@@ -4842,7 +4842,10 @@ fn logo_markup() -> String {
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
 const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
   body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; }
-  #qsv-theme-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
+  /* Bottom-right, stacked just above the #qsv-logo: keeps the toggle clear of the Plotly modebar
+     (always top-right, and hover-revealed) — which would otherwise overlap and block the modebar's
+     rightmost buttons, including the fullscreen toggle — and of the geo extent menus (top-left). */
+  #qsv-theme-toggle { position: fixed; bottom: 50px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
   #qsv-theme-toggle:hover { opacity: 1; }"#;
 
 /// The light/dark toggle `<script>` for `toggle_chrome`. Token placeholders are substituted at

@@ -1170,6 +1170,14 @@ fn format_description(lines: &[String]) -> String {
     // When an indented block is emitted as a fenced code block, the outer loop
     // resumes here, skipping the lines already consumed.
     let mut skip_until = 0usize;
+    // Source indentation of the FIRST bullet in the current list run; nested
+    // bullets are emitted indented relative to it so deeper source bullets render
+    // as nested markdown lists. Uniform-indent lists keep relative 0 (byte-for-byte
+    // unchanged). Reset when a blank line ends the run.
+    let mut list_base_indent: Option<usize> = None;
+    // Markdown indent (in spaces) for continuation lines of the current list item;
+    // 0 for top-level items so flush-left lazy continuations stay unchanged.
+    let mut cur_item_content_indent = 0usize;
 
     for (i, line) in lines.iter().enumerate() {
         if i < skip_until {
@@ -1294,6 +1302,8 @@ fn format_description(lines: &[String]) -> String {
         if trimmed.is_empty() {
             // A blank line ends any in-progress list.
             in_list = false;
+            list_base_indent = None;
+            cur_item_content_indent = 0;
             if !prev_empty {
                 md.push('\n');
                 prev_empty = true;
@@ -1320,18 +1330,29 @@ fn format_description(lines: &[String]) -> String {
             continue;
         }
 
-        // Bullet list items
+        // Bullet list items. Indent relative to the run's first bullet so deeper
+        // source bullets nest in the rendered markdown; uniform-indent lists emit
+        // relative 0 (unchanged). Continuation lines of a nested item are aligned
+        // under its text (rel + len("- ")).
         if trimmed.starts_with("* ") || trimmed.starts_with("- ") {
             in_list = true;
+            let indent = leading_spaces(line);
+            let base = *list_base_indent.get_or_insert(indent);
+            let rel = indent.saturating_sub(base);
+            cur_item_content_indent = if rel > 0 { rel + 2 } else { 0 };
+            if rel > 0 {
+                md.push_str(&" ".repeat(rel));
+            }
             md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
             continue;
         }
 
-        // Numbered list items
+        // Numbered list items (treated as top-level for continuation purposes)
         if trimmed.chars().next().is_some_and(|c| c.is_ascii_digit()) && trimmed.contains(". ") {
             in_list = true;
+            cur_item_content_indent = 0;
             md.push_str(&linkify_bare_urls(trimmed));
             md.push('\n');
             prev_empty = false;
@@ -1360,7 +1381,11 @@ fn format_description(lines: &[String]) -> String {
             continue;
         }
 
-        // Regular paragraph text
+        // Regular paragraph text. While inside a nested list item, align wrapped
+        // continuation lines under the item's text so they stay part of it.
+        if in_list && cur_item_content_indent > 0 {
+            md.push_str(&" ".repeat(cur_item_content_indent));
+        }
         md.push_str(&linkify_bare_urls(trimmed));
         maybe_append_colon_break(&mut md, trimmed);
         md.push('\n');
@@ -2913,6 +2938,55 @@ mod tests {
             !md.contains("```text"),
             "list-item continuation should not be fenced, got:\n{md}"
         );
+    }
+
+    #[test]
+    fn test_nested_bullets_indented_relative_to_run() {
+        // Deeper source bullets nest under their parent (indented by the relative
+        // step), wrapped continuation lines align under the item's text, and
+        // siblings at the parent level stay flush-left.
+        let input = lines(&[
+            "Overview:",
+            "    - parent bullet:",
+            "        - child one that wraps",
+            "          onto a second line",
+            "        - child two",
+            "    - sibling parent",
+        ]);
+        let md = format_description(&input);
+        assert!(
+            md.contains("\n- parent bullet:\n"),
+            "parent flush-left, got:\n{md}"
+        );
+        assert!(
+            md.contains("\n    - child one that wraps\n"),
+            "child nests, got:\n{md}"
+        );
+        assert!(
+            md.contains("\n      onto a second line\n"),
+            "child continuation aligns under text, got:\n{md}"
+        );
+        assert!(
+            md.contains("\n    - child two\n"),
+            "second child nests, got:\n{md}"
+        );
+        assert!(
+            md.contains("\n- sibling parent\n"),
+            "sibling parent flush-left, got:\n{md}"
+        );
+    }
+
+    #[test]
+    fn test_uniform_indent_bullets_stay_flush_left() {
+        // A list whose bullets all share one indent renders flush-left, with no
+        // spurious nesting (guards the relative-indent logic's unchanged path).
+        let input = lines(&["Items:", "    - one", "    - two", "    - three"]);
+        let md = format_description(&input);
+        assert!(
+            !md.contains("    - "),
+            "uniform list must not indent, got:\n{md}"
+        );
+        assert!(md.contains("\n- one\n- two\n- three\n"), "got:\n{md}");
     }
 
     #[test]

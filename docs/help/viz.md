@@ -78,26 +78,26 @@ a 3D scatter of the strongest triple is added too.
 - time-series line, when an auto-detected date/datetime column and a
 continuous numeric column both exist.
 - geographic map, when a latitude/longitude pair is detected:
-- HTML uses a Mapbox tile map for a local extent, or an offline
-ScatterGeo projection world-overview for continental/global data.
-- static image export uses an offline ScatterGeo fit to the data extent
-(US-spanning data uses albers-usa); tile maps and 3D panels stay
-HTML-only, as tile maps need network tiles.
-- geographic outliers (points beyond the Tukey far-out fence of
-distances from the cluster centroid) get a distinct marker and are
-excluded from the spatial extent; the map zooms to the core, with a
-dotted no-fill box marking the full extent and (in HTML) Core/Full
-extent buttons. Outliers within the core's jurisdiction don't trigger
-the extent call-out.
-- with the `geocode` feature, the core extent (4 corners + center) is
-reverse-geocoded against the local Geonames index and drawn as a
-labeled bounding box with a location summary (e.g. "New York & New
-Jersey, United States"); outliers are called out with their count and
-jurisdiction. HTML points reveal city/state/country on hover (static
-exports omit it). The first run may download the index (~13MB, cached
-in ~/.qsv-cache); offline, the map renders without the overlay.
-- extents spanning the antimeridian (>180 degrees of longitude) are
-skipped.
+    - HTML uses a Mapbox tile map for a local extent, or an offline
+      ScatterGeo projection world-overview for continental/global data.
+    - static image export uses an offline ScatterGeo fit to the data extent
+      (US-spanning data uses albers-usa); tile maps and 3D panels stay
+      HTML-only, as tile maps need network tiles.
+    - geographic outliers (points beyond the Tukey far-out fence of
+      distances from the cluster centroid) get a distinct marker and are
+      excluded from the spatial extent; the map zooms to the core, with a
+      dotted no-fill box marking the full extent and (in HTML) Core/Full
+      extent buttons. Outliers within the core's jurisdiction don't trigger
+      the extent call-out.
+    - with the `geocode` feature, the core extent (4 corners + center) is
+      reverse-geocoded against the local Geonames index and drawn as a
+      labeled bounding box with a location summary (e.g. "New York & New
+      Jersey, United States"); outliers are called out with their count and
+      jurisdiction. HTML points reveal city/state/country on hover (static
+      exports omit it). The first run may download the index (~13MB, cached
+      in ~/.qsv-cache); offline, the map renders without the overlay.
+    - extents spanning the antimeridian (>180 degrees of longitude) are
+      skipped.
 
 
 <a name="examples"></a>

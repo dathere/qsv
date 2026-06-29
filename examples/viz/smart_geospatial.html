@@ -24,6 +24,7 @@
   body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }
   #qsv-theme-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; font: 13px Helvetica Neue, Helvetica, Arial, sans-serif; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
   #qsv-theme-toggle:hover { opacity: 1; }
+  .js-plotly-plot:fullscreen { background: var(--qsv-page-bg, #ffffff); }
   .qsv-viz-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }
   .qsv-viz-cell { min-width: 0; }
   .qsv-viz-cell.full-width { grid-column: 1 / -1; }
@@ -125,6 +126,48 @@
       </div>
     </div>
 </div>
+<script>
+(function () {
+  var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
+  var button = {
+    name: "qsv-fullscreen",
+    title: "Toggle fullscreen",
+    icon: icon,
+    click: function (gd) {
+      try {
+        // requestFullscreen/exitFullscreen return a promise that rejects without transient user
+        // activation (or when a Permissions-Policy blocks fullscreen); swallow it so it doesn't
+        // surface as an unhandled rejection.
+        var p = document.fullscreenElement ? document.exitFullscreen() : gd.requestFullscreen();
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+  };
+  function enhance(gd) {
+    gd.__qsvFs = true;
+    try {
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      gd.addEventListener("fullscreenchange", function () {
+        try { Plotly.Plots.resize(gd); } catch (e) {}
+      });
+    } catch (e) {}
+  }
+  var tries = 0;
+  function init() {
+    if (typeof Plotly === "undefined") { if (tries++ < 100) setTimeout(init, 50); return; }
+    var pending = false;
+    document.querySelectorAll(".plotly-graph-div").forEach(function (gd) {
+      if (gd.__qsvFs) return;
+      if (gd.data) enhance(gd);
+      else pending = true;
+    });
+    if (pending && tries++ < 100) setTimeout(init, 50);
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
+  else setTimeout(init, 0);
+})();
+</script>
 <script>
 (function () {
   var themeDefaultMode = "dark";

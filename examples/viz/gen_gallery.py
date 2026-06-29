@@ -570,7 +570,10 @@ def main():
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
                 f'<figure class="cell full">{figcaption_html(title, desc, args)}'
+                # allow fullscreen so each dashboard's in-iframe Plotly "Fullscreen" modebar
+                # button (gd.requestFullscreen()) isn't blocked by the iframe permissions policy.
                 f'<iframe src="{iframe_name}" class="dash" scrolling="no" loading="lazy" '
+                f'allowfullscreen allow="fullscreen" '
                 f'title="{title}"></iframe></figure>'
             )
             continue

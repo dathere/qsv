@@ -24,10 +24,12 @@ you expect. The per-figure commands below are mirrored in README.md.
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
 import tempfile
+from html import escape as html_escape
 
 VIZ_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(VIZ_DIR))
@@ -70,6 +72,13 @@ PREGENERATED = {
 # no trailing whitespace. The height here is just an initial value before the first height message.
 DASH_CSS = ("figure.full iframe.dash{width:100%;border:0;height:600px;display:block;"
             "border-radius:6px;overflow:hidden}")
+
+# Styling for the per-figure, copy-pasteable `qsv viz` command block rendered under each
+# description. `<pre>` preserves the single-line command and monospaces it; overflow-x:auto lets a
+# long command scroll horizontally rather than wrap, so a copy-paste stays intact.
+CMD_CSS = ("figure pre.cmd{background:#f3f5f9;border-radius:6px;padding:8px 10px;"
+           "margin:6px 4px 0;overflow-x:auto;font:11.5px/1.4 SFMono-Regular,"
+           "Consolas,Menlo,monospace;color:#2A3F5F}")
 
 # Injected into each smart_*.html so the dashboard reports its real rendered height to the parent
 # gallery. postMessage works cross-origin (e.g. when the gallery is opened over file://), unlike
@@ -313,6 +322,26 @@ def find_qsv():
     sys.exit("qsv binary not found: build it (cargo build --bin qsv -F all_features) or set QSV_BIN")
 
 
+def viz_command(title, args):
+    """The copy-pasteable `qsv viz` command for a figure, runnable from this directory.
+
+    Dataset paths in `args` are already relative to examples/viz; a slugged `-o <slug>.html`
+    (derived from the unique title) is appended so the command writes a viewable artifact
+    instead of flooding stdout. This is display text only — `gen_gallery.py` runs each figure
+    into a tempfile, so no example output file is written to the tree."""
+    slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
+    parts = " ".join(shlex.quote(a) for a in args)
+    return f"qsv viz {parts} -o {slug}.html"
+
+
+def figcaption_html(title, desc, args):
+    """A figure's `<figcaption>`: title, description, then the runnable command block."""
+    cmd = html_escape(viz_command(title, args))
+    return (f'<figcaption><span class="t">{title}</span>'
+            f'<span class="d">{desc}</span>'
+            f'<pre class="cmd"><code>{cmd}</code></pre></figcaption>')
+
+
 def scan_object(html, brace_start):
     """Brace-scan the balanced {...} object starting at brace_start; return (obj, end_index)."""
     assert html[brace_start] == "{", f"expected object at {brace_start}, got {html[brace_start]!r}"
@@ -431,6 +460,9 @@ def main():
     # reused verbatim across runs) so the current DASH_CSS always wins.
     head = re.sub(r"\s*figure\.full iframe\.dash\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + DASH_CSS + "\n</style>", 1)
+    # per-figure command block styling (idempotent: drop any prior rule before re-adding)
+    head = re.sub(r"\s*figure pre\.cmd\{[^}]*\}", "", head)
+    head = head.replace("</style>", " " + CMD_CSS + "\n</style>", 1)
 
     figs, fig_divs, plots = [], [], []
     for idx, fig in enumerate(FIGURES):
@@ -451,8 +483,7 @@ def main():
                     fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
-                f'<figure class="cell full"><figcaption><span class="t">{title}</span>'
-                f'<span class="d">{desc}</span></figcaption>'
+                f'<figure class="cell full">{figcaption_html(title, desc, args)}'
                 f'<iframe src="{iframe_name}" class="dash" scrolling="no" loading="lazy" '
                 f'title="{title}"></iframe></figure>'
             )
@@ -468,8 +499,7 @@ def main():
             cells = "".join(
                 f'<div id="{gid}-p{k}" style="height:340px"></div>' for k in range(len(panels)))
             fig_divs.append(
-                f'<figure class="cell full"><figcaption><span class="t">{title}</span>'
-                f'<span class="d">{desc}</span></figcaption>'
+                f'<figure class="cell full">{figcaption_html(title, desc, args)}'
                 f'<div style="display:grid;grid-template-columns:repeat({cols},minmax(0,1fr));'
                 f'gap:14px">{cells}</div></figure>'
             )
@@ -483,9 +513,8 @@ def main():
             figs.append(result["fig"])
             cls = "cell full" if full else "cell"
             fig_divs.append(
-                f'<figure class="{cls}"><figcaption><span class="t">{title}</span>'
-                f'<span class="d">{desc}</span></figcaption><div id="{gid}" class="plot"></div>'
-                f'</figure>'
+                f'<figure class="{cls}">{figcaption_html(title, desc, args)}'
+                f'<div id="{gid}" class="plot"></div></figure>'
             )
             plots.append(
                 f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '

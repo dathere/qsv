@@ -17,15 +17,15 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The nine **smart dashboards** are embedded as `<iframe>`s of their genuine
+The ten **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
 them. Those iframe sources are the real output with the inline plotly bundle swapped for the
-same CDN tag (so they stay a few KB each); they need a network connection to render. Three of
-them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_choropleth.html`) are
-`--dictionary infer` examples that need a local LLM to regenerate, so `gen_gallery.py` reuses the
-committed copies instead of re-running the LLM.
+same CDN tag (so they stay a few KB each); they need a network connection to render. Four of
+them (`smart_dict_treemap.html`, `smart_dict_sunburst.html`, `smart_world_choropleth.html`,
+`smart_nyc311.html`) are `--dictionary infer` examples that need a local LLM to regenerate, so
+`gen_gallery.py` reuses the committed copies instead of re-running the LLM.
 
 **▶ View it rendered** (GitHub Pages, served with the correct `text/html` type):
 
@@ -58,6 +58,7 @@ as `text/plain`, so a browser won't render it):
 | `customer_spend.csv` | 300 customers: a bimodal `monthly_spend`, a right-skewed `account_age_days`, plan/region categoricals, an ID | `smart --smarter` (moarstats-informed: histogram + box hints) |
 | `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2) | `smart --smarter --geojson japan_prefectures.geojson --feature-id-key properties.id` (the full geospatial dashboard: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
+| `nyc_311.csv` + `nyc_neighborhoods.geojson` | **10,000-row** sample of NYC 311 service requests (2010–2020): 41 columns incl. `Latitude`/`Longitude`, `Borough`, `Agency`, `Complaint Type`, `Status`, several date columns, and `X`/`Y Coordinate (State Plane)`, plus a custom GeoJSON of **188 NYC neighborhoods** keyed by top-level `id` | `smart --smarter --dictionary infer --geojson nyc_neighborhoods.geojson` (full municipal dashboard: dense point map + **neighborhood choropleth on a MapLibre tile basemap via point-in-polygon binning** + correlation + time-series + boxes + bars, with LLM-inferred field labels) |
 
 ## The smart dashboard
 
@@ -174,6 +175,17 @@ qsv viz smart delivery_stops.csv -o delivery_dashboard.html
 # Rendered with the built-in plotly_dark theme (--theme works on every chart type, incl. smart).
 qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 \
     --geojson japan_prefectures.geojson --feature-id-key properties.id -o seismic_dashboard.html
+
+# the same point-in-polygon choropleth, but on a CITY-scale dataset: 10k NYC 311 requests binned
+# into 188 neighborhood polygons. Because the matched regions span a metro extent (under ~8° in
+# both lat and lon), viz smart draws the filled regions on an interactive MapLibre TILE basemap
+# (token-free carto tiles, fine street/coastline detail) instead of the coarse projection basemap
+# it uses for country/continental choropleths — see the metro-choropleth gallery figure. (The
+# --feature-id-key defaults to the GeoJSON's top-level `id`, so it's omitted here.) --dictionary
+# infer adds LLM-inferred field labels; it needs a reachable local LLM (set QSV_TIMEOUT generously
+# for slower local models).
+qsv viz smart nyc_311.csv --smarter --dictionary infer \
+    --geojson nyc_neighborhoods.geojson -o nyc311_dashboard.html
 ```
 
 ### dictionary-guided hierarchy panels (treemap / sunburst)

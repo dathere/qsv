@@ -4916,6 +4916,91 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
 })();
 </script>"##;
 
+/// `<style>` body for the fullscreen modebar button. A single `:fullscreen` rule gives the
+/// fullscreened graph div an opaque, theme-aware background so the desktop doesn't bleed through.
+/// `var(--qsv-page-bg, #ffffff)` resolves to the page background on `viz smart` pages (which
+/// define the var) and falls back to white on the plain single-chart document (no qsv CSS vars).
+const FULLSCREEN_STYLE: &str =
+    "  .js-plotly-plot:fullscreen { background: var(--qsv-page-bg, #ffffff); }";
+
+/// A self-contained `<script>` that adds a custom "Fullscreen" button to every plot's modebar.
+///
+/// The plotly-rs `Configuration` we use can't carry a JS `click` handler, and a custom modebar
+/// button can only be added to an already-rendered plot reliably by re-running
+/// `Plotly.newPlot(gd, gd.data, gd.layout, cfg)` with `modeBarButtonsToAdd` (`Plotly.react`
+/// historically ignores `config` changes, and a DOM-appended `.modebar-btn` gets wiped whenever
+/// plotly rebuilds the modebar — e.g. on the theme toggle's `relayout`). So we re-render every
+/// graph div once with the button added. The button toggles the native Fullscreen API on the
+/// graph div; a `fullscreenchange` listener resizes the plot on both enter and exit.
+///
+/// plotly's own render runs in a deferred `<script type="module">` with a top-level
+/// `await Plotly.newPlot(...)`, which `DOMContentLoaded` does NOT wait for — so we can't assume the
+/// plots are rendered when we first run. We therefore POLL: each `.plotly-graph-div` is enhanced
+/// only once its `gd.data` is populated (marked with a `__qsvFs` flag so it's done exactly once),
+/// retrying briefly until every div is ready (capped so a render error can't loop forever). Raw
+/// string (like `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
+const FULLSCREEN_SCRIPT: &str = r##"<script>
+(function () {
+  var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
+  var button = {
+    name: "qsv-fullscreen",
+    title: "Toggle fullscreen",
+    icon: icon,
+    click: function (gd) {
+      try {
+        // requestFullscreen/exitFullscreen return a promise that rejects without transient user
+        // activation (or when a Permissions-Policy blocks fullscreen); swallow it so it doesn't
+        // surface as an unhandled rejection.
+        var p = document.fullscreenElement ? document.exitFullscreen() : gd.requestFullscreen();
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+  };
+  function enhance(gd) {
+    gd.__qsvFs = true;
+    try {
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      gd.addEventListener("fullscreenchange", function () {
+        try { Plotly.Plots.resize(gd); } catch (e) {}
+      });
+    } catch (e) {}
+  }
+  var tries = 0;
+  function init() {
+    if (typeof Plotly === "undefined") { if (tries++ < 100) setTimeout(init, 50); return; }
+    var pending = false;
+    document.querySelectorAll(".plotly-graph-div").forEach(function (gd) {
+      if (gd.__qsvFs) return;
+      if (gd.data) enhance(gd);
+      else pending = true;
+    });
+    if (pending && tries++ < 100) setTimeout(init, 50);
+  }
+  if (document.readyState === "loading")
+    document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
+  else setTimeout(init, 0);
+})();
+</script>"##;
+
+/// Splice the fullscreen `<style>` + `<script>` into a full HTML document immediately before the
+/// closing `</body>` (so the script runs after plotly's own `Plotly.newPlot` script tags). Used
+/// for the plain single-chart document produced by `Plot::to_html`; the `viz smart` pages embed
+/// the same constants directly in `smart_html_page`. Falls back to appending at the end if no
+/// `</body>` is present (defensive against future plotly template changes).
+fn inject_fullscreen_chrome(doc: &str) -> String {
+    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{FULLSCREEN_SCRIPT}\n");
+    match doc.rfind("</body>") {
+        Some(idx) => {
+            let mut out = String::with_capacity(doc.len() + chrome.len());
+            out.push_str(&doc[..idx]);
+            out.push_str(&chrome);
+            out.push_str(&doc[idx..]);
+            out
+        },
+        None => format!("{doc}{chrome}"),
+    }
+}
+
 fn smart_html_page(
     title_text: &str,
     theme: Option<BuiltinTheme>,
@@ -4969,6 +5054,7 @@ fn smart_html_page(
   body.qsv-dark #qsv-logo .qsv-logo-dark {{ display: block; }}
   body.qsv-dark #qsv-logo img {{ filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.45)); }}
 {toggle_style}
+{FULLSCREEN_STYLE}
 {extra_style}
 </style>
 </head>
@@ -4977,6 +5063,7 @@ fn smart_html_page(
 {logo}
 {heading}
 {body}
+{FULLSCREEN_SCRIPT}
 {script}
 </body>
 </html>
@@ -5045,20 +5132,12 @@ fn output_plot(
 }
 
 fn output_html(plot: &Plot, args: &Args) -> CliResult<()> {
-    match args.flag_output.as_deref() {
-        Some(path) => plot.write_html(path),
-        None => {
-            let html = plot.to_html();
-            std::io::stdout().write_all(html.as_bytes())?;
-        },
-    }
-    if args.flag_open {
-        match args.flag_output.as_deref() {
-            Some(path) => open_path(path)?,
-            None => plot.show(),
-        }
-    }
-    Ok(())
+    // `Plot::write_html`/`Plot::show` would bypass any post-processing (write straight to disk /
+    // open plotly's own temp file), so render to a string, splice in the fullscreen modebar
+    // button, and reuse `output_inline_html` for the `--output` / stdout / `--open`-temp-file
+    // handling — the same path the `viz smart` dashboards already use.
+    let html = inject_fullscreen_chrome(&plot.to_html());
+    output_inline_html(&html, args)
 }
 
 // image formats (only reachable with the viz_static feature; guarded in run())

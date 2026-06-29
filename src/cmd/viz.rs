@@ -4721,6 +4721,28 @@ fn light_chart_palette(
     }
 }
 
+/// The chart colors `(paper, font, grid, line, zero)` the toggle's runtime DARK palette applies.
+/// Symmetric to `light_chart_palette`: a dark theme drives its own template colors so the dark
+/// view (and the dark toggle target) honors that theme's actual shade — e.g. `seaborn_dark`'s
+/// `#222222` rather than collapsing to the generic `#111111`. `plotly_dark`, the light themes,
+/// and no theme keep the generic fixed-dark set (which equals `plotly_dark`'s own colors), so
+/// those dashboards render byte-identically. Mirrors the fork's `layout::themes` values.
+fn dark_chart_palette(
+    theme: Option<BuiltinTheme>,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    match theme {
+        Some(BuiltinTheme::SeabornDark) => ("#222222", "#eaeaf2", "#444444", "#888888", "#444444"),
+        // plotly_dark, the light themes, and no theme use the generic fixed-dark set.
+        _ => ("#111111", "#f2f5fa", "#283442", "#506784", "#283442"),
+    }
+}
+
 /// The CSS, button markup, and re-theming `<script>` for the `viz smart` light/dark toggle,
 /// shared by both HTML render paths (the inline-div grid and the single typed-`Plot` grid).
 /// Page chrome is driven by CSS variables (`--qsv-page-bg`/`--qsv-page-ink`/`--qsv-geo-meta`)
@@ -4754,24 +4776,30 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
         Some(_) => "light",
     };
 
+    // The light/dark chart palettes the runtime toggle relayouts to. Each mirrors the selected
+    // theme's own template colors for that mode (so the page chrome and the charts agree), else
+    // qsv's built-in light look / the generic fixed-dark set. The dark page chrome reuses the dark
+    // chart paper/font (geo-meta stays a fixed light gray, readable on any dark page).
+    let (light_paper, light_font, light_grid, light_line, light_zero) = light_chart_palette(theme);
+    let (dark_paper, dark_font, dark_grid, dark_line, dark_zero) = dark_chart_palette(theme);
+
     // Raw-string templates with token placeholders, so the brace-heavy JS needs no `{{`/`}}`
     // escaping and rustfmt's `format_strings` (regular-string-only) won't reflow/mangle them.
     let style = STYLE_TEMPLATE
         .replace("__LIGHT_BG__", light_bg)
         .replace("__LIGHT_INK__", light_ink)
         .replace("__LIGHT_GEO_META__", light_geo_meta)
+        .replace("__DARK_BG__", dark_paper)
+        .replace("__DARK_INK__", dark_font)
+        .replace("__DARK_GEO_META__", "#9aa4b2")
         .replace("__FONT_FAMILY__", FONT_FAMILY);
 
     let button = "<button id=\"qsv-theme-toggle\" type=\"button\" aria-label=\"Toggle light/dark \
                   mode\">\u{1F313} Theme</button>"
         .to_string();
 
-    // The light palette mirrors the selected theme's own template colors for light non-default
-    // themes (so the relayout keeps charts consistent with the themed page), else qsv's built-in
-    // look; the dark palette is a fixed dark set. `buildUpdate` only sets keys present on a given
-    // graph's layout, so axis-less plots (pie) and arbitrary subplot counts both work without
-    // knowing div ids.
-    let (light_paper, light_font, light_grid, light_line, light_zero) = light_chart_palette(theme);
+    // `buildUpdate` only sets keys present on a given graph's layout, so axis-less plots (pie) and
+    // arbitrary subplot counts both work without knowing div ids.
     let script = SCRIPT_TEMPLATE
         .replace("__DEFAULT_MODE__", default_mode)
         .replace("__LIGHT_PAPER__", light_paper)
@@ -4779,6 +4807,11 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
         .replace("__LIGHT_GRID__", light_grid)
         .replace("__LIGHT_LINE__", light_line)
         .replace("__LIGHT_ZERO__", light_zero)
+        .replace("__DARK_PAPER__", dark_paper)
+        .replace("__DARK_FONT__", dark_font)
+        .replace("__DARK_GRID__", dark_grid)
+        .replace("__DARK_LINE__", dark_line)
+        .replace("__DARK_ZERO__", dark_zero)
         .replace("__GEO_LAND_LIGHT__", GEO_LAND_LIGHT)
         .replace("__GEO_WATER_LIGHT__", GEO_WATER_LIGHT)
         .replace("__GEO_LAND_DARK__", GEO_LAND_DARK)
@@ -4808,7 +4841,7 @@ fn logo_markup() -> String {
 /// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
 const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
-  body.qsv-dark { --qsv-page-bg: #111111; --qsv-page-ink: #f2f5fa; --qsv-geo-meta: #9aa4b2; }
+  body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; }
   #qsv-theme-toggle { position: fixed; top: 12px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
   #qsv-theme-toggle:hover { opacity: 1; }"#;
 
@@ -4817,7 +4850,7 @@ const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-pag
 const SCRIPT_TEMPLATE: &str = r##"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
+  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
   var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard

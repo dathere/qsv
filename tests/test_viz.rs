@@ -3774,6 +3774,44 @@ fn viz_smart_light_theme_palette_matches_chrome() {
 }
 
 #[test]
+fn viz_smart_seaborn_dark_palette_matches_chrome() {
+    // seaborn_dark is a dark theme whose own shade is #222222, not the generic #111111. Its dark
+    // chart palette and dark page chrome must both carry #222222 so the default (dark) view honors
+    // the theme instead of collapsing to a plotly_dark look.
+    let wrk = Workdir::new("viz_smart_seaborn_dark_palette_matches_chrome");
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "people.csv",
+        "--theme",
+        "seaborn_dark",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the runtime DARK palette carries seaborn_dark's own paper/font ...
+    assert!(html.contains(r##"var DARK = { paper: "#222222", plot: "#222222", font: "#eaeaf2""##));
+    // ... and the dark page chrome matches it, opening in dark mode.
+    assert!(html.contains("body.qsv-dark { --qsv-page-bg: #222222;"));
+    assert!(html.contains(r#"var themeDefaultMode = "dark""#));
+}
+
+#[test]
 fn viz_smart_grid_has_theme_toggle() {
     // the common ≤8-panel case: the single typed-Plot grid is now wrapped in qsv's own HTML
     // page so it carries the always-on light/dark toggle (plotly's to_html() has no hook).

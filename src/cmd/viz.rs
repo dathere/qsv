@@ -44,44 +44,45 @@ Chart types (subcommands):
                 column, --value/--agg the measure (row counts if omitted). Defaults
                 to a token-free projection basemap; --map switches to MapLibre tiles.
 
-`qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
-frequency caches. Continuous numeric columns become box plots (quartiles from the stats
-cache; sample points are overlaid by a size heuristic - see --box-points), and
-low-cardinality / boolean columns become frequency bar charts. ID-like (near-unique) and
-all-empty columns are skipped. When the dataset has two or more continuous numeric columns,
-a correlation heatmap panel is added (one extra data pass to compute Pearson correlations),
-and if the most strongly correlated pair is at least moderately correlated, a drill-down of
-that pair is added beside it: a scatter, or a 2D density contour for large datasets where a
-scatter would overplot; with three or more numeric columns, a 3D scatter of the
-strongest-correlation triple is added too. When the dataset has a date/datetime column
-(auto-detected via stats date inference) plus a continuous numeric column, a time-series
-line panel over time is added. When a latitude/longitude column pair is detected, a
-geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local extent or an
-offline ScatterGeo projection world-overview for continental/global data. For static image
-export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
-Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. Points that lie
-far from the cluster centroid (distance beyond the Tukey far-out fence of all points' distances) are
-flagged as geographic outliers: they're drawn with a distinct marker, excluded from the spatial
-extent (so a few strays don't inflate it), and the map zooms tightly to the core extent (outliers
-may then sit off-screen until you zoom out). When those outliers fall within the same jurisdiction
-as the core, the spatial-extent label's outlier call-out is suppressed (they're the cluster's far
-edge, not strays elsewhere). When qsv is built with the `geocode` feature, the map's (core) spatial extent
-(its 4 bounding-box corners + center) is reverse-geocoded against the local Geonames index and
-drawn on the map as a bounding box with labeled points, plus a consolidated location summary below
-it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
-count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). When there are outliers, a second
-dotted box with no fill marks the full extent (core + outliers), so the strays' span is visible
-alongside the core box, and the interactive HTML map gets "Core extent" / "Full extent" buttons to
-jump between the two views (the map opens at the tight core view). In HTML the points reveal their
-city/state/country on hover; static exports show the box without hover. The first such run may
-download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
-still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)
-are skipped. These overview
-panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
-on their own full-width row; the per-column box/bar/histogram panels flow below in the
-multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
-are fast.
+`qsv viz smart` builds a one-page dashboard of subplots, reusing qsv's stats and
+frequency caches (the first run computes & caches stats; later runs are fast). It
+auto-picks panels, so no --x/--y is needed:
+
+  Per-column panels (flow in the grid below the overview rows, see --grid-cols):
+    - continuous numeric -> box plot (quartiles from the stats cache; sample
+      points overlaid by a size heuristic, see --box-points)
+    - low-cardinality / boolean -> frequency bar chart
+    - ID-like (near-unique) and all-empty columns are skipped
+
+  Overview panels (each leads the dashboard on its own full-width row):
+    - correlation heatmap, when 2+ continuous numeric columns exist (one extra
+      data pass for Pearson correlations). If the strongest pair is at least
+      moderately correlated, a drill-down is added beside it: a scatter (or a 2D
+      density contour for large, overplotting datasets); with 3+ numeric columns,
+      a 3D scatter of the strongest triple is added too.
+    - time-series line, when an auto-detected date/datetime column and a
+      continuous numeric column both exist.
+    - geographic map, when a latitude/longitude pair is detected:
+        - HTML uses a Mapbox tile map for a local extent, or an offline
+          ScatterGeo projection world-overview for continental/global data.
+        - static image export uses an offline ScatterGeo fit to the data extent
+          (US-spanning data uses albers-usa); tile maps and 3D panels stay
+          HTML-only, as tile maps need network tiles.
+        - geographic outliers (points beyond the Tukey far-out fence of
+          distances from the cluster centroid) get a distinct marker and are
+          excluded from the spatial extent; the map zooms to the core, with a
+          dotted no-fill box marking the full extent and (in HTML) Core/Full
+          extent buttons. Outliers within the core's jurisdiction don't trigger
+          the extent call-out.
+        - with the `geocode` feature, the core extent (4 corners + center) is
+          reverse-geocoded against the local Geonames index and drawn as a
+          labeled bounding box with a location summary (e.g. "New York & New
+          Jersey, United States"); outliers are called out with their count and
+          jurisdiction. HTML points reveal city/state/country on hover (static
+          exports omit it). The first run may download the index (~13MB, cached
+          in ~/.qsv-cache); offline, the map renders without the overlay.
+        - extents spanning the antimeridian (>180 degrees of longitude) are
+          skipped.
 
 Examples:
   # Auto-dashboard for a dataset, opened in the browser
@@ -2470,6 +2471,82 @@ fn choropleth_hover_text(
             lines.join("<br>")
         })
         .collect()
+}
+
+/// Build the dataset portion of a map point's hover (no coordinates, no geocoded place): a bold
+/// identifier line (when `id_value` is non-empty), then one `label: value` line per non-empty
+/// `extra` field. Every value/label is HTML-escaped. The trailing `lat, lon` line and any
+/// reverse-geocoded place are added by `assemble_map_hover`.
+fn format_map_dataset_line(id_value: Option<&str>, extra: &[(String, String)]) -> String {
+    let mut lines: Vec<String> = Vec::with_capacity(extra.len() + 1);
+    if let Some(id) = id_value.filter(|s| !s.is_empty()) {
+        lines.push(format!("<b>{}</b>", escape_hover(id)));
+    }
+    for (label, value) in extra {
+        if !value.is_empty() {
+            lines.push(format!("{}: {}", escape_hover(label), escape_hover(value)));
+        }
+    }
+    lines.join("<br>")
+}
+
+/// Assemble a map point's full hover string from its dataset line (see `format_map_dataset_line`),
+/// the reverse-geocoded place (`geo_place`, already gap-filtered + escaped; empty when none), and
+/// its coordinates. When the dataset has no identifier column (`has_id` is false) the geocoded
+/// place serves as the bold identifier; otherwise it's an additional location-context line. The
+/// trailing line is always `lat, lon` (4 dp). Attached via `.hover_text_array(..)` +
+/// `HoverInfo::Text`.
+fn assemble_map_hover(
+    dataset_line: &str,
+    has_id: bool,
+    geo_place: &str,
+    lat: f64,
+    lon: f64,
+) -> String {
+    let mut lines: Vec<String> = Vec::with_capacity(3);
+    if !has_id && !geo_place.is_empty() {
+        // no identifier column: the reverse-geocoded place becomes the (bold) identifier
+        lines.push(format!("<b>{geo_place}</b>"));
+        if !dataset_line.is_empty() {
+            lines.push(dataset_line.to_string());
+        }
+    } else {
+        if !dataset_line.is_empty() {
+            lines.push(dataset_line.to_string());
+        }
+        if !geo_place.is_empty() {
+            lines.push(geo_place.to_string());
+        }
+    }
+    lines.push(format!("{lat:.4}, {lon:.4}"));
+    lines.join("<br>")
+}
+
+/// Format a reverse-geocoded `GeoLabel` into a "City, Admin1, Country" hover line for gap-filling —
+/// dataset fields win, so a component is dropped when (a) a chosen dataset column already covers it
+/// by concept (`sup_*`), or (b) its value already appears in this point's `dataset_line` (so e.g. a
+/// city-name identifier isn't echoed by the geocoded city). Components are HTML-escaped.
+#[cfg(feature = "geocode")]
+fn geocode_hover_place(
+    label: &crate::cmd::geocode::GeoLabel,
+    sup_city: bool,
+    sup_admin1: bool,
+    sup_country: bool,
+    dataset_line: &str,
+) -> String {
+    let dataset_lc = dataset_line.to_lowercase();
+    let shown = |s: &str| !s.trim().is_empty() && dataset_lc.contains(&s.to_lowercase());
+    [
+        (!sup_city && !shown(&label.city)).then_some(label.city.as_str()),
+        (!sup_admin1 && !shown(&label.admin1)).then_some(label.admin1.as_str()),
+        (!sup_country && !shown(&label.country)).then_some(label.country.as_str()),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|s| !s.trim().is_empty())
+    .map(escape_hover)
+    .collect::<Vec<_>>()
+    .join(", ")
 }
 
 /// Build per-location region names aligned 1:1 to `locs` from binned/matched GeoJSON features: the
@@ -5281,11 +5358,19 @@ enum PanelKind {
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (far from the cluster centroid),
     /// drawn as a distinct marker trace on top of the core points.
     Map {
-        lats:         Vec<f64>,
-        lons:         Vec<f64>,
-        density:      bool,
-        outlier_lats: Vec<f64>,
-        outlier_lons: Vec<f64>,
+        lats:               Vec<f64>,
+        lons:               Vec<f64>,
+        density:            bool,
+        outlier_lats:       Vec<f64>,
+        outlier_lons:       Vec<f64>,
+        /// Pre-rendered per-point hover label (row-aligned to `lats`/`lons`): the row's identifier
+        /// (and, under `--smarter`, a dictionary/stats-chosen field combination) plus a coordinate
+        /// line. Empty when no identifier could be chosen, in which case render falls back to
+        /// plotly's default lat/lon hover. Attached via `hover_text_array` + `HoverInfo::Text`.
+        hover_text:         Vec<String>,
+        /// Per-point hover labels for the outlier markers (aligned to
+        /// `outlier_lats`/`outlier_lons`).
+        outlier_hover_text: Vec<String>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
@@ -5293,10 +5378,16 @@ enum PanelKind {
     /// grid, so a dashboard containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
     Geo {
-        lats:         Vec<f64>,
-        lons:         Vec<f64>,
-        outlier_lats: Vec<f64>,
-        outlier_lons: Vec<f64>,
+        lats:               Vec<f64>,
+        lons:               Vec<f64>,
+        outlier_lats:       Vec<f64>,
+        outlier_lons:       Vec<f64>,
+        /// Pre-rendered per-point hover label (row-aligned to `lats`/`lons`); see
+        /// `Map::hover_text`.
+        hover_text:         Vec<String>,
+        /// Per-point hover labels for the outlier markers (aligned to
+        /// `outlier_lats`/`outlier_lons`).
+        outlier_hover_text: Vec<String>,
     },
     /// Filled-region `Choropleth` aggregate drawn on the projection `geo` subplot — added beside
     /// the point Map/Geo panel when geocode resolves the coordinates to 2+ distinct countries,
@@ -5402,12 +5493,14 @@ fn circular_median_lon(sorted: &[f64]) -> f64 {
 /// is zero (a point-mass core, e.g. many duplicate coordinates) the fence falls back to the
 /// point-mass band itself (`d > q3`), so a lone far stray is flagged even with very few duplicates;
 /// with too few points (< 4) or a fully degenerate (all-identical) distance spread, nothing is
-/// flagged and the whole set is core. Returns `(core_lats, core_lons, outlier_lats, outlier_lons)`.
-fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+/// flagged and the whole set is core. Returns `(core_indices, outlier_indices)` into the input
+/// slices, so callers can carry row-aligned side data (e.g. hover labels) through the same
+/// partition. `partition_geo_outliers` wraps this to gather the lat/lon vecs directly.
+fn partition_geo_outlier_indices(lats: &[f64], lons: &[f64]) -> (Vec<usize>, Vec<usize>) {
     let n = lats.len();
     if n < 4 {
         // too few points to characterize a cluster -> everything is core, zero outliers
-        return (lats.to_vec(), lons.to_vec(), Vec::new(), Vec::new());
+        return ((0..n).collect(), Vec::new());
     }
     // robust centroid: per-axis medians (so a few strays don't drag the center toward them)
     let mut sorted_lats = lats.to_vec();
@@ -5454,17 +5547,32 @@ fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Ve
         q3
     };
 
-    let (mut core_lats, mut core_lons) = (Vec::with_capacity(n), Vec::with_capacity(n));
-    let (mut out_lats, mut out_lons) = (Vec::new(), Vec::new());
-    for ((&lat, &lon), &d) in lats.iter().zip(lons).zip(&dists) {
+    let (mut core_idx, mut out_idx) = (Vec::with_capacity(n), Vec::new());
+    for (i, &d) in dists.iter().enumerate() {
         if d > fence {
-            out_lats.push(lat);
-            out_lons.push(lon);
+            out_idx.push(i);
         } else {
-            core_lats.push(lat);
-            core_lons.push(lon);
+            core_idx.push(i);
         }
     }
+    (core_idx, out_idx)
+}
+
+/// Partition row-aligned (lat, lon) pairs into a core set and a geographic-outlier set, returning
+/// `(core_lats, core_lons, outlier_lats, outlier_lons)`. Thin wrapper over
+/// `partition_geo_outlier_indices` (see it for the full algorithm). Only the index form is used in
+/// production (so hover labels follow the split); this lat/lon form backs the partition unit tests.
+#[cfg(test)]
+fn partition_geo_outliers(lats: &[f64], lons: &[f64]) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let (core_idx, out_idx) = partition_geo_outlier_indices(lats, lons);
+    let gather = |idx: &[usize]| -> (Vec<f64>, Vec<f64>) {
+        (
+            idx.iter().map(|&i| lats[i]).collect(),
+            idx.iter().map(|&i| lons[i]).collect(),
+        )
+    };
+    let (core_lats, core_lons) = gather(&core_idx);
+    let (out_lats, out_lons) = gather(&out_idx);
     (core_lats, core_lons, out_lats, out_lons)
 }
 
@@ -6048,6 +6156,249 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         return Some(PanelKind::FreqBar { idx });
     }
     None // high-cardinality / ID-like text
+}
+
+/// Max number of fields (identifier + extras) shown in a `viz smart --smarter` map-point hover.
+const MAP_HOVER_MAX_FIELDS: usize = 4;
+// describegpt concept tokens (see `describegpt::dictionary::CONCEPT_VOCAB`) used to pick map-hover
+// fields, in descending preference within each category.
+const MAP_ID_CONCEPTS: &[&str] = &[
+    "id.natural_key",
+    "id.uuid",
+    "id.surrogate_key",
+    "id.foreign_key",
+];
+const MAP_NAME_CONCEPTS: &[&str] = &[
+    "pii.full_name",
+    "org.company",
+    "org.agency",
+    "geo.city",
+    "geo.street_address",
+];
+const MAP_MEASURE_CONCEPTS: &[&str] = &["measure.amount", "measure.count", "measure.ratio"];
+const MAP_CATEGORY_CONCEPTS: &[&str] = &["category.status", "category.type", "category.channel"];
+const MAP_GEO_CONTEXT_CONCEPTS: &[&str] = &["geo.country", "geo.state", "geo.city"];
+
+/// Observed numeric range (`|max - min|`) of a column from its stats, or 0.0 when unparseable.
+fn stat_range(s: &crate::cmd::stats::StatsData) -> f64 {
+    let parse = |o: &Option<String>| o.as_deref().and_then(|v| v.trim().parse::<f64>().ok());
+    match (parse(&s.min), parse(&s.max)) {
+        (Some(lo), Some(hi)) => (hi - lo).abs(),
+        _ => 0.0,
+    }
+}
+
+/// A column is unavailable for a hover field when it's the lat/lon pair or already chosen.
+fn map_field_used(i: usize, lat_idx: usize, lon_idx: usize, chosen: &[usize]) -> bool {
+    i == lat_idx || i == lon_idx || chosen.contains(&i)
+}
+
+/// First available (not lat/lon, not already chosen) column whose `concept` exactly matches one of
+/// `preferred`, scanning `preferred` in order.
+fn first_col_by_concepts(
+    col_sems: &[ColSemantics],
+    preferred: &[&str],
+    lat_idx: usize,
+    lon_idx: usize,
+    chosen: &[usize],
+) -> Option<usize> {
+    preferred.iter().find_map(|c| {
+        col_sems
+            .iter()
+            .enumerate()
+            .find(|(i, s)| !map_field_used(*i, lat_idx, lon_idx, chosen) && s.concept == *c)
+            .map(|(i, _)| i)
+    })
+}
+
+fn near_unique_col(s: &crate::cmd::stats::StatsData) -> bool {
+    s.uniqueness_ratio.is_some_and(|r| r > 0.95)
+}
+
+/// Pick the single best human-readable identifier column for a `viz smart` map-point hover, or
+/// `None` when nothing suitable exists. Priority (lat/lon always excluded; ties → lowest index):
+/// dictionary `id.*` concept, then a name-like concept (`pii.full_name`/`org.*`/`geo.city`/
+/// `geo.street_address`), then dictionary `role == "identifier"`, then a statistical fallback —
+/// the near-unique column, preferring a `String` (a readable name) over an `Integer` (an opaque
+/// key). The statistical fallback runs whether or not a dictionary is present, so plain
+/// `viz smart` still labels points.
+fn select_map_identifier(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    dict: Option<&DictData>,
+    lat_idx: usize,
+    lon_idx: usize,
+) -> Option<usize> {
+    let is_coord = |i: usize| i == lat_idx || i == lon_idx;
+
+    // 1 & 2: dictionary concept — id.* then name-like, in preference order
+    if let Some(i) = first_col_by_concepts(
+        col_sems,
+        &[MAP_ID_CONCEPTS, MAP_NAME_CONCEPTS].concat(),
+        lat_idx,
+        lon_idx,
+        &[],
+    ) {
+        return Some(i);
+    }
+
+    // 3: dictionary role == "identifier" (keyed by field name)
+    if let Some(d) = dict
+        && let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
+            (!is_coord(i)
+                && d.rows
+                    .get(&s.field)
+                    .is_some_and(|r| r.role.eq_ignore_ascii_case("identifier")))
+            .then_some(i)
+        })
+    {
+        return Some(i);
+    }
+
+    // 4: statistical fallback — near-unique column, prefer String over Integer
+    for want in ["String", "Integer"] {
+        if let Some(i) = stats.iter().enumerate().find_map(|(i, s)| {
+            (!is_coord(i) && s.r#type == want && near_unique_col(s)).then_some(i)
+        }) {
+            return Some(i);
+        }
+    }
+    None
+}
+
+/// Choose the ordered list of column indices to show in a `viz smart` map-point hover. Always
+/// starts with the identifier from `select_map_identifier` (0 or 1 column). Without `--smarter`,
+/// that's all. With `--smarter`, appends the best additional fields (capped at
+/// `MAP_HOVER_MAX_FIELDS` total), driven by the dictionary when present — a primary measure, a key
+/// category, a time field, and geo context — or by statistics otherwise (the highest-variation
+/// numeric measure, then the lowest-cardinality category). lat/lon and already-chosen columns are
+/// never repeated.
+fn select_map_hover_fields(
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    dict: Option<&DictData>,
+    lat_idx: usize,
+    lon_idx: usize,
+    smarter: bool,
+) -> Vec<usize> {
+    let mut chosen: Vec<usize> = Vec::new();
+    if let Some(id) = select_map_identifier(stats, col_sems, dict, lat_idx, lon_idx) {
+        chosen.push(id);
+    }
+    if !smarter {
+        return chosen;
+    }
+
+    let room = |chosen: &[usize]| chosen.len() < MAP_HOVER_MAX_FIELDS;
+
+    if dict.is_some() {
+        // measure: concept priority, else any `measure.*` (tie → largest observed range)
+        if room(&chosen) {
+            let m =
+                first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &chosen)
+                    .or_else(|| {
+                        col_sems
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, s)| {
+                                !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                                    && s.concept.starts_with("measure.")
+                            })
+                            .max_by(|(ia, _), (ib, _)| {
+                                stat_range(&stats[*ia])
+                                    .partial_cmp(&stat_range(&stats[*ib]))
+                                    .unwrap_or(std::cmp::Ordering::Equal)
+                            })
+                            .map(|(i, _)| i)
+                    });
+            if let Some(i) = m {
+                chosen.push(i);
+            }
+        }
+        // category: concept priority, else any `category.*`/`org.*` (tie → lowest cardinality)
+        if room(&chosen) {
+            let c =
+                first_col_by_concepts(col_sems, MAP_CATEGORY_CONCEPTS, lat_idx, lon_idx, &chosen)
+                    .or_else(|| {
+                        col_sems
+                            .iter()
+                            .enumerate()
+                            .filter(|(i, s)| {
+                                !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                                    && (s.concept.starts_with("category.")
+                                        || s.concept.starts_with("org."))
+                            })
+                            .min_by_key(|(i, _)| stats[*i].cardinality)
+                            .map(|(i, _)| i)
+                    });
+            if let Some(i) = c {
+                chosen.push(i);
+            }
+        }
+        // time: any `time.*`
+        if room(&chosen)
+            && let Some(i) = col_sems.iter().enumerate().find_map(|(i, s)| {
+                (!map_field_used(i, lat_idx, lon_idx, &chosen) && s.concept.starts_with("time."))
+                    .then_some(i)
+            })
+        {
+            chosen.push(i);
+        }
+        // geo context: country/state/city
+        if room(&chosen)
+            && let Some(i) = first_col_by_concepts(
+                col_sems,
+                MAP_GEO_CONTEXT_CONCEPTS,
+                lat_idx,
+                lon_idx,
+                &chosen,
+            )
+        {
+            chosen.push(i);
+        }
+    } else {
+        // no dictionary: primary measure by coefficient of variation (fallback range)
+        if room(&chosen) {
+            let m = stats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                        && matches!(s.r#type.as_str(), "Integer" | "Float")
+                        && !near_unique_col(s)
+                })
+                .max_by(|(_, sa), (_, sb)| {
+                    let score = |s: &crate::cmd::stats::StatsData| {
+                        s.cv.map(f64::abs).unwrap_or_else(|| stat_range(s))
+                    };
+                    score(sa)
+                        .partial_cmp(&score(sb))
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .map(|(i, _)| i);
+            if let Some(i) = m {
+                chosen.push(i);
+            }
+        }
+        // then a low-cardinality category (lowest cardinality first)
+        if room(&chosen) {
+            let c = stats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !map_field_used(*i, lat_idx, lon_idx, &chosen)
+                        && s.cardinality >= 1
+                        && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
+                        && !near_unique_col(s)
+                })
+                .min_by_key(|(_, s)| s.cardinality)
+                .map(|(i, _)| i);
+            if let Some(i) = c {
+                chosen.push(i);
+            }
+        }
+    }
+    chosen
 }
 
 /// Build a short parenthetical title hint for a box-plot panel from moarstats shape statistics:
@@ -6855,23 +7206,61 @@ fn build_smart_pip_choropleth_panel(
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
 /// panel. The pair comes from `coord_hint` (dictionary `geo.latitude`/`geo.longitude` signals) when
 /// supplied, else the header-name heuristic (`latlon_indices`). Does one extra data pass to collect
-/// the in-range coordinates (the stats cache holds no geometry). Returns `None` when no pair is
-/// found, the columns aren't numeric, or no row has valid coordinates. On success returns the panel
-/// together with the (lat, lon) column indices it consumed, so the caller can exclude exactly those
-/// columns from the other panels — and only when a map is actually rendered. Without a dictionary
-/// hint, name detection needs headers, so this is a no-op under `--no-headers`.
+/// the in-range coordinates (the stats cache holds no geometry) and, per point, a hover label: the
+/// row's identifier and — under `--smarter` — a dictionary/stats-chosen field combination (see
+/// `select_map_hover_fields`); when the `geocode` feature is available each point is also reverse-
+/// geocoded so the hover names the resolved place (City, Admin1, Country), with dataset fields
+/// winning over duplicate geocoded components. Returns `None` when no pair is found, the columns
+/// aren't numeric, or no row has valid coordinates. On success returns the panel together with the
+/// (lat, lon) column indices it consumed, so the caller can exclude exactly those columns from the
+/// other panels — and only when a map is actually rendered. Without a dictionary hint, name
+/// detection needs headers, so this is a no-op under `--no-headers`.
 fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize))>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
 
-    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    // pick the hover fields once: [identifier, extras...] (extras only under --smarter). When this
+    // is empty AND no point reverse-geocodes, the trace keeps plotly's default lat/lon hover.
+    let hover_field_idxs =
+        select_map_hover_fields(stats, col_sems, dict, lat_idx, lon_idx, args.flag_smarter);
+    let dataset_has_fields = !hover_field_idxs.is_empty();
+    // Resolve the identifier independently — `select_map_hover_fields` can return ONLY `--smarter`
+    // extras (measure/category) when no identifier exists, so the first field is not necessarily
+    // the id. Treating it as one would bold a measure and (via `has_id`) suppress the geocoded
+    // place that should serve as the identifier. Everything that isn't the id becomes an extra.
+    let id_idx = select_map_identifier(stats, col_sems, dict, lat_idx, lon_idx);
+    let has_id = id_idx.is_some();
+    let extra_idxs: Vec<usize> = hover_field_idxs
+        .iter()
+        .copied()
+        .filter(|&i| Some(i) != id_idx)
+        .collect();
+
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    // friendly labels for the extra fields: dictionary label, else the column header.
+    let extra_labels: Vec<String> = extra_idxs
+        .iter()
+        .map(|&idx| {
+            col_sems
+                .get(idx)
+                .map(|s| s.label.as_str())
+                .filter(|l| !l.is_empty())
+                .map_or_else(|| col_label(&headers, idx, nh), ToString::to_string)
+        })
+        .collect();
+
     let mut lats: Vec<f64> = Vec::new();
     let mut lons: Vec<f64> = Vec::new();
+    // dataset portion of each point's hover (bold id + extra fields, NO coords/geo), row-aligned
+    // with lats/lons; empty string when the dataset contributes no fields.
+    let mut dataset_lines: Vec<String> = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -6883,6 +7272,22 @@ fn build_map_panel(
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
             lats.push(lat);
             lons.push(lon);
+            let cell = |i: usize| -> String {
+                record
+                    .get(i)
+                    .map(|b| String::from_utf8_lossy(b).into_owned())
+                    .unwrap_or_default()
+            };
+            let id_val = id_idx.map(&cell).unwrap_or_default();
+            let extra: Vec<(String, String)> = extra_idxs
+                .iter()
+                .zip(&extra_labels)
+                .map(|(&i, label)| (label.clone(), cell(i)))
+                .collect();
+            dataset_lines.push(format_map_dataset_line(
+                (!id_val.is_empty()).then_some(id_val.as_str()),
+                &extra,
+            ));
         }
     }
     if lats.is_empty() {
@@ -6910,8 +7315,19 @@ fn build_map_panel(
     // split into the core cluster vs. geographic outliers (points far from the cluster centroid)
     // BEFORE downsampling, so the centroid/distances see the full population and true strays are
     // never stride-sampled away first. Not geocode-gated: the distinct outlier markers render in
-    // every `viz` build; only the jurisdiction naming/suppression below needs geocode.
-    let (core_lats, core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
+    // every `viz` build; only the jurisdiction naming/suppression below needs geocode. Partition by
+    // INDEX so the row-aligned dataset hover lines follow the same split.
+    let (core_idx, out_idx) = partition_geo_outlier_indices(&lats, &lons);
+    let gather_f64 =
+        |idx: &[usize], src: &[f64]| -> Vec<f64> { idx.iter().map(|&i| src[i]).collect() };
+    let gather_str =
+        |idx: &[usize]| -> Vec<String> { idx.iter().map(|&i| dataset_lines[i].clone()).collect() };
+    let core_lats = gather_f64(&core_idx, &lats);
+    let core_lons = gather_f64(&core_idx, &lons);
+    let out_lats = gather_f64(&out_idx, &lats);
+    let out_lons = gather_f64(&out_idx, &lons);
+    let core_lines = gather_str(&core_idx);
+    let out_lines = gather_str(&out_idx);
 
     // reverse-geocode the CORE bounding box into the spatial-extent overlay + summary, plus a
     // representative sample of the outliers for the call-out (one batched engine load). Degrades to
@@ -6924,8 +7340,106 @@ fn build_map_panel(
         out_lats.len(),
     );
 
-    let (lats, lons) = downsample_pair(&core_lats, &core_lons, MAX_SMART_POINTS);
-    let (outlier_lats, outlier_lons) = downsample_pair(&out_lats, &out_lons, SMART_GEO_OUTLIER_CAP);
+    // downsample coords AND the row-aligned dataset hover lines together (pack the line into the
+    // pair's `Y` so the same stride applies), keeping each line aligned to its (lat, lon).
+    let pack = |lons: &[f64], lines: &[String]| -> Vec<(f64, String)> {
+        lons.iter().copied().zip(lines.iter().cloned()).collect()
+    };
+    let (lats, core_pl) =
+        downsample_pair(&core_lats, &pack(&core_lons, &core_lines), MAX_SMART_POINTS);
+    let (lons, core_lines): (Vec<f64>, Vec<String>) = core_pl.into_iter().unzip();
+    let (outlier_lats, out_pl) = downsample_pair(
+        &out_lats,
+        &pack(&out_lons, &out_lines),
+        SMART_GEO_OUTLIER_CAP,
+    );
+    let (outlier_lons, out_lines): (Vec<f64>, Vec<String>) = out_pl.into_iter().unzip();
+
+    // per-point reverse-geocoded place (City, Admin1, Country), gap-filtered so it never duplicates
+    // a dataset geo.* column already in the hover. One batched engine load for core+outliers;
+    // degrades to no place on failure. Empty strings (and an all-empty result) when the geocode
+    // feature is off or every geo component is already covered by dataset fields.
+    #[cfg(feature = "geocode")]
+    let (core_places, out_places): (Vec<String>, Vec<String>) = {
+        // which geocoded components are already supplied by a chosen dataset column (gap-filling)
+        let mut sup_city = false;
+        let mut sup_admin1 = false;
+        let mut sup_country = false;
+        for &idx in &hover_field_idxs {
+            match col_sems.get(idx).map(|s| s.concept.as_str()).unwrap_or("") {
+                "geo.city" => sup_city = true,
+                "geo.state" => sup_admin1 = true,
+                "geo.country" => sup_country = true,
+                _ => {},
+            }
+        }
+        if sup_city && sup_admin1 && sup_country {
+            // nothing a geocoded place could add — skip the lookup entirely
+            (
+                vec![String::new(); lats.len()],
+                vec![String::new(); outlier_lats.len()],
+            )
+        } else {
+            let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
+            pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
+            pts.extend(
+                outlier_lats
+                    .iter()
+                    .zip(&outlier_lons)
+                    .map(|(&a, &o)| (a, o)),
+            );
+            let labels =
+                crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
+            // dataset_line lets the place drop any component the dataset already shows for this
+            // point (e.g. a city-name identifier).
+            let place = |i: usize, dataset_line: &str| -> String {
+                labels
+                    .get(i)
+                    .and_then(Option::as_ref)
+                    .map(|l| {
+                        geocode_hover_place(l, sup_city, sup_admin1, sup_country, dataset_line)
+                    })
+                    .unwrap_or_default()
+            };
+            let core: Vec<String> = core_lines
+                .iter()
+                .enumerate()
+                .map(|(i, l)| place(i, l))
+                .collect();
+            let out: Vec<String> = out_lines
+                .iter()
+                .enumerate()
+                .map(|(j, l)| place(lats.len() + j, l))
+                .collect();
+            (core, out)
+        }
+    };
+    #[cfg(not(feature = "geocode"))]
+    let (core_places, out_places): (Vec<String>, Vec<String>) = (
+        vec![String::new(); lats.len()],
+        vec![String::new(); outlier_lats.len()],
+    );
+
+    // build hover text only when something beyond the bare coordinates was contributed (a dataset
+    // field or a geocoded place); otherwise leave the vecs empty so render keeps plotly's default
+    // lat/lon hover.
+    let geo_contributed = core_places.iter().chain(&out_places).any(|p| !p.is_empty());
+    let (hover_text, outlier_hover_text) = if dataset_has_fields || geo_contributed {
+        let assemble = |lats: &[f64], lons: &[f64], lines: &[String], places: &[String]| {
+            lats.iter()
+                .zip(lons)
+                .zip(lines)
+                .zip(places)
+                .map(|(((&la, &lo), line), place)| assemble_map_hover(line, has_id, place, la, lo))
+                .collect::<Vec<String>>()
+        };
+        (
+            assemble(&lats, &lons, &core_lines, &core_places),
+            assemble(&outlier_lats, &outlier_lons, &out_lines, &out_places),
+        )
+    } else {
+        (Vec::new(), Vec::new())
+    };
 
     // geocode-gated companion: a per-region choropleth overview drawn beside the point map. Gate it
     // on the cheap min/max-extent SPAN (already computed above) — a per-region breakdown only makes
@@ -6980,6 +7494,8 @@ fn build_map_panel(
             lons,
             outlier_lats,
             outlier_lons,
+            hover_text,
+            outlier_hover_text,
         }
     } else {
         PanelKind::Map {
@@ -6988,6 +7504,8 @@ fn build_map_panel(
             density,
             outlier_lats,
             outlier_lons,
+            hover_text,
+            outlier_hover_text,
         }
     };
     Ok(Some((
@@ -7813,7 +8331,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
-        match build_map_panel(args, &stats, coord_hint)? {
+        match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
             None => (None, None),
             Some((p, choro, cols)) => {
                 if out_format.is_image() {
@@ -7823,12 +8341,16 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                             lons,
                             outlier_lats,
                             outlier_lons,
+                            hover_text,
+                            outlier_hover_text,
                             ..
                         } => PanelKind::Geo {
                             lats,
                             lons,
                             outlier_lats,
                             outlier_lons,
+                            hover_text,
+                            outlier_hover_text,
                         },
                         other => other,
                     };
@@ -8702,6 +9224,8 @@ fn smart_grid_parts(
             lons,
             outlier_lats,
             outlier_lons,
+            hover_text,
+            outlier_hover_text,
         } = &panel.kind
         {
             let geom = geoms[n].clone();
@@ -8777,22 +9301,30 @@ fn smart_grid_parts(
             if let Some(lataxis) = lataxis {
                 geo = geo.lataxis(lataxis);
             }
-            traces.push(
-                ScatterGeo::new(lats.clone(), lons.clone())
-                    .mode(Mode::Markers)
-                    .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
-                    .subplot(geo_ref(pos)),
-            );
+            let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
+                .mode(Mode::Markers)
+                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
+                .subplot(geo_ref(pos));
+            if !hover_text.is_empty() {
+                core_trace = core_trace
+                    .hover_text_array(hover_text.clone())
+                    .hover_info(HoverInfo::Text);
+            }
+            traces.push(core_trace);
             // geographic outliers as a distinct amber/X marker trace on top of the core points
             if !outlier_lats.is_empty() {
-                traces.push(
-                    ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                        .name("geographic outliers")
-                        .mode(Mode::Markers)
-                        .marker(outlier_marker_geo())
-                        .show_legend(false)
-                        .subplot(geo_ref(pos)),
-                );
+                let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
+                    .name("geographic outliers")
+                    .mode(Mode::Markers)
+                    .marker(outlier_marker_geo())
+                    .show_legend(false)
+                    .subplot(geo_ref(pos));
+                if !outlier_hover_text.is_empty() {
+                    out_trace = out_trace
+                        .hover_text_array(outlier_hover_text.clone())
+                        .hover_info(HoverInfo::Text);
+                }
+                traces.push(out_trace);
             }
             // spatial-extent overlay (bounding box + reverse-geocoded corner/center markers),
             // both bound to this cell's `geo{pos}` subplot, plus a consolidated summary
@@ -9115,6 +9647,8 @@ fn smart_inline_panel_plot(
         density,
         outlier_lats,
         outlier_lons,
+        hover_text,
+        outlier_hover_text,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -9149,21 +9683,30 @@ fn smart_inline_panel_plot(
                     .radius(MAP_SMART_DENSITY_RADIUS_PX),
             );
         } else {
-            plot.add_trace(
-                ScatterMapbox::new(lats.clone(), lons.clone())
-                    .mode(Mode::Markers)
-                    .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
-            );
+            let mut core_trace = ScatterMapbox::new(lats.clone(), lons.clone())
+                .mode(Mode::Markers)
+                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY));
+            if !hover_text.is_empty() {
+                core_trace = core_trace
+                    .hover_text_array(hover_text.clone())
+                    .hover_info(HoverInfo::Text);
+            }
+            plot.add_trace(core_trace);
         }
-        // geographic outliers as a distinct amber marker trace on top of the core points/heatmap
+        // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
+        // Outliers are always markers (even in density mode), so they carry hover labels too.
         if !outlier_lats.is_empty() {
-            plot.add_trace(
-                ScatterMapbox::new(outlier_lats.clone(), outlier_lons.clone())
-                    .name("geographic outliers")
-                    .mode(Mode::Markers)
-                    .marker(outlier_marker_mapbox())
-                    .show_legend(false),
-            );
+            let mut out_trace = ScatterMapbox::new(outlier_lats.clone(), outlier_lons.clone())
+                .name("geographic outliers")
+                .mode(Mode::Markers)
+                .marker(outlier_marker_mapbox())
+                .show_legend(false);
+            if !outlier_hover_text.is_empty() {
+                out_trace = out_trace
+                    .hover_text_array(outlier_hover_text.clone())
+                    .hover_info(HoverInfo::Text);
+            }
+            plot.add_trace(out_trace);
         }
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
@@ -9208,6 +9751,8 @@ fn smart_inline_panel_plot(
         lons,
         outlier_lats,
         outlier_lons,
+        hover_text,
+        outlier_hover_text,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -9215,25 +9760,33 @@ fn smart_inline_panel_plot(
         // accent: the `geo` projection paints a light-blue ocean and light-gray land, and the
         // palette's first color is a blue that disappears against the ocean (e.g. coastal/island
         // points on a world overview). Crimson reads on both land and water and in dark themes.
-        plot.add_trace(
-            ScatterGeo::new(lats.clone(), lons.clone())
-                .mode(Mode::Markers)
-                .marker(
-                    Marker::new()
-                        .color(NamedColor::Crimson)
-                        .opacity(MAP_POINT_OPACITY)
-                        .line(Line::new().color(NamedColor::White).width(0.5)),
-                ),
-        );
+        let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
+            .mode(Mode::Markers)
+            .marker(
+                Marker::new()
+                    .color(NamedColor::Crimson)
+                    .opacity(MAP_POINT_OPACITY)
+                    .line(Line::new().color(NamedColor::White).width(0.5)),
+            );
+        if !hover_text.is_empty() {
+            core_trace = core_trace
+                .hover_text_array(hover_text.clone())
+                .hover_info(HoverInfo::Text);
+        }
+        plot.add_trace(core_trace);
         // geographic outliers as a distinct amber/X marker trace on top of the core points
         if !outlier_lats.is_empty() {
-            plot.add_trace(
-                ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
-                    .name("geographic outliers")
-                    .mode(Mode::Markers)
-                    .marker(outlier_marker_geo())
-                    .show_legend(false),
-            );
+            let mut out_trace = ScatterGeo::new(outlier_lats.clone(), outlier_lons.clone())
+                .name("geographic outliers")
+                .mode(Mode::Markers)
+                .marker(outlier_marker_geo())
+                .show_legend(false);
+            if !outlier_hover_text.is_empty() {
+                out_trace = out_trace
+                    .hover_text_array(outlier_hover_text.clone())
+                    .hover_info(HoverInfo::Text);
+            }
+            plot.add_trace(out_trace);
         }
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
@@ -11089,6 +11642,201 @@ mod tests {
         );
         assert_eq!(d.route, Route::Defer);
         assert_eq!(d.label, "Notes");
+    }
+
+    fn csem(concept: &str) -> ColSemantics {
+        ColSemantics {
+            concept: concept.to_string(),
+            ..Default::default()
+        }
+    }
+
+    // a numeric measure stat with an explicit coefficient of variation (for the statistical
+    // hover-combination picker).
+    fn measure_stat(cv: f64) -> crate::cmd::stats::StatsData {
+        crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            cardinality: 100,
+            uniqueness_ratio: Some(0.5),
+            cv: Some(cv),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn select_map_identifier_dictionary_beats_stats() {
+        // idx0 has an id.* concept; idx3 is a near-unique String. The dictionary concept wins.
+        let stats = vec![
+            stat("Integer", 1000, Some(0.99)), // 0: id column
+            stat("Float", 900, Some(0.5)),     // 1: lat
+            stat("Float", 900, Some(0.5)),     // 2: lon
+            stat("String", 1000, Some(0.99)),  // 3: a near-unique name
+        ];
+        let sems = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem(""),
+        ];
+        assert_eq!(select_map_identifier(&stats, &sems, None, 1, 2), Some(0));
+    }
+
+    #[test]
+    fn select_map_identifier_name_like_concept() {
+        // no id.* concept -> a name-like concept (geo.city) is the identifier.
+        let stats = vec![
+            stat("Float", 9, Some(0.5)),   // 0: lat
+            stat("Float", 9, Some(0.5)),   // 1: lon
+            stat("String", 50, Some(0.6)), // 2: city
+            stat("Integer", 5, Some(0.1)), // 3: a code
+        ];
+        let sems = vec![
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem("geo.city"),
+            csem(""),
+        ];
+        assert_eq!(select_map_identifier(&stats, &sems, None, 0, 1), Some(2));
+    }
+
+    #[test]
+    fn select_map_identifier_statistical_prefers_string_over_integer() {
+        // no dictionary concepts: the near-unique String (a readable name) beats the near-unique
+        // Integer (an opaque key); lat/lon are excluded even though near-unique.
+        let stats = vec![
+            stat("Integer", 1000, Some(0.99)), // 0: opaque key
+            stat("Float", 900, Some(0.99)),    // 1: lat (near-unique, excluded)
+            stat("Float", 900, Some(0.99)),    // 2: lon (near-unique, excluded)
+            stat("String", 1000, Some(0.99)),  // 3: a readable name
+        ];
+        let sems = vec![csem(""), csem(""), csem(""), csem("")];
+        assert_eq!(select_map_identifier(&stats, &sems, None, 1, 2), Some(3));
+    }
+
+    #[test]
+    fn select_map_identifier_none_when_nothing_suitable() {
+        // all low-cardinality numerics, no concepts -> no identifier.
+        let stats = vec![
+            stat("Float", 9, Some(0.5)),   // 0: lat
+            stat("Float", 9, Some(0.5)),   // 1: lon
+            stat("Integer", 5, Some(0.1)), // 2: a low-card code
+        ];
+        let sems = vec![csem(""), csem(""), csem("")];
+        assert_eq!(select_map_identifier(&stats, &sems, None, 0, 1), None);
+    }
+
+    #[test]
+    fn select_map_hover_fields_default_is_identifier_only() {
+        let stats = vec![
+            stat("Float", 9, Some(0.5)),
+            stat("Float", 9, Some(0.5)),
+            stat("String", 1000, Some(0.99)),
+        ];
+        let sems = vec![csem("geo.latitude"), csem("geo.longitude"), csem("")];
+        // smarter = false -> just the identifier
+        assert_eq!(
+            select_map_hover_fields(&stats, &sems, None, 0, 1, false),
+            vec![2]
+        );
+    }
+
+    #[test]
+    fn select_map_hover_fields_smarter_dictionary_combination() {
+        // id + measure + category, in that order, capped.
+        let stats = vec![
+            stat("String", 1000, Some(0.99)), // 0: id
+            stat("Float", 9, Some(0.5)),      // 1: lat
+            stat("Float", 9, Some(0.5)),      // 2: lon
+            stat("Float", 100, Some(0.5)),    // 3: measure
+            stat("String", 4, Some(0.1)),     // 4: category
+        ];
+        let sems = vec![
+            csem("id.natural_key"),
+            csem("geo.latitude"),
+            csem("geo.longitude"),
+            csem("measure.amount"),
+            csem("category.status"),
+        ];
+        let dict = DictData::default();
+        assert_eq!(
+            select_map_hover_fields(&stats, &sems, Some(&dict), 1, 2, true),
+            vec![0, 3, 4]
+        );
+    }
+
+    #[test]
+    fn select_map_hover_fields_smarter_statistical_combination() {
+        // no dictionary: id (near-unique String) + highest-CV measure + lowest-cardinality
+        // category.
+        let stats = vec![
+            stat("String", 1000, Some(0.99)), // 0: id
+            stat("Float", 9, Some(0.5)),      // 1: lat
+            stat("Float", 9, Some(0.5)),      // 2: lon
+            measure_stat(0.2),                // 3: low-CV measure
+            measure_stat(0.9),                // 4: high-CV measure (preferred)
+            stat("String", 4, Some(0.1)),     // 5: category
+        ];
+        let sems = vec![csem(""), csem(""), csem(""), csem(""), csem(""), csem("")];
+        assert_eq!(
+            select_map_hover_fields(&stats, &sems, None, 1, 2, true),
+            vec![0, 4, 5]
+        );
+    }
+
+    #[test]
+    fn format_and_assemble_map_hover() {
+        // dataset line: bold id + escaped extra
+        let line = format_map_dataset_line(
+            Some("Tokyo"),
+            &[("Magnitude".to_string(), "5.2".to_string())],
+        );
+        assert_eq!(line, "<b>Tokyo</b><br>Magnitude: 5.2");
+        // markup in values is escaped
+        assert_eq!(
+            format_map_dataset_line(Some("<b>x"), &[]),
+            "<b>&lt;b&gt;x</b>"
+        );
+
+        // with an identifier, the geocoded place is a context line; coords always last
+        assert_eq!(
+            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan", 35.68, 139.69),
+            "<b>Tokyo</b><br>Tokyo, Japan<br>35.6800, 139.6900"
+        );
+        // no identifier column: the geocoded place becomes the bold identifier
+        assert_eq!(
+            assemble_map_hover("", false, "Tokyo, Japan", 35.68, 139.69),
+            "<b>Tokyo, Japan</b><br>35.6800, 139.6900"
+        );
+        // nothing but coordinates when neither dataset nor geocode contributed
+        assert_eq!(
+            assemble_map_hover("", false, "", 1.0, 2.0),
+            "1.0000, 2.0000"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn geocode_hover_place_gap_fills() {
+        let label = crate::cmd::geocode::GeoLabel {
+            city:    "Kinshasa".to_string(),
+            admin1:  "Kinshasa City".to_string(),
+            country: "Democratic Republic of Congo".to_string(),
+        };
+        // nothing suppressed, empty dataset line -> the full place
+        assert_eq!(
+            geocode_hover_place(&label, false, false, false, ""),
+            "Kinshasa, Kinshasa City, Democratic Republic of Congo"
+        );
+        // the city already appears in the dataset line (it's the identifier) -> dropped
+        assert_eq!(
+            geocode_hover_place(&label, false, false, false, "<b>Kinshasa</b>"),
+            "Kinshasa City, Democratic Republic of Congo"
+        );
+        // concept suppression (a chosen geo.country column) drops the country
+        assert_eq!(
+            geocode_hover_place(&label, false, false, true, ""),
+            "Kinshasa, Kinshasa City"
+        );
     }
 
     #[test]

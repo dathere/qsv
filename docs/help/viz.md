@@ -59,44 +59,45 @@ choropleth  Filled-region map: color whole regions (countries, US states, or
             to a token-free projection basemap; --map switches to MapLibre tiles.
 ```
 
-`qsv viz smart` builds a one-page dashboard of subplots by reusing qsv's stats and
-frequency caches. Continuous numeric columns become box plots (quartiles from the stats
-cache; sample points are overlaid by a size heuristic - see --box-points), and
-low-cardinality / boolean columns become frequency bar charts. ID-like (near-unique) and
-all-empty columns are skipped. When the dataset has two or more continuous numeric columns,
-a correlation heatmap panel is added (one extra data pass to compute Pearson correlations),
-and if the most strongly correlated pair is at least moderately correlated, a drill-down of
-that pair is added beside it: a scatter, or a 2D density contour for large datasets where a
-scatter would overplot; with three or more numeric columns, a 3D scatter of the
-strongest-correlation triple is added too. When the dataset has a date/datetime column
-(auto-detected via stats date inference) plus a continuous numeric column, a time-series
-line panel over time is added. When a latitude/longitude column pair is detected, a
-geographic panel leads the dashboard: for HTML, a Mapbox tile map for a local extent or an
-offline ScatterGeo projection world-overview for continental/global data. For static image
-export the map is rendered as an offline ScatterGeo projection fit to the data extent (the
-Mapbox tile map can't be exported as it needs network tiles); US-spanning data uses an
-albers-usa projection. The Mapbox tile map and 3D panels stay HTML-only. Points that lie
-far from the cluster centroid (distance beyond the Tukey far-out fence of all points' distances) are
-flagged as geographic outliers: they're drawn with a distinct marker, excluded from the spatial
-extent (so a few strays don't inflate it), and the map zooms tightly to the core extent (outliers
-may then sit off-screen until you zoom out). When those outliers fall within the same jurisdiction
-as the core, the spatial-extent label's outlier call-out is suppressed (they're the cluster's far
-edge, not strays elsewhere). When qsv is built with the `geocode` feature, the map's (core) spatial extent
-(its 4 bounding-box corners + center) is reverse-geocoded against the local Geonames index and
-drawn on the map as a bounding box with labeled points, plus a consolidated location summary below
-it (e.g. "New York & New Jersey, United States"); any outliers are called out there too with their
-count and jurisdiction (e.g. "... - 3 outliers (Pennsylvania)"). When there are outliers, a second
-dotted box with no fill marks the full extent (core + outliers), so the strays' span is visible
-alongside the core box, and the interactive HTML map gets "Core extent" / "Full extent" buttons to
-jump between the two views (the map opens at the tight core view). In HTML the points reveal their
-city/state/country on hover; static exports show the box without hover. The first such run may
-download the Geonames index (~13MB, cached in ~/.qsv-cache); if it's unavailable (offline) the map
-still renders without the overlay. Extents that span the antimeridian (>180 degrees of longitude)
-are skipped. These overview
-panels (map/geo, correlation heatmap and its drill-downs, time-series) each lead the dashboard
-on their own full-width row; the per-column box/bar/histogram panels flow below in the
-multi-column grid (see --grid-cols). The first run computes & caches stats; subsequent runs
-are fast.
+`qsv viz smart` builds a one-page dashboard of subplots, reusing qsv's stats and
+frequency caches (the first run computes & caches stats; later runs are fast). It
+auto-picks panels, so no --x/--y is needed:  
+
+Per-column panels (flow in the grid below the overview rows, see --grid-cols):  
+- continuous numeric -> box plot (quartiles from the stats cache; sample
+points overlaid by a size heuristic, see --box-points)
+- low-cardinality / boolean -> frequency bar chart
+- ID-like (near-unique) and all-empty columns are skipped
+
+Overview panels (each leads the dashboard on its own full-width row):  
+- correlation heatmap, when 2+ continuous numeric columns exist (one extra
+data pass for Pearson correlations). If the strongest pair is at least
+moderately correlated, a drill-down is added beside it: a scatter (or a 2D
+density contour for large, overplotting datasets); with 3+ numeric columns,
+a 3D scatter of the strongest triple is added too.
+- time-series line, when an auto-detected date/datetime column and a
+continuous numeric column both exist.
+- geographic map, when a latitude/longitude pair is detected:
+    - HTML uses a Mapbox tile map for a local extent, or an offline
+      ScatterGeo projection world-overview for continental/global data.
+    - static image export uses an offline ScatterGeo fit to the data extent
+      (US-spanning data uses albers-usa); tile maps and 3D panels stay
+      HTML-only, as tile maps need network tiles.
+    - geographic outliers (points beyond the Tukey far-out fence of
+      distances from the cluster centroid) get a distinct marker and are
+      excluded from the spatial extent; the map zooms to the core, with a
+      dotted no-fill box marking the full extent and (in HTML) Core/Full
+      extent buttons. Outliers within the core's jurisdiction don't trigger
+      the extent call-out.
+    - with the `geocode` feature, the core extent (4 corners + center) is
+      reverse-geocoded against the local Geonames index and drawn as a
+      labeled bounding box with a location summary (e.g. "New York & New
+      Jersey, United States"); outliers are called out with their count and
+      jurisdiction. HTML points reveal city/state/country on hover (static
+      exports omit it). The first run may download the index (~13MB, cached
+      in ~/.qsv-cache); offline, the map renders without the overlay.
+    - extents spanning the antimeridian (>180 degrees of longitude) are
+      skipped.
 
 
 <a name="examples"></a>

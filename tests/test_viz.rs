@@ -2242,6 +2242,177 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(!html.contains(r#""scope":"#));
 }
 
+// `viz smart` adds the row identifier (here the near-unique `place` column) to each map point's
+// hover, in addition to the coordinates. Dataset-derived, so it holds whether or not the geocode
+// index is available.
+#[test]
+fn viz_smart_geo_hover_has_identifier() {
+    let wrk = Workdir::new("viz_smart_geo_hover_has_identifier");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""hovertext""#),
+        "map points should carry pre-rendered hover text"
+    );
+    assert!(html.contains(r#""hoverinfo":"text""#));
+    // the identifier value is the `place` column (near-unique String)
+    assert!(html.contains("Tokyo"), "hover should name the point");
+}
+
+// `--smarter` (no dictionary) enriches the hover with a statistical combination: identifier (the
+// near-unique `city`) + a numeric measure (`depth_km`, with repeated values so it isn't ID-like) +
+// a low-cardinality category (`zone`). Uses a dedicated fixture with repeats so a measure
+// qualifies.
+#[test]
+fn viz_smart_smarter_statistical_combination() {
+    let wrk = Workdir::new("viz_smart_smarter_statistical_combination");
+    wrk.create_from_string(
+        "events.csv",
+        "city,lat,lon,depth_km,zone
+Tokyo,35.68,139.69,30,Asia
+London,51.51,-0.13,20,Europe
+NewYork,40.71,-74.01,30,Americas
+Sydney,-33.87,151.21,20,Oceania
+Lima,-12.04,-77.04,30,Americas
+Cairo,30.04,31.24,20,Africa
+Paris,48.85,2.35,30,Europe
+Nairobi,-1.29,36.82,20,Africa
+Delhi,28.61,77.21,30,Asia
+Bogota,4.71,-74.07,20,Americas
+Oslo,59.91,10.75,30,Europe
+Accra,5.56,-0.20,20,Africa
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "events.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext""#));
+    // the statistically-chosen measure and category appear as labeled hover lines
+    assert!(
+        html.contains("depth_km: "),
+        "smarter hover should include a numeric measure"
+    );
+    assert!(
+        html.contains("zone: "),
+        "smarter hover should include a low-cardinality category"
+    );
+}
+
+// Regression: when `--smarter` finds no identifier column, the chosen measure/category must be
+// rendered as labeled extras ("temperature: 22"), NOT promoted to the bold point identifier. A
+// dataset with only repeated numeric/category columns (no near-unique key) exercises this path.
+#[test]
+fn viz_smart_smarter_no_identifier_keeps_measure_as_extra() {
+    let wrk = Workdir::new("viz_smart_smarter_no_identifier_keeps_measure_as_extra");
+    wrk.create_from_string(
+        "obs.csv",
+        "lat,lon,temperature,zone
+35.68,139.69,22,A
+51.51,-0.13,15,B
+40.71,-74.01,22,A
+-33.87,151.21,15,B
+-1.29,36.82,22,A
+59.91,10.75,15,B
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "obs.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext""#));
+    // the measure appears as a labeled extra line; before the fix it was the bold "<b>22</b>" id,
+    // so this label line would be absent.
+    assert!(
+        html.contains("temperature: "),
+        "no-identifier measure must be a labeled extra, not the bold id"
+    );
+    assert!(html.contains("zone: "));
+}
+
+// `--smarter --dictionary` drives the combination from the dictionary: the friendly label and the
+// concept-chosen measure (magnitude, tagged measure.amount) appear in the hover.
+#[test]
+fn viz_smart_smarter_dictionary_combination() {
+    let wrk = Workdir::new("viz_smart_smarter_dictionary_combination");
+    quakes(&wrk);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "place": { "type": "string", "title": "Quake Site",
+              "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" } },
+            "lat": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.latitude" } },
+            "lon": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.longitude" } },
+            "magnitude": { "type": "number", "title": "Magnitude",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } },
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "quakes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""hovertext""#));
+    // the dictionary friendly label titles the measure's hover line
+    assert!(
+        html.contains("Magnitude: "),
+        "dictionary-driven hover should use the friendly measure label"
+    );
+    assert!(html.contains("Tokyo"));
+}
+
+// A coordinates-only dataset (no identifier column) still gets a hover when the geocode index is
+// available: the reverse-geocoded place serves as the identifier. Tolerant of an unavailable index
+// (offline CI) — it must always render, and only assert the hover wiring when geocoding
+// contributed.
+#[test]
+fn viz_smart_geo_hover_geocoded_identifier() {
+    let wrk = Workdir::new("viz_smart_geo_hover_geocoded_identifier");
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon
+35.68,139.69
+51.51,-0.13
+40.71,-74.01
+-33.87,151.21
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // a global lat/lon spread renders the ScatterGeo world overview in every build
+    assert!(html.contains(r#""type":"scattergeo""#));
+    // with no identifier column, hover text only appears when reverse-geocoding resolved a place
+    if html.contains(r#""hovertext""#) {
+        assert!(html.contains(r#""hoverinfo":"text""#));
+    }
+}
+
 // A geo overview whose points all fall within a single plotly continent box is framed to that
 // continent's geo `scope` (aligning with plotly.js's layout.geo.scope vocabulary) instead of
 // showing the whole world. The African cities span ~64 deg of latitude (so the panel renders as

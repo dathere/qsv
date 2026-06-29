@@ -3741,6 +3741,39 @@ fn viz_smart_inline_theme_drives_page_chrome() {
 }
 
 #[test]
+fn viz_smart_light_theme_palette_matches_chrome() {
+    // a light non-default theme (seaborn) must drive the runtime LIGHT palette so the on-load
+    // relayout keeps the panels consistent with the themed page chrome, instead of resetting them
+    // to qsv's generic light look (which left a #EAEAF2 seaborn page wrapping #FFFFFF charts).
+    let wrk = Workdir::new("viz_smart_light_theme_palette_matches_chrome");
+    let mut rows = String::from("id,age,city,active\n");
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        let active = if i % 2 == 0 { "true" } else { "false" };
+        rows.push_str(&format!("{i},{},{city},{active}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--theme", "seaborn", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the runtime LIGHT palette carries seaborn's own paper/font colors ...
+    assert!(html.contains(r##"var LIGHT = { paper: "#EAEAF2", plot: "#EAEAF2", font: "#333333""##));
+    // ... matching the seaborn page chrome (so page and charts agree), and it opens in light mode.
+    assert!(html.contains("--qsv-page-bg: #EAEAF2"));
+    assert!(html.contains(r#"var themeDefaultMode = "light""#));
+    // the dark complement (toggle target) stays the generic fixed-dark set.
+    assert!(html.contains(r##"var DARK = { paper: "#111111""##));
+}
+
+#[test]
 fn viz_smart_grid_has_theme_toggle() {
     // the common ≤8-panel case: the single typed-Plot grid is now wrapped in qsv's own HTML
     // page so it carries the always-on light/dark toggle (plotly's to_html() has no hook).

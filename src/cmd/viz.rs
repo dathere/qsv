@@ -4689,6 +4689,38 @@ fn theme_page_chrome(theme: Option<BuiltinTheme>) -> (&'static str, &'static str
     }
 }
 
+/// The chart colors `(paper, font, grid, line, zero)` the toggle's runtime LIGHT palette applies
+/// on load. For a light *non-default* theme (seaborn/seaborn_whitegrid/matplotlib/plotnine) this
+/// mirrors that theme's own template colors, so the on-load `Plotly.relayout` keeps the panel
+/// backgrounds consistent with the themed page chrome (`theme_page_chrome`) instead of resetting
+/// them to qsv's generic light look — which left e.g. a `#EAEAF2` seaborn page wrapping `#FFFFFF`
+/// charts. Every other case (no theme, the white `default`/`plotly_white`, or a dark theme whose
+/// LIGHT palette is only the toggle's light *complement*) keeps qsv's built-in light look, so
+/// unthemed and dark-theme dashboards render byte-identically. Mirrors the fork's
+/// `layout::themes` values. Trace colors come from the baked template (the relayout never touches
+/// `colorway`/marker colors), so they are already theme-correct and out of scope here.
+fn light_chart_palette(
+    theme: Option<BuiltinTheme>,
+) -> (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+) {
+    match theme {
+        Some(BuiltinTheme::Seaborn) => ("#EAEAF2", "#333333", "#D3D3D3", "#CCCCCC", "#D3D3D3"),
+        Some(BuiltinTheme::SeabornWhitegrid) => {
+            ("#FFFFFF", "#333333", "#E5E5E5", "#CCCCCC", "#E5E5E5")
+        },
+        Some(BuiltinTheme::Matplotlib) => ("#FFFFFF", "black", "#e5e5e5", "black", "#e5e5e5"),
+        Some(BuiltinTheme::Plotnine) => ("#EBEBEB", "#525252", "#FFFFFF", "#CCCCCC", "#FFFFFF"),
+        // No theme, the white default themes, and dark themes (whose light palette is just the
+        // toggle's light complement) all keep qsv's built-in light look.
+        _ => (PAPER_BG, INK, GRID_COLOR, AXIS_LINE, GRID_COLOR),
+    }
+}
+
 /// The CSS, button markup, and re-theming `<script>` for the `viz smart` light/dark toggle,
 /// shared by both HTML render paths (the inline-div grid and the single typed-`Plot` grid).
 /// Page chrome is driven by CSS variables (`--qsv-page-bg`/`--qsv-page-ink`/`--qsv-geo-meta`)
@@ -4734,15 +4766,19 @@ fn toggle_chrome(theme: Option<BuiltinTheme>) -> ToggleChrome {
                   mode\">\u{1F313} Theme</button>"
         .to_string();
 
-    // The light palette mirrors qsv's built-in look (INK/PAPER_BG/GRID_COLOR/AXIS_LINE); the dark
-    // palette is a fixed dark set. `buildUpdate` only sets keys present on a given graph's layout,
-    // so axis-less plots (pie) and arbitrary subplot counts both work without knowing div ids.
+    // The light palette mirrors the selected theme's own template colors for light non-default
+    // themes (so the relayout keeps charts consistent with the themed page), else qsv's built-in
+    // look; the dark palette is a fixed dark set. `buildUpdate` only sets keys present on a given
+    // graph's layout, so axis-less plots (pie) and arbitrary subplot counts both work without
+    // knowing div ids.
+    let (light_paper, light_font, light_grid, light_line, light_zero) = light_chart_palette(theme);
     let script = SCRIPT_TEMPLATE
         .replace("__DEFAULT_MODE__", default_mode)
-        .replace("__PAPER_BG__", PAPER_BG)
-        .replace("__INK__", INK)
-        .replace("__GRID_COLOR__", GRID_COLOR)
-        .replace("__AXIS_LINE__", AXIS_LINE)
+        .replace("__LIGHT_PAPER__", light_paper)
+        .replace("__LIGHT_FONT__", light_font)
+        .replace("__LIGHT_GRID__", light_grid)
+        .replace("__LIGHT_LINE__", light_line)
+        .replace("__LIGHT_ZERO__", light_zero)
         .replace("__GEO_LAND_LIGHT__", GEO_LAND_LIGHT)
         .replace("__GEO_WATER_LIGHT__", GEO_WATER_LIGHT)
         .replace("__GEO_LAND_DARK__", GEO_LAND_DARK)
@@ -4782,7 +4818,7 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
   var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
-  var LIGHT = { paper: "__PAPER_BG__", plot: "__PAPER_BG__", font: "__INK__", grid: "__GRID_COLOR__", line: "__AXIS_LINE__", zero: "__GRID_COLOR__", bg: "__PAPER_BG__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
+  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard
     // saved preference (the localStorage key is shared across all qsv viz pages,

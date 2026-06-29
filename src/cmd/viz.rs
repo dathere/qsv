@@ -4807,7 +4807,7 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
-      } else if (/^mapbox\d*$/.test(k)) {
+      } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
         u[k + ".style"] = p.mapbox;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
@@ -5548,6 +5548,25 @@ enum PanelKind {
         /// Pre-rendered per-region hover label (aligned to `locations`): name+id, labeled count,
         /// share of total, rank. Attached via `hover_text_array` + `HoverInfo::Text` at render.
         hover_text:     Vec<String>,
+    },
+    /// Filled-region choropleth drawn on a MapLibre tile basemap (`map` subplot) instead of the
+    /// projection `geo` subplot — used for a `viz smart` `--geojson` point-in-polygon panel whose
+    /// matched regions span a metro-scale extent (< `SMART_CHOROPLETH_MIN_SPAN_DEG` in BOTH dims),
+    /// where the projection basemap's coastline/street detail is too coarse. Carries the user
+    /// GeoJSON plus a precomputed center/zoom so render frames the metro area without re-scanning
+    /// geometry. Like `Choropleth`, the `map` subplot doesn't compose with the typed x/y grid, so a
+    /// dashboard containing this panel always renders via the inline path.
+    ChoroplethMap {
+        locations:      Vec<String>,
+        z:              Vec<f64>,
+        geojson:        serde_json::Value,
+        feature_id_key: String,
+        hover_text:     Vec<String>,
+        /// Map center + zoom precomputed from the matched-region bbox union (degrees; `Center` is
+        /// rebuilt at render as `Center::new(center_lat, center_lon)`).
+        center_lon:     f64,
+        center_lat:     f64,
+        zoom:           f64,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -7333,8 +7352,53 @@ fn build_smart_pip_choropleth_panel(
     } else {
         "Regions".to_string()
     };
-    Ok(Some(Panel::new(
-        panel_name,
+    // Frame the basemap to the matched regions' bbox union (PipFeature::bbox is
+    // [min_lon, min_lat, max_lon, max_lat]). A metro-scale extent — under
+    // SMART_CHOROPLETH_MIN_SPAN_DEG in BOTH dimensions, the inverse of the country-scale threshold
+    // build_smart_choropleth_panel uses — renders on a MapLibre tile basemap (fine street/coastline
+    // detail) instead of the projection `geo` basemap (whose coastlines are too coarse at city
+    // scale). Continental/global extents stay on the projection basemap (offline, no tile fetches).
+    let matched: std::collections::HashSet<&str> = order.iter().map(String::as_str).collect();
+    let mut min_lon = f64::INFINITY;
+    let mut min_lat = f64::INFINITY;
+    let mut max_lon = f64::NEG_INFINITY;
+    let mut max_lat = f64::NEG_INFINITY;
+    // a matched feature crossing the ±180° seam stores its bbox in a [0, 360) frame, so a raw
+    // min/max union would be meaningless; fall back to the projection basemap in that case.
+    let mut any_wrap = false;
+    for f in &features {
+        if matched.contains(f.id.as_str()) {
+            min_lon = min_lon.min(f.bbox[0]);
+            min_lat = min_lat.min(f.bbox[1]);
+            max_lon = max_lon.max(f.bbox[2]);
+            max_lat = max_lat.max(f.bbox[3]);
+            any_wrap |= f.wraps_antimeridian;
+        }
+    }
+    let lon_span = max_lon - min_lon;
+    let lat_span = max_lat - min_lat;
+    let use_tiles = !any_wrap
+        && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
+        && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
+
+    let kind = if use_tiles {
+        PanelKind::ChoroplethMap {
+            locations: order,
+            z,
+            geojson,
+            feature_id_key: feature_id_key.to_string(),
+            hover_text,
+            center_lon: (min_lon + max_lon) / 2.0,
+            center_lat: (min_lat + max_lat) / 2.0,
+            zoom: f64::from(fitbounds_zoom(
+                min_lat,
+                max_lat,
+                lon_span,
+                MAP_PANEL_ASSUMED_WIDTH_PX,
+                MAP_PANEL_USABLE_HEIGHT_PX,
+            )),
+        }
+    } else {
         PanelKind::Choropleth {
             locations: order,
             z,
@@ -7342,8 +7406,9 @@ fn build_smart_pip_choropleth_panel(
             geojson: Some(geojson),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
-        },
-    )))
+        }
+    };
+    Ok(Some(Panel::new(panel_name, kind)))
 }
 
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
@@ -8843,6 +8908,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             PanelKind::Map { .. }
                 | PanelKind::Geo { .. }
                 | PanelKind::Choropleth { .. }
+                | PanelKind::ChoroplethMap { .. }
                 | PanelKind::Scatter3D { .. }
                 | PanelKind::Hierarchy { .. }
         )
@@ -8902,6 +8968,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
+            | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. } => None,
         })
         .collect();
@@ -9218,6 +9285,7 @@ fn panel_trace(
         PanelKind::Map { .. }
         | PanelKind::Geo { .. }
         | PanelKind::Choropleth { .. }
+        | PanelKind::ChoroplethMap { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::Hierarchy { .. } => {
             unreachable!(
@@ -9285,6 +9353,7 @@ fn smart_grid_parts(
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
+            | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. } => None,
         })
         .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
@@ -9965,6 +10034,59 @@ fn smart_inline_panel_plot(
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // metro-scale `--geojson` choropleth: a MapLibre tile basemap (`map` subplot) supplies the fine
+    // street/coastline detail the projection basemap lacks at city scale. Center/zoom are
+    // precomputed from the matched-region bbox, so render frames the metro area without re-scanning
+    // geometry. Token-free carto tiles (load from local files; no Referer header) chosen by theme,
+    // matching the point `Map` panel.
+    if let PanelKind::ChoroplethMap {
+        locations,
+        z,
+        geojson,
+        feature_id_key,
+        hover_text,
+        center_lon,
+        center_lat,
+        zoom,
+    } = &panel.kind
+    {
+        let mut plot = Plot::new();
+        plot.add_trace(
+            ChoroplethMap::new(locations.clone(), z.clone())
+                .geojson(geojson.clone())
+                .feature_id_key(feature_id_key.clone())
+                .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                .show_scale(true)
+                .color_bar(ColorBar::new().title("count"))
+                .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+                .hover_text_array(hover_text.clone())
+                .hover_info(HoverInfo::Text),
+        );
+        let style = if is_dark_theme(theme) {
+            MapStyle::CartoDarkMatter
+        } else {
+            MapStyle::CartoPositron
+        };
+        let layout_map = LayoutMap::new()
+            .style(style)
+            .center(Center::new(*center_lat, *center_lon))
+            .zoom(*zoom);
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .map(layout_map);
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -10946,6 +11068,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::Map { .. }
         | PanelKind::Geo { .. }
         | PanelKind::Choropleth { .. }
+        | PanelKind::ChoroplethMap { .. }
         | PanelKind::Hierarchy { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
@@ -13602,6 +13725,67 @@ mod tests {
         .unwrap()
         .expect("panel renders");
         assert_eq!(no_snap.name, "Regions (1 dropped, --no-snap)");
+
+        // the continental-extent regions above (20 deg lon / 10 deg lat span, both >=
+        // SMART_CHOROPLETH_MIN_SPAN_DEG) stay on the projection `geo` basemap, NOT tiles.
+        assert!(
+            matches!(panel.kind, PanelKind::Choropleth { .. }),
+            "continental extent uses the projection Choropleth, got {:?}",
+            std::mem::discriminant(&panel.kind)
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    // a metro-scale `--geojson` choropleth (matched regions span < SMART_CHOROPLETH_MIN_SPAN_DEG in
+    // BOTH dims) switches to the MapLibre tile basemap (`ChoroplethMap`), framed to the region
+    // bbox, so city-scale coastline/street detail isn't lost on the coarse projection basemap.
+    #[test]
+    fn smart_pip_panel_metro_extent_uses_tile_basemap() {
+        // two small adjacent NYC-scale regions: ~0.05 deg each, union ~0.1 deg lon / 0.05 deg lat.
+        let gj = r#"{"type":"FeatureCollection","features":[
+            {"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon",
+             "coordinates":[[[-74.05,40.70],[-74.05,40.75],[-74.00,40.75],[-74.00,40.70],[-74.05,40.70]]]}},
+            {"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon",
+             "coordinates":[[[-74.00,40.70],[-74.00,40.75],[-73.95,40.75],[-73.95,40.70],[-74.00,40.70]]]}}]}"#;
+        let path = std::env::temp_dir().join("qsv_smart_pip_metro_test.geojson");
+        std::fs::write(&path, gj).unwrap();
+        let spec = path.to_str().unwrap();
+        // 2 points in A, 2 in B.
+        let lats = vec![40.72, 40.73, 40.72, 40.73];
+        let lons = vec![-74.02, -74.03, -73.97, -73.98];
+
+        let panel =
+            build_smart_pip_choropleth_panel(spec, "properties.id", None, &lats, &lons, true, 10.0)
+                .unwrap()
+                .expect("2 regions keep points, so a panel renders");
+        match panel.kind {
+            PanelKind::ChoroplethMap {
+                center_lon,
+                center_lat,
+                zoom,
+                ..
+            } => {
+                // centered on the matched-region bbox union (lon -74.05..-73.95, lat 40.70..40.75).
+                assert!(
+                    (center_lon - (-74.0)).abs() < 1e-9,
+                    "center_lon = {center_lon}"
+                );
+                assert!(
+                    (center_lat - 40.725).abs() < 1e-9,
+                    "center_lat = {center_lat}"
+                );
+                // a ~0.1 deg metro box zooms in well past the world view, within the fit clamp.
+                assert!(
+                    (9.0..=16.0).contains(&zoom),
+                    "metro zoom should be street-level, got {zoom}"
+                );
+            },
+            other => panic!(
+                "metro extent should use the tile basemap, got {:?}",
+                std::mem::discriminant(&other)
+            ),
+        }
 
         let _ = std::fs::remove_file(&path);
     }

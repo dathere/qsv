@@ -73,12 +73,57 @@ PREGENERATED = {
 DASH_CSS = ("figure.full iframe.dash{width:100%;border:0;height:600px;display:block;"
             "border-radius:6px;overflow:hidden}")
 
+# GitHub-style copy icons (Octicons, 16x16, fill=currentColor). The button shows the "copy" icon
+# (two overlapping squares) and swaps to a green "check" on success — both are present in the
+# button and toggled by the `.ok` class (no innerHTML churn, no SVG strings in JS).
+COPY_ICON_SVG = ('<svg class="ci-copy" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">'
+                 '<path d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 0 1 0 1.5h-1.5a.25.25 0 0 0-.25'
+                 '.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 0 0 .25-.25v-1.5a.75.75 0 0 1 1.5 0v1.5A1.'
+                 '75 1.75 0 0 1 9.25 16h-7.5A1.75 1.75 0 0 1 0 14.25Z"></path>'
+                 '<path d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 '
+                 '0 1 14.25 11h-7.5A1.75 1.75 0 0 1 5 9.25Zm1.75-.25a.25.25 0 0 0-.25.25v7.5c0 .138.11'
+                 '2.25.25.25h7.5a.25.25 0 0 0 .25-.25v-7.5a.25.25 0 0 0-.25-.25Z"></path></svg>')
+CHECK_ICON_SVG = ('<svg class="ci-check" viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">'
+                  '<path d="M13.78 4.22a.75.75 0 0 1 0 1.06l-7.25 7.25a.75.75 0 0 1-1.06 0L1.72 9.78a.'
+                  '751.751 0 0 1 .018-1.042.751.751 0 0 1 1.042-.018L6 11.94l6.72-6.72a.75.75 0 0 1 1.'
+                  '06 0Z"></path></svg>')
+
 # Styling for the per-figure, copy-pasteable `qsv viz` command block rendered under each
-# description. `<pre>` preserves the single-line command and monospaces it; overflow-x:auto lets a
-# long command scroll horizontally rather than wrap, so a copy-paste stays intact.
-CMD_CSS = ("figure pre.cmd{background:#f3f5f9;border-radius:6px;padding:8px 10px;"
-           "margin:6px 4px 0;overflow-x:auto;font:11.5px/1.4 SFMono-Regular,"
-           "Consolas,Menlo,monospace;color:#2A3F5F}")
+# description. The block wraps long commands (with a ` \` shell continuation) and `<pre>` preserves
+# those newlines; overflow-x:auto still scrolls any stray over-wide line. `.cmdbox` is the relative
+# anchor for the GitHub-style icon-only Copy button (top-right); pre.cmd's right padding keeps text
+# clear of it. The button is subtle by default, darker on hover, and shows a green check on success.
+CMD_CSS = ("figure .cmdbox{position:relative;margin:6px 4px 0}"
+           "figure pre.cmd{background:#f3f5f9;border-radius:6px;padding:8px 40px 8px 10px;"
+           "margin:0;overflow-x:auto;font:11.5px/1.4 SFMono-Regular,Consolas,Menlo,monospace;"
+           "color:#2A3F5F;white-space:pre}"
+           "figure button.copy{position:absolute;top:6px;right:6px;display:inline-flex;"
+           "align-items:center;justify-content:center;width:28px;height:28px;padding:0;"
+           "border:1px solid transparent;background:transparent;color:#57606a;border-radius:6px;"
+           "cursor:pointer}"
+           "figure button.copy:hover{color:#24292f;background:#eef1f6;border-color:#d4d9e3}"
+           "figure button.copy svg{width:16px;height:16px;fill:currentColor;display:block}"
+           "figure button.copy .ci-check{display:none}"
+           "figure button.copy.ok{color:#1a7f37;border-color:transparent;background:transparent}"
+           "figure button.copy.ok .ci-copy{display:none}"
+           "figure button.copy.ok .ci-check{display:block}")
+
+# Injected once into the gallery: copies a command block's single-line form (data-cmd) to the
+# clipboard. Uses the async Clipboard API when available (https / localhost) and falls back to a
+# hidden-textarea + execCommand("copy") for file:// where the API is absent. Flips the button label
+# to "Copied!" for ~1.2s on success.
+COPY_JS = (
+    "<script>document.addEventListener(\"click\",function(e){"
+    "var b=e.target.closest&&e.target.closest(\"button.copy\");if(!b)return;"
+    "var cmd=b.getAttribute(\"data-cmd\");"
+    "function ok(){if(b._t)clearTimeout(b._t);b.classList.add(\"ok\");b.title=\"Copied!\";"
+    "b._t=setTimeout(function(){b.classList.remove(\"ok\");b.title=\"Copy\";b._t=null;},1200);}"
+    "if(navigator.clipboard&&navigator.clipboard.writeText){"
+    "navigator.clipboard.writeText(cmd).then(ok,function(){fallback();});}else{fallback();}"
+    "function fallback(){var t=document.createElement(\"textarea\");t.value=cmd;"
+    "t.style.position=\"fixed\";t.style.opacity=\"0\";document.body.appendChild(t);t.select();"
+    "try{if(document.execCommand(\"copy\"))ok();}catch(err){}document.body.removeChild(t);}"
+    "});</script>")
 
 # Injected into each smart_*.html so the dashboard reports its real rendered height to the parent
 # gallery. postMessage works cross-origin (e.g. when the gallery is opened over file://), unlike
@@ -322,24 +367,60 @@ def find_qsv():
     sys.exit("qsv binary not found: build it (cargo build --bin qsv -F all_features) or set QSV_BIN")
 
 
-def viz_command(title, args):
-    """The copy-pasteable `qsv viz` command for a figure, runnable from this directory.
+def viz_command_tokens(title, args):
+    """The `qsv viz` command for a figure as a token list, runnable from this directory.
 
     Dataset paths in `args` are already relative to examples/viz; a slugged `-o <slug>.html`
     (derived from the unique title) is appended so the command writes a viewable artifact
     instead of flooding stdout. This is display text only — `gen_gallery.py` runs each figure
-    into a tempfile, so no example output file is written to the tree."""
+    into a tempfile, so no example output file is written to the tree. Args are shlex-quoted so
+    each token is atomic (safe to wrap on token boundaries even if a value contained spaces)."""
     slug = re.sub(r"[^a-z0-9]+", "_", title.lower()).strip("_")
-    parts = " ".join(shlex.quote(a) for a in args)
-    return f"qsv viz {parts} -o {slug}.html"
+    return ["qsv", "viz", *(shlex.quote(a) for a in args), "-o", f"{slug}.html"]
+
+
+def viz_command(title, args):
+    """The single-line command string — used verbatim as the copy-to-clipboard source."""
+    return " ".join(viz_command_tokens(title, args))
+
+
+def wrap_command_lines(tokens, width=60):
+    """Wrap a token list into lines, breaking BEFORE a flag (`-`/`--` token) once the current
+    line reaches `width`. Keeps each flag with its value on the same line and never splits a
+    token. Returns the list of line strings (joined later with a ` \\` shell continuation)."""
+    lines, cur = [], ""
+    for tok in tokens:
+        if not cur:
+            cur = tok
+        elif tok.startswith("-") and len(cur) >= width:
+            lines.append(cur)
+            cur = tok
+        else:
+            cur += " " + tok
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+# Continuation joiner: trailing space + backslash + newline + 2-space indent. The displayed,
+# wrapped command stays a valid shell command if pasted as-is; the Copy button copies the
+# single-line form (data-cmd) for the cleanest paste.
+WRAP_SEP = " \\\n  "
 
 
 def figcaption_html(title, desc, args):
-    """A figure's `<figcaption>`: title, description, then the runnable command block."""
-    cmd = html_escape(viz_command(title, args))
+    """A figure's `<figcaption>`: title, description, then the runnable command block with a
+    Copy button. The displayed command is wrapped for readability; the button copies the
+    single-line form."""
+    tokens = viz_command_tokens(title, args)
+    display = html_escape(WRAP_SEP.join(wrap_command_lines(tokens)))
+    oneline = html_escape(" ".join(tokens), quote=True)
     return (f'<figcaption><span class="t">{title}</span>'
             f'<span class="d">{desc}</span>'
-            f'<pre class="cmd"><code>{cmd}</code></pre></figcaption>')
+            f'<div class="cmdbox"><button class="copy" type="button" title="Copy" '
+            f'aria-label="Copy command to clipboard" data-cmd="{oneline}">'
+            f'{COPY_ICON_SVG}{CHECK_ICON_SVG}</button>'
+            f'<pre class="cmd"><code>{display}</code></pre></div></figcaption>')
 
 
 def scan_object(html, brace_start):
@@ -460,8 +541,8 @@ def main():
     # reused verbatim across runs) so the current DASH_CSS always wins.
     head = re.sub(r"\s*figure\.full iframe\.dash\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + DASH_CSS + "\n</style>", 1)
-    # per-figure command block styling (idempotent: drop any prior rule before re-adding)
-    head = re.sub(r"\s*figure pre\.cmd\{[^}]*\}", "", head)
+    # per-figure command block styling (idempotent: drop all prior cmd rules before re-adding)
+    head = re.sub(r"\s*figure (?:pre\.cmd|\.cmdbox|button\.copy)[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + CMD_CSS + "\n</style>", 1)
 
     figs, fig_divs, plots = [], [], []
@@ -531,6 +612,7 @@ def main():
         + "\n".join(plots) + "\n"
         + "</script>\n"
         + RESIZE_LISTENER_JS + "\n"
+        + COPY_JS + "\n"
         + "</body></html>\n"
     )
     with open(GALLERY, "w", encoding="utf-8") as fh:

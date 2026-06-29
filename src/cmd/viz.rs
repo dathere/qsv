@@ -4880,12 +4880,17 @@ fn smart_html_page(
   body {{ font-family: {FONT_FAMILY}; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}
   h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
-  #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.85; line-height: 0; }}
+  #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.95; line-height: 0; }}
   #qsv-logo:hover {{ opacity: 1; }}
-  #qsv-logo img {{ height: 28px; width: auto; display: block; }}
+  /* Theme-aware halo so the logo stays legible on any paper color: a faint dark
+     outline on light themes, a light outline under body.qsv-dark so the navy
+     shield reads against near-black dark-theme paper. Keyed on body.qsv-dark, so
+     it follows the runtime Theme toggle, not just the initial --theme. */
+  #qsv-logo img {{ height: 28px; width: auto; display: block; filter: drop-shadow(0 0 2px rgba(0, 0, 0, 0.45)); }}
   #qsv-logo .qsv-logo-dark {{ display: none; }}
   body.qsv-dark #qsv-logo .qsv-logo-light {{ display: none; }}
   body.qsv-dark #qsv-logo .qsv-logo-dark {{ display: block; }}
+  body.qsv-dark #qsv-logo img {{ filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.6)) drop-shadow(0 0 1px rgba(255, 255, 255, 0.45)); }}
 {toggle_style}
 {extra_style}
 </style>

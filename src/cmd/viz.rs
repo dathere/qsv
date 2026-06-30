@@ -9567,8 +9567,28 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
 
     // prepend a "measure by dimension" bar when a low-cardinality categorical dimension strongly
     // explains one of the numeric measures (correlation ratio η² above the gate) — e.g. mean amount
-    // by region. Reuses the numeric measures already gathered for the correlation matrix; the panel
-    // builder does one extra data pass to compute η² and the per-group aggregates.
+    // by region. The panel builder does one extra data pass to compute η² and the per-group
+    // aggregates.
+    //
+    // Measure candidates are computed separately from `numeric_indices` (the correlation list): a
+    // genuine per-row measure like revenue/amount is often near-unique, and the correlation list
+    // drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique columns
+    // ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a column the
+    // dictionary explicitly routes as `Measure` qualifies regardless of uniqueness — mirroring the
+    // time-series panel, which deliberately allows near-unique measures.
+    let measure_indices: Vec<usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            let route = col_sems[*i].route;
+            !is_map_col(*i)
+                && matches!(route, Route::Defer | Route::Measure)
+                && matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.cardinality > 1
+                && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
+        })
+        .map(|(i, _)| i)
+        .collect();
     let dim_indices: Vec<usize> = stats
         .iter()
         .enumerate()
@@ -9582,13 +9602,13 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         })
         .map(|(i, _)| i)
         .collect();
-    if !numeric_indices.is_empty() && !dim_indices.is_empty() {
+    if !measure_indices.is_empty() && !dim_indices.is_empty() {
         let top_n = args.flag_limit.max(1);
         match measure_by_dim_panel(
             args,
             &stats,
             &col_sems,
-            &numeric_indices,
+            &measure_indices,
             &dim_indices,
             top_n,
         ) {

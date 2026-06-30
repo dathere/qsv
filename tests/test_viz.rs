@@ -1949,6 +1949,51 @@ fn viz_smart_measure_by_dimension_panel() {
 }
 
 #[test]
+fn viz_smart_measure_by_dimension_keeps_near_unique_dictionary_measure() {
+    let wrk = Workdir::new("viz_smart_measure_by_dimension_keeps_near_unique_dictionary_measure");
+    // a genuine per-row measure (revenue, all 60 values distinct -> near-unique) strongly explained
+    // by a low-card dimension (region). The correlation candidate list drops near-unique columns to
+    // keep IDs out of the matrix; MeasureByDim must NOT inherit that exclusion for a column the
+    // dictionary explicitly routes as a Measure, or this meaningful panel would be silently
+    // omitted.
+    let mut rows = String::from("region,revenue\n");
+    for i in 0..30 {
+        rows.push_str(&format!("east,{}\n", 1000 + i));
+    }
+    for i in 0..30 {
+        rows.push_str(&format!("west,{}\n", 5000 + i));
+    }
+    wrk.create_from_string("rev.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the dictionary friendly labels title the bar; presence proves the near-unique measure was
+    // NOT excluded. (An additive `measure.amount` aggregates as "sum", not "mean".)
+    assert!(
+        html.contains("Revenue by Region ("),
+        "a dictionary-tagged near-unique measure should still yield a measure-by-dimension bar"
+    );
+}
+
+#[test]
 fn viz_smart_bubble_scatter_size_encodes_third() {
     let wrk = Workdir::new("viz_smart_bubble_scatter_size_encodes_third");
     // three correlated numeric columns (small dataset -> scatter, not contour). The strongest pair

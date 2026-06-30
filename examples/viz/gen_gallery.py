@@ -158,13 +158,16 @@ RESIZE_LISTENER_JS = (
 # document-level `fullscreenchange` listener then resizes the plot so it actually fills the
 # fullscreen viewport on enter (and restores on exit) — mirroring the CLI handler's resize.
 #
-# Maps mirror the CLI's `qsvRefitMaps` (see FULLSCREEN_SCRIPT in src/cmd/viz.rs): mapbox/MapLibre
-# bake an absolute zoom for a fixed assumed px size — standalone `viz map` HTML frames against
-# 1000x600 (the only map figures reconstructed on this page are standalone; the map-bearing smart
-# dashboards are iframes that carry their own CLI prelude). Since mapbox zoom is logarithmic, the
-# optimal zoom for any real container size is bakedZoom + log2(min(curW/1000, curH/600)) keeping the
-# baked center; curW/curH are domain-scaled (subplot px). Applied on initial display and on every
-# fullscreenchange, recomputing from the once-captured baked reference so toggles don't drift.
+# Maps mirror the CLI's fit (see FULLSCREEN_SCRIPT in src/cmd/viz.rs): mapbox/MapLibre bake an
+# absolute zoom for a fixed assumed px size — standalone `viz map` HTML frames against 1000x600
+# (the only map figures reconstructed on this page are standalone; the map-bearing smart dashboards
+# are iframes that carry their own CLI prelude). Since mapbox zoom is logarithmic, the optimal zoom
+# for any real container size is bakedZoom + log2(min(curW/1000, curH/600)) keeping the baked center
+# (qsvFitTarget); curW/curH are domain-scaled (subplot px). The fit is applied by aiming the GL map
+# camera directly (qsvApplyCamera -> _subplot.map.jumpTo), NEVER Plotly.relayout/react — those throw
+# on a MapLibre choroplethmap in our pinned plotly fork and blank the layer. Applied on initial
+# display and on every fullscreenchange, recomputing from the once-captured baked reference so
+# toggles don't drift.
 FS_BUTTON_JS = (
     'var qsvFsBtn={name:"qsv-fullscreen",title:"Toggle fullscreen",'
     'icon:{width:512,height:512,path:"M512 512v-208l-80 80-96-96-48 48 96 96-80 80z '
@@ -178,23 +181,43 @@ FS_BUTTON_JS = (
     'qsvMapKeys(gd).forEach(function(k){gd.__qsvBaked[k]={z:lay[k].zoom,c:lay[k].center};});}'
     'function qsvPlotPx(gd){var fl=gd._fullLayout||{};'
     'return{w:fl.width||gd.clientWidth||0,h:fl.height||gd.clientHeight||0};}'
-    'function qsvRefitMaps(gd,plotW,plotH){if(!gd||!gd.__qsvBaked||!(plotW>0)||!(plotH>0))return;'
-    'var aw=1000,ah=600,lay=gd.layout||{};Object.keys(gd.__qsvBaked).forEach(function(k){'
-    'var b=gd.__qsvBaked[k];if(!b||typeof b.z!=="number")return;'
-    'var dom=(lay[k]&&lay[k].domain)||{};'
+    'function qsvFitTarget(gd,k,plotW,plotH){var b=gd.__qsvBaked&&gd.__qsvBaked[k];'
+    'if(!b||typeof b.z!=="number"||!(plotW>0)||!(plotH>0))return null;'
+    'var aw=1000,ah=600,lay=gd.layout||{};var dom=(lay[k]&&lay[k].domain)||{};'
     'var dx=(dom.x&&dom.x.length===2)?(dom.x[1]-dom.x[0]):1;'
     'var dy=(dom.y&&dom.y.length===2)?(dom.y[1]-dom.y[0]):1;'
-    'var ratio=Math.min((dx*plotW)/aw,(dy*plotH)/ah);if(!isFinite(ratio)||ratio<=0)return;'
-    'var u={};u[k+".zoom"]=b.z+Math.log2(ratio);if(b.c)u[k+".center"]=b.c;'
-    # let a "Style is not done loading" throw propagate so qsvFitNow can retry (see viz.rs).
-    'Plotly.relayout(gd,u);});}'
-    'function qsvFitNow(gd,tries){if(tries===undefined)tries=20;try{qsvCaptureBaked(gd);'
-    'var px=qsvPlotPx(gd);qsvRefitMaps(gd,px.w,px.h);}'
-    'catch(e){if(tries>0)setTimeout(function(){qsvFitNow(gd,tries-1);},150);}}'
+    'var ratio=Math.min((dx*plotW)/aw,(dy*plotH)/ah);if(!isFinite(ratio)||ratio<=0)return null;'
+    'return{zoom:b.z+Math.log2(ratio),center:b.c};}'
+    # Aim the GL map camera directly (gd._fullLayout[k]._subplot.map.jumpTo) — NEVER Plotly.relayout/
+    # react, which throw on a MapLibre choroplethmap in our pinned plotly fork ("setData of
+    # undefined") and blank the layer. Mirrors applyFitCamera in src/cmd/viz.rs.
+    'function qsvApplyCamera(gd,plotW,plotH){if(!gd||!gd.__qsvBaked)return;'
+    'var fl=gd._fullLayout||{},lay=gd.layout||{};Object.keys(gd.__qsvBaked).forEach(function(k){'
+    'var t=qsvFitTarget(gd,k,plotW,plotH);if(!t)return;'
+    'var sp=fl[k]&&fl[k]._subplot,m=sp&&sp.map;if(!m||typeof m.jumpTo!=="function")return;'
+    'var dest={zoom:t.zoom};'
+    'if(t.center&&typeof t.center.lon==="number"&&typeof t.center.lat==="number")'
+    'dest.center=[t.center.lon,t.center.lat];try{m.jumpTo(dest);}catch(e){}'
+    'if(lay[k]){lay[k].zoom=t.zoom;if(t.center)lay[k].center=t.center;}});}'
+    # capture baked once, wait (bounded) for each map subplot's _subplot.map to attach, then aim.
+    'function qsvFitNow(gd,tries){if(tries===undefined)tries=20;qsvCaptureBaked(gd);'
+    'var fl=gd._fullLayout||{};var ready=Object.keys(gd.__qsvBaked||{}).every(function(k){'
+    'var sp=fl[k]&&fl[k]._subplot;return sp&&sp.map;});'
+    'if(!ready&&tries>0){setTimeout(function(){qsvFitNow(gd,tries-1);},100);return;}'
+    'var px=qsvPlotPx(gd);qsvApplyCamera(gd,px.w,px.h);}'
     'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
     'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
     'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
-    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);}else pending=true;});'
+    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);'
+    # Core/Full extent buttons bake an assumed-px zoom; adopt the clicked extent as the new fit
+    # reference and re-aim the camera for the current size (mirrors the CLI handler in viz.rs).
+    'if(gd.on)gd.on("plotly_buttonclicked",function(ed){try{'
+    'var args=ed&&ed.button&&ed.button.args&&ed.button.args[0];if(!args||!gd.__qsvBaked)return;'
+    'var hit=false;Object.keys(gd.__qsvBaked).forEach(function(k){var z=args[k+".zoom"];'
+    'if(typeof z!=="number")return;var c=args[k+".center"];'
+    'gd.__qsvBaked[k]={z:z,c:(c!==undefined?c:gd.__qsvBaked[k].c)};hit=true;});'
+    'if(hit)setTimeout(function(){qsvFitNow(gd);},0);}catch(e){}});'
+    '}else pending=true;});'
     'if(pending&&qsvTries++<100)setTimeout(qsvInitFit,50);}setTimeout(qsvInitFit,0);'
     # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
     # the post-resize dims rather than stale pre-change ones.

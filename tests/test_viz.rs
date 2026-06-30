@@ -5430,9 +5430,10 @@ fn viz_smart_has_fullscreen_button() {
     assert!(html.contains(".js-plotly-plot:fullscreen"));
 }
 
-// The map zoom auto-fit (`qsvRefitMaps`) recomputes mapbox/MapLibre zoom for the real container
-// size from the baked (assumed-px) zoom on initial display and on fullscreen toggle. These assert
-// the client-side fit logic and the per-render-path assumed-dims prelude are emitted.
+// The map zoom auto-fit recomputes mapbox/MapLibre zoom for the real container size from the baked
+// (assumed-px) zoom on initial display (`applyFitLayout` before the render newPlot) and on
+// fullscreen toggle (`applyFitCamera` via the GL camera). These assert the client-side fit logic
+// and the per-render-path assumed-dims prelude are emitted.
 
 #[test]
 fn viz_map_has_zoom_autofit() {
@@ -5445,8 +5446,9 @@ fn viz_map_has_zoom_autofit() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // the fit helper + logarithmic zoom math...
-    assert!(html.contains("qsvRefitMaps"));
+    // the fit helpers (layout pre-mutation + GL-camera) + logarithmic zoom math...
+    assert!(html.contains("applyFitLayout"));
+    assert!(html.contains("applyFitCamera"));
     assert!(html.contains("Math.log2"));
     // ...and the standalone assumed-dims prelude (fit_dims HTML default = 1000x600).
     assert!(html.contains("window.__qsvMapAssumedW=1000"));
@@ -5464,8 +5466,14 @@ fn viz_smart_map_has_zoom_autofit() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    assert!(html.contains("qsvRefitMaps"));
+    assert!(html.contains("applyFitLayout"));
+    assert!(html.contains("applyFitCamera"));
     assert!(html.contains("Math.log2"));
+    // Core/Full extent buttons re-fit to the current container size via the buttonclicked handler.
+    assert!(html.contains("plotly_buttonclicked"));
+    // theme toggle skips the basemap restyle for a choroplethmap (the fork's relayout would blank
+    // it).
+    assert!(html.contains("hasChoro"));
     // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x352).
     assert!(html.contains("window.__qsvMapAssumedW=960"));
     assert!(html.contains("window.__qsvMapAssumedH=352"));

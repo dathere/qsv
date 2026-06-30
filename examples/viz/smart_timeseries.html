@@ -87,53 +87,106 @@
     var fl = gd._fullLayout || {};
     return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
   }
-  // Re-fit every captured map subplot to the current plot pixel size. mapbox zoom is logarithmic,
-  // so to keep the SAME bounds framed: zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)),
-  // keeping the baked center. curW/curH are DOMAIN-scaled (the subplot's own px), so this is
-  // correct for a full-bleed map AND a map that is one subplot in a combined grid.
-  function qsvRefitMaps(gd, plotW, plotH) {
-    if (!gd || !gd.__qsvBaked || !(plotW > 0) || !(plotH > 0)) return;
+  // Compute the optimal {zoom, center} for map subplot `k` at the current plot pixel size.
+  // mapbox/MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
+  // differs from the assumed px the baked zoom was computed for:
+  //   zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)); center = baked center.
+  // curW/curH are DOMAIN-scaled (the subplot's own px), so this is correct for a full-bleed map AND
+  // a map that is one subplot in a combined grid. Always recomputed from the fixed baked reference,
+  // so repeated re-fits never drift.
+  function fitTarget(gd, k, plotW, plotH) {
+    var baked = gd.__qsvBaked && gd.__qsvBaked[k];
+    if (!baked || typeof baked.z !== "number" || !(plotW > 0) || !(plotH > 0)) return null;
     var a = assumedDims(), lay = gd.layout || {};
+    var dom = (lay[k] && lay[k].domain) || {};
+    var dx = (dom.x && dom.x.length === 2) ? (dom.x[1] - dom.x[0]) : 1;
+    var dy = (dom.y && dom.y.length === 2) ? (dom.y[1] - dom.y[0]) : 1;
+    var ratio = Math.min((dx * plotW) / a.w, (dy * plotH) / a.h);
+    if (!isFinite(ratio) || ratio <= 0) return null;
+    return { zoom: baked.z + Math.log2(ratio), center: baked.c };
+  }
+  // Pre-render fit: mutate gd.layout so the NEXT Plotly.newPlot renders at the fitted zoom. Used for
+  // the initial-display fit, folded into the button-injection newPlot (no extra paint). Crucially
+  // NO Plotly.relayout/react — those throw on a MapLibre choroplethmap in our pinned plotly fork
+  // ("setData of undefined") and blank the layer; only newPlot safely sets a map camera at render.
+  function applyFitLayout(gd, plotW, plotH) {
+    if (!gd || !gd.__qsvBaked) return;
+    var lay = gd.layout || {};
     Object.keys(gd.__qsvBaked).forEach(function (k) {
-      var baked = gd.__qsvBaked[k];
-      if (!baked || typeof baked.z !== "number") return;
-      var dom = (lay[k] && lay[k].domain) || {};
-      var dx = (dom.x && dom.x.length === 2) ? (dom.x[1] - dom.x[0]) : 1;
-      var dy = (dom.y && dom.y.length === 2) ? (dom.y[1] - dom.y[0]) : 1;
-      var ratio = Math.min((dx * plotW) / a.w, (dy * plotH) / a.h);
-      if (!isFinite(ratio) || ratio <= 0) return;
-      var upd = {};
-      upd[k + ".zoom"] = baked.z + Math.log2(ratio);
-      if (baked.c) upd[k + ".center"] = baked.c;
-      // NB: let a "Style is not done loading" throw propagate so fitNow can retry — swallowing it
-      // here is why an early initial-fit would silently no-op before the mapbox tiles are ready.
-      Plotly.relayout(gd, upd);
+      var t = fitTarget(gd, k, plotW, plotH);
+      if (!t || !lay[k]) return;
+      lay[k].zoom = t.zoom;
+      if (t.center) lay[k].center = t.center;
     });
   }
-  // mapbox/MapLibre relayout throws if called before the GL style finishes loading, so retry with
-  // backoff (bounded) until it sticks. Recomputes from the live px each try (size may still settle).
-  function fitNow(gd, tries) {
+  // Post-render fit: move the GL map camera directly via the maplibre/mapbox-gl instance
+  // (gd._fullLayout[k]._subplot.map). This sits BELOW plotly's relayout/react/setData path, so it
+  // re-aims a choroplethmap's camera without the "setData of undefined" throw, needs no tile
+  // reload, and works even before the GL style finishes loading. Used for fullscreen enter/exit.
+  function applyFitCamera(gd, plotW, plotH) {
+    if (!gd || !gd.__qsvBaked) return;
+    var fl = gd._fullLayout || {}, lay = gd.layout || {};
+    Object.keys(gd.__qsvBaked).forEach(function (k) {
+      var t = fitTarget(gd, k, plotW, plotH);
+      if (!t) return;
+      var sp = fl[k] && fl[k]._subplot, m = sp && sp.map;
+      if (!m || typeof m.jumpTo !== "function") return;
+      var dest = { zoom: t.zoom };
+      if (t.center && typeof t.center.lon === "number" && typeof t.center.lat === "number")
+        dest.center = [t.center.lon, t.center.lat];
+      try { m.jumpTo(dest); } catch (e) {}
+      // keep plotly's stored layout coherent with the camera (plain property set, NOT relayout).
+      if (lay[k]) { lay[k].zoom = t.zoom; if (t.center) lay[k].center = t.center; }
+    });
+  }
+  // The GL map camera may not be attached for a frame or two after a resize; retry briefly
+  // (bounded) until every captured map subplot has its `_subplot.map`, then aim the camera.
+  function fitCameraNow(gd, tries) {
     if (tries === undefined) tries = 20;
-    try {
-      var px = plotPx(gd);
-      qsvRefitMaps(gd, px.w, px.h);
-    } catch (e) { if (tries > 0) setTimeout(function () { fitNow(gd, tries - 1); }, 150); }
+    var fl = gd._fullLayout || {};
+    var ready = Object.keys(gd.__qsvBaked || {}).every(function (k) {
+      var sp = fl[k] && fl[k]._subplot; return sp && sp.map;
+    });
+    if (!ready && tries > 0) { setTimeout(function () { fitCameraNow(gd, tries - 1); }, 100); return; }
+    var px = plotPx(gd);
+    applyFitCamera(gd, px.w, px.h);
   }
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
       captureBaked(gd);
-      var pr = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
-      // initial-display fit: the baked zoom assumed a fixed px size; rescale to the real one.
-      if (pr && pr.then) pr.then(function () { fitNow(gd); }).catch(function () {});
-      else fitNow(gd);
+      // initial-display fit: bake the fitted zoom into the layout the button-injection newPlot
+      // renders, so the first paint already fills the real container (no relayout, no reflow).
+      var px = plotPx(gd);
+      applyFitLayout(gd, px.w, px.h);
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      // Core/Full extent buttons (viz smart outlier maps) relayout the map to a zoom baked for the
+      // ASSUMED px — so they ignore the real/fullscreen/resized container. Adopt the clicked
+      // extent's baked zoom/center as the new fit reference, then re-aim the camera for the CURRENT
+      // size (the button's own relayout fired the assumed-px zoom; this corrects it dimension-aware).
+      if (gd.on) gd.on("plotly_buttonclicked", function (ed) {
+        try {
+          var args = ed && ed.button && ed.button.args && ed.button.args[0];
+          if (!args || !gd.__qsvBaked) return;
+          var hit = false;
+          Object.keys(gd.__qsvBaked).forEach(function (k) {
+            var z = args[k + ".zoom"];
+            if (typeof z !== "number") return;
+            var c = args[k + ".center"];
+            gd.__qsvBaked[k] = { z: z, c: (c !== undefined ? c : gd.__qsvBaked[k].c) };
+            hit = true;
+          });
+          // defer so plotly's button relayout settles first, else it would overwrite the camera.
+          if (hit) setTimeout(function () { fitCameraNow(gd); }, 0);
+        } catch (e) {}
+      });
       gd.addEventListener("fullscreenchange", function () {
-        // Plotly.Plots.resize is async; fit only AFTER it resolves so fitNow reads the post-resize
-        // _fullLayout dims (else enter/exit would refit from stale pre-change dims and stick).
+        // Plotly.Plots.resize is async; aim the camera only AFTER it resolves so we read the
+        // post-resize _fullLayout dims (else enter/exit would refit from stale dims and stick).
         var rp;
         try { rp = Plotly.Plots.resize(gd); } catch (e) {}
-        if (rp && rp.then) rp.then(function () { fitNow(gd); }).catch(function () { fitNow(gd); });
-        else fitNow(gd);
+        if (rp && rp.then) rp.then(function () { fitCameraNow(gd); }).catch(function () { fitCameraNow(gd); });
+        else fitCameraNow(gd);
       });
     } catch (e) {}
   }
@@ -191,7 +244,11 @@
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
       } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
-        u[k + ".style"] = p.mapbox;
+        // A choroplethmap (MapLibre) can't take a `.style` relayout in our pinned plotly fork: it
+        // throws "setData of undefined" and blanks the polygons. Skip the basemap restyle for it
+        // (its data + the page's paper/font still theme); other map types still switch basemap.
+        var hasChoro = (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+        if (!hasChoro) u[k + ".style"] = p.mapbox;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }

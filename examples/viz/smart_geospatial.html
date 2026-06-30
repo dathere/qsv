@@ -329,11 +329,7 @@
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
       } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
-        // A choroplethmap (MapLibre) can't take a `.style` relayout in our pinned plotly fork: it
-        // throws "setData of undefined" and blanks the polygons. Skip the basemap restyle for it
-        // (its data + the page's paper/font still theme); other map types still switch basemap.
-        var hasChoro = (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
-        if (!hasChoro) u[k + ".style"] = p.mapbox;
+        u[k + ".style"] = p.mapbox;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -341,11 +337,40 @@
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
   }
+  function hasChoropleth(gd) {
+    return (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+  }
+  // Apply a flat dotted-key update (buildUpdate's shape) onto a nested layout, in place — so the
+  // same update can feed Plotly.newPlot (which wants nested layout) instead of relayout.
+  function setPath(obj, path, val) {
+    var parts = path.split("."), o = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (o[parts[i]] == null || typeof o[parts[i]] !== "object") o[parts[i]] = {};
+      o = o[parts[i]];
+    }
+    o[parts[parts.length - 1]] = val;
+  }
   function apply(dark) {
     document.body.classList.toggle("qsv-dark", dark);
     var p = dark ? DARK : LIGHT;
     document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
-      try { Plotly.relayout(gd, buildUpdate(gd, p)); } catch (e) {}
+      var u = buildUpdate(gd, p);
+      try {
+        if (hasChoropleth(gd)) {
+          // A choroplethmap (MapLibre) throws "setData of undefined" on a relayout/react in our
+          // pinned plotly fork, so fold the theme update (incl. the basemap `.style`) into a full
+          // Plotly.newPlot — the only primitive that safely restyles a choroplethmap without
+          // blanking its polygons. Preserve the injected fullscreen modebar button via the div's
+          // existing config.
+          Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
+          var cfg = { responsive: true };
+          var add = gd._context && gd._context.modeBarButtonsToAdd;
+          if (add && add.length) cfg.modeBarButtonsToAdd = add;
+          Plotly.newPlot(gd, gd.data, gd.layout, cfg);
+        } else {
+          Plotly.relayout(gd, u);
+        }
+      } catch (e) {}
     });
   }
   function init() {

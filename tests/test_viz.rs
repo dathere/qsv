@@ -1921,6 +1921,124 @@ fn viz_smart_timeseries_panel() {
 }
 
 #[test]
+fn viz_smart_measure_by_dimension_panel() {
+    let wrk = Workdir::new("viz_smart_measure_by_dimension_panel");
+    // a low-cardinality dimension (region) that strongly separates a numeric measure (amount):
+    // east clusters ~10-19, west ~100-109, so between-group variance dominates -> a high
+    // correlation ratio η² that clears the gate and adds an "amount by region" bar.
+    let mut rows = String::from("region,amount\n");
+    for i in 0..30 {
+        rows.push_str(&format!("east,{}\n", 10 + (i % 10)));
+    }
+    for i in 0..30 {
+        rows.push_str(&format!("west,{}\n", 100 + (i % 10)));
+    }
+    wrk.create_from_string("rev.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "rev.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the grouped bar's title names the measure, dimension, aggregation, and η²
+    assert!(
+        html.contains("amount by region (mean"),
+        "expected a measure-by-dimension bar titled 'amount by region (mean, ...)'"
+    );
+}
+
+#[test]
+fn viz_smart_bubble_scatter_size_encodes_third() {
+    let wrk = Workdir::new("viz_smart_bubble_scatter_size_encodes_third");
+    // three correlated numeric columns (small dataset -> scatter, not contour). The strongest pair
+    // gets a scatter drill-down whose marker SIZE encodes the third (most-associated) column. x is
+    // i%40 (cardinality 40, not near-unique) so it qualifies as a continuous measure.
+    let mut rows = String::from("x,y,z\n");
+    for i in 0..60 {
+        let x = i % 40;
+        rows.push_str(&format!("{x},{},{}\n", x * 2, x * 3));
+    }
+    wrk.create_from_string("xyz.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "xyz.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the scatter pair panel's title notes the size-encoded third column ...
+    assert!(
+        html.contains("size: z"),
+        "bubble scatter should encode z as marker size"
+    );
+    // ... and the trace carries a per-point size array (bubble markers)
+    assert!(html.contains(r#""size":["#));
+}
+
+#[test]
+fn viz_smart_cyclic_seasonality_panel() {
+    let wrk = Workdir::new("viz_smart_cyclic_seasonality_panel");
+    // a datetime column with intraday timestamps spread across many hours -> a polar
+    // hour-of-day "seasonality" profile (HTML-only, ScatterPolar).
+    let mut rows = String::from("ts\n");
+    for i in 0..48 {
+        let h = i % 24;
+        rows.push_str(&format!("2021-06-01T{h:02}:15:00\n"));
+    }
+    wrk.create_from_string("events.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Records by hour of day"),
+        "expected an hour-of-day cyclic panel"
+    );
+    assert!(html.contains(r#""type":"scatterpolar""#));
+}
+
+#[test]
+fn viz_smart_map_bubble_sizes_by_measure() {
+    let wrk = Workdir::new("viz_smart_map_bubble_sizes_by_measure");
+    quakes(&wrk);
+    // a dictionary tagging `magnitude` as a map measure (measure.amount) -> the smart map sizes
+    // each point by magnitude. Without a dictionary no measure is tagged, so maps stay fixed-size.
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "place": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" } },
+            "lat": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.latitude" } },
+            "lon": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.longitude" } },
+            "magnitude": { "type": "number", "title": "Magnitude",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "quakes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // global spread -> ScatterGeo world overview, with magnitude encoded as per-point marker size
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(
+        html.contains(r#""size":["#),
+        "map points should be bubble-sized by the dictionary measure"
+    );
+}
+
+#[test]
 fn viz_smart_timeseries_dmy_dates() {
     let wrk = Workdir::new("viz_smart_timeseries_dmy_dates");
     // AMBIGUOUS DMY dates (day AND month both <= 12, so each parses to a *different valid date*

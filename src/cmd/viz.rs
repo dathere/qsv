@@ -523,6 +523,13 @@ const LOG_SCALE_MIN_RATIO: f64 = 50.0;
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
 
+/// Minimum correlation ratio η² (ANOVA effect size: between-group variance / total variance) for
+/// `viz smart` to add a "measure by dimension" bar. η² ranges 0..1; 0.06 is Cohen's conventional
+/// "medium" effect. Below this the dimension barely explains the measure, so the grouped bar would
+/// be misleading noise — matching the strength-gate convention of the scatter (`|r|`) and hierarchy
+/// (Cramér's V) overview panels.
+const MEASURE_BY_DIM_MIN_ETA_SQUARED: f64 = 0.06;
+
 /// `viz smart` skips the 3D scatter drill-down when the strongest numeric pair is at or above this
 /// absolute correlation. The 3D is built ON that pair plus a third axis; when the pair is
 /// near-collinear (|r| ~ 1) the two axes are effectively the same variable, so the cloud collapses
@@ -1568,10 +1575,13 @@ fn scatter_with_marker(xs: Vec<String>, ys: Vec<f64>, marker: Marker) -> Box<dyn
 
 /// Linearly rescale raw `--size` values into the [`BUBBLE_MIN_PX`, `BUBBLE_MAX_PX`] pixel
 /// range so bubbles stay readable regardless of the column's magnitude. When all values are
-/// equal, every bubble gets the midpoint size.
+/// equal, every bubble gets the midpoint size. Non-finite values (a missing/NaN measure on a
+/// sized map point) are excluded from the min/max and drawn at the smallest size, so they stay
+/// visible rather than collapsing to a zero-pixel (invisible) marker.
 fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
     let (min, max) = values
         .iter()
+        .filter(|v| v.is_finite())
         .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
             (lo.min(v), hi.max(v))
         });
@@ -1579,7 +1589,13 @@ fn scale_bubble_sizes(values: &[f64]) -> Vec<usize> {
     values
         .iter()
         .map(|&v| {
-            let t = if span > 0.0 { (v - min) / span } else { 0.5 };
+            let t = if !v.is_finite() {
+                0.0
+            } else if span > 0.0 {
+                (v - min) / span
+            } else {
+                0.5
+            };
             (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
         })
         .collect()
@@ -4084,6 +4100,24 @@ fn least_redundant_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usiz
         })
 }
 
+/// Pick the third axis whose values best reveal structure as marker SIZE on the
+/// strongest-correlated scatter pair `i`/`j`: the candidate `k` MOST associated with either chosen
+/// axis (`max(|r_ik|, |r_jk|)` largest), so bubble size shows the steepest gradient across the
+/// cloud. This is the complement of `least_redundant_third` (which `Scatter3D` uses), so the bubble
+/// and 3D drill-downs encode different, each-meaningful third variables rather than the same one
+/// twice. Same NaN-guarding as `least_redundant_third`: candidates need DEFINED correlations to
+/// both chosen axes, else a zero-variance column's NaN could win. Returns `None` when no finite
+/// candidate remains (caller renders a plain 2-D scatter).
+fn most_associated_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usize> {
+    (0..matrix.len())
+        .filter(|&k| k != i && k != j && matrix[i][k].is_finite() && matrix[j][k].is_finite())
+        .max_by(|&a, &b| {
+            let ra = matrix[i][a].abs().max(matrix[j][a].abs());
+            let rb = matrix[i][b].abs().max(matrix[j][b].abs());
+            ra.partial_cmp(&rb).unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
 /// Pearson correlation matrix for equal-length numeric columns: NxN symmetric. The diagonal
 /// is computed from `pearson` (rather than hard-coded to 1.0) so a degenerate column — zero
 /// variance or too few observations — surfaces as `NaN` instead of a fabricated 1.0. Cells for
@@ -5674,6 +5708,164 @@ fn aggregate(xs: Vec<String>, ys: Vec<f64>, agg: Agg) -> (Vec<String>, Vec<f64>)
     (out_x, out_y)
 }
 
+/// Cap on the number of candidate dimensions and measures the `MeasureByDim` panel considers, so a
+/// very wide table doesn't build a D×M group accumulator that blows up memory. Generous — real
+/// dashboards have far fewer low-cardinality dimensions than this.
+const MEASURE_BY_DIM_MAX_CANDIDATES: usize = 16;
+
+/// Build the "measure by dimension" overview panel: a numeric measure aggregated by a
+/// low-cardinality categorical dimension, chosen as the (dimension, measure) pair whose association
+/// — the correlation ratio η² (ANOVA effect size: between-group variance / total variance) — is
+/// strongest, provided it clears `MEASURE_BY_DIM_MIN_ETA_SQUARED`. Returns `Ok(None)` when there
+/// are no candidate pairs or none is associated strongly enough (a weak grouping would be
+/// misleading).
+///
+/// η² is computed from the read values themselves in a single pass (not the stats cache), so the
+/// between- and total-variance are over exactly the same rows. For each measure-present row the
+/// value contributes to that measure's grand (sum, sum-of-squares, n) and, partitioned by each
+/// dimension's category, to that (measure, dimension) group's (sum, count). Then
+/// η² = SS_between / SS_total where SS_total = Σy² − (Σy)²/n and
+/// SS_between = Σ_g (Σy_g)²/n_g − (Σy)²/n.
+fn measure_by_dim_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    measure_indices: &[usize],
+    dim_indices: &[usize],
+    top_n: usize,
+) -> CliResult<Option<Panel>> {
+    let measures: Vec<usize> = measure_indices
+        .iter()
+        .take(MEASURE_BY_DIM_MAX_CANDIDATES)
+        .copied()
+        .collect();
+    let dims: Vec<usize> = dim_indices
+        .iter()
+        .take(MEASURE_BY_DIM_MAX_CANDIDATES)
+        .copied()
+        .collect();
+    if measures.is_empty() || dims.is_empty() {
+        return Ok(None);
+    }
+    let (n_m, n_d) = (measures.len(), dims.len());
+
+    // grand[mi] = (Σy, Σy², n) over rows where measure `mi` parses
+    let mut grand: Vec<(f64, f64, u64)> = vec![(0.0, 0.0, 0); n_m];
+    // groups[mi * n_d + di] : category -> (Σy, count), over the same measure-present rows
+    let mut groups: Vec<HashMap<String, (f64, u64)>> = vec![HashMap::new(); n_m * n_d];
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        for (mi, &m_idx) in measures.iter().enumerate() {
+            let Some(y) = parse_f64(record.get(m_idx)) else {
+                continue;
+            };
+            let g = &mut grand[mi];
+            g.0 += y;
+            g.1 += y * y;
+            g.2 += 1;
+            for (di, &d_idx) in dims.iter().enumerate() {
+                let raw = cell_to_string(record.get(d_idx));
+                let key = if raw.trim().is_empty() {
+                    NULL_TEXT.to_string()
+                } else {
+                    raw.trim().to_string()
+                };
+                let e = groups[mi * n_d + di].entry(key).or_insert((0.0, 0));
+                e.0 += y;
+                e.1 += 1;
+            }
+        }
+    }
+
+    // pick the (measure, dimension) pair with the strongest η²
+    let mut best: Option<(f64, usize, usize)> = None; // (eta2, mi, di)
+    for mi in 0..n_m {
+        let (sum, sumsq, n) = grand[mi];
+        if n < 2 {
+            continue;
+        }
+        let nf = n as f64;
+        let correction = sum * sum / nf;
+        let ss_total = sumsq - correction;
+        if ss_total <= 0.0 {
+            continue; // constant measure — nothing to explain
+        }
+        for di in 0..n_d {
+            let gmap = &groups[mi * n_d + di];
+            if gmap.len() < 2 {
+                continue; // need ≥2 groups to compare
+            }
+            let ss_between: f64 = gmap
+                .values()
+                .map(|&(gs, gc)| if gc > 0 { gs * gs / gc as f64 } else { 0.0 })
+                .sum::<f64>()
+                - correction;
+            let eta2 = (ss_between / ss_total).clamp(0.0, 1.0);
+            if best.is_none_or(|(b, ..)| eta2 > b) {
+                best = Some((eta2, mi, di));
+            }
+        }
+    }
+
+    let Some((eta2, mi, di)) = best.filter(|&(e, ..)| e >= MEASURE_BY_DIM_MIN_ETA_SQUARED) else {
+        return Ok(None);
+    };
+
+    // resolve the human label for a column: dictionary label, else header, else positional
+    let label = |idx: usize| {
+        let sem = &col_sems[idx];
+        if !sem.label.is_empty() {
+            sem.label.clone()
+        } else if stats[idx].field.is_empty() {
+            format!("col {}", idx + 1)
+        } else {
+            stats[idx].field.clone()
+        }
+    };
+
+    // additive measures (counts/amounts) sum; rates/ratios (and the un-tagged default) average
+    let agg = match col_sems[measures[mi]].agg {
+        Some(Agg::Sum) => Agg::Sum,
+        _ => Agg::Mean,
+    };
+    let agg_word = if agg == Agg::Sum { "sum" } else { "mean" };
+
+    // aggregate each category, then sort by value descending and cap to the top-N
+    let gmap = &groups[mi * n_d + di];
+    let mut rows: Vec<(String, f64)> = gmap
+        .iter()
+        .map(|(k, &(gs, gc))| {
+            let v = if agg == Agg::Sum || gc == 0 {
+                gs
+            } else {
+                gs / gc as f64
+            };
+            (k.clone(), v)
+        })
+        .collect();
+    rows.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+    let total_groups = rows.len();
+    rows.truncate(top_n.max(1));
+    let truncated = total_groups > rows.len();
+
+    let mut title = format!(
+        "{} by {} ({agg_word}, \u{3b7}\u{b2}={eta2:.2})",
+        label(measures[mi]),
+        label(dims[di])
+    );
+    if truncated {
+        title.push_str(&format!(" \u{2014} top {}", rows.len()));
+    }
+
+    let (labels, values): (Vec<String>, Vec<f64>) = rows.into_iter().unzip();
+    Ok(Some(Panel::new(
+        title,
+        PanelKind::MeasureByDim { labels, values },
+    )))
+}
+
 /// For line charts, order points by their x value so the connecting line is drawn in the
 /// correct sequence: numeric x is sorted numerically (fixing 1, 10, 2), while categorical x
 /// preserves input order.
@@ -5813,6 +6005,14 @@ enum PanelKind {
         xs:      Vec<String>,
         ys:      Vec<f64>,
     },
+    /// Cyclic "seasonality" profile: a date/datetime column folded onto a repeating phase —
+    /// hour-of-day, day-of-week, or month-of-year — with record volume as the radial value. Exposes
+    /// periodicity (rush-hour, weekly, seasonal) that the absolute `TimeSeries` timeline hides.
+    /// Drawn as a `ScatterPolar`; like `Scatter3D`, a polar subplot can't share the typed x/y grid,
+    /// so it is HTML-only and rendered via the inline path. `theta` are the phase labels and `r`
+    /// the matching counts, both CLOSED (first element repeated at the end) so the polar ring
+    /// connects.
+    CyclicProfile { theta: Vec<String>, r: Vec<f64> },
     /// Pearson correlation heatmap over the dataset's numeric columns. Carries precomputed
     /// data (labels + matrix) so the render loop stays a pure assembly step.
     CorrHeatmap {
@@ -5820,8 +6020,17 @@ enum PanelKind {
         matrix: Vec<Vec<f64>>,
     },
     /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
-    /// heatmap. Carries the two columns' precomputed, row-aligned values.
-    ScatterPair { xs: Vec<f64>, ys: Vec<f64> },
+    /// heatmap. Carries the two columns' precomputed, row-aligned values. `sizes`, when present,
+    /// carries a third numeric column's row-aligned RAW values (the axis MOST associated with the
+    /// pair, the complement of the least-redundant axis `Scatter3D` picks) to encode as marker size
+    /// (bubble chart) — a 3-variable view that, unlike the HTML-only `Scatter3D`, also renders in
+    /// static image export. `scale_bubble_sizes` rescales to pixels at render time. `None` keeps a
+    /// plain 2-D scatter.
+    ScatterPair {
+        xs:    Vec<f64>,
+        ys:    Vec<f64>,
+        sizes: Option<Vec<f64>>,
+    },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
@@ -5829,6 +6038,15 @@ enum PanelKind {
         x: Vec<f64>,
         y: Vec<f64>,
         z: Vec<Vec<f64>>,
+    },
+    /// A numeric measure aggregated BY a low-cardinality categorical dimension (e.g. mean amount by
+    /// region) — the (dimension, measure) pair with the strongest association (correlation ratio
+    /// η²) above `MEASURE_BY_DIM_MIN_ETA_SQUARED`. Bars are sorted by aggregated value descending
+    /// and capped to the top-N (`--limit`). The title carries the chosen pair, aggregation, and
+    /// η². A plain `Bar`, so it composes with the typed subplot grid and static image export.
+    MeasureByDim {
+        labels: Vec<String>,
+        values: Vec<f64>,
     },
     /// 3D scatter of the three numeric columns that form the strongest-correlation triple — a
     /// spatial drill-down for the correlation heatmap. Carries the three columns' precomputed,
@@ -5867,6 +6085,12 @@ enum PanelKind {
         /// Per-point hover labels for the outlier markers (aligned to
         /// `outlier_lats`/`outlier_lons`).
         outlier_hover_text: Vec<String>,
+        /// When `Some` (only under `--smarter` with a dictionary-tagged map measure —
+        /// `MAP_MEASURE_CONCEPTS`), the row-aligned RAW measure value per CORE point, encoded as
+        /// marker size (bubble map). `scale_bubble_sizes` rescales to pixels at render time;
+        /// missing values draw at the smallest size. Never applied to the outlier trace or
+        /// in density mode.
+        sizes:              Option<Vec<f64>>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
@@ -5884,6 +6108,8 @@ enum PanelKind {
         /// Per-point hover labels for the outlier markers (aligned to
         /// `outlier_lats`/`outlier_lons`).
         outlier_hover_text: Vec<String>,
+        /// Row-aligned RAW measure per CORE point for bubble sizing; see `Map::sizes`.
+        sizes:              Option<Vec<f64>>,
     },
     /// Filled-region `Choropleth` aggregate drawn on the projection `geo` subplot — added beside
     /// the point Map/Geo panel when geocode resolves the coordinates to 2+ distinct countries,
@@ -7325,6 +7551,156 @@ fn build_timeseries_panel(
     }
 }
 
+/// The repeating phase a `CyclicProfile` folds timestamps onto.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CyclicAxis {
+    HourOfDay,
+    DayOfWeek,
+    MonthOfYear,
+}
+
+impl CyclicAxis {
+    /// Number of phase buckets in the cycle.
+    fn len(self) -> usize {
+        match self {
+            CyclicAxis::HourOfDay => 24,
+            CyclicAxis::DayOfWeek => 7,
+            CyclicAxis::MonthOfYear => 12,
+        }
+    }
+
+    /// 0-based bucket index for a timestamp.
+    fn bucket(self, dt: &chrono::DateTime<chrono::Utc>) -> usize {
+        use chrono::{Datelike, Timelike};
+        match self {
+            CyclicAxis::HourOfDay => dt.hour() as usize,
+            CyclicAxis::DayOfWeek => dt.weekday().num_days_from_monday() as usize,
+            CyclicAxis::MonthOfYear => dt.month0() as usize,
+        }
+    }
+
+    /// Human label for each bucket (length == `self.len()`).
+    fn labels(self) -> Vec<String> {
+        match self {
+            CyclicAxis::HourOfDay => (0..24).map(|h| format!("{h:02}h")).collect(),
+            CyclicAxis::DayOfWeek => ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+                .iter()
+                .map(ToString::to_string)
+                .collect(),
+            CyclicAxis::MonthOfYear => [
+                "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+            ]
+            .iter()
+            .map(ToString::to_string)
+            .collect(),
+        }
+    }
+
+    /// Word for the panel title.
+    fn word(self) -> &'static str {
+        match self {
+            CyclicAxis::HourOfDay => "hour of day",
+            CyclicAxis::DayOfWeek => "day of week",
+            CyclicAxis::MonthOfYear => "month",
+        }
+    }
+}
+
+/// Minimum populated phase buckets for a `CyclicProfile` to be worth drawing: fewer than this isn't
+/// a cycle, just a couple of points scattered on a ring.
+const CYCLIC_MIN_POPULATED_BUCKETS: usize = 3;
+
+/// Build the cyclic-seasonality polar panel: fold the canonical date/datetime column onto a
+/// repeating phase (hour-of-day for datetimes; day-of-week or month-of-year for dates, by span) and
+/// plot record volume per phase. Complements `build_timeseries_panel` (absolute timeline) by
+/// surfacing periodicity. Returns `Ok(None)` when there's no date column or too few phase buckets
+/// are populated to show a real cycle.
+fn build_cyclic_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    prefer_dmy: bool,
+    map_cols: Option<(usize, usize)>,
+    sems: &[ColSemantics],
+) -> CliResult<Option<Panel>> {
+    use qsv_dateparser::parse_with_preference;
+
+    // pick the canonical date/datetime column, same ranking as the time-series panel.
+    let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
+    let Some((date_idx, is_datetime)) = stats
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !is_map_col(*i))
+        .filter_map(|(i, s)| match s.r#type.as_str() {
+            "Date" => Some((i, false)),
+            "DateTime" => Some((i, true)),
+            _ => None,
+        })
+        .min_by_key(|&(i, _)| {
+            (
+                timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                i,
+            )
+        })
+    else {
+        return Ok(None);
+    };
+
+    // choose the cycle: intraday timestamps -> hour-of-day; date-only -> month-of-year when the
+    // span is wide enough to show a yearly shape, else the weekly rhythm.
+    let axis = if is_datetime {
+        CyclicAxis::HourOfDay
+    } else {
+        let parse_bound = |o: &Option<String>| {
+            o.as_deref()
+                .map(str::trim)
+                .filter(|t| !t.is_empty())
+                .and_then(|t| parse_with_preference(t, prefer_dmy).ok())
+        };
+        let span_days = match (
+            parse_bound(&stats[date_idx].min),
+            parse_bound(&stats[date_idx].max),
+        ) {
+            (Some(lo), Some(hi)) => (hi - lo).num_days().max(0),
+            _ => 0,
+        };
+        if span_days >= 60 {
+            CyclicAxis::MonthOfYear
+        } else {
+            CyclicAxis::DayOfWeek
+        }
+    };
+
+    let mut counts = vec![0u64; axis.len()];
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        if let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) {
+            counts[axis.bucket(&dt)] += 1;
+        }
+    }
+
+    if counts.iter().filter(|&&c| c > 0).count() < CYCLIC_MIN_POPULATED_BUCKETS {
+        return Ok(None);
+    }
+
+    // close the ring: repeat the first phase/value at the end so the polar line connects around.
+    let mut theta = axis.labels();
+    theta.push(theta[0].clone());
+    let mut r: Vec<f64> = counts.iter().map(|&c| c as f64).collect();
+    r.push(r[0]);
+
+    let date_label = sems
+        .get(date_idx)
+        .map(|s| s.label.as_str())
+        .filter(|l| !l.is_empty())
+        .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
+
+    Ok(Some(Panel::new(
+        format!("Records by {} ({date_label})", axis.word()),
+        PanelKind::CyclicProfile { theta, r },
+    )))
+}
+
 /// Detect the latitude/longitude column index pair by header name + numeric stats type. Shared by
 /// the map-panel builder and the `viz smart` classifier so that columns recognized as geographic
 /// coordinates are charted on the map panel only — not redundantly as per-column distribution
@@ -7808,6 +8184,11 @@ fn build_map_panel(
         .filter(|&i| Some(i) != id_idx)
         .collect();
 
+    // optional bubble-size measure: a dictionary-tagged map measure (amount/count/ratio). `None`
+    // without a dictionary (concepts are empty), so non-dictionary maps stay fixed-size markers —
+    // sizing by an untagged numeric would be an arbitrary, misleading encoding.
+    let size_idx = first_col_by_concepts(col_sems, MAP_MEASURE_CONCEPTS, lat_idx, lon_idx, &[]);
+
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     // friendly labels for the extra fields: dictionary label, else the column header.
     let extra_labels: Vec<String> = extra_idxs
@@ -7826,6 +8207,9 @@ fn build_map_panel(
     // dataset portion of each point's hover (bold id + extra fields, NO coords/geo), row-aligned
     // with lats/lons; empty string when the dataset contributes no fields.
     let mut dataset_lines: Vec<String> = Vec::new();
+    // raw bubble-size measure per in-range point, row-aligned with lats/lons; left empty unless a
+    // map measure was found. A missing/non-numeric value is NaN (drawn at the smallest size).
+    let mut sizes_raw: Vec<f64> = Vec::new();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -7837,6 +8221,9 @@ fn build_map_panel(
         if (-90.0..=90.0).contains(&lat) && (-180.0..=180.0).contains(&lon) {
             lats.push(lat);
             lons.push(lon);
+            if let Some(si) = size_idx {
+                sizes_raw.push(parse_f64(record.get(si)).unwrap_or(f64::NAN));
+            }
             let cell = |i: usize| -> String {
                 record
                     .get(i)
@@ -7910,9 +8297,27 @@ fn build_map_panel(
     let pack = |lons: &[f64], lines: &[String]| -> Vec<(f64, String)> {
         lons.iter().copied().zip(lines.iter().cloned()).collect()
     };
-    let (lats, core_pl) =
-        downsample_pair(&core_lats, &pack(&core_lons, &core_lines), MAX_SMART_POINTS);
-    let (lons, core_lines): (Vec<f64>, Vec<String>) = core_pl.into_iter().unzip();
+    // core: pack lon + hover line + (optional) bubble measure so one stride keeps them aligned.
+    let core_sizes_raw: Vec<f64> = if size_idx.is_some() {
+        gather_f64(&core_idx, &sizes_raw)
+    } else {
+        vec![f64::NAN; core_lats.len()]
+    };
+    let core_packed: Vec<(f64, String, f64)> = core_lons
+        .iter()
+        .copied()
+        .zip(core_lines.iter().cloned())
+        .zip(core_sizes_raw.iter().copied())
+        .map(|((lo, line), sz)| (lo, line, sz))
+        .collect();
+    let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, MAX_SMART_POINTS);
+    let lons: Vec<f64> = core_pl.iter().map(|t| t.0).collect();
+    let core_lines: Vec<String> = core_pl.iter().map(|t| t.1.clone()).collect();
+    // size only when a measure was tagged AND at least one core point has a finite value (else
+    // uniform/empty sizing adds nothing — fall back to fixed-size markers).
+    let core_sizes: Option<Vec<f64>> = size_idx
+        .map(|_| core_pl.iter().map(|t| t.2).collect::<Vec<f64>>())
+        .filter(|v| v.iter().any(|x| x.is_finite()));
     let (outlier_lats, out_pl) = downsample_pair(
         &out_lats,
         &pack(&out_lons, &out_lines),
@@ -8061,6 +8466,7 @@ fn build_map_panel(
             outlier_lons,
             hover_text,
             outlier_hover_text,
+            sizes: core_sizes,
         }
     } else {
         PanelKind::Map {
@@ -8071,6 +8477,7 @@ fn build_map_panel(
             outlier_lons,
             hover_text,
             outlier_hover_text,
+            sizes: core_sizes,
         }
     };
     Ok(Some((
@@ -8908,6 +9315,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                             outlier_lons,
                             hover_text,
                             outlier_hover_text,
+                            sizes,
                             ..
                         } => PanelKind::Geo {
                             lats,
@@ -8916,6 +9324,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                             outlier_lons,
                             hover_text,
                             outlier_hover_text,
+                            sizes,
                         },
                         other => other,
                     };
@@ -9081,7 +9490,21 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     Panel::new(name, PanelKind::ContourPair { x, y, z })
                 } else {
                     let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
-                    Panel::new(name, PanelKind::ScatterPair { xs, ys })
+                    // Encode a third numeric (the axis MOST associated with the pair, so size
+                    // shows a real gradient — the complement of the least-redundant axis
+                    // `Scatter3D` picks) as marker size: a 3-variable bubble
+                    // view that, unlike the HTML-only 3D panel, also survives
+                    // static image export. Aligned to xs/ys because
+                    // `downsample_pair` picks the same row indices for the same (n, cap).
+                    let (name, sizes) = match most_associated_third(&matrix, i, j) {
+                        Some(k) => {
+                            let (_, sizes) =
+                                downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
+                            (format!("{name} \u{b7} size: {}", labels[k]), Some(sizes))
+                        },
+                        None => (name, None),
+                    };
+                    Panel::new(name, PanelKind::ScatterPair { xs, ys, sizes })
                 }
             });
 
@@ -9139,6 +9562,39 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             if let Some(panel) = scatter3d_panel {
                 panels.insert(at, panel);
             }
+        }
+    }
+
+    // prepend a "measure by dimension" bar when a low-cardinality categorical dimension strongly
+    // explains one of the numeric measures (correlation ratio η² above the gate) — e.g. mean amount
+    // by region. Reuses the numeric measures already gathered for the correlation matrix; the panel
+    // builder does one extra data pass to compute η² and the per-group aggregates.
+    let dim_indices: Vec<usize> = stats
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            !is_map_col(*i)
+                && !twin_suppress.contains(i)
+                && matches!(col_sems[*i].route, Route::Defer | Route::Dimension)
+                && s.r#type.as_str() == "String"
+                && s.cardinality >= 2
+                && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if !numeric_indices.is_empty() && !dim_indices.is_empty() {
+        let top_n = args.flag_limit.max(1);
+        match measure_by_dim_panel(
+            args,
+            &stats,
+            &col_sems,
+            &numeric_indices,
+            &dim_indices,
+            top_n,
+        ) {
+            Ok(Some(panel)) => panels.insert(0, panel),
+            Ok(None) => {},
+            Err(e) => eprintln!("viz smart: measure-by-dimension panel skipped ({e})"),
         }
     }
 
@@ -9235,6 +9691,15 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         panels.insert(0, panel);
     }
 
+    // prepend a cyclic-seasonality polar panel (volume by hour-of-day / weekday / month) when a
+    // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
+    // so it can't be statically exported — build it for HTML only.
+    if !out_format.is_image()
+        && let Some(panel) = build_cyclic_panel(args, &stats, prefer_dmy, map_cols, &col_sems)?
+    {
+        panels.insert(0, panel);
+    }
+
     // prepend the geographic overview panels (built up front, above) so they lead the dashboard and
     // survive the panel cap. Insert the per-country choropleth first, then the point map at index
     // 0, yielding [map, choropleth, ...] — the point map for spatial detail, the choropleth
@@ -9267,6 +9732,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 | PanelKind::Choropleth { .. }
                 | PanelKind::ChoroplethMap { .. }
                 | PanelKind::Scatter3D { .. }
+                | PanelKind::CyclicProfile { .. }
                 | PanelKind::Hierarchy { .. }
         )
     });
@@ -9322,6 +9788,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
+            | PanelKind::MeasureByDim { .. }
+            | PanelKind::CyclicProfile { .. }
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
@@ -9605,11 +10073,15 @@ fn panel_trace(
             }
             t
         },
-        PanelKind::ScatterPair { xs, ys } => {
+        PanelKind::ScatterPair { xs, ys, sizes } => {
+            let mut marker = Marker::new().color(color);
+            if let Some(sizes) = sizes {
+                marker = marker.size_array(scale_bubble_sizes(sizes));
+            }
             let mut t = Scatter::new(xs.clone(), ys.clone())
                 .mode(Mode::Markers)
                 .name(panel.name.clone())
-                .marker(Marker::new().color(color));
+                .marker(marker);
             if let Some((x, y)) = &axes {
                 t = t.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -9635,6 +10107,21 @@ fn panel_trace(
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
         ),
+        PanelKind::MeasureByDim { labels, values } => {
+            bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
+            let mut bar = Bar::new(labels.clone(), values.clone())
+                .name(panel.name.clone())
+                .marker(Marker::new().color(color))
+                // value labels above each bar, SI-formatted ("258k", "1.05M") to match the ticks
+                .text_template("%{y:.3s}")
+                .text_position(TextPosition::Outside)
+                .clip_on_axis(false)
+                .text_font(label_font);
+            if let Some((x, y)) = &axes {
+                bar = bar.x_axis(x.clone()).y_axis(y.clone());
+            }
+            bar
+        },
         // map / geo / 3D / hierarchy panels use a non-cartesian layout (mapbox, geo projection,
         // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
         // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
@@ -9644,10 +10131,11 @@ fn panel_trace(
         | PanelKind::Choropleth { .. }
         | PanelKind::ChoroplethMap { .. }
         | PanelKind::Scatter3D { .. }
+        | PanelKind::CyclicProfile { .. }
         | PanelKind::Hierarchy { .. } => {
             unreachable!(
-                "map/geo/choropleth/3D/hierarchy panels are rendered via the inline path, not \
-                 panel_trace"
+                "map/geo/choropleth/3D/polar/hierarchy panels are rendered via the inline path, \
+                 not panel_trace"
             )
         },
     };
@@ -9706,6 +10194,8 @@ fn smart_grid_parts(
             | PanelKind::ScatterPair { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
+            | PanelKind::MeasureByDim { .. }
+            | PanelKind::CyclicProfile { .. }
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
@@ -9795,6 +10285,7 @@ fn smart_grid_parts(
             outlier_lons,
             hover_text,
             outlier_hover_text,
+            sizes,
         } = &panel.kind
         {
             let geom = geoms[n].clone();
@@ -9870,9 +10361,13 @@ fn smart_grid_parts(
             if let Some(lataxis) = lataxis {
                 geo = geo.lataxis(lataxis);
             }
+            let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
+            if let Some(sizes) = sizes {
+                core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
+            }
             let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
-                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
+                .marker(core_marker)
                 .subplot(geo_ref(pos));
             if !hover_text.is_empty() {
                 core_trace = core_trace
@@ -10218,6 +10713,7 @@ fn smart_inline_panel_plot(
         outlier_lons,
         hover_text,
         outlier_hover_text,
+        sizes,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -10252,9 +10748,13 @@ fn smart_inline_panel_plot(
                     .radius(MAP_SMART_DENSITY_RADIUS_PX),
             );
         } else {
+            let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
+            if let Some(sizes) = sizes {
+                core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
+            }
             let mut core_trace = ScatterMapbox::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
-                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY));
+                .marker(core_marker);
             if !hover_text.is_empty() {
                 core_trace = core_trace
                     .hover_text_array(hover_text.clone())
@@ -10322,6 +10822,7 @@ fn smart_inline_panel_plot(
         outlier_lons,
         hover_text,
         outlier_hover_text,
+        sizes,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -10329,14 +10830,16 @@ fn smart_inline_panel_plot(
         // accent: the `geo` projection paints a light-blue ocean and light-gray land, and the
         // palette's first color is a blue that disappears against the ocean (e.g. coastal/island
         // points on a world overview). Crimson reads on both land and water and in dark themes.
+        let mut core_marker = Marker::new()
+            .color(NamedColor::Crimson)
+            .opacity(MAP_POINT_OPACITY)
+            .line(Line::new().color(NamedColor::White).width(0.5));
+        if let Some(sizes) = sizes {
+            core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
+        }
         let mut core_trace = ScatterGeo::new(lats.clone(), lons.clone())
             .mode(Mode::Markers)
-            .marker(
-                Marker::new()
-                    .color(NamedColor::Crimson)
-                    .opacity(MAP_POINT_OPACITY)
-                    .line(Line::new().color(NamedColor::White).width(0.5)),
-            );
+            .marker(core_marker);
         if !hover_text.is_empty() {
             core_trace = core_trace
                 .hover_text_array(hover_text.clone())
@@ -10545,6 +11048,31 @@ fn smart_inline_panel_plot(
             .title(Title::with_text(panel.name.clone()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .scene(scene);
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // cyclic-seasonality panels use a `polar` subplot — plotly auto-creates it from the
+    // ScatterPolar trace (as the standalone `viz radar` does), so they own their whole Plot
+    // here too.
+    if let PanelKind::CyclicProfile { theta, r } = &panel.kind {
+        let mut plot = Plot::new();
+        plot.add_trace(
+            ScatterPolar::new(theta.clone(), r.clone())
+                .mode(Mode::Lines)
+                .fill(Fill::ToSelf),
+        );
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .title(Title::with_text(panel.name.clone()))
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -11421,6 +11949,8 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::ScatterPair { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
+        | PanelKind::MeasureByDim { .. }
+        | PanelKind::CyclicProfile { .. }
         | PanelKind::TimeSeries { .. }
         | PanelKind::Map { .. }
         | PanelKind::Geo { .. }

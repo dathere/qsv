@@ -666,9 +666,12 @@ def cleanup_sidecars():
 
 def main():
     qsv = find_qsv()
-    # QSV_VIZ_REGEN_LLM=1 opts into regenerating the `--dictionary infer` dashboards live (needs a
+    # QSV_VIZ_REGEN_LLM opts into regenerating the `--dictionary infer` dashboards live (needs a
     # local LLM up); otherwise their committed HTML is reused so a normal run stays LLM-free.
-    pregenerated = set() if os.environ.get("QSV_VIZ_REGEN_LLM") else PREGENERATED
+    # Only an explicit truthy value enables it, so QSV_VIZ_REGEN_LLM=0/false/off (or empty) stays
+    # off rather than enabling LLM work just because the var is present.
+    regen_llm = os.environ.get("QSV_VIZ_REGEN_LLM", "").strip().lower() in {"1", "true", "yes", "on"}
+    pregenerated = set() if regen_llm else PREGENERATED
     if not pregenerated:
         sys.stderr.write("QSV_VIZ_REGEN_LLM set: regenerating LLM dashboards (local LLM required)\n")
     # reuse the existing scaffold verbatim: everything up to and including `<div class="grid">`,

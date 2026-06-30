@@ -173,8 +173,12 @@
       if (pr && pr.then) pr.then(function () { fitNow(gd); }).catch(function () {});
       else fitNow(gd);
       gd.addEventListener("fullscreenchange", function () {
-        try { Plotly.Plots.resize(gd); } catch (e) {}
-        fitNow(gd);
+        // Plotly.Plots.resize is async; fit only AFTER it resolves so fitNow reads the post-resize
+        // _fullLayout dims (else enter/exit would refit from stale pre-change dims and stick).
+        var rp;
+        try { rp = Plotly.Plots.resize(gd); } catch (e) {}
+        if (rp && rp.then) rp.then(function () { fitNow(gd); }).catch(function () { fitNow(gd); });
+        else fitNow(gd);
       });
     } catch (e) {}
   }

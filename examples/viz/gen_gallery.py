@@ -196,12 +196,16 @@ FS_BUTTON_JS = (
     'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
     'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);}else pending=true;});'
     'if(pending&&qsvTries++<100)setTimeout(qsvInitFit,50);}setTimeout(qsvInitFit,0);'
+    # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
+    # the post-resize dims rather than stale pre-change ones.
+    'function qsvResizeThenFit(gd){var rp;try{rp=Plotly.Plots.resize(gd);}catch(e){}'
+    'if(rp&&rp.then)rp.then(function(){qsvFitNow(gd);}).catch(function(){qsvFitNow(gd);});'
+    'else qsvFitNow(gd);}'
     'document.addEventListener("fullscreenchange",function(){try{'
     'var el=document.fullscreenElement;'
-    'if(el&&el.classList&&el.classList.contains("js-plotly-plot")){'
-    'Plotly.Plots.resize(el);qsvFitNow(el);}'
+    'if(el&&el.classList&&el.classList.contains("js-plotly-plot")){qsvResizeThenFit(el);}'
     'else{document.querySelectorAll(".js-plotly-plot").forEach(function(gd){'
-    'try{Plotly.Plots.resize(gd);qsvFitNow(gd);}catch(e){}});}'
+    'try{qsvResizeThenFit(gd);}catch(e){}});}'
     '}catch(e){}});')
 
 BANNER = (

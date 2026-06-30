@@ -7701,7 +7701,11 @@ fn build_smart_pip_choropleth_panel(
         } else {
             "--no-snap".to_string()
         };
-        format!("Regions ({dropped} dropped, {why})")
+        format!(
+            "Regions ({} of {} dropped, {why})",
+            HumanCount(dropped as u64),
+            HumanCount(total as u64)
+        )
     } else {
         "Regions".to_string()
     };
@@ -14049,7 +14053,7 @@ mod tests {
             build_smart_pip_choropleth_panel(spec, "properties.id", None, &lats, &lons, true, 10.0)
                 .unwrap()
                 .expect("2 regions keep points, so a panel renders");
-        assert_eq!(panel.name, "Regions (1 dropped, >10 km)");
+        assert_eq!(panel.name, "Regions (1 of 5 dropped, >10 km)");
 
         // an unbounded cap snaps the gap point instead -> nothing dropped, plain title.
         let snapped = build_smart_pip_choropleth_panel(
@@ -14077,7 +14081,7 @@ mod tests {
         )
         .unwrap()
         .expect("panel renders");
-        assert_eq!(no_snap.name, "Regions (1 dropped, --no-snap)");
+        assert_eq!(no_snap.name, "Regions (1 of 5 dropped, --no-snap)");
 
         // the continental-extent regions above (20 deg lon / 10 deg lat span, both >=
         // SMART_CHOROPLETH_MIN_SPAN_DEG) stay on the projection `geo` basemap, NOT tiles.

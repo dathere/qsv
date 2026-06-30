@@ -285,7 +285,7 @@ BANNER = (
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart dashboard (--smarter, geospatial)",
-     "One command, 11 auto-chosen panels — nearly every "
+     "One command, 12 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "

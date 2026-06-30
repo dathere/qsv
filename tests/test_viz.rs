@@ -5429,3 +5429,44 @@ fn viz_smart_has_fullscreen_button() {
     assert!(html.contains("requestFullscreen"));
     assert!(html.contains(".js-plotly-plot:fullscreen"));
 }
+
+// The map zoom auto-fit (`qsvRefitMaps`) recomputes mapbox/MapLibre zoom for the real container
+// size from the baked (assumed-px) zoom on initial display and on fullscreen toggle. These assert
+// the client-side fit logic and the per-render-path assumed-dims prelude are emitted.
+
+#[test]
+fn viz_map_has_zoom_autofit() {
+    let wrk = Workdir::new("viz_map_has_zoom_autofit");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["map", "quakes.csv", "--lat", "lat", "--lon", "lon"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the fit helper + logarithmic zoom math...
+    assert!(html.contains("qsvRefitMaps"));
+    assert!(html.contains("Math.log2"));
+    // ...and the standalone assumed-dims prelude (fit_dims HTML default = 1000x600).
+    assert!(html.contains("window.__qsvMapAssumedW=1000"));
+    assert!(html.contains("window.__qsvMapAssumedH=600"));
+}
+
+#[test]
+fn viz_smart_map_has_zoom_autofit() {
+    let wrk = Workdir::new("viz_smart_map_has_zoom_autofit");
+    quakes(&wrk);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains("qsvRefitMaps"));
+    assert!(html.contains("Math.log2"));
+    // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x352).
+    assert!(html.contains("window.__qsvMapAssumedW=960"));
+    assert!(html.contains("window.__qsvMapAssumedH=352"));
+}

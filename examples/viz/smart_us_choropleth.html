@@ -89,6 +89,7 @@
       </div>
     </div>
 </div>
+<script>window.__qsvMapAssumedW=960;window.__qsvMapAssumedH=352;</script>
 <script>
 (function () {
   var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
@@ -106,12 +107,74 @@
       } catch (e) {}
     }
   };
+  // The assumed pixel size the baked mapbox/MapLibre zoom was computed against (published by a
+  // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
+  function assumedDims() {
+    var w = (typeof window.__qsvMapAssumedW === "number" && window.__qsvMapAssumedW > 0) ? window.__qsvMapAssumedW : 1000;
+    var h = (typeof window.__qsvMapAssumedH === "number" && window.__qsvMapAssumedH > 0) ? window.__qsvMapAssumedH : 600;
+    return { w: w, h: h };
+  }
+  function mapKeys(gd) {
+    var lay = (gd && gd.layout) || {};
+    return Object.keys(lay).filter(function (k) {
+      return /^(mapbox|map)\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+    });
+  }
+  // Snapshot the baked (assumed-px) zoom + center ONCE, before any mutation, as the fixed
+  // reference every later re-fit recomputes from (so repeated toggles can't drift).
+  function captureBaked(gd) {
+    if (gd.__qsvBaked) return;
+    gd.__qsvBaked = {};
+    var lay = gd.layout || {};
+    mapKeys(gd).forEach(function (k) { gd.__qsvBaked[k] = { z: lay[k].zoom, c: lay[k].center }; });
+  }
+  function plotPx(gd) {
+    var fl = gd._fullLayout || {};
+    return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
+  }
+  // Re-fit every captured map subplot to the current plot pixel size. mapbox zoom is logarithmic,
+  // so to keep the SAME bounds framed: zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)),
+  // keeping the baked center. curW/curH are DOMAIN-scaled (the subplot's own px), so this is
+  // correct for a full-bleed map AND a map that is one subplot in a combined grid.
+  function qsvRefitMaps(gd, plotW, plotH) {
+    if (!gd || !gd.__qsvBaked || !(plotW > 0) || !(plotH > 0)) return;
+    var a = assumedDims(), lay = gd.layout || {};
+    Object.keys(gd.__qsvBaked).forEach(function (k) {
+      var baked = gd.__qsvBaked[k];
+      if (!baked || typeof baked.z !== "number") return;
+      var dom = (lay[k] && lay[k].domain) || {};
+      var dx = (dom.x && dom.x.length === 2) ? (dom.x[1] - dom.x[0]) : 1;
+      var dy = (dom.y && dom.y.length === 2) ? (dom.y[1] - dom.y[0]) : 1;
+      var ratio = Math.min((dx * plotW) / a.w, (dy * plotH) / a.h);
+      if (!isFinite(ratio) || ratio <= 0) return;
+      var upd = {};
+      upd[k + ".zoom"] = baked.z + Math.log2(ratio);
+      if (baked.c) upd[k + ".center"] = baked.c;
+      // NB: let a "Style is not done loading" throw propagate so fitNow can retry — swallowing it
+      // here is why an early initial-fit would silently no-op before the mapbox tiles are ready.
+      Plotly.relayout(gd, upd);
+    });
+  }
+  // mapbox/MapLibre relayout throws if called before the GL style finishes loading, so retry with
+  // backoff (bounded) until it sticks. Recomputes from the live px each try (size may still settle).
+  function fitNow(gd, tries) {
+    if (tries === undefined) tries = 20;
+    try {
+      var px = plotPx(gd);
+      qsvRefitMaps(gd, px.w, px.h);
+    } catch (e) { if (tries > 0) setTimeout(function () { fitNow(gd, tries - 1); }, 150); }
+  }
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      captureBaked(gd);
+      var pr = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      // initial-display fit: the baked zoom assumed a fixed px size; rescale to the real one.
+      if (pr && pr.then) pr.then(function () { fitNow(gd); }).catch(function () {});
+      else fitNow(gd);
       gd.addEventListener("fullscreenchange", function () {
         try { Plotly.Plots.resize(gd); } catch (e) {}
+        fitNow(gd);
       });
     } catch (e) {}
   }

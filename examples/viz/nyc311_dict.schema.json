@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NYC 311 Service Requests — curated Data Dictionary",
+  "description": "Curated dictionary for the viz smart gallery example. Tags the numeric identifier/code/coordinate columns that an LLM `--dictionary infer` pass mislabeled as measures (Unique Key, BBL, the State-Plane X/Y coordinates), so the dashboard profiles request VOLUME and categories rather than treating IDs as quantities. Categorical string columns are intentionally omitted so they fall back to the statistical classifier (frequency bars).",
+  "type": "object",
+  "properties": {
+    "Unique Key": {
+      "type": "integer", "title": "Service Request ID",
+      "x-qsv": { "qsv_type": "Integer", "role": "identifier", "concept": "id.record" }
+    },
+    "BBL": {
+      "type": "integer", "title": "Borough-Block-Lot Code",
+      "x-qsv": { "qsv_type": "Integer", "role": "identifier", "concept": "id.bbl" }
+    },
+    "X Coordinate (State Plane)": {
+      "type": "integer", "title": "State Plane X",
+      "x-qsv": { "qsv_type": "Integer", "role": "identifier", "concept": "id.xcoord" }
+    },
+    "Y Coordinate (State Plane)": {
+      "type": "integer", "title": "State Plane Y",
+      "x-qsv": { "qsv_type": "Integer", "role": "identifier", "concept": "id.ycoord" }
+    },
+    "Incident Zip": {
+      "type": "string", "title": "Incident ZIP",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.zip" }
+    },
+    "Community Board": {
+      "type": "string", "title": "Community Board",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.community_board" }
+    },
+    "Latitude": {
+      "type": "number", "title": "Latitude",
+      "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.latitude" }
+    },
+    "Longitude": {
+      "type": "number", "title": "Longitude",
+      "x-qsv": { "qsv_type": "Float", "role": "dimension", "concept": "geo.longitude" }
+    },
+    "Created Date": {
+      "type": "string", "title": "Complaint Creation Date",
+      "x-qsv": { "qsv_type": "DateTime", "role": "timestamp", "concept": "time.event" }
+    },
+    "Closed Date": {
+      "type": "string", "title": "Complaint Closed Date",
+      "x-qsv": { "qsv_type": "DateTime", "role": "timestamp", "concept": "time.closed" }
+    },
+    "Due Date": {
+      "type": "string", "title": "Resolution Deadline",
+      "x-qsv": { "qsv_type": "DateTime", "role": "timestamp", "concept": "time.due" }
+    },
+    "Resolution Action Updated Date": {
+      "type": "string", "title": "Resolution Last Updated",
+      "x-qsv": { "qsv_type": "DateTime", "role": "timestamp", "concept": "time.updated" }
+    },
+    "Agency": {
+      "type": "string", "title": "Agency",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "org.agency" }
+    },
+    "Complaint Type": {
+      "type": "string", "title": "Complaint Type",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.complaint_type" }
+    },
+    "Borough": {
+      "type": "string", "title": "Borough",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.borough" }
+    },
+    "Status": {
+      "type": "string", "title": "Request Status",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" }
+    }
+  }
+}

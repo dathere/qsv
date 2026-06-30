@@ -4926,7 +4926,8 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
 const FULLSCREEN_STYLE: &str =
     "  .js-plotly-plot:fullscreen { background: var(--qsv-page-bg, #ffffff); }";
 
-/// A self-contained `<script>` that adds a custom "Fullscreen" button to every plot's modebar.
+/// A self-contained `<script>` that adds a custom "Fullscreen" button to every plot's modebar
+/// and auto-fits map zoom to the rendered container size.
 ///
 /// The plotly-rs `Configuration` we use can't carry a JS `click` handler, and a custom modebar
 /// button can only be added to an already-rendered plot reliably by re-running
@@ -4934,7 +4935,17 @@ const FULLSCREEN_STYLE: &str =
 /// historically ignores `config` changes, and a DOM-appended `.modebar-btn` gets wiped whenever
 /// plotly rebuilds the modebar — e.g. on the theme toggle's `relayout`). So we re-render every
 /// graph div once with the button added. The button toggles the native Fullscreen API on the
-/// graph div; a `fullscreenchange` listener resizes the plot on both enter and exit.
+/// graph div.
+///
+/// Maps (mapbox / MapLibre) bake an ABSOLUTE `zoom` computed in Rust for a fixed assumed pixel
+/// size (`window.__qsvMapAssumedW`/`__qsvMapAssumedH`, published by a per-page prelude). Since
+/// mapbox zoom is logarithmic, the optimal zoom for any real container size is
+/// `bakedZoom + log2(min(curW/assumedW, curH/assumedH))` with the baked center unchanged.
+/// `qsvRefitMaps` applies that — using each map subplot's DOMAIN-scaled pixel size, so it is
+/// correct whether the map is full-bleed or one subplot in a grid — on initial display and on
+/// every `fullscreenchange` (enter zooms in to fill; exit returns to the panel fit). Non-map
+/// charts just get `Plotly.Plots.resize`. The baked zoom/center are captured ONCE before any
+/// mutation (`gd.__qsvBaked`) so repeated toggles never drift.
 ///
 /// plotly's own render runs in a deferred `<script type="module">` with a top-level
 /// `await Plotly.newPlot(...)`, which `DOMContentLoaded` does NOT wait for — so we can't assume the
@@ -4959,12 +4970,78 @@ const FULLSCREEN_SCRIPT: &str = r##"<script>
       } catch (e) {}
     }
   };
+  // The assumed pixel size the baked mapbox/MapLibre zoom was computed against (published by a
+  // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
+  function assumedDims() {
+    var w = (typeof window.__qsvMapAssumedW === "number" && window.__qsvMapAssumedW > 0) ? window.__qsvMapAssumedW : 1000;
+    var h = (typeof window.__qsvMapAssumedH === "number" && window.__qsvMapAssumedH > 0) ? window.__qsvMapAssumedH : 600;
+    return { w: w, h: h };
+  }
+  function mapKeys(gd) {
+    var lay = (gd && gd.layout) || {};
+    return Object.keys(lay).filter(function (k) {
+      return /^(mapbox|map)\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+    });
+  }
+  // Snapshot the baked (assumed-px) zoom + center ONCE, before any mutation, as the fixed
+  // reference every later re-fit recomputes from (so repeated toggles can't drift).
+  function captureBaked(gd) {
+    if (gd.__qsvBaked) return;
+    gd.__qsvBaked = {};
+    var lay = gd.layout || {};
+    mapKeys(gd).forEach(function (k) { gd.__qsvBaked[k] = { z: lay[k].zoom, c: lay[k].center }; });
+  }
+  function plotPx(gd) {
+    var fl = gd._fullLayout || {};
+    return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
+  }
+  // Re-fit every captured map subplot to the current plot pixel size. mapbox zoom is logarithmic,
+  // so to keep the SAME bounds framed: zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)),
+  // keeping the baked center. curW/curH are DOMAIN-scaled (the subplot's own px), so this is
+  // correct for a full-bleed map AND a map that is one subplot in a combined grid.
+  function qsvRefitMaps(gd, plotW, plotH) {
+    if (!gd || !gd.__qsvBaked || !(plotW > 0) || !(plotH > 0)) return;
+    var a = assumedDims(), lay = gd.layout || {};
+    Object.keys(gd.__qsvBaked).forEach(function (k) {
+      var baked = gd.__qsvBaked[k];
+      if (!baked || typeof baked.z !== "number") return;
+      var dom = (lay[k] && lay[k].domain) || {};
+      var dx = (dom.x && dom.x.length === 2) ? (dom.x[1] - dom.x[0]) : 1;
+      var dy = (dom.y && dom.y.length === 2) ? (dom.y[1] - dom.y[0]) : 1;
+      var ratio = Math.min((dx * plotW) / a.w, (dy * plotH) / a.h);
+      if (!isFinite(ratio) || ratio <= 0) return;
+      var upd = {};
+      upd[k + ".zoom"] = baked.z + Math.log2(ratio);
+      if (baked.c) upd[k + ".center"] = baked.c;
+      // NB: let a "Style is not done loading" throw propagate so fitNow can retry — swallowing it
+      // here is why an early initial-fit would silently no-op before the mapbox tiles are ready.
+      Plotly.relayout(gd, upd);
+    });
+  }
+  // mapbox/MapLibre relayout throws if called before the GL style finishes loading, so retry with
+  // backoff (bounded) until it sticks. Recomputes from the live px each try (size may still settle).
+  function fitNow(gd, tries) {
+    if (tries === undefined) tries = 20;
+    try {
+      var px = plotPx(gd);
+      qsvRefitMaps(gd, px.w, px.h);
+    } catch (e) { if (tries > 0) setTimeout(function () { fitNow(gd, tries - 1); }, 150); }
+  }
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      captureBaked(gd);
+      var pr = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      // initial-display fit: the baked zoom assumed a fixed px size; rescale to the real one.
+      if (pr && pr.then) pr.then(function () { fitNow(gd); }).catch(function () {});
+      else fitNow(gd);
       gd.addEventListener("fullscreenchange", function () {
-        try { Plotly.Plots.resize(gd); } catch (e) {}
+        // Plotly.Plots.resize is async; fit only AFTER it resolves so fitNow reads the post-resize
+        // _fullLayout dims (else enter/exit would refit from stale pre-change dims and stick).
+        var rp;
+        try { rp = Plotly.Plots.resize(gd); } catch (e) {}
+        if (rp && rp.then) rp.then(function () { fitNow(gd); }).catch(function () { fitNow(gd); });
+        else fitNow(gd);
       });
     } catch (e) {}
   }
@@ -4985,13 +5062,28 @@ const FULLSCREEN_SCRIPT: &str = r##"<script>
 })();
 </script>"##;
 
-/// Splice the fullscreen `<style>` + `<script>` into a full HTML document immediately before the
-/// closing `</body>` (so the script runs after plotly's own `Plotly.newPlot` script tags). Used
-/// for the plain single-chart document produced by `Plot::to_html`; the `viz smart` pages embed
-/// the same constants directly in `smart_html_page`. Falls back to appending at the end if no
-/// `</body>` is present (defensive against future plotly template changes).
+/// A tiny prelude `<script>` publishing the assumed map pixel size the baked mapbox/MapLibre
+/// `zoom` was computed against, so `FULLSCREEN_SCRIPT`'s `qsvRefitMaps` can rescale the zoom to the
+/// real rendered size (initial display + fullscreen). Sourced from the Rust constants so it can't
+/// drift: standalone `viz map` HTML frames against `fit_dims` (`DEFAULT_IMG_WIDTH`×
+/// `DEFAULT_IMG_HEIGHT`); `viz smart` panels against `MAP_PANEL_ASSUMED_WIDTH_PX`×
+/// `MAP_PANEL_USABLE_HEIGHT_PX`.
+fn assumed_map_dims_prelude(width_px: f64, height_px: f64) -> String {
+    format!(
+        "<script>window.__qsvMapAssumedW={width_px};window.__qsvMapAssumedH={height_px};</script>"
+    )
+}
+
+/// Splice the fullscreen `<style>` + assumed-dims prelude + `<script>` into a full HTML document
+/// immediately before the closing `</body>` (so the script runs after plotly's own
+/// `Plotly.newPlot` script tags). Used for the plain single-chart document produced by
+/// `Plot::to_html` (standalone HTML always frames against `DEFAULT_IMG_WIDTH`×`DEFAULT_IMG_HEIGHT`,
+/// per `fit_dims`); the `viz smart` pages embed the same constants directly in `smart_html_page`.
+/// Falls back to appending at the end if no `</body>` is present (defensive against future plotly
+/// template changes).
 fn inject_fullscreen_chrome(doc: &str) -> String {
-    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{FULLSCREEN_SCRIPT}\n");
+    let prelude = assumed_map_dims_prelude(DEFAULT_IMG_WIDTH as f64, DEFAULT_IMG_HEIGHT as f64);
+    let chrome = format!("<style>\n{FULLSCREEN_STYLE}\n</style>\n{prelude}\n{FULLSCREEN_SCRIPT}\n");
     match doc.rfind("</body>") {
         Some(idx) => {
             let mut out = String::with_capacity(doc.len() + chrome.len());
@@ -5019,6 +5111,10 @@ fn smart_html_page(
         script,
     } = toggle_chrome(theme);
     let logo = logo_markup();
+    // Publish the assumed map pixel size the smart-panel mapbox/MapLibre zoom was baked against, so
+    // the client can re-fit map zoom to the real rendered size (see `assumed_map_dims_prelude`).
+    let fs_prelude =
+        assumed_map_dims_prelude(MAP_PANEL_ASSUMED_WIDTH_PX, MAP_PANEL_USABLE_HEIGHT_PX);
     // The inline-div grid has no overall plot title (panels carry only their own), so it shows the
     // dashboard title as a page `<h1>`. The typed-`Plot` grid already bakes the dashboard title
     // into its layout (needed for static image export), so its wrapper suppresses the `<h1>` to
@@ -5066,6 +5162,7 @@ fn smart_html_page(
 {logo}
 {heading}
 {body}
+{fs_prelude}
 {FULLSCREEN_SCRIPT}
 {script}
 </body>

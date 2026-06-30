@@ -157,6 +157,14 @@ RESIZE_LISTENER_JS = (
 # click handler toggles the native Fullscreen API on the graph div plotly passes in; a single
 # document-level `fullscreenchange` listener then resizes the plot so it actually fills the
 # fullscreen viewport on enter (and restores on exit) — mirroring the CLI handler's resize.
+#
+# Maps mirror the CLI's `qsvRefitMaps` (see FULLSCREEN_SCRIPT in src/cmd/viz.rs): mapbox/MapLibre
+# bake an absolute zoom for a fixed assumed px size — standalone `viz map` HTML frames against
+# 1000x600 (the only map figures reconstructed on this page are standalone; the map-bearing smart
+# dashboards are iframes that carry their own CLI prelude). Since mapbox zoom is logarithmic, the
+# optimal zoom for any real container size is bakedZoom + log2(min(curW/1000, curH/600)) keeping the
+# baked center; curW/curH are domain-scaled (subplot px). Applied on initial display and on every
+# fullscreenchange, recomputing from the once-captured baked reference so toggles don't drift.
 FS_BUTTON_JS = (
     'var qsvFsBtn={name:"qsv-fullscreen",title:"Toggle fullscreen",'
     'icon:{width:512,height:512,path:"M512 512v-208l-80 80-96-96-48 48 96 96-80 80z '
@@ -164,11 +172,40 @@ FS_BUTTON_JS = (
     'M0 0v208l80-80 96 96 48-48-96-96 80-80z"},'
     'click:function(gd){try{var p=document.fullscreenElement?document.exitFullscreen()'
     ':gd.requestFullscreen();if(p&&p.catch)p.catch(function(){});}catch(e){}}};'
+    'function qsvMapKeys(gd){var lay=(gd&&gd.layout)||{};return Object.keys(lay).filter('
+    'function(k){return /^(mapbox|map)\\d*$/.test(k)&&lay[k]&&typeof lay[k].zoom==="number";});}'
+    'function qsvCaptureBaked(gd){if(gd.__qsvBaked)return;gd.__qsvBaked={};var lay=gd.layout||{};'
+    'qsvMapKeys(gd).forEach(function(k){gd.__qsvBaked[k]={z:lay[k].zoom,c:lay[k].center};});}'
+    'function qsvPlotPx(gd){var fl=gd._fullLayout||{};'
+    'return{w:fl.width||gd.clientWidth||0,h:fl.height||gd.clientHeight||0};}'
+    'function qsvRefitMaps(gd,plotW,plotH){if(!gd||!gd.__qsvBaked||!(plotW>0)||!(plotH>0))return;'
+    'var aw=1000,ah=600,lay=gd.layout||{};Object.keys(gd.__qsvBaked).forEach(function(k){'
+    'var b=gd.__qsvBaked[k];if(!b||typeof b.z!=="number")return;'
+    'var dom=(lay[k]&&lay[k].domain)||{};'
+    'var dx=(dom.x&&dom.x.length===2)?(dom.x[1]-dom.x[0]):1;'
+    'var dy=(dom.y&&dom.y.length===2)?(dom.y[1]-dom.y[0]):1;'
+    'var ratio=Math.min((dx*plotW)/aw,(dy*plotH)/ah);if(!isFinite(ratio)||ratio<=0)return;'
+    'var u={};u[k+".zoom"]=b.z+Math.log2(ratio);if(b.c)u[k+".center"]=b.c;'
+    # let a "Style is not done loading" throw propagate so qsvFitNow can retry (see viz.rs).
+    'Plotly.relayout(gd,u);});}'
+    'function qsvFitNow(gd,tries){if(tries===undefined)tries=20;try{qsvCaptureBaked(gd);'
+    'var px=qsvPlotPx(gd);qsvRefitMaps(gd,px.w,px.h);}'
+    'catch(e){if(tries>0)setTimeout(function(){qsvFitNow(gd,tries-1);},150);}}'
+    'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
+    'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
+    'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
+    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);}else pending=true;});'
+    'if(pending&&qsvTries++<100)setTimeout(qsvInitFit,50);}setTimeout(qsvInitFit,0);'
+    # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
+    # the post-resize dims rather than stale pre-change ones.
+    'function qsvResizeThenFit(gd){var rp;try{rp=Plotly.Plots.resize(gd);}catch(e){}'
+    'if(rp&&rp.then)rp.then(function(){qsvFitNow(gd);}).catch(function(){qsvFitNow(gd);});'
+    'else qsvFitNow(gd);}'
     'document.addEventListener("fullscreenchange",function(){try{'
     'var el=document.fullscreenElement;'
-    'if(el&&el.classList&&el.classList.contains("js-plotly-plot")){Plotly.Plots.resize(el);}'
+    'if(el&&el.classList&&el.classList.contains("js-plotly-plot")){qsvResizeThenFit(el);}'
     'else{document.querySelectorAll(".js-plotly-plot").forEach(function(gd){'
-    'try{Plotly.Plots.resize(gd);}catch(e){}});}'
+    'try{qsvResizeThenFit(gd);}catch(e){}});}'
     '}catch(e){}});')
 
 BANNER = (

@@ -53,7 +53,7 @@ SMART_IFRAME = {
     "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
     "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
-    "smart dashboard (--smarter, --dictionary infer, NYC 311 metro choropleth)": "smart_nyc311.html",
+    "smart dashboard (--smarter, curated --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -65,7 +65,8 @@ PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",
     "smart_world_choropleth.html",
-    "smart_nyc311.html",
+    # smart_nyc311.html is NOT here: it now uses a committed curated dictionary
+    # (nyc311_dict.schema.json), so it regenerates deterministically without an LLM.
 }
 
 # CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
@@ -455,9 +456,9 @@ FIGURES = [
      "is a rough synthetic proxy (latitude + elevation-lapse model), so treat it as illustrative. "
      "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
-    ("smart dashboard (--smarter, --dictionary infer, NYC 311 metro choropleth)",
-     "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into ~38 "
-     "auto-chosen panels, nearly every panel type at once on a real, wide municipal dataset. The "
+    ("smart dashboard (--smarter, curated --dictionary, NYC 311 metro choropleth)",
+     "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
+     "panels on a real, wide municipal dataset. The "
      "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned by "
      "point-in-polygon into one of <b>188 NYC neighborhood</b> polygons (no geocoding), and because "
      "the matched regions span a city-scale extent, <code>viz smart</code> now draws the filled "
@@ -469,13 +470,17 @@ FIGURES = [
      "right above its reverse-geocoded <i>Pennsylvania, United States</i>, so a real Manhattan "
      "complaint saddled with corrupt coordinates is self-evident at a glance. "
      "<code>--smarter</code> runs <code>moarstats --advanced</code> "
-     "to enrich the stats cache (so skewed/bimodal numerics render as histograms with outlier "
-     "annotations rather than averaged-away boxes), and <code>--dictionary infer</code> calls "
-     "describegpt against a local LLM to supply friendly field labels (e.g. <i>Complaint Creation "
-     "Date</i>, <i>Resolution Deadline</i>). Alongside the maps the auto-profiler fills the dashboard "
-     "with box plots, frequency bars, a correlation heatmap and a created-over-time trend. Requires a "
-     "local LLM; the committed HTML is reused on regen.",
-     True, ["smart", "nyc_311.csv", "--smarter", "--dictionary", "infer",
+     "to enrich the stats cache, and a curated <code>--dictionary</code> "
+     "(<code>nyc311_dict.schema.json</code>) tags this log's numeric identifier/code columns "
+     "(<i>Unique Key</i>, <i>BBL</i>, the State-Plane coordinates) as identifiers and supplies "
+     "friendly labels (e.g. <i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
+     "profiler treats a service-request log as volume-and-category data rather than charting IDs as "
+     "quantities. Alongside the maps the auto-profiler fills the dashboard with frequency bars, an "
+     "hour-of-day seasonality profile and a requests-over-time trend. Fully deterministic — no LLM "
+     "needed (a Data Dictionary an LLM <code>--dictionary infer</code> pass produces can be reviewed "
+     "and committed exactly like this one).",
+     True, ["smart", "nyc_311.csv", "--smarter",
+            "--dictionary", "nyc311_dict.schema.json",
             "--geojson", "nyc_neighborhoods.geojson"]),
 ]
 

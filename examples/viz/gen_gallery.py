@@ -284,9 +284,7 @@ BANNER = (
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart dashboard (--smarter, geospatial)",
-     "One `qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 "
-     "--geojson japan_prefectures.geojson --feature-id-key properties.id` command, 11 auto-chosen "
-     "panels — nearly every "
+     "One command, 11 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
@@ -305,7 +303,7 @@ FIGURES = [
      True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3",
             "--geojson", "japan_prefectures.geojson", "--feature-id-key", "properties.id"]),
     ("smart dashboard (geographic outliers)",
-     "`qsv viz smart delivery_stops.csv` — delivery stops clustered in metro Denver with four "
+     "Delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "
      "their distances) are flagged as geographic <b>outliers</b>: drawn as distinct amber markers, "
      "drawn outside the purple (filled) spatial-extent box, and excluded from the auto-zoom — so the "
@@ -422,7 +420,7 @@ FIGURES = [
      "date) leads, alongside box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
     ("smart dashboard (per-US-state choropleth)",
-     "`qsv viz smart us_cities.csv` — `viz smart` reverse-geocodes each point; because every city "
+     "`viz smart` reverse-geocodes each point; because every city "
      "resolves to a US state, it adds a per-US-<b>state</b> choropleth (cities-per-state, albers-usa) "
      "beside the point map, alongside the usual box plots, frequency bars and the strongest-pair "
      "scatter. (The point map's <i>spatial extent</i> caption counts the data's bounding-box corners, "
@@ -443,7 +441,7 @@ FIGURES = [
      "HTML is reused on regen.",
      True, ["smart", "sales_sample.csv", "--dictionary", "infer", "--hierarchy-style", "sunburst"]),
     ("smart dashboard (--dictionary infer, world choropleth)",
-     "`qsv viz smart world_cities.csv --dictionary infer` — <b>1,179 cities</b> with population "
+     "<b>1,179 cities</b> with population "
      "over 500,000 across <b>six inhabited continents</b> (GeoNames-derived): `viz smart` "
      "reverse-geocodes every point and adds a per-<b>country</b> choropleth (cities-per-country, "
      "ISO-3) <b>framed to the filled-country geometries</b> via Plotly <code>fitbounds</code> — so "
@@ -458,8 +456,7 @@ FIGURES = [
      "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
     ("smart dashboard (--smarter, --dictionary infer, NYC 311 metro choropleth)",
-     "`qsv viz smart nyc_311.csv --smarter --dictionary infer --geojson nyc_neighborhoods.geojson` "
-     "— a <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into ~38 "
+     "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into ~38 "
      "auto-chosen panels, nearly every panel type at once on a real, wide municipal dataset. The "
      "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned by "
      "point-in-polygon into one of <b>188 NYC neighborhood</b> polygons (no geocoding), and because "

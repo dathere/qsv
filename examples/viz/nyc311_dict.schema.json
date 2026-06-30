@@ -64,6 +64,10 @@
       "type": "string", "title": "Borough",
       "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.borough" }
     },
+    "City": {
+      "type": "string", "title": "Incident City",
+      "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.city" }
+    },
     "Status": {
       "type": "string", "title": "Request Status",
       "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" }

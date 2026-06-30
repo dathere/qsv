@@ -58,8 +58,9 @@ SMART_IFRAME = {
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
 # local LM Studio / Ollama endpoint). Their committed HTML is REUSED as-is rather than regenerated,
-# so a normal `gen_gallery.py` run stays LLM-free and deterministic. To refresh them, run the
-# `qsv viz smart ... --dictionary infer` commands from README.md (with your LLM up) and re-cdnify.
+# so a normal `gen_gallery.py` run stays LLM-free and deterministic. To refresh them in-place, run
+# with QSV_VIZ_REGEN_LLM=1 and your local LLM up (LM Studio / Ollama) — main() then treats this set
+# as empty so these `--dictionary infer` figures are regenerated and re-cdnified like the others.
 PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",
@@ -96,7 +97,11 @@ CHECK_ICON_SVG = ('<svg class="ci-check" viewBox="0 0 16 16" width="16" height="
 CMD_CSS = ("figure .cmdbox{position:relative;margin:6px 4px 0}"
            "figure pre.cmd{background:#f3f5f9;border-radius:6px;padding:8px 40px 8px 10px;"
            "margin:0;overflow-x:auto;font:11.5px/1.4 SFMono-Regular,Consolas,Menlo,monospace;"
-           "color:#2A3F5F;white-space:pre}"
+           # pre-wrap (not plain `pre`) so a long single-line command wraps before the absolutely
+           # positioned Copy button instead of scrolling underneath it; the 40px right padding above
+           # reserves the button gutter, and overflow-wrap:anywhere lets a stray over-wide token
+           # break on very narrow (mobile) widths rather than clip.
+           "color:#2A3F5F;white-space:pre-wrap;overflow-wrap:anywhere}"
            "figure button.copy{position:absolute;top:6px;right:6px;display:inline-flex;"
            "align-items:center;justify-content:center;width:28px;height:28px;padding:0;"
            "border:1px solid transparent;background:transparent;color:#57606a;border-radius:6px;"
@@ -107,6 +112,43 @@ CMD_CSS = ("figure .cmdbox{position:relative;margin:6px 4px 0}"
            "figure button.copy.ok{color:#1a7f37;border-color:transparent;background:transparent}"
            "figure button.copy.ok .ci-copy{display:none}"
            "figure button.copy.ok .ci-check{display:block}")
+
+# Navigation + responsive layout, injected once (between /*qsv-nav*/.../*end-qsv-nav*/ markers so a
+# regen strips and re-adds it cleanly). Three jobs: (1) a sticky, collapsed-by-default "Jump to a
+# chart" Table of Contents (the page is ~35 figures / very tall, so a jump list is the only sane way
+# to navigate) — each link targets a per-figure id; scroll-margin-top keeps the sticky bar from
+# covering a jumped-to figure's title, and scroll-behavior:smooth animates the jump. (2) a
+# max-width:760px breakpoint that collapses the 2-col grid (set in the verbatim head) to a single
+# column so charts and command blocks stop being crushed/clipped on phones. (3) the TOC's own chrome.
+NAV_CSS = (
+    "html{scroll-behavior:smooth}"
+    "figure{scroll-margin-top:64px}"
+    "details.toc{position:sticky;top:0;z-index:30;max-width:1200px;margin:0 auto 16px;background:#fff;"
+    "border:1px solid #e6e9f0;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.05)}"
+    "details.toc>summary{cursor:pointer;list-style:none;user-select:none;font-weight:600;font-size:13px;"
+    "color:#2A3F5F;padding:10px 14px}"
+    "details.toc>summary::-webkit-details-marker{display:none}"
+    'details.toc>summary::after{content:"\\25be";float:right;color:#6b7a94;font-weight:400}'
+    'details.toc[open]>summary::after{content:"\\25b4"}'
+    "details.toc .toc-count{color:#8a97ad;font-weight:400;font-size:12px;margin-left:6px}"
+    "details.toc .toc-links{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));"
+    "gap:1px 16px;padding:6px 14px 12px;max-height:54vh;overflow:auto;border-top:1px solid #eef1f6}"
+    "details.toc .toc-links a{display:block;font-size:12.5px;color:#3056d3;text-decoration:none;"
+    "padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;border-radius:4px}"
+    "details.toc .toc-links a:hover{text-decoration:underline;background:#f3f5f9}"
+    "@media (max-width:760px){body{padding:14px}"
+    ".grid{grid-template-columns:1fr;gap:16px}"
+    "figure.full .plot{height:520px}.plot{height:320px}"
+    "details.toc .toc-links{grid-template-columns:1fr;max-height:60vh}}")
+
+# Collapse the sticky "Jump to a chart" panel as soon as one of its links is clicked, so the open
+# Table of Contents doesn't sit over the figure the reader just jumped to. The collapse happens
+# before the browser's default in-page hash navigation, and figure{scroll-margin-top} keeps the
+# target clear of the now-collapsed (thin) sticky bar.
+TOC_JS = (
+    "<script>document.addEventListener(\"click\",function(e){"
+    "var a=e.target.closest&&e.target.closest(\"details.toc .toc-links a\");if(!a)return;"
+    "var d=a.closest(\"details.toc\");if(d)d.open=false;});</script>")
 
 # Injected once into the gallery: copies a command block's single-line form (data-cmd) to the
 # clipboard. Uses the async Clipboard API when available (https / localhost) and falls back to a
@@ -471,6 +513,13 @@ def viz_command(title, args):
     return " ".join(viz_command_tokens(title, args))
 
 
+def anchor_id(title):
+    """Stable, hyphenated DOM id / URL fragment for a figure (e.g. `fig-choropleth-us-states`),
+    so the Table of Contents can deep-link to it and the fragment is shareable. Titles are unique,
+    so the derived ids are too."""
+    return "fig-" + re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
 def wrap_command_lines(tokens, width=60):
     """Wrap a token list into lines, breaking BEFORE a flag (`-`/`--` token) once the current
     line reaches `width`. Keeps each flag with its value on the same line and never splits a
@@ -617,6 +666,11 @@ def cleanup_sidecars():
 
 def main():
     qsv = find_qsv()
+    # QSV_VIZ_REGEN_LLM=1 opts into regenerating the `--dictionary infer` dashboards live (needs a
+    # local LLM up); otherwise their committed HTML is reused so a normal run stays LLM-free.
+    pregenerated = set() if os.environ.get("QSV_VIZ_REGEN_LLM") else PREGENERATED
+    if not pregenerated:
+        sys.stderr.write("QSV_VIZ_REGEN_LLM set: regenerating LLM dashboards (local LLM required)\n")
     # reuse the existing scaffold verbatim: everything up to and including `<div class="grid">`,
     # minus any previous banner (re-added below so it stays a single, current copy)
     with open(GALLERY, encoding="utf-8") as fh:
@@ -635,16 +689,29 @@ def main():
     # (idempotent: drop any prior rule before re-adding)
     head = re.sub(r"\s*\.js-plotly-plot:fullscreen\{[^}]*\}", "", head)
     head = head.replace("</style>", " .js-plotly-plot:fullscreen{background:#fff}\n</style>", 1)
+    # navigation + responsive CSS (idempotent: drop any prior marked block before re-adding)
+    head = re.sub(r"\s*/\*qsv-nav\*/.*?/\*end-qsv-nav\*/", "", head, flags=re.S)
+    head = head.replace("</style>", " /*qsv-nav*/" + NAV_CSS + "/*end-qsv-nav*/\n</style>", 1)
+    # sticky "Jump to a chart" Table of Contents, generated from FIGURES so it always lists every
+    # figure in order. Inserted right before the grid (idempotent: strip any prior copy first).
+    head = re.sub(r'<details class="toc">.*?</details>\n', "", head, flags=re.S)
+    toc_links = "".join(
+        f'<a href="#{anchor_id(t)}">{html_escape(t)}</a>' for (t, _d, _f, _a) in FIGURES)
+    toc_html = (f'<details class="toc"><summary>Jump to a chart'
+                f'<span class="toc-count">{len(FIGURES)} charts</span></summary>'
+                f'<div class="toc-links">{toc_links}</div></details>\n')
+    head = head.replace('<div class="grid">', toc_html + '<div class="grid">', 1)
 
     figs, fig_divs, plots = [], [], []
     for idx, fig in enumerate(FIGURES):
         title, desc, full, args = fig
         gid = f"g{idx}"
+        anchor = anchor_id(title)  # TOC deep-link target; distinct from gid (the inner plot div id)
         iframe_name = SMART_IFRAME.get(title)
         if iframe_name:
             # embed the genuine `qsv viz smart` output (CDN-slimmed) as a full-width iframe so the
             # real full-width overview panels, theme and map buttons render as the CLI produces them
-            if iframe_name in PREGENERATED:
+            if iframe_name in pregenerated:
                 # LLM-dependent (`--dictionary infer`): reuse the committed, already-cdnified HTML so
                 # regen stays offline & deterministic (refresh it manually — see README commands).
                 sys.stderr.write(f"[{idx}] {title}: reusing pre-generated {iframe_name}\n")
@@ -655,7 +722,7 @@ def main():
                     fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures
             fig_divs.append(
-                f'<figure class="cell full">{figcaption_html(title, desc, args)}'
+                f'<figure class="cell full" id="{anchor}">{figcaption_html(title, desc, args)}'
                 # allow fullscreen so each dashboard's in-iframe Plotly "Fullscreen" modebar
                 # button (gd.requestFullscreen()) isn't blocked by the iframe permissions policy.
                 f'<iframe src="{iframe_name}" class="dash" scrolling="no" loading="lazy" '
@@ -674,7 +741,7 @@ def main():
             cells = "".join(
                 f'<div id="{gid}-p{k}" style="height:340px"></div>' for k in range(len(panels)))
             fig_divs.append(
-                f'<figure class="cell full">{figcaption_html(title, desc, args)}'
+                f'<figure class="cell full" id="{anchor}">{figcaption_html(title, desc, args)}'
                 f'<div style="display:grid;grid-template-columns:repeat({cols},minmax(0,1fr));'
                 f'gap:14px">{cells}</div></figure>'
             )
@@ -689,7 +756,7 @@ def main():
             figs.append(result["fig"])
             cls = "cell full" if full else "cell"
             fig_divs.append(
-                f'<figure class="{cls}">{figcaption_html(title, desc, args)}'
+                f'<figure class="{cls}" id="{anchor}">{figcaption_html(title, desc, args)}'
                 f'<div id="{gid}" class="plot"></div></figure>'
             )
             plots.append(
@@ -710,6 +777,7 @@ def main():
         + "</script>\n"
         + RESIZE_LISTENER_JS + "\n"
         + COPY_JS + "\n"
+        + TOC_JS + "\n"
         + "</body></html>\n"
     )
     with open(GALLERY, "w", encoding="utf-8") as fh:

@@ -517,6 +517,19 @@ def anchor_id(title):
     return "fig-" + re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
 
 
+def toc_label(title):
+    """Display text for a figure's Table-of-Contents link. The many `smart dashboard (...)` figures
+    share a long `smart dashboard ` prefix that buries the distinguishing parenthetical and gets
+    ellipsis-truncated in the TOC grid, so move the common `dashboard` word to the end (e.g.
+    `smart dashboard (--smarter, geospatial)` -> `smart (--smarter, geospatial) dashboard`). The
+    figure title itself, its anchor id and the iframe lookup keys are unchanged — this only affects
+    the TOC link text. Bare `smart dashboard` (no parenthetical) round-trips unchanged."""
+    prefix = "smart dashboard"
+    if title.startswith(prefix):
+        return "smart" + title[len(prefix):] + " dashboard"
+    return title
+
+
 def wrap_command_lines(tokens, width=60):
     """Wrap a token list into lines, breaking BEFORE a flag (`-`/`--` token) once the current
     line reaches `width`. Keeps each flag with its value on the same line and never splits a
@@ -696,7 +709,7 @@ def main():
     # figure in order. Inserted right before the grid (idempotent: strip any prior copy first).
     head = re.sub(r'<details class="toc">.*?</details>\n', "", head, flags=re.S)
     toc_links = "".join(
-        f'<a href="#{anchor_id(t)}">{html_escape(t)}</a>' for (t, _d, _f, _a) in FIGURES)
+        f'<a href="#{anchor_id(t)}">{html_escape(toc_label(t))}</a>' for (t, _d, _f, _a) in FIGURES)
     toc_html = (f'<details class="toc"><summary>Jump to a chart'
                 f'<span class="toc-count">{len(FIGURES)} charts</span></summary>'
                 f'<div class="toc-links">{toc_links}</div></details>\n')

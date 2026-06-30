@@ -5471,9 +5471,9 @@ fn viz_smart_map_has_zoom_autofit() {
     assert!(html.contains("Math.log2"));
     // Core/Full extent buttons re-fit to the current container size via the buttonclicked handler.
     assert!(html.contains("plotly_buttonclicked"));
-    // theme toggle skips the basemap restyle for a choroplethmap (the fork's relayout would blank
+    // theme toggle restyles a choroplethmap via newPlot, not relayout (the fork's relayout blanks
     // it).
-    assert!(html.contains("hasChoro"));
+    assert!(html.contains("hasChoropleth"));
     // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x352).
     assert!(html.contains("window.__qsvMapAssumedW=960"));
     assert!(html.contains("window.__qsvMapAssumedH=352"));

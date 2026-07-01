@@ -7052,8 +7052,17 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
 /// label/field text. Deliberately conservative: bare "rate" is omitted because it is a substring of
 /// additive names like "generated"/"aggregate", and `pct`/`ratio`/`percent` already cover most
 /// proportion columns.
+///
+/// A COUNT is additive by definition regardless of what it counts, so a count-named column
+/// (`review_score_count`, `index_count`) is never intensive even when it embeds an intensive
+/// token like "score" or "index". The count guard wins. (`count` as a substring of `discount`
+/// / `account` is harmless here — those are additive amounts that should stay summed anyway.)
 fn is_intensive_measure(label: &str, field: &str) -> bool {
     let hay = format!("{label} {field}").to_ascii_lowercase();
+    const COUNTING: &[&str] = &["count", "number of", "num_", "tally"];
+    if COUNTING.iter().any(|kw| hay.contains(kw)) {
+        return false;
+    }
     const INTENSIVE: &[&str] = &[
         "temperature",
         "celsius",
@@ -7092,9 +7101,12 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     let concept = row.concept.trim();
     let make = |route: Route, agg: Option<Agg>| {
         // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
-        // the coarse measure.* concept vocab must be averaged, not summed, across a group.
+        // the coarse measure.* concept vocab must be averaged, not summed, across a group. An
+        // explicit `measure.count` is additive by definition (a count sums, never averages), so
+        // it is never downgraded even if its label embeds an intensive token.
         let agg = if route == Route::Measure
             && agg == Some(Agg::Sum)
+            && concept != "measure.count"
             && is_intensive_measure(&label, &s.field)
         {
             Some(Agg::Mean)
@@ -13806,6 +13818,13 @@ mod tests {
         assert!(!is_intensive_measure("Revenue", "revenue"));
         assert!(!is_intensive_measure("Packages", "packages"));
         assert!(!is_intensive_measure("Order Count", "order_count"));
+        // a COUNT wins over an embedded intensive token — it is additive by definition
+        assert!(!is_intensive_measure(
+            "Review Score Count",
+            "review_score_count"
+        ));
+        assert!(!is_intensive_measure("Index Count", "index_count"));
+        assert!(!is_intensive_measure("Number of Ratings", "num_ratings"));
     }
 
     #[test]
@@ -13834,6 +13853,19 @@ mod tests {
             )),
         );
         assert_eq!(pop.agg, Some(Agg::Sum));
+        // an explicit measure.count stays additive even when its label embeds an intensive token
+        // ("score"/"index") — a count is summed, never averaged.
+        let counts = stat("Integer", 300, Some(0.9));
+        let score_count = derive_semantics(
+            &counts,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.count",
+                "Review Score Count",
+            )),
+        );
+        assert_eq!(score_count.agg, Some(Agg::Sum));
     }
 
     #[test]

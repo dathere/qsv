@@ -5641,3 +5641,499 @@ fn viz_smart_map_has_zoom_autofit() {
     assert!(html.contains("window.__qsvMapAssumedW=960"));
     assert!(html.contains("window.__qsvMapAssumedH=352"));
 }
+
+// --- `viz smart --bivariate` ----------------------------------------------------------------
+// NMI-driven association heatmap + ranked top relationships, sourced from moarstats'
+// `--bivariate` sidecar CSV. `--bivariate` implies `--smarter` and (when `--dictionary` isn't
+// otherwise set) `--dictionary infer`; most of these tests pass an explicit (often trivial)
+// `--dictionary` file so they don't depend on a live LLM being configured, mirroring the existing
+// `--dictionary infer` tests' convention of preferring a file dictionary for determinism/speed.
+
+#[test]
+fn viz_smart_bivariate_implies_smarter_and_dictionary() {
+    let wrk = Workdir::new("viz_smart_bivariate_implies_smarter_and_dictionary");
+    // two categorical columns deterministically related (code -> status), so NMI = 1.0 and the
+    // association heatmap has something to show.
+    let mut rows = String::from("code,status\n");
+    for i in 0..80 {
+        let code = ["A", "B", "C", "D"][i % 4];
+        let status = code; // deterministic mapping
+        rows.push_str(&format!("{code},{status}\n"));
+    }
+    wrk.create_from_string("assoc.csv", &rows);
+
+    // deliberately NO --smarter and NO --dictionary: --bivariate alone must imply both.
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "assoc.csv", "--bivariate", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the association heatmap only exists when moarstats' `--bivariate` sidecar was produced,
+    // which only happens via the moarstats subprocess that `--smarter` enables -- so its presence
+    // proves --bivariate implied --smarter.
+    assert!(
+        html.contains("Association (NMI)") && html.contains(r#""name":"association""#),
+        "expected the NMI association heatmap to be built from an implied --smarter moarstats \
+         run; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_respects_explicit_dictionary() {
+    let wrk = Workdir::new("viz_smart_bivariate_respects_explicit_dictionary");
+    let mut rows = String::from("code,status\n");
+    for i in 0..80 {
+        let code = ["A", "B", "C", "D"][i % 4];
+        let status = code;
+        rows.push_str(&format!("{code},{status}\n"));
+    }
+    wrk.create_from_string("assoc.csv", &rows);
+    // a distinctive title an LLM `--dictionary infer` pass is vanishingly unlikely to produce
+    // verbatim, so its presence proves the EXPLICIT file dictionary was used and NOT silently
+    // replaced by `--dictionary infer`.
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "code": { "type": "string", "title": "Qsv Test Custom Region Label ABC123",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "status": { "type": "string", "title": "Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "assoc.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Qsv Test Custom Region Label ABC123"),
+        "explicit --dictionary's custom label should drive the panel title, not be replaced by \
+         --dictionary infer; html: {html}"
+    );
+    assert!(html.contains(r#""name":"association""#));
+}
+
+#[test]
+fn viz_smart_bivariate_assoc_heatmap_categorical_pair() {
+    let wrk = Workdir::new("viz_smart_bivariate_assoc_heatmap_categorical_pair");
+    // two purely categorical columns, near-deterministically mapped (strong NMI) -- with no
+    // numeric columns at all, a Pearson CorrHeatmap can never be built, so any heatmap trace in
+    // the output must be the new NMI AssocHeatmap.
+    let mut rows = String::from("region,tier\n");
+    for i in 0..120 {
+        let region = ["North", "South", "East", "West"][i % 4];
+        let tier = region; // deterministic -> NMI = 1.0
+        rows.push_str(&format!("{region},{tier}\n"));
+    }
+    wrk.create_from_string("catpair.csv", &rows);
+    // trivial dictionary (no x-qsv routing) keeps --dictionary explicit (skipping the slow LLM
+    // `infer` path) while leaving stats-only routing unchanged.
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "catpair.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""name":"association""#),
+        "a categorical/categorical pair should still produce an NMI association heatmap; html: \
+         {html}"
+    );
+    // no numeric columns exist, so no Pearson correlation heatmap should have been built
+    assert!(!html.contains(r#""name":"correlation""#));
+}
+
+#[test]
+fn viz_smart_bivariate_top_relationships_ranks_beyond_strongest_pair() {
+    let wrk = Workdir::new("viz_smart_bivariate_top_relationships_ranks_beyond_strongest_pair");
+    // 10 categorical columns: g1..g4 are all deterministically related to each other (NMI ~ 1.0
+    // for every pair among them), the rest are independent random noise -- more than
+    // CORR_INCELL_MAX_N (8) columns participate in surviving pairs, so the ranked
+    // "top relationships" bar is built, and it must rank MORE than just the single strongest pair.
+    let mut rows = String::from("g1,g2,g3,g4,noise1,noise2,noise3,noise4,noise5,noise6\n");
+    let cats = ["A", "B", "C", "D"];
+    for i in 0..300 {
+        let g1 = cats[i % 4];
+        let g2 = g1;
+        let g3 = cats[(i * 3) % 4];
+        let g4 = g3;
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        rows.push_str(&format!(
+            "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
+            noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
+        ));
+    }
+    wrk.create_from_string("wide_assoc.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "wide_assoc.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""name":"Top Relationships (NMI)""#),
+        "expected a ranked top-relationships bar with > 8 chartable columns; html: {html}"
+    );
+    // each ranked entry's label is "FieldA × FieldB" -- at least two distinct '×'-joined entries
+    // means the ranking goes beyond the single strongest pair.
+    let times_count = html.matches('\u{d7}').count();
+    assert!(
+        times_count >= 2,
+        "expected more than one ranked relationship entry (found {times_count} '×' labels); html: \
+         {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_top_relationships_lollipop_encodings() {
+    let wrk = Workdir::new("viz_smart_bivariate_top_relationships_lollipop_encodings");
+    // same wide-categorical shape as the ranking test (>8 chartable columns → the panel is built),
+    // but here we assert the panel is rendered as the multivariate LOLLIPOP: a marker scatter with
+    // asymmetric x error-bar stems and a per-dot size array (support encoding), NOT a plain bar.
+    let mut rows = String::from("g1,g2,g3,g4,noise1,noise2,noise3,noise4,noise5,noise6\n");
+    let cats = ["A", "B", "C", "D"];
+    for i in 0..300 {
+        let g1 = cats[i % 4];
+        let g2 = g1;
+        let g3 = cats[(i * 3) % 4];
+        let g4 = g3;
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        rows.push_str(&format!(
+            "{g1},{g2},{g3},{g4},{},{},{},{},{},{}\n",
+            noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
+        ));
+    }
+    wrk.create_from_string("wide_assoc.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "wide_assoc.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // locate the Top Relationships trace object and assert the lollipop shape within its window.
+    let anchor = html
+        .find(r#""name":"Top Relationships (NMI)""#)
+        .expect("Top Relationships panel should be present");
+    let window = &html[anchor.saturating_sub(200)..(anchor + 2000).min(html.len())];
+    assert!(
+        window.contains(r#""type":"scatter""#) && window.contains(r#""mode":"markers""#),
+        "Top Relationships should render as a marker scatter (lollipop), not a bar; window: \
+         {window}"
+    );
+    assert!(
+        window.contains(r#""error_x""#) && window.contains(r#""arrayminus""#),
+        "lollipop stems (asymmetric x error bars) should be present; window: {window}"
+    );
+    assert!(
+        window.contains(r#""size":["#),
+        "dot SIZE should encode support (a per-point size array); window: {window}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_pii_column_excluded() {
+    let wrk = Workdir::new("viz_smart_bivariate_pii_column_excluded");
+    // region/tier are strongly associated (NMI = 1.0); email is a low-cardinality (non-near-
+    // unique, so moarstats still computes its pairs) PII column that the dictionary tags as an
+    // identifier.
+    let mut rows = String::from("region,tier,email\n");
+    for i in 0..80 {
+        let region = ["East", "West"][i % 2];
+        let tier = region;
+        let domain = ["a.com", "b.com", "c.com", "d.com"][i % 4];
+        rows.push_str(&format!("{region},{tier},{domain}\n"));
+    }
+    wrk.create_from_string("pii.csv", &rows);
+    wrk.create_from_string(
+        "pii_dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "tier": { "type": "string", "title": "Tier",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "email": { "type": "string", "title": "Email Address",
+              "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "pii.email" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pii.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("pii_dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""name":"association""#),
+        "the region/tier pair should still produce an association heatmap; html: {html}"
+    );
+    assert!(
+        !html.contains("email") && !html.contains("Email"),
+        "the PII-tagged identifier column must not appear in any panel, including the new \
+         bivariate ones; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_skips_on_wide_dataset() {
+    let wrk = Workdir::new("viz_smart_bivariate_skips_on_wide_dataset");
+    // 55 columns > BIVARIATE_MAX_COLUMNS (50)
+    let n_cols = 55;
+    let mut rows = (0..n_cols)
+        .map(|i| format!("c{i}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    rows.push('\n');
+    for r in 0..20 {
+        let row: Vec<String> = (0..n_cols).map(|i| ((r + i) % 10).to_string()).collect();
+        rows.push_str(&row.join(","));
+        rows.push('\n');
+    }
+    wrk.create_from_string("wide55.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "wide55.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "the dashboard should still succeed overall, just without the bivariate panels"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("exceeds the 50-column cap"),
+        "expected a column-cap warning naming the 50-column limit; stderr: {stderr}"
+    );
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains(r#""name":"association""#) && !html.contains("Top Relationships (NMI)"),
+        "the bivariate panels must not appear once the column cap is exceeded; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_soft_fails_with_no_headers() {
+    let wrk = Workdir::new("viz_smart_bivariate_soft_fails_with_no_headers");
+    // moarstats can't honor --no-headers (same constraint --smarter already documents), so
+    // --bivariate's moarstats sidecar is never produced for a --no-headers input; the dashboard
+    // must still render successfully via the standard (non-enriched) path.
+    let mut rows = String::new();
+    for i in 1..=100 {
+        let city = match i % 3 {
+            0 => "NYC",
+            1 => "LA",
+            _ => "SF",
+        };
+        rows.push_str(&format!("{i},{},{city}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("headerless.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("headerless.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "headerless.csv",
+        "--bivariate",
+        "--no-headers",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("headerless.html").unwrap();
+    assert!(
+        html.contains("Plotly.newPlot"),
+        "fallback dashboard should still render; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""name":"association""#),
+        "no bivariate panels should be built when moarstats enrichment is skipped under \
+         --no-headers; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_flags_nonlinear_relationship() {
+    let wrk = Workdir::new("viz_smart_bivariate_flags_nonlinear_relationship");
+    // y = exp(x/3) over a repeated x range: strictly monotonic (Spearman rho = 1.0) but sharply
+    // curved, so Pearson r is markedly lower (~0.70) -- a textbook "nonlinear" divergence. x is
+    // repeated 5x (cardinality 30 over 150 rows) so moarstats' cardinality == rowcount filter
+    // doesn't drop the pair.
+    let mut rows = String::from("x,y\n");
+    for _ in 0..5 {
+        for x in 1..=30 {
+            let y = (f64::from(x) / 3.0).exp();
+            rows.push_str(&format!("{x},{y:.6}\n"));
+        }
+    }
+    wrk.create_from_string("nonlin.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "nonlin.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("Nonlinear: pearson r="),
+        "expected the association heatmap's hover to flag the monotonic-but-curved x/y pair as \
+         nonlinear; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
+    let wrk = Workdir::new("viz_smart_bivariate_top_relationships_excludes_low_support_pairs");
+    // g1..g4 are deterministically related (NMI ~ 1.0) and fully populated across all 300 rows
+    // (n_pairs = 300, the best-supported pairs in this dataset). sparse_a/sparse_b are empty for
+    // every row except the SAME narrow 10-row slice, where they're also deterministically
+    // related -- so their NMI is just as high, but their co-occurring row count (n_pairs = 10) is
+    // far below BIVARIATE_MIN_SUPPORT_RATIO (10%) of 300. The ranked "Top Relationships" bar
+    // should exclude sparse_a x sparse_b even though its NMI rivals the well-supported pairs; the
+    // association heatmap (which isn't support-gated) should still chart both columns.
+    let mut rows =
+        String::from("g1,g2,g3,g4,noise1,noise2,noise3,noise4,noise5,noise6,sparse_a,sparse_b\n");
+    let cats = ["A", "B", "C", "D"];
+    for i in 0..300 {
+        let g1 = cats[i % 4];
+        let g2 = g1;
+        let g3 = cats[(i * 3) % 4];
+        let g4 = g3;
+        let noise: Vec<&str> = (0..6).map(|k| cats[(i * 7 + k * 13) % 4]).collect();
+        let (sparse_a, sparse_b) = if i < 10 { ("P", "Q") } else { ("", "") };
+        rows.push_str(&format!(
+            "{g1},{g2},{g3},{g4},{},{},{},{},{},{},{sparse_a},{sparse_b}\n",
+            noise[0], noise[1], noise[2], noise[3], noise[4], noise[5]
+        ));
+    }
+    wrk.create_from_string("sparse_assoc.csv", &rows);
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "sparse_assoc.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""name":"Top Relationships (NMI)""#),
+        "expected a ranked top-relationships bar with > 8 chartable columns; html: {html}"
+    );
+    assert!(
+        !html.contains("sparse_a \u{d7} sparse_b") && !html.contains("sparse_b \u{d7} sparse_a"),
+        "the sparsely-supported (n_pairs=10 of 300) sparse_a/sparse_b pair should be excluded \
+         from the support-gated ranking despite its high NMI; html: {html}"
+    );
+    assert!(
+        html.contains("sparse_a") && html.contains("sparse_b"),
+        "the association heatmap itself is not support-gated, so both columns should still appear \
+         somewhere in its labels; html: {html}"
+    );
+}

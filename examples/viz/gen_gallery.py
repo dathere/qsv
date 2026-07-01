@@ -65,8 +65,12 @@ PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",
     "smart_world_choropleth.html",
+    # smart_geospatial.html (Japan): --bivariate now implies --dictionary infer here (no
+    # explicit --dictionary is passed), so it needs a live LLM like the other infer figures.
+    "smart_geospatial.html",
     # smart_nyc311.html is NOT here: it now uses a committed curated dictionary
-    # (nyc311_dict.schema.json), so it regenerates deterministically without an LLM.
+    # (nyc311_dict.schema.json), so --bivariate doesn't imply --dictionary infer (already
+    # set) and it still regenerates deterministically without an LLM.
 }
 
 # CSS for the smart-dashboard iframes. `scrolling="no"` + `overflow:hidden` plus the postMessage
@@ -285,7 +289,7 @@ BANNER = (
 # lead and close the contiguous run of individual chart types.
 FIGURES = [
     ("smart dashboard (--smarter, geospatial)",
-     "One command, 12 auto-chosen panels — nearly every "
+     "One command, 13 auto-chosen panels — nearly every "
      "panel type at once on a synthetic catalog of Japanese earthquakes. Things the raw table hides "
      "but the dashboard makes obvious: depth_km is <b>bimodal</b> (two populations — shallow "
      "interplate quakes ~20&nbsp;km and the deep Wadati-Benioff slab ~450&nbsp;km — so --smarter "
@@ -298,11 +302,17 @@ FIGURES = [
      "nearest prefecture instead, or <code>--no-snap</code> to drop every offshore point. "
      "magnitude vs felt_reports is almost perfectly correlated "
      "(r=0.95); magnitude and felt_reports are right-skewed with flagged outliers; and the "
-     "magnitude-over-time trend spikes during a September aftershock sequence. Coordinate columns "
+     "magnitude-over-time trend spikes during a September aftershock sequence. "
+     "<code>--bivariate</code> adds an <b>NMI association heatmap</b> spanning every column type, "
+     "not just the continuous-numeric ones the Pearson heatmap covers — it surfaces "
+     "depth_km and felt_reports as strongly associated with occurrence_date (NMI=0.93 and 0.89), "
+     "a temporal-clustering signal (the same September aftershock sequence) a Pearson matrix "
+     "restricted to numeric pairs alone cannot express against a date column. Coordinate columns "
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
      "<code>plotly_dark</code> theme.",
-     True, ["smart", "seismic_events.csv", "--smarter", "--theme", "plotly_dark", "--grid-cols", "3",
-            "--geojson", "japan_prefectures.geojson", "--feature-id-key", "properties.id"]),
+     True, ["smart", "seismic_events.csv", "--smarter", "--bivariate", "--theme", "plotly_dark",
+            "--grid-cols", "3", "--geojson", "japan_prefectures.geojson", "--feature-id-key",
+            "properties.id"]),
     ("smart dashboard (geographic outliers)",
      "Delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "
@@ -476,10 +486,31 @@ FIGURES = [
      "friendly labels (e.g. <i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
      "profiler treats a service-request log as volume-and-category data rather than charting IDs as "
      "quantities. Alongside the maps the auto-profiler fills the dashboard with frequency bars, an "
-     "hour-of-day seasonality profile and a requests-over-time trend. Fully deterministic — no LLM "
+     "hour-of-day seasonality profile and a requests-over-time trend. "
+     "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across all 34 charted columns "
+     "(the identifier/coordinate columns above stay excluded, same as everywhere else) plus a ranked "
+     "<b>Top Relationships</b> panel — a horizontal <b>multivariate lollipop</b> where each dot's "
+     "position is the pair's NMI on a value axis <b>zoomed</b> to the shown band (so near-ceiling "
+     "associations separate instead of crushing together at 1.0), its <b>size</b> encodes "
+     "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. A genuine categorical "
+     "pairing it surfaces is "
+     "<i>Complaint Type</i> ↔ <i>Descriptor</i> (NMI=0.86), an association a Pearson-only heatmap "
+     "could never show since neither column is numeric. It also flags a real <b>nonlinear</b> "
+     "relationship: <i>Resolution Deadline</i> and <i>Complaint Closed Date</i> are almost perfectly "
+     "associated (NMI=0.999) and perfectly rank-monotonic (spearman ρ=1.00), yet only "
+     "moderately linear (pearson r=0.71) — because how far a complaint's actual close date lands "
+     "from its deadline varies by complaint type, curving the relationship in a way Pearson alone "
+     "would understate. The ranked list itself is <b>support-weighted</b>: a pair only qualifies "
+     "when its co-occurring row count is at least 10% of the best-supported pair's, so a "
+     "technically-perfect NMI from two sparsely-populated columns that only ever co-occur in a "
+     "narrow complaint subset (bridge/taxi-specific fields, say) can't crowd out a more broadly "
+     "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
+     "<i>Borough</i> ↔ <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000) and "
+     "<i>Resolution Deadline</i> ↔ <i>Resolution Last Updated</i> (NMI=0.9996, n=3,467). Fully "
+     "deterministic — no LLM "
      "needed (a Data Dictionary an LLM <code>--dictionary infer</code> pass produces can be reviewed "
      "and committed exactly like this one).",
-     True, ["smart", "nyc_311.csv", "--smarter",
+     True, ["smart", "nyc_311.csv", "--smarter", "--bivariate",
             "--dictionary", "nyc311_dict.schema.json",
             "--geojson", "nyc_neighborhoods.geojson"]),
 ]
@@ -672,10 +703,13 @@ def grid_cols(args):
 
 def cleanup_sidecars():
     # `viz smart` writes a stats cache next to the CSV; `--smarter` (via its internal
-    # `moarstats --advanced`) also auto-creates an `.idx` index. Don't leave either in the tree
+    # `moarstats --advanced`) also auto-creates an `.idx` index; `--bivariate` additionally
+    # writes a `*.stats.bivariate.csv` sidecar (a separate moarstats output, so it doesn't
+    # match the `.stats.csv` substring check below). Don't leave any of these in the tree
     # (the committed datasets ship without them).
     for f in os.listdir(VIZ_DIR):
-        if ".stats.csv" in f or ".stats.jsonl" in f or f.endswith(".idx"):
+        if (".stats.csv" in f or ".stats.jsonl" in f or ".stats.bivariate.csv" in f
+                or f.endswith(".idx")):
             os.unlink(os.path.join(VIZ_DIR, f))
 
 

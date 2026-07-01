@@ -402,7 +402,7 @@ tikv-jemallocator = { version = "0.7", optional = true }
 # pinned to =0.3.51: time 0.3.52 changed the Parsable::parse signature (added a
 # `defaults: Option<Parsed>` arg), breaking the cookie 0.16/0.18 crates in our
 # graph. Unpin once cookie ships a compatible release or time yanks/patches 0.3.52.
-time = { version = "=0.3.51", optional = true }
+time = { version = "=0.3.53", optional = true }
 titlecase = { version = "3", optional = true }
 tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 unicode-width = { version = "0.2", optional = true }

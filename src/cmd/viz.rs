@@ -6020,6 +6020,25 @@ fn bivariate_csv_path(input: &str) -> std::path::PathBuf {
     parent.join(format!("{fstem}.stats.bivariate.csv"))
 }
 
+/// Whether a bivariate sidecar on disk was written by the CURRENT `moarstats --bivariate` run,
+/// used to guard against reading a stale one a prior run left behind. Given the pre-run mtime
+/// snapshot (`before`, `None` if the file was absent), the post-run snapshot (`after`, `None` if
+/// absent now), and whether the pre-run delete cleared the path (`cleared`): fresh iff a file
+/// exists now AND either the path was cleared before the run (so any file present was written just
+/// now) or its mtime advanced past the snapshot (the delete FAILED — e.g. a locked file — but
+/// moarstats still rewrote it). A present-but-unadvanced file with a failed delete is stale and
+/// must not be trusted.
+fn bivariate_sidecar_is_fresh(
+    before: Option<std::time::SystemTime>,
+    after: Option<std::time::SystemTime>,
+    cleared: bool,
+) -> bool {
+    match after {
+        Some(after) => cleared || before.is_none_or(|before| after > before),
+        None => false,
+    }
+}
+
 /// One parsed row of moarstats' `--bivariate` sidecar CSV.
 struct BivariateRow {
     field1:   String,
@@ -9720,14 +9739,25 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             // bivariate sidecar request. Always asks for nmi (the association heatmap's value,
             // works for numeric AND categorical pairs) plus pearson/spearman (their divergence
             // flags a numeric pair as nonlinear).
+            // freshness bookkeeping for the bivariate sidecar, read after the moarstats run below;
+            // defaults are never read unless `bivariate_enabled`.
+            let mut sidecar_before: Option<std::time::SystemTime> = None;
+            let mut sidecar_cleared = false;
             if bivariate_enabled {
                 moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,pearson,spearman"]);
-                // remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
-                // moarstats (re)writes it only when the fresh run yields pairs, so deleting first
-                // means a failed or pair-less current run leaves NO sidecar (bivariate_panels then
-                // soft-fails) instead of the dashboard silently reading association stats computed
-                // for since-changed data.
-                let _ = std::fs::remove_file(bivariate_csv_path(&input));
+                // Remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
+                // moarstats (re)writes it only when the fresh run yields pairs, so clearing it
+                // first means a pair-less or failed current run leaves NO sidecar for the dashboard
+                // to read (it then soft-fails) instead of charting association stats computed for
+                // since-changed data. Snapshot the pre-run mtime FIRST so that even if the removal
+                // fails (e.g. a locked/read-only file), a stale copy whose mtime never advances is
+                // still caught as not-fresh below rather than trusted.
+                let sidecar = bivariate_csv_path(&input);
+                sidecar_before = std::fs::metadata(&sidecar).and_then(|m| m.modified()).ok();
+                sidecar_cleared = match std::fs::remove_file(&sidecar) {
+                    Ok(()) => true,
+                    Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+                };
             }
             let moar_result = util::run_qsv_cmd(
                 "moarstats",
@@ -9741,9 +9771,28 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                      standard stats. Dashboard will omit advanced refinements."
                 );
             }
-            // trust the sidecar only when THIS run succeeded; on failure it was just deleted (or is
-            // a partial write), so the association panels must be skipped rather than read stale.
-            bivariate_sidecar_fresh = bivariate_enabled && moar_result.is_ok();
+            // Trust the sidecar only when THIS run actually wrote it: moarstats must have succeeded
+            // AND a sidecar must now exist that is provably fresh — either the path was cleared
+            // before the run (so any file present was written just now) or, if the pre-delete
+            // failed, its mtime advanced past the pre-run snapshot. A present-but-unrefreshed file
+            // is a stale copy the delete couldn't remove: skip the panels (with a notice) rather
+            // than read the wrong data. An absent sidecar means no pairs — silently skip.
+            if bivariate_enabled && moar_result.is_ok() {
+                let sidecar_after = std::fs::metadata(bivariate_csv_path(&input))
+                    .and_then(|m| m.modified())
+                    .ok();
+                bivariate_sidecar_fresh =
+                    bivariate_sidecar_is_fresh(sidecar_before, sidecar_after, sidecar_cleared);
+                // a sidecar present but NOT fresh is a stale copy the pre-delete couldn't remove;
+                // warn so the missing panels aren't a mystery (an absent sidecar just means no
+                // pairs — stay silent there).
+                if !bivariate_sidecar_fresh && sidecar_after.is_some() {
+                    eprintln!(
+                        "viz smart --bivariate: a stale bivariate sidecar could not be removed \
+                         and was not refreshed by moarstats; skipping the association panels."
+                    );
+                }
+            }
         }
     }
 
@@ -16078,5 +16127,39 @@ mod tests {
             ceil > 0.9 && ceil <= TOPREL_CEIL_CAP,
             "ceil pads above the max, got {ceil}"
         );
+    }
+
+    #[test]
+    fn bivariate_sidecar_fresh_when_path_cleared_and_written() {
+        // pre-delete succeeded (cleared) and a file exists now => moarstats wrote it this run.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(bivariate_sidecar_is_fresh(Some(t0), Some(t0), true));
+        // even with no pre-existing file, a present-after file with cleared path is fresh.
+        assert!(bivariate_sidecar_is_fresh(None, Some(t0), true));
+    }
+
+    #[test]
+    fn bivariate_sidecar_not_fresh_when_absent_after_run() {
+        // moarstats produced no pairs (no sidecar written); nothing to read.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(!bivariate_sidecar_is_fresh(Some(t0), None, true));
+        assert!(!bivariate_sidecar_is_fresh(None, None, false));
+    }
+
+    #[test]
+    fn bivariate_sidecar_stale_when_delete_failed_and_mtime_unchanged() {
+        // the pre-delete FAILED (not cleared) and moarstats did not rewrite the sidecar, so its
+        // mtime is unchanged from the pre-run snapshot: this is the stale copy we must NOT trust.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(!bivariate_sidecar_is_fresh(Some(t0), Some(t0), false));
+    }
+
+    #[test]
+    fn bivariate_sidecar_fresh_when_delete_failed_but_mtime_advanced() {
+        // the pre-delete failed but moarstats still overwrote the sidecar in place: the advanced
+        // mtime proves the current run wrote it, so it is fresh.
+        let before = std::time::UNIX_EPOCH;
+        let after = before + std::time::Duration::from_secs(1);
+        assert!(bivariate_sidecar_is_fresh(Some(before), Some(after), false));
     }
 }

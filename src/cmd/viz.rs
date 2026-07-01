@@ -7043,6 +7043,80 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
     sem
 }
 
+/// Recognize an *intensive* (non-additive) measure — temperature, percentages/ratios, indices or
+/// scores, elevation, per-capita/density figures, and pre-aggregated (average/median) columns —
+/// from its human label and field name. Summing these across a group is meaningless (you can't add
+/// °C from two cities), so `viz smart` averages them instead. Additive amounts/counts (revenue,
+/// population, packages) are NOT matched and keep their Sum aggregation. describegpt's `measure.*`
+/// concept vocab (count/amount/ratio) is too coarse to express this distinction, so key off the
+/// label/field text. Deliberately conservative: bare "rate" is omitted because it is a substring of
+/// additive names like "generated"/"aggregate", and `pct`/`ratio`/`percent` already cover most
+/// proportion columns.
+///
+/// A COUNT is additive by definition regardless of what it counts, so a count-named column
+/// (`review_score_count`, `reviewScoreCount`, `index_count`) is never intensive even when it embeds
+/// an intensive token like "score" or "index" — the count guard wins. That guard is **token-aware**
+/// (`count` must be a whole token, split on non-alphanumeric boundaries AND camelCase transitions)
+/// so it catches snake_case, spaced, and camelCase names alike while NOT suppressing genuinely
+/// intensive fields that merely embed the letters, e.g. `discount_pct`, `account_score`,
+/// `county_index`.
+fn is_intensive_measure(label: &str, field: &str) -> bool {
+    let raw = format!("{label} {field}");
+    let hay = raw.to_ascii_lowercase();
+    // Tokenize on non-alphanumeric boundaries AND lower/digit -> upper (camelCase/PascalCase)
+    // transitions so a count token is recognized in `order_count`, `Order Count`, and
+    // `reviewScoreCount` alike — without matching the `count` substring inside
+    // `discount`/`account`/`county`.
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower_or_digit = false;
+    for c in raw.chars() {
+        if !c.is_alphanumeric() {
+            if !cur.is_empty() {
+                tokens.push(std::mem::take(&mut cur));
+            }
+            prev_lower_or_digit = false;
+            continue;
+        }
+        if c.is_uppercase() && prev_lower_or_digit && !cur.is_empty() {
+            tokens.push(std::mem::take(&mut cur));
+        }
+        cur.push(c.to_ascii_lowercase());
+        prev_lower_or_digit = c.is_ascii_lowercase() || c.is_ascii_digit();
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    let is_count = tokens
+        .iter()
+        .any(|t| matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally"))
+        || hay.contains("number of");
+    if is_count {
+        return false;
+    }
+    const INTENSIVE: &[&str] = &[
+        "temperature",
+        "celsius",
+        "fahrenheit",
+        "\u{b0}c",
+        "\u{b0}f",
+        "average",
+        "avg",
+        "median",
+        "percent",
+        "pct",
+        "ratio",
+        "index",
+        "score",
+        "elevation",
+        "altitude",
+        "density",
+        "per capita",
+        "per_capita",
+    ];
+    INTENSIVE.iter().any(|kw| hay.contains(kw))
+}
+
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
 ///
 /// Precedence: **concept -> role -> content_type -> statistics**. `concept` is the most specific,
@@ -7057,6 +7131,19 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     let label = row.label.trim().to_string();
     let concept = row.concept.trim();
     let make = |route: Route, agg: Option<Agg>| {
+        // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
+        // the coarse measure.* concept vocab must be averaged, not summed, across a group. An
+        // explicit `measure.count` is additive by definition (a count sums, never averages), so
+        // it is never downgraded even if its label embeds an intensive token.
+        let agg = if route == Route::Measure
+            && agg == Some(Agg::Sum)
+            && concept != "measure.count"
+            && is_intensive_measure(&label, &s.field)
+        {
+            Some(Agg::Mean)
+        } else {
+            agg
+        };
         guardrail(
             ColSemantics {
                 route,
@@ -13741,6 +13828,87 @@ mod tests {
         // unknown namespace / bare unknown -> None (fall through to role)
         assert_eq!(route_from_concept("weather.temp"), None);
         assert_eq!(route_from_concept("unknown"), None);
+    }
+
+    #[test]
+    fn intensive_measure_detection() {
+        // intensive quantities -> averaged, matched by label or field
+        assert!(is_intensive_measure(
+            "Average Annual Temperature (\u{b0}C)",
+            "avg_annual_temp_c"
+        ));
+        assert!(is_intensive_measure("Elevation", "elevation_m"));
+        assert!(is_intensive_measure("Literacy", "literacy_pct"));
+        assert!(is_intensive_measure("Happiness Index", "happiness_index"));
+        assert!(is_intensive_measure("Population Density", "pop_density"));
+        // additive amounts/counts stay additive
+        assert!(!is_intensive_measure(
+            "Metro Population (millions)",
+            "metro_population_m"
+        ));
+        assert!(!is_intensive_measure("Revenue", "revenue"));
+        assert!(!is_intensive_measure("Packages", "packages"));
+        assert!(!is_intensive_measure("Order Count", "order_count"));
+        // a COUNT wins over an embedded intensive token — it is additive by definition
+        assert!(!is_intensive_measure(
+            "Review Score Count",
+            "review_score_count"
+        ));
+        assert!(!is_intensive_measure("Index Count", "index_count"));
+        assert!(!is_intensive_measure("Number of Ratings", "num_ratings"));
+        // camelCase / PascalCase count fields are recognized even with an empty/unhelpful label
+        assert!(!is_intensive_measure("", "reviewScoreCount"));
+        assert!(!is_intensive_measure("", "indexCount"));
+        assert!(!is_intensive_measure("", "numRatings"));
+        // the count guard is token-aware: intensive fields that merely EMBED "count" as a
+        // substring (discount, account, county) are still detected as intensive, in snake_case
+        // and camelCase alike
+        assert!(is_intensive_measure("Discount", "discount_pct"));
+        assert!(is_intensive_measure("Account Score", "account_score"));
+        assert!(is_intensive_measure("County Index", "county_index"));
+        assert!(is_intensive_measure("", "discountPct"));
+        assert!(is_intensive_measure("", "accountScore"));
+    }
+
+    #[test]
+    fn derive_semantics_averages_intensive_measure() {
+        let numeric = stat("Float", 300, Some(0.9));
+        // temperature tagged as an additive amount by the coarse vocab -> downgraded to Mean
+        let temp = derive_semantics(
+            &numeric,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.amount",
+                "Average Annual Temperature (\u{b0}C)",
+            )),
+        );
+        assert_eq!(temp.route, Route::Measure);
+        assert_eq!(temp.agg, Some(Agg::Mean));
+        // a genuine additive amount keeps Sum
+        let pop = derive_semantics(
+            &numeric,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.amount",
+                "Metro Population",
+            )),
+        );
+        assert_eq!(pop.agg, Some(Agg::Sum));
+        // an explicit measure.count stays additive even when its label embeds an intensive token
+        // ("score"/"index") — a count is summed, never averaged.
+        let counts = stat("Integer", 300, Some(0.9));
+        let score_count = derive_semantics(
+            &counts,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.count",
+                "Review Score Count",
+            )),
+        );
+        assert_eq!(score_count.agg, Some(Agg::Sum));
     }
 
     #[test]

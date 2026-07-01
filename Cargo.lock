@@ -836,9 +836,9 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-rs"
-version = "1.17.0"
+version = "1.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ec2f1fc3ec205783a5da9a7e6c1509cc69dedf09a1949e412c1e18469326d00"
+checksum = "4342d8937fc7e5dd9b1c60292261c0670c882a2cd1719cfc11b1af41731e32ad"
 dependencies = [
  "aws-lc-sys",
  "zeroize",
@@ -846,14 +846,15 @@ dependencies = [
 
 [[package]]
 name = "aws-lc-sys"
-version = "0.41.0"
+version = "0.42.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a2f9779ce85b93ab6170dd940ad0169b5766ff848247aff13bb788b832fe3f4"
+checksum = "6d9ceb1da931507a12f4fccea479dccd00da1943e1b4ae72d8e502d707361444"
 dependencies = [
  "cc",
  "cmake",
  "dunce",
  "fs_extra",
+ "pkg-config",
 ]
 
 [[package]]
@@ -1751,16 +1752,18 @@ dependencies = [
 
 [[package]]
 name = "cpc"
-version = "4.1.0"
+version = "4.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9802c8f84ed2a338e74b2889eb846e869ed6f8d00a27cc8ffdcb10966e0d6e4d"
+checksum = "964b16b17dfd4b2f76687b54f7a4cb32ac6f3e2bb06c173e1de1bc0efa64ccea"
 dependencies = [
  "console_error_panic_hook",
  "fastnum",
  "js-sys",
  "reqwest 0.13.4",
  "serde",
+ "serde-wasm-bindgen",
  "serde_json",
+ "sys-locale",
  "unicode-segmentation",
  "wasm-bindgen",
  "web-time",
@@ -4297,9 +4300,9 @@ dependencies = [
 
 [[package]]
 name = "jsonschema"
-version = "0.46.7"
+version = "0.46.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "185abd1edcef44ac028ec6588ad1360155fbd0a8baa20243a28f5b2a05537a48"
+checksum = "24fc8535da347b994f6d2fab0a84b74e3b31ad08ebe4204d95f3e755db7af49b"
 dependencies = [
  "ahash 0.8.12",
  "bytecount",
@@ -5839,7 +5842,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#a2aa7cc78bc7fe4d369d774952ba617b99275a90"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
 dependencies = [
  "askama",
  "async-trait",
@@ -5862,7 +5865,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#a2aa7cc78bc7fe4d369d774952ba617b99275a90"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5873,7 +5876,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps#a2aa7cc78bc7fe4d369d774952ba617b99275a90"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -7533,9 +7536,9 @@ dependencies = [
 
 [[package]]
 name = "referencing"
-version = "0.46.7"
+version = "0.46.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c335a4796e6081e384712c269f29ed8d2f6613e7afdd54a8467bb7d48f99859f"
+checksum = "1c8dceb372b46fecd006be48ca335468b49ad887a7f0150cabd6098fa4fc500f"
 dependencies = [
  "ahash 0.8.12",
  "fluent-uri",
@@ -8008,9 +8011,9 @@ dependencies = [
 
 [[package]]
 name = "rustls-pki-types"
-version = "1.14.1"
+version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30a7197ae7eb376e574fe940d068c30fe0462554a3ddbe4eca7838e049c937a9"
+checksum = "764899a24af3980067ee14bc143654f297b22eaebfe3c7b6b211920a5a59b046"
 dependencies = [
  "web-time",
  "zeroize",
@@ -8919,6 +8922,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "sys-locale"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8eab9a99a024a169fe8a903cf9d4a3b3601109bcc13bd9e3c6fff259138626c4"
+dependencies = [
+ "libc",
 ]
 
 [[package]]
@@ -11091,9 +11103,9 @@ dependencies = [
 
 [[package]]
 name = "zlib-rs"
-version = "0.6.4"
+version = "0.6.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "977347db8caa080403f6b6b7c1cda9479a8e869316f7e13a59b19076a40f94e3"
+checksum = "5431d5661c32445236631278f27946e444ddafe4684cac70b185272d4f9c52d5"
 
 [[package]]
 name = "zmij"

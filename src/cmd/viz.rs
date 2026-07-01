@@ -1046,11 +1046,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         None => OutFormat::Html,
     };
 
-    if out_format.is_image() && args.flag_output.is_none() {
-        return fail_incorrectusage_clierror!(
-            "Image formats require an --output file (image data cannot be written to stdout)."
-        );
-    }
     #[cfg(not(feature = "viz_static"))]
     if out_format.is_image() {
         return fail_clierror!(
@@ -1524,14 +1519,18 @@ fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, 
     Ok((traces, data.x_label, data.y_label))
 }
 
-/// Build a Scatter trace, using a numeric x-axis when every x value parses as a number,
-/// otherwise a categorical (string) x-axis.
+/// Build a Scatter trace, using a numeric x-axis when every x value parses as a finite number
+/// (`parse_finite_f64` semantics — "inf"/"nan" literals force a categorical axis instead of
+/// serializing as `null` and silently dropping points), otherwise a categorical (string) x-axis.
 fn scatter_trace(name: &str, xs: Vec<String>, ys: Vec<f64>, mode: Mode) -> Box<dyn Trace> {
-    if !xs.is_empty() && xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
-        let xn: Vec<f64> = xs
-            .iter()
-            .map(|s| s.trim().parse::<f64>().unwrap_or(f64::NAN))
-            .collect();
+    let xn = (!xs.is_empty())
+        .then(|| {
+            xs.iter()
+                .map(|s| parse_finite_f64(s))
+                .collect::<Option<Vec<f64>>>()
+        })
+        .flatten();
+    if let Some(xn) = xn {
         let mut t = Scatter::new(xn, ys).mode(mode);
         if !name.is_empty() {
             t = t.name(name);
@@ -1652,9 +1651,9 @@ fn build_scatter_encoded(args: &Args) -> CliResult<(Vec<Box<dyn Trace>>, String,
 }
 
 /// Build a markers-mode Scatter with the given marker, using a numeric x-axis when every x
-/// value parses as a number (otherwise a categorical x-axis), mirroring `scatter_trace`. `hover`,
-/// when non-empty, is the row-aligned pre-rendered hover text (naming x/y and any size/color
-/// encoding) attached via `HoverInfo::Text`.
+/// value parses as a finite number (otherwise a categorical x-axis), mirroring `scatter_trace`.
+/// `hover`, when non-empty, is the row-aligned pre-rendered hover text (naming x/y and any
+/// size/color encoding) attached via `HoverInfo::Text`.
 fn scatter_with_marker(
     xs: Vec<String>,
     ys: Vec<f64>,
@@ -1663,11 +1662,14 @@ fn scatter_with_marker(
 ) -> Box<dyn Trace> {
     // numeric vs categorical x produce differently-typed Scatter traces, so each branch owns the
     // (identical) hover attachment before coercing to `Box<dyn Trace>`.
-    if !xs.is_empty() && xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
-        let xn: Vec<f64> = xs
-            .iter()
-            .map(|s| s.trim().parse::<f64>().unwrap_or(f64::NAN))
-            .collect();
+    let xn = (!xs.is_empty())
+        .then(|| {
+            xs.iter()
+                .map(|s| parse_finite_f64(s))
+                .collect::<Option<Vec<f64>>>()
+        })
+        .flatten();
+    if let Some(xn) = xn {
         let mut t = Scatter::new(xn, ys).mode(Mode::Markers).marker(marker);
         if !hover.is_empty() {
             t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
@@ -2118,7 +2120,9 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
             series.push(cell_to_string(record.get(i)));
         }
         if let Some(i) = text_idx {
-            texts.push(cell_to_string(record.get(i)));
+            // escape: plotly renders point text/hover as pseudo-HTML, so a cell containing
+            // `<b>`/`&` would otherwise display as markup instead of the literal value
+            texts.push(escape_hover(&cell_to_string(record.get(i))));
         }
     }
     if lats.is_empty() {
@@ -2330,7 +2334,9 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
             series.push(cell_to_string(record.get(i)));
         }
         if let Some(i) = text_idx {
-            texts.push(cell_to_string(record.get(i)));
+            // escape: plotly renders point text/hover as pseudo-HTML, so a cell containing
+            // `<b>`/`&` would otherwise display as markup instead of the literal value
+            texts.push(escape_hover(&cell_to_string(record.get(i))));
         }
     }
     if lats.is_empty() {
@@ -2621,31 +2627,37 @@ struct PipFeature {
     name:               Option<String>,
     polygons:           Vec<Vec<Vec<[f64; 2]>>>,
     bbox:               [f64; 4],
-    /// True when this feature crosses the ±180° antimeridian. Such features store their vertices
-    /// (and `bbox`) in a `[0, 360)` longitude frame (negative lons shifted by +360) so the
-    /// planar ray-cast and bbox prefilter stay contiguous across the dateline seam; a western-
-    /// hemisphere query longitude must be shifted the same way via [`PipFeature::frame_lon`]
-    /// before any containment or distance test against this feature.
+    /// True when at least one of this feature's polygons genuinely crosses the ±180° antimeridian
+    /// and was continuity-unwrapped into a contiguous extended longitude frame (vertices may lie
+    /// beyond ±180°, within `(-180, 540)`), so the planar ray-cast and bbox prefilter stay
+    /// contiguous across the dateline seam. Queries against such a feature must be probed at both
+    /// 360°-equivalent longitudes via [`PipFeature::candidate_lons`]. Pole-enclosing rings pre-cut
+    /// along the seam (e.g. Natural Earth's Antarctica) are deliberately KEPT RAW — their planar
+    /// form is already ray-cast-correct — and don't set this flag by themselves.
     wraps_antimeridian: bool,
 }
 
 impl PipFeature {
-    /// Map a query longitude into this feature's coordinate frame: antimeridian-crossing features
-    /// store vertices in `[0, 360)`, so a negative query lon is shifted by +360 to match. A no-op
-    /// for features that don't wrap.
-    fn frame_lon(&self, lon: f64) -> f64 {
-        if self.wraps_antimeridian && lon < 0.0 {
-            lon + 360.0
+    /// The query longitudes to test against this feature. An antimeridian-crossing feature stores
+    /// continuity-unwrapped vertices extending past ±180°, so the query is probed at both of its
+    /// 360°-equivalent representations — at most one can fall inside any single planar polygon
+    /// (per-polygon spans are < 360°), so OR-ing the probes can't double-count. Non-wrapping
+    /// features are tested at the raw longitude only.
+    fn candidate_lons(&self, lon: f64) -> [Option<f64>; 2] {
+        if self.wraps_antimeridian {
+            [Some(lon), Some(lon + 360.0)]
         } else {
-            lon
+            [Some(lon), None]
         }
     }
 }
 
 /// Resolve a GeoJSON feature's id by a dotted `--feature-id-key` path. Supports the top-level
-/// `"id"` and `"properties.<...>"` paths (mirroring plotly's `featureidkey` convention). Strings
-/// and numbers both coerce to `String` (CSV cells and plotly match feature ids as strings).
-/// Returns `None` when the path is absent or the value isn't a string/number.
+/// `"id"`, `"properties.<...>"` paths (mirroring plotly's `featureidkey` convention), and any
+/// other key as a top-level foreign member (e.g. a bare `"name"` on each feature — TopoJSON-style
+/// exports carry names there rather than under `properties`). Strings and numbers both coerce to
+/// `String` (CSV cells and plotly match feature ids as strings). Returns `None` when the path is
+/// absent or the value isn't a string/number.
 fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
     let coerce = |v: &serde_json::Value| -> Option<String> {
         match v {
@@ -2660,10 +2672,18 @@ fn feature_id_by_path(feature: &geojson::Feature, key: &str) -> Option<String> {
             geojson::feature::Id::Number(n) => n.to_string(),
         });
     }
-    let rest = key.strip_prefix("properties.")?;
-    let props = feature.properties.as_ref()?;
-    let mut segs = rest.split('.');
-    let mut cur = props.get(segs.next()?)?;
+    let (root, segs) = match key.strip_prefix("properties.") {
+        Some(rest) => {
+            let mut segs = rest.split('.');
+            (feature.properties.as_ref()?.get(segs.next()?)?, segs)
+        },
+        // no "properties." prefix: a top-level foreign member
+        None => {
+            let mut segs = key.split('.');
+            (feature.foreign_members.as_ref()?.get(segs.next()?)?, segs)
+        },
+    };
+    let mut cur = root;
     for seg in segs {
         cur = cur.get(seg)?;
     }
@@ -2928,14 +2948,15 @@ fn geojson_value_to_polygons(value: &geojson::GeometryValue) -> Vec<Vec<Vec<[f64
     }
 }
 
-/// Does any ring edge make a genuine ±180° antimeridian jump? True when an edge's endpoints are
-/// far apart in raw longitude but CLOSE the short way across the seam (within `MAX_SEAM_GAP_DEG`) —
-/// the signature of a dateline crossing (e.g. 179° -> -179°, or a wider Pacific box 160° -> -160°).
-/// A genuinely wide but non-crossing polygon (e.g. a -100°..100° span centered on the prime
-/// meridian) has a large short-way gap and is deliberately NOT flagged, so its planar interior is
-/// binned correctly. When true, the feature is normalized into a `[0, 360)` longitude frame before
-/// planar point-in-polygon tests, which can't reason across the seam.
-fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
+/// Does any edge of this polygon's rings make a genuine ±180° antimeridian jump? True when an
+/// edge's endpoints are far apart in raw longitude but CLOSE the short way across the seam (within
+/// `MAX_SEAM_GAP_DEG`) — the signature of a dateline crossing (e.g. 179° -> -179°, or a wider
+/// Pacific box 160° -> -160°). A genuinely wide but non-crossing polygon (e.g. a -100°..100° span
+/// centered on the prime meridian) has a large short-way gap and is deliberately NOT flagged, so
+/// its planar interior is binned correctly. When true, the polygon is continuity-unwrapped into a
+/// contiguous extended longitude frame before planar point-in-polygon tests, which can't reason
+/// across the seam.
+fn polygon_crosses_antimeridian(polygon: &[Vec<[f64; 2]>]) -> bool {
     // A dateline crossing connects two vertices that are far apart in raw longitude (>180°) but
     // CLOSE the short way across the ±180° seam. We key off that short-way gap: `360 - |Δlon|`. A
     // real crossing like 179° -> -179° has a 2° seam gap; a wide Pacific box 160° -> -160° has a
@@ -2946,7 +2967,7 @@ fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
     // within 90° of each other across the seam (inclusive), i.e. |Δlon| >= 360 - 90 = 270°. The
     // boundary is inclusive so an exactly-90°-gap box (135° -> -135°) is still treated as crossing.
     const MAX_SEAM_GAP_DEG: f64 = 90.0;
-    polygons.iter().flatten().any(|ring| {
+    polygon.iter().any(|ring| {
         ring.windows(2).any(|edge| {
             let &[[lon_a, _], [lon_b, _]] = edge else {
                 return false;
@@ -2954,6 +2975,29 @@ fn polygons_cross_antimeridian(polygons: &[Vec<Vec<[f64; 2]>>]) -> bool {
             (lon_a - lon_b).abs() >= 360.0 - MAX_SEAM_GAP_DEG
         })
     })
+}
+
+/// Continuity-unwrap a pre-closed ring across the ±180° antimeridian: each vertex longitude is
+/// shifted by the multiple of 360° that puts it within 180° of its predecessor, so a seam-jumping
+/// vertex walk (179° -> -179°) becomes contiguous (179° -> 181°) while genuine prime-meridian
+/// crossings (0.4° -> -0.2°) stay short — a blanket "shift all negative lons by +360" would turn
+/// the latter into a fake ~359°-long edge, scrambling ray-cast parity near 0° for any feature that
+/// crosses BOTH meridians. Returns `None` when the unwrapped ring does not arrive back at its
+/// starting longitude (a ±360° residue): that's the signature of a pole-enclosing ring pre-cut
+/// along the seam (e.g. Natural Earth's Antarctica), whose RAW planar form is already correct for
+/// even-odd ray casting and must not be reframed.
+fn unwrap_ring_across_seam(ring: &[[f64; 2]]) -> Option<Vec<[f64; 2]>> {
+    let mut out = Vec::with_capacity(ring.len());
+    let mut prev = ring.first()?[0];
+    for &[lon, lat] in ring {
+        let lon = lon + ((prev - lon) / 360.0).round() * 360.0;
+        out.push([lon, lat]);
+        prev = lon;
+    }
+    if (out.last()?[0] - out.first()?[0]).abs() > 180.0 {
+        return None;
+    }
+    Some(out)
 }
 
 /// Parse a GeoJSON FeatureCollection into [`PipFeature`]s keyed by `feature_id_key`. Features
@@ -3005,18 +3049,61 @@ fn build_pip_features(
             skipped += 1;
             continue;
         }
-        // Normalize antimeridian-crossing features into a [0, 360) longitude frame so their bbox
-        // and the planar ray-cast stay contiguous across the ±180° seam. Query longitudes
-        // are shifted to match per-feature in PipFeature::frame_lon.
-        let wraps_antimeridian = polygons_cross_antimeridian(&polygons);
-        if wraps_antimeridian {
-            for ring in polygons.iter_mut().flatten() {
-                for v in ring.iter_mut() {
-                    if v[0] < 0.0 {
-                        v[0] += 360.0;
+        // Normalize each antimeridian-crossing polygon into a contiguous extended longitude frame
+        // (continuity unwrapping) so its bbox and the planar ray-cast stay contiguous across the
+        // ±180° seam. Query longitudes are probed at both 360°-equivalent representations via
+        // PipFeature::candidate_lons. Per-POLYGON (not per-feature) so a multipolygon's
+        // non-crossing parts keep their raw frame, and per-polygon rings stay in ONE frame so
+        // hole subtraction (even-odd parity) still works.
+        let mut wraps_antimeridian = false;
+        for polygon in &mut polygons {
+            if !polygon_crosses_antimeridian(polygon) {
+                continue;
+            }
+            // exterior + holes unwrapped together; a pole-cut ring (unwrap doesn't close) reverts
+            // the whole polygon to its raw — already ray-cast-correct — planar form
+            let Some(mut rings) = polygon
+                .iter()
+                .map(|ring| unwrap_ring_across_seam(ring))
+                .collect::<Option<Vec<_>>>()
+            else {
+                continue;
+            };
+            // continuity anchors each ring at its own first vertex, so a hole can land a full
+            // 360° away from its exterior; re-align each hole's frame to the exterior's midpoint
+            let mid_lon = |ring: &[[f64; 2]]| -> f64 {
+                let (min, max) = ring
+                    .iter()
+                    .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), v| {
+                        (lo.min(v[0]), hi.max(v[0]))
+                    });
+                f64::midpoint(min, max)
+            };
+            if let Some((exterior, holes)) = rings.split_first_mut() {
+                let ext_mid = mid_lon(exterior);
+                for hole in holes {
+                    let k = ((ext_mid - mid_lon(hole)) / 360.0).round();
+                    if k != 0.0 {
+                        for v in hole.iter_mut() {
+                            v[0] += k * 360.0;
+                        }
                     }
                 }
             }
+            // keep every vertex within (-180, 540) so the {lon, lon+360} query candidates can
+            // reach it (a ring anchored near -180 that walks west unwraps below -180)
+            let min = rings
+                .iter()
+                .flatten()
+                .map(|v| v[0])
+                .fold(f64::INFINITY, f64::min);
+            if min < -180.0 {
+                for v in rings.iter_mut().flatten() {
+                    v[0] += 360.0;
+                }
+            }
+            *polygon = rings;
+            wraps_antimeridian = true;
         }
         let mut bbox = [
             f64::INFINITY,
@@ -3073,22 +3160,26 @@ fn point_in_polygon(polygon: &[Vec<[f64; 2]>], lon: f64, lat: f64) -> bool {
     inside
 }
 
-/// Is `(lon, lat)` inside this feature (bbox prefilter, then any constituent polygon)?
+/// Is `(lon, lat)` inside this feature (bbox prefilter, then any constituent polygon)? The query
+/// is probed at each of the feature's candidate longitudes (both 360°-equivalent representations
+/// for antimeridian-crossing features, whose unwrapped vertices may extend past ±180°); a
+/// wrong-frame probe lands planar-outside every ring, so OR-ing the probes is safe.
 fn feature_contains(feature: &PipFeature, lon: f64, lat: f64) -> bool {
-    // shift the query into this feature's frame so antimeridian-crossing features (stored in
-    // [0, 360)) are tested consistently with their normalized vertices/bbox.
-    let lon = feature.frame_lon(lon);
-    if lon < feature.bbox[0]
-        || lon > feature.bbox[2]
-        || lat < feature.bbox[1]
-        || lat > feature.bbox[3]
-    {
+    if lat < feature.bbox[1] || lat > feature.bbox[3] {
         return false;
     }
     feature
-        .polygons
-        .iter()
-        .any(|poly| point_in_polygon(poly, lon, lat))
+        .candidate_lons(lon)
+        .into_iter()
+        .flatten()
+        .any(|lon| {
+            lon >= feature.bbox[0]
+                && lon <= feature.bbox[2]
+                && feature
+                    .polygons
+                    .iter()
+                    .any(|poly| point_in_polygon(poly, lon, lat))
+        })
 }
 
 /// Mean km per degree of latitude (and of longitude at the equator). Used by the point-in-polygon
@@ -3179,16 +3270,18 @@ fn pip_assign(
     let mut best_i = None;
     let mut best_d2 = f64::INFINITY;
     for (i, f) in features.iter().enumerate() {
-        // shift the query into each feature's frame so antimeridian-crossing features (stored in
-        // [0, 360)) measure distance consistently with their normalized vertices/bbox.
-        let flon = f.frame_lon(lon);
-        if bbox_dist2(&f.bbox, flon, lat, sx, sy) >= best_d2 {
-            continue;
-        }
-        let d2 = feature_dist2(f, flon, lat, sx, sy);
-        if d2 < best_d2 {
-            best_d2 = d2;
-            best_i = Some(i);
+        // probe the query at each of the feature's candidate longitudes so antimeridian-crossing
+        // features (stored continuity-unwrapped past ±180°) measure distance consistently with
+        // their vertices/bbox; the nearer representation wins.
+        for flon in f.candidate_lons(lon).into_iter().flatten() {
+            if bbox_dist2(&f.bbox, flon, lat, sx, sy) >= best_d2 {
+                continue;
+            }
+            let d2 = feature_dist2(f, flon, lat, sx, sy);
+            if d2 < best_d2 {
+                best_d2 = d2;
+                best_i = Some(i);
+            }
         }
     }
     match best_i {
@@ -3896,9 +3989,14 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
     let z_title = col_label(&headers, z_idx, nh);
     // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it does
     // NOT read the scene axis titles), so build an explicit template naming each dimension with
-    // comma-grouped values.
+    // comma-grouped values. escape: this is a hoverTEMPLATE — a raw header containing
+    // `<extra>`/`<b>` would otherwise terminate/format the template instead of displaying
+    // literally.
     let hover = format!(
-        "{x_title}: %{{x:,.3f}}<br>{y_title}: %{{y:,.3f}}<br>{z_title}: %{{z:,.3f}}<extra></extra>"
+        "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
+        escape_hover(&x_title),
+        escape_hover(&y_title),
+        escape_hover(&z_title)
     );
 
     let mut plot = Plot::new();
@@ -4401,8 +4499,9 @@ fn heatmap_trace_with_range(
 }
 
 /// Truncate a label to at most `max` characters (Unicode-aware), appending an ellipsis when
-/// shortened. Used for `viz smart` correlation-heatmap axis ticks so long numeric-column names
-/// don't clip against the dashboard's left margin (full names remain visible on hover).
+/// shortened. Used for chart axis ticks so long column names don't clip against the page edge.
+/// NOTE: truncation can collide distinct names — where the labels serve as plotly *category
+/// coordinates* (heatmaps), use `truncate_labels_unique` instead.
 fn truncate_label(s: &str, max: usize) -> String {
     if s.chars().count() <= max {
         return s.to_string();
@@ -4410,6 +4509,27 @@ fn truncate_label(s: &str, max: usize) -> String {
     let keep = max.saturating_sub(1);
     let mut out: String = s.chars().take(keep).collect();
     out.push('\u{2026}');
+    out
+}
+
+/// `truncate_label` over a label set, disambiguating collisions with a `(2)`, `(3)`, ... suffix.
+/// Plotly keys heatmap rows/columns by the category *string*, so two columns whose names share a
+/// long prefix (e.g. `total_precipitation_mm` / `total_precipitation_in`) would otherwise
+/// truncate identically and silently collapse onto one axis position, misattributing matrix
+/// cells. The suffix may exceed `max` by a few chars — cosmetic only (margin sizing clamps).
+fn truncate_labels_unique(labels: &[String], max: usize) -> Vec<String> {
+    let mut used = std::collections::HashSet::with_capacity(labels.len());
+    let mut out = Vec::with_capacity(labels.len());
+    for l in labels {
+        let base = truncate_label(l, max);
+        let mut candidate = base.clone();
+        let mut n = 1_usize;
+        while !used.insert(candidate.clone()) {
+            n += 1;
+            candidate = format!("{base}({n})");
+        }
+        out.push(candidate);
+    }
     out
 }
 
@@ -4719,8 +4839,13 @@ fn build_sankey(args: &Args) -> CliResult<Box<dyn Trace>> {
         if s.is_empty() || t.is_empty() {
             continue;
         }
+        // skip rows whose --value doesn't parse (matching pie/bar) rather than emitting
+        // zero-weight ghost links/nodes
         let val = match v_idx {
-            Some(i) => parse_f64(record.get(i)).unwrap_or(0.0),
+            Some(i) => match parse_f64(record.get(i)) {
+                Some(v) => v,
+                None => continue,
+            },
             None => 1.0,
         };
         let si = *node_pos.entry(s.clone()).or_insert_with(|| {
@@ -5739,13 +5864,20 @@ fn cell_to_string(cell: Option<&[u8]>) -> String {
 }
 
 fn parse_f64(cell: Option<&[u8]>) -> Option<f64> {
-    let s = std::str::from_utf8(cell?).ok()?.trim();
+    parse_finite_f64(std::str::from_utf8(cell?).ok()?)
+}
+
+/// `parse_f64` for an already-decoded string: finite-only numeric parse.
+///
+/// Rejects non-finite literals: Rust's f64::from_str accepts "inf"/"-inf"/"infinity"/"nan", which
+/// would poison min/max folds (e.g. an infinite axis span collapses a contour grid into one bin),
+/// emit bogus ±inf aggregate bars, serialize as `null` (silently dropped points), or make sort
+/// comparators non-total. Treat them as unparseable.
+fn parse_finite_f64(s: &str) -> Option<f64> {
+    let s = s.trim();
     if s.is_empty() {
         return None;
     }
-    // reject non-finite literals: Rust's f64::from_str accepts "inf"/"-inf"/"infinity"/"nan", which
-    // would poison min/max folds (e.g. an infinite axis span collapses a contour grid into one bin)
-    // and emit bogus ±inf aggregate bars. Treat them as unparseable.
     s.parse::<f64>().ok().filter(|v| v.is_finite())
 }
 
@@ -6415,17 +6547,26 @@ fn bivariate_panels(
 
 /// For line charts, order points by their x value so the connecting line is drawn in the
 /// correct sequence: numeric x is sorted numerically (fixing 1, 10, 2), while categorical x
-/// preserves input order.
+/// preserves input order. The numeric gate uses `parse_finite_f64` semantics: a "nan"/"inf"
+/// literal makes the column categorical rather than poisoning the sort comparator (NaN keys
+/// break total ordering, which misorders the line and can panic Rust's sort).
 fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
-    if xs.is_empty() || !xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
+    let Some(keys) = (!xs.is_empty())
+        .then(|| {
+            xs.iter()
+                .map(|s| parse_finite_f64(s))
+                .collect::<Option<Vec<f64>>>()
+        })
+        .flatten()
+    else {
         return (xs, ys);
-    }
-    let mut pairs: Vec<(f64, String, f64)> = xs
+    };
+    let mut pairs: Vec<(f64, String, f64)> = keys
         .into_iter()
-        .zip(ys)
-        .map(|(x, y)| (x.trim().parse::<f64>().unwrap_or(f64::NAN), x, y))
+        .zip(xs.into_iter().zip(ys))
+        .map(|(k, (x, y))| (k, x, y))
         .collect();
-    pairs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    pairs.sort_by(|a, b| a.0.total_cmp(&b.0));
     let mut out_x = Vec::with_capacity(pairs.len());
     let mut out_y = Vec::with_capacity(pairs.len());
     for (_, x, y) in pairs {
@@ -6768,6 +6909,14 @@ fn box_fences(s: &crate::cmd::stats::StatsData) -> Option<(f64, f64)> {
 /// distribution's edge points stay core rather than swamping the map.
 const GEO_OUTLIER_DIST_IQR_MULT: f64 = 3.0;
 
+/// Absolute floor (in centroid-scaled degrees, ~111 km/deg) for the zero-IQR point-mass fallback
+/// fence in [`partition_geo_outlier_indices`]. When ≥75% of rows share one exact coordinate
+/// (e.g. a geocoder's city-centroid default), `q1 == q3 == 0` and a bare `d > q3` fence would
+/// flag EVERY non-duplicate point — including real addresses meters away — as a geographic
+/// outlier. Requiring at least ~1° keeps same-metro scatter core while still catching genuine
+/// strays (another state/country, hundreds of km out).
+const GEO_OUTLIER_MIN_FENCE_DEG: f64 = 1.0;
+
 /// Antimeridian-aware median longitude. Mirrors the largest-gap unwrapping of
 /// [`lon_center_and_span`] but takes the median (robust to strays) rather than a trimmed midpoint.
 /// A plain nearest-rank median can land on a NON-cluster stray: a dateline cluster split across
@@ -6817,7 +6966,8 @@ fn circular_median_lon(sorted: &[f64]) -> f64 {
 /// dateline-straddling cluster isn't split. Unlike a per-axis percentile, this flags only points
 /// genuinely far from the bulk (true strays), not the distribution's tails. When the distance IQR
 /// is zero (a point-mass core, e.g. many duplicate coordinates) the fence falls back to the
-/// point-mass band itself (`d > q3`), so a lone far stray is flagged even with very few duplicates;
+/// point-mass band with an absolute floor (`max(q3, GEO_OUTLIER_MIN_FENCE_DEG)`), so a lone far
+/// stray is flagged even with very few duplicates while legitimately-nearby points stay core;
 /// with too few points (< 4) or a fully degenerate (all-identical) distance spread, nothing is
 /// flagged and the whole set is core. Returns `(core_indices, outlier_indices)` into the input
 /// slices, so callers can carry row-aligned side data (e.g. hover labels) through the same
@@ -6864,13 +7014,14 @@ fn partition_geo_outlier_indices(lats: &[f64], lons: &[f64]) -> (Vec<usize>, Vec
     // many rows share the exact same coordinate (duplicate geocodes). The Tukey fence would then
     // collapse and a scale-based fallback (mean/std) is itself inflated by the candidate stray, so
     // it misses a lone stray when there are few duplicates. Instead flag anything beyond the
-    // point-mass band itself (`d > q3`): `q3` is robust (unmoved by the stray), so a single far
-    // stray is caught regardless of how few duplicates form the mass. A truly degenerate
-    // all-identical set has `q3 == 0` and nothing exceeds it, so nothing is flagged.
+    // point-mass band (`d > q3`) AND beyond an absolute floor (`GEO_OUTLIER_MIN_FENCE_DEG`):
+    // `q3` is robust (unmoved by the stray), so a single far stray is caught regardless of how
+    // few duplicates form the mass, while the floor keeps legitimately-nearby points (real
+    // addresses scattered around a duplicated city-centroid geocode) from ALL being flagged.
     let fence = if iqr > 0.0 {
         q3 + GEO_OUTLIER_DIST_IQR_MULT * iqr
     } else {
-        q3
+        q3.max(GEO_OUTLIER_MIN_FENCE_DEG)
     };
 
     let (mut core_idx, mut out_idx) = (Vec::with_capacity(n), Vec::new());
@@ -6966,6 +7117,10 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
     let routed = match ns {
         "geo" => match leaf {
             "latitude" | "longitude" | "coordinate_pair" => (Route::MapCoord, None),
+            // State-plane coordinates are continuous planar positions, not place keys: they can't
+            // be mapped (not degrees) and a frequency bar of near-unique coordinates is garbage.
+            // Defer to the statistical classifier, matching the no-dictionary behavior.
+            "crs_stateplane_x" | "crs_stateplane_y" => (Route::Defer, None),
             // geo *keys* (zip, census_tract, city, state, country, street_address) name a place;
             // they are dimensions to bar, never continuous measures. This is the signal that fixes
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
@@ -7978,7 +8133,7 @@ fn count_unit_from_grain(grain: Option<&str>) -> String {
     }
 }
 
-/// Parse a row's date cell into a `NaiveDateTime`, honoring the DMY preference stats used to infer
+/// Parse a row's date cell into a `DateTime<Utc>`, honoring the DMY preference stats used to infer
 /// the column. Returns `None` for a missing/blank/unparseable cell.
 fn parse_record_date(
     record: &csv::ByteRecord,
@@ -9272,7 +9427,7 @@ fn extent_box_line() -> Line {
         .dash(plotly::common::DashType::Dot)
 }
 
-/// Styled line for the FULL-extent box (core + outliers): a dashed vivid-magenta frame. Magenta
+/// Styled line for the FULL-extent box (core + outliers): a dotted vivid-magenta frame. Magenta
 /// stays high-contrast on every basemap layer (tan land, green, blue water, white) — unlike the
 /// amber it replaced, which washed out over light terrain — and is distinct from the purple core
 /// box, the warm data points, and the amber outlier markers.
@@ -9414,7 +9569,9 @@ fn format_geo_label(label: &crate::cmd::geocode::GeoLabel) -> String {
 #[cfg(feature = "geocode")]
 fn point_hover_text(p: &GeoPoint) -> String {
     match &p.label {
-        Some(label) => format!("{}: {}", p.tag, format_geo_label(label)),
+        // escape: geocoded place names can carry `&`/`<` and this feeds HoverInfo::Text,
+        // which plotly renders as pseudo-HTML — matching every other hover path
+        Some(label) => format!("{}: {}", p.tag, escape_hover(&format_geo_label(label))),
         None => format!("{}: no nearby city", p.tag),
     }
 }
@@ -9714,8 +9871,8 @@ const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 
 /// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
 /// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`. When the panel has
-/// geographic outliers, a second no-fill dotted amber box marking the full extent (core + outliers)
-/// is drawn underneath.
+/// geographic outliers, a second no-fill dotted magenta box marking the full extent (core +
+/// outliers) is drawn underneath.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     // the full-extent box (core + outliers) is drawn first, underneath, with no fill. Mapbox
@@ -9882,13 +10039,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     }
     let args = &args;
 
-    // `--smarter` with non-default parsing (--no-headers / custom --delimiter) skips moarstats
-    // enrichment (see below) AND forces the standard stats path to regenerate. get_stats_records
-    // keys its `.stats.csv.data.jsonl` cache only by mtime + stat sufficiency, NOT by parsing
-    // options, so without this a current default-parsing cache (e.g. from an earlier headered run)
-    // would be reused and the "standard dashboard" would render from incorrectly parsed stats.
-    let force_stats_regen =
-        args.flag_smarter && (args.flag_no_headers || args.flag_delimiter.is_some());
+    // Non-default parsing (--no-headers / custom --delimiter) forces the stats path to
+    // regenerate. get_stats_records keys its `.stats.csv.data.jsonl` cache only by mtime + stat
+    // sufficiency, NOT by parsing options, so without this a current default-parsing cache (e.g.
+    // from an earlier headered `qsv stats` run) would be reused and the dashboard would render
+    // from incorrectly parsed stats (row 1 as headers vs data, or a mis-split delimiter).
+    let force_stats_regen = args.flag_no_headers || args.flag_delimiter.is_some();
 
     // set only when THIS run's moarstats --bivariate subprocess succeeds, gating the association
     // panels below. The sidecar path is deterministic from the input stem, so without this a
@@ -10962,10 +11118,7 @@ fn panel_trace(
             c
         },
         PanelKind::CorrHeatmap { labels, matrix } => corr_heatmap_trace(
-            labels
-                .iter()
-                .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
-                .collect(),
+            truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
             matrix.clone(),
             axes.clone(),
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
@@ -10976,10 +11129,7 @@ fn panel_trace(
             matrix,
             hover_suffix,
         } => assoc_heatmap_trace(
-            labels
-                .iter()
-                .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
-                .collect(),
+            truncate_labels_unique(labels, CORR_LABEL_MAX_CHARS),
             matrix.clone(),
             hover_suffix.clone(),
             axes.clone(),
@@ -11021,12 +11171,20 @@ fn panel_trace(
                 })
                 .collect();
             // per-dot hover carries the FULL (untruncated) pair label plus n= and any nonlinearity
-            // note; the y-axis tick shows only the truncated label.
+            // note; the y-axis tick shows only the truncated label. escape: this is a plotly
+            // hoverTEMPLATE, so a raw header containing `<extra>` or `<b>` would otherwise
+            // terminate/format the template instead of displaying literally (matching the
+            // escaped Histogram/ScatterPair hovers).
             let templates: Vec<String> = labels
                 .iter()
                 .rev()
                 .zip(hover_suffix.iter().rev())
-                .map(|(full, suffix)| format!("{full}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>"))
+                .map(|(full, suffix)| {
+                    format!(
+                        "{}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>",
+                        escape_hover(full)
+                    )
+                })
                 .collect();
             let marker = Marker::new()
                 .size_array(scale_bubble_sizes(&sizes))
@@ -12015,10 +12173,14 @@ fn smart_inline_panel_plot(
     if let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind {
         let (x_label, y_label, z_label) = labels;
         // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
-        // does NOT read the scene axis titles), so name each dimension explicitly.
+        // does NOT read the scene axis titles), so name each dimension explicitly. escape: this
+        // is a hoverTEMPLATE — a raw header containing `<extra>`/`<b>` would otherwise
+        // terminate/format the template instead of displaying literally.
         let hover = format!(
-            "{x_label}: %{{x:,.3f}}<br>{y_label}: %{{y:,.3f}}<br>{z_label}: \
-             %{{z:,.3f}}<extra></extra>"
+            "{}: %{{x:,.3f}}<br>{}: %{{y:,.3f}}<br>{}: %{{z:,.3f}}<extra></extra>",
+            escape_hover(x_label),
+            escape_hover(y_label),
+            escape_hover(z_label)
         );
         let mut plot = Plot::new();
         plot.add_trace(
@@ -12705,6 +12867,23 @@ fn hierarchy_arrays(
     let mut ids = vec![HIER_ROOT_ID.to_string()];
     let mut node_count = 1_usize;
 
+    // plotly keys `parents` on `ids`, so ids must be GLOBALLY unique. The naive
+    // `prefix_id + SEP + seg` join isn't collision-proof against adversarial segment values: a
+    // category value containing a literal HIER_PATH_SEP (U+001F is legal in a CSV field) makes
+    // paths like ["A\u{1F}B"] and ["A","B"] join identically, and a real child value equal to
+    // "<sentinel>other" collides with its parent's Other-bucket id. Disambiguate with a
+    // used-set + sentinel loop (same approach as `push_aggregate_bar`); children are queued with
+    // their RESOLVED id, so `parents` always references the final unique id.
+    let mut used_ids: std::collections::HashSet<String> =
+        std::collections::HashSet::from([HIER_ROOT_ID.to_string()]);
+    let mut unique_id = |base: String| -> String {
+        let mut candidate = base;
+        while !used_ids.insert(candidate.clone()) {
+            candidate.push(AGG_KEY_SENTINEL);
+        }
+        candidate
+    };
+
     let mut queue: std::collections::VecDeque<(Vec<String>, String, usize)> =
         std::collections::VecDeque::new();
     queue.push_back((Vec::new(), HIER_ROOT_ID.to_string(), 0));
@@ -12729,7 +12908,7 @@ fn hierarchy_arrays(
         let mut other_drops = 0_usize;
         for (i, (seg, v)) in ranked.into_iter().enumerate() {
             if i < keep {
-                let child_id = format!("{prefix_id}{HIER_PATH_SEP}{seg}");
+                let child_id = unique_id(format!("{prefix_id}{HIER_PATH_SEP}{seg}"));
                 let mut child_path = prefix.clone();
                 child_path.push(seg.clone());
                 labels.push(seg.clone());
@@ -12749,8 +12928,9 @@ fn hierarchy_arrays(
             labels.push(format!("{OTHER_TEXT} ({})", HumanCount(other_drops as u64)));
             parents.push(prefix_id.clone());
             values.push(other_value);
-            // prefix_id is unique per parent, so a sentinel suffix is collision-free.
-            ids.push(format!("{prefix_id}{HIER_PATH_SEP}{AGG_KEY_SENTINEL}other"));
+            ids.push(unique_id(format!(
+                "{prefix_id}{HIER_PATH_SEP}{AGG_KEY_SENTINEL}other"
+            )));
             node_count += 1;
         }
     }
@@ -13531,6 +13711,26 @@ mod tests {
     }
 
     #[test]
+    fn partition_geo_outliers_point_mass_keeps_nearby_points_core() {
+        // ≥75% duplicate coordinates (q1 == q3 == 0) + legitimately-nearby scatter: the
+        // zero-IQR fallback must NOT flag every non-duplicate point — only genuine strays
+        // beyond the absolute floor. 800:200 city-centroid-default vs real-address shape.
+        let mut lats: Vec<f64> = vec![40.70; 16];
+        let mut lons: Vec<f64> = vec![-74.00; 16];
+        // 4 real addresses scattered ~0.05-0.3° (a few km to ~30 km) from the centroid
+        for (dlat, dlon) in [(0.05, 0.1), (-0.2, 0.05), (0.3, -0.1), (-0.1, -0.25)] {
+            lats.push(40.70 + dlat);
+            lons.push(-74.00 + dlon);
+        }
+        // plus one genuine stray hundreds of km out
+        lats.push(45.0);
+        lons.push(-74.0);
+        let (clat, _clon, olat, _olon) = partition_geo_outliers(&lats, &lons);
+        assert_eq!(olat, vec![45.0], "only the genuine stray is flagged");
+        assert_eq!(clat.len(), 20, "nearby real addresses stay core");
+    }
+
+    #[test]
     fn partition_geo_outliers_constant_flags_nothing() {
         // a fully constant (zero-spread) distribution has zero distance IQR -> nothing flagged
         let lats = vec![10.0; 50];
@@ -13796,6 +13996,15 @@ mod tests {
         assert_eq!(
             route_from_concept("geo.census_tract"),
             Some((Route::Dimension, None))
+        );
+        // state-plane planar coordinates: neither mappable nor a place key -> statistical classify
+        assert_eq!(
+            route_from_concept("geo.crs_stateplane_x"),
+            Some((Route::Defer, None))
+        );
+        assert_eq!(
+            route_from_concept("geo.crs_stateplane_y"),
+            Some((Route::Defer, None))
         );
         assert_eq!(
             route_from_concept("nyc.bbl"),
@@ -15032,6 +15241,52 @@ mod tests {
     }
 
     #[test]
+    fn sort_line_xy_nonfinite_literal_falls_back_to_categorical() {
+        // "nan"/"inf" parse as f64 but are non-finite: they must NOT flip the axis numeric
+        // (NaN sort keys break total ordering; inf serializes as null). Input order preserved.
+        let xs = vec![
+            "3".to_string(),
+            "1".to_string(),
+            "nan".to_string(),
+            "2".to_string(),
+        ];
+        let ys = vec![30.0, 10.0, 99.0, 20.0];
+        let (out_x, out_y) = sort_line_xy(xs.clone(), ys.clone());
+        assert_eq!(out_x, xs);
+        assert_eq!(out_y, ys);
+
+        let xs = vec!["1".to_string(), "inf".to_string()];
+        let (out_x, _) = sort_line_xy(xs.clone(), vec![1.0, 2.0]);
+        assert_eq!(out_x, xs);
+    }
+
+    #[test]
+    fn truncate_labels_unique_disambiguates_collisions() {
+        // shared 15+-char prefix truncates identically -> would collapse plotly heatmap
+        // categories; the helper must keep every label distinct
+        let labels = vec![
+            "total_precipitation_mm".to_string(),
+            "total_precipitation_in".to_string(),
+            "short".to_string(),
+            "total_precipitation_cm".to_string(),
+        ];
+        let out = truncate_labels_unique(&labels, 16);
+        assert_eq!(out.len(), 4);
+        let distinct: std::collections::HashSet<&String> = out.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            4,
+            "labels must be pairwise distinct: {out:?}"
+        );
+        assert_eq!(out[2], "short");
+        assert!(out[0].starts_with("total_precipita"));
+        // identical full names (duplicate headers) also get disambiguated
+        let dupes = vec!["a".to_string(), "a".to_string()];
+        let out = truncate_labels_unique(&dupes, 16);
+        assert_ne!(out[0], out[1]);
+    }
+
+    #[test]
     fn sort_line_xy_preserves_categorical_order() {
         let xs = vec!["b".to_string(), "a".to_string(), "c".to_string()];
         let ys = vec![1.0, 2.0, 3.0];
@@ -15530,6 +15785,37 @@ mod tests {
     }
 
     #[test]
+    fn hierarchy_arrays_ids_survive_adversarial_segments() {
+        // (a) a segment containing a literal HIER_PATH_SEP must not join-collide with the
+        // equivalent split path; (b) a real child value equal to "<sentinel>other" must not
+        // collide with the parent's Other-bucket id. All ids stay globally distinct and every
+        // parent ref resolves.
+        let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
+        leaves.insert(vec![format!("A{HIER_PATH_SEP}B"), "x".to_string()], 10.0);
+        leaves.insert(vec!["A".to_string(), "B".to_string()], 20.0);
+        leaves.insert(
+            vec!["A".to_string(), format!("{AGG_KEY_SENTINEL}other")],
+            5.0,
+        );
+        leaves.insert(vec!["A".to_string(), "C".to_string()], 1.0);
+        // top_n=2 under "A" forces an Other bucket alongside the literal "<sentinel>other" child
+        let (labels, parents, values, ids) = hierarchy_arrays(&leaves, 2, 2, 100, "root").unwrap();
+        assert_eq!(labels.len(), parents.len());
+        assert_eq!(labels.len(), values.len());
+        assert_eq!(labels.len(), ids.len());
+        let distinct: std::collections::HashSet<&String> = ids.iter().collect();
+        assert_eq!(
+            distinct.len(),
+            ids.len(),
+            "ids must be globally unique: {ids:?}"
+        );
+        // every non-root parent reference resolves to an emitted id
+        for p in parents.iter().skip(1) {
+            assert!(ids.contains(p), "dangling parent ref {p:?}");
+        }
+    }
+
+    #[test]
     fn hierarchy_arrays_folds_remainder_into_other() {
         // parent "R" has 4 children; top_n = 2 keeps a,b and folds c,d into "Other (2)".
         let mut leaves: HashMap<Vec<String>, f64> = HashMap::new();
@@ -15984,6 +16270,27 @@ mod tests {
     }
 
     #[test]
+    fn build_pip_features_resolves_top_level_name_foreign_member() {
+        // a top-level (foreign-member) "name" — TopoJSON-style exports carry names there, not
+        // under properties — must auto-detect via the bare "name" candidate
+        let gj = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "name": "Beta",
+                "properties": {"id": "B"},
+                "geometry": {"type": "Polygon", "coordinates":
+                    [[[0.0, 0.0], [0.0, 1.0], [1.0, 1.0], [1.0, 0.0], [0.0, 0.0]]]}
+            }]
+        });
+        let feats = build_pip_features(&gj, "properties.id", None).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Beta"));
+        // and an explicit non-properties --feature-name-key resolves it too
+        let feats = build_pip_features(&gj, "properties.id", Some("name")).unwrap();
+        assert_eq!(feats[0].name.as_deref(), Some("Beta"));
+    }
+
+    #[test]
     fn build_pip_features_escapes_name() {
         let gj = serde_json::json!({
             "type": "FeatureCollection",
@@ -16130,7 +16437,7 @@ mod tests {
         );
         // snap path: just north of the box (lat 0..10) on the negative-lon side — outside every
         // polygon but ~555 km from the top edge, within the 2000 km cap -> Snapped. Exercises
-        // frame_lon in the distance loop (#4092 snap code), not just the containment path.
+        // candidate_lons in the distance loop (#4092 snap code), not just the containment path.
         assert_eq!(
             pip_assign(&features, 15.0, -175.0, true, 2_000.0),
             PipOutcome::Snapped(0)
@@ -16243,6 +16550,94 @@ mod tests {
         );
         assert_eq!(
             pip_assign(&features, 5.0, 0.0, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_pole_cut_antarctica_class_keeps_raw_frame() {
+        // Natural-Earth-style Antarctica: a pole-enclosing polygon pre-CUT along the seam — its
+        // ring runs along both ±180° meridians and closes along lat -90, so it contains a
+        // |Δlon| = 360 edge that flags it as "crossing". Continuity-unwrapping can't close such a
+        // ring (±360 residue), so it must be kept RAW: its planar form is already correct, and
+        // the old shift-all-negative-lons normalization corrupted ray-cast parity for points
+        // near the prime meridian (0.4° -> -0.2° edges became fake ~359°-long edges).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "ANT",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [-180.0, -60.0], [-90.0, -65.0], [-0.2, -60.0], [0.4, -60.0],
+                        [90.0, -65.0], [180.0, -60.0], [180.0, -90.0], [-180.0, -90.0],
+                        [-180.0, -60.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(
+            !features[0].wraps_antimeridian,
+            "a pole-cut ring must revert to its raw planar frame, not unwrap"
+        );
+        // coastal points on BOTH sides of the prime meridian bin inside
+        assert_eq!(
+            pip_assign(&features, -75.0, 0.2, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        assert_eq!(
+            pip_assign(&features, -75.0, -0.1, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        // and near the seam
+        assert_eq!(
+            pip_assign(&features, -80.0, 179.0, false, f64::INFINITY),
+            PipOutcome::Inside(0)
+        );
+        // north of the coast is outside
+        assert_eq!(
+            pip_assign(&features, -50.0, 0.3, false, f64::INFINITY),
+            PipOutcome::Outside
+        );
+    }
+
+    #[test]
+    fn pip_assign_feature_crossing_both_meridians_unwraps_contiguously() {
+        // a (non-polar) band spanning 90°E across the antimeridian and onward across the prime
+        // meridian to 5°E: continuity unwrapping keeps BOTH crossings contiguous (the old
+        // shift-negatives normalization broke the -10° -> 5° prime-meridian edge into a fake
+        // ~345°-long edge and left the feature's interior near 0° unreachable by frame_lon).
+        let geojson = serde_json::json!({
+            "type": "FeatureCollection",
+            "features": [{
+                "type": "Feature",
+                "id": "BAND",
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [[
+                        [90.0, 0.0], [170.0, 0.0], [-170.0, 0.0], [-90.0, 0.0],
+                        [-10.0, 0.0], [5.0, 0.0], [5.0, 10.0], [-10.0, 10.0],
+                        [-90.0, 10.0], [-170.0, 10.0], [170.0, 10.0], [90.0, 10.0],
+                        [90.0, 0.0]
+                    ]]
+                }
+            }]
+        });
+        let features = build_pip_features(&geojson, "id", None).unwrap();
+        assert!(features[0].wraps_antimeridian);
+        // interior points: east of the seam, west of the seam, and past the prime meridian
+        for lon in [100.0, 179.0, -179.0, -30.0, -0.1, 4.0] {
+            assert_eq!(
+                pip_assign(&features, 5.0, lon, false, f64::INFINITY),
+                PipOutcome::Inside(0),
+                "lon {lon} must be inside the band"
+            );
+        }
+        // outside the band's longitude range
+        assert_eq!(
+            pip_assign(&features, 5.0, 40.0, false, f64::INFINITY),
             PipOutcome::Outside
         );
     }

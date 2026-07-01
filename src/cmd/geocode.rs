@@ -2122,7 +2122,7 @@ fn display_rebuild_instructions(
     geocode_index_file: &str,
 ) {
     winfo!(
-        r#"To rebuild the index, use the geosuggest crate directly:
+        r"To rebuild the index, use the geosuggest crate directly:
 
 git clone https://github.com/estin/geosuggest.git
 cd geosuggest
@@ -2131,7 +2131,7 @@ cargo run -p geosuggest-utils --bin geosuggest-build-index --release --features=
     --cities-url {cities_url} \
     --cities-filename {cities_filename} \
     --languages {languages} \
-    --output {geocode_index_file}"#,
+    --output {geocode_index_file}",
         cities_url = cities_url,
         cities_filename = cities_filename,
         languages = languages,

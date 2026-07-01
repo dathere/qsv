@@ -291,10 +291,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         match safenames_mode {
             SafeNameMode::VerifyVerbose => {
                 eprintln!(
-                    r#"{num_headers} header/s
+                    r"{num_headers} header/s
 {dupe_count} duplicate/s: {dupe_headers:?}
 {unsafe_count} unsafe header/s: {unsafenames_vec:?}
-{num_safeheaders} safe header/s: {safenames_vec:?}"#,
+{num_safeheaders} safe header/s: {safenames_vec:?}",
                     dupe_headers = safenames_struct.duplicate_headers.join(", "),
                     num_headers = headers_count,
                     num_safeheaders = safe_count

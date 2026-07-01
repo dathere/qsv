@@ -9675,6 +9675,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let force_stats_regen =
         args.flag_smarter && (args.flag_no_headers || args.flag_delimiter.is_some());
 
+    // set only when THIS run's moarstats --bivariate subprocess succeeds, gating the association
+    // panels below. The sidecar path is deterministic from the input stem, so without this a
+    // stale sidecar left by a prior run (on since-changed data) — or a failed/pair-less current
+    // run — could be read as if it described the current input.
+    let mut bivariate_sidecar_fresh = false;
+
     if args.flag_smarter {
         // moarstats --advanced computes its advanced stats by RE-READING the input itself: the
         // KGA pass via `Config::new(...).reader_file()` and the entropy pass via a `frequency`
@@ -9716,18 +9722,28 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             // flags a numeric pair as nonlinear).
             if bivariate_enabled {
                 moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,pearson,spearman"]);
+                // remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
+                // moarstats (re)writes it only when the fresh run yields pairs, so deleting first
+                // means a failed or pair-less current run leaves NO sidecar (bivariate_panels then
+                // soft-fails) instead of the dashboard silently reading association stats computed
+                // for since-changed data.
+                let _ = std::fs::remove_file(bivariate_csv_path(&input));
             }
-            if let Err(e) = util::run_qsv_cmd(
+            let moar_result = util::run_qsv_cmd(
                 "moarstats",
                 &moar_argv,
                 &input,
                 "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
-            ) {
+            );
+            if let Err(e) = &moar_result {
                 eprintln!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
                      standard stats. Dashboard will omit advanced refinements."
                 );
             }
+            // trust the sidecar only when THIS run succeeded; on failure it was just deleted (or is
+            // a partial write), so the association panels must be skipped rather than read stale.
+            bivariate_sidecar_fresh = bivariate_enabled && moar_result.is_ok();
         }
     }
 
@@ -9952,7 +9968,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // to run wins the front slot, so final visual order top-to-bottom is
     // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
     // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
-    if bivariate_enabled {
+    if bivariate_sidecar_fresh {
         let (assoc_panel, top_panel) = bivariate_panels(
             args,
             args.arg_input.as_deref().unwrap_or_default(),

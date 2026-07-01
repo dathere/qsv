@@ -5885,6 +5885,57 @@ fn viz_smart_bivariate_top_relationships_lollipop_encodings() {
 }
 
 #[test]
+fn viz_smart_bivariate_ignores_stale_sidecar() {
+    let wrk = Workdir::new("viz_smart_bivariate_ignores_stale_sidecar");
+    // A single-column input makes moarstats --bivariate produce ZERO pairs, and moarstats then
+    // does NOT (re)write the deterministic `<stem>.stats.bivariate.csv` sidecar. So a sidecar left
+    // by a PRIOR run (on since-changed data) would otherwise be read as if it described this input.
+    // The fix deletes the expected sidecar before moarstats runs, so a pair-less/failed run leaves
+    // no sidecar to reuse.
+    wrk.create_from_string("oned.csv", "a\n1\n2\n3\n2\n1\n4\n5\n2\n1\n3\n");
+    // plant a stale sidecar carrying recognizable ghost pairs that WOULD parse if read.
+    wrk.create_from_string(
+        "oned.stats.bivariate.csv",
+        "field1,field2,normalized_mutual_information,pearson_correlation,spearman_correlation,\
+         n_pairs\nghost_field_x,ghost_field_y,0.99,0.5,0.5,100\n",
+    );
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "oned.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    // the stale sidecar must have been removed before the (pair-less) moarstats run — moarstats
+    // never rewrote it, so its continued existence would mean viz reused stale data.
+    assert!(
+        !wrk.path("oned.stats.bivariate.csv").exists(),
+        "stale bivariate sidecar should be deleted before the moarstats run, not reused"
+    );
+    // and no association panel sourced from the stale ghost pairs may appear.
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains("ghost_field_x"),
+        "stale ghost pair must not be charted; html: {html}"
+    );
+    assert!(
+        !html.contains("Association (NMI)") && !html.contains("Top Relationships (NMI)"),
+        "no bivariate panels should render for a pair-less input; html: {html}"
+    );
+}
+
+#[test]
 fn viz_smart_bivariate_pii_column_excluded() {
     let wrk = Workdir::new("viz_smart_bivariate_pii_column_excluded");
     // region/tier are strongly associated (NMI = 1.0); email is a low-cardinality (non-near-

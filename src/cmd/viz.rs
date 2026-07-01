@@ -7043,6 +7043,40 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
     sem
 }
 
+/// Recognize an *intensive* (non-additive) measure — temperature, percentages/ratios, indices or
+/// scores, elevation, per-capita/density figures, and pre-aggregated (average/median) columns —
+/// from its human label and field name. Summing these across a group is meaningless (you can't add
+/// °C from two cities), so `viz smart` averages them instead. Additive amounts/counts (revenue,
+/// population, packages) are NOT matched and keep their Sum aggregation. describegpt's `measure.*`
+/// concept vocab (count/amount/ratio) is too coarse to express this distinction, so key off the
+/// label/field text. Deliberately conservative: bare "rate" is omitted because it is a substring of
+/// additive names like "generated"/"aggregate", and `pct`/`ratio`/`percent` already cover most
+/// proportion columns.
+fn is_intensive_measure(label: &str, field: &str) -> bool {
+    let hay = format!("{label} {field}").to_ascii_lowercase();
+    const INTENSIVE: &[&str] = &[
+        "temperature",
+        "celsius",
+        "fahrenheit",
+        "\u{b0}c",
+        "\u{b0}f",
+        "average",
+        "avg",
+        "median",
+        "percent",
+        "pct",
+        "ratio",
+        "index",
+        "score",
+        "elevation",
+        "altitude",
+        "density",
+        "per capita",
+        "per_capita",
+    ];
+    INTENSIVE.iter().any(|kw| hay.contains(kw))
+}
+
 /// Distill a column's `StatsData` + optional dictionary `row` into one charting verdict.
 ///
 /// Precedence: **concept -> role -> content_type -> statistics**. `concept` is the most specific,
@@ -7057,6 +7091,16 @@ fn derive_semantics(s: &crate::cmd::stats::StatsData, row: Option<&DictRow>) -> 
     let label = row.label.trim().to_string();
     let concept = row.concept.trim();
     let make = |route: Route, agg: Option<Agg>| {
+        // An intensive measure (temperature, rate, index, pre-averaged value) tagged additive by
+        // the coarse measure.* concept vocab must be averaged, not summed, across a group.
+        let agg = if route == Route::Measure
+            && agg == Some(Agg::Sum)
+            && is_intensive_measure(&label, &s.field)
+        {
+            Some(Agg::Mean)
+        } else {
+            agg
+        };
         guardrail(
             ColSemantics {
                 route,
@@ -13741,6 +13785,55 @@ mod tests {
         // unknown namespace / bare unknown -> None (fall through to role)
         assert_eq!(route_from_concept("weather.temp"), None);
         assert_eq!(route_from_concept("unknown"), None);
+    }
+
+    #[test]
+    fn intensive_measure_detection() {
+        // intensive quantities -> averaged, matched by label or field
+        assert!(is_intensive_measure(
+            "Average Annual Temperature (\u{b0}C)",
+            "avg_annual_temp_c"
+        ));
+        assert!(is_intensive_measure("Elevation", "elevation_m"));
+        assert!(is_intensive_measure("Literacy", "literacy_pct"));
+        assert!(is_intensive_measure("Happiness Index", "happiness_index"));
+        assert!(is_intensive_measure("Population Density", "pop_density"));
+        // additive amounts/counts stay additive
+        assert!(!is_intensive_measure(
+            "Metro Population (millions)",
+            "metro_population_m"
+        ));
+        assert!(!is_intensive_measure("Revenue", "revenue"));
+        assert!(!is_intensive_measure("Packages", "packages"));
+        assert!(!is_intensive_measure("Order Count", "order_count"));
+    }
+
+    #[test]
+    fn derive_semantics_averages_intensive_measure() {
+        let numeric = stat("Float", 300, Some(0.9));
+        // temperature tagged as an additive amount by the coarse vocab -> downgraded to Mean
+        let temp = derive_semantics(
+            &numeric,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.amount",
+                "Average Annual Temperature (\u{b0}C)",
+            )),
+        );
+        assert_eq!(temp.route, Route::Measure);
+        assert_eq!(temp.agg, Some(Agg::Mean));
+        // a genuine additive amount keeps Sum
+        let pop = derive_semantics(
+            &numeric,
+            Some(&dict_row(
+                "",
+                "measure",
+                "measure.amount",
+                "Metro Population",
+            )),
+        );
+        assert_eq!(pop.agg, Some(Agg::Sum));
     }
 
     #[test]

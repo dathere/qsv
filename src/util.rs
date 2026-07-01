@@ -585,6 +585,18 @@ pub fn create_reqwest_blocking_client(
         builder = builder
             .timeout(timeout_duration)
             .connect_timeout(timeout_duration);
+    } else {
+        // `timeout_secs == 0` means "no timeout" to every caller of this function (see
+        // callers computing 0 to disable timeouts for local LLM endpoints), but
+        // reqwest::blocking::ClientBuilder does NOT default to "no timeout" when
+        // `.timeout()` is simply never called: its internal `Timeout` wrapper has its own
+        // `Default` impl of `Some(Duration::from_secs(30))` (reqwest 0.13.4
+        // src/blocking/client.rs), independent of the inner async client's `Config` (which
+        // DOES default to `None`/no timeout). Skipping `.timeout()` here silently left
+        // that 30s default active, killing legitimate long-running local-LLM completions
+        // (e.g. describegpt --dictionary against LM Studio) exactly 30s in. Explicitly
+        // passing `None` overrides it.
+        builder = builder.timeout(None);
     }
 
     Ok(builder.build()?)

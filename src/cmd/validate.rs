@@ -1375,14 +1375,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         match validator_options.build(&json) {
                             Ok(schema) => (json, schema, has_unique_combined),
                             Err(e) => {
-                                return fail_clierror!(r#"Cannot compile JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_path.to_string_lossy());
+                                return fail_clierror!(r"Cannot compile JSONschema. error: {e}
+Try running `qsv validate schema {}` to check the JSON Schema file.", json_schema_path.to_string_lossy());
                             },
                         }
                     },
                     Err(e) => {
-                        return fail_clierror!(r#"Unable to parse JSONschema. error: {e}
-Try running `qsv validate schema {}` to check the JSON Schema file."#, json_schema_arg.as_ref().unwrap());
+                        return fail_clierror!(r"Unable to parse JSONschema. error: {e}
+Try running `qsv validate schema {}` to check the JSON Schema file.", json_schema_arg.as_ref().unwrap());
                     },
                 }
             },
@@ -1904,10 +1904,10 @@ fn validate_single_file_rfc4180(
             // we're not returning a JSON error, so we can use a
             // user-friendly error message with utf8 transcoding suggestions
             return fail_encoding_clierror!(
-                r#"non-utf8 sequence at record {record_idx}.
+                r"non-utf8 sequence at record {record_idx}.
 Invalid record: {record:?}
 Use `qsv input` to fix formatting and to handle non-utf8 sequences.
-Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."#
+Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."
             );
         }
 

@@ -1611,9 +1611,9 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
             // rebuild their qsvs the way they like it, instead of overwriting it with
             // our prebuilt binaries.
             winfo!(
-                r#"This qsv was {QSV_KIND}. self-update does not work for manually {QSV_KIND} binaries.
+                r"This qsv was {QSV_KIND}. self-update does not work for manually {QSV_KIND} binaries.
 If you wish to update to the latest version of qsv, manually install/compile from source.
-Self-update only works with prebuilt binaries released on GitHub https://github.com/dathere/qsv/releases/latest"#
+Self-update only works with prebuilt binaries released on GitHub https://github.com/dathere/qsv/releases/latest"
             );
         }
     } else {
@@ -3257,7 +3257,7 @@ pub fn get_stats_records(
             // safety: we know it's Some because we set it above
             let delim_to_use = detected_delimiter.unwrap().as_byte();
             if delim_to_use == b'\t' {
-                r#"\t"#.to_string()
+                r"\t".to_string()
             } else {
                 (delim_to_use as char).to_string()
             }

@@ -311,7 +311,7 @@ fn clean_readme_description(description: &str) -> String {
     result = anchor_re.replace_all(&result, "").to_string();
 
     // Remove <a name=...> anchor tags (without closing tag)
-    let anchor_re2 = regex_oncelock!(r#"<a name=[^>]*>"#);
+    let anchor_re2 = regex_oncelock!(r"<a name=[^>]*>");
     result = anchor_re2.replace_all(&result, "").to_string();
 
     // Rewrite relative URLs in markdown links to work from docs/help/

@@ -5117,17 +5117,17 @@ fn logo_markup() -> String {
 
 /// CSS variables + toggle-button rule for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the literal CSS braces stay intact.
-const STYLE_TEMPLATE: &str = r#"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
+const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page-ink: __LIGHT_INK__; --qsv-geo-meta: __LIGHT_GEO_META__; }
   body.qsv-dark { --qsv-page-bg: __DARK_BG__; --qsv-page-ink: __DARK_INK__; --qsv-geo-meta: __DARK_GEO_META__; }
   /* Bottom-right, stacked just above the #qsv-logo: keeps the toggle clear of the Plotly modebar
      (always top-right, and hover-revealed) — which would otherwise overlap and block the modebar's
      rightmost buttons, including the fullscreen toggle — and of the geo extent menus (top-left). */
   #qsv-theme-toggle { position: fixed; bottom: 50px; right: 12px; z-index: 1000; font: 13px __FONT_FAMILY__; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--qsv-page-ink); background: var(--qsv-page-bg); color: var(--qsv-page-ink); cursor: pointer; opacity: 0.85; }
-  #qsv-theme-toggle:hover { opacity: 1; }"#;
+  #qsv-theme-toggle:hover { opacity: 1; }";
 
 /// The light/dark toggle `<script>` for `toggle_chrome`. Token placeholders are substituted at
 /// runtime; kept as a raw string so the JS braces and regex backslashes need no escaping.
-const SCRIPT_TEMPLATE: &str = r##"<script>
+const SCRIPT_TEMPLATE: &str = r#"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
   var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
@@ -5223,7 +5223,7 @@ const SCRIPT_TEMPLATE: &str = r##"<script>
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
   else setTimeout(init, 0);
 })();
-</script>"##;
+</script>"#;
 
 /// `<style>` body for the fullscreen modebar button. A single `:fullscreen` rule gives the
 /// fullscreened graph div an opaque, theme-aware background so the desktop doesn't bleed through.
@@ -5269,7 +5269,7 @@ const FULLSCREEN_STYLE: &str =
 /// only once its `gd.data` is populated (marked with a `__qsvFs` flag so it's done exactly once),
 /// retrying briefly until every div is ready (capped so a render error can't loop forever). Raw
 /// string (like `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
-const FULLSCREEN_SCRIPT: &str = r##"<script>
+const FULLSCREEN_SCRIPT: &str = r#"<script>
 (function () {
   var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
   var button = {
@@ -5429,7 +5429,7 @@ const FULLSCREEN_SCRIPT: &str = r##"<script>
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
   else setTimeout(init, 0);
 })();
-</script>"##;
+</script>"#;
 
 /// A tiny prelude `<script>` publishing the assumed map pixel size the baked mapbox/MapLibre
 /// `zoom` was computed against, so `FULLSCREEN_SCRIPT`'s `qsvRefitMaps` can rescale the zoom to the
@@ -11561,8 +11561,8 @@ fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_tex
     plot.set_configuration(Configuration::new().responsive(true));
     // raw strings (actual newlines, real quotes) so rustfmt's `format_strings` can't split a `\n`
     // or `\"` escape across a line wrap and corrupt the markup (see `smart_html_page`).
-    let extra_style = r#"  .qsv-viz-grid { width: 100%; }
-  .qsv-viz-plot { width: 100%; }"#;
+    let extra_style = r"  .qsv-viz-grid { width: 100%; }
+  .qsv-viz-plot { width: 100%; }";
     let inner = plot.to_inline_html(Some("qsv-viz-smart-grid"));
     let body = format!(
         r#"<div class="qsv-viz-grid">
@@ -12233,10 +12233,10 @@ fn render_smart_inline(
     }
 
     let extra_style = format!(
-        r#"  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); gap: 16px; }}
+        r"  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); gap: 16px; }}
   .qsv-viz-cell {{ min-width: 0; }}
   .qsv-viz-cell.full-width {{ grid-column: 1 / -1; }}
-  .qsv-viz-plot {{ width: 100%; }}"#
+  .qsv-viz-plot {{ width: 100%; }}"
     );
     let body = format!(
         r#"<div class="qsv-viz-grid">
@@ -16078,7 +16078,7 @@ mod tests {
         let lons = [
             179.0, 179.2, 179.4, 179.6, -179.6, -179.4, -179.2, -179.0, 0.5,
         ];
-        let (core_lats, _core_lons, out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
+        let (core_lats, _core_lons, _out_lats, out_lons) = partition_geo_outliers(&lats, &lons);
         assert_eq!(
             out_lons.len(),
             1,

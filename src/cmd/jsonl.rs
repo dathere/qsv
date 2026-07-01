@@ -228,9 +228,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         continue;
                     }
                     return fail_clierror!(
-                        r#"Could not read input line!: {e}
+                        r"Could not read input line!: {e}
 Use `--ignore-errors` option to skip malformed input lines.
-Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
+Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl.",
                     );
                 },
             }
@@ -252,9 +252,9 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
                     Ok(v) => Some(v),
                     Err(e) => {
                         return fail_clierror!(
-                            r#"Could not parse first input line as JSON to infer headers: {e}
+                            r"Could not parse first input line as JSON to infer headers: {e}
 Use `--ignore-errors` option to skip malformed input lines.
-Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
+Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl.",
                         );
                     },
                 }
@@ -309,9 +309,9 @@ Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
             } else if !args.flag_ignore_errors {
                 // there was an error parsing a json line
                 return fail_clierror!(
-                    r#"Could not parse input line {line_no} as JSON
+                    r"Could not parse input line {line_no} as JSON
 Use `--ignore-errors` option to skip malformed input lines.
-Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl."#,
+Use `tojsonl` command to convert _to_ jsonl instead of _from_ jsonl.",
                 );
             }
         }

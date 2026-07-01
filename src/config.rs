@@ -33,9 +33,9 @@ const NO_INDEX_WARNING_FILESIZE: u64 = 100 * (1 << 20); // 100MB
 // so we don't have to keep checking if the index has been created
 static AUTO_INDEXED: AtomicBool = AtomicBool::new(false);
 
-pub static SPONSOR_MESSAGE: &str = r#"sponsored by datHere - Data Infrastructure Engineering (https://qsv.datHere.com)
+pub static SPONSOR_MESSAGE: &str = r"sponsored by datHere - Data Infrastructure Engineering (https://qsv.datHere.com)
 Need a UI & more advanced data-wrangling? Upgrade to qsv pro (https://qsvpro.datHere.com)
-"#;
+";
 
 pub static TEMP_FILE_DIR: OnceLock<PathBuf> = OnceLock::new();
 

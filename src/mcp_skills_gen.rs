@@ -983,7 +983,7 @@ impl UsageParser {
         result = anchor_re.replace_all(&result, "").to_string();
 
         // Remove <a name=...> anchor tags (without closing tag)
-        let anchor_re2 = regex_oncelock!(r#"<a name=[^>]*>"#);
+        let anchor_re2 = regex_oncelock!(r"<a name=[^>]*>");
         result = anchor_re2.replace_all(&result, "").to_string();
 
         // Remove markdown links: [text](url) -> text

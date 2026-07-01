@@ -187,11 +187,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     },
                     Ordering::Greater => {
                         return fail_clierror!(
-                            r#"Aborting! Input not sorted! Current record is greater than Next record.
+                            r"Aborting! Input not sorted! Current record is greater than Next record.
   Compare mode: {compare_mode:?};  Select columns index/es (0-based): {sel:?}
   Current: {record:?}
      Next: {next_record:?}
-"#
+"
                         );
                     },
                 }

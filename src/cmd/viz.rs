@@ -7054,17 +7054,42 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
 /// proportion columns.
 ///
 /// A COUNT is additive by definition regardless of what it counts, so a count-named column
-/// (`review_score_count`, `index_count`) is never intensive even when it embeds an intensive token
-/// like "score" or "index" — the count guard wins. That guard is **token-aware** (`count` must be a
-/// whole word/token, not a substring) so it does NOT suppress genuinely intensive fields that
-/// merely embed the letters, e.g. `discount_pct`, `account_score`, `county_index`.
+/// (`review_score_count`, `reviewScoreCount`, `index_count`) is never intensive even when it embeds
+/// an intensive token like "score" or "index" — the count guard wins. That guard is **token-aware**
+/// (`count` must be a whole token, split on non-alphanumeric boundaries AND camelCase transitions)
+/// so it catches snake_case, spaced, and camelCase names alike while NOT suppressing genuinely
+/// intensive fields that merely embed the letters, e.g. `discount_pct`, `account_score`,
+/// `county_index`.
 fn is_intensive_measure(label: &str, field: &str) -> bool {
-    let hay = format!("{label} {field}").to_ascii_lowercase();
-    // tokenize on any non-alphanumeric boundary so `count`/`num`/`tally` match as whole tokens
-    // (`order_count`, `num_ratings`, `Order Count`) but not as substrings (`discount`, `county`).
-    let is_count = hay
-        .split(|c: char| !c.is_alphanumeric())
-        .any(|t| matches!(t, "count" | "counts" | "cnt" | "num" | "tally"))
+    let raw = format!("{label} {field}");
+    let hay = raw.to_ascii_lowercase();
+    // Tokenize on non-alphanumeric boundaries AND lower/digit -> upper (camelCase/PascalCase)
+    // transitions so a count token is recognized in `order_count`, `Order Count`, and
+    // `reviewScoreCount` alike — without matching the `count` substring inside
+    // `discount`/`account`/`county`.
+    let mut tokens: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower_or_digit = false;
+    for c in raw.chars() {
+        if !c.is_alphanumeric() {
+            if !cur.is_empty() {
+                tokens.push(std::mem::take(&mut cur));
+            }
+            prev_lower_or_digit = false;
+            continue;
+        }
+        if c.is_uppercase() && prev_lower_or_digit && !cur.is_empty() {
+            tokens.push(std::mem::take(&mut cur));
+        }
+        cur.push(c.to_ascii_lowercase());
+        prev_lower_or_digit = c.is_ascii_lowercase() || c.is_ascii_digit();
+    }
+    if !cur.is_empty() {
+        tokens.push(cur);
+    }
+    let is_count = tokens
+        .iter()
+        .any(|t| matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally"))
         || hay.contains("number of");
     if is_count {
         return false;
@@ -13831,11 +13856,18 @@ mod tests {
         ));
         assert!(!is_intensive_measure("Index Count", "index_count"));
         assert!(!is_intensive_measure("Number of Ratings", "num_ratings"));
+        // camelCase / PascalCase count fields are recognized even with an empty/unhelpful label
+        assert!(!is_intensive_measure("", "reviewScoreCount"));
+        assert!(!is_intensive_measure("", "indexCount"));
+        assert!(!is_intensive_measure("", "numRatings"));
         // the count guard is token-aware: intensive fields that merely EMBED "count" as a
-        // substring (discount, account, county) are still detected as intensive
+        // substring (discount, account, county) are still detected as intensive, in snake_case
+        // and camelCase alike
         assert!(is_intensive_measure("Discount", "discount_pct"));
         assert!(is_intensive_measure("Account Score", "account_score"));
         assert!(is_intensive_measure("County Index", "county_index"));
+        assert!(is_intensive_measure("", "discountPct"));
+        assert!(is_intensive_measure("", "accountScore"));
     }
 
     #[test]

@@ -7054,13 +7054,19 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
 /// proportion columns.
 ///
 /// A COUNT is additive by definition regardless of what it counts, so a count-named column
-/// (`review_score_count`, `index_count`) is never intensive even when it embeds an intensive
-/// token like "score" or "index". The count guard wins. (`count` as a substring of `discount`
-/// / `account` is harmless here — those are additive amounts that should stay summed anyway.)
+/// (`review_score_count`, `index_count`) is never intensive even when it embeds an intensive token
+/// like "score" or "index" — the count guard wins. That guard is **token-aware** (`count` must be a
+/// whole word/token, not a substring) so it does NOT suppress genuinely intensive fields that
+/// merely embed the letters, e.g. `discount_pct`, `account_score`, `county_index`.
 fn is_intensive_measure(label: &str, field: &str) -> bool {
     let hay = format!("{label} {field}").to_ascii_lowercase();
-    const COUNTING: &[&str] = &["count", "number of", "num_", "tally"];
-    if COUNTING.iter().any(|kw| hay.contains(kw)) {
+    // tokenize on any non-alphanumeric boundary so `count`/`num`/`tally` match as whole tokens
+    // (`order_count`, `num_ratings`, `Order Count`) but not as substrings (`discount`, `county`).
+    let is_count = hay
+        .split(|c: char| !c.is_alphanumeric())
+        .any(|t| matches!(t, "count" | "counts" | "cnt" | "num" | "tally"))
+        || hay.contains("number of");
+    if is_count {
         return false;
     }
     const INTENSIVE: &[&str] = &[
@@ -13825,6 +13831,11 @@ mod tests {
         ));
         assert!(!is_intensive_measure("Index Count", "index_count"));
         assert!(!is_intensive_measure("Number of Ratings", "num_ratings"));
+        // the count guard is token-aware: intensive fields that merely EMBED "count" as a
+        // substring (discount, account, county) are still detected as intensive
+        assert!(is_intensive_measure("Discount", "discount_pct"));
+        assert!(is_intensive_measure("Account Score", "account_score"));
+        assert!(is_intensive_measure("County Index", "county_index"));
     }
 
     #[test]

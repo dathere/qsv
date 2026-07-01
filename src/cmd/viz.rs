@@ -1606,38 +1606,79 @@ fn build_scatter_encoded(args: &Args) -> CliResult<(Vec<Box<dyn Trace>>, String,
         );
     }
 
+    let x_label = col_label(&headers, x_idx, nh);
+    let y_label = col_label(&headers, y_idx, nh);
+    let color_label = color_idx.map(|i| col_label(&headers, i, nh));
+    let size_label = size_idx.map(|i| col_label(&headers, i, nh));
+
+    // Pre-render per-point hover naming x/y plus any color/size encoding — plotly's default shows
+    // only the bare (x, y) pair, hiding the encoded dimensions. Numeric values are comma-grouped.
+    let xl = escape_hover(&x_label);
+    let yl = escape_hover(&y_label);
+    let cl = color_label.as_deref().map(escape_hover);
+    let sl = size_label.as_deref().map(escape_hover);
+    let hover: Vec<String> = (0..ys.len())
+        .map(|p| {
+            let xdisp = xs[p]
+                .trim()
+                .parse::<f64>()
+                .ok()
+                .map_or_else(|| escape_hover(&xs[p]), fmt_measure);
+            let mut label = format!("{xl}: {xdisp}<br>{yl}: {}", fmt_measure(ys[p]));
+            if let (Some(cl), Some(c)) = (cl.as_ref(), colors.get(p)) {
+                label.push_str(&format!("<br>{cl}: {}", fmt_measure(*c)));
+            }
+            if let (Some(sl), Some(s)) = (sl.as_ref(), sizes.get(p)) {
+                label.push_str(&format!("<br>{sl}: {}", fmt_measure(*s)));
+            }
+            label
+        })
+        .collect();
+
     let mut marker = Marker::new();
     if !sizes.is_empty() {
         marker = marker.size_array(scale_bubble_sizes(&sizes));
     }
     if !colors.is_empty() {
-        let color_label = col_label(&headers, color_idx.unwrap(), nh);
         marker = marker
             .color_array(colors)
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(true)
-            .color_bar(ColorBar::new().title(color_label));
+            .color_bar(ColorBar::new().title(color_label.clone().unwrap_or_default()));
     }
 
-    let trace = scatter_with_marker(xs, ys, marker);
-    Ok((
-        vec![trace],
-        col_label(&headers, x_idx, nh),
-        col_label(&headers, y_idx, nh),
-    ))
+    let trace = scatter_with_marker(xs, ys, marker, hover);
+    Ok((vec![trace], x_label, y_label))
 }
 
 /// Build a markers-mode Scatter with the given marker, using a numeric x-axis when every x
-/// value parses as a number (otherwise a categorical x-axis), mirroring `scatter_trace`.
-fn scatter_with_marker(xs: Vec<String>, ys: Vec<f64>, marker: Marker) -> Box<dyn Trace> {
+/// value parses as a number (otherwise a categorical x-axis), mirroring `scatter_trace`. `hover`,
+/// when non-empty, is the row-aligned pre-rendered hover text (naming x/y and any size/color
+/// encoding) attached via `HoverInfo::Text`.
+fn scatter_with_marker(
+    xs: Vec<String>,
+    ys: Vec<f64>,
+    marker: Marker,
+    hover: Vec<String>,
+) -> Box<dyn Trace> {
+    // numeric vs categorical x produce differently-typed Scatter traces, so each branch owns the
+    // (identical) hover attachment before coercing to `Box<dyn Trace>`.
     if !xs.is_empty() && xs.iter().all(|s| s.trim().parse::<f64>().is_ok()) {
         let xn: Vec<f64> = xs
             .iter()
             .map(|s| s.trim().parse::<f64>().unwrap_or(f64::NAN))
             .collect();
-        Scatter::new(xn, ys).mode(Mode::Markers).marker(marker)
+        let mut t = Scatter::new(xn, ys).mode(Mode::Markers).marker(marker);
+        if !hover.is_empty() {
+            t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
+        }
+        t
     } else {
-        Scatter::new(xs, ys).mode(Mode::Markers).marker(marker)
+        let mut t = Scatter::new(xs, ys).mode(Mode::Markers).marker(marker);
+        if !hover.is_empty() {
+            t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
+        }
+        t
     }
 }
 
@@ -2640,13 +2681,41 @@ fn escape_hover(s: &str) -> String {
 }
 
 /// Format a measure value for a hover label: a whole number prints without a decimal point
-/// (`65`), otherwise up to 3 decimals with trailing zeros trimmed (`12.5`, `0.333`).
+/// (`65`), otherwise up to 3 decimals with trailing zeros trimmed (`12.5`, `0.333`). The integer
+/// part is grouped with thousands separators (`1,234,567`).
 fn fmt_measure(v: f64) -> String {
-    if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
+    let s = if v.is_finite() && v.fract() == 0.0 && v.abs() < 1e15 {
         format!("{v:.0}")
     } else {
         let s = format!("{v:.3}");
         s.trim_end_matches('0').trim_end_matches('.').to_string()
+    };
+    group_thousands(&s)
+}
+
+/// Insert `,` thousands separators into the integer part of a formatted number string, preserving
+/// an optional leading sign and any `.fraction` suffix (`-1234.5` -> `-1,234.5`). Used by every
+/// pre-rendered hover label so large magnitudes stay readable.
+fn group_thousands(s: &str) -> String {
+    let (sign, rest) = match s.strip_prefix('-') {
+        Some(r) => ("-", r),
+        None => ("", s),
+    };
+    let (int_part, frac_part) = match rest.split_once('.') {
+        Some((i, f)) => (i, Some(f)),
+        None => (rest, None),
+    };
+    let len = int_part.len();
+    let mut grouped = String::with_capacity(len + len / 3);
+    for (i, ch) in int_part.chars().enumerate() {
+        if i > 0 && (len - i) % 3 == 0 {
+            grouped.push(',');
+        }
+        grouped.push(ch);
+    }
+    match frac_part {
+        Some(f) => format!("{sign}{grouped}.{f}"),
+        None => format!("{sign}{grouped}"),
     }
 }
 
@@ -3711,12 +3780,14 @@ fn choropleth_geocoded_locations(
 }
 
 /// Split row-aligned (x, y, z) numeric triples into one `Scatter3D` trace per `--series` category,
-/// preserving first-seen category order.
+/// preserving first-seen category order. `hover` is the shared per-point hover template (naming the
+/// x/y/z columns) applied to every trace so the tooltip isn't plotly's bare `x/y/z`.
 fn scatter3d_series_traces(
     xs: Vec<f64>,
     ys: Vec<f64>,
     zs: Vec<f64>,
     series: Vec<String>,
+    hover: &str,
 ) -> Vec<Box<dyn Trace>> {
     let mut order: Vec<String> = Vec::new();
     let mut groups: BTreeMap<String, (Vec<f64>, Vec<f64>, Vec<f64>)> = BTreeMap::new();
@@ -3734,7 +3805,10 @@ fn scatter3d_series_traces(
         .into_iter()
         .map(|name| {
             let (a, b, c) = groups.remove(&name).unwrap_or_default();
-            let trace: Box<dyn Trace> = Scatter3D::new(a, b, c).mode(Mode::Markers).name(name);
+            let trace: Box<dyn Trace> = Scatter3D::new(a, b, c)
+                .mode(Mode::Markers)
+                .name(name)
+                .hover_template(hover);
             trace
         })
         .collect()
@@ -3811,9 +3885,25 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
         );
     }
 
+    let x_title = args
+        .flag_x_title
+        .clone()
+        .unwrap_or_else(|| col_label(&headers, x_idx, nh));
+    let y_title = args
+        .flag_y_title
+        .clone()
+        .unwrap_or_else(|| col_label(&headers, y_idx, nh));
+    let z_title = col_label(&headers, z_idx, nh);
+    // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it does
+    // NOT read the scene axis titles), so build an explicit template naming each dimension with
+    // comma-grouped values.
+    let hover = format!(
+        "{x_title}: %{{x:,.3f}}<br>{y_title}: %{{y:,.3f}}<br>{z_title}: %{{z:,.3f}}<extra></extra>"
+    );
+
     let mut plot = Plot::new();
     if series_idx.is_some() {
-        for trace in scatter3d_series_traces(xs, ys, zs, series) {
+        for trace in scatter3d_series_traces(xs, ys, zs, series, &hover) {
             plot.add_trace(trace);
         }
     } else {
@@ -3832,19 +3922,11 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
         plot.add_trace(
             Scatter3D::new(xs, ys, zs)
                 .mode(Mode::Markers)
-                .marker(marker),
+                .marker(marker)
+                .hover_template(hover),
         );
     }
 
-    let x_title = args
-        .flag_x_title
-        .clone()
-        .unwrap_or_else(|| col_label(&headers, x_idx, nh));
-    let y_title = args
-        .flag_y_title
-        .clone()
-        .unwrap_or_else(|| col_label(&headers, y_idx, nh));
-    let z_title = col_label(&headers, z_idx, nh);
     let scene = LayoutScene::new()
         .x_axis(Axis::new().title(Title::with_text(x_title)))
         .y_axis(Axis::new().title(Title::with_text(y_title)))
@@ -4768,9 +4850,31 @@ fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
         }
         let mut r: Vec<f64> = (0..n_axes).map(|a| normalize(a, means[a])).collect();
         r.push(r[0]);
+        // Hover surfaces each axis with its ACTUAL mean (not the 0..1 plotted radius): the
+        // normalized geometry stays comparable across differently-scaled axes while the tooltip
+        // carries the real, comma-grouped value. Without this plotly shows only "trace 0".
+        let mut hover: Vec<String> = (0..n_axes)
+            .map(|a| {
+                let line = format!(
+                    "{}: {}",
+                    escape_hover(&axis_labels[a]),
+                    fmt_measure(means[a])
+                );
+                if series.is_empty() {
+                    line
+                } else {
+                    format!("{}<br>{line}", escape_hover(&series))
+                }
+            })
+            .collect();
+        hover.push(hover[0].clone());
+        // lines+markers so each axis intersection is its own hoverable vertex (the per-vertex
+        // hover text below is keyed to those points), not just a single hover on the ring.
         let mut t = ScatterPolar::new(theta_closed.clone(), r)
-            .mode(Mode::Lines)
-            .fill(Fill::ToSelf);
+            .mode(Mode::LinesMarkers)
+            .fill(Fill::ToSelf)
+            .hover_text_array(hover)
+            .hover_info(HoverInfo::Text);
         if !series.is_empty() {
             t = t.name(series);
         }
@@ -6501,11 +6605,16 @@ enum PanelKind {
     /// pair, the complement of the least-redundant axis `Scatter3D` picks) to encode as marker size
     /// (bubble chart) — a 3-variable view that, unlike the HTML-only `Scatter3D`, also renders in
     /// static image export. `scale_bubble_sizes` rescales to pixels at render time. `None` keeps a
-    /// plain 2-D scatter.
+    /// plain 2-D scatter. `x_label`/`y_label`/`size_label` are the source column names, carried so
+    /// the per-point hover can name each value (the cell has no axis titles) — `size_label` is
+    /// `Some` iff `sizes` is.
     ScatterPair {
-        xs:    Vec<f64>,
-        ys:    Vec<f64>,
-        sizes: Option<Vec<f64>>,
+        xs:         Vec<f64>,
+        ys:         Vec<f64>,
+        sizes:      Option<Vec<f64>>,
+        x_label:    String,
+        y_label:    String,
+        size_label: Option<String>,
     },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
@@ -10091,15 +10200,29 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     // view that, unlike the HTML-only 3D panel, also survives
                     // static image export. Aligned to xs/ys because
                     // `downsample_pair` picks the same row indices for the same (n, cap).
-                    let (name, sizes) = match most_associated_third(&matrix, i, j) {
+                    let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
                         Some(k) => {
                             let (_, sizes) =
                                 downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
-                            (format!("{name} \u{b7} size: {}", labels[k]), Some(sizes))
+                            (
+                                format!("{name} \u{b7} size: {}", labels[k]),
+                                Some(sizes),
+                                Some(labels[k].clone()),
+                            )
                         },
-                        None => (name, None),
+                        None => (name, None, None),
                     };
-                    Panel::new(name, PanelKind::ScatterPair { xs, ys, sizes })
+                    Panel::new(
+                        name,
+                        PanelKind::ScatterPair {
+                            xs,
+                            ys,
+                            sizes,
+                            x_label: labels[i].clone(),
+                            y_label: labels[j].clone(),
+                            size_label,
+                        },
+                    )
                 }
             });
 
@@ -10672,9 +10795,16 @@ fn panel_trace(
         },
         PanelKind::Histogram { idx } => {
             let values = hist.get(idx).cloned().unwrap_or_default();
+            // the cell has no x-axis title (panel.name is only a cell annotation), so name the
+            // binned value and its count in the hover, both comma-grouped.
+            let hover = format!(
+                "{}: %{{x:,.3f}}<br>count: %{{y:,}}<extra></extra>",
+                escape_hover(&panel.name)
+            );
             let mut h = Histogram::new(values)
                 .name(panel.name.clone())
-                .marker(Marker::new().color(color));
+                .marker(Marker::new().color(color))
+                .hover_template(hover);
             if let Some((x, y)) = &axes {
                 h = h.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -10690,15 +10820,45 @@ fn panel_trace(
             }
             t
         },
-        PanelKind::ScatterPair { xs, ys, sizes } => {
+        PanelKind::ScatterPair {
+            xs,
+            ys,
+            sizes,
+            x_label,
+            y_label,
+            size_label,
+        } => {
             let mut marker = Marker::new().color(color);
             if let Some(sizes) = sizes {
                 marker = marker.size_array(scale_bubble_sizes(sizes));
             }
+            // The marker encodes SCALED pixel sizes, so `%{marker.size}` can't surface the real
+            // third value — pre-render a per-point label naming x/y (the cell has no axis titles)
+            // and, when present, the size column's RAW value. All comma-grouped via `fmt_measure`.
+            let xl = escape_hover(x_label);
+            let yl = escape_hover(y_label);
+            let sl = size_label.as_deref().map(escape_hover);
+            let hover: Vec<String> = xs
+                .iter()
+                .zip(ys.iter())
+                .enumerate()
+                .map(|(pt, (x, y))| {
+                    let mut label =
+                        format!("{xl}: {}<br>{yl}: {}", fmt_measure(*x), fmt_measure(*y));
+                    if let (Some(sl), Some(s)) =
+                        (sl.as_ref(), sizes.as_ref().and_then(|sz| sz.get(pt)))
+                    {
+                        label.push_str(&format!("<br>{sl}: {}", fmt_measure(*s)));
+                    }
+                    label
+                })
+                .collect();
             let mut t = Scatter::new(xs.clone(), ys.clone())
                 .mode(Mode::Markers)
                 .name(panel.name.clone())
-                .marker(marker);
+                .marker(marker)
+                .hover_text_array(hover)
+                .hover_info(HoverInfo::Text);
             if let Some((x, y)) = &axes {
                 t = t.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -11767,11 +11927,18 @@ fn smart_inline_panel_plot(
     // assembled here as well.
     if let PanelKind::Scatter3D { xs, ys, zs, labels } = &panel.kind {
         let (x_label, y_label, z_label) = labels;
+        // plotly's default 3D hover labels the coordinates with the bare axis letters x/y/z (it
+        // does NOT read the scene axis titles), so name each dimension explicitly.
+        let hover = format!(
+            "{x_label}: %{{x:,.3f}}<br>{y_label}: %{{y:,.3f}}<br>{z_label}: \
+             %{{z:,.3f}}<extra></extra>"
+        );
         let mut plot = Plot::new();
         plot.add_trace(
             Scatter3D::new(xs.clone(), ys.clone(), zs.clone())
                 .mode(Mode::Markers)
-                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY)),
+                .marker(Marker::new().color(color).opacity(MAP_POINT_OPACITY))
+                .hover_template(hover),
         );
         let scene = LayoutScene::new()
             .x_axis(Axis::new().title(Title::with_text(x_label.clone())))
@@ -11800,8 +11967,12 @@ fn smart_inline_panel_plot(
         let mut plot = Plot::new();
         plot.add_trace(
             ScatterPolar::new(theta.clone(), r.clone())
-                .mode(Mode::Lines)
-                .fill(Fill::ToSelf),
+                // lines+markers so each phase (hour/day/month) is its own hoverable vertex, not
+                // just a single hover on the ring.
+                .mode(Mode::LinesMarkers)
+                .fill(Fill::ToSelf)
+                .name(panel.name.clone())
+                .hover_template("%{theta}<br>records: %{r:,.0f}<extra></extra>"),
         );
         let mut layout = Layout::new()
             .show_legend(false)
@@ -15605,6 +15776,12 @@ mod tests {
         assert_eq!(fmt_measure(3.27), "3.27");
         assert_eq!(fmt_measure(3.3630), "3.363");
         assert_eq!(fmt_measure(0.5), "0.5");
+        // thousands separators are inserted into the integer part only
+        assert_eq!(fmt_measure(1_234_567.0), "1,234,567");
+        assert_eq!(fmt_measure(1234.5), "1,234.5");
+        assert_eq!(fmt_measure(-1_234_567.0), "-1,234,567");
+        assert_eq!(fmt_measure(-12_345.678), "-12,345.678");
+        assert_eq!(fmt_measure(999.0), "999");
     }
 
     #[test]

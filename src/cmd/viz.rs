@@ -383,6 +383,26 @@ smart options:
                            tags, hence a better dashboard. Ignored unless `--dictionary infer`
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
+    --bivariate            EXPERIMENTAL. Add two pairwise-association overview panels driven by
+                           `qsv moarstats --bivariate`: a normalized mutual information (NMI)
+                           heatmap over every column pair (works for numeric AND categorical
+                           columns, unlike the Pearson-only correlation heatmap), plus a ranked
+                           "top relationships" bar of the strongest pairs when there are more than
+                           8 chartable columns. The ranked bar (not the heatmap, which still shows
+                           every pair) requires a pair's co-occurring row count to be at least 10%
+                           of the best-supported pair's, so a technically-perfect NMI from two
+                           sparsely-populated columns that only ever co-occur in a narrow row
+                           slice can't crowd out a more broadly meaningful association; each bar's
+                           hover shows its co-occurring row count. A numeric pair whose Spearman
+                           rank correlation diverges sharply from its Pearson correlation is
+                           flagged "nonlinear" in the hover. Identifier / PII / free-text columns
+                           (per --dictionary) and map lat/lon columns are excluded. This
+                           automatically turns on --smarter, and when --dictionary isn't already
+                           set, also turns on --dictionary infer (so the PII/identifier exclusion
+                           has semantic signal to work with). Capped at 50 columns (1,225 pairs);
+                           wider datasets skip these panels with a warning (run
+                           `qsv moarstats --bivariate` directly for the full pairwise output).
+                           Only affects `smart`.
     --log-scale <mode>     Use a logarithmic y-axis for frequency bar panels whose
                            tallest bar dwarfs the rest (e.g. a large "(NULL)" or
                            "Other (N)" bucket), so the small categories stay visible.
@@ -437,8 +457,8 @@ use plotly::{
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, Fill, Font, HoverInfo, Line, Marker, Mode,
-        Pattern, PatternShape, TextPosition, TickMode, Title,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, ErrorData, ErrorType, Fill, Font,
+        HoverInfo, Line, Marker, Mode, Pattern, PatternShape, TextPosition, TickMode, Title,
     },
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
@@ -751,6 +771,53 @@ const CORR_LABEL_MAX_CHARS: usize = 16;
 const CORR_LABEL_PX_PER_CHAR: usize = 7;
 const CORR_INCELL_MAX_N: usize = 8;
 
+/// `viz smart --bivariate` column-count safety cap. The association heatmap/top-relationships
+/// panels are built from moarstats' ALL-PAIRS bivariate sidecar (50 choose 2 = 1,225 pairs at the
+/// cap), so a wide dataset is skipped (with a warning suggesting `qsv moarstats --bivariate`
+/// directly) rather than handing moarstats a combinatorially explosive pair count.
+const BIVARIATE_MAX_COLUMNS: usize = 50;
+
+/// `viz smart --bivariate`: a numeric pair's drill-down is flagged "nonlinear" in the association
+/// heatmap/top-relationships hover when its Spearman |rho| exceeds its Pearson |r| by at least
+/// this much — mirroring `SMART_NONLINEAR_MIN_GAP`'s correlation-pair nonlinearity note, applied
+/// here per-cell across every bivariate pair instead of just the single strongest one.
+const NONLINEAR_DIVERGENCE_THRESHOLD: f64 = 0.15;
+
+/// `viz smart --bivariate`'s "Top Relationships" ranking requires a pair's co-occurring row count
+/// (moarstats' `n_pairs`) to be at least this fraction of the best-supported pair's `n_pairs`
+/// among the chartable columns. NMI has no notion of sample size: two columns that are each
+/// populated for only a narrow, mostly-disjoint-from-everything-else slice of rows (e.g. taxi- or
+/// bridge-specific fields in a 311 log) can co-occur perfectly in that sliver and score NMI=1.0,
+/// outranking a moderate-NMI pair backed by the whole dataset. This ratio only gates the RANKED
+/// list, not the association heatmap itself, which still shows every survivor pair for a full
+/// overview.
+const BIVARIATE_MIN_SUPPORT_RATIO: f64 = 0.10;
+
+/// `viz smart --bivariate`'s "Top Relationships" panel is a horizontal multivariate lollipop
+/// (dot position = NMI, dot size = co-occurrence support, dot color = nonlinear flag). The value
+/// (NMI) axis is ZOOMED to fit the shown pairs rather than anchored at 0, because the strongest
+/// associations cluster tightly near 1.0 where a zero-based axis crushes them into visually
+/// identical positions (the very complaint this panel had). A dot plot — unlike a bar — carries no
+/// area, so a non-zero baseline is legitimate. The zoom pads each end by `TOPREL_PAD_FRAC` of the
+/// data span (but at least `TOPREL_MIN_PAD` in absolute terms, so a near-tied cluster like
+/// 0.995..1.0 still gets breathing room and its dots separate), caps the top at `TOPREL_CEIL_CAP`
+/// (NMI's ceiling is 1.0; the small overshoot leaves marker/label room), and enforces only a tiny
+/// `TOPREL_MIN_SPAN` so an all-EXACTLY-tied top-N can't produce a zero-width axis (identical values
+/// legitimately overlap). Category (pair) labels are truncated to `TOPREL_LABEL_MAX_CHARS` on the
+/// y-axis (the full "FieldA × FieldB" rides in the hover) to bound the shared page left-margin.
+const TOPREL_PAD_FRAC: f64 = 0.25;
+const TOPREL_MIN_PAD: f64 = 0.01;
+const TOPREL_MIN_SPAN: f64 = 0.02;
+const TOPREL_CEIL_CAP: f64 = 1.02;
+const TOPREL_LABEL_MAX_CHARS: usize = 56;
+
+/// Marker colors for the "Top Relationships" lollipop dots. Because color here ENCODES DATA (the
+/// nonlinear flag), the regular color is FIXED (the palette's blue) rather than the panel's
+/// rotating slot color — otherwise the amber nonlinear flag could land next to a near-identical
+/// yellow/orange palette slot and vanish. Blue-vs-amber is also a strongly colorblind-safe pairing.
+const REGULAR_MARKER_COLOR: &str = PALETTE[0];
+const NONLINEAR_MARKER_COLOR: &str = "#f9a825";
+
 /// `viz smart` frequency-bar panel tuning. Very long category names (e.g. full agency names or
 /// datetime strings) rotate into tall x-axis tick labels that squeeze the plot area, clipping
 /// the outside value labels at the top of the cell. Displayed tick labels are truncated to this
@@ -801,7 +868,7 @@ enum FreqBarKind {
 /// Per-column frequency bars for the `viz smart` panels, keyed by column index.
 type FreqMap = HashMap<usize, Vec<FreqBar>>;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 struct Args {
     cmd_smart:               bool,
     cmd_bar:                 bool,
@@ -871,6 +938,7 @@ struct Args {
     flag_no_nulls:           bool,
     flag_no_other:           bool,
     flag_smarter:            bool,
+    flag_bivariate:          bool,
     flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
@@ -4165,14 +4233,85 @@ fn corr_heatmap_trace(
     axes: Option<(String, String)>,
     show_scale: bool,
 ) -> Box<dyn Trace> {
+    heatmap_trace_with_range(
+        labels,
+        matrix,
+        axes,
+        show_scale,
+        -1.0,
+        1.0,
+        Some(0.0),
+        ColorScalePalette::RdBu,
+        "r",
+        "correlation",
+        None,
+    )
+}
+
+/// `viz smart --bivariate`: a sequential (Viridis) [0, 1] heatmap trace for the NMI association
+/// matrix. `hover_suffix`, when present, is rendered per-cell via plotly's `text` + `%{text}` so a
+/// flagged-nonlinear pair's hover carries its Pearson/Spearman divergence note.
+fn assoc_heatmap_trace(
+    labels: Vec<String>,
+    matrix: Vec<Vec<f64>>,
+    hover_suffix: Vec<Vec<String>>,
+    axes: Option<(String, String)>,
+    show_scale: bool,
+) -> Box<dyn Trace> {
+    heatmap_trace_with_range(
+        labels,
+        matrix,
+        axes,
+        show_scale,
+        0.0,
+        1.0,
+        None,
+        ColorScalePalette::Viridis,
+        "NMI",
+        "association",
+        Some(hover_suffix),
+    )
+}
+
+/// Shared heatmap-trace builder behind `corr_heatmap_trace` (diverging, [-1, 1]) and
+/// `assoc_heatmap_trace` (sequential, [0, 1]): a fixed-range, named heatmap with a clean
+/// `y ↔ x: <label> = value` hover (instead of plotly's default "trace 0"). `axes` assigns the
+/// subplot axis refs when used as a `viz smart` panel (`None` for a standalone chart).
+/// `text_matrix`, when present (same shape as `matrix`), appends a per-cell hover suffix via
+/// `%{text}` — used to flag nonlinear numeric pairs in the association heatmap.
+#[allow(clippy::too_many_arguments)]
+fn heatmap_trace_with_range(
+    labels: Vec<String>,
+    matrix: Vec<Vec<f64>>,
+    axes: Option<(String, String)>,
+    show_scale: bool,
+    zmin: f64,
+    zmax: f64,
+    zmid: Option<f64>,
+    palette: ColorScalePalette,
+    hover_label: &str,
+    name: &str,
+    text_matrix: Option<Vec<Vec<String>>>,
+) -> Box<dyn Trace> {
+    let mut hover_template = format!("%{{y}} \u{2194} %{{x}}<br>{hover_label} = %{{z:.3f}}");
+    if text_matrix.is_some() {
+        hover_template.push_str("%{text}");
+    }
+    hover_template.push_str("<extra></extra>");
+
     let mut h = HeatMap::new(labels.clone(), labels, matrix)
-        .color_scale(ColorScale::Palette(ColorScalePalette::RdBu))
-        .zmin(-1.0)
-        .zmax(1.0)
-        .zmid(0.0)
+        .color_scale(ColorScale::Palette(palette))
+        .zmin(zmin)
+        .zmax(zmax)
         .show_scale(show_scale)
-        .name("correlation")
-        .hover_template("%{y} \u{2194} %{x}<br>r = %{z:.3f}<extra></extra>");
+        .name(name)
+        .hover_template(hover_template);
+    if let Some(zmid) = zmid {
+        h = h.zmid(zmid);
+    }
+    if let Some(tm) = text_matrix {
+        h = h.text_matrix(tm);
+    }
     if let Some((x, y)) = axes {
         h = h.x_axis(x).y_axis(y);
     }
@@ -5866,6 +6005,310 @@ fn measure_by_dim_panel(
     )))
 }
 
+/// Path to moarstats' `--bivariate` sidecar CSV for a given `viz smart` input, mirroring
+/// `moarstats::get_bivariate_csv_path`'s non-joined form (`viz smart` never asks moarstats to
+/// `--join-inputs`): `<parent>/<stem>.stats.bivariate.csv`.
+fn bivariate_csv_path(input: &str) -> std::path::PathBuf {
+    let input_path = std::path::Path::new(input);
+    let parent = input_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new(""));
+    let fstem = input_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| input.to_string());
+    parent.join(format!("{fstem}.stats.bivariate.csv"))
+}
+
+/// Whether a bivariate sidecar on disk was written by the CURRENT `moarstats --bivariate` run,
+/// used to guard against reading a stale one a prior run left behind. Given the pre-run mtime
+/// snapshot (`before`, `None` if the file was absent), the post-run snapshot (`after`, `None` if
+/// absent now), and whether the pre-run delete cleared the path (`cleared`): fresh iff a file
+/// exists now AND either the path was cleared before the run (so any file present was written just
+/// now) or its mtime advanced past the snapshot (the delete FAILED — e.g. a locked file — but
+/// moarstats still rewrote it). A present-but-unadvanced file with a failed delete is stale and
+/// must not be trusted.
+fn bivariate_sidecar_is_fresh(
+    before: Option<std::time::SystemTime>,
+    after: Option<std::time::SystemTime>,
+    cleared: bool,
+) -> bool {
+    match after {
+        Some(after) => cleared || before.is_none_or(|before| after > before),
+        None => false,
+    }
+}
+
+/// One parsed row of moarstats' `--bivariate` sidecar CSV.
+struct BivariateRow {
+    field1:   String,
+    field2:   String,
+    nmi:      f64,
+    pearson:  Option<f64>,
+    spearman: Option<f64>,
+    /// Co-occurring (both non-empty) row count moarstats used to compute this pair's stats.
+    /// Always written by `moarstats --bivariate` regardless of `--bivariate-stats`; a missing or
+    /// unparseable value degrades to 0 (fails the support-ratio gate in `bivariate_panels`
+    /// rather than letting an un-vetted pair through).
+    n_pairs:  u64,
+}
+
+/// Parse a moarstats `--bivariate` sidecar CSV, looking up every column BY HEADER NAME (the
+/// emitted column set varies with `--bivariate-stats`) rather than a fixed index. A row missing
+/// `field1`/`field2`/`normalized_mutual_information` (always requested by `viz smart
+/// --bivariate`) — or with an unparseable NMI — is skipped; `pearson`/`spearman` are `None` when
+/// their columns are absent or the cell is empty/unparseable. Returns `Err` only on a file-open
+/// or CSV-structure read error; a missing/empty `pearson`/`spearman` column, or a CSV with a
+/// header row but no data rows, both yield `Ok` (the latter an empty `Vec`).
+fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .from_path(path)?;
+    let headers = rdr.headers()?.clone();
+    let find = |name: &str| headers.iter().position(|h| h == name);
+    let (Some(f1i), Some(f2i), Some(nmi_i)) = (
+        find("field1"),
+        find("field2"),
+        find("normalized_mutual_information"),
+    ) else {
+        return Ok(Vec::new());
+    };
+    let pearson_i = find("pearson_correlation");
+    let spearman_i = find("spearman_correlation");
+    let n_pairs_i = find("n_pairs");
+
+    let mut rows = Vec::new();
+    for result in rdr.records() {
+        let record = result?;
+        let (Some(field1), Some(field2)) = (record.get(f1i), record.get(f2i)) else {
+            continue;
+        };
+        let Some(nmi) = record.get(nmi_i).and_then(|s| s.parse::<f64>().ok()) else {
+            continue;
+        };
+        let pearson = pearson_i
+            .and_then(|i| record.get(i))
+            .and_then(|s| s.parse::<f64>().ok());
+        let spearman = spearman_i
+            .and_then(|i| record.get(i))
+            .and_then(|s| s.parse::<f64>().ok());
+        let n_pairs = n_pairs_i
+            .and_then(|i| record.get(i))
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        rows.push(BivariateRow {
+            field1: field1.to_string(),
+            field2: field2.to_string(),
+            nmi,
+            pearson,
+            spearman,
+            n_pairs,
+        });
+    }
+    Ok(rows)
+}
+
+/// Build the `viz smart --bivariate` overview panels — a normalized mutual information (NMI)
+/// association heatmap and, for wider datasets, a ranked "top relationships" bar — from moarstats'
+/// `--bivariate` sidecar CSV (written by the `--smarter` moarstats subprocess above when
+/// `--bivariate` is enabled). Soft-fails (warns, returns `(None, None)`) when the sidecar is
+/// missing/unreadable or carries no usable pairs, matching `--smarter`'s own degrade-gracefully
+/// convention — a `--bivariate` run never aborts the dashboard over this. Pairs touching a
+/// `Route::Skip` (identifier/PII/free-text) column or a map lat/lon column are dropped, mirroring
+/// every other per-column panel builder's exclusions. The ranked bar additionally requires
+/// co-occurrence support (`BIVARIATE_MIN_SUPPORT_RATIO`) — see its comment — so it can drop to
+/// `None` even when the heatmap still renders.
+fn bivariate_panels(
+    args: &Args,
+    input: &str,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    is_map_col: impl Fn(usize) -> bool,
+) -> (Option<Panel>, Option<Panel>) {
+    let path = bivariate_csv_path(input);
+    let rows = match parse_bivariate_csv(&path) {
+        Ok(rows) => rows,
+        Err(e) => {
+            eprintln!(
+                "viz smart --bivariate: could not read moarstats bivariate output ({e}); skipping \
+                 the association panels."
+            );
+            return (None, None);
+        },
+    };
+    if rows.is_empty() {
+        eprintln!(
+            "viz smart --bivariate: moarstats produced no bivariate pairs; skipping the \
+             association panels."
+        );
+        return (None, None);
+    }
+
+    // resolve field name -> column index once
+    let field_idx: HashMap<&str, usize> = stats
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.field.as_str(), i))
+        .collect();
+
+    struct Survivor {
+        i:       usize,
+        j:       usize,
+        nmi:     f64,
+        n_pairs: u64,
+        suffix:  Option<String>,
+    }
+    let mut survivors: Vec<Survivor> = Vec::new();
+    for row in &rows {
+        let (Some(&i), Some(&j)) = (
+            field_idx.get(row.field1.as_str()),
+            field_idx.get(row.field2.as_str()),
+        ) else {
+            continue;
+        };
+        if i == j || col_sems[i].route == Route::Skip || col_sems[j].route == Route::Skip {
+            continue;
+        }
+        if is_map_col(i) || is_map_col(j) {
+            continue;
+        }
+        // a numeric pair whose Spearman rank correlation diverges sharply from its Pearson
+        // correlation is monotonic but curved (nonlinear): a single Pearson number understates
+        // it, so flag it in the hover (mirrors the strongest-pair drill-down's own nonlinearity
+        // note, here applied per-cell across every bivariate pair).
+        let suffix = match (row.pearson, row.spearman) {
+            (Some(p), Some(s)) if (s.abs() - p.abs()) > NONLINEAR_DIVERGENCE_THRESHOLD => Some(
+                format!("<br>\u{26a0} Nonlinear: pearson r={p:.2}, spearman \u{3c1}={s:.2}"),
+            ),
+            _ => None,
+        };
+        survivors.push(Survivor {
+            i,
+            j,
+            nmi: row.nmi,
+            n_pairs: row.n_pairs,
+            suffix,
+        });
+    }
+    if survivors.is_empty() {
+        return (None, None);
+    }
+
+    // unique labels across surviving pairs, in column order (matches CorrHeatmap's convention)
+    let mut idxs: Vec<usize> = Vec::new();
+    for s in &survivors {
+        if !idxs.contains(&s.i) {
+            idxs.push(s.i);
+        }
+        if !idxs.contains(&s.j) {
+            idxs.push(s.j);
+        }
+    }
+    idxs.sort_unstable();
+
+    // resolve the human label for a column: dictionary label, else header, else positional
+    let label_of = |idx: usize| -> String {
+        let sem = &col_sems[idx];
+        if !sem.label.is_empty() {
+            sem.label.clone()
+        } else if stats[idx].field.is_empty() {
+            format!("col {}", idx + 1)
+        } else {
+            stats[idx].field.clone()
+        }
+    };
+
+    let assoc_panel = if idxs.len() >= 2 {
+        let n = idxs.len();
+        let pos: HashMap<usize, usize> =
+            idxs.iter().enumerate().map(|(p, &idx)| (idx, p)).collect();
+        let mut matrix = vec![vec![f64::NAN; n]; n];
+        let mut hover_suffix = vec![vec![String::new(); n]; n];
+        for s in &survivors {
+            let (pi, pj) = (pos[&s.i], pos[&s.j]);
+            matrix[pi][pj] = s.nmi;
+            matrix[pj][pi] = s.nmi;
+            if let Some(suf) = &s.suffix {
+                hover_suffix[pi][pj].clone_from(suf);
+                hover_suffix[pj][pi].clone_from(suf);
+            }
+        }
+        let labels: Vec<String> = idxs.iter().map(|&idx| label_of(idx)).collect();
+        Some(Panel::new(
+            "Association (NMI)".to_string(),
+            PanelKind::AssocHeatmap {
+                labels,
+                matrix: mask_to_lower_triangle(matrix),
+                hover_suffix,
+            },
+        ))
+    } else {
+        None
+    };
+
+    // ranked top-N relationships, only when the heatmap has grown past the point where its
+    // in-cell numeric labels turn off (CORR_INCELL_MAX_N) — below that the heatmap alone is
+    // already legible, so a separate ranked view would be redundant.
+    let top_relationships_panel = if idxs.len() > CORR_INCELL_MAX_N {
+        // NMI alone rewards perfect co-occurrence in a narrow, sparsely-populated slice of rows
+        // (e.g. two columns only ever filled in together for one complaint sub-type) just as
+        // readily as it rewards a pair genuinely associated across the whole dataset. Gate the
+        // RANKING (not the heatmap, which still shows every survivor pair) on co-occurrence
+        // support relative to the best-populated pair among these columns, so a technically-
+        // perfect but thinly-supported association can't crowd out more broadly meaningful ones.
+        let max_n_pairs = survivors.iter().map(|s| s.n_pairs).max().unwrap_or(0);
+        let min_support = (max_n_pairs as f64 * BIVARIATE_MIN_SUPPORT_RATIO).round() as u64;
+        let top_n = args.flag_limit.max(1);
+        let mut ranked: Vec<&Survivor> = survivors
+            .iter()
+            .filter(|s| s.n_pairs >= min_support)
+            .collect();
+        ranked.sort_by(|a, b| {
+            b.nmi
+                .partial_cmp(&a.nmi)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+        ranked.truncate(top_n);
+        if ranked.is_empty() {
+            None
+        } else {
+            let labels: Vec<String> = ranked
+                .iter()
+                .map(|s| format!("{} \u{d7} {}", label_of(s.i), label_of(s.j)))
+                .collect();
+            let values: Vec<f64> = ranked.iter().map(|s| s.nmi).collect();
+            // dot SIZE encodes co-occurrence support (raw n_pairs); dot COLOR flags a nonlinear
+            // numeric pair (present-suffix == Pearson/Spearman diverged past the threshold).
+            let supports: Vec<f64> = ranked.iter().map(|s| s.n_pairs as f64).collect();
+            let nonlinear: Vec<bool> = ranked.iter().map(|s| s.suffix.is_some()).collect();
+            let hover_suffix: Vec<String> = ranked
+                .iter()
+                .map(|s| {
+                    format!(
+                        "<br>n={}{}",
+                        s.n_pairs,
+                        s.suffix.clone().unwrap_or_default()
+                    )
+                })
+                .collect();
+            Some(Panel::new(
+                "Top Relationships (NMI)".to_string(),
+                PanelKind::TopRelationships {
+                    labels,
+                    values,
+                    supports,
+                    nonlinear,
+                    hover_suffix,
+                },
+            ))
+        }
+    } else {
+        None
+    };
+
+    (assoc_panel, top_relationships_panel)
+}
+
 /// For line charts, order points by their x value so the connecting line is drawn in the
 /// correct sequence: numeric x is sorted numerically (fixing 1, 10, 2), while categorical x
 /// preserves input order.
@@ -6018,6 +6461,39 @@ enum PanelKind {
     CorrHeatmap {
         labels: Vec<String>,
         matrix: Vec<Vec<f64>>,
+    },
+    /// `viz smart --bivariate`: a normalized mutual information (NMI) heatmap over every
+    /// surviving column pair from moarstats' bivariate sidecar — unlike `CorrHeatmap` (Pearson,
+    /// numeric-only), NMI is defined for numeric AND categorical pairs, so this can chart
+    /// associations `CorrHeatmap` can't see at all. `matrix` is masked to the lower triangle
+    /// (`f64::NAN` elsewhere, via `mask_to_lower_triangle`) like `CorrHeatmap`. `hover_suffix` is
+    /// the same shape as `matrix`; a non-empty cell appends a nonlinearity warning (Pearson vs
+    /// Spearman diverge past `NONLINEAR_DIVERGENCE_THRESHOLD`) to that pair's hover.
+    AssocHeatmap {
+        labels:       Vec<String>,
+        matrix:       Vec<Vec<f64>>,
+        hover_suffix: Vec<Vec<String>>,
+    },
+    /// `viz smart --bivariate`: a ranked bar of the strongest column-pair associations (by NMI,
+    /// descending, capped to `--limit`) — built only when the association heatmap has more than
+    /// `CORR_INCELL_MAX_N` labels (past that point the heatmap's in-cell numeric annotations turn
+    /// off, so a ranked top-N view is the more legible way to see the strongest pairs). Unlike the
+    /// heatmap (which shows every survivor pair), the ranking is gated on co-occurrence support
+    /// (`BIVARIATE_MIN_SUPPORT_RATIO`) so a technically-perfect NMI backed by only a sparse,
+    /// narrow slice of rows can't crowd out a more broadly meaningful association. `labels` are
+    /// "FieldA × FieldB"; `hover_suffix` parallels `labels`/`values` and always leads with the
+    /// pair's co-occurring row count (`<br>n=1234`), followed by the same nonlinearity-warning
+    /// convention as `AssocHeatmap::hover_suffix` when applicable. Rendered as a horizontal
+    /// multivariate lollipop: `values` (NMI) drives the dot's position on a zoomed value axis,
+    /// `supports` (each pair's `n_pairs`, raw) the dot SIZE, and `nonlinear` the dot COLOR (amber
+    /// for a Pearson/Spearman-divergent numeric pair, the panel color otherwise). All five vectors
+    /// are parallel and in descending-NMI rank order.
+    TopRelationships {
+        labels:       Vec<String>,
+        values:       Vec<f64>,
+        supports:     Vec<f64>,
+        nonlinear:    Vec<bool>,
+        hover_suffix: Vec<String>,
     },
     /// Scatter of the most strongly correlated numeric pair — a drill-down for the correlation
     /// heatmap. Carries the two columns' precomputed, row-aligned values. `sizes`, when present,
@@ -9157,6 +9633,8 @@ fn outlier_marker_geo() -> Marker {
 /// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
 /// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
 fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
+    let mut args = args.clone();
+
     let Some(input) = args.arg_input.clone() else {
         return fail_incorrectusage_clierror!(
             "`viz smart` requires a file input (it derives charts from the dataset's statistics)."
@@ -9168,6 +9646,46 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
 
+    // `--bivariate` blows up combinatorially with wide datasets (50 choose 2 = 1,225 pairs at the
+    // cap), and can't be honored at all under non-default parsing (its moarstats subprocess is
+    // skipped just like `--smarter`'s, below). A cheap header-only read (no stats pass) decides
+    // the column-count cap. Computed BEFORE the `--bivariate` implication block below so that a
+    // column-cap/no-headers skip also skips the (potentially LLM-backed) `--dictionary infer`
+    // implication -- otherwise a wide or `--no-headers` input would still pay for an LLM call
+    // whose result the disabled bivariate panels would never use.
+    let bivariate_enabled =
+        if args.flag_bivariate && !(args.flag_no_headers || args.flag_delimiter.is_some()) {
+            let ncols = reader_and_headers(&args)?.1.len();
+            if ncols > BIVARIATE_MAX_COLUMNS {
+                eprintln!(
+                    "viz smart --bivariate: {ncols} columns exceeds the \
+                     {BIVARIATE_MAX_COLUMNS}-column cap (~{} pairs at the cap); skipping the \
+                     bivariate association panels. Run `qsv moarstats --bivariate` directly for \
+                     the full pairwise output.",
+                    BIVARIATE_MAX_COLUMNS * (BIVARIATE_MAX_COLUMNS - 1) / 2
+                );
+                false
+            } else {
+                true
+            }
+        } else {
+            false
+        };
+
+    // `--bivariate` is a turnkey convenience: it forces `--smarter` (the moarstats subprocess
+    // that writes the bivariate sidecar `--bivariate` itself enables below) and, unless the
+    // caller already gave an explicit `--dictionary`, infers one too (so the new panels'
+    // identifier/PII exclusion has a `Route::Skip` signal to work with). The dictionary-infer
+    // implication is gated on `bivariate_enabled` (not the raw flag) so a column-cap/no-headers
+    // skip doesn't still trigger an unused LLM call.
+    if args.flag_bivariate {
+        args.flag_smarter = true;
+    }
+    if bivariate_enabled && args.flag_dictionary.is_none() {
+        args.flag_dictionary = Some("infer".to_string());
+    }
+    let args = &args;
+
     // `--smarter` with non-default parsing (--no-headers / custom --delimiter) skips moarstats
     // enrichment (see below) AND forces the standard stats path to regenerate. get_stats_records
     // keys its `.stats.csv.data.jsonl` cache only by mtime + stat sufficiency, NOT by parsing
@@ -9175,6 +9693,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // would be reused and the "standard dashboard" would render from incorrectly parsed stats.
     let force_stats_regen =
         args.flag_smarter && (args.flag_no_headers || args.flag_delimiter.is_some());
+
+    // set only when THIS run's moarstats --bivariate subprocess succeeds, gating the association
+    // panels below. The sidecar path is deterministic from the input stem, so without this a
+    // stale sidecar left by a prior run (on since-changed data) — or a failed/pair-less current
+    // run — could be read as if it described the current input.
+    let mut bivariate_sidecar_fresh = false;
 
     if args.flag_smarter {
         // moarstats --advanced computes its advanced stats by RE-READING the input itself: the
@@ -9209,17 +9733,65 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             let stats_opts = "--infer-dates --infer-boolean --cardinality --mode --mad \
                               --quartiles --percentiles --force --stats-jsonl --dates-whitelist \
                               sniff";
-            let moar_argv = ["--advanced", "--force", "--stats-options", stats_opts];
-            if let Err(e) = util::run_qsv_cmd(
+            let mut moar_argv: Vec<&str> =
+                vec!["--advanced", "--force", "--stats-options", stats_opts];
+            // `--bivariate`: extend the SAME moarstats subprocess (no second invocation) with the
+            // bivariate sidecar request. Always asks for nmi (the association heatmap's value,
+            // works for numeric AND categorical pairs) plus pearson/spearman (their divergence
+            // flags a numeric pair as nonlinear).
+            // freshness bookkeeping for the bivariate sidecar, read after the moarstats run below;
+            // defaults are never read unless `bivariate_enabled`.
+            let mut sidecar_before: Option<std::time::SystemTime> = None;
+            let mut sidecar_cleared = false;
+            if bivariate_enabled {
+                moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,pearson,spearman"]);
+                // Remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
+                // moarstats (re)writes it only when the fresh run yields pairs, so clearing it
+                // first means a pair-less or failed current run leaves NO sidecar for the dashboard
+                // to read (it then soft-fails) instead of charting association stats computed for
+                // since-changed data. Snapshot the pre-run mtime FIRST so that even if the removal
+                // fails (e.g. a locked/read-only file), a stale copy whose mtime never advances is
+                // still caught as not-fresh below rather than trusted.
+                let sidecar = bivariate_csv_path(&input);
+                sidecar_before = std::fs::metadata(&sidecar).and_then(|m| m.modified()).ok();
+                sidecar_cleared = match std::fs::remove_file(&sidecar) {
+                    Ok(()) => true,
+                    Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+                };
+            }
+            let moar_result = util::run_qsv_cmd(
                 "moarstats",
                 &moar_argv,
                 &input,
                 "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
-            ) {
+            );
+            if let Err(e) = &moar_result {
                 eprintln!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
                      standard stats. Dashboard will omit advanced refinements."
                 );
+            }
+            // Trust the sidecar only when THIS run actually wrote it: moarstats must have succeeded
+            // AND a sidecar must now exist that is provably fresh — either the path was cleared
+            // before the run (so any file present was written just now) or, if the pre-delete
+            // failed, its mtime advanced past the pre-run snapshot. A present-but-unrefreshed file
+            // is a stale copy the delete couldn't remove: skip the panels (with a notice) rather
+            // than read the wrong data. An absent sidecar means no pairs — silently skip.
+            if bivariate_enabled && moar_result.is_ok() {
+                let sidecar_after = std::fs::metadata(bivariate_csv_path(&input))
+                    .and_then(|m| m.modified())
+                    .ok();
+                bivariate_sidecar_fresh =
+                    bivariate_sidecar_is_fresh(sidecar_before, sidecar_after, sidecar_cleared);
+                // a sidecar present but NOT fresh is a stale copy the pre-delete couldn't remove;
+                // warn so the missing panels aren't a mystery (an absent sidecar just means no
+                // pairs — stay silent there).
+                if !bivariate_sidecar_fresh && sidecar_after.is_some() {
+                    eprintln!(
+                        "viz smart --bivariate: a stale bivariate sidecar could not be removed \
+                         and was not refreshed by moarstats; skipping the association panels."
+                    );
+                }
             }
         }
     }
@@ -9435,6 +10007,29 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 panels.push(Panel::new(name, kind));
             },
             None => skipped.push(name),
+        }
+    }
+
+    // `--bivariate`: NMI-driven association heatmap + ranked top relationships, built from
+    // moarstats' bivariate sidecar (already produced by the `--smarter` block above, since
+    // `--bivariate` forces `--smarter`). Inserted here — BEFORE the correlation-heatmap block
+    // below — so that block's own `panels.insert(0, ..)` ends up on top: the LAST `insert(0, ..)`
+    // to run wins the front slot, so final visual order top-to-bottom is
+    // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
+    // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
+    if bivariate_sidecar_fresh {
+        let (assoc_panel, top_panel) = bivariate_panels(
+            args,
+            args.arg_input.as_deref().unwrap_or_default(),
+            &stats,
+            &col_sems,
+            is_map_col,
+        );
+        if let Some(panel) = top_panel {
+            panels.insert(0, panel);
+        }
+        if let Some(panel) = assoc_panel {
+            panels.insert(0, panel);
         }
     }
 
@@ -9803,6 +10398,8 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
             | PanelKind::CorrHeatmap { .. }
+            | PanelKind::AssocHeatmap { .. }
+            | PanelKind::TopRelationships { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
             | PanelKind::ContourPair { .. }
@@ -10127,6 +10724,85 @@ fn panel_trace(
             // standalone (inline) panels show the colorbar; grid panels use in-cell labels
             axes.is_none(),
         ),
+        PanelKind::AssocHeatmap {
+            labels,
+            matrix,
+            hover_suffix,
+        } => assoc_heatmap_trace(
+            labels
+                .iter()
+                .map(|l| truncate_label(l, CORR_LABEL_MAX_CHARS))
+                .collect(),
+            matrix.clone(),
+            hover_suffix.clone(),
+            axes.clone(),
+            // standalone (inline) panels show the colorbar; grid panels use in-cell labels
+            axes.is_none(),
+        ),
+        PanelKind::TopRelationships {
+            labels,
+            values,
+            supports,
+            nonlinear,
+            hover_suffix,
+        } => {
+            // Horizontal multivariate lollipop: value (NMI) on x, pair on the category y-axis
+            // (the zoomed value-axis range and category axis are built by the grid assembler for
+            // this panel kind, NOT via `bar_max`/`styled_y_axis`). Three encodings per dot:
+            // x = association strength, size = co-occurrence support, color = nonlinear flag.
+            // Rank #1 must sit at the TOP, but plotly places category index 0 at the axis BOTTOM,
+            // so every parallel array is fed weakest-first (reverse of the descending rank order).
+            let (floor, _ceil) = lollipop_value_range(values);
+            let xs: Vec<f64> = values.iter().rev().copied().collect();
+            // FULL (untruncated) pair labels are the category y-values so each pair gets its own
+            // row — two distinct pairs that share a long prefix must NOT collapse onto one line.
+            // The category axis (built by the assembler) truncates only the DISPLAYED tick text.
+            let ys: Vec<String> = labels.iter().rev().cloned().collect();
+            let sizes: Vec<f64> = supports.iter().rev().copied().collect();
+            // stems: each extends leftward from its dot down to the (zoomed) axis floor, drawn as
+            // an asymmetric x error bar with no rightward arm and no end caps (`width(0)`).
+            let stem_minus: Vec<f64> = xs.iter().map(|v| (v - floor).max(0.0)).collect();
+            let colors: Vec<&'static str> = nonlinear
+                .iter()
+                .rev()
+                .map(|&nl| {
+                    if nl {
+                        NONLINEAR_MARKER_COLOR
+                    } else {
+                        REGULAR_MARKER_COLOR
+                    }
+                })
+                .collect();
+            // per-dot hover carries the FULL (untruncated) pair label plus n= and any nonlinearity
+            // note; the y-axis tick shows only the truncated label.
+            let templates: Vec<String> = labels
+                .iter()
+                .rev()
+                .zip(hover_suffix.iter().rev())
+                .map(|(full, suffix)| format!("{full}<br>NMI = %{{x:.3f}}{suffix}<extra></extra>"))
+                .collect();
+            let marker = Marker::new()
+                .size_array(scale_bubble_sizes(&sizes))
+                .color_array(colors);
+            let mut sc = Scatter::new(xs.clone(), ys)
+                .name(panel.name.clone())
+                .mode(Mode::Markers)
+                .marker(marker)
+                .error_x(
+                    ErrorData::new(ErrorType::Data)
+                        .symmetric(false)
+                        .array(vec![0.0_f64; xs.len()])
+                        .array_minus(stem_minus)
+                        .width(0)
+                        .thickness(1.5)
+                        .color(MUTED_COLOR),
+                )
+                .hover_template_array(templates);
+            if let Some((x, y)) = &axes {
+                sc = sc.x_axis(x.clone()).y_axis(y.clone());
+            }
+            sc
+        },
         PanelKind::MeasureByDim { labels, values } => {
             bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
             let mut bar = Bar::new(labels.clone(), values.clone())
@@ -10204,8 +10880,10 @@ fn smart_grid_parts(
     // tick labels — truncated to CORR_LABEL_MAX_CHARS — aren't clipped against the page edge.
     let left_margin = panels
         .iter()
-        .find_map(|p| match &p.kind {
-            PanelKind::CorrHeatmap { labels, .. } => Some(labels),
+        .filter_map(|p| match &p.kind {
+            PanelKind::CorrHeatmap { labels, .. } | PanelKind::AssocHeatmap { labels, .. } => {
+                Some(labels.as_slice())
+            },
             PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
@@ -10215,6 +10893,7 @@ fn smart_grid_parts(
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::MeasureByDim { .. }
+            | PanelKind::TopRelationships { .. }
             | PanelKind::CyclicProfile { .. }
             | PanelKind::Histogram { .. }
             | PanelKind::Map { .. }
@@ -10223,14 +10902,26 @@ fn smart_grid_parts(
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. } => None,
         })
-        .map_or(DEFAULT_LEFT_MARGIN_PX, |labels| {
-            let longest = labels
-                .iter()
-                .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
-                .max()
-                .unwrap_or(0);
+        .flat_map(<[String]>::iter)
+        .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
+        .max()
+        .map_or(DEFAULT_LEFT_MARGIN_PX, |longest| {
             (longest * CORR_LABEL_PX_PER_CHAR + 24).max(DEFAULT_LEFT_MARGIN_PX)
         });
+    // the horizontal Top Relationships lollipop puts its (truncated) pair labels on the y-axis, at
+    // the shared page-left edge (it's a full-width overview panel); widen the margin to fit them.
+    let toprel_margin = panels
+        .iter()
+        .filter_map(|p| match &p.kind {
+            PanelKind::TopRelationships { labels, .. } => labels
+                .iter()
+                .map(|l| l.chars().count().min(TOPREL_LABEL_MAX_CHARS))
+                .max(),
+            _ => None,
+        })
+        .max()
+        .map_or(0, |longest| longest * CORR_LABEL_PX_PER_CHAR + 24);
+    let left_margin = left_margin.max(toprel_margin);
     // log freq panels carry a rotated y-axis title cue; reserve extra left room (shared across
     // the single-Plot grid) so it isn't clipped against the page edge.
     let left_margin = if panels.iter().any(|p| panel_is_log(p, freq, log_scale)) {
@@ -10511,12 +11202,35 @@ fn smart_grid_parts(
         // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
         // above the cell. x-axis anchors to its paired y-axis and vice versa.
         let geom = geoms[n].clone();
-        let x_axis = styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq))
-            .domain(&geom.x_domain)
-            .anchor(yref.clone());
-        let y_axis = styled_y_axis(bar_max, log_y, theme)
-            .domain(&geom.y_domain)
-            .anchor(xref.clone());
+        // the Top Relationships lollipop is the one horizontal panel: value (NMI) on a zoomed x,
+        // pair on the category y — the opposite axis roles from every other (vertical) panel.
+        let (x_axis, y_axis) =
+            if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+                let (floor, ceil) = lollipop_value_range(values);
+                // bottom-to-top (weakest-first), matching the reversed y-values the trace feeds
+                let ticks: Vec<String> = labels
+                    .iter()
+                    .rev()
+                    .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
+                    .collect();
+                (
+                    lollipop_value_axis(floor, ceil, theme)
+                        .domain(&geom.x_domain)
+                        .anchor(yref.clone()),
+                    lollipop_category_axis(theme, &ticks)
+                        .domain(&geom.y_domain)
+                        .anchor(xref.clone()),
+                )
+            } else {
+                (
+                    styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq))
+                        .domain(&geom.x_domain)
+                        .anchor(yref.clone()),
+                    styled_y_axis(bar_max, log_y, theme)
+                        .domain(&geom.y_domain)
+                        .anchor(xref.clone()),
+                )
+            };
         axes.push((pos, x_axis, y_axis));
         annotations.push(
             Annotation::new()
@@ -10535,7 +11249,8 @@ fn smart_grid_parts(
         // small enough to stay legible in one dashboard cell. Category axes index annotations
         // by serial number (0-based), and the text flips to white on the dark high-|r| cells
         // for contrast against the RdBu scale.
-        if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
+        if let PanelKind::CorrHeatmap { matrix, .. } | PanelKind::AssocHeatmap { matrix, .. } =
+            &panel.kind
             && matrix.len() <= CORR_INCELL_MAX_N
         {
             for ann in corr_incell_annotations(matrix, &xref, &yref) {
@@ -11134,8 +11849,12 @@ fn smart_inline_panel_plot(
         panel.kind,
         PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
     );
-    let is_corr = matches!(panel.kind, PanelKind::CorrHeatmap { .. });
+    let is_corr = matches!(
+        panel.kind,
+        PanelKind::CorrHeatmap { .. } | PanelKind::AssocHeatmap { .. }
+    );
     let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
+    let is_toprel = matches!(panel.kind, PanelKind::TopRelationships { .. });
     let (trace, bar_max, log_y) =
         panel_trace(panel, color, freq, hist, outliers, None, theme, log_scale);
 
@@ -11143,13 +11862,35 @@ fn smart_inline_panel_plot(
     plot.add_trace(trace);
 
     // correlation cells need extra left room for tick labels and right room for the colorbar;
+    // the horizontal Top Relationships lollipop needs left room for its (truncated) pair labels;
     // log freq cells need a little extra left room for the rotated y-axis title cue.
     let (left, right) = if is_corr {
         (110, 90)
+    } else if is_toprel {
+        (TOPREL_LABEL_MAX_CHARS * CORR_LABEL_PX_PER_CHAR + 24, 30)
     } else if log_y {
         (60 + LOG_AXIS_TITLE_MARGIN_PX, 30)
     } else {
         (60, 30)
+    };
+    // the lollipop is the one horizontal panel: value (NMI) on a zoomed x, pair on the category y
+    // — the opposite axis roles from every other (vertical) inline panel.
+    let (x_axis, y_axis) = if let PanelKind::TopRelationships { values, labels, .. } = &panel.kind {
+        let (floor, ceil) = lollipop_value_range(values);
+        let ticks: Vec<String> = labels
+            .iter()
+            .rev()
+            .map(|l| truncate_label(l, TOPREL_LABEL_MAX_CHARS))
+            .collect();
+        (
+            lollipop_value_axis(floor, ceil, theme),
+            lollipop_category_axis(theme, &ticks),
+        )
+    } else {
+        (
+            styled_x_axis(is_box, is_date, theme, freq_bar_tick_text(panel, freq)),
+            styled_y_axis(bar_max, log_y, theme),
+        )
     };
     let mut layout = Layout::new()
         .show_legend(false)
@@ -11163,13 +11904,8 @@ fn smart_inline_panel_plot(
                 .right(right)
                 .pad(4),
         )
-        .x_axis(styled_x_axis(
-            is_box,
-            is_date,
-            theme,
-            freq_bar_tick_text(panel, freq),
-        ))
-        .y_axis(styled_y_axis(bar_max, log_y, theme));
+        .x_axis(x_axis)
+        .y_axis(y_axis);
     if !themed {
         layout = layout
             .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -11177,7 +11913,8 @@ fn smart_inline_panel_plot(
             .plot_background_color(PAPER_BG);
     }
 
-    if let PanelKind::CorrHeatmap { matrix, .. } = &panel.kind
+    if let PanelKind::CorrHeatmap { matrix, .. } | PanelKind::AssocHeatmap { matrix, .. } =
+        &panel.kind
         && matrix.len() <= CORR_INCELL_MAX_N
     {
         layout = layout.annotations(corr_incell_annotations(matrix, "x", "y"));
@@ -11966,6 +12703,8 @@ struct SubplotGeometry {
 fn is_overview_panel(kind: &PanelKind) -> bool {
     match kind {
         PanelKind::CorrHeatmap { .. }
+        | PanelKind::AssocHeatmap { .. }
+        | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
@@ -12201,6 +12940,82 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
             title_font = title_font.family(FONT_FAMILY);
         }
         a = a.title(Title::with_text(LOG_AXIS_TITLE).font(title_font));
+    }
+    a
+}
+
+/// Zoomed value-axis range `[floor, ceil]` for the "Top Relationships" lollipop (`viz smart
+/// --bivariate`), given the ranked NMI values. Anchors the floor near the smallest shown value
+/// (not 0) so near-ceiling pairs stay separable, but never narrower than `TOPREL_MIN_SPAN` (which
+/// guards the all-tied-at-1.0 case from collapsing to a sliver) and never below 0; the top is
+/// padded and capped at `TOPREL_CEIL_CAP`. Empty input (never produced by the builder, but kept
+/// total) falls back to the full `[0, 1]` NMI domain.
+fn lollipop_value_range(values: &[f64]) -> (f64, f64) {
+    let max = values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min = values
+        .iter()
+        .copied()
+        .filter(|v| v.is_finite())
+        .fold(f64::INFINITY, f64::min);
+    if !max.is_finite() || !min.is_finite() {
+        return (0.0, 1.0);
+    }
+    // pad proportionally to the data span (so the dots spread across the panel), but at least
+    // TOPREL_MIN_PAD absolute — that absolute floor is what rescues a near-tied cluster (span ≈ 0)
+    // from collapsing against the panel edge.
+    let pad = ((max - min) * TOPREL_PAD_FRAC).max(TOPREL_MIN_PAD);
+    let ceil = (max + pad).min(TOPREL_CEIL_CAP);
+    let floor = (min - pad).max(0.0);
+    // degeneracy guard only: an all-EXACTLY-tied top-N (span 0, pad = TOPREL_MIN_PAD) still yields
+    // a >0 span here, but keep a hard minimum so the axis can never render zero-width.
+    if ceil - floor < TOPREL_MIN_SPAN {
+        return ((ceil - TOPREL_MIN_SPAN).max(0.0), ceil);
+    }
+    (floor, ceil)
+}
+
+/// The zoomed, linear VALUE (x) axis for a horizontal "Top Relationships" lollipop — light
+/// vertical gridlines, small ticks, range fixed to the top-N band via `lollipop_value_range`.
+/// Mirrors `styled_y_axis`'s chrome so the panel reads consistently with the rest of the grid.
+fn lollipop_value_axis(floor: f64, ceil: f64, theme: Option<BuiltinTheme>) -> Axis {
+    let mut a = Axis::new()
+        .show_grid(true)
+        .grid_width(1)
+        .zero_line(false)
+        .show_line(false)
+        .range(vec![floor, ceil]);
+    if theme.is_none() {
+        a = a
+            .grid_color(GRID_COLOR)
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
+    }
+    a
+}
+
+/// The CATEGORY (y) axis for a horizontal "Top Relationships" lollipop — one tick per ranked pair,
+/// no gridlines, small ticks. The trace's y-values are the FULL pair labels (so each pair is a
+/// distinct row); `tick_text` overrides only what's DISPLAYED with the caller's already-truncated
+/// labels (`tick_text[i]` labeling category position `i`, bottom-to-top). The full name still rides
+/// in each dot's hover template. `tick_text` is bottom-to-top (weakest-first), matching the
+/// reversed order the trace feeds its y-values.
+fn lollipop_category_axis(theme: Option<BuiltinTheme>, tick_text: &[String]) -> Axis {
+    let mut a = Axis::new()
+        .type_(AxisType::Category)
+        .show_grid(false)
+        .zero_line(false)
+        .show_line(false)
+        .tick_mode(TickMode::Array)
+        .tick_values((0..tick_text.len()).map(|i| i as f64).collect())
+        .tick_text(tick_text.to_vec());
+    if theme.is_none() {
+        a = a
+            .tick_color(AXIS_LINE)
+            .tick_font(Font::new().family(FONT_FAMILY).size(10));
     }
     a
 }
@@ -15269,5 +16084,82 @@ mod tests {
             100.0,
             "the real exterior is kept"
         );
+    }
+
+    #[test]
+    fn lollipop_value_range_zooms_near_tied_cluster() {
+        // near-ceiling cluster (the common bivariate case): the axis must NOT start at 0 — it
+        // should zoom in so the dots separate, while staying below the smallest value.
+        let (floor, ceil) = lollipop_value_range(&[0.9949, 0.999, 1.0]);
+        assert!(
+            floor > 0.9,
+            "floor should zoom in near the data, got {floor}"
+        );
+        assert!(
+            floor < 0.9949,
+            "floor must sit below the smallest value, got {floor}"
+        );
+        assert!(ceil <= TOPREL_CEIL_CAP, "ceil must be capped, got {ceil}");
+        assert!(ceil >= 1.0, "ceil must clear the max value, got {ceil}");
+    }
+
+    #[test]
+    fn lollipop_value_range_guards_all_tied() {
+        // an all-EXACTLY-tied top-N (span 0) must still yield a finite, non-degenerate, in-bounds
+        // range (identical values legitimately overlap; the axis must not render zero-width).
+        let (floor, ceil) = lollipop_value_range(&[1.0, 1.0, 1.0]);
+        assert!(floor >= 0.0 && ceil <= TOPREL_CEIL_CAP);
+        assert!(
+            ceil - floor >= TOPREL_MIN_SPAN - f64::EPSILON,
+            "span {} must be at least TOPREL_MIN_SPAN",
+            ceil - floor
+        );
+        assert!(ceil >= 1.0, "the tied value must be inside the range");
+    }
+
+    #[test]
+    fn lollipop_value_range_wide_spread() {
+        // a genuinely spread top-N pads proportionally around the data and never dips below 0.
+        let (floor, ceil) = lollipop_value_range(&[0.3, 0.6, 0.9]);
+        assert!(floor >= 0.0);
+        assert!(floor < 0.3, "floor pads below the min, got {floor}");
+        assert!(
+            ceil > 0.9 && ceil <= TOPREL_CEIL_CAP,
+            "ceil pads above the max, got {ceil}"
+        );
+    }
+
+    #[test]
+    fn bivariate_sidecar_fresh_when_path_cleared_and_written() {
+        // pre-delete succeeded (cleared) and a file exists now => moarstats wrote it this run.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(bivariate_sidecar_is_fresh(Some(t0), Some(t0), true));
+        // even with no pre-existing file, a present-after file with cleared path is fresh.
+        assert!(bivariate_sidecar_is_fresh(None, Some(t0), true));
+    }
+
+    #[test]
+    fn bivariate_sidecar_not_fresh_when_absent_after_run() {
+        // moarstats produced no pairs (no sidecar written); nothing to read.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(!bivariate_sidecar_is_fresh(Some(t0), None, true));
+        assert!(!bivariate_sidecar_is_fresh(None, None, false));
+    }
+
+    #[test]
+    fn bivariate_sidecar_stale_when_delete_failed_and_mtime_unchanged() {
+        // the pre-delete FAILED (not cleared) and moarstats did not rewrite the sidecar, so its
+        // mtime is unchanged from the pre-run snapshot: this is the stale copy we must NOT trust.
+        let t0 = std::time::UNIX_EPOCH;
+        assert!(!bivariate_sidecar_is_fresh(Some(t0), Some(t0), false));
+    }
+
+    #[test]
+    fn bivariate_sidecar_fresh_when_delete_failed_but_mtime_advanced() {
+        // the pre-delete failed but moarstats still overwrote the sidecar in place: the advanced
+        // mtime proves the current run wrote it, so it is fresh.
+        let before = std::time::UNIX_EPOCH;
+        let after = before + std::time::Duration::from_secs(1);
+        assert!(bivariate_sidecar_is_fresh(Some(before), Some(after), false));
     }
 }

@@ -179,6 +179,99 @@ fn viz_histogram() {
 }
 
 #[test]
+fn viz_scatter3d_hover_labels_columns() {
+    // plotly's default 3D hover labels the coordinates with the bare letters x/y/z; we override
+    // it with a template that names the real columns and comma-groups the values.
+    let wrk = Workdir::new("viz_scatter3d_hover_labels_columns");
+    wrk.create_from_string("cube.csv", "a,b,c\n1000,2,3\n4,5000,6\n7,8,9000\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["scatter3d", "cube.csv", "--x", "a", "--y", "b", "--z", "c"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("a: %{x:,.3f}") && html.contains("c: %{z:,.3f}"),
+        "3D hover should name x/y/z columns with thousands-grouped values; html: {html}"
+    );
+}
+
+#[test]
+fn viz_radar_hover_shows_axis_means() {
+    // Without a hover template plotly shows only "trace 0"; we attach per-vertex hovertext naming
+    // each axis with its ACTUAL (comma-grouped) mean.
+    let wrk = Workdir::new("viz_radar_hover_shows_axis_means");
+    wrk.create_from_string(
+        "ratings.csv",
+        "brand,speed,power\nx,1000,2\nx,2000,4\ny,10,20\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "radar",
+        "ratings.csv",
+        "--cols",
+        "speed,power",
+        "--series",
+        "brand",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""hovertext":["#),
+        "radar should set per-vertex hovertext; html: {html}"
+    );
+    // lines+markers so each axis intersection is its own hoverable vertex, not just the ring
+    assert!(
+        html.contains(r#""mode":"lines+markers""#),
+        "radar should render markers at each axis vertex; html: {html}"
+    );
+    // brand x: mean speed = (1000 + 2000) / 2 = 1500
+    assert!(
+        html.contains("speed: 1,500"),
+        "radar hover should show the axis mean with thousands separators; html: {html}"
+    );
+}
+
+#[test]
+fn viz_scatter_bubble_hover_surfaces_size_and_color() {
+    // A bubble/color scatter encodes extra dimensions onto marker size/color; plotly's default
+    // hover shows only (x, y), so we pre-render hovertext that also names the size/color values.
+    let wrk = Workdir::new("viz_scatter_bubble_hover_surfaces_size_and_color");
+    wrk.create_from_string("sales.csv", "x,y,sz,col\n5,10000,3,0.5\n6,20000,4,0.6\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter",
+        "sales.csv",
+        "--x",
+        "x",
+        "--y",
+        "y",
+        "--size",
+        "sz",
+        "--color",
+        "col",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""hovertext":["#),
+        "bubble scatter should set a hovertext array; html: {html}"
+    );
+    assert!(
+        html.contains("y: 10,000"),
+        "hover should comma-group the y value; html: {html}"
+    );
+    assert!(
+        html.contains("sz: 3") && html.contains("col: 0.5"),
+        "hover should surface the size and color dimensions; html: {html}"
+    );
+}
+
+#[test]
 fn viz_box_grouped() {
     let wrk = Workdir::new("viz_box_grouped");
     fruits(&wrk);
@@ -552,6 +645,12 @@ fn viz_smart_smarter_promotes_bimodal_to_histogram() {
     assert!(
         html.contains(r#""type":"histogram""#),
         "--smarter should populate bimodality_coefficient and render a histogram; html: {html}"
+    );
+    // the histogram panel labels its binned value + count in the hover (comma-grouped), since the
+    // dashboard cell has no axis titles
+    assert!(
+        html.contains("count: %{y:,}"),
+        "histogram panel hover should label the comma-grouped count; html: {html}"
     );
 }
 

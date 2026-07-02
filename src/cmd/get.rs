@@ -112,9 +112,11 @@ get options:
     --ckan-api <url>       CKAN Action API base URL. Overrides the QSV_CKAN_API
                            env var. [default: https://data.dathere.com/api/3/action]
     --ckan-token <token>   CKAN API token. Overrides the QSV_CKAN_TOKEN env var.
-    --timeout <secs>       HTTP inactivity timeout in seconds. Aborts only if no data is
-                           received from the server for this long (a slow-but-steady
-                           download is NOT aborted). 0 = no timeout. [default: 30]
+    --timeout <secs>       HTTP timeout in seconds. For cache downloads this is an INACTIVITY
+                           timeout: the transfer aborts only if no data is received from the
+                           server for this long, so a slow-but-steady download is NOT cut off.
+                           Preview mode (--sample / --offset / --random) instead uses it as a
+                           total-request timeout. 0 = no timeout. [default: 30]
     --older-than <val>     For cache-prune: remove entries older than this age.
                            Accepts seconds, or a value with an s/m/h/d/w suffix
                            (e.g. 3600, 90m, 30d, 2w).

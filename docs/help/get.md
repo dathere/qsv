@@ -171,7 +171,7 @@ qsv get --help
 | &nbsp;`‑‑cloud‑opt`&nbsp; | string | Extra cloud object-store config as a `key=value` pair (repeatable), e.g. region=us-east-1 or skip_signature=true. Overrides the AWS_*/AZURE_*/GOOGLE_* environment. (get_cloud only) |  |
 | &nbsp;`‑‑ckan‑api`&nbsp; | string | CKAN Action API base URL. Overrides the QSV_CKAN_API env var. | `https://data.dathere.com/api/3/action` |
 | &nbsp;`‑‑ckan‑token`&nbsp; | string | CKAN API token. Overrides the QSV_CKAN_TOKEN env var. |  |
-| &nbsp;`‑‑timeout`&nbsp; | integer | HTTP inactivity timeout in seconds. Aborts only if no data is received from the server for this long (a slow-but-steady download is NOT aborted). 0 = no timeout. | `30` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | HTTP timeout in seconds. For cache downloads this is an INACTIVITY timeout: the transfer aborts only if no data is received from the server for this long, so a slow-but-steady download is NOT cut off. Preview mode (--sample / --offset / --random) instead uses it as a total-request timeout. 0 = no timeout. | `30` |
 | &nbsp;`‑‑older‑than`&nbsp; | string | For cache-prune: remove entries older than this age. Accepts seconds, or a value with an s/m/h/d/w suffix (e.g. 3600, 90m, 30d, 2w). |  |
 | &nbsp;`‑‑json`&nbsp; | flag | For cache-list/cache-info: output JSON instead of a table. |  |
 | &nbsp;`‑‑verify`&nbsp; | flag | For cache-list: recompute each cached blob's BLAKE3 and report OK/FAIL per name (exits non-zero on any failure). |  |

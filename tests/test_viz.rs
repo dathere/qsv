@@ -2536,6 +2536,26 @@ fn viz_smart_heatmap_density_threshold() {
     assert!(stderr.contains("--heatmap-density 2"));
 }
 
+// A globe-spanning dataset renders the smart map as an offline ScatterGeo world-overview, NOT a
+// DensityMapbox — so even with a low --heatmap-density threshold, no heatmap is drawn and the
+// heatmap note must NOT be emitted (it would misdescribe the ScatterGeo markers as a heatmap).
+#[test]
+fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
+    let wrk = Workdir::new("viz_smart_heatmap_density_note_suppressed_for_global_extent");
+    quakes(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "quakes.csv", "--heatmap-density", "2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(!html.contains(r#""type":"densitymapbox""#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(!stderr.contains("--heatmap-density"));
+}
+
 // `viz smart` adds the row identifier (here the near-unique `place` column) to each map point's
 // hover, in addition to the coordinates. Dataset-derived, so it holds whether or not the geocode
 // index is available.

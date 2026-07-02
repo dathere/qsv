@@ -9343,17 +9343,11 @@ fn build_map_panel(
     // decide density vs. markers from the full row count, then cap the embedded points so a huge
     // dataset doesn't bloat the HTML or freeze the browser on pan/zoom. A `--heatmap-density` of 0
     // disables the heatmap entirely (always render individual markers, whatever the point count).
-    let heatmap_threshold = args.flag_heatmap_density;
-    let density = heatmap_threshold > 0 && lats.len() >= heatmap_threshold;
-    if density {
-        viz_note(&format!(
-            "viz smart: map has {} mappable points (>= --heatmap-density {heatmap_threshold}); \
-             drawing the core as a density heatmap. Per-point hover isn't available in heatmap \
-             mode — raise --heatmap-density (or set it to 0) to render individual markers with \
-             full per-point hover.",
-            lats.len()
-        ));
-    }
+    // The user-facing heatmap note is emitted by the caller, but only once it's certain a
+    // DensityMapbox will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
+    // becomes a `ScatterGeo` world-overview and static image export coerces `Map` -> `Geo`, so
+    // neither draws a heatmap despite `density` being true here.
+    let density = args.flag_heatmap_density > 0 && lats.len() >= args.flag_heatmap_density;
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
     // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
@@ -10566,6 +10560,24 @@ fn build_smart(
                     };
                     (Some((p, cols)), None)
                 } else {
+                    // HTML output: a local-extent density panel actually renders as a DensityMapbox
+                    // here (global extents are `Geo` markers, image export was coerced above), so
+                    // this is the point at which the heatmap note is truthful.
+                    if let PanelKind::Map {
+                        density: true,
+                        lats,
+                        ..
+                    } = &p.kind
+                    {
+                        viz_note(&format!(
+                            "viz smart: map has {} mappable points (>= --heatmap-density {}); \
+                             drawing the core as a density heatmap. Per-point hover isn't \
+                             available in heatmap mode — raise --heatmap-density (or set it to 0) \
+                             to render individual markers with full per-point hover.",
+                            lats.len(),
+                            args.flag_heatmap_density
+                        ));
+                    }
                     (Some((p, cols)), choro)
                 }
             },

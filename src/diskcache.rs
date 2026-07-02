@@ -1810,6 +1810,20 @@ mod rich {
         )?;
         let rt = tokio::runtime::Runtime::new()?;
 
+        // Map a response-body read error to a CliError. A reqwest read (inactivity)
+        // timeout surfaces here as a body error whose `is_timeout()` is true; turn that
+        // into an actionable message instead of the cryptic raw reqwest text.
+        fn body_read_err(url: &str, e: &reqwest::Error) -> CliError {
+            if e.is_timeout() {
+                CliError::Other(format!(
+                    "get: download stalled: no data received from {url} within the inactivity \
+                     timeout — increase --timeout"
+                ))
+            } else {
+                CliError::Other(format!("get: reading {url} failed: {e}"))
+            }
+        }
+
         // Stream a whole response body into the sink, returning the byte count.
         async fn drain(
             sink: &mut IngestSink,
@@ -1820,8 +1834,7 @@ mod rich {
             let mut have = 0u64;
             let mut stream = resp.bytes_stream();
             while let Some(chunk) = stream.next().await {
-                let chunk = chunk
-                    .map_err(|e| CliError::Other(format!("get: reading {url} failed: {e}")))?;
+                let chunk = chunk.map_err(|e| body_read_err(url, &e))?;
                 have += chunk.len() as u64;
                 sink.write(&chunk)?;
             }
@@ -1985,9 +1998,10 @@ mod rich {
                                     )));
                                 },
                             }
-                            let body = resp.bytes().await.map_err(|err| {
-                                CliError::Other(format!("get: reading {url} failed: {err}"))
-                            })?;
+                            let body = resp
+                                .bytes()
+                                .await
+                                .map_err(|err| body_read_err(&url, &err))?;
                             if body.len() as u64 != e - s {
                                 return Err(CliError::Other(format!(
                                     "get: range {s}-{} of {url} returned {} bytes, expected {}",

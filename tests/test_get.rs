@@ -96,6 +96,68 @@ async fn serve_big(c: web::Data<Counters>, req: HttpRequest) -> HttpResponse {
     ranged_response(big_csv().as_bytes(), BIG_ETAG, &req, &c)
 }
 
+// --- Inactivity (idle) timeout handlers -------------------------------------
+// Both IGNORE Range and return a 200 chunked/streaming body, mirroring the WPRDC
+// downstream proxy that motivated making `--timeout` an inactivity timeout: `get`
+// then takes the full-body streaming `drain` path.
+
+// Streams a small CSV in many chunks with a gap BETWEEN chunks that is short
+// enough to keep resetting the client's idle read-timeout, while the TOTAL stream
+// time deliberately EXCEEDS a short `--timeout`. A total-request deadline would
+// abort this; an inactivity timeout must not.
+async fn serve_slow_active(_req: HttpRequest) -> HttpResponse {
+    const CHUNKS: [&[u8]; 14] = [
+        b"id,name\n",
+        b"1,a\n",
+        b"2,b\n",
+        b"3,c\n",
+        b"4,d\n",
+        b"5,e\n",
+        b"6,f\n",
+        b"7,g\n",
+        b"8,h\n",
+        b"9,i\n",
+        b"10,j\n",
+        b"11,k\n",
+        b"12,l\n",
+        b"13,m\n",
+    ];
+    let body = futures_util::stream::unfold(0usize, |i| async move {
+        if i >= CHUNKS.len() {
+            return None;
+        }
+        if i > 0 {
+            // gap << --timeout, but summed across all chunks > --timeout
+            tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        }
+        Some((
+            Ok::<_, std::io::Error>(web::Bytes::from_static(CHUNKS[i])),
+            i + 1,
+        ))
+    });
+    HttpResponse::Ok().content_type("text/csv").streaming(body)
+}
+
+// Sends headers + a first chunk, then STALLS (no data) far longer than the
+// client's `--timeout`, so an inactivity read-timeout must fire and abort.
+async fn serve_stalled(_req: HttpRequest) -> HttpResponse {
+    let body = futures_util::stream::unfold(0usize, |i| async move {
+        match i {
+            0 => Some((
+                Ok::<_, std::io::Error>(web::Bytes::from_static(b"id,name\n")),
+                1,
+            )),
+            1 => {
+                // Stall well past the client's --timeout (which the test sets to 1s).
+                tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+                Some((Ok(web::Bytes::from_static(b"1,a\n")), 2))
+            },
+            _ => None,
+        }
+    });
+    HttpResponse::Ok().content_type("text/csv").streaming(body)
+}
+
 // A request handler that serves STATES_CSV with an ETag and honors
 // conditional GETs: a matching `If-None-Match` yields 304 (counted as a
 // revalidation, NOT a body send), so a test can assert that a second
@@ -193,6 +255,9 @@ async fn run_webserver(
             .service(web::resource("/one_fresh.csv").to(serve_one_fresh))
             // A larger object for the HTTP ranged/streaming download test.
             .service(web::resource("/big.csv").to(serve_big))
+            // Inactivity-timeout tests: a slow-but-active stream and a stalled stream.
+            .service(web::resource("/slow_active.csv").to(serve_slow_active))
+            .service(web::resource("/stalled.csv").to(serve_stalled))
             // Path-style S3 object: object_store issues `GET /{bucket}/{key}`
             // against the endpoint override. Reuses the ETag/304 handler so the
             // cloud path can assert revalidation just like the HTTP path.
@@ -487,6 +552,64 @@ fn get_http_ranged_download() {
     let mut count = wrk.command("count");
     count.env("QSV_CACHE_DIR", &cache_dir).arg("dc:big.csv");
     assert_eq!(wrk.stdout::<String>(&mut count), "500");
+}
+
+#[test]
+#[serial]
+fn get_idle_timeout_allows_slow_but_active_stream() {
+    // A slow-but-steady download must NOT be aborted: the inactivity (read) timeout
+    // resets on every received chunk, even though the TOTAL stream time exceeds
+    // --timeout. (A total-request deadline — the old behavior — would fail this.)
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_idle_timeout_allows_slow_but_active_stream");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("slow_active.csv");
+    let outfile = wrk.path("slow_out.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "slow_active.csv"])
+        // 14 chunks, 250ms apart => ~3.25s total > 2s timeout, but each gap << 2s
+        .args(["--timeout", "2"])
+        .args(["--output", outfile.to_str().unwrap()])
+        .arg(&url);
+    wrk.assert_success(&mut g);
+
+    let out = std::fs::read_to_string(&outfile).unwrap();
+    assert!(out.starts_with("id,name\n"), "unexpected output:\n{out}");
+    assert!(out.contains("13,m\n"), "stream was truncated:\n{out}");
+    assert_eq!(
+        out.lines().count(),
+        14,
+        "expected the full 14-line stream:\n{out}"
+    );
+}
+
+#[test]
+#[serial]
+fn get_idle_timeout_aborts_stalled_stream() {
+    // A stalled connection (no data past the inactivity window) must abort with a
+    // clear, actionable message rather than a cryptic reqwest decode error.
+    let server = GetWebServer::start();
+    let wrk = Workdir::new("get_idle_timeout_aborts_stalled_stream");
+    let cache_dir = wrk.path("qsvcache");
+    let url = server.url("stalled.csv");
+
+    let mut g = wrk.command("get");
+    g.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "stalled.csv"])
+        .args(["--timeout", "1"])
+        .arg(&url);
+    let out = wrk.output(&mut g);
+    assert!(
+        !out.status.success(),
+        "a stalled download should fail, but it succeeded"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("download stalled") && stderr.contains("increase --timeout"),
+        "expected a clear stalled-download error, got:\n{stderr}"
+    );
 }
 
 #[test]

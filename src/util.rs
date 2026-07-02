@@ -486,7 +486,7 @@ pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
 /// # Arguments
 ///
 /// * `user_agent` - Optional custom user agent string
-/// * `timeout_secs` - Timeout in seconds for HTTP requests. If 0, no timeout is used.
+/// * `timeout_secs` - Inactivity (idle) timeout in seconds for HTTP requests. If 0, no timeout.
 /// * `base_url` - Optional base URL for retry configuration
 ///
 /// # Returns
@@ -497,7 +497,7 @@ pub fn set_user_agent(user_agent: Option<String>) -> CliResult<String> {
 /// - Rustls TLS backend
 /// - HTTP/2 adaptive window
 /// - Connection verbose logging (when debug/trace enabled)
-/// - Timeout configuration
+/// - Idle/read timeout configuration (NOT a total-request deadline)
 /// - Retry logic for service unavailable errors
 pub fn create_reqwest_async_client(
     user_agent: Option<String>,
@@ -526,12 +526,16 @@ pub fn create_reqwest_async_client(
         .retry(retries);
 
     if timeout_secs > 0 {
-        // bound the total request AND the connect/TLS handshake separately.
-        // a stalled connect is not reliably caught by the total timeout alone
-        // (e.g. flaky windows-arm64 CI runners), so set connect_timeout too.
+        // Use an INACTIVITY (idle) timeout, not a total-request deadline. `read_timeout`
+        // applies to each read of the response body and RESETS after every successful read,
+        // so a slow-but-steady download (e.g. a large CSV trickling in over a slow proxy) is
+        // never aborted mid-stream — only a genuinely stalled connection (no bytes for
+        // `timeout_secs`) trips it. `connect_timeout` still bounds a stalled connect/TLS
+        // handshake (not reliably caught otherwise on flaky windows-arm64 CI runners).
+        // There is deliberately no total-request `.timeout()` cap.
         let timeout_duration = Duration::from_secs(timeout_secs.into());
         builder = builder
-            .timeout(timeout_duration)
+            .read_timeout(timeout_duration)
             .connect_timeout(timeout_duration);
     }
 
@@ -551,6 +555,12 @@ pub fn create_reqwest_async_client(
 ///
 /// Returns a configured blocking reqwest client with the same options
 /// as `create_reqwest_async_client`
+///
+/// NOTE: unlike the async client, this uses a TOTAL-request `.timeout()`, not an inactivity
+/// (`read_timeout`) one. reqwest 0.13.4's blocking client reads the response body on the
+/// calling thread via a park/unpark waker with NO Tokio timer running, so a `read_timeout`
+/// body wrapper panics ("there is no reactor running") the moment the body is read. The
+/// idle-timeout semantics therefore apply only to `create_reqwest_async_client`.
 pub fn create_reqwest_blocking_client(
     user_agent: Option<String>,
     timeout_secs: u16,

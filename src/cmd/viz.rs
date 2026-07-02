@@ -366,7 +366,11 @@ smart options:
                            high-cardinality columns, and skew/outlier hints on box panels.
                            Costs one extra pass over the data and writes <stem>.stats.csv,
                            its sidecars, and an .idx index (like running `qsv moarstats`
-                           manually). Only affects `smart`. Applied only with default
+                           manually). On geocode-enabled builds it also enriches map point
+                           hovers with the US FIPS code and annotates the spatial-extent
+                           summary with the country's continent (and capital for a single
+                           country); the county is always shown in map hovers, with or
+                           without --smarter. Only affects `smart`. Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
     --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
@@ -2884,22 +2888,32 @@ fn assemble_map_hover(
     lines.join("<br>")
 }
 
-/// Format a reverse-geocoded `GeoLabel` into a "City, Admin1, Country" hover line for gap-filling —
-/// dataset fields win, so a component is dropped when (a) a chosen dataset column already covers it
-/// by concept (`sup_*`), or (b) its value already appears in this point's `dataset_line` (so e.g. a
-/// city-name identifier isn't echoed by the geocoded city). Components are HTML-escaped.
+/// Format a reverse-geocoded `GeoLabel` into a "City, County, Admin1, Country" hover line for
+/// gap-filling — dataset fields win, so a component is dropped when (a) a chosen dataset column
+/// already covers it by concept (`sup_*`), or (b) its value already appears in this point's
+/// `dataset_line` (so e.g. a city-name identifier isn't echoed by the geocoded city). When
+/// `verbose` (driven by `--smarter`) and the place resolved to a US location, the combined 5-digit
+/// county FIPS (else the 2-digit state FIPS) is appended as "(FIPS …)". Components are
+/// HTML-escaped.
 #[cfg(feature = "geocode")]
 fn geocode_hover_place(
     label: &crate::cmd::geocode::GeoLabel,
     sup_city: bool,
     sup_admin1: bool,
     sup_country: bool,
+    verbose: bool,
     dataset_line: &str,
 ) -> String {
     let dataset_lc = dataset_line.to_lowercase();
     let shown = |s: &str| !s.trim().is_empty() && dataset_lc.contains(&s.to_lowercase());
-    [
+    // county (admin2) sits between city and admin1 (state) — the natural City, County, State,
+    // Country hierarchy. It's always-on — there's no `geo.county` concept to gap-fill against (only
+    // city/state/country exist in the dictionary vocab) — but the `shown` value-match still drops
+    // it when the county literally appears in this point's dataset line. Geonames US county
+    // names already include "County", so no suffix is appended here.
+    let place = [
         (!sup_city && !shown(&label.city)).then_some(label.city.as_str()),
+        (!shown(&label.admin2)).then_some(label.admin2.as_str()),
         (!sup_admin1 && !shown(&label.admin1)).then_some(label.admin1.as_str()),
         (!sup_country && !shown(&label.country)).then_some(label.country.as_str()),
     ]
@@ -2908,7 +2922,23 @@ fn geocode_hover_place(
     .filter(|s| !s.trim().is_empty())
     .map(escape_hover)
     .collect::<Vec<_>>()
-    .join(", ")
+    .join(", ");
+
+    // FIPS is a verbose detail (US only): prefer the full county FIPS, else the state FIPS. Only
+    // appended to an already-resolved place so it never appears as a bare "(FIPS …)".
+    if verbose && !place.is_empty() {
+        let fips = if !label.us_county_fips.is_empty() {
+            Some(label.us_county_fips.as_str())
+        } else if !label.us_state_fips.is_empty() {
+            Some(label.us_state_fips.as_str())
+        } else {
+            None
+        };
+        if let Some(fips) = fips {
+            return format!("{place} (FIPS {fips})");
+        }
+    }
+    place
 }
 
 /// Build per-location region names aligned 1:1 to `locs` from binned/matched GeoJSON features: the
@@ -9396,6 +9426,7 @@ fn build_map_panel(
         &out_lats,
         &out_lons,
         out_lats.len(),
+        args.flag_smarter,
     );
 
     // downsample coords AND the row-aligned dataset hover lines together (pack the line into the
@@ -9473,7 +9504,14 @@ fn build_map_panel(
                     .get(i)
                     .and_then(Option::as_ref)
                     .map(|l| {
-                        geocode_hover_place(l, sup_city, sup_admin1, sup_country, dataset_line)
+                        geocode_hover_place(
+                            l,
+                            sup_city,
+                            sup_admin1,
+                            sup_country,
+                            args.flag_smarter,
+                            dataset_line,
+                        )
                     })
                     .unwrap_or_default()
             };
@@ -10019,6 +10057,12 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
     if cities.len() == 1 {
         return format!("{}, {admin1}{suffix}", cities[0]);
     }
+    // multiple cities but a single county: name the county for tighter context (mirrors the
+    // single-city rule). A multi-county metro keeps the plain "Admin1, Country" form.
+    let counties = distinct_jurisdictions(labels.iter().map(|l| l.admin2.as_str()));
+    if counties.len() == 1 {
+        return format!("{}, {admin1}{suffix}", counties[0]);
+    }
     format!("{admin1}{suffix}")
 }
 
@@ -10027,6 +10071,40 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
 /// NAME the jurisdictions, so a far-flung set is still represented without ballooning the lookup.
 #[cfg(feature = "geocode")]
 const GEO_OUTLIER_GEOCODE_SAMPLE: usize = 12;
+
+/// Build the `--smarter` country-context annotation appended to a map's extent summary: the shared
+/// continent of the resolved extent countries (plus the capital when there's exactly one country,
+/// to bound length). Returns `None` when geocoding is unavailable, nothing resolves, or the extent
+/// spans more than one continent. Costs one extra batched engine load over the (<=5) distinct
+/// countries — the continent/capital are country-level, so they can't come from the point lookup.
+#[cfg(feature = "geocode")]
+fn country_context_note(points: &[GeoPoint]) -> Option<String> {
+    let iso2s = distinct_jurisdictions(
+        points
+            .iter()
+            .filter_map(|p| p.label.as_ref())
+            .map(|l| l.country_iso2.as_str()),
+    );
+    if iso2s.is_empty() {
+        return None;
+    }
+    let refs: Vec<&str> = iso2s.iter().map(String::as_str).collect();
+    let ctxs = crate::cmd::geocode::country_context(&refs).ok()?;
+    let continents = distinct_jurisdictions(ctxs.iter().flatten().map(|c| c.continent.as_str()));
+    if continents.len() != 1 {
+        // no continent resolved, or the extent spans multiple continents — skip the annotation.
+        return None;
+    }
+    let continent = &continents[0];
+    // capital only when the extent resolved to exactly one country, to keep the line short
+    if iso2s.len() == 1
+        && let Some(Some(ctx)) = ctxs.first()
+        && !ctx.capital.is_empty()
+    {
+        return Some(format!(" · {continent}; cap. {}", ctx.capital));
+    }
+    Some(format!(" · {continent}"))
+}
 
 /// Reverse-geocode the CORE bounding box (4 corners + center) into the `GeoMeta` overlay + summary,
 /// plus a capped, stride-sampled set of the outlier points — all in ONE batched lookup (the engine
@@ -10044,6 +10122,7 @@ fn build_geo_meta(
     outlier_lats: &[f64],
     outlier_lons: &[f64],
     n_outliers: usize,
+    smarter: bool,
 ) -> Option<GeoMeta> {
     // a dataset straddling +/-180 yields a near-global box whose center lands mid-ocean; skip.
     if extent_spans_antimeridian(&core_extent) {
@@ -10093,7 +10172,7 @@ fn build_geo_meta(
     }
     // suppress the call-out when the outliers fall within the core's own jurisdiction(s) — they're
     // the cluster's far edge, not strays "elsewhere", so naming them would just be redundant noise.
-    let summary = if n_outliers == 0 || outliers_share_core_region(&points, &outlier_labels) {
+    let mut summary = if n_outliers == 0 || outliers_share_core_region(&points, &outlier_labels) {
         core_summary
     } else {
         outlier_summary(
@@ -10102,6 +10181,11 @@ fn build_geo_meta(
             &outlier_jurisdictions(&outlier_labels),
         )
     };
+    // under `--smarter`, annotate with the extent's shared continent (and, for a single country,
+    // its capital). A second, small batched engine load over the <=5 distinct extent countries.
+    if smarter && let Some(note) = country_context_note(&points) {
+        summary.push_str(&note);
+    }
     // the full extent (core + all outliers) is drawn as a second, no-fill box. Only meaningful when
     // there ARE outliers; skip it if a stray pushes the box across the antimeridian (it would
     // wrap).
@@ -13907,9 +13991,10 @@ mod tests {
             lat: 0.0,
             lon: 0.0,
             label: Some(crate::cmd::geocode::GeoLabel {
-                city:    city.to_string(),
-                admin1:  admin1.to_string(),
+                city: city.to_string(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             }),
         }
     }
@@ -13950,6 +14035,84 @@ mod tests {
             gp("NE", "Vancouver", "British Columbia", "Canada"),
         ];
         assert_eq!(consolidate_geo(&pts), "United States & Canada");
+    }
+
+    #[cfg(feature = "geocode")]
+    fn gp_county(
+        tag: &'static str,
+        city: &str,
+        admin2: &str,
+        admin1: &str,
+        country: &str,
+    ) -> GeoPoint {
+        GeoPoint {
+            tag,
+            lat: 0.0,
+            lon: 0.0,
+            label: Some(crate::cmd::geocode::GeoLabel {
+                city: city.to_string(),
+                admin1: admin1.to_string(),
+                country: country.to_string(),
+                admin2: admin2.to_string(),
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_single_county() {
+        // multiple cities but a single county within one state -> name the county for tight context
+        let pts = vec![
+            gp_county(
+                "NW",
+                "Pittsburgh",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "NE",
+                "McKeesport",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "SE",
+                "Bethel Park",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+        ];
+        assert_eq!(
+            consolidate_geo(&pts),
+            "Allegheny County, Pennsylvania, United States"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_multi_county_no_regression() {
+        // several counties in one state -> stays the plain "State, Country" form (no county name)
+        let pts = vec![
+            gp_county(
+                "NW",
+                "Pittsburgh",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "NE",
+                "Greensburg",
+                "Westmoreland County",
+                "Pennsylvania",
+                "United States",
+            ),
+        ];
+        assert_eq!(consolidate_geo(&pts), "Pennsylvania, United States");
     }
 
     #[cfg(feature = "geocode")]
@@ -14131,9 +14294,10 @@ mod tests {
     fn outlier_jurisdictions_lists_admin1_then_countries() {
         let label = |admin1: &str, country: &str| {
             Some(crate::cmd::geocode::GeoLabel {
-                city:    String::new(),
-                admin1:  admin1.to_string(),
+                city: String::new(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             })
         };
         // single admin1
@@ -14163,9 +14327,10 @@ mod tests {
     fn outliers_share_core_region_suppression() {
         let label = |admin1: &str, country: &str| {
             Some(crate::cmd::geocode::GeoLabel {
-                city:    String::new(),
-                admin1:  admin1.to_string(),
+                city: String::new(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             })
         };
         let core = vec![
@@ -14709,24 +14874,62 @@ mod tests {
     #[test]
     fn geocode_hover_place_gap_fills() {
         let label = crate::cmd::geocode::GeoLabel {
-            city:    "Kinshasa".to_string(),
-            admin1:  "Kinshasa City".to_string(),
+            city: "Kinshasa".to_string(),
+            admin1: "Kinshasa City".to_string(),
             country: "Democratic Republic of Congo".to_string(),
+            ..Default::default()
         };
         // nothing suppressed, empty dataset line -> the full place
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, ""),
+            geocode_hover_place(&label, false, false, false, false, ""),
             "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
         // the city already appears in the dataset line (it's the identifier) -> dropped
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, "<b>Kinshasa</b>"),
+            geocode_hover_place(&label, false, false, false, false, "<b>Kinshasa</b>"),
             "Kinshasa City, Democratic Republic of Congo"
         );
         // concept suppression (a chosen geo.country column) drops the country
         assert_eq!(
-            geocode_hover_place(&label, false, false, true, ""),
+            geocode_hover_place(&label, false, false, true, false, ""),
             "Kinshasa, Kinshasa City"
+        );
+
+        // county (admin2) is always-on, between admin1 and country
+        let us = crate::cmd::geocode::GeoLabel {
+            city: "Pittsburgh".to_string(),
+            admin1: "Pennsylvania".to_string(),
+            country: "United States".to_string(),
+            admin2: "Allegheny County".to_string(),
+            us_state_fips: "42".to_string(),
+            us_county_fips: "42003".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            geocode_hover_place(&us, false, false, false, false, ""),
+            "Pittsburgh, Allegheny County, Pennsylvania, United States"
+        );
+        // FIPS appended only when verbose (--smarter): prefer the 5-digit county FIPS
+        assert_eq!(
+            geocode_hover_place(&us, false, false, false, true, ""),
+            "Pittsburgh, Allegheny County, Pennsylvania, United States (FIPS 42003)"
+        );
+        // verbose but only a state FIPS -> the 2-digit state FIPS
+        let state_only = crate::cmd::geocode::GeoLabel {
+            city: "Somewhere".to_string(),
+            admin1: "Pennsylvania".to_string(),
+            country: "United States".to_string(),
+            us_state_fips: "42".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            geocode_hover_place(&state_only, false, false, false, true, ""),
+            "Somewhere, Pennsylvania, United States (FIPS 42)"
+        );
+        // non-US place under verbose -> no FIPS tail
+        assert_eq!(
+            geocode_hover_place(&label, false, false, false, true, ""),
+            "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
     }
 

@@ -2758,6 +2758,46 @@ fn viz_smart_geo_hover_geocoded_identifier() {
     }
 }
 
+// Geocoding enrichment: the county is always shown in a US map hover; the US FIPS code appears only
+// under --smarter. Tolerant of an unavailable geocode index (offline CI) — the enrichment is only
+// asserted when reverse-geocoding actually resolved the county.
+#[test]
+fn viz_smart_geocode_enrichment_county_and_fips() {
+    let wrk = Workdir::new("viz_smart_geocode_enrichment_county_and_fips");
+    // a tight Allegheny County, PA cluster -> a local mapbox map with per-point hovers
+    wrk.create_from_string(
+        "pitt.csv",
+        "id,lat,lon,val
+Pittsburgh,40.4406,-79.9959,10
+McKeesport,40.3487,-79.8642,20
+BethelPark,40.3273,-80.0373,30
+Monroeville,40.4212,-79.7883,40
+Wilkinsburg,40.4445,-79.8811,50
+",
+    );
+
+    // plain: county appears (when geocoding resolved); the FIPS tail does NOT (it's --smarter-only)
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pitt.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let plain = String::from_utf8_lossy(&out.stdout);
+    let geocoded = plain.contains("Allegheny County");
+    if geocoded {
+        assert!(!plain.contains("(FIPS "));
+    }
+
+    // --smarter: when the county resolved, the combined 5-digit county FIPS tail is present
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pitt.csv", "--smarter"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let smart = String::from_utf8_lossy(&out.stdout);
+    if smart.contains("Allegheny County") {
+        assert!(smart.contains("(FIPS 42003)"));
+    }
+}
+
 // A geo overview whose points all fall within a single plotly continent box is framed to that
 // continent's geo `scope` (aligning with plotly.js's layout.geo.scope vocabulary) instead of
 // showing the whole world. The African cities span ~64 deg of latitude (so the panel renders as

@@ -2798,6 +2798,38 @@ Wilkinsburg,40.4445,-79.8811,50
     }
 }
 
+// The --smarter country-context continent note must reflect EXACTLY the summarized extent: a US
+// core with a European (Paris) outlier spans two continents, so the note must be suppressed rather
+// than claiming a single continent. Tolerant of an unavailable geocode index (offline CI).
+#[test]
+fn viz_smart_country_context_suppressed_across_continents() {
+    let wrk = Workdir::new("viz_smart_country_context_suppressed_across_continents");
+    // a tight US core plus one far outlier in France
+    wrk.create_from_string(
+        "mixed.csv",
+        "id,lat,lon,val
+Pittsburgh,40.4406,-79.9959,10
+McKeesport,40.3487,-79.8642,20
+BethelPark,40.3273,-80.0373,30
+Monroeville,40.4212,-79.7883,40
+Wilkinsburg,40.4445,-79.8811,50
+Paris,48.8566,2.3522,999
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "mixed.csv", "--smarter"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // when geocoding resolved the US core, the outlier call-out is present but NO single-continent
+    // annotation may follow (the extent spans North America AND Europe).
+    if html.contains("Pennsylvania") && html.contains("outlier") {
+        assert!(!html.contains(" · North America"));
+        assert!(!html.contains(" · Europe"));
+    }
+}
+
 // A geo overview whose points all fall within a single plotly continent box is framed to that
 // continent's geo `scope` (aligning with plotly.js's layout.geo.scope vocabulary) instead of
 // showing the whole world. The African cities span ~64 deg of latitude (so the panel renders as

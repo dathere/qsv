@@ -9462,10 +9462,10 @@ fn build_map_panel(
     );
     let (outlier_lons, out_lines): (Vec<f64>, Vec<String>) = out_pl.into_iter().unzip();
 
-    // per-point reverse-geocoded place (City, Admin1, Country), gap-filtered so it never duplicates
-    // a dataset geo.* column already in the hover. One batched engine load for core+outliers;
-    // degrades to no place on failure. Empty strings (and an all-empty result) when the geocode
-    // feature is off or every geo component is already covered by dataset fields.
+    // per-point reverse-geocoded place (City, County, Admin1, Country [+ FIPS under --smarter]),
+    // gap-filtered so it never duplicates a dataset geo.* column already in the hover. One batched
+    // engine load for core+outliers; degrades to no place on failure. Empty strings when the
+    // geocode feature is off or a point didn't resolve.
     #[cfg(feature = "geocode")]
     let (core_places, out_places): (Vec<String>, Vec<String>) = {
         // which geocoded components are already supplied by a chosen dataset column (gap-filling)
@@ -9480,53 +9480,48 @@ fn build_map_panel(
                 _ => {},
             }
         }
-        if sup_city && sup_admin1 && sup_country {
-            // nothing a geocoded place could add — skip the lookup entirely
-            (
-                vec![String::new(); lats.len()],
-                vec![String::new(); outlier_lats.len()],
-            )
-        } else {
-            let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
-            pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
-            pts.extend(
-                outlier_lats
-                    .iter()
-                    .zip(&outlier_lons)
-                    .map(|(&a, &o)| (a, o)),
-            );
-            let labels =
-                crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
-            // dataset_line lets the place drop any component the dataset already shows for this
-            // point (e.g. a city-name identifier).
-            let place = |i: usize, dataset_line: &str| -> String {
-                labels
-                    .get(i)
-                    .and_then(Option::as_ref)
-                    .map(|l| {
-                        geocode_hover_place(
-                            l,
-                            sup_city,
-                            sup_admin1,
-                            sup_country,
-                            args.flag_smarter,
-                            dataset_line,
-                        )
-                    })
-                    .unwrap_or_default()
-            };
-            let core: Vec<String> = core_lines
+        // Always reverse-geocode when a map renders: even if the dataset already supplies
+        // city/state/country, the lookup still contributes the county (always-on) and — under
+        // --smarter — the US FIPS code. `geocode_hover_place` suppresses (via the sup_* flags) any
+        // component the dataset already shows, so nothing is duplicated.
+        let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
+        pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
+        pts.extend(
+            outlier_lats
                 .iter()
-                .enumerate()
-                .map(|(i, l)| place(i, l))
-                .collect();
-            let out: Vec<String> = out_lines
-                .iter()
-                .enumerate()
-                .map(|(j, l)| place(lats.len() + j, l))
-                .collect();
-            (core, out)
-        }
+                .zip(&outlier_lons)
+                .map(|(&a, &o)| (a, o)),
+        );
+        let labels = crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
+        // dataset_line lets the place drop any component the dataset already shows for this
+        // point (e.g. a city-name identifier).
+        let place = |i: usize, dataset_line: &str| -> String {
+            labels
+                .get(i)
+                .and_then(Option::as_ref)
+                .map(|l| {
+                    geocode_hover_place(
+                        l,
+                        sup_city,
+                        sup_admin1,
+                        sup_country,
+                        args.flag_smarter,
+                        dataset_line,
+                    )
+                })
+                .unwrap_or_default()
+        };
+        let core: Vec<String> = core_lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| place(i, l))
+            .collect();
+        let out: Vec<String> = out_lines
+            .iter()
+            .enumerate()
+            .map(|(j, l)| place(lats.len() + j, l))
+            .collect();
+        (core, out)
     };
     #[cfg(not(feature = "geocode"))]
     let (core_places, out_places): (Vec<String>, Vec<String>) = (
@@ -10074,17 +10069,14 @@ const GEO_OUTLIER_GEOCODE_SAMPLE: usize = 12;
 
 /// Build the `--smarter` country-context annotation appended to a map's extent summary: the shared
 /// continent of the resolved extent countries (plus the capital when there's exactly one country,
-/// to bound length). Returns `None` when geocoding is unavailable, nothing resolves, or the extent
-/// spans more than one continent. Costs one extra batched engine load over the (<=5) distinct
-/// countries — the continent/capital are country-level, so they can't come from the point lookup.
+/// to bound length). `labels` must be EXACTLY the jurisdictions named in the summary (the core
+/// points, plus the outliers when their call-out is present) so the continent can't contradict a
+/// cross-continent outlier. Returns `None` when geocoding is unavailable, nothing resolves, or the
+/// named extent spans more than one continent. Costs one extra batched engine load over the (<=5)
+/// distinct countries — the continent/capital are country-level, not on the point lookup.
 #[cfg(feature = "geocode")]
-fn country_context_note(points: &[GeoPoint]) -> Option<String> {
-    let iso2s = distinct_jurisdictions(
-        points
-            .iter()
-            .filter_map(|p| p.label.as_ref())
-            .map(|l| l.country_iso2.as_str()),
-    );
+fn country_context_note(labels: &[&crate::cmd::geocode::GeoLabel]) -> Option<String> {
+    let iso2s = distinct_jurisdictions(labels.iter().map(|l| l.country_iso2.as_str()));
     if iso2s.is_empty() {
         return None;
     }
@@ -10092,7 +10084,7 @@ fn country_context_note(points: &[GeoPoint]) -> Option<String> {
     let ctxs = crate::cmd::geocode::country_context(&refs).ok()?;
     let continents = distinct_jurisdictions(ctxs.iter().flatten().map(|c| c.continent.as_str()));
     if continents.len() != 1 {
-        // no continent resolved, or the extent spans multiple continents — skip the annotation.
+        // no continent resolved, or the named extent spans multiple continents — skip the note.
         return None;
     }
     let continent = &continents[0];
@@ -10172,19 +10164,31 @@ fn build_geo_meta(
     }
     // suppress the call-out when the outliers fall within the core's own jurisdiction(s) — they're
     // the cluster's far edge, not strays "elsewhere", so naming them would just be redundant noise.
-    let mut summary = if n_outliers == 0 || outliers_share_core_region(&points, &outlier_labels) {
-        core_summary
-    } else {
+    let outliers_in_summary =
+        n_outliers != 0 && !outliers_share_core_region(&points, &outlier_labels);
+    let mut summary = if outliers_in_summary {
         outlier_summary(
             &core_summary,
             n_outliers,
             &outlier_jurisdictions(&outlier_labels),
         )
+    } else {
+        core_summary
     };
     // under `--smarter`, annotate with the extent's shared continent (and, for a single country,
     // its capital). A second, small batched engine load over the <=5 distinct extent countries.
-    if smarter && let Some(note) = country_context_note(&points) {
-        summary.push_str(&note);
+    // Derive the context from EXACTLY the jurisdictions the summary names — the core plus the
+    // outliers when their call-out is present — so a cross-continent outlier suppresses the note
+    // rather than contradicting it (e.g. a US core with a European outlier).
+    if smarter {
+        let mut ctx_labels: Vec<&crate::cmd::geocode::GeoLabel> =
+            points.iter().filter_map(|p| p.label.as_ref()).collect();
+        if outliers_in_summary {
+            ctx_labels.extend(outlier_labels.iter().filter_map(Option::as_ref));
+        }
+        if let Some(note) = country_context_note(&ctx_labels) {
+            summary.push_str(&note);
+        }
     }
     // the full extent (core + all outliers) is drawn as a second, no-fill box. Only meaningful when
     // there ARE outliers; skip it if a stray pushes the box across the antimeridian (it would

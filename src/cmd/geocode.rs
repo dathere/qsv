@@ -3773,17 +3773,16 @@ pub fn forward_geocode_regions(
 }
 
 /// Per-country context for a batch of ISO-3166-1 alpha-2 codes, used by `viz smart` to annotate a
-/// map's spatial-extent summary. `continent` is the Geonames continent name; `capital` is the
-/// capital city name (both `""` when unavailable).
+/// map's spatial-extent summary. `continent` is the Geonames continent name (`""` when
+/// unavailable).
 #[derive(Clone, Debug, Default)]
 pub struct CountryContext {
     pub continent: String,
-    pub capital:   String,
 }
 
 /// Resolve [`CountryContext`] for each ISO-2 code (in order), loading the engine ONCE. Returns
-/// `None` for a code that doesn't resolve (or carries no continent/capital). `Err` only on a hard
-/// setup failure — callers (like `viz smart`) treat `Err` as "no context" and degrade gracefully.
+/// `None` for a code that doesn't resolve (or carries no continent). `Err` only on a hard setup
+/// failure — callers (like `viz smart`) treat `Err` as "no context" and degrade gracefully.
 /// `continent` is expanded to a human-readable name (Geonames stores a 2-letter continent code).
 pub fn country_context(iso2s: &[&str]) -> CliResult<Vec<Option<CountryContext>>> {
     with_geocode_engine(|engine| {
@@ -3792,14 +3791,10 @@ pub fn country_context(iso2s: &[&str]) -> CliResult<Vec<Option<CountryContext>>>
             .map(|&iso2| {
                 let countryrecord = engine.country_info(iso2)?;
                 let continent = continent_name(&countryrecord.info.continent).to_string();
-                let capital = engine
-                    .capital(iso2)
-                    .map(|cr| cr.name.as_str().to_string())
-                    .unwrap_or_default();
-                if continent.is_empty() && capital.is_empty() {
+                if continent.is_empty() {
                     return None;
                 }
-                Some(CountryContext { continent, capital })
+                Some(CountryContext { continent })
             })
             .collect()
     })

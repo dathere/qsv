@@ -368,9 +368,9 @@ smart options:
                            its sidecars, and an .idx index (like running `qsv moarstats`
                            manually). On geocode-enabled builds it also enriches map point
                            hovers with the US FIPS code and annotates the spatial-extent
-                           summary with the country's continent (and capital for a single
-                           country); the county is always shown in map hovers, with or
-                           without --smarter. Only affects `smart`. Applied only with default
+                           summary with the country's continent; the county is always shown
+                           in map hovers, with or without --smarter. Only affects `smart`.
+                           Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
     --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
@@ -10068,12 +10068,12 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
 const GEO_OUTLIER_GEOCODE_SAMPLE: usize = 12;
 
 /// Build the `--smarter` country-context annotation appended to a map's extent summary: the shared
-/// continent of the resolved extent countries (plus the capital when there's exactly one country,
-/// to bound length). `labels` must be EXACTLY the jurisdictions named in the summary (the core
-/// points, plus the outliers when their call-out is present) so the continent can't contradict a
-/// cross-continent outlier. Returns `None` when geocoding is unavailable, nothing resolves, or the
-/// named extent spans more than one continent. Costs one extra batched engine load over the (<=5)
-/// distinct countries — the continent/capital are country-level, not on the point lookup.
+/// continent of the resolved extent countries. `labels` must be EXACTLY the jurisdictions named in
+/// the summary (the core points, plus the outliers when their call-out is present) so the continent
+/// can't contradict a cross-continent outlier. Returns `None` when geocoding is unavailable,
+/// nothing resolves, or the named extent spans more than one continent. Costs one extra batched
+/// engine load over the (<=5) distinct countries — the continent is country-level, not on the point
+/// lookup.
 #[cfg(feature = "geocode")]
 fn country_context_note(labels: &[&crate::cmd::geocode::GeoLabel]) -> Option<String> {
     let iso2s = distinct_jurisdictions(labels.iter().map(|l| l.country_iso2.as_str()));
@@ -10087,15 +10087,7 @@ fn country_context_note(labels: &[&crate::cmd::geocode::GeoLabel]) -> Option<Str
         // no continent resolved, or the named extent spans multiple continents — skip the note.
         return None;
     }
-    let continent = &continents[0];
-    // capital only when the extent resolved to exactly one country, to keep the line short
-    if iso2s.len() == 1
-        && let Some(Some(ctx)) = ctxs.first()
-        && !ctx.capital.is_empty()
-    {
-        return Some(format!(" · {continent}; cap. {}", ctx.capital));
-    }
-    Some(format!(" · {continent}"))
+    Some(format!(" · {}", continents[0]))
 }
 
 /// Reverse-geocode the CORE bounding box (4 corners + center) into the `GeoMeta` overlay + summary,

@@ -276,7 +276,7 @@ qsv sample --help
 | &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Option&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; | Type | Description | Default |
 |--------|------|-------------|--------|
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Specify custom user agent to use when the input is a URL. It supports the following variables - $QSV_VERSION, $QSV_TARGET, $QSV_BIN_NAME, $QSV_KIND and $QSV_COMMAND. Try to follow the syntax here - <https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent> |  |
-| &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for downloading URLs in seconds. If 0, no timeout is used. | `30` |
+| &nbsp;`‑‑timeout`&nbsp; | integer | Inactivity timeout for downloading URLs in seconds. Aborts only if no data is received from the server for this long. If 0, no timeout. | `30` |
 | &nbsp;`‑‑max‑size`&nbsp; | integer | Maximum size of the file to download in MB before sampling. Will download the entire file if not specified. If the CSV is partially downloaded, the sample will be taken only from the downloaded portion. |  |
 | &nbsp;`‑‑force`&nbsp; | flag | Do not use stats cache, even if its available. |  |
 

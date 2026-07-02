@@ -1157,6 +1157,24 @@ fn get_cache_set_ttl() {
         2,
         "both aliases of the shared entry should show the new TTL:\n{stdout}"
     );
+
+    // a leading `dc:` prefix on <name> resolves to the same entry
+    let mut set_dc = wrk.command("get");
+    set_dc
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-set-ttl", "dc:a.csv", "--ttl", "67890"]);
+    wrk.assert_success(&mut set_dc);
+
+    let mut list2 = wrk.command("get");
+    list2
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let stdout2 = String::from_utf8_lossy(&wrk.output(&mut list2).stdout).into_owned();
+    assert_eq!(
+        stdout2.matches("\"ttl_secs\": 67890").count(),
+        2,
+        "a `dc:`-prefixed name must resolve to the same entry:\n{stdout2}"
+    );
 }
 
 #[test]

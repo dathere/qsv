@@ -229,6 +229,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     if args.cmd_cache_set_ttl {
         let name = args.arg_name.as_deref().unwrap_or_default();
+        // convenience: accept (and ignore) a leading `dc:` prefix, like cache-fetch
+        let name = name.strip_prefix("dc:").unwrap_or(name);
         diskcache::set_ttl(&cache_dir, name, args.flag_ttl)?;
         if !args.flag_quiet {
             eprintln!("Set TTL of '{name}' to {} seconds.", args.flag_ttl);
@@ -238,6 +240,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.cmd_cache_set_policy {
         let policy = diskcache::RefreshPolicy::parse(&args.flag_refresh)?;
         let name = args.arg_name.as_deref().unwrap_or_default();
+        // convenience: accept (and ignore) a leading `dc:` prefix, like cache-fetch
+        let name = name.strip_prefix("dc:").unwrap_or(name);
         diskcache::set_policy(&cache_dir, name, policy)?;
         if !args.flag_quiet {
             eprintln!("Set refresh policy of '{name}' to {}.", args.flag_refresh);

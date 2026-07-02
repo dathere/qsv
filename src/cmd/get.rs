@@ -61,16 +61,27 @@ Examples:
         $ qsv get cache-list
         $ qsv get cache-prune --older-than=30d
 
+    Export an already-cached entry to a file or stdout (offline; no re-fetch):
+        $ qsv get cache-fetch data.csv --output /tmp/data.csv
+        $ qsv get cache-fetch data.csv | qsv stats
+
     Verify cached blob integrity, then retune an entry's TTL & policy:
         $ qsv get cache-list --verify
         $ qsv get cache-set-ttl data.csv --ttl=86400
         $ qsv get cache-set-policy data.csv --refresh=never
+
+    The `dc:` handle prefix is accepted (and ignored) wherever a cached <name> is
+    expected, so a `dc:` reference copied from another command works as-is:
+        $ qsv get cache-fetch dc:data.csv --output /tmp/data.csv
+        $ qsv get cache-set-ttl dc:data.csv --ttl=86400
+        $ qsv get cache-set-policy dc:data.csv --refresh=never
 
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_get.rs.
 
 Usage:
     qsv get cache-list [--verify] [options]
     qsv get cache-info [options]
+    qsv get cache-fetch <name> [options]
     qsv get cache-clear [options]
     qsv get cache-prune --older-than=<val> [options]
     qsv get cache-set-ttl <name> --ttl=<secs> [options]
@@ -80,8 +91,13 @@ Usage:
 
 get arguments:
     <source>...            One or more sources to fetch into the cache.
-    <name>                 For cache-set-ttl / cache-set-policy: the cached
-                           logical name (`dc:` handle) to modify.
+    <name>                 For cache-fetch / cache-set-ttl / cache-set-policy: the
+                           cached logical name (`dc:` handle) to read or modify.
+                           A leading `dc:` prefix is accepted and ignored.
+
+cache-fetch writes an ALREADY-cached entry's (decompressed) contents to the --output
+file (or stdout if omitted or `-`). It is offline: it reads the cached blob directly and
+never re-fetches the source. Errors if <name> is not in the cache.
 
 get options:
     --name <name>          Logical cache name (the `dc:` handle) for the fetched
@@ -128,7 +144,7 @@ Common options:
     -h, --help             Display this message
     --cache-dir <dir>      The qsv cache directory. Overrides the QSV_CACHE_DIR
                            env var. [default: ~/.qsv-cache]
-    -o, --output <file>    For a single <source>, also write the fetched
+    -o, --output <file>    For a single <source> (or cache-fetch <name>), write the
                            (decompressed) data to <file> (use `-` for stdout).
     -q, --quiet            Do not print progress/summary messages to stderr.
 "#;
@@ -168,6 +184,7 @@ struct Args {
     flag_quiet:           bool,
     cmd_cache_list:       bool,
     cmd_cache_info:       bool,
+    cmd_cache_fetch:      bool,
     cmd_cache_clear:      bool,
     cmd_cache_prune:      bool,
     cmd_cache_set_ttl:    bool,
@@ -187,6 +204,20 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             args.flag_verify,
         );
     }
+    if args.cmd_cache_fetch {
+        let name = args.arg_name.as_deref().unwrap_or_default();
+        // convenience: accept (and ignore) a leading `dc:` prefix
+        let name = name.strip_prefix("dc:").unwrap_or(name);
+        diskcache::write_output(&cache_dir, name, args.flag_output.as_deref())?;
+        // stderr confirmation only when writing to a real file (never pollute stdout data)
+        if !args.flag_quiet
+            && let Some(p) = args.flag_output.as_deref()
+            && p != "-"
+        {
+            eprintln!("✓ wrote dc:{name} to {p}");
+        }
+        return Ok(());
+    }
     if args.cmd_cache_clear {
         let removed = diskcache::clear(&cache_dir)?;
         if !args.flag_quiet {
@@ -204,6 +235,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     }
     if args.cmd_cache_set_ttl {
         let name = args.arg_name.as_deref().unwrap_or_default();
+        // convenience: accept (and ignore) a leading `dc:` prefix, like cache-fetch
+        let name = name.strip_prefix("dc:").unwrap_or(name);
         diskcache::set_ttl(&cache_dir, name, args.flag_ttl)?;
         if !args.flag_quiet {
             eprintln!("Set TTL of '{name}' to {} seconds.", args.flag_ttl);
@@ -213,6 +246,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     if args.cmd_cache_set_policy {
         let policy = diskcache::RefreshPolicy::parse(&args.flag_refresh)?;
         let name = args.arg_name.as_deref().unwrap_or_default();
+        // convenience: accept (and ignore) a leading `dc:` prefix, like cache-fetch
+        let name = name.strip_prefix("dc:").unwrap_or(name);
         diskcache::set_policy(&cache_dir, name, policy)?;
         if !args.flag_quiet {
             eprintln!("Set refresh policy of '{name}' to {}.", args.flag_refresh);

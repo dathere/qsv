@@ -1072,6 +1072,56 @@ fn corrupt_first_content_blob(cache_dir: &Path, bytes: &[u8]) -> bool {
 }
 
 #[test]
+fn get_cache_fetch() {
+    // cache-fetch exports an already-cached entry (decompressed) to stdout or --output,
+    // offline. Seed the cache with a local file, then read it back by logical name.
+    let wrk = Workdir::new("get_cache_fetch");
+    wrk.create_from_string("src.csv", STATES_CSV);
+    let cache_dir = wrk.path("qsvcache");
+
+    let mut seed = wrk.command("get");
+    seed.env("QSV_CACHE_DIR", &cache_dir)
+        .args(["--name", "x.csv"])
+        .arg("src.csv");
+    wrk.assert_success(&mut seed);
+
+    // stdout path: bytes are byte-identical to the original source
+    let mut to_stdout = wrk.command("get");
+    to_stdout
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-fetch", "x.csv"]);
+    let out = wrk.output(&mut to_stdout);
+    assert!(out.status.success(), "cache-fetch to stdout failed");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), STATES_CSV);
+
+    // --output file path, exercising the accepted-and-ignored `dc:` prefix on <name>
+    let outfile = wrk.path("x_out.csv");
+    let mut to_file = wrk.command("get");
+    to_file
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-fetch", "dc:x.csv"])
+        .args(["--output", outfile.to_str().unwrap()]);
+    wrk.assert_success(&mut to_file);
+    assert_eq!(std::fs::read_to_string(&outfile).unwrap(), STATES_CSV);
+
+    // unknown name errors cleanly (non-zero, actionable message)
+    let mut missing = wrk.command("get");
+    missing
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-fetch", "nope.csv"]);
+    let out = wrk.output(&mut missing);
+    assert!(
+        !out.status.success(),
+        "cache-fetch of an unknown name should fail"
+    );
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("no cached entry named 'nope.csv'"),
+        "expected a clear not-found error, got:\n{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+#[test]
 fn get_cache_set_ttl() {
     let wrk = Workdir::new("get_cache_set_ttl");
     wrk.create_from_string("src.csv", STATES_CSV);
@@ -1106,6 +1156,24 @@ fn get_cache_set_ttl() {
         stdout.matches("\"ttl_secs\": 12345").count(),
         2,
         "both aliases of the shared entry should show the new TTL:\n{stdout}"
+    );
+
+    // a leading `dc:` prefix on <name> resolves to the same entry
+    let mut set_dc = wrk.command("get");
+    set_dc
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-set-ttl", "dc:a.csv", "--ttl", "67890"]);
+    wrk.assert_success(&mut set_dc);
+
+    let mut list2 = wrk.command("get");
+    list2
+        .env("QSV_CACHE_DIR", &cache_dir)
+        .args(["cache-list", "--json"]);
+    let stdout2 = String::from_utf8_lossy(&wrk.output(&mut list2).stdout).into_owned();
+    assert_eq!(
+        stdout2.matches("\"ttl_secs\": 67890").count(),
+        2,
+        "a `dc:`-prefixed name must resolve to the same entry:\n{stdout2}"
     );
 }
 

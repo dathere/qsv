@@ -114,6 +114,15 @@ qsv get cache-list
 qsv get cache-prune --older-than=30d
 ```
 
+Export an already-cached entry to a file or stdout (offline; no re-fetch):  
+```console
+qsv get cache-fetch data.csv --output /tmp/data.csv
+```
+
+```console
+qsv get cache-fetch data.csv | qsv stats
+```
+
 Verify cached blob integrity, then retune an entry's TTL & policy:  
 ```console
 qsv get cache-list --verify
@@ -127,6 +136,20 @@ qsv get cache-set-ttl data.csv --ttl=86400
 qsv get cache-set-policy data.csv --refresh=never
 ```
 
+The `dc:` handle prefix is accepted (and ignored) wherever a cached <name> is
+expected, so a `dc:` reference copied from another command works as-is:  
+```console
+qsv get cache-fetch dc:data.csv --output /tmp/data.csv
+```
+
+```console
+qsv get cache-set-ttl dc:data.csv --ttl=86400
+```
+
+```console
+qsv get cache-set-policy dc:data.csv --refresh=never
+```
+
 For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/test_get.rs).
 
 
@@ -137,6 +160,7 @@ For more examples, see [tests](https://github.com/dathere/qsv/blob/master/tests/
 ```console
 qsv get cache-list [--verify] [options]
 qsv get cache-info [options]
+qsv get cache-fetch <name> [options]
 qsv get cache-clear [options]
 qsv get cache-prune --older-than=<val> [options]
 qsv get cache-set-ttl <name> --ttl=<secs> [options]
@@ -152,7 +176,7 @@ qsv get --help
 | &nbsp;Argument&nbsp; | Description |
 |----------|-------------|
 | &nbsp;`<source>`&nbsp; | One or more sources to fetch into the cache. |
-| &nbsp;`<name>`&nbsp; | For cache-set-ttl / cache-set-policy: the cached logical name (`dc:` handle) to modify. |
+| &nbsp;`<name>`&nbsp; | For cache-fetch / cache-set-ttl / cache-set-policy: the cached logical name (`dc:` handle) to read or modify. A leading `dc:` prefix is accepted and ignored. |
 
 <a name="get-options"></a>
 
@@ -184,7 +208,7 @@ qsv get --help
 |--------|------|-------------|--------|
 | &nbsp;`‑h,`<br>`‑‑help`&nbsp; | flag | Display this message |  |
 | &nbsp;`‑‑cache‑dir`&nbsp; | string | The qsv cache directory. Overrides the QSV_CACHE_DIR env var. | `~/.qsv-cache` |
-| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | For a single <source>, also write the fetched (decompressed) data to <file> (use `-` for stdout). |  |
+| &nbsp;`‑o,`<br>`‑‑output`&nbsp; | string | For a single <source> (or cache-fetch <name>), write the (decompressed) data to <file> (use `-` for stdout). |  |
 | &nbsp;`‑q,`<br>`‑‑quiet`&nbsp; | flag | Do not print progress/summary messages to stderr. |  |
 
 ---

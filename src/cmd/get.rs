@@ -70,6 +70,12 @@ Examples:
         $ qsv get cache-set-ttl data.csv --ttl=86400
         $ qsv get cache-set-policy data.csv --refresh=never
 
+    The `dc:` handle prefix is accepted (and ignored) wherever a cached <name> is
+    expected, so a `dc:` reference copied from another command works as-is:
+        $ qsv get cache-fetch dc:data.csv --output /tmp/data.csv
+        $ qsv get cache-set-ttl dc:data.csv --ttl=86400
+        $ qsv get cache-set-policy dc:data.csv --refresh=never
+
 For examples, see https://github.com/dathere/qsv/blob/master/tests/test_get.rs.
 
 Usage:

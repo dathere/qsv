@@ -10167,11 +10167,11 @@ fn build_geo_meta(
     } else {
         core_summary
     };
-    // under `--smarter`, annotate with the extent's shared continent (and, for a single country,
-    // its capital). A second, small batched engine load over the <=5 distinct extent countries.
-    // Derive the context from EXACTLY the jurisdictions the summary names — the core plus the
-    // outliers when their call-out is present — so a cross-continent outlier suppresses the note
-    // rather than contradicting it (e.g. a US core with a European outlier).
+    // under `--smarter`, annotate with the extent's shared continent. A second, small batched
+    // engine load over the <=5 distinct extent countries. Derive the context from EXACTLY the
+    // jurisdictions the summary names — the core plus the outliers when their call-out is
+    // present — so a cross-continent outlier suppresses the note rather than contradicting it
+    // (e.g. a US core with a European outlier).
     if smarter {
         let mut ctx_labels: Vec<&crate::cmd::geocode::GeoLabel> =
             points.iter().filter_map(|p| p.label.as_ref()).collect();

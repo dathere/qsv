@@ -4508,6 +4508,51 @@ fn viz_smart_hierarchy_sunburst_for_three_dims() {
     assert!(html.contains(r#""type":"sunburst""#));
 }
 
+// The composite hierarchy overview title uses the dictionary's human labels (joined with ` › `),
+// NOT the raw field names that per-column panel titles now use. Regression guard for the
+// title inheriting `Panel.name` (which became the raw field name).
+#[test]
+fn viz_smart_hierarchy_uses_dictionary_labels_in_title() {
+    let wrk = Workdir::new("viz_smart_hierarchy_uses_dictionary_labels_in_title");
+    three_dim_hierarchy(&wrk);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "region":   { "type": "string", "title": "Sales Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "category": { "type": "string", "title": "Product Category",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "channel":  { "type": "string", "title": "Sales Channel",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "three_dim.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"))
+        .args(["-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"sunburst""#));
+    // dims are ordered coarsest-first (region=3 < category=4 < channel=4), so the title reads
+    // "Sales Region › Product Category › Sales Channel" — the dictionary labels, not
+    // "region › category › channel".
+    assert!(
+        html.contains("Sales Region › Product Category › Sales Channel"),
+        "hierarchy title should use dictionary labels joined with ` › `; html: {html}"
+    );
+    assert!(
+        !html.contains("region › category › channel"),
+        "hierarchy title should NOT use raw field names; html: {html}"
+    );
+}
+
 #[test]
 fn viz_smart_hierarchy_style_override() {
     let wrk = Workdir::new("viz_smart_hierarchy_style_override");

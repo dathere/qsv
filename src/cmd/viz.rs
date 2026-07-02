@@ -10631,7 +10631,21 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     let card = s.cardinality;
                     (s.r#type == "String"
                         && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card))
-                    .then(|| (idx, card, p.name.clone()))
+                    .then(|| {
+                        // the hierarchy overview is a composite panel, so its title keeps the
+                        // dictionary's human label (like measure-by-dim / bivariate) rather than
+                        // the raw field name that per-column titles now use. Fall back to the
+                        // header, or a positional name when headerless.
+                        let sem = &col_sems[idx];
+                        let label = if !sem.label.is_empty() {
+                            sem.label.clone()
+                        } else if s.field.is_empty() {
+                            format!("col {}", idx + 1)
+                        } else {
+                            s.field.clone()
+                        };
+                        (idx, card, label)
+                    })
                 },
                 _ => None,
             })

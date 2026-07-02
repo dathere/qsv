@@ -368,9 +368,9 @@ smart options:
                            dimensions and numeric codes (ward, census_tract, zone) become bars,
                            measures get box/correlation/trend panels, date/datetime columns feed
                            the time-series panel (not noisy frequency bars), identifiers / PII /
-                           free-text are skipped, and lat/lon feed the map. Field labels become
-                           panel titles. Columns the dictionary cannot classify still use the
-                           statistical heuristic. <src> is one of:
+                           free-text are skipped, and lat/lon feed the map. Field labels are shown
+                           as panel subtitles beneath the field-name titles. Columns the dictionary
+                           cannot classify still use the statistical heuristic. <src> is one of:
                            "infer" to run describegpt on the input now (with infer-content-type,
                            two-pass and jsonschema output; requires an LLM configured) and use
                            its output; or a path to an existing describegpt dictionary file

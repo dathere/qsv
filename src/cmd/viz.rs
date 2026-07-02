@@ -1083,6 +1083,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // register the bar so viz_note() can suspend it from anywhere in the call tree (ProgressBar is
     // Arc-backed, so the clone is cheap and shares the same underlying bar).
     let _ = VIZ_PROGRESS.set(progress.clone());
+    // clear the spinner on EVERY exit path, incl. the `?` error returns below, so an error message
+    // is never printed over a still-animating bar (the explicit finish_and_clear()s before the
+    // success outputs stay — clearing twice is harmless).
+    let _progress_guard = ProgressGuard(progress.clone());
 
     let (mut plot, smart_dims) = if args.cmd_smart {
         match build_smart(&args, out_format, &progress)? {
@@ -6327,6 +6331,19 @@ fn viz_progress(show: bool) -> ProgressBar {
         pb
     } else {
         ProgressBar::with_draw_target(None, ProgressDrawTarget::hidden())
+    }
+}
+
+/// RAII guard that clears viz's progress spinner on drop, so a live steady-ticking bar never
+/// lingers past `run()` — including the `?` error paths that return after the bar is registered
+/// but before an explicit `finish_and_clear()`. Without this, a validation/build error would print
+/// the top-level error message on top of an animating spinner on a TTY. `finish_and_clear()` is
+/// safe to call more than once, so the explicit clears on the success paths stay harmless.
+struct ProgressGuard(ProgressBar);
+
+impl Drop for ProgressGuard {
+    fn drop(&mut self) {
+        self.0.finish_and_clear();
     }
 }
 

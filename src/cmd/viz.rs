@@ -362,12 +362,12 @@ smart options:
                            practice — a treemap for a shallow 2-level hierarchy (accurate
                            size comparison) and a sunburst for a deep 3-level one (parent
                            child structure). Only affects `smart`.
-    --dictionary <src>     EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel
-                           selection from each field's semantic role/concept (falling back to
-                           its content type) instead of relying on column statistics alone:
-                           dimensions and numeric codes (ward, census_tract, zone) become bars,
-                           measures get box/correlation/trend panels, date/datetime columns feed
-                           the time-series panel (not noisy frequency bars), identifiers / PII /
+    --dictionary <src>     Use a describegpt Data Dictionary to guide panel selection from
+                           each field's semantic role/concept (falling back to its content type)
+                           instead of relying on column statistics alone: dimensions and numeric
+                           codes (ward, census_tract, zone) become bars, measures get
+                           box/correlation/trend panels, date/datetime columns feed the
+                           time-series panel (not noisy frequency bars), identifiers / PII /
                            free-text are skipped, and lat/lon feed the map. Field labels are shown
                            as panel subtitles beneath the field-name titles. Columns the dictionary
                            cannot classify still use the statistical heuristic. <src> is one of:
@@ -383,7 +383,7 @@ smart options:
                            tags, hence a better dashboard. Ignored unless `--dictionary infer`
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
-    --bivariate            EXPERIMENTAL. Add two pairwise-association overview panels driven by
+    --bivariate            Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (works for numeric AND categorical
                            columns, unlike the Pearson-only correlation heatmap), plus a ranked

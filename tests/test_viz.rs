@@ -2556,6 +2556,37 @@ fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
     assert!(!stderr.contains("--heatmap-density"));
 }
 
+// The heatmap note must report the FULL mappable point count that drove the density decision, not
+// the downsampled/outlier-excluded count carried on the rendered panel. With more points than the
+// internal MAX_SMART_POINTS cap (50_000), the panel's coordinates are downsampled to 50_000, so a
+// note sourced from the panel would print a contradictory "50000 >= --heatmap-density 55000".
+#[test]
+fn viz_smart_heatmap_density_note_reports_full_count() {
+    let wrk = Workdir::new("viz_smart_heatmap_density_note_reports_full_count");
+    // 60_000 tightly-clustered local points (span ~0.01°) so the map renders as a local mapbox
+    // heatmap and every point is a core point (no outlier split), exceeding the 50_000 cap.
+    let mut csv = String::from("id,lat,lon,val\n");
+    for i in 0..60_000u32 {
+        let jitter = f64::from(i % 100) * 0.0001;
+        csv.push_str(&format!(
+            "{i},{:.4},{:.4},a\n",
+            40.44 + jitter,
+            -79.99 - jitter
+        ));
+    }
+    wrk.create_from_string("dense_local.csv", &csv);
+
+    // threshold between the downsampled count (50_000) and the full count (60_000): density mode
+    // engages, and the note must report 60_000 (the source count), never 50_000.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense_local.csv", "--heatmap-density", "55000"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("map has 60000 mappable points (>= --heatmap-density 55000)"));
+    assert!(!stderr.contains("map has 50000 mappable points"));
+}
+
 // `viz smart` adds the row identifier (here the near-unique `place` column) to each map point's
 // hover, in addition to the coordinates. Dataset-derived, so it holds whether or not the geocode
 // index is available.

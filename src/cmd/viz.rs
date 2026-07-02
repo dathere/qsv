@@ -6397,10 +6397,10 @@ fn sum_dict_tokens(stderr: &str) -> Option<u64> {
         let Some(start) = line.find("TokenUsage {") else {
             continue;
         };
-        let Some(tpos) = line[start..].find("total:") else {
+        let Some(total_pos) = line[start..].find("total:") else {
             continue;
         };
-        let digits: String = line[start + tpos + "total:".len()..]
+        let digits: String = line[start + total_pos + "total:".len()..]
             .trim_start()
             .chars()
             .take_while(char::is_ascii_digit)
@@ -9249,15 +9249,18 @@ fn build_smart_pip_choropleth_panel(
 /// winning over duplicate geocoded components. Returns `None` when no pair is found, the columns
 /// aren't numeric, or no row has valid coordinates. On success returns the panel together with the
 /// (lat, lon) column indices it consumed, so the caller can exclude exactly those columns from the
-/// other panels — and only when a map is actually rendered. Without a dictionary hint, name
-/// detection needs headers, so this is a no-op under `--no-headers`.
+/// other panels — and only when a map is actually rendered. The trailing `usize` is the full
+/// mappable point count (before outlier split / downsampling) that drove the density decision, so
+/// the caller's heatmap note reports the source count rather than the downsampled rendered count.
+/// Without a dictionary hint, name detection needs headers, so this is a no-op under
+/// `--no-headers`.
 fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
-) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize))>> {
+) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
@@ -9346,8 +9349,11 @@ fn build_map_panel(
     // The user-facing heatmap note is emitted by the caller, but only once it's certain a
     // DensityMapbox will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
     // becomes a `ScatterGeo` world-overview and static image export coerces `Map` -> `Geo`, so
-    // neither draws a heatmap despite `density` being true here.
-    let density = args.flag_heatmap_density > 0 && lats.len() >= args.flag_heatmap_density;
+    // neither draws a heatmap despite `density` being true here. Capture the FULL mappable count
+    // now — `lats` is shadowed by the downsampled, outlier-excluded core below, so the note must
+    // report this source count (the number the threshold was actually compared against).
+    let mappable_count = lats.len();
+    let density = args.flag_heatmap_density > 0 && mappable_count >= args.flag_heatmap_density;
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
     // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
@@ -9590,6 +9596,7 @@ fn build_map_panel(
         },
         choropleth_panel,
         (lat_idx, lon_idx),
+        mappable_count,
     )))
 }
 
@@ -10528,7 +10535,7 @@ fn build_smart(
         progress.set_message("Building map panel…");
         match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
             None => (None, None),
-            Some((p, choro, cols)) => {
+            Some((p, choro, cols, mappable_count)) => {
                 if out_format.is_image() {
                     let kind = match p.kind {
                         PanelKind::Map {
@@ -10562,19 +10569,16 @@ fn build_smart(
                 } else {
                     // HTML output: a local-extent density panel actually renders as a DensityMapbox
                     // here (global extents are `Geo` markers, image export was coerced above), so
-                    // this is the point at which the heatmap note is truthful.
-                    if let PanelKind::Map {
-                        density: true,
-                        lats,
-                        ..
-                    } = &p.kind
-                    {
+                    // this is the point at which the heatmap note is truthful. Report
+                    // `mappable_count` (the full source count that drove the density decision), not
+                    // the panel's downsampled/outlier-excluded `lats`.
+                    if matches!(p.kind, PanelKind::Map { density: true, .. }) {
                         viz_note(&format!(
-                            "viz smart: map has {} mappable points (>= --heatmap-density {}); \
-                             drawing the core as a density heatmap. Per-point hover isn't \
-                             available in heatmap mode — raise --heatmap-density (or set it to 0) \
-                             to render individual markers with full per-point hover.",
-                            lats.len(),
+                            "viz smart: map has {mappable_count} mappable points (>= \
+                             --heatmap-density {}); drawing the core as a density heatmap. \
+                             Per-point hover isn't available in heatmap mode — raise \
+                             --heatmap-density (or set it to 0) to render individual markers with \
+                             full per-point hover.",
                             args.flag_heatmap_density
                         ));
                     }

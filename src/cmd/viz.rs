@@ -374,8 +374,12 @@ smart options:
                            "infer" to run describegpt on the input now (with infer-content-type,
                            two-pass and jsonschema output; requires an LLM configured) and use
                            its output; or a path to an existing describegpt dictionary file
-                           (jsonschema or json). Generation/read failures soft-fall back to the
-                           stats-only dashboard. Only affects `smart`.
+                           (jsonschema or json). With "infer", the generated dictionary is saved
+                           beside the input as <stem>.schema.json so you can fine-tune it; if that
+                           file already exists, it is reused as-is (skipping the LLM) - edit it to
+                           fine-tune, or delete it to force a fresh re-infer.
+                           Generation/read failures soft-fall back to the stats-only dashboard.
+                           Only affects `smart`.
     --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
                            describegpt as --context-file when `--dictionary infer` generates the
@@ -6259,6 +6263,21 @@ fn bivariate_csv_path(input: &str) -> std::path::PathBuf {
     parent.join(format!("{fstem}.stats.bivariate.csv"))
 }
 
+/// Path to the inferred Data Dictionary sidecar for a `viz smart --dictionary infer`
+/// input: `<parent>/<stem>.schema.json`. Written after a successful infer so users can
+/// fine-tune it, and reused (skipping the LLM) on later runs when present.
+fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
+    let input_path = std::path::Path::new(input);
+    let parent = input_path
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new(""));
+    let fstem = input_path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_else(|| input.to_string());
+    parent.join(format!("{fstem}.schema.json"))
+}
+
 /// Whether a bivariate sidecar on disk was written by the CURRENT `moarstats --bivariate` run,
 /// used to guard against reading a stale one a prior run left behind. Given the pre-run mtime
 /// snapshot (`before`, `None` if the file was absent), the post-run snapshot (`after`, `None` if
@@ -7624,19 +7643,6 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
     (!rows.is_empty()).then_some(DictData { rows, grain: None })
 }
 
-/// Resolve the `--dictionary` source into a parsed `DictData` for `viz smart`:
-///   * `infer` -> run `qsv describegpt --dictionary --infer-content-type --two-pass --format
-///     jsonschema` on the input now (requires an LLM configured) and parse its stdout. The
-///     jsonschema format carries role/concept (in each property's `x-qsv`) and the dataset grain,
-///     and — unlike `--format json` — does not perturb describegpt's two-pass refine cache.
-///     `--dictionary-context <file>` is forwarded as describegpt's `--context-file` so a glossary /
-///     README / data dictionary conditions the role/concept/label/grain inference.
-///   * any other value -> a path to an existing describegpt dictionary file (jsonschema or json).
-///     `--dictionary-context` does not apply here (the dictionary is already built) and is ignored
-///     with a warning.
-///
-/// Soft-fails (warns, returns `Ok(None)`) when generation or reading fails, so a missing LLM or a
-/// stray path degrades to the plain stats-driven dashboard instead of aborting.
 fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
     let Some(spec) = args.flag_dictionary.as_deref() else {
         if args.flag_dictionary_context.is_some() {
@@ -7656,34 +7662,77 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
         );
     }
 
+    // Set to the sidecar path ONLY when we infer a fresh dictionary this run, so we persist it
+    // after a successful parse (and never overwrite a reused/hand-edited one).
+    let mut persist_to: Option<std::path::PathBuf> = None;
+    // Human label for the dictionary source, used in the "not recognizable" fallback message so a
+    // broken hand-edited sidecar points the user at the file to fix (not the literal "infer").
+    let mut source_label = spec.to_string();
+
     let json_text = if is_infer {
-        // forward --dictionary-context to describegpt as --context-file when present, so the LLM's
-        // role/concept/label/grain inference is conditioned on the user's domain context.
-        let mut dg_args: Vec<&str> = vec![
-            "--dictionary",
-            "--infer-content-type",
-            "--two-pass",
-            "--format",
-            "jsonschema",
-        ];
-        if let Some(ctx) = args.flag_dictionary_context.as_deref() {
-            dg_args.push("--context-file");
-            dg_args.push(ctx);
-        }
-        match util::run_qsv_cmd(
-            "describegpt",
-            &dg_args,
-            input,
-            "Generated a Data Dictionary via describegpt for `viz smart --dictionary infer`",
-        ) {
-            Ok((stdout, _stderr)) => stdout,
-            Err(e) => {
-                eprintln!(
-                    "viz smart --dictionary infer: describegpt failed ({e}); building the \
-                     dashboard from statistics alone (no semantic hints)."
-                );
-                return Ok(None);
-            },
+        let sidecar = dictionary_sidecar_path(input);
+        if sidecar.exists() {
+            // Reuse the on-disk dictionary from a prior infer (or the user's fine-tuned edit),
+            // skipping the LLM entirely.
+            match std::fs::read_to_string(&sidecar) {
+                Ok(text) => {
+                    eprintln!(
+                        "viz smart --dictionary infer: reusing existing dictionary '{}' (delete \
+                         it to re-infer).",
+                        sidecar.display()
+                    );
+                    if args.flag_dictionary_context.is_some() {
+                        eprintln!(
+                            "viz smart --dictionary-context: ignored when reusing the existing \
+                             dictionary '{}' (the dictionary is already built); delete it to \
+                             re-infer with context.",
+                            sidecar.display()
+                        );
+                    }
+                    source_label = sidecar.display().to_string();
+                    text
+                },
+                Err(e) => {
+                    eprintln!(
+                        "viz smart --dictionary infer: could not read existing dictionary '{}' \
+                         ({e}); building the dashboard from statistics alone.",
+                        sidecar.display()
+                    );
+                    return Ok(None);
+                },
+            }
+        } else {
+            // forward --dictionary-context to describegpt as --context-file when present, so the
+            // LLM's role/concept/label/grain inference is conditioned on the user's domain context.
+            let mut dg_args: Vec<&str> = vec![
+                "--dictionary",
+                "--infer-content-type",
+                "--two-pass",
+                "--format",
+                "jsonschema",
+            ];
+            if let Some(ctx) = args.flag_dictionary_context.as_deref() {
+                dg_args.push("--context-file");
+                dg_args.push(ctx);
+            }
+            match util::run_qsv_cmd(
+                "describegpt",
+                &dg_args,
+                input,
+                "Generated a Data Dictionary via describegpt for `viz smart --dictionary infer`",
+            ) {
+                Ok((stdout, _stderr)) => {
+                    persist_to = Some(sidecar);
+                    stdout
+                },
+                Err(e) => {
+                    eprintln!(
+                        "viz smart --dictionary infer: describegpt failed ({e}); building the \
+                         dashboard from statistics alone (no semantic hints)."
+                    );
+                    return Ok(None);
+                },
+            }
         }
     } else {
         match std::fs::read_to_string(spec) {
@@ -7699,10 +7748,30 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
     };
 
     let data = parse_dictionary_semantics(&json_text);
+
+    // Persist a freshly-inferred dictionary next to the input so users can fine-tune it and later
+    // runs can reuse it. Only when the parse succeeded (never persist output the loader can't read)
+    // and only for a fresh infer (never clobber a reused/hand-edited file). Best-effort: warn on a
+    // write failure, matching this function's soft-fail-to-stats philosophy.
+    if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
+        match std::fs::write(path, &json_text) {
+            Ok(()) => eprintln!(
+                "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
+                 fine-tune; reused on later runs).",
+                path.display()
+            ),
+            Err(e) => eprintln!(
+                "viz smart --dictionary infer: could not save dictionary to '{}' ({e}); \
+                 continuing (it will be re-inferred next run).",
+                path.display()
+            ),
+        }
+    }
+
     if data.is_none() {
         eprintln!(
-            "viz smart --dictionary: '{spec}' is not a recognizable describegpt dictionary (JSON \
-             Schema or JSON); building the dashboard from statistics alone."
+            "viz smart --dictionary: '{source_label}' is not a recognizable describegpt \
+             dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
         );
     }
     Ok(data)

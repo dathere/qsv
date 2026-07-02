@@ -2844,6 +2844,60 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
     assert!(html.contains("Case Status"));
 }
 
+// `--dictionary infer` reuses a pre-existing `<stem>.schema.json` sidecar beside the input,
+// skipping the LLM entirely. CI has no LLM configured, so an actual infer would soft-fall to the
+// stats-only dashboard (census_tract -> box). The dictionary routing (bar, not box) + labels
+// therefore prove the sidecar was reused rather than re-inferred.
+#[test]
+fn viz_smart_dictionary_infer_reuses_sidecar() {
+    let wrk = Workdir::new("viz_smart_dictionary_infer_reuses_sidecar");
+    let mut rows = String::from("census_tract,status\n");
+    for i in 0..200 {
+        let tract = i % 40; // 40 distinct integer codes -> a box without semantics
+        let status = match i % 3 {
+            0 => "Open",
+            1 => "Closed",
+            _ => "Pending",
+        };
+        rows.push_str(&format!("{tract},{status}\n"));
+    }
+    wrk.create_from_string("codes.csv", &rows);
+
+    // Seed the sidecar at the exact path `--dictionary infer` looks for: `<stem>.schema.json`
+    // beside the input.
+    wrk.create_from_string(
+        "codes.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Case Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          },
+          "x-qsv": { "grain": "one row = one service request" }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary", "infer"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // reused sidecar -> census_tract routed as a bar (not a box) with its human label
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "census_tract should be a bar (not a box) when the sidecar dictionary is reused"
+    );
+    assert!(html.contains(r#""type":"bar""#));
+    assert!(
+        html.contains("Census Tract"),
+        "reused dictionary label should appear on the panel"
+    );
+    assert!(html.contains("Case Status"));
+}
+
 // The field name titles each per-column panel and the dictionary label becomes a smaller muted
 // subtitle beneath it (rather than the label replacing the field name outright).
 #[test]

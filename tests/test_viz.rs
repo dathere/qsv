@@ -2504,6 +2504,38 @@ fn viz_smart_with_coords_has_map_panel() {
     assert!(!html.contains(r#""scope":"#));
 }
 
+#[test]
+fn viz_smart_heatmap_density_threshold() {
+    let wrk = Workdir::new("viz_smart_heatmap_density_threshold");
+    // a small, locally-clustered lat/lon dataset so smart renders a mapbox tile map (not the
+    // global ScatterGeo world-overview), where the heatmap-vs-markers decision applies.
+    wrk.create_from_string(
+        "local_geo.csv",
+        "id,lat,lon,val\n1,40.440,-79.990,a\n2,40.441,-79.991,b\n3,40.442,-79.992,c\n4,40.443,-79.\
+         993,d\n",
+    );
+
+    // --heatmap-density 0 => always individual markers (full per-point hover), never a heatmap
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "local_geo.csv", "--heatmap-density", "0"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(!html.contains(r#""type":"densitymapbox""#));
+
+    // a low threshold (<= point count) => draw the core cluster as a density heatmap, and emit the
+    // explanatory note (per-point hover unavailable in heatmap mode) to stderr.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "local_geo.csv", "--heatmap-density", "2"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"densitymapbox""#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("--heatmap-density 2"));
+}
+
 // `viz smart` adds the row identifier (here the near-unique `place` column) to each map point's
 // hover, in addition to the coordinates. Dataset-derived, so it holds whether or not the geocode
 // index is available.

@@ -345,6 +345,14 @@ smart options:
     --grid-cols <n>        Number of columns in the dashboard grid for the per-column
                            distribution panels. Overview panels (map/geo, correlation,
                            time-series) always span the full width. [default: 2]
+    --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
+                           points, draw the core cluster as a density heatmap
+                           (DensityMapbox) instead of individual markers, which
+                           overplot into a solid, unreadable mass at scale. A heatmap
+                           has no per-point hover — only a generic density readout —
+                           whereas individual markers keep their full per-point hover.
+                           Set to 0 to always render individual markers (never a
+                           heatmap), regardless of point count. [default: 20000]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -652,18 +660,14 @@ const LABEL_MAX_BARS: usize = 40;
 /// overall shape/distribution of the data.
 const MAX_SMART_POINTS: usize = 50_000;
 
-/// At or above this many mappable rows, `viz smart` draws its map panel as a density heatmap
-/// (DensityMapbox) rather than individual markers, which overplot into a solid mass at scale.
-const MAP_DENSITY_MIN_POINTS: usize = 20_000;
-
 /// Max geographic outlier points embedded per `viz smart` map panel. Outliers are the whole point
 /// of the call-out, so this is set generously, but still bounds the embedded payload; if there are
 /// more, they're uniformly stride-sampled (like the core points) rather than dropped wholesale.
 const SMART_GEO_OUTLIER_CAP: usize = 5_000;
 
 /// Marker opacity for the `viz smart` map panel when it's drawn as discrete points (i.e. fewer
-/// than `MAP_DENSITY_MIN_POINTS` rows). Mild transparency reveals overlapping points instead of a
-/// flat blob.
+/// than the `--heatmap-density` threshold rows). Mild transparency reveals overlapping points
+/// instead of a flat blob.
 const MAP_POINT_OPACITY: f64 = 0.4;
 
 /// Fraction trimmed from each end of the latitude/longitude distributions when framing a map, so a
@@ -947,6 +951,7 @@ struct Args {
     flag_box_points:         Option<String>,
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
+    flag_heatmap_density:    usize,
     flag_limit:              usize,
     flag_no_nulls:           bool,
     flag_no_other:           bool,
@@ -6392,10 +6397,10 @@ fn sum_dict_tokens(stderr: &str) -> Option<u64> {
         let Some(start) = line.find("TokenUsage {") else {
             continue;
         };
-        let Some(tpos) = line[start..].find("total:") else {
+        let Some(total_pos) = line[start..].find("total:") else {
             continue;
         };
-        let digits: String = line[start + tpos + "total:".len()..]
+        let digits: String = line[start + total_pos + "total:".len()..]
             .trim_start()
             .chars()
             .take_while(char::is_ascii_digit)
@@ -9244,15 +9249,18 @@ fn build_smart_pip_choropleth_panel(
 /// winning over duplicate geocoded components. Returns `None` when no pair is found, the columns
 /// aren't numeric, or no row has valid coordinates. On success returns the panel together with the
 /// (lat, lon) column indices it consumed, so the caller can exclude exactly those columns from the
-/// other panels — and only when a map is actually rendered. Without a dictionary hint, name
-/// detection needs headers, so this is a no-op under `--no-headers`.
+/// other panels — and only when a map is actually rendered. The trailing `usize` is the full
+/// mappable point count (before outlier split / downsampling) that drove the density decision, so
+/// the caller's heatmap note reports the source count rather than the downsampled rendered count.
+/// Without a dictionary hint, name detection needs headers, so this is a no-op under
+/// `--no-headers`.
 fn build_map_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
     col_sems: &[ColSemantics],
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
-) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize))>> {
+) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
     };
@@ -9336,8 +9344,16 @@ fn build_map_panel(
         return Ok(None);
     }
     // decide density vs. markers from the full row count, then cap the embedded points so a huge
-    // dataset doesn't bloat the HTML or freeze the browser on pan/zoom
-    let density = lats.len() >= MAP_DENSITY_MIN_POINTS;
+    // dataset doesn't bloat the HTML or freeze the browser on pan/zoom. A `--heatmap-density` of 0
+    // disables the heatmap entirely (always render individual markers, whatever the point count).
+    // The user-facing heatmap note is emitted by the caller, but only once it's certain a
+    // DensityMapbox will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
+    // becomes a `ScatterGeo` world-overview and static image export coerces `Map` -> `Geo`, so
+    // neither draws a heatmap despite `density` being true here. Capture the FULL mappable count
+    // now — `lats` is shadowed by the downsampled, outlier-excluded core below, so the note must
+    // report this source count (the number the threshold was actually compared against).
+    let mappable_count = lats.len();
+    let density = args.flag_heatmap_density > 0 && mappable_count >= args.flag_heatmap_density;
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
     // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
@@ -9580,6 +9596,7 @@ fn build_map_panel(
         },
         choropleth_panel,
         (lat_idx, lon_idx),
+        mappable_count,
     )))
 }
 
@@ -10518,7 +10535,7 @@ fn build_smart(
         progress.set_message("Building map panel…");
         match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
             None => (None, None),
-            Some((p, choro, cols)) => {
+            Some((p, choro, cols, mappable_count)) => {
                 if out_format.is_image() {
                     let kind = match p.kind {
                         PanelKind::Map {
@@ -10550,6 +10567,21 @@ fn build_smart(
                     };
                     (Some((p, cols)), None)
                 } else {
+                    // HTML output: a local-extent density panel actually renders as a DensityMapbox
+                    // here (global extents are `Geo` markers, image export was coerced above), so
+                    // this is the point at which the heatmap note is truthful. Report
+                    // `mappable_count` (the full source count that drove the density decision), not
+                    // the panel's downsampled/outlier-excluded `lats`.
+                    if matches!(p.kind, PanelKind::Map { density: true, .. }) {
+                        viz_note(&format!(
+                            "viz smart: map has {mappable_count} mappable points (>= \
+                             --heatmap-density {}); drawing the core as a density heatmap. \
+                             Per-point hover isn't available in heatmap mode — raise \
+                             --heatmap-density (or set it to 0) to render individual markers with \
+                             full per-point hover.",
+                            args.flag_heatmap_density
+                        ));
+                    }
                     (Some((p, cols)), choro)
                 }
             },

@@ -751,6 +751,9 @@ const BOTTOM_MARGIN_PX: usize = 60;
 /// rendered glyph height (~17px for the 13px font).
 const TITLE_BAND_PX: usize = 32;
 const TITLE_OFFSET_PX: usize = 6;
+/// Extra band pixels reserved when panels carry a subtitle (dictionary label under the title),
+/// so the second, smaller line clears the chart above without overlap.
+const TITLE_SUBTITLE_EXTRA_PX: usize = 16;
 
 /// Default dashboard left margin (pixels), widened when a correlation-heatmap panel is present
 /// so its (long) numeric-column tick labels aren't clipped.
@@ -6581,6 +6584,10 @@ fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
 /// A single dashboard panel: a column and the chart chosen for it.
 struct Panel {
     name:     String,
+    /// Optional secondary line shown beneath the title (smaller, muted). Carries the
+    /// dictionary's human-readable label so `name` can stay the raw field name (which also
+    /// feeds trace names and status messages, so it must stay plain — no markup).
+    subtitle: Option<String>,
     kind:     PanelKind,
     /// Reverse-geocoded spatial-extent metadata for a `Map`/`Geo` panel (the 4 bounding-box
     /// corners + center, plus a consolidated jurisdiction summary). `None` for non-map panels,
@@ -6595,9 +6602,31 @@ impl Panel {
     fn new(name: String, kind: PanelKind) -> Self {
         Panel {
             name,
+            subtitle: None,
             kind,
             #[cfg(feature = "geocode")]
             geo_meta: None,
+        }
+    }
+
+    /// Attach an optional subtitle (the dictionary label) shown beneath the title.
+    fn with_subtitle(mut self, subtitle: Option<String>) -> Self {
+        self.subtitle = subtitle;
+        self
+    }
+
+    /// The on-screen title markup: the field name, with the dictionary label as a smaller muted
+    /// subtitle line when present. Plotly renders `<br>`/`<span style>` in both annotation and
+    /// title text. `self.name` itself stays plain (it also feeds trace names / status messages).
+    fn display_title(&self) -> String {
+        match &self.subtitle {
+            Some(sub) => format!(
+                "{}<br><span style=\"font-size:11px;color:{}\">{}</span>",
+                html_escape(&self.name),
+                MUTED_COLOR,
+                html_escape(sub)
+            ),
+            None => self.name.clone(),
         }
     }
 }
@@ -9310,6 +9339,7 @@ fn build_map_panel(
     Ok(Some((
         Panel {
             name: "Map".to_string(),
+            subtitle: None,
             kind,
             #[cfg(feature = "geocode")]
             geo_meta,
@@ -10254,6 +10284,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     };
                     let p = Panel {
                         name: p.name,
+                        subtitle: p.subtitle,
                         kind,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
@@ -10291,15 +10322,16 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             continue;
         }
         let sem = &col_sems[idx];
-        // prefer the dictionary's human label for the panel title, falling back to the header
-        // (or a positional name when headerless).
-        let name = if !sem.label.is_empty() {
-            sem.label.clone()
-        } else if s.field.is_empty() {
+        // the panel title is the raw field name (or a positional name when headerless); the
+        // dictionary's human label becomes a subtitle beneath it, dropped when it's empty or
+        // just echoes the header.
+        let name = if s.field.is_empty() {
             format!("col {}", idx + 1)
         } else {
             s.field.clone()
         };
+        let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
+            .then(|| sem.label.clone());
         // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
         if twin_suppress.contains(&idx) {
             skipped.push(name);
@@ -10356,7 +10388,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     },
                     _ => name,
                 };
-                panels.push(Panel::new(name, kind));
+                panels.push(Panel::new(name, kind).with_subtitle(subtitle));
             },
             None => skipped.push(name),
         }
@@ -11574,7 +11606,7 @@ fn smart_grid_parts(
             geos.push((pos, geo_json));
             annotations.push(
                 Annotation::new()
-                    .text(panel.name.clone())
+                    .text(panel.display_title())
                     .x(geom.title_x)
                     .y(geom.title_y)
                     .x_ref("paper")
@@ -11639,7 +11671,7 @@ fn smart_grid_parts(
         axes.push((pos, x_axis, y_axis));
         annotations.push(
             Annotation::new()
-                .text(panel.name.clone())
+                .text(panel.display_title())
                 .x(geom.title_x)
                 .y(geom.title_y)
                 .x_ref("paper")
@@ -11924,7 +11956,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .mapbox(
                 Mapbox::new()
@@ -12031,7 +12063,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
         if !themed {
@@ -12084,7 +12116,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .map(layout_map);
         if !themed {
@@ -12155,7 +12187,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
         if !themed {
@@ -12196,7 +12228,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .scene(scene);
         if !themed {
@@ -12226,7 +12258,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
@@ -12253,7 +12285,7 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.name.clone()))
+            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
@@ -12315,7 +12347,7 @@ fn smart_inline_panel_plot(
     let mut layout = Layout::new()
         .show_legend(false)
         .height(row_height)
-        .title(Title::with_text(panel.name.clone()))
+        .title(Title::with_text(panel.display_title()))
         .margin(
             Margin::new()
                 .top(48)
@@ -13113,9 +13145,16 @@ fn smart_plot_area_h(rows: usize) -> f64 {
 /// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
 /// reserves a fixed `TITLE_BAND_PX` pixels (converted to a paper fraction via the plot-area
 /// height) for the top row's panel titles, so they always clear the dashboard title — for
-/// both short (one-row) and tall (eight-row) dashboards. Capped at half the area.
-fn smart_grid_top(rows: usize) -> f64 {
-    let band = (TITLE_BAND_PX as f64 / smart_plot_area_h(rows)).min(0.5);
+/// both short (one-row) and tall (eight-row) dashboards. When any panel carries a subtitle
+/// (a dictionary label under the title), the band grows by one extra text line so the
+/// two-line title has room. Capped at half the area.
+fn smart_grid_top(rows: usize, has_subtitles: bool) -> f64 {
+    let band_px = if has_subtitles {
+        TITLE_BAND_PX + TITLE_SUBTITLE_EXTRA_PX
+    } else {
+        TITLE_BAND_PX
+    };
+    let band = (band_px as f64 / smart_plot_area_h(rows)).min(0.5);
     1.0 - band
 }
 
@@ -13262,7 +13301,8 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     }
     let rows = (if col_in_row > 0 { row + 1 } else { row }).max(1);
 
-    let top = smart_grid_top(rows);
+    let has_subtitles = panels.iter().any(|p| p.subtitle.is_some());
+    let top = smart_grid_top(rows, has_subtitles);
     let title_offset = smart_title_offset(rows);
     let geoms = placements
         .into_iter()
@@ -15335,7 +15375,7 @@ mod tests {
                 rows,
                 1,
                 false,
-                smart_grid_top(rows),
+                smart_grid_top(rows, false),
                 smart_title_offset(rows),
             );
             let title_top = g.title_y + GLYPH_PX / area;
@@ -15348,7 +15388,7 @@ mod tests {
         }
 
         // the reserved band is a real pixel size even for a short one-row dashboard
-        let band_px = (1.0 - smart_grid_top(1)) * smart_plot_area_h(1);
+        let band_px = (1.0 - smart_grid_top(1, false)) * smart_plot_area_h(1);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
     }
 
@@ -15361,7 +15401,7 @@ mod tests {
         for panels in [9usize, 16, 30, 42, 64] {
             let cols = 2;
             let rows = panels.div_ceil(cols);
-            let top = smart_grid_top(rows);
+            let top = smart_grid_top(rows, false);
             let offset = smart_title_offset(rows);
             for n in 0..panels {
                 let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset);

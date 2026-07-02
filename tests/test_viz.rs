@@ -2835,12 +2835,74 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
         "census_tract should be a bar (not a box) with the jsonschema dictionary"
     );
     assert!(html.contains(r#""type":"bar""#));
-    // the human labels from `title` become panel titles
+    // the human labels from `title` are surfaced (now as the panel subtitle beneath the field
+    // name); their presence proves the dictionary was applied.
     assert!(
         html.contains("Census Tract"),
-        "label should title the panel"
+        "dictionary label should appear on the panel"
     );
     assert!(html.contains("Case Status"));
+}
+
+// The field name titles each per-column panel and the dictionary label becomes a smaller muted
+// subtitle beneath it (rather than the label replacing the field name outright).
+#[test]
+fn viz_smart_dictionary_field_name_title_label_subtitle() {
+    let wrk = Workdir::new("viz_smart_dictionary_field_name_title_label_subtitle");
+    wrk.create(
+        "codes.csv",
+        vec![
+            svec!["census_tract", "status"],
+            svec!["101", "Open"],
+            svec!["102", "Closed"],
+            svec!["103", "Open"],
+            svec!["104", "Closed"],
+            svec!["105", "Open"],
+        ],
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.census_tract" } },
+            "status": { "type": "string", "title": "Case Status",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // the field name leads (as the title), with the dictionary label on a smaller muted subtitle
+    // line, i.e. "<field><br><span style=...>label</span>". Plotly serializes the title annotation
+    // into a JSON string, so `<`/`>`/`"` are escaped as < / > / \". Build the expected
+    // markup from those escaped pieces so the assertion matches the on-disk bytes exactly.
+    let lt = "\\u003c"; // escaped '<'
+    let gt = "\\u003e"; // escaped '>'
+    let q = "\\\""; // escaped '"'
+    let expected = |field: &str, label: &str| {
+        format!(
+            "{field}{lt}br{gt}{lt}span \
+             style={q}font-size:11px;color:#999999{q}{gt}{label}{lt}/span{gt}"
+        )
+    };
+    let tract = expected("census_tract", "Census Tract");
+    assert!(
+        html.contains(&tract),
+        "expected field-name title + dictionary-label subtitle {tract}; html: {html}"
+    );
+    let status = expected("status", "Case Status");
+    assert!(
+        html.contains(&status),
+        "expected field-name title + dictionary-label subtitle {status}; html: {html}"
+    );
 }
 
 // `--dictionary-context` only applies to `--dictionary infer` (it's forwarded to describegpt as

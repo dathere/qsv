@@ -4557,11 +4557,13 @@ pub fn run_qsv_cmd(
 /// Like `run_qsv_cmd`, but *streams* the child's live progress to the terminal instead of capturing
 /// its output. The child inherits STDERR, so its own `winfo!`/status lines and progress bars render
 /// as it runs; STDOUT is discarded so the child can never corrupt this process's own stdout (e.g.
-/// `viz`'s piped HTML). `QSV_PROGRESSBAR=1` is set for the child so its (and any nested
-/// subcommand's) progress bars are enabled. Returns `Ok(())` on success; use when the caller only
-/// needs the child's on-disk side effects (e.g. `moarstats`' stats/bivariate cache sidecars), not
-/// its stdout. Callers that render their own progress bar should suspend it around this call so the
-/// two don't collide.
+/// `viz`'s piped HTML). `QSV_PROGRESSBAR=1` is set for the child so its OWN in-process progress
+/// bars are enabled. This surfaces only what the child writes to its own stderr — it does NOT
+/// reveal progress from any subprocess the child itself spawns and captures (e.g. `moarstats` runs
+/// its nested `stats`/`frequency` via capturing calls, so those stay hidden). Returns `Ok(())` on
+/// success; use when the caller only needs the child's on-disk side effects (e.g. `moarstats`'
+/// stats/bivariate cache sidecars), not its stdout. Callers that render their own progress bar
+/// should suspend it around this call so the two don't collide.
 pub fn run_qsv_cmd_streaming(
     command: &str,
     args: &[&str],

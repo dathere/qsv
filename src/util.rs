@@ -4554,6 +4554,48 @@ pub fn run_qsv_cmd(
     Ok((stdout_str.to_string(), stderr_str.to_string()))
 }
 
+/// Like `run_qsv_cmd`, but *streams* the child's live progress to the terminal instead of capturing
+/// its output. The child inherits STDERR, so its own `winfo!`/status lines and progress bars render
+/// as it runs; STDOUT is discarded so the child can never corrupt this process's own stdout (e.g.
+/// `viz`'s piped HTML). `QSV_PROGRESSBAR=1` is set for the child so its (and any nested
+/// subcommand's) progress bars are enabled. Returns `Ok(())` on success; use when the caller only
+/// needs the child's on-disk side effects (e.g. `moarstats`' stats/bivariate cache sidecars), not
+/// its stdout. Callers that render their own progress bar should suspend it around this call so the
+/// two don't collide.
+pub fn run_qsv_cmd_streaming(
+    command: &str,
+    args: &[&str],
+    input_path: &str,
+    status_msg: &str,
+) -> CliResult<()> {
+    let start_time = Instant::now();
+
+    // safety: we know that the current_exe() is very unlikely to fail as qsv is already running
+    let qsv_path = QSV_PATH.get_or_init(|| current_exe().unwrap().to_string_lossy().to_string());
+    let mut cmd = Command::new(qsv_path);
+
+    if command == "sample" {
+        cmd.arg(command).args(args).arg(input_path);
+    } else {
+        cmd.arg(command).arg(input_path).args(args);
+    }
+
+    cmd.env("QSV_PROGRESSBAR", "1")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::inherit());
+
+    let status = cmd
+        .status()
+        .map_err(|e| CliError::Other(format!("Error while executing command {command}: {e:?}")))?;
+
+    if !status.success() {
+        return fail_clierror!("Command {command} failed with exit status: {status}");
+    }
+
+    print_status(status_msg, Some(start_time.elapsed()));
+    Ok(())
+}
+
 /// Sync subprocess output to disk and validate it is non-empty.
 ///
 /// After a child `qsv` subprocess writes its output via `--output <path>` and

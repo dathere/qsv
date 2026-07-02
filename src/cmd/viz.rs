@@ -449,7 +449,7 @@ Common options:
 
 use std::{
     collections::{BTreeMap, HashMap},
-    io::Write,
+    io::{IsTerminal, Write},
     time::{Duration, Instant},
 };
 
@@ -1089,7 +1089,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let _progress_guard = ProgressGuard(progress.clone());
 
     let (mut plot, smart_dims) = if args.cmd_smart {
-        match build_smart(&args, out_format, &progress)? {
+        match build_smart(&args, out_format, &progress, show_progress)? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
             SmartRender::Inline(html) => {
@@ -10253,6 +10253,7 @@ fn build_smart(
     args: &Args,
     out_format: OutFormat,
     progress: &ProgressBar,
+    show_progress: bool,
 ) -> CliResult<SmartRender> {
     let mut args = args.clone();
 
@@ -10379,15 +10380,25 @@ fn build_smart(
                     Err(e) => e.kind() == std::io::ErrorKind::NotFound,
                 };
             }
-            // Keep the spinner live during the run: run_qsv_cmd captures moarstats' output (it
-            // never reaches the terminal), so there's nothing to clash with the animated bar.
+            // moarstats --advanced (+ --bivariate) is by far the longest phase (a full stats
+            // recompute + advanced/pairwise passes over every row). On an interactive terminal,
+            // stream moarstats' OWN live progress (its per-phase status lines and progress bars)
+            // instead of a single static spinner line: suspend our spinner and let the child render
+            // to the inherited stderr (its stdout is discarded so it can't corrupt ours). When
+            // progress is disabled or output is piped/redirected, fall back to the capturing path
+            // so nothing is emitted. Either way viz only needs the on-disk
+            // stats/bivariate sidecars.
+            let status_msg =
+                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`";
+            let stream_moarstats = show_progress && std::io::stderr().is_terminal();
             progress.set_message("Analyzing column relationships…");
-            let moar_result = util::run_qsv_cmd(
-                "moarstats",
-                &moar_argv,
-                &input,
-                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
-            );
+            let moar_result: CliResult<()> = if stream_moarstats {
+                progress.suspend(|| {
+                    util::run_qsv_cmd_streaming("moarstats", &moar_argv, &input, status_msg)
+                })
+            } else {
+                util::run_qsv_cmd("moarstats", &moar_argv, &input, status_msg).map(|_| ())
+            };
             if let Err(e) = &moar_result {
                 viz_note(&format!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \

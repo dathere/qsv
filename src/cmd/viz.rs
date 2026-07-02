@@ -11,6 +11,11 @@ The output format is inferred from the --output file extension (.html is the def
 Interactive HTML is written to stdout when --output is not given; image formats always
 require --output. Use --open to view the result in your default browser/viewer.
 
+Progress is shown on stderr by default: a spinner with per-phase status messages (loading
+statistics, inferring the data dictionary, computing correlations, rendering, etc.). It is
+auto-hidden when stderr is not a terminal (e.g. piped or redirected). Set the QSV_PROGRESSBAR
+environment variable to a falsy value (0/false/off) to disable it.
+
 Chart types (subcommands):
     smart       Auto-dashboard. Picks an appropriate chart per column from the
                 dataset's statistics & frequency distribution (no --x/--y needed).
@@ -444,10 +449,11 @@ Common options:
 
 use std::{
     collections::{BTreeMap, HashMap},
-    io::Write,
+    io::{IsTerminal, Write},
+    time::{Duration, Instant},
 };
 
-use indicatif::HumanCount;
+use indicatif::{HumanCount, HumanDuration, ProgressBar, ProgressDrawTarget, ProgressStyle};
 // the Core/Full extent zoom buttons are part of the geocode-gated spatial-extent overlay
 #[cfg(feature = "geocode")]
 use plotly::layout::update_menu::{
@@ -1062,16 +1068,41 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         );
     }
 
+    // viz shows a progress spinner on stderr by default; QSV_PROGRESSBAR can disable it. A
+    // recognized-falsy value turns it off; anything else (incl. unset) leaves it on. (Can't reuse
+    // util::get_envvar_flag — that treats unset as false, i.e. default-OFF.) indicatif itself
+    // hides the spinner when stderr isn't a terminal, so piped/redirected runs stay clean.
+    let show_progress = match std::env::var("QSV_PROGRESSBAR") {
+        Ok(v) => !matches!(
+            v.trim().to_ascii_lowercase().as_str(),
+            "" | "false" | "f" | "0" | "no" | "n" | "off"
+        ),
+        Err(_) => true,
+    };
+    let progress = viz_progress(show_progress);
+    // register the bar so viz_note() can suspend it from anywhere in the call tree (ProgressBar is
+    // Arc-backed, so the clone is cheap and shares the same underlying bar).
+    let _ = VIZ_PROGRESS.set(progress.clone());
+    // clear the spinner on EVERY exit path, incl. the `?` error returns below, so an error message
+    // is never printed over a still-animating bar (the explicit finish_and_clear()s before the
+    // success outputs stay — clearing twice is harmless).
+    let _progress_guard = ProgressGuard(progress.clone());
+
     let (mut plot, smart_dims) = if args.cmd_smart {
-        match build_smart(&args, out_format)? {
+        match build_smart(&args, out_format, &progress, show_progress)? {
             // >8-panel HTML dashboards are assembled as an inline-div grid that bypasses the
             // single-`Plot` output path entirely.
-            SmartRender::Inline(html) => return output_inline_html(&html, &args),
+            SmartRender::Inline(html) => {
+                progress.finish_and_clear();
+                return output_inline_html(&html, &args);
+            },
             // >8-panel static image export is a raw Plotly JSON value (with xaxis9+/yaxis9+ that
             // the typed `Plot` can't hold), rendered directly via the static exporter.
             SmartRender::GridJson { value, dims } => {
                 let img_width = args.flag_width.unwrap_or(dims.0);
                 let img_height = args.flag_height.unwrap_or(dims.1);
+                progress.set_message("Exporting image…");
+                progress.finish_and_clear();
                 return output_image_json(
                     &value,
                     &args,
@@ -1092,13 +1123,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 // point. Static image export keeps the typed `Plot` path below.
                 if matches!(out_format, OutFormat::Html) {
                     let html = render_smart_grid_page(*plot, theme, &title);
+                    progress.finish_and_clear();
                     return output_inline_html(&html, &args);
                 }
                 (plot, Some(dims))
             },
         }
     } else {
-        (Box::new(build_plot(&args, out_format)?), None)
+        (Box::new(build_plot(&args, out_format, &progress)?), None)
     };
 
     // make the interactive HTML re-fit its width to the window/container on resize; this
@@ -1111,6 +1143,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let img_width = args.flag_width.or(smart_w).unwrap_or(DEFAULT_IMG_WIDTH);
     let img_height = args.flag_height.or(smart_h).unwrap_or(DEFAULT_IMG_HEIGHT);
 
+    progress.finish_and_clear();
     output_plot(
         &plot,
         &args,
@@ -1179,7 +1212,8 @@ fn output_inline_html(html: &str, args: &Args) -> CliResult<()> {
 }
 
 /// Build a `Plot` for the requested chart subcommand.
-fn build_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
+fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> CliResult<Plot> {
+    progress.set_message("Building chart…");
     // --color/--size are per-point marker encodings that apply to scatter and map only, and
     // need a single trace, so they can't be combined with --series (which splits into traces).
     if encoded_scatter(args) {
@@ -3141,10 +3175,10 @@ fn build_pip_features(
         );
     }
     if skipped > 0 {
-        eprintln!(
+        viz_note(&format!(
             "viz: skipped {skipped} GeoJSON feature(s) lacking a '{feature_id_key}' id or polygon \
              geometry."
-        );
+        ));
     }
     Ok(out)
 }
@@ -3719,15 +3753,15 @@ fn choropleth_pip_locations(
         "--no-snap".to_string()
     };
     if snapped > 0 {
-        eprintln!(
+        viz_note(&format!(
             "viz choropleth: {snapped} of {total} points were snapped to the nearest region."
-        );
+        ));
     }
     if dropped > 0 {
-        eprintln!(
+        viz_note(&format!(
             "viz choropleth: {dropped} of {total} points fell outside every region and were \
              dropped ({drop_reason})."
-        );
+        ));
     }
 
     let (locs, z) = aggregate(raw_locs, values, agg);
@@ -4602,12 +4636,12 @@ fn advise_if_pie_hard_to_read(values: &[f64]) {
     let variance = values.iter().map(|v| (v - mean) * (v - mean)).sum::<f64>() / n;
     let cv = variance.sqrt() / mean;
     if cv < PIE_NEAR_EQUAL_MAX_CV {
-        eprintln!(
+        viz_note(&format!(
             "viz pie: {} slices are near-equal (coefficient of variation {cv:.2} < \
              {PIE_NEAR_EQUAL_MAX_CV:.2}); a pie makes near-equal slices hard to compare. Consider \
              `viz bar` for an easier read.",
             values.len()
-        );
+        ));
     }
 }
 
@@ -6278,6 +6312,102 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
     parent.join(format!("{fstem}.schema.json"))
 }
 
+/// Build viz's phase-progress spinner. When `show`, it draws to stderr; indicatif hides it
+/// automatically when stderr isn't a terminal (piped/redirected/CI), so no manual TTY check is
+/// needed. When not shown, a hidden no-op bar keeps call sites branch-free.
+///
+/// The spinner steady-ticks so it stays visible AND animated throughout the long phases
+/// (stats/dictionary/moarstats/map). Those phases' subprocesses run via `util::run_qsv_cmd`,
+/// which *captures* their output rather than letting it hit the terminal, so they don't clash
+/// with the live bar. viz's own stderr writes go through `viz_note()`, which suspends the
+/// registered `VIZ_PROGRESS` bar around each write so they print cleanly around the tick.
+fn viz_progress(show: bool) -> ProgressBar {
+    if show {
+        let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
+        pb.set_style(
+            ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {msg}").unwrap(),
+        );
+        pb.enable_steady_tick(Duration::from_millis(120));
+        pb
+    } else {
+        ProgressBar::with_draw_target(None, ProgressDrawTarget::hidden())
+    }
+}
+
+/// RAII guard that clears viz's progress spinner on drop, so a live steady-ticking bar never
+/// lingers past `run()` — including the `?` error paths that return after the bar is registered
+/// but before an explicit `finish_and_clear()`. Without this, a validation/build error would print
+/// the top-level error message on top of an animating spinner on a TTY. `finish_and_clear()` is
+/// safe to call more than once, so the explicit clears on the success paths stay harmless.
+struct ProgressGuard(ProgressBar);
+
+impl Drop for ProgressGuard {
+    fn drop(&mut self) {
+        self.0.finish_and_clear();
+    }
+}
+
+/// The active `viz` progress spinner, registered once by `run()` so notices emitted deep in the
+/// call tree (map/choropleth/bivariate helpers, dictionary messages) can suspend it without every
+/// helper having to thread a `&ProgressBar`. `viz` runs once per process, so a process-global is
+/// safe here.
+static VIZ_PROGRESS: std::sync::OnceLock<ProgressBar> = std::sync::OnceLock::new();
+
+/// Emit a `viz` notice to stderr without garbling a live progress spinner. When a spinner is
+/// registered (see `VIZ_PROGRESS`) it is briefly suspended around the write so indicatif clears and
+/// redraws the bar cleanly; otherwise the message is written directly. A suspended write still
+/// reaches stderr even when the bar is hidden (non-TTY), so notices are never swallowed.
+fn viz_note(msg: &str) {
+    match VIZ_PROGRESS.get() {
+        Some(pb) => pb.suspend(|| eprintln!("{msg}")),
+        None => eprintln!("{msg}"),
+    }
+}
+
+/// Extract the model name from a describegpt JSON Schema dictionary. The model is baked into
+/// the `x-qsv.generated_by` provenance string as a `Model: <model>` line. Returns `None` when
+/// the text isn't parseable JSON or carries no such line (e.g. a hand-written dictionary).
+fn parse_dict_model(json_text: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json_text).ok()?;
+    let generated_by = value.get("x-qsv")?.get("generated_by")?.as_str()?;
+    for line in generated_by.lines() {
+        if let Some(rest) = line.trim().strip_prefix("Model:") {
+            let model = rest.trim();
+            if !model.is_empty() {
+                return Some(model.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Sum the total token counts describegpt reports on its (captured) stderr. Each inference
+/// pass prints a `TokenUsage { prompt: N, completion: N, total: N, elapsed: N, completion_tps:
+/// N.NN }` line; `--two-pass` yields two. Returns `None` when no such line is present (e.g.
+/// describegpt ran quiet), else the summed `total:` across passes.
+fn sum_dict_tokens(stderr: &str) -> Option<u64> {
+    let mut sum = 0_u64;
+    let mut found = false;
+    for line in stderr.lines() {
+        let Some(start) = line.find("TokenUsage {") else {
+            continue;
+        };
+        let Some(tpos) = line[start..].find("total:") else {
+            continue;
+        };
+        let digits: String = line[start + tpos + "total:".len()..]
+            .trim_start()
+            .chars()
+            .take_while(char::is_ascii_digit)
+            .collect();
+        if let Ok(n) = digits.parse::<u64>() {
+            sum += n;
+            found = true;
+        }
+    }
+    found.then_some(sum)
+}
+
 /// Whether a bivariate sidecar on disk was written by the CURRENT `moarstats --bivariate` run,
 /// used to guard against reading a stale one a prior run left behind. Given the pre-run mtime
 /// snapshot (`before`, `None` if the file was absent), the post-run snapshot (`after`, `None` if
@@ -6387,17 +6517,17 @@ fn bivariate_panels(
     let rows = match parse_bivariate_csv(&path) {
         Ok(rows) => rows,
         Err(e) => {
-            eprintln!(
+            viz_note(&format!(
                 "viz smart --bivariate: could not read moarstats bivariate output ({e}); skipping \
                  the association panels."
-            );
+            ));
             return (None, None);
         },
     };
     if rows.is_empty() {
-        eprintln!(
+        viz_note(
             "viz smart --bivariate: moarstats produced no bivariate pairs; skipping the \
-             association panels."
+             association panels.",
         );
         return (None, None);
     }
@@ -7646,7 +7776,7 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
 fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
     let Some(spec) = args.flag_dictionary.as_deref() else {
         if args.flag_dictionary_context.is_some() {
-            eprintln!("viz smart --dictionary-context: ignored without --dictionary infer.");
+            viz_note("viz smart --dictionary-context: ignored without --dictionary infer.");
         }
         return Ok(None);
     };
@@ -7656,15 +7786,18 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
 
     let is_infer = spec.eq_ignore_ascii_case("infer");
     if args.flag_dictionary_context.is_some() && !is_infer {
-        eprintln!(
+        viz_note(
             "viz smart --dictionary-context: only applies to `--dictionary infer` (a generated \
-             dictionary); ignored when reading an existing dictionary file."
+             dictionary); ignored when reading an existing dictionary file.",
         );
     }
 
     // Set to the sidecar path ONLY when we infer a fresh dictionary this run, so we persist it
     // after a successful parse (and never overwrite a reused/hand-edited one).
     let mut persist_to: Option<std::path::PathBuf> = None;
+    // Captured describegpt stderr + wall-clock elapsed, set ONLY on a fresh infer, so the
+    // post-parse summary can report the model/tokens/elapsed of what the LLM just produced.
+    let mut infer_meta: Option<(String, std::time::Duration)> = None;
     // Human label for the dictionary source, used in the "not recognizable" fallback message so a
     // broken hand-edited sidecar points the user at the file to fix (not the literal "infer").
     let mut source_label = spec.to_string();
@@ -7676,28 +7809,33 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
             // skipping the LLM entirely.
             match std::fs::read_to_string(&sidecar) {
                 Ok(text) => {
-                    eprintln!(
-                        "viz smart --dictionary infer: reusing existing dictionary '{}' (delete \
-                         it to re-infer).",
+                    // surface the model the reused dictionary was generated with, when it carries
+                    // one (infer-generated files do; hand-written ones may not).
+                    let model_note = parse_dict_model(&text)
+                        .map(|m| format!(", model {m}"))
+                        .unwrap_or_default();
+                    viz_note(&format!(
+                        "viz smart --dictionary infer: reusing existing dictionary \
+                         '{}'{model_note} (delete it to re-infer).",
                         sidecar.display()
-                    );
+                    ));
                     if args.flag_dictionary_context.is_some() {
-                        eprintln!(
+                        viz_note(&format!(
                             "viz smart --dictionary-context: ignored when reusing the existing \
                              dictionary '{}' (the dictionary is already built); delete it to \
                              re-infer with context.",
                             sidecar.display()
-                        );
+                        ));
                     }
                     source_label = sidecar.display().to_string();
                     text
                 },
                 Err(e) => {
-                    eprintln!(
+                    viz_note(&format!(
                         "viz smart --dictionary infer: could not read existing dictionary '{}' \
                          ({e}); building the dashboard from statistics alone.",
                         sidecar.display()
-                    );
+                    ));
                     return Ok(None);
                 },
             }
@@ -7715,21 +7853,23 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
                 dg_args.push("--context-file");
                 dg_args.push(ctx);
             }
+            let infer_start = Instant::now();
             match util::run_qsv_cmd(
                 "describegpt",
                 &dg_args,
                 input,
                 "Generated a Data Dictionary via describegpt for `viz smart --dictionary infer`",
             ) {
-                Ok((stdout, _stderr)) => {
+                Ok((stdout, stderr)) => {
                     persist_to = Some(sidecar);
+                    infer_meta = Some((stderr, infer_start.elapsed()));
                     stdout
                 },
                 Err(e) => {
-                    eprintln!(
+                    viz_note(&format!(
                         "viz smart --dictionary infer: describegpt failed ({e}); building the \
                          dashboard from statistics alone (no semantic hints)."
-                    );
+                    ));
                     return Ok(None);
                 },
             }
@@ -7738,10 +7878,10 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
         match std::fs::read_to_string(spec) {
             Ok(text) => text,
             Err(e) => {
-                eprintln!(
+                viz_note(&format!(
                     "viz smart --dictionary: could not read dictionary file '{spec}' ({e}); \
                      building the dashboard from statistics alone (no semantic hints)."
-                );
+                ));
                 return Ok(None);
             },
         }
@@ -7749,30 +7889,53 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
 
     let data = parse_dictionary_semantics(&json_text);
 
+    // Report a fresh inference the user just paid for: dictionary name, and — when available —
+    // the model, elapsed time, and token usage. `infer_meta` is Some only on a fresh describegpt
+    // run (never on reuse); gate on a usable parse so we don't advertise unreadable output.
+    if let (Some((stderr, elapsed)), Some(path), Some(_)) =
+        (infer_meta.as_ref(), persist_to.as_ref(), data.as_ref())
+    {
+        let name = path
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let mut summary = format!(
+            "viz smart: inferred data dictionary '{name}' in {}",
+            HumanDuration(*elapsed)
+        );
+        if let Some(model) = parse_dict_model(&json_text) {
+            summary.push_str(&format!(", model {model}"));
+        }
+        if let Some(tokens) = sum_dict_tokens(stderr) {
+            summary.push_str(&format!(", {} tokens", HumanCount(tokens)));
+        }
+        viz_note(&format!("{summary}."));
+    }
+
     // Persist a freshly-inferred dictionary next to the input so users can fine-tune it and later
     // runs can reuse it. Only when the parse succeeded (never persist output the loader can't read)
     // and only for a fresh infer (never clobber a reused/hand-edited file). Best-effort: warn on a
     // write failure, matching this function's soft-fail-to-stats philosophy.
     if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
         match std::fs::write(path, &json_text) {
-            Ok(()) => eprintln!(
+            Ok(()) => viz_note(&format!(
                 "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
                  fine-tune; reused on later runs).",
                 path.display()
-            ),
-            Err(e) => eprintln!(
+            )),
+            Err(e) => viz_note(&format!(
                 "viz smart --dictionary infer: could not save dictionary to '{}' ({e}); \
                  continuing (it will be re-inferred next run).",
                 path.display()
-            ),
+            )),
         }
     }
 
     if data.is_none() {
-        eprintln!(
+        viz_note(&format!(
             "viz smart --dictionary: '{source_label}' is not a recognizable describegpt \
              dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
-        );
+        ));
     }
     Ok(data)
 }
@@ -8971,7 +9134,9 @@ fn build_smart_pip_choropleth_panel(
     // only report after we know a panel will actually render, so the note never describes a map the
     // dashboard drops.
     if snapped > 0 {
-        eprintln!("viz smart: {snapped} of {total} points were snapped to the nearest region.");
+        viz_note(&format!(
+            "viz smart: {snapped} of {total} points were snapped to the nearest region."
+        ));
     }
     if dropped > 0 {
         let why = if snap {
@@ -8979,10 +9144,10 @@ fn build_smart_pip_choropleth_panel(
         } else {
             "--no-snap".to_string()
         };
-        eprintln!(
+        viz_note(&format!(
             "viz smart: {dropped} of {total} points fell outside every region and were dropped \
              ({why})."
-        );
+        ));
     }
     let z: Vec<f64> = order.iter().map(|key| counts[key]).collect();
     let names = aligned_region_names(&features, &order);
@@ -10084,7 +10249,12 @@ fn outlier_marker_geo() -> Marker {
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
 /// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
 /// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
-fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
+fn build_smart(
+    args: &Args,
+    out_format: OutFormat,
+    progress: &ProgressBar,
+    show_progress: bool,
+) -> CliResult<SmartRender> {
     let mut args = args.clone();
 
     let Some(input) = args.arg_input.clone() else {
@@ -10109,13 +10279,13 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         if args.flag_bivariate && !(args.flag_no_headers || args.flag_delimiter.is_some()) {
             let ncols = reader_and_headers(&args)?.1.len();
             if ncols > BIVARIATE_MAX_COLUMNS {
-                eprintln!(
+                viz_note(&format!(
                     "viz smart --bivariate: {ncols} columns exceeds the \
                      {BIVARIATE_MAX_COLUMNS}-column cap (~{} pairs at the cap); skipping the \
                      bivariate association panels. Run `qsv moarstats --bivariate` directly for \
                      the full pairwise output.",
                     BIVARIATE_MAX_COLUMNS * (BIVARIATE_MAX_COLUMNS - 1) / 2
-                );
+                ));
                 false
             } else {
                 true
@@ -10163,9 +10333,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // get_stats_records path below build a correct, freshly-regenerated cache
         // (force_stats_regen above) that honors the parsing flags.
         if args.flag_no_headers || args.flag_delimiter.is_some() {
-            eprintln!(
+            viz_note(
                 "viz smart --smarter: moarstats enrichment is only applied with default parsing; \
-                 --no-headers / --delimiter inputs use the standard dashboard instead."
+                 --no-headers / --delimiter inputs use the standard dashboard instead.",
             );
         } else {
             // Enrich the stats cache with moarstats advanced distribution-shape stats so
@@ -10210,17 +10380,30 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                     Err(e) => e.kind() == std::io::ErrorKind::NotFound,
                 };
             }
-            let moar_result = util::run_qsv_cmd(
-                "moarstats",
-                &moar_argv,
-                &input,
-                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
-            );
+            // moarstats --advanced (+ --bivariate) is by far the longest phase (a full stats
+            // recompute + advanced/pairwise passes over every row). On an interactive terminal,
+            // stream moarstats' OWN live progress (its per-phase status lines and progress bars)
+            // instead of a single static spinner line: suspend our spinner and let the child render
+            // to the inherited stderr (its stdout is discarded so it can't corrupt ours). When
+            // progress is disabled or output is piped/redirected, fall back to the capturing path
+            // so nothing is emitted. Either way viz only needs the on-disk
+            // stats/bivariate sidecars.
+            let status_msg =
+                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`";
+            let stream_moarstats = show_progress && std::io::stderr().is_terminal();
+            progress.set_message("Analyzing column relationships…");
+            let moar_result: CliResult<()> = if stream_moarstats {
+                progress.suspend(|| {
+                    util::run_qsv_cmd_streaming("moarstats", &moar_argv, &input, status_msg)
+                })
+            } else {
+                util::run_qsv_cmd("moarstats", &moar_argv, &input, status_msg).map(|_| ())
+            };
             if let Err(e) = &moar_result {
-                eprintln!(
+                viz_note(&format!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
                      standard stats. Dashboard will omit advanced refinements."
-                );
+                ));
             }
             // Trust the sidecar only when THIS run actually wrote it: moarstats must have succeeded
             // AND a sidecar must now exist that is provably fresh — either the path was cleared
@@ -10238,9 +10421,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
                 // warn so the missing panels aren't a mystery (an absent sidecar just means no
                 // pairs — stay silent there).
                 if !bivariate_sidecar_fresh && sidecar_after.is_some() {
-                    eprintln!(
+                    viz_note(
                         "viz smart --bivariate: a stale bivariate sidecar could not be removed \
-                         and was not refreshed by moarstats; skipping the association panels."
+                         and was not refreshed by moarstats; skipping the association panels.",
                     );
                 }
             }
@@ -10266,6 +10449,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         flag_output:          None,
     };
 
+    // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
+    // captured subprocess, so nothing here writes to the terminal to clash with the bar.
+    progress.set_message("Loading statistics…");
     let (_headers, mut stats) =
         util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
     if stats.is_empty() {
@@ -10282,16 +10468,19 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     // `--smarter`. No-op (and no pass) when moarstats already enriched the cache or no column
     // qualifies. Soft-fail to a box plot.
     if let Err(e) = enrich_bimodality(args, &mut stats) {
-        eprintln!(
+        viz_note(&format!(
             "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
              plots. Use --smarter for moarstats-based enrichment."
-        );
+        ));
     }
 
     // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts (concept ->
     // role -> content_type -> stats) that override the statistical guess for the cases they speak
     // to. When --dictionary is absent, dict_data is None and every column's route resolves to
     // Defer, so classification is identical to today's stats-only behavior.
+    // Keep the spinner live during describegpt (the slowest phase): its output is captured by
+    // run_qsv_cmd, and load_dictionary_semantics suspends the bar only around its own messages.
+    progress.set_message("Inferring data dictionary…");
     let dict_data = load_dictionary_semantics(args)?;
     let col_sems: Vec<ColSemantics> = stats
         .iter()
@@ -10326,6 +10515,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+        progress.set_message("Building map panel…");
         match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
             None => (None, None),
             Some((p, choro, cols)) => {
@@ -10507,6 +10697,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         .map(|(i, _)| i)
         .collect();
     if numeric_indices.len() >= 2 {
+        progress.set_message("Computing correlations…");
         let (mut rdr, headers, nh) = reader_and_headers(args)?;
         let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices)?;
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
@@ -10676,7 +10867,11 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         ) {
             Ok(Some(panel)) => panels.insert(0, panel),
             Ok(None) => {},
-            Err(e) => eprintln!("viz smart: measure-by-dimension panel skipped ({e})"),
+            Err(e) => {
+                viz_note(&format!(
+                    "viz smart: measure-by-dimension panel skipped ({e})"
+                ));
+            },
         }
     }
 
@@ -10746,12 +10941,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
             );
             let assoc = max_pairwise_cramers_v(&leaves, depth);
             if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
-                eprintln!(
+                viz_note(&format!(
                     "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
                      statistically independent (max Cramér's V={assoc:.2} < \
                      {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars convey \
                      the same information. Use --hierarchy-style treemap|sunburst to force it."
-                );
+                ));
             } else if let Some((labels, parents, values, ids)) =
                 hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
             {
@@ -10862,12 +11057,12 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         );
     }
     if !skipped.is_empty() {
-        eprintln!(
+        viz_note(&format!(
             "viz smart: charting {} column(s); skipped {}: {}",
             panels.len(),
             skipped.len(),
             skipped.join(", ")
-        );
+        ));
     }
 
     // gather frequency counts for the bar panels in a single pass
@@ -10896,6 +11091,9 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         })
         .collect();
     let top_n = args.flag_limit.max(1);
+    if !bar_indices.is_empty() {
+        progress.set_message("Computing frequencies…");
+    }
     let freq = if bar_indices.is_empty() {
         HashMap::new()
     } else {
@@ -10934,6 +11132,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
     let (raw_values, outlier_stats) = if raw_indices.is_empty() && fence_bounds.is_empty() {
         (HashMap::new(), HashMap::new())
     } else {
+        progress.set_message("Preparing panel data…");
         collect_smart_values(args, &raw_indices, &fence_bounds)?
     };
 
@@ -10953,6 +11152,7 @@ fn build_smart(args: &Args, out_format: OutFormat) -> CliResult<SmartRender> {
         && panels
             .iter()
             .any(|p| matches!(p.kind, PanelKind::Geo { .. }));
+    progress.set_message("Rendering dashboard…");
     if inline {
         Ok(SmartRender::Inline(render_smart_inline(
             args,

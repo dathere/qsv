@@ -23,6 +23,11 @@ The output format is inferred from the --output file extension (.html is the def
 Interactive HTML is written to stdout when --output is not given; image formats always
 require --output. Use --open to view the result in your default browser/viewer.
 
+Progress is shown on stderr by default: a spinner with per-phase status messages (loading
+statistics, inferring the data dictionary, computing correlations, rendering, etc.). It is
+auto-hidden when stderr is not a terminal (e.g. piped or redirected). Set the QSV_PROGRESSBAR
+environment variable to a falsy value (0/false/off) to disable it.
+
 Chart types (subcommands):
 
 ```text

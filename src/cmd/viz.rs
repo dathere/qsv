@@ -450,7 +450,7 @@ Common options:
 use std::{
     collections::{BTreeMap, HashMap},
     io::Write,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use indicatif::{HumanCount, HumanDuration, ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -6306,16 +6306,21 @@ fn dictionary_sidecar_path(input: &str) -> std::path::PathBuf {
 }
 
 /// Build viz's phase-progress spinner. When `show`, it draws to stderr; indicatif hides it
-/// automatically when stderr isn't a terminal (piped/redirected/CI), so no manual TTY check
-/// is needed. When not shown, a hidden no-op bar keeps call sites branch-free. No steady
-/// tick: the message is redrawn only at phase boundaries, so no background thread races
-/// viz's `eprintln!` output.
+/// automatically when stderr isn't a terminal (piped/redirected/CI), so no manual TTY check is
+/// needed. When not shown, a hidden no-op bar keeps call sites branch-free.
+///
+/// The spinner steady-ticks so it stays visible AND animated throughout the long phases
+/// (stats/dictionary/moarstats/map). Those phases' subprocesses run via `util::run_qsv_cmd`,
+/// which *captures* their output rather than letting it hit the terminal, so they don't clash
+/// with the live bar. viz's own stderr writes (dictionary messages, the charting summary) are
+/// wrapped in `progress.suspend(…)` at their call sites so they print cleanly around the tick.
 fn viz_progress(show: bool) -> ProgressBar {
     if show {
         let pb = ProgressBar::with_draw_target(None, ProgressDrawTarget::stderr_with_hz(5));
         pb.set_style(
             ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] {msg}").unwrap(),
         );
+        pb.enable_steady_tick(Duration::from_millis(120));
         pb
     } else {
         ProgressBar::with_draw_target(None, ProgressDrawTarget::hidden())
@@ -7731,10 +7736,12 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
     (!rows.is_empty()).then_some(DictData { rows, grain: None })
 }
 
-fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
+fn load_dictionary_semantics(args: &Args, progress: &ProgressBar) -> CliResult<Option<DictData>> {
     let Some(spec) = args.flag_dictionary.as_deref() else {
         if args.flag_dictionary_context.is_some() {
-            eprintln!("viz smart --dictionary-context: ignored without --dictionary infer.");
+            progress.suspend(|| {
+                eprintln!("viz smart --dictionary-context: ignored without --dictionary infer.");
+            });
         }
         return Ok(None);
     };
@@ -7744,10 +7751,12 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
 
     let is_infer = spec.eq_ignore_ascii_case("infer");
     if args.flag_dictionary_context.is_some() && !is_infer {
-        eprintln!(
-            "viz smart --dictionary-context: only applies to `--dictionary infer` (a generated \
-             dictionary); ignored when reading an existing dictionary file."
-        );
+        progress.suspend(|| {
+            eprintln!(
+                "viz smart --dictionary-context: only applies to `--dictionary infer` (a \
+                 generated dictionary); ignored when reading an existing dictionary file."
+            );
+        });
     }
 
     // Set to the sidecar path ONLY when we infer a fresh dictionary this run, so we persist it
@@ -7772,28 +7781,32 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
                     let model_note = parse_dict_model(&text)
                         .map(|m| format!(", model {m}"))
                         .unwrap_or_default();
-                    eprintln!(
-                        "viz smart --dictionary infer: reusing existing dictionary \
-                         '{}'{model_note} (delete it to re-infer).",
-                        sidecar.display()
-                    );
-                    if args.flag_dictionary_context.is_some() {
+                    progress.suspend(|| {
                         eprintln!(
-                            "viz smart --dictionary-context: ignored when reusing the existing \
-                             dictionary '{}' (the dictionary is already built); delete it to \
-                             re-infer with context.",
+                            "viz smart --dictionary infer: reusing existing dictionary \
+                             '{}'{model_note} (delete it to re-infer).",
                             sidecar.display()
                         );
-                    }
+                        if args.flag_dictionary_context.is_some() {
+                            eprintln!(
+                                "viz smart --dictionary-context: ignored when reusing the \
+                                 existing dictionary '{}' (the dictionary is already built); \
+                                 delete it to re-infer with context.",
+                                sidecar.display()
+                            );
+                        }
+                    });
                     source_label = sidecar.display().to_string();
                     text
                 },
                 Err(e) => {
-                    eprintln!(
-                        "viz smart --dictionary infer: could not read existing dictionary '{}' \
-                         ({e}); building the dashboard from statistics alone.",
-                        sidecar.display()
-                    );
+                    progress.suspend(|| {
+                        eprintln!(
+                            "viz smart --dictionary infer: could not read existing dictionary \
+                             '{}' ({e}); building the dashboard from statistics alone.",
+                            sidecar.display()
+                        );
+                    });
                     return Ok(None);
                 },
             }
@@ -7824,10 +7837,12 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
                     stdout
                 },
                 Err(e) => {
-                    eprintln!(
-                        "viz smart --dictionary infer: describegpt failed ({e}); building the \
-                         dashboard from statistics alone (no semantic hints)."
-                    );
+                    progress.suspend(|| {
+                        eprintln!(
+                            "viz smart --dictionary infer: describegpt failed ({e}); building the \
+                             dashboard from statistics alone (no semantic hints)."
+                        );
+                    });
                     return Ok(None);
                 },
             }
@@ -7836,10 +7851,12 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
         match std::fs::read_to_string(spec) {
             Ok(text) => text,
             Err(e) => {
-                eprintln!(
-                    "viz smart --dictionary: could not read dictionary file '{spec}' ({e}); \
-                     building the dashboard from statistics alone (no semantic hints)."
-                );
+                progress.suspend(|| {
+                    eprintln!(
+                        "viz smart --dictionary: could not read dictionary file '{spec}' ({e}); \
+                         building the dashboard from statistics alone (no semantic hints)."
+                    );
+                });
                 return Ok(None);
             },
         }
@@ -7867,7 +7884,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
         if let Some(tokens) = sum_dict_tokens(stderr) {
             summary.push_str(&format!(", {} tokens", HumanCount(tokens)));
         }
-        eprintln!("{summary}.");
+        progress.suspend(|| eprintln!("{summary}."));
     }
 
     // Persist a freshly-inferred dictionary next to the input so users can fine-tune it and later
@@ -7876,24 +7893,30 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
     // write failure, matching this function's soft-fail-to-stats philosophy.
     if let (Some(path), Some(_)) = (persist_to.as_ref(), data.as_ref()) {
         match std::fs::write(path, &json_text) {
-            Ok(()) => eprintln!(
-                "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
-                 fine-tune; reused on later runs).",
-                path.display()
-            ),
-            Err(e) => eprintln!(
-                "viz smart --dictionary infer: could not save dictionary to '{}' ({e}); \
-                 continuing (it will be re-inferred next run).",
-                path.display()
-            ),
+            Ok(()) => progress.suspend(|| {
+                eprintln!(
+                    "viz smart --dictionary infer: saved inferred dictionary to '{}' (edit it to \
+                     fine-tune; reused on later runs).",
+                    path.display()
+                );
+            }),
+            Err(e) => progress.suspend(|| {
+                eprintln!(
+                    "viz smart --dictionary infer: could not save dictionary to '{}' ({e}); \
+                     continuing (it will be re-inferred next run).",
+                    path.display()
+                );
+            }),
         }
     }
 
     if data.is_none() {
-        eprintln!(
-            "viz smart --dictionary: '{source_label}' is not a recognizable describegpt \
-             dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
-        );
+        progress.suspend(|| {
+            eprintln!(
+                "viz smart --dictionary: '{source_label}' is not a recognizable describegpt \
+                 dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
+            );
+        });
     }
     Ok(data)
 }
@@ -10335,15 +10358,15 @@ fn build_smart(
                     Err(e) => e.kind() == std::io::ErrorKind::NotFound,
                 };
             }
+            // Keep the spinner live during the run: run_qsv_cmd captures moarstats' output (it
+            // never reaches the terminal), so there's nothing to clash with the animated bar.
             progress.set_message("Analyzing column relationships…");
-            let moar_result = progress.suspend(|| {
-                util::run_qsv_cmd(
-                    "moarstats",
-                    &moar_argv,
-                    &input,
-                    "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
-                )
-            });
+            let moar_result = util::run_qsv_cmd(
+                "moarstats",
+                &moar_argv,
+                &input,
+                "Enriched stats cache via moarstats --advanced for `viz smart --smarter`",
+            );
             if let Err(e) = &moar_result {
                 eprintln!(
                     "viz smart --smarter: moarstats enrichment failed ({e}); falling back to \
@@ -10394,9 +10417,11 @@ fn build_smart(
         flag_output:          None,
     };
 
+    // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
+    // captured subprocess, so nothing here writes to the terminal to clash with the bar.
     progress.set_message("Loading statistics…");
-    let (_headers, mut stats) = progress
-        .suspend(|| util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema))?;
+    let (_headers, mut stats) =
+        util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
     if stats.is_empty() {
         return fail_clierror!(
             "Could not compute statistics for `viz smart`. The input must be a regular CSV/TSV \
@@ -10421,8 +10446,10 @@ fn build_smart(
     // role -> content_type -> stats) that override the statistical guess for the cases they speak
     // to. When --dictionary is absent, dict_data is None and every column's route resolves to
     // Defer, so classification is identical to today's stats-only behavior.
+    // Keep the spinner live during describegpt (the slowest phase): its output is captured by
+    // run_qsv_cmd, and load_dictionary_semantics suspends the bar only around its own messages.
     progress.set_message("Inferring data dictionary…");
-    let dict_data = progress.suspend(|| load_dictionary_semantics(args))?;
+    let dict_data = load_dictionary_semantics(args, progress)?;
     let col_sems: Vec<ColSemantics> = stats
         .iter()
         .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
@@ -10457,9 +10484,7 @@ fn build_smart(
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
         progress.set_message("Building map panel…");
-        match progress
-            .suspend(|| build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint))?
-        {
+        match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
             None => (None, None),
             Some((p, choro, cols)) => {
                 if out_format.is_image() {

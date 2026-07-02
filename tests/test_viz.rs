@@ -2834,10 +2834,32 @@ Paris,48.8566,2.3522,999
 // already exposes dictionary-recognized geo.city / geo.state / geo.country columns, the always-on
 // county and --smarter FIPS enrichment must still be added (the dataset's own city/country values
 // are deduped, but county/FIPS are net-new). A dictionary makes the geo concepts deterministic (no
-// LLM). Tolerant of an unavailable geocode index (offline CI).
+// LLM). Anchored on an independent control run WITHOUT the geo columns so the county assertion
+// can't pass vacuously: the control proves the geocode index resolves these coordinates (its county
+// can ONLY come from geocoding), and whenever it does, the geo-column run must resolve the county
+// and FIPS too. Tolerant of an unavailable geocode index (offline CI) — both gate on the control.
 #[test]
 fn viz_smart_geocode_enrichment_with_geo_columns() {
     let wrk = Workdir::new("viz_smart_geocode_enrichment_with_geo_columns");
+
+    // control: identical coordinates, NO geo-name columns — the county can only be geocoded, so its
+    // presence establishes that the index is available for these points.
+    wrk.create_from_string(
+        "control.csv",
+        "id,lat,lon,val
+a,40.4406,-79.9959,10
+b,40.3487,-79.8642,20
+c,40.3273,-80.0373,30
+d,40.4212,-79.7883,40
+",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "control.csv"]);
+    let control = wrk.output(&mut cmd);
+    assert!(control.status.success());
+    let index_resolves = String::from_utf8_lossy(&control.stdout).contains("Allegheny County");
+
+    // main run: city/state/country are recognized (dictionary-tagged) geo concepts.
     wrk.create_from_string(
         "geo_cols.csv",
         "id,city,state,country,lat,lon,val
@@ -2863,17 +2885,25 @@ d,Monroeville,Pennsylvania,United States,40.4212,-79.7883,40
           }
         }"#,
     );
-
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "--smarter", "geo_cols.csv", "--dictionary"])
         .arg(wrk.path("geo_dict.schema.json"));
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    // when geocoding resolved, the county (net-new; not a dataset column) and the --smarter FIPS
-    // tail must appear even though the dataset already carries city/state/country.
-    if html.contains("Allegheny County") {
-        assert!(html.contains("(FIPS 42003)"));
+
+    // gated on the CONTROL (not the main run's own output): whenever geocoding resolves the county,
+    // the geo-column run MUST still surface county + FIPS despite already carrying
+    // city/state/country.
+    if index_resolves {
+        assert!(
+            html.contains("Allegheny County"),
+            "county enrichment dropped when the dataset already has geo columns"
+        );
+        assert!(
+            html.contains("(FIPS 42003)"),
+            "FIPS enrichment dropped when the dataset already has geo columns"
+        );
     }
 }
 

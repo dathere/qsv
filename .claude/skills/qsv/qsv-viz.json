@@ -1,7 +1,7 @@
 {
   "name": "qsv-viz",
   "version": "21.1.0",
-  "description": "Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using plotly. `viz smart` \"automagically\" picks an appropriate chart per column from the dataset's statistics & frequency distributions. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature.",
+  "description": "Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using plotly. `viz smart` *\"neuro-symbolically\"* picks an appropriate chart per column using the dataset's statistics, frequency distributions & data dictionary with integrated Geonames geocoding & optional LLM metadata inferencing. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature. (Gallery)",
   "category": "utility",
   "command": {
     "subcommand": "viz",
@@ -52,6 +52,11 @@
         "description": "Number of bins. For histogram: bins along the x-axis (default: auto). For contour: the per-axis resolution of the density grid (default: 20)."
       },
       {
+        "flag": "--bivariate",
+        "type": "flag",
+        "description": "Add two pairwise-association overview panels driven by `qsv moarstats --bivariate`: a normalized mutual information (NMI) heatmap over every column pair (works for numeric AND categorical columns, unlike the Pearson-only correlation heatmap), plus a ranked \"top relationships\" bar of the strongest pairs when there are more than 8 chartable columns. The ranked bar (not the heatmap, which still shows every pair) requires a pair's co-occurring row count to be at least 10% of the best-supported pair's, so a technically-perfect NMI from two sparsely-populated columns that only ever co-occur in a narrow row slice can't crowd out a more broadly meaningful association; each bar's hover shows its co-occurring row count. A numeric pair whose Spearman rank correlation diverges sharply from its Pearson correlation is flagged \"nonlinear\" in the hover. Identifier / PII / free-text columns (per --dictionary) and map lat/lon columns are excluded. This automatically turns on --smarter, and when --dictionary isn't already set, also turns on --dictionary infer (so the PII/identifier exclusion has semantic signal to work with). Capped at 50 columns (1,225 pairs); wider datasets skip these panels with a warning (run `qsv moarstats --bivariate` directly for the full pairwise output). Only affects `smart`."
+      },
+      {
         "flag": "--box-points",
         "type": "string",
         "description": "Which sample points to draw alongside a box. Reading the raw values lets plotly render true Tukey whiskers (1.5*IQR) with the points beyond the fences as outliers. One of: outliers (only the outliers), all (every point, jittered), suspected (mark suspected outliers), none (no points, but still real Tukey whiskers). For `viz box` the default is outliers. For `viz smart` this flag OVERRIDES the default size-based heuristic, which overlays all points for small data (<=1,000 rows) and only the outliers for medium data (<=10,000 rows). Above that, a column that HAS outliers shows them as points on a precomputed quartile box (a single pass collects only the out-of-fence values, capped); a column with no outliers stays a fast cache-only quartile summary with no data re-scan. An explicit mode is applied to every box panel (one batched pass to read the values), except `none`, which always keeps the cache-only box."
@@ -90,7 +95,7 @@
       {
         "flag": "--dictionary",
         "type": "string",
-        "description": "EXPERIMENTAL. Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels become panel titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: \"infer\" to run describegpt on the input now (with infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). Generation/read failures soft-fall back to the stats-only dashboard. Only affects `smart`."
+        "description": "Use a describegpt Data Dictionary to guide panel selection from each field's semantic role/concept (falling back to its content type) instead of relying on column statistics alone: dimensions and numeric codes (ward, census_tract, zone) become bars, measures get box/correlation/trend panels, date/datetime columns feed the time-series panel (not noisy frequency bars), identifiers / PII / free-text are skipped, and lat/lon feed the map. Field labels are shown as panel subtitles beneath the field-name titles. Columns the dictionary cannot classify still use the statistical heuristic. <src> is one of: \"infer\" to run describegpt on the input now (with infer-content-type, two-pass and jsonschema output; requires an LLM configured) and use its output; or a path to an existing describegpt dictionary file (jsonschema or json). With \"infer\", the generated dictionary is saved beside the input as <stem>.schema.json so you can fine-tune it; if that file already exists, it is reused as-is (skipping the LLM) - edit it to fine-tune, or delete it to force a fresh re-infer. Generation/read failures soft-fall back to the stats-only dashboard. Only affects `smart`."
       },
       {
         "flag": "--dictionary-context",
@@ -105,8 +110,13 @@
       {
         "flag": "--feature-id-key",
         "type": "string",
-        "description": "Property path in each GeoJSON feature whose value matches an entry in the locations column (e.g. id, properties.fips).",
+        "description": "Property path in each GeoJSON feature whose value matches an entry in the locations column, or that labels each binned region (e.g. id, properties.fips).",
         "default": "id"
+      },
+      {
+        "flag": "--feature-name-key",
+        "type": "string",
+        "description": "GeoJSON property path whose value is shown as the human-readable region label in choropleth hover (e.g. properties.name). When omitted, common name keys are auto-detected; falls back to the feature id when absent."
       },
       {
         "flag": "--geocode",
@@ -116,13 +126,19 @@
       {
         "flag": "--geojson",
         "type": "string",
-        "description": "Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode."
+        "description": "Custom region polygons as a local file path or an http(s) URL to a GeoJSON FeatureCollection. Required for --map, and for the geojson-id location mode. Also enables point-in-polygon binning: with --lat/--lon (and without --geocode), each row's point is binned into the region whose polygon contains it (exact, no geocoding) and colored by --value/--agg or counts. In `viz smart`, it also overlays the region boundaries on the map, labelling each with its --feature-name-key value (falling back to its id) — as on-map text on the projection/static map, or as a centroid hover marker on the interactive tile map (which culls on-map text). Labels are omitted above 60 regions."
       },
       {
         "flag": "--grid-cols",
         "type": "string",
         "description": "Number of columns in the dashboard grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width.",
         "default": "2"
+      },
+      {
+        "flag": "--heatmap-density",
+        "type": "string",
+        "description": "For the `viz smart` map panel: at or above <n> mappable points, draw the core cluster as a density heatmap (DensityMapbox) instead of individual markers, which overplot into a solid, unreadable mass at scale. A heatmap has no per-point hover — only a generic density readout — whereas individual markers keep their full per-point hover. Set to 0 to always render individual markers (never a heatmap), regardless of point count.",
+        "default": "20000"
       },
       {
         "flag": "--height",
@@ -164,7 +180,7 @@
       {
         "flag": "--log-scale",
         "type": "string",
-        "description": "Use a logarithmic y-axis for frequency bar panels whose tallest bar dwarfs the rest (e.g. a large \"(NULL)\" or \"Other (N)\" bucket), so the small categories stay visible. One of: auto, on, off. \"auto\" (the default) switches a panel to a log y-axis only when its dynamic range is high; \"on\" forces a log y-axis on every frequency panel; \"off\" keeps the linear axes. Only affects `smart`.",
+        "description": "Use a logarithmic y-axis for panels with a high dynamic range: frequency bar panels whose tallest bar dwarfs the rest (e.g. a large \"(NULL)\" or \"Other (N)\" bucket), so the small categories stay visible; and box panels of an all-positive column whose observed max/min ratio is huge (a box otherwise squashed against its extremes). One of: auto, on, off. \"auto\" (the default) switches a panel to a log y-axis only when its dynamic range is high; \"on\" forces a log y-axis on every frequency panel and every all-positive box panel; \"off\" keeps the linear axes. Only affects `smart`.",
         "default": "auto"
       },
       {
@@ -209,6 +225,11 @@
         "description": "Omit the \"Other (N)\" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default."
       },
       {
+        "flag": "--no-snap",
+        "type": "flag",
+        "description": "For point-in-polygon binning (lat/lon points binned into a custom GeoJSON without geocoding): do not snap at all — drop every point that falls outside every region. By default an outside point instead snaps to its nearest region when within the snap-distance limit (see --snap-max-dist). Applies to both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel. A stderr note reports coverage either way; each snapping region's hover tallies the points it absorbed from outside, and dropped points are reported beneath the map (or in the smart panel's title)."
+      },
+      {
         "flag": "--ohlc-open",
         "type": "string",
         "description": "Open-price column for candlestick/ohlc charts."
@@ -248,7 +269,12 @@
       {
         "flag": "--smarter",
         "type": "flag",
-        "description": "Before building the dashboard, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, and skew/outlier hints on box panels. Costs one extra pass over the data and writes <stem>.stats.csv, its sidecars, and an .idx index (like running `qsv moarstats` manually). Only affects `smart`. Applied only with default parsing; inputs using --no-headers or a custom --delimiter fall back to the standard dashboard."
+        "description": "Before building the dashboard, run `qsv moarstats --advanced` to enrich the stats cache with distribution-shape statistics (bimodality, entropy, skewness, outlier share). This unlocks histograms for bimodal columns, frequency bars for concentrated high-cardinality columns, and skew/outlier hints on box panels. Costs one extra pass over the data and writes <stem>.stats.csv, its sidecars, and an .idx index (like running `qsv moarstats` manually). On geocode-enabled builds it also enriches map point hovers with the US FIPS code and annotates the spatial-extent summary with the country's continent; the county is always shown in map hovers, with or without --smarter. Only affects `smart`. Applied only with default parsing; inputs using --no-headers or a custom --delimiter fall back to the standard dashboard."
+      },
+      {
+        "flag": "--snap-max-dist",
+        "type": "string",
+        "description": "For point-in-polygon binning: the farthest (in km) an outside point may snap to a region's boundary; points with no region within this distance are dropped. Distance is an equirectangular km approximation. Defaults to 10 km, for both the `viz choropleth` command and the `viz smart` GeoJSON choropleth panel. Pass a large value for effectively unbounded snapping. Cannot be combined with --no-snap."
       },
       {
         "flag": "--source",
@@ -319,6 +345,7 @@
     ]
   },
   "hints": {
+    "indexed": true,
     "memory": "constant"
   },
   "examples": [
@@ -425,6 +452,10 @@
     {
       "description": "Reverse-geocode lat/lon points to ISO-3 codes, then count per country (needs geocode feature)",
       "command": "qsv viz choropleth stops.csv --geocode --lat lat --lon lon -o by_country.html"
+    },
+    {
+      "description": "Point-in-polygon: bin lat/lon points into custom GeoJSON regions by count (no geocode)",
+      "command": "qsv viz choropleth quakes.csv --lat lat --lon lon --geojson prefectures.geojson --feature-id-key properties.id -o by_pref.html"
     }
   ]
 }

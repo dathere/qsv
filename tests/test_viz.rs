@@ -6808,3 +6808,125 @@ fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
          somewhere in its labels; html: {html}"
     );
 }
+
+#[test]
+fn viz_smart_derives_skew_hint_without_smarter() {
+    // Plain `viz smart` (no moarstats): the skew hint is derived from the BASE stats cache
+    // (3 * (mean - median) / stddev — the same formula moarstats uses), so a right-skewed box
+    // panel is annotated even though pearson_skewness was never computed.
+    let wrk = Workdir::new("viz_smart_derives_skew_hint_without_smarter");
+    // continuous right-skewed column: bulk at 1..=40 with a heavy tail of 1000s
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=280 {
+        rows.push_str(&format!("{i},{}\n", i % 40 + 1));
+    }
+    for i in 281..=300 {
+        rows.push_str(&format!("{i},1000\n"));
+    }
+    wrk.create_from_string("amounts.csv", &rows);
+
+    let out_html = wrk.path("amounts.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "amounts.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("amounts.html").unwrap();
+    assert!(
+        html.contains("right-skewed"),
+        "box panel title should carry the derived skew hint without --smarter; html: {html}"
+    );
+    assert!(html.contains(r#""type":"box""#));
+}
+
+#[test]
+fn viz_smart_dominant_category_hint() {
+    // when one real category holds >= 90% of all rows, the frequency bar panel's title says so
+    let wrk = Workdir::new("viz_smart_dominant_category_hint");
+    let mut rows = String::from("status\n");
+    for _ in 0..95 {
+        rows.push_str("active\n");
+    }
+    for _ in 0..5 {
+        rows.push_str("inactive\n");
+    }
+    wrk.create_from_string("statuses.csv", &rows);
+
+    let out_html = wrk.path("statuses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "statuses.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("statuses.html").unwrap();
+    assert!(
+        html.contains("(dominated by active, 95%)"),
+        "dominated freq bar panel should carry the dominance hint; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_log_scale_auto_logs_high_range_box() {
+    // an all-positive continuous column whose observed max/min ratio clears
+    // LOG_SCALE_MIN_RATIO gets a logarithmic value axis under the default --log-scale auto,
+    // cued by the "log scale" y-axis title (distinct from the bars' "count (log)").
+    let wrk = Workdir::new("viz_smart_log_scale_auto_logs_high_range_box");
+    let mut rows = String::from("load\n");
+    for i in 1..=300 {
+        rows.push_str(&format!("{i}.5\n"));
+    }
+    wrk.create_from_string("loads.csv", &rows);
+
+    let out_html = wrk.path("loads.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "loads.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("loads.html").unwrap();
+    assert!(
+        html.contains("log scale"),
+        "high-dynamic-range box panel should carry the log value-axis cue; html: {html}"
+    );
+    assert!(
+        html.contains(r#""type":"log""#),
+        "box panel's y-axis should be logarithmic; html: {html}"
+    );
+
+    // --log-scale off keeps it linear
+    let out_lin = wrk.path("loads_linear.html").to_string_lossy().to_string();
+    let mut lin = wrk.command("viz");
+    lin.args(["smart", "loads.csv", "--log-scale", "off", "-o", &out_lin]);
+    wrk.assert_success(&mut lin);
+    let linear_html = wrk.read_to_string("loads_linear.html").unwrap();
+    assert!(
+        !linear_html.contains(r#""type":"log""#),
+        "--log-scale off must keep the box value axis linear; html: {linear_html}"
+    );
+}
+
+#[test]
+fn viz_smart_max_charts_keeps_most_interesting_panels() {
+    // when the dashboard overflows --max-charts, survivors are chosen by the stats-driven
+    // interestingness ranking, not by column position: a varied 12-category bar (later column)
+    // outranks a 96%-dominated 2-category bar (earlier column).
+    let wrk = Workdir::new("viz_smart_max_charts_keeps_most_interesting_panels");
+    let mut rows = String::from("flag,category\n");
+    for i in 0..100 {
+        let flag = if i < 96 { "y" } else { "n" };
+        rows.push_str(&format!("{flag},cat_{:02}\n", i % 12));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "--max-charts", "1", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("wide.html").unwrap();
+    assert!(
+        html.contains("cat_00"),
+        "the varied 12-category panel should survive the overflow ranking; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""name":"flag"#),
+        "the dominated 2-category panel (leftmost column) should be the one skipped; html: {html}"
+    );
+}

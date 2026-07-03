@@ -570,8 +570,8 @@ fn viz_smart_dense_grid_demotes_all_points_to_outliers() {
 
     // an explicit --box-points mode is the user's call and is never demoted
     let out_html2 = wrk.path("dash_all.html").to_string_lossy().to_string();
-    let mut cmd2 = wrk.command("viz");
-    cmd2.args([
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args([
         "smart",
         "wide.csv",
         "--violin",
@@ -581,7 +581,7 @@ fn viz_smart_dense_grid_demotes_all_points_to_outliers() {
         "-o",
         &out_html2,
     ]);
-    wrk.assert_success(&mut cmd2);
+    wrk.assert_success(&mut cmd_2);
     let html2 = wrk.read_to_string("dash_all.html").unwrap();
     assert!(html2.contains(r#""boxpoints":"all""#));
 }

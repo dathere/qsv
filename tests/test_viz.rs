@@ -5354,6 +5354,39 @@ fn viz_choropleth_map() {
     assert!(html.contains(r#""zoom":"#));
 }
 
+// --feature-id-key is optional for --map: when omitted it defaults to "id" (the top-level
+// GeoJSON feature id), so a ChoroplethMap still resolves without the flag. Regression guard for
+// the relaxed `--map requires --geojson` check (feature-id-key no longer required).
+#[test]
+fn viz_choropleth_map_default_feature_id_key() {
+    let wrk = Workdir::new("viz_choropleth_map_default_feature_id_key");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"A","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},{"type":"Feature","id":"B","properties":{},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    // renders the same ChoroplethMap as the explicit `--feature-id-key id` case
+    assert!(html.contains(r#""type":"choroplethmap""#));
+    assert!(html.contains(r#""featureidkey":"id""#));
+}
+
 // the geojson-extent framing must read coordinates ONLY from geometry, never from numeric arrays in
 // feature `properties` — otherwise a stray property array would drag the map center off the data.
 #[test]

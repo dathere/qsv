@@ -6544,6 +6544,122 @@ fn measure_by_dim_panel(
     )))
 }
 
+/// Build the "grouped violin" overview panel: the DISTRIBUTION of the primary numeric measure
+/// (`measure_indices[0]`) split into one violin per category of the coarsest (lowest-cardinality)
+/// categorical dimension — the distribution companion to `measure_by_dim_panel`'s aggregate bar,
+/// and to the categorical hierarchy it sits beneath. Does one extra data pass to gather the raw
+/// per-category values (the measure-by-dim/hierarchy passes only accumulate aggregates/counts).
+/// The `top_n` most-populous categories are kept so the panel stays readable; when the collected
+/// point count exceeds `MAX_SMART_POINTS` the values are deterministically stride-sampled (every
+/// stride-th value per category) to bound the embedded HTML. Returns `Ok(None)` when fewer than 2
+/// categories carry values (a single violin conveys no grouping).
+fn grouped_violin_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    measure_indices: &[usize],
+    dim_indices: &[usize],
+    top_n: usize,
+    explicit_points: Option<&BoxPoints>,
+) -> CliResult<Option<Panel>> {
+    let Some(&m_idx) = measure_indices.first() else {
+        return Ok(None);
+    };
+    // group by the coarsest dimension that would also anchor the sunburst/treemap's outer ring
+    // (cardinality >= HIER_MIN_DIM_CARDINALITY), so the violins split on the same categories the
+    // hierarchy shows — fewest, most-readable violins. Fall back to the coarsest dimension overall
+    // (e.g. a two-value flag) only when no dimension is rich enough for a hierarchy.
+    let coarsest = |min_card: u64| {
+        dim_indices
+            .iter()
+            .copied()
+            .filter(|&i| stats[i].cardinality >= min_card)
+            .min_by_key(|&i| (stats[i].cardinality, i))
+    };
+    let Some(d_idx) = coarsest(HIER_MIN_DIM_CARDINALITY).or_else(|| coarsest(0)) else {
+        return Ok(None);
+    };
+
+    // one pass: collect the measure's raw values partitioned by the dimension's category
+    let mut by_cat: HashMap<String, Vec<f64>> = HashMap::new();
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(y) = parse_f64(record.get(m_idx)) else {
+            continue;
+        };
+        let raw = cell_to_string(record.get(d_idx));
+        let key = if raw.trim().is_empty() {
+            NULL_TEXT.to_string()
+        } else {
+            raw.trim().to_string()
+        };
+        by_cat.entry(key).or_default().push(y);
+    }
+
+    // keep the top-N most-populous categories (descending count, then label for a stable order)
+    let mut cats: Vec<(String, Vec<f64>)> = by_cat.into_iter().collect();
+    cats.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    let total_cats = cats.len();
+    cats.truncate(top_n.max(1));
+    if cats.len() < 2 {
+        return Ok(None);
+    }
+    let truncated = total_cats > cats.len();
+
+    // bound the embedded point count: stride-sample each category's values when the total is
+    // large. step_by always yields index 0, so every kept category retains at least one point.
+    let total: usize = cats.iter().map(|(_, v)| v.len()).sum();
+    let stride = if total > MAX_SMART_POINTS {
+        total.div_ceil(MAX_SMART_POINTS)
+    } else {
+        1
+    };
+    let sampled = stride > 1;
+    let mut groups: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    for (cat, vals) in &cats {
+        for v in vals.iter().step_by(stride) {
+            groups.push(cat.clone());
+            values.push(*v);
+        }
+    }
+
+    // an explicit --box-points is the user's call; otherwise overlay outliers, but draw NO points
+    // when the values were stride-sampled (a sample misses the true extremes, so an "outlier"
+    // overlay would be misleading — the KDE silhouette still shows the shape).
+    let points = match explicit_points {
+        Some(p) => p.clone(),
+        None if sampled => BoxPoints::False,
+        None => BoxPoints::Outliers,
+    };
+
+    // resolve the human label for a column: dictionary label, else header, else positional
+    let label = |idx: usize| {
+        let sem = &col_sems[idx];
+        if !sem.label.is_empty() {
+            sem.label.clone()
+        } else if stats[idx].field.is_empty() {
+            format!("col {}", idx + 1)
+        } else {
+            stats[idx].field.clone()
+        }
+    };
+    let mut title = format!("{} distribution by {}", label(m_idx), label(d_idx));
+    if truncated {
+        title.push_str(&format!(" \u{2014} top {}", cats.len()));
+    }
+
+    Ok(Some(Panel::new(
+        title,
+        PanelKind::GroupedViolin {
+            groups,
+            values,
+            points,
+        },
+    )))
+}
+
 /// Path to moarstats' `--bivariate` sidecar CSV for a given `viz smart` input, mirroring
 /// `moarstats::get_bivariate_csv_path`'s non-joined form (`viz smart` never asks moarstats to
 /// `--join-inputs`): `<parent>/<stem>.stats.bivariate.csv`.
@@ -7258,6 +7374,18 @@ enum PanelKind {
     MeasureByDim {
         labels: Vec<String>,
         values: Vec<f64>,
+    },
+    /// Grouped violin (one KDE density silhouette per category) showing the DISTRIBUTION of a
+    /// numeric measure split by a low-cardinality categorical dimension — the distribution
+    /// companion to `MeasureByDim`'s aggregate bar. Carries its own collected data (parallel
+    /// arrays: `groups[i]` is the category label for `values[i]`), gathered in one data pass at
+    /// build time rather than via the batched `hist` map. `points` is the resolved `--box-points`
+    /// overlay mode. A plain `Violin::new_xy`, so it composes with the typed subplot grid and
+    /// static image export.
+    GroupedViolin {
+        groups: Vec<String>,
+        values: Vec<f64>,
+        points: BoxPoints,
     },
     /// 3D scatter of the three numeric columns that form the strongest-correlation triple — a
     /// spatial drill-down for the correlation heatmap. Carries the three columns' precomputed,
@@ -11887,6 +12015,31 @@ fn build_smart(
         }
     }
 
+    // prepend a grouped-violin panel — the distribution of the primary measure split by the
+    // coarsest categorical dimension (one violin per category) — whenever a categorical dimension
+    // and a numeric measure both exist. Inserted here (after the measure-by-dim bar, before the
+    // hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin → measure-by-dim:
+    // part-to-whole counts, then distribution-by-category, then the aggregate. A plain cartesian
+    // Violin::new_xy, so (unlike the hierarchy) it composes with the typed grid and static export.
+    if !measure_indices.is_empty() && !dim_indices.is_empty() {
+        let top_n = args.flag_limit.max(1);
+        match grouped_violin_panel(
+            args,
+            &stats,
+            &col_sems,
+            &measure_indices,
+            &dim_indices,
+            top_n,
+            explicit_box_points.as_ref(),
+        ) {
+            Ok(Some(panel)) => panels.insert(0, panel),
+            Ok(None) => {},
+            Err(e) => {
+                viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
+            },
+        }
+    }
+
     // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
     // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with the
     // typed x/y subplot grid, so it forces the inline render path. The chosen dimensions also keep
@@ -12124,6 +12277,7 @@ fn build_smart(
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
             | PanelKind::Violin { .. }
+            | PanelKind::GroupedViolin { .. }
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::AssocHeatmap { .. }
             | PanelKind::TopRelationships { .. }
@@ -12368,6 +12522,26 @@ fn panel_trace(
                 // show only the y stats in the hover, not plotly's default "(<trace name>,
                 // ...)" which repeats the (long) column name — it's already the panel title.
                 .hover_info(HoverInfo::Y);
+            if let Some((x, y)) = &axes {
+                v = v.x_axis(x.clone()).y_axis(y.clone());
+            }
+            v
+        },
+        PanelKind::GroupedViolin {
+            groups,
+            values,
+            points,
+        } => {
+            // distribution-by-category overview: one KDE silhouette per category (categories on
+            // the shared x-axis, the measure on y). A single `new_xy` trace, so it composes with
+            // the typed subplot grid and static image export like the MeasureByDim bar.
+            let mut v = Violin::new_xy(groups.clone(), values.clone())
+                .quartile_method(QuartileMethod::Linear)
+                .box_plot(ViolinBox::new().visible(true))
+                .mean_line(MeanLine::new().visible(true))
+                .points(violin_points(points))
+                .marker(Marker::new().color(color))
+                .line(Line::new().color(color));
             if let Some((x, y)) = &axes {
                 v = v.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -12714,6 +12888,7 @@ fn smart_grid_parts(
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
             | PanelKind::Violin { .. }
+            | PanelKind::GroupedViolin { .. }
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
@@ -14649,6 +14824,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::MeasureByDim { .. }
+        | PanelKind::GroupedViolin { .. }
         | PanelKind::CyclicProfile { .. }
         | PanelKind::TimeSeries { .. }
         | PanelKind::Map { .. }

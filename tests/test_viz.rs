@@ -513,6 +513,42 @@ fn viz_smart_violin_explicit_all_points() {
 }
 
 #[test]
+fn viz_smart_grouped_violin_panel() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_panel");
+    // one low-cardinality categorical dimension + one numeric measure: `viz smart` adds a
+    // grouped-violin overview panel showing the measure's distribution split by category (one
+    // violin per category), distinct from any single-column violin.
+    let mut rows = String::from("category,amount\n");
+    for i in 0..90_u32 {
+        let category = match i % 3 {
+            0 => "alpha",
+            1 => "beta",
+            _ => "gamma",
+        };
+        // per-category offsets so the distributions differ
+        let amount = (i % 30) + (i % 3) * 40;
+        rows.push_str(&format!("{category},{amount}\n"));
+    }
+    wrk.create_from_string("grp.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "grp.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the grouped-violin panel: title "<measure> distribution by <dimension>" and a violin trace
+    assert!(html.contains("amount distribution by category"));
+    assert!(html.contains(r#""type":"violin""#));
+    // grouped => the violin carries an x-array of the category labels (a single-column violin has
+    // no x data); each category's label is present as violin x data
+    assert!(html.contains(r#""alpha","alpha""#));
+    // inner quartile box + mean line inside each KDE silhouette
+    assert!(html.contains(r#""box":{"visible":true}"#));
+    assert!(html.contains(r#""meanline":{"visible":true}"#));
+}
+
+#[test]
 fn viz_smart_box_all_points_gated_on_nonnull_count() {
     let wrk = Workdir::new("viz_smart_box_all_points_gated_on_nonnull_count");
     // 2,000 rows but only 800 non-null values (60% null): the all-points tier is measured

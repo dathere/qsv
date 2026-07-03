@@ -261,12 +261,16 @@ viz options:
                            no outliers stays a fast cache-only quartile summary with no
                            data re-scan. An explicit mode is applied to every box panel
                            (one batched pass to read the values), except `none`, which
-                           always keeps the cache-only box. The same modes also pick
-                           the sample points drawn beside a violin, for `viz violin`
-                           and for the violin panels of `viz smart` — though a smart
-                           violin panel skips the size-based `all` upgrade (its KDE
-                           silhouette already shows the distribution) and overlays
-                           only the outliers unless an explicit mode is given.
+                           keeps the cache-only box for BOX panels. A smart violin
+                           panel still renders under `none`, just with no sample
+                           points — its KDE needs the values anyway; combine with the
+                           violin option's `off` mode for the cache-only escape hatch.
+                           The same modes also pick the sample points drawn beside a
+                           violin, for `viz violin` and for the violin panels of
+                           `viz smart` — though a smart violin panel skips the
+                           size-based `all` upgrade (its KDE silhouette already shows
+                           the distribution) and overlays only the outliers unless an
+                           explicit mode is given.
 
 map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
@@ -471,9 +475,11 @@ smart options:
                            from a deterministic sample of at most 10,000 evenly
                            strided values, carries no point overlay (a sample
                            misses the true extremes), and is titled "(sampled)".
-                           An explicit mode given via the box-points option
-                           instead collects every value for every panel,
-                           violins included. Only affects `smart`.
+                           An explicit all, outliers or suspected mode given
+                           via the box-points option instead collects every
+                           value for every panel, violins included; that
+                           option's `none` mode just hides a violin's points.
+                           Only affects `smart`.
                            [default: auto]
 
     --title <s>            Chart title.
@@ -11571,37 +11577,44 @@ fn build_smart(
                         } else {
                             PanelKind::BoxRaw { idx, points }
                         };
-                    } else if explicit_box_points.is_none() && n_points > SMART_BOX_OUTLIERS_MAX {
-                        if wants_violin(violin_mode, s, would_log) {
-                            // too many values to embed exactly, but a violin doesn't need them
-                            // all: draw the KDE + inner box from a deterministic stride sample
-                            // (at most VIOLIN_SAMPLE_MAX values), with no point overlay — a
-                            // strided sample misses the true extremes, so sampled "outliers"
-                            // would mislead.
-                            #[allow(clippy::cast_possible_truncation)]
-                            let sample_stride =
-                                n_points.div_ceil(VIOLIN_SAMPLE_MAX).max(1) as usize;
-                            kind = PanelKind::Violin {
-                                idx,
-                                points: BoxPoints::False,
-                                sample_stride,
-                            };
-                        } else if let Some((fence_low, fence_high)) = box_fences(s)
-                            && (lower.is_some_and(|lo| lo < fence_low)
-                                || upper.is_some_and(|hi| hi > fence_high))
-                        {
-                            // `lower`/`upper` are the column's observed min/max — outside the
-                            // Tukey fences means real outliers exist, so overlay them.
-                            kind = PanelKind::BoxOutliers {
-                                idx,
-                                q1,
-                                median,
-                                q3,
-                                mean,
-                                fence_low,
-                                fence_high,
-                            };
-                        }
+                    } else if wants_violin(violin_mode, s, would_log) {
+                        // `smart_box_points` returned None for one of two reasons, and a violin
+                        // still renders in both: an explicit `--box-points none` only means "no
+                        // point overlay" (a violin's KDE doesn't need points; the cache-only
+                        // escape hatch for that flag is `--violin off`), or the column has too
+                        // many values to embed exactly — a violin doesn't need them all: draw
+                        // the KDE + inner box from a deterministic stride sample (at most
+                        // VIOLIN_SAMPLE_MAX values), with no point overlay either way (a
+                        // strided sample misses the true extremes, so sampled "outliers"
+                        // would mislead).
+                        #[allow(clippy::cast_possible_truncation)]
+                        let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
+                            n_points.div_ceil(VIOLIN_SAMPLE_MAX).max(1) as usize
+                        } else {
+                            1
+                        };
+                        kind = PanelKind::Violin {
+                            idx,
+                            points: BoxPoints::False,
+                            sample_stride,
+                        };
+                    } else if explicit_box_points.is_none()
+                        && n_points > SMART_BOX_OUTLIERS_MAX
+                        && let Some((fence_low, fence_high)) = box_fences(s)
+                        && (lower.is_some_and(|lo| lo < fence_low)
+                            || upper.is_some_and(|hi| hi > fence_high))
+                    {
+                        // `lower`/`upper` are the column's observed min/max — outside the
+                        // Tukey fences means real outliers exist, so overlay them.
+                        kind = PanelKind::BoxOutliers {
+                            idx,
+                            q1,
+                            median,
+                            q3,
+                            mean,
+                            fence_low,
+                            fence_high,
+                        };
                     }
                 }
                 // for box/histogram panels, append cache-derived shape hints (null/zero share,

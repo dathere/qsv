@@ -653,6 +653,26 @@ fn viz_smart_violin_on_forces_violins() {
 }
 
 #[test]
+fn viz_smart_violin_box_points_none_still_violin() {
+    let wrk = Workdir::new("viz_smart_violin_box_points_none_still_violin");
+    ambiguous_band_column(&wrk);
+
+    // `--box-points none` only suppresses the point overlay — the violin (which needs the
+    // raw values for its KDE regardless of points) still renders; the cache-only escape
+    // hatch is `--violin off --box-points none`
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "band.csv", "--box-points", "none", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(html.contains(r#""points":false"#));
+    assert!(!html.contains(r#""type":"box""#));
+    // exact data (200 rows), so no sampling cue
+    assert!(!html.contains("(sampled)"));
+}
+
+#[test]
 fn viz_smart_violin_invalid_errors() {
     let wrk = Workdir::new("viz_smart_violin_invalid_errors");
     fruits(&wrk);
@@ -2065,13 +2085,14 @@ fn viz_smart_box_points_heuristic_large_none() {
 
 #[test]
 fn viz_smart_box_points_explicit_overrides_heuristic() {
-    // an explicit --box-points wins over the size heuristic: `none` keeps the cache-only box even
-    // though the small dataset would otherwise overlay all points.
+    // an explicit --box-points wins over the size heuristic: `none` (with --violin off, which
+    // pins box panels) keeps the cache-only box even though the small dataset would otherwise
+    // overlay all points.
     let wrk = Workdir::new("viz_smart_box_points_explicit_overrides_heuristic");
     wrk.create_from_string("d.csv", &continuous_box_csv(100));
 
     let mut none_cmd = wrk.command("viz");
-    none_cmd.args(["smart", "d.csv", "--box-points", "none"]);
+    none_cmd.args(["smart", "d.csv", "--violin", "off", "--box-points", "none"]);
     let none_out = wrk.output(&mut none_cmd);
     assert!(none_out.status.success());
     let none_html = String::from_utf8_lossy(&none_out.stdout);

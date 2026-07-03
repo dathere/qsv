@@ -6930,3 +6930,31 @@ fn viz_smart_max_charts_keeps_most_interesting_panels() {
         "the dominated 2-category panel (leftmost column) should be the one skipped; html: {html}"
     );
 }
+
+#[test]
+fn viz_smart_dominance_share_survives_no_nulls() {
+    // regression (roborev 3387): the dominance share must come from the full row count, not the
+    // rendered bars — with 85% "active" + 15% nulls and --no-nulls suppressing the NULL bar,
+    // the surviving bar is 100% of what's drawn but only 85% of the rows: NOT dominant.
+    let wrk = Workdir::new("viz_smart_dominance_share_survives_no_nulls");
+    let mut rows = String::from("status\n");
+    for _ in 0..85 {
+        rows.push_str("active\n");
+    }
+    for _ in 0..15 {
+        rows.push('\n');
+    }
+    wrk.create_from_string("statuses.csv", &rows);
+
+    let out_html = wrk.path("statuses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "statuses.csv", "--no-nulls", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("statuses.html").unwrap();
+    assert!(
+        !html.contains("dominated by"),
+        "an 85%-of-rows category must not be reported as dominant just because --no-nulls hid the \
+         NULL bar; html: {html}"
+    );
+}

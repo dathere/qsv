@@ -1,6 +1,6 @@
 # viz
 
-> Generate interactive charts (bar, line, scatter, histogram, box, pie, heatmap, candlestick/ohlc, sankey, radar, treemap, sunburst, geographic maps) and an auto-dashboard (`viz smart`) from CSV data using [plotly](https://plotly.com). `viz smart` *"[neuro-symbolically](https://en.wikipedia.org/wiki/Neuro-symbolic_AI)"* picks an appropriate chart per column using the dataset's statistics, frequency distributions & data dictionary with integrated Geonames geocoding & optional LLM metadata inferencing. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature. ([Gallery](https://dathere.github.io/qsv/gallery.html))
+> Generate interactive charts & maps from CSV data using [plotly](https://plotly.com). `viz smart` creates a *"[neuro-symbolic](https://en.wikipedia.org/wiki/Neuro-symbolic_AI)"* dashboard, picking appropriate visualizations using the dataset's statistics, frequency distributions, data dictionary & optional LLM metadata inferencing, with automatic geocoding enrichment. Outputs self-contained, interactive HTML or static PNG/SVG/PDF/JPEG/WebP with the `viz_static` feature. ([Gallery](https://dathere.github.io/qsv/gallery.html))
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/viz.rs](https://github.com/dathere/qsv/blob/master/src/cmd/viz.rs)** | [🪄](TableOfContents.md#legend "\"automagical\" commands that uses stats and/or frequency tables to work \"smarter\" & \"faster\".")[📇](TableOfContents.md#legend "uses an index when available.")[🏎️](TableOfContents.md#legend "multithreaded and/or faster when an index (📇) is available.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🌐](TableOfContents.md#legend "has web-aware options.")[🌎](TableOfContents.md#legend "has geospatial capabilities.")
 
@@ -11,7 +11,7 @@
 
 ## Description [↩](#nav)
 
-Generate charts from CSV data using the plotly charting library.
+Generate charts/maps from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
 so charts work offline; map basemaps fetch their tiles over the network at view time

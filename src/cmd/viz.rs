@@ -1,5 +1,5 @@
 static USAGE: &str = r#"
-Generate charts from CSV data using the plotly charting library.
+Generate charts/maps from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
 so charts work offline; map basemaps fetch their tiles over the network at view time

@@ -9298,21 +9298,139 @@ struct GeoJsonOverlay {
     /// line there and a single trace draws every boundary.
     boundary_lats: Vec<f64>,
     boundary_lons: Vec<f64>,
-    /// Per-feature label anchors (bounding-box centers) and text (HTML-escaped). Empty when there
-    /// are more than `GEOJSON_OVERLAY_LABEL_MAX` features.
+    /// Per-feature label anchors (a representative interior point; see [`feature_label_anchor`])
+    /// and text (HTML-escaped). Empty when there are more than `GEOJSON_OVERLAY_LABEL_MAX`
+    /// features.
     label_lats:    Vec<f64>,
     label_lons:    Vec<f64>,
     labels:        Vec<String>,
 }
 
+/// Absolute planar (shoelace) area of a polygon ring, in squared degrees. Used only to pick the
+/// largest part of a MultiPolygon for label placement, so the planar/`deg²` approximation is fine
+/// at the local/regional scales this overlay targets. Rings may be open or closed (first==last).
+fn ring_area(ring: &[[f64; 2]]) -> f64 {
+    let n = ring.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut a = 0.0;
+    let mut j = n - 1;
+    for i in 0..n {
+        let [xi, yi] = ring[i];
+        let [xj, yj] = ring[j];
+        a += (xj + xi) * (yj - yi);
+        j = i;
+    }
+    (a / 2.0).abs()
+}
+
+/// Area-weighted centroid (shoelace) of a polygon ring, as `[lon, lat]`. `None` when the ring is
+/// degenerate (near-zero area). Rings may be open or closed.
+fn ring_centroid(ring: &[[f64; 2]]) -> Option<[f64; 2]> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let (mut a2, mut cx, mut cy) = (0.0, 0.0, 0.0);
+    let mut j = n - 1;
+    for i in 0..n {
+        let [xi, yi] = ring[i];
+        let [xj, yj] = ring[j];
+        let cross = xj * yi - xi * yj;
+        a2 += cross;
+        cx += (xj + xi) * cross;
+        cy += (yj + yi) * cross;
+        j = i;
+    }
+    if a2.abs() < 1e-12 {
+        return None;
+    }
+    Some([cx / (3.0 * a2), cy / (3.0 * a2)])
+}
+
+/// Point guaranteed on the polygon's surface at latitude `y`: intersect the horizontal line with
+/// every ring edge, sort the crossings, and return the midpoint of the widest interior (even-odd)
+/// span as `[lon, lat]`. `None` when the line misses the polygon entirely.
+fn point_on_surface(rings: &[Vec<[f64; 2]>], y: f64) -> Option<[f64; 2]> {
+    let mut xs: Vec<f64> = Vec::new();
+    for ring in rings {
+        let n = ring.len();
+        if n < 3 {
+            continue;
+        }
+        let mut j = n - 1;
+        for i in 0..n {
+            let [xi, yi] = ring[i];
+            let [xj, yj] = ring[j];
+            if (yi > y) != (yj > y) {
+                xs.push((xj - xi) * (y - yi) / (yj - yi) + xi);
+            }
+            j = i;
+        }
+    }
+    xs.sort_by(f64::total_cmp);
+    let mut best: Option<f64> = None;
+    let mut best_w = f64::NEG_INFINITY;
+    let mut k = 0;
+    while k + 1 < xs.len() {
+        let w = xs[k + 1] - xs[k];
+        if w > best_w {
+            best_w = w;
+            best = Some((xs[k] + xs[k + 1]) / 2.0);
+        }
+        k += 2;
+    }
+    best.map(|x| [x, y])
+}
+
+/// A representative interior point (`[lon, lat]`) of a single polygon (rings: `[0]` exterior, rest
+/// holes): the area-weighted centroid when it lands inside, otherwise a point-on-surface at the
+/// centroid's latitude (falling back to the ring's vertical midline). `None` for a degenerate ring.
+fn representative_point(rings: &[Vec<[f64; 2]>]) -> Option<[f64; 2]> {
+    let exterior = rings.first()?;
+    let centroid = ring_centroid(exterior)?;
+    if point_in_polygon(rings, centroid[0], centroid[1]) {
+        return Some(centroid);
+    }
+    // concave or holed: the centroid fell outside — fall back to an on-surface scanline point.
+    let mid_y = {
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for &[_, y] in exterior {
+            lo = lo.min(y);
+            hi = hi.max(y);
+        }
+        (lo + hi) / 2.0
+    };
+    point_on_surface(rings, centroid[1]).or_else(|| point_on_surface(rings, mid_y))
+}
+
+/// Label anchor (`[lon, lat]`) for a `--geojson` feature: a representative interior point of its
+/// LARGEST sub-polygon (so a MultiPolygon labels its main part, not the empty gap between parts),
+/// falling back to the whole-feature bounding-box center when the geometry is degenerate.
+fn feature_label_anchor(feature: &PipFeature) -> [f64; 2] {
+    let largest = feature
+        .polygons
+        .iter()
+        .filter(|poly| poly.first().is_some_and(|r| r.len() >= 3))
+        .max_by(|a, b| ring_area(&a[0]).total_cmp(&ring_area(&b[0])));
+    if let Some(poly) = largest
+        && let Some(pt) = representative_point(poly)
+    {
+        return pt;
+    }
+    let [min_lon, min_lat, max_lon, max_lat] = feature.bbox;
+    [(min_lon + max_lon) / 2.0, (min_lat + max_lat) / 2.0]
+}
+
 /// Build the [`GeoJsonOverlay`] for a `--geojson` map overlay: every feature's boundary rings as
 /// one `NaN`-gap-separated polyline, plus a per-feature label (its `--feature-name-key` value,
-/// falling back to the id) at its bounding-box center — suppressed above
-/// `GEOJSON_OVERLAY_LABEL_MAX` features. Best-effort: returns `None` when the file can't be
-/// loaded/parsed (the choropleth-panel builder already hard-errors on a bad `--geojson` before this
-/// runs) or yields no drawable rings. Antimeridian-crossing features are drawn from their stored
-/// (continuity-unwrapped) vertices, so a region straddling ±180° may draw imperfectly — a non-issue
-/// for the local/regional GeoJSON this overlay targets.
+/// falling back to the id) at a representative interior point (see [`feature_label_anchor`]) —
+/// suppressed above `GEOJSON_OVERLAY_LABEL_MAX` features. Best-effort: returns `None` when the file
+/// can't be loaded/parsed (the choropleth-panel builder already hard-errors on a bad `--geojson`
+/// before this runs) or yields no drawable rings. Antimeridian-crossing features are drawn from
+/// their stored (continuity-unwrapped) vertices, so a region straddling ±180° may draw imperfectly
+/// — a non-issue for the local/regional GeoJSON this overlay targets.
 fn build_geojson_overlay(
     spec: &str,
     feature_id_key: &str,
@@ -9347,9 +9465,9 @@ fn build_geojson_overlay(
             }
         }
         if label_them {
-            let [min_lon, min_lat, max_lon, max_lat] = feature.bbox;
-            label_lons.push((min_lon + max_lon) / 2.0);
-            label_lats.push((min_lat + max_lat) / 2.0);
+            let [lon, lat] = feature_label_anchor(feature);
+            label_lons.push(lon);
+            label_lats.push(lat);
             // `name` is HTML-escaped at construction; the id fallback is raw, so escape it here.
             labels.push(
                 feature
@@ -17669,5 +17787,79 @@ mod tests {
         let before = std::time::UNIX_EPOCH;
         let after = before + std::time::Duration::from_secs(1);
         assert!(bivariate_sidecar_is_fresh(Some(before), Some(after), false));
+    }
+
+    // A convex polygon (square): the area-weighted centroid is inside, so it IS the label anchor.
+    #[test]
+    fn geojson_label_anchor_convex_is_centroid() {
+        let square = vec![vec![
+            [0.0, 0.0],
+            [0.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 0.0],
+            [0.0, 0.0],
+        ]];
+        let pt = representative_point(&square).expect("anchor");
+        assert!((pt[0] - 5.0).abs() < 1e-9 && (pt[1] - 5.0).abs() < 1e-9);
+        assert!(point_in_polygon(&square, pt[0], pt[1]));
+    }
+
+    // A concave U-shaped polygon: the bbox center AND the naive centroid fall in the notch
+    // (outside), so the anchor must be pulled onto the surface (guaranteed inside).
+    #[test]
+    fn geojson_label_anchor_concave_stays_inside() {
+        // a "U": full width at the bottom, two prongs up the sides, hollow center-top.
+        let u = vec![vec![
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [7.0, 10.0],
+            [7.0, 3.0],
+            [3.0, 3.0],
+            [3.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0],
+        ]];
+        // sanity: the whole-bbox center (5,5) is in the hollow notch => outside
+        assert!(!point_in_polygon(&u, 5.0, 5.0));
+        let pt = representative_point(&u).expect("anchor");
+        assert!(
+            point_in_polygon(&u, pt[0], pt[1]),
+            "anchor {pt:?} must be inside the U"
+        );
+    }
+
+    // A MultiPolygon (a tiny part + a large part with a wide gap between them): the anchor must
+    // land inside the LARGE part, never in the empty gap that a whole-feature bbox center would
+    // pick.
+    #[test]
+    fn geojson_label_anchor_multipolygon_picks_largest_part() {
+        let small = vec![vec![
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 0.0],
+        ]];
+        let large = vec![vec![
+            [50.0, 50.0],
+            [50.0, 60.0],
+            [60.0, 60.0],
+            [60.0, 50.0],
+            [50.0, 50.0],
+        ]];
+        let feature = PipFeature {
+            id:                 "m".to_string(),
+            name:               Some("Multi".to_string()),
+            polygons:           vec![small, large.clone()],
+            bbox:               [0.0, 0.0, 60.0, 60.0],
+            wraps_antimeridian: false,
+        };
+        let [lon, lat] = feature_label_anchor(&feature);
+        // inside the large square, not in the (0,0)-(60,60) union-bbox gap (~30,30)
+        assert!(
+            point_in_polygon(&large, lon, lat),
+            "anchor ({lon},{lat}) not in large part"
+        );
     }
 }

@@ -301,6 +301,11 @@ choropleth options:
                            binning: with --lat/--lon (and without --geocode), each row's
                            point is binned into the region whose polygon contains it
                            (exact, no geocoding) and colored by --value/--agg or counts.
+                           In `viz smart`, it also overlays the region boundaries on the
+                           map, labelling each with its --feature-name-key value (falling
+                           back to its id) — as on-map text on the projection/static map,
+                           or as a centroid hover marker on the interactive tile map (which
+                           culls on-map text). Labels are omitted above 60 regions.
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
                            entry in the locations column, or that labels each binned
                            region (e.g. id, properties.fips). [default: id]
@@ -6767,18 +6772,21 @@ fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
 
 /// A single dashboard panel: a column and the chart chosen for it.
 struct Panel {
-    name:     String,
+    name:            String,
     /// Optional secondary line shown beneath the title (smaller, muted). Carries the
     /// dictionary's human-readable label so `name` can stay the raw field name (which also
     /// feeds trace names and status messages, so it must stay plain — no markup).
-    subtitle: Option<String>,
-    kind:     PanelKind,
+    subtitle:        Option<String>,
+    kind:            PanelKind,
     /// Reverse-geocoded spatial-extent metadata for a `Map`/`Geo` panel (the 4 bounding-box
     /// corners + center, plus a consolidated jurisdiction summary). `None` for non-map panels,
     /// when geocoding was skipped (e.g. antimeridian-spanning data), or when the lookup failed
     /// (offline/missing index) — the map then renders without the overlay.
     #[cfg(feature = "geocode")]
-    geo_meta: Option<GeoMeta>,
+    geo_meta:        Option<GeoMeta>,
+    /// `--geojson` region boundaries + labels to overlay on a `Map`/`Geo` panel (no geocoding
+    /// needed). `None` for non-map panels or when no `--geojson` was supplied.
+    geojson_overlay: Option<GeoJsonOverlay>,
 }
 
 impl Panel {
@@ -6790,6 +6798,7 @@ impl Panel {
             kind,
             #[cfg(feature = "geocode")]
             geo_meta: None,
+            geojson_overlay: None,
         }
     }
 
@@ -9269,6 +9278,193 @@ fn build_smart_pip_choropleth_panel(
     Ok(Some(Panel::new(panel_name, kind)))
 }
 
+/// Max `--geojson` features to label on a map overlay. Above this, the region boundaries are still
+/// drawn but the per-region text labels are suppressed to avoid a cluttered map.
+const GEOJSON_OVERLAY_LABEL_MAX: usize = 60;
+
+/// Outline color for `--geojson` region boundaries overlaid on a smart map. A teal, distinct from
+/// the warm data points, the purple core-extent box, and the magenta full-extent box.
+const GEOJSON_OVERLAY_LINE_COLOR: &str = "#00695c";
+
+/// Outline width (px) for the `--geojson` region boundary overlay.
+const GEOJSON_OVERLAY_LINE_WIDTH: f64 = 1.5;
+
+/// Region boundaries (as one gap-separated polyline) plus per-feature labels for overlaying a
+/// user `--geojson` on a `viz smart` map panel. Built once in `build_map_panel`, rendered by
+/// [`geojson_overlay_mapbox_traces`] / [`geojson_overlay_geo_traces`] on both the mapbox and the
+/// offline `ScatterGeo` (global / static-export) paths.
+struct GeoJsonOverlay {
+    /// All feature ring vertices; a `NaN` gap separates consecutive rings so plotly breaks the
+    /// line there and a single trace draws every boundary.
+    boundary_lats: Vec<f64>,
+    boundary_lons: Vec<f64>,
+    /// Per-feature label anchors (bounding-box centers) and text (HTML-escaped). Empty when there
+    /// are more than `GEOJSON_OVERLAY_LABEL_MAX` features.
+    label_lats:    Vec<f64>,
+    label_lons:    Vec<f64>,
+    labels:        Vec<String>,
+}
+
+/// Build the [`GeoJsonOverlay`] for a `--geojson` map overlay: every feature's boundary rings as
+/// one `NaN`-gap-separated polyline, plus a per-feature label (its `--feature-name-key` value,
+/// falling back to the id) at its bounding-box center — suppressed above
+/// `GEOJSON_OVERLAY_LABEL_MAX` features. Best-effort: returns `None` when the file can't be
+/// loaded/parsed (the choropleth-panel builder already hard-errors on a bad `--geojson` before this
+/// runs) or yields no drawable rings. Antimeridian-crossing features are drawn from their stored
+/// (continuity-unwrapped) vertices, so a region straddling ±180° may draw imperfectly — a non-issue
+/// for the local/regional GeoJSON this overlay targets.
+fn build_geojson_overlay(
+    spec: &str,
+    feature_id_key: &str,
+    feature_name_key: Option<&str>,
+) -> Option<GeoJsonOverlay> {
+    let geojson = load_geojson(spec).ok()?;
+    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
+    if features.is_empty() {
+        return None;
+    }
+    let label_them = features.len() <= GEOJSON_OVERLAY_LABEL_MAX;
+    let mut boundary_lats: Vec<f64> = Vec::new();
+    let mut boundary_lons: Vec<f64> = Vec::new();
+    let mut label_lats: Vec<f64> = Vec::new();
+    let mut label_lons: Vec<f64> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    for feature in &features {
+        for polygon in &feature.polygons {
+            for ring in polygon {
+                if ring.len() < 2 {
+                    continue;
+                }
+                if !boundary_lats.is_empty() {
+                    // gap so plotly breaks the line between this ring and the previous one
+                    boundary_lats.push(f64::NAN);
+                    boundary_lons.push(f64::NAN);
+                }
+                for &[lon, lat] in ring {
+                    boundary_lats.push(lat);
+                    boundary_lons.push(lon);
+                }
+            }
+        }
+        if label_them {
+            let [min_lon, min_lat, max_lon, max_lat] = feature.bbox;
+            label_lons.push((min_lon + max_lon) / 2.0);
+            label_lats.push((min_lat + max_lat) / 2.0);
+            // `name` is HTML-escaped at construction; the id fallback is raw, so escape it here.
+            labels.push(
+                feature
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| escape_hover(&feature.id)),
+            );
+        }
+    }
+    if boundary_lats.is_empty() {
+        return None;
+    }
+    Some(GeoJsonOverlay {
+        boundary_lats,
+        boundary_lons,
+        label_lats,
+        label_lons,
+        labels,
+    })
+}
+
+/// Shared line style for the `--geojson` region boundary overlay.
+fn geojson_overlay_line() -> Line {
+    Line::new()
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+        .width(GEOJSON_OVERLAY_LINE_WIDTH)
+}
+
+/// Shared text font for the on-map `--geojson` region labels on the `ScatterGeo` projection
+/// (global / static export), where text glyphs render reliably: small, in the overlay's teal.
+fn geojson_overlay_label_font() -> Font {
+    Font::new()
+        .family(FONT_FAMILY)
+        .size(10)
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+}
+
+/// Small centroid marker carrying each region's name as hover text on the mapbox tile map. Raster
+/// mapbox basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
+/// haloed circles, not text), so the region label is delivered on hover of this dot instead — a
+/// white-haloed teal circle that reads on both light and dark basemaps.
+fn geojson_overlay_label_marker() -> Marker {
+    Marker::new()
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+        .size(7)
+        .opacity(0.9)
+        .line(Line::new().color("#ffffff").width(1.0))
+}
+
+/// Boundary + label traces for a `--geojson` overlay on a mapbox tile map (`ScatterMapbox`). The
+/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (raster
+/// mapbox culls colliding on-map text, so the region name is shown on hover of a small dot
+/// instead).
+fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
+    let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
+    let boundary: Box<dyn Trace> =
+        ScatterMapbox::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+            .name("regions")
+            .mode(Mode::Lines)
+            .line(geojson_overlay_line())
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false);
+    out.push(boundary);
+    if !overlay.labels.is_empty() {
+        let label_trace: Box<dyn Trace> =
+            ScatterMapbox::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+                .name("region labels")
+                .mode(Mode::Markers)
+                .marker(geojson_overlay_label_marker())
+                .hover_text_array(overlay.labels.clone())
+                .hover_info(HoverInfo::Text)
+                .show_legend(false);
+        out.push(label_trace);
+    }
+    out
+}
+
+/// Boundary + label traces for a `--geojson` overlay on an offline `ScatterGeo` projection (global
+/// HTML + static image export). `subplot` binds each trace to a specific `geo{n}` cell when set
+/// (the typed-subplot / static path); pass `None` for the single-panel inline plot.
+fn geojson_overlay_geo_traces(
+    overlay: &GeoJsonOverlay,
+    subplot: Option<&str>,
+) -> Vec<Box<dyn Trace>> {
+    let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
+    let mut boundary =
+        ScatterGeo::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+            .name("regions")
+            .mode(Mode::Lines)
+            .line(geojson_overlay_line())
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false);
+    if let Some(sp) = subplot {
+        boundary = boundary.subplot(sp);
+    }
+    let boundary: Box<dyn Trace> = boundary;
+    out.push(boundary);
+    if !overlay.labels.is_empty() {
+        let mut label_trace =
+            ScatterGeo::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+                .name("region labels")
+                .mode(Mode::Text)
+                .text_array(overlay.labels.clone())
+                .text_font(geojson_overlay_label_font())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false);
+        if let Some(sp) = subplot {
+            label_trace = label_trace.subplot(sp);
+        }
+        let label_trace: Box<dyn Trace> = label_trace;
+        out.push(label_trace);
+    }
+    out
+}
+
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
 /// panel. The pair comes from `coord_hint` (dictionary `geo.latitude`/`geo.longitude` signals) when
 /// supplied, else the header-name heuristic (`latlon_indices`). Does one extra data pass to collect
@@ -9566,7 +9762,7 @@ fn build_map_panel(
     // intent, so a small custom-district file shouldn't be span-suppressed. Without
     // `--geojson`, fall back to the geocode-derived iso3/US-state panel (gated, span-gated as
     // before).
-    let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
+    let (choropleth_panel, geojson_overlay) = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
         // smart shares the command's default cap; the value is validated up front in run()
         // (non-negative finite, not with --no-snap), so no clamping is needed here. Do NOT revert
@@ -9575,7 +9771,7 @@ fn build_map_panel(
         let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
-        build_smart_pip_choropleth_panel(
+        let panel = build_smart_pip_choropleth_panel(
             spec,
             key,
             name_key,
@@ -9583,18 +9779,21 @@ fn build_map_panel(
             &core_lons,
             snap,
             snap_max_km,
-        )?
+        )?;
+        // overlay the region boundaries + labels directly on the point map (best-effort; the panel
+        // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
+        // 2-region minimum — even a single region is worth outlining on the map.
+        let overlay = build_geojson_overlay(spec, key, name_key);
+        (panel, overlay)
     } else {
         #[cfg(feature = "geocode")]
-        {
-            (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-                .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
-                .flatten()
-        }
+        let choropleth = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
+            || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+            .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+            .flatten();
         #[cfg(not(feature = "geocode"))]
-        {
-            None
-        }
+        let choropleth = None;
+        (choropleth, None)
     };
 
     let kind = if global {
@@ -9626,6 +9825,7 @@ fn build_map_panel(
             kind,
             #[cfg(feature = "geocode")]
             geo_meta,
+            geojson_overlay,
         },
         choropleth_panel,
         (lat_idx, lon_idx),
@@ -10644,6 +10844,7 @@ fn build_smart(
                         kind,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
+                        geojson_overlay: p.geojson_overlay,
                     };
                     (Some((p, cols)), None)
                 } else {
@@ -11991,6 +12192,9 @@ fn smart_grid_parts(
                     );
                 }
             }
+            if let Some(overlay) = &panel.geojson_overlay {
+                traces.extend(geojson_overlay_geo_traces(overlay, Some(&geo_ref(pos))));
+            }
             let mut geo_json = serde_json::to_value(&geo).unwrap_or(serde_json::Value::Null);
             if let Some(obj) = geo_json.as_object_mut() {
                 obj.insert(
@@ -12348,6 +12552,11 @@ fn smart_inline_panel_plot(
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_mapbox(&mut plot, meta);
         }
+        if let Some(overlay) = &panel.geojson_overlay {
+            for trace in geojson_overlay_mapbox_traces(overlay) {
+                plot.add_trace(trace);
+            }
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -12430,6 +12639,11 @@ fn smart_inline_panel_plot(
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_geo(&mut plot, meta);
+        }
+        if let Some(overlay) = &panel.geojson_overlay {
+            for trace in geojson_overlay_geo_traces(overlay, None) {
+                plot.add_trace(trace);
+            }
         }
         let (geo_land, geo_water, geo_bg) = geo_palette(theme);
         // when every plotted point (core + outliers) sits in a single plotly continent, frame the

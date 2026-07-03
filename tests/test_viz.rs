@@ -2536,6 +2536,85 @@ fn viz_smart_heatmap_density_threshold() {
     assert!(stderr.contains("--heatmap-density 2"));
 }
 
+// A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the
+// mapbox tile map: a single gap-separated `scattermapbox` line trace named "regions", plus a
+// "region labels" trace of centroid HOVER markers (raster mapbox culls on-map text, so the region
+// name is delivered on hover of a dot instead of as a visible glyph).
+#[test]
+fn viz_smart_geojson_overlay() {
+    let wrk = Workdir::new("viz_smart_geojson_overlay");
+    // locally-clustered points so smart renders a mapbox tile map (not the global ScatterGeo)
+    wrk.create_from_string(
+        "local_geo.csv",
+        "id,lat,lon,val\n1,40.46,-79.98,a\n2,40.47,-79.97,b\n3,40.46,-79.92,c\n4,40.47,-79.91,d\n",
+    );
+    // two adjacent wards straddling the cluster, each with a human-readable name
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"N","name":"North Ward"},"geometry":{"type":"Polygon","coordinates":[[[-80.0,40.44],[-80.0,40.50],[-79.95,40.50],[-79.95,40.44],[-80.0,40.44]]]}},{"type":"Feature","properties":{"id":"S","name":"South Ward"},"geometry":{"type":"Polygon","coordinates":[[[-79.95,40.44],[-79.95,40.50],[-79.90,40.50],[-79.90,40.44],[-79.95,40.44]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "local_geo.csv",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--feature-name-key",
+        "properties.name",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // local mapbox map with the boundary + label overlay traces
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""name":"regions""#));
+    assert!(html.contains(r#""name":"region labels""#));
+    // labels ride in hover text (mapbox culls on-map glyphs), carrying the --feature-name-key
+    // values rather than the ids
+    assert!(html.contains(r#""hovertext":["North Ward","South Ward"]"#));
+}
+
+// The same `--geojson` overlay on a GLOBE-spanning `viz smart` map renders on the offline
+// `ScatterGeo` projection, where on-map text glyphs ARE reliable: a "regions" boundary line trace
+// plus a "region labels" `text`-mode trace carrying the visible feature names.
+#[test]
+fn viz_smart_geojson_overlay_global_geo() {
+    let wrk = Workdir::new("viz_smart_geojson_overlay_global_geo");
+    // points on multiple continents force the global ScatterGeo world-overview path
+    wrk.create_from_string(
+        "global_geo.csv",
+        "id,lat,lon,val\n1,40.44,-79.99,a\n2,48.85,2.35,b\n3,-33.86,151.20,c\n4,35.68,139.69,d\n",
+    );
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"N","name":"North Ward"},"geometry":{"type":"Polygon","coordinates":[[[-80.0,40.44],[-80.0,40.50],[-79.95,40.50],[-79.95,40.44],[-80.0,40.44]]]}},{"type":"Feature","properties":{"id":"S","name":"South Ward"},"geometry":{"type":"Polygon","coordinates":[[[-79.95,40.44],[-79.95,40.50],[-79.90,40.50],[-79.90,40.44],[-79.95,40.44]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "global_geo.csv",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--feature-name-key",
+        "properties.name",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // global map => ScatterGeo overlay with VISIBLE on-map text labels
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(html.contains(r#""name":"regions""#));
+    assert!(html.contains(r#""name":"region labels""#));
+    assert!(html.contains(r#""mode":"text""#));
+    assert!(html.contains(r#""text":["North Ward","South Ward"]"#));
+}
+
 // A globe-spanning dataset renders the smart map as an offline ScatterGeo world-overview, NOT a
 // DensityMapbox — so even with a low --heatmap-density threshold, no heatmap is drawn and the
 // heatmap note must NOT be emitted (it would misdescribe the ScatterGeo markers as a heatmap).

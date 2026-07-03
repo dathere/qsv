@@ -513,6 +513,116 @@ fn viz_smart_violin_explicit_all_points() {
 }
 
 #[test]
+fn viz_smart_grouped_violin_panel() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_panel");
+    // one low-cardinality categorical dimension + one numeric measure: `viz smart` adds a
+    // grouped-violin overview panel showing the measure's distribution split by category (one
+    // violin per category), distinct from any single-column violin.
+    let mut rows = String::from("category,amount\n");
+    for i in 0..90_u32 {
+        let category = match i % 3 {
+            0 => "alpha",
+            1 => "beta",
+            _ => "gamma",
+        };
+        // per-category offsets so the distributions differ
+        let amount = (i % 30) + (i % 3) * 40;
+        rows.push_str(&format!("{category},{amount}\n"));
+    }
+    wrk.create_from_string("grp.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "grp.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the grouped-violin panel: title "<measure> distribution by <dimension>" and a violin trace
+    assert!(html.contains("amount distribution by category"));
+    assert!(html.contains(r#""type":"violin""#));
+    // grouped => the violin carries an x-array of the category labels (a single-column violin has
+    // no x data); each category's label is present as violin x data
+    assert!(html.contains(r#""alpha","alpha""#));
+    // inner quartile box + mean line inside each KDE silhouette
+    assert!(html.contains(r#""box":{"visible":true}"#));
+    assert!(html.contains(r#""meanline":{"visible":true}"#));
+}
+
+#[test]
+fn viz_smart_grouped_violin_alternating_categories_above_sample_cap() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_alternating_categories_above_sample_cap");
+    // Regression: two categories STRICTLY alternating by row, with a non-null measure count
+    // (100_000) that puts the collection stride at exactly 2 (> MAX_SMART_POINTS = 50_000). A
+    // global `seen % stride` sampler would keep only the even-position category ("east"), starve
+    // "west", and drop the panel to a single violin (or skip it). The per-category stride must
+    // sample both, so both categories survive in the grouped violin.
+    let mut rows = String::from("grp,val\n");
+    for i in 0..100_000_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        let val = i % 1000;
+        rows.push_str(&format!("{grp},{val}\n"));
+    }
+    wrk.create_from_string("alt.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "alt.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the grouped-violin panel is present (not collapsed to <2 categories and skipped) ...
+    assert!(html.contains("val distribution by grp"));
+    // ... and BOTH alternating categories appear as violin x data (the aliasing bug would have
+    // sampled only one of them)
+    assert!(html.contains(r#""east""#));
+    assert!(html.contains(r#""west""#));
+}
+
+#[test]
+fn viz_smart_grouped_violin_max_points_env_override() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_max_points_env_override");
+    // 60k rows across two categories (30k each). At the default budget the violin sample target is
+    // 10k (MAX_SMART_POINTS/5), so each category is strided down (~5k kept); raising
+    // QSV_VIZ_MAX_POINTS lifts the target above the row count, so all values are kept. The count of
+    // a category label in the violin's x-array reflects how many of its points were embedded.
+    let mut rows = String::from("grp,val\n");
+    for i in 0..60_000_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{grp},{}\n", i % 1000));
+    }
+    wrk.create_from_string("big.csv", &rows);
+
+    let count_east = |env: Option<&str>| -> usize {
+        let out = wrk.path("d.html").to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "big.csv", "-o", &out]);
+        // don't inherit a QSV_VIZ_MAX_POINTS a developer/CI may already have set, so the default
+        // branch actually exercises the default budget
+        cmd.env_remove("QSV_VIZ_MAX_POINTS");
+        if let Some(v) = env {
+            cmd.env("QSV_VIZ_MAX_POINTS", v);
+        }
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string("d.html")
+            .unwrap()
+            .matches(r#""east""#)
+            .count()
+    };
+
+    // default: strided to ~5k per category; raised budget keeps all 30k
+    let default_east = count_east(None);
+    let raised_east = count_east(Some("1000000"));
+    assert!(
+        default_east < 10_000,
+        "default budget should stride-sample (got {default_east} east points)"
+    );
+    assert!(
+        raised_east > 20_000,
+        "raised QSV_VIZ_MAX_POINTS should embed more points (got {raised_east} east points)"
+    );
+}
+
+#[test]
 fn viz_smart_box_all_points_gated_on_nonnull_count() {
     let wrk = Workdir::new("viz_smart_box_all_points_gated_on_nonnull_count");
     // 2,000 rows but only 800 non-null values (60% null): the all-points tier is measured

@@ -206,7 +206,7 @@ Date and DateTime statistics are only computed when `--infer-dates` is enabled. 
 | `min` | Variable | Minimum value found. | Tracks minimum value during the scan. |
 | `max` | Variable | Maximum value found. | Tracks maximum value during the scan. |
 | `range` | Variable | Difference between Max and Min. | `max - min`. |
-| `sort_order` | Variable | Sorting status of the column. | Checked during scan. Returns "ASCENDING", "DESCENDING", or "UNSORTED". |
+| `sort_order` | Variable | Sorting status of the column. | Checked during scan. Returns "Ascending", "Descending", or "Unsorted". |
 | `sortiness` | Variable | Measure of how sorted the column is. | Returns a score between -1.0 and 1.0: 1.0 indicates perfectly ascending order, -1.0 indicates perfectly descending order, values in between indicate the general tendency towards ascending or descending order, and 0.0 indicates either no clear ordering or empty/single-element collections. |
 
 ### Central Tendency & Dispersion (Streaming)

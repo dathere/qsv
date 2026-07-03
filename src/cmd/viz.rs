@@ -7487,6 +7487,14 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
 ///   tagged `measure.count`, e.g. items-per-order 1-6, is also charted as a bar — which is arguably
 ///   an improvement anyway.)
 fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
+    // a zero-padded numeric code (zip/FIPS/ICD-9, per stats' zero_padded_numeric detection) can
+    // never be a measure, whatever the dictionary said: leading zeros only survive in codes,
+    // which is harder evidence than an LLM role/concept tag. Applies to any type (zero-padded
+    // decimal codes like `007.1` infer as Float, padded integer codes as String).
+    if sem.route == Route::Measure && s.zero_padded_numeric == Some(true) {
+        sem.route = Route::Dimension;
+        return sem;
+    }
     if sem.route != Route::Measure || s.r#type.as_str() != "Integer" {
         return sem;
     }
@@ -7712,6 +7720,7 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
             let low_card = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
             s.bimodality_coefficient.is_none()
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
+                && s.zero_padded_numeric != Some(true) // codes never become boxes/histograms
                 && s.cardinality > 1
                 && !low_card
                 && s.q1.is_some()
@@ -8097,13 +8106,22 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         if low_cardinality {
             return Some(PanelKind::FreqBar { idx });
         }
-        // continuous numeric -> box plot / histogram from precomputed quartiles. Shared with the
-        // dictionary `measure` verdict (see `classify_measure`) so a measure is charted the same
-        // way however it was identified; returns None when the column lacks quartiles.
-        return classify_measure(idx, s);
+        // a zero-padded numeric code (zip/FIPS/ICD-9 style, per stats' zero_padded_numeric
+        // detection) is a CODE, never a quantity: quartiles/means of code values are
+        // meaningless, so it must not become a box/histogram. Fall through to the categorical
+        // path below instead — a concentrated code column still makes an informative top-N bar
+        // (per the entropy check), while a near-uniform one is skipped as ID-like noise.
+        if s.zero_padded_numeric != Some(true) {
+            // continuous numeric -> box plot / histogram from precomputed quartiles. Shared
+            // with the dictionary `measure` verdict (see `classify_measure`) so a measure is
+            // charted the same way however it was identified; returns None when the column
+            // lacks quartiles.
+            return classify_measure(idx, s);
+        }
     }
 
-    // String / Date / DateTime -> frequency bar when low-cardinality
+    // String / Date / DateTime (and zero-padded numeric codes) -> frequency bar when
+    // low-cardinality
     if low_cardinality {
         return Some(PanelKind::FreqBar { idx });
     }
@@ -8619,6 +8637,27 @@ fn timestamp_rank(concept: &str) -> u8 {
     }
 }
 
+/// Sortedness tiebreak for the canonical-date choice: a date column the file is physically
+/// ordered by (ascending or descending — e.g. an export ordered newest-first) is more likely
+/// the primary event timestamp than an unsorted one (an edited/backfilled modified_date), so
+/// among equal-concept-rank candidates it wins. Matched case-insensitively: stats currently
+/// emits "Ascending"/"Descending"/"Unsorted" (STATS_DEFINITIONS.md documents the uppercase
+/// forms). Heuristic caveat: stats' `sort_order` is evaluated on the raw values, so a
+/// chronologically-sorted column in a non-lexicographic date format (e.g. `M/D/YYYY`) may read
+/// unsorted — the tiebreak then simply doesn't fire and selection falls back to column order,
+/// exactly as before.
+fn sort_order_rank(s: &crate::cmd::stats::StatsData) -> u8 {
+    match s.sort_order.as_deref() {
+        Some(order)
+            if order.eq_ignore_ascii_case("ascending")
+                || order.eq_ignore_ascii_case("descending") =>
+        {
+            0
+        },
+        _ => 1,
+    }
+}
+
 /// Time bucket granularity for the trend panel, widened as the date span grows so a multi-year
 /// dataset doesn't render thousands of daily points.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -8719,8 +8758,9 @@ fn build_timeseries_panel(
     use qsv_dateparser::parse_with_preference;
 
     // pick the canonical date/datetime column: when a dictionary tagged timestamps, prefer the
-    // event/created one (timestamp_rank); otherwise the first date column (rank ties break on
-    // column order). stats emits "Date"/"DateTime" once dates are inferred.
+    // event/created one (timestamp_rank); among equal ranks prefer a column the file is
+    // physically sorted by (sort_order_rank — likely the primary event time); remaining ties
+    // break on column order. stats emits "Date"/"DateTime" once dates are inferred.
     let Some((date_idx, is_datetime)) = stats
         .iter()
         .enumerate()
@@ -8732,6 +8772,7 @@ fn build_timeseries_panel(
         .min_by_key(|&(i, _)| {
             (
                 timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                sort_order_rank(&stats[i]),
                 i,
             )
         })
@@ -9024,6 +9065,7 @@ fn build_cyclic_panel(
         .min_by_key(|&(i, _)| {
             (
                 timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                sort_order_rank(&stats[i]),
                 i,
             )
         })
@@ -16411,6 +16453,71 @@ mod tests {
         let hist = PanelKind::Histogram { idx: 0 };
         let plain = stat("Float", 1000, Some(0.5));
         assert!(panel_interest(&plain, &hist) > panel_interest(&plain, &boxkind));
+    }
+
+    #[test]
+    fn classify_routes_zero_padded_codes_as_dimensions() {
+        // a high-cardinality Float column with quartiles: a genuine measure -> box plot ...
+        let mut measure = stat("Float", 40, Some(0.1));
+        measure.q1 = Some(10.0);
+        measure.q2_median = Some(50.0);
+        measure.q3 = Some(90.0);
+        assert!(matches!(
+            classify(0, &measure),
+            Some(PanelKind::BoxStats { .. })
+        ));
+        // ... but the SAME statistics with the zero-padded flag (ICD-9 style decimal codes like
+        // 007.1 infer as Float) must never box: quartiles of code values are meaningless. With
+        // no entropy signal it's skipped as ID-like ...
+        let mut code = measure.clone();
+        code.zero_padded_numeric = Some(true);
+        assert!(classify(0, &code).is_none());
+        // ... and with a concentrated distribution (moarstats normalized_entropy) it becomes an
+        // informative top-N frequency bar, exactly like a high-cardinality text categorical.
+        code.normalized_entropy = Some(0.4);
+        assert!(matches!(
+            classify(0, &code),
+            Some(PanelKind::FreqBar { .. })
+        ));
+        // low-cardinality zero-padded codes were already bars; the flag doesn't change that
+        let mut low = stat("Float", 10, Some(0.01));
+        low.zero_padded_numeric = Some(true);
+        assert!(matches!(classify(0, &low), Some(PanelKind::FreqBar { .. })));
+    }
+
+    #[test]
+    fn guardrail_bars_zero_padded_measures_whatever_the_dictionary_says() {
+        // an explicit measure.* concept normally wins, but leading zeros are harder evidence:
+        // a zero-padded code column is downgraded to a Dimension bar even then.
+        let mut code = stat("Float", 200, Some(0.2));
+        code.zero_padded_numeric = Some(true);
+        assert_eq!(
+            derive_semantics(&code, Some(&dict_row("", "measure", "measure.amount", ""))).route,
+            Route::Dimension
+        );
+        // without the flag, the same explicit measure verdict is trusted as-is
+        let plain = stat("Float", 200, Some(0.2));
+        assert_eq!(
+            derive_semantics(&plain, Some(&dict_row("", "measure", "measure.amount", ""))).route,
+            Route::Measure
+        );
+    }
+
+    #[test]
+    fn sort_order_rank_prefers_physically_sorted_columns() {
+        let with_order = |order: Option<&str>| {
+            let mut s = stat("Date", 100, Some(0.5));
+            s.sort_order = order.map(String::from);
+            s
+        };
+        // a column the file is ordered by (either direction) outranks an unsorted/unknown one,
+        // whatever the casing (stats emits "Ascending"; STATS_DEFINITIONS.md says "ASCENDING")
+        assert_eq!(sort_order_rank(&with_order(Some("Ascending"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("ASCENDING"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("Descending"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("DESCENDING"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("Unsorted"))), 1);
+        assert_eq!(sort_order_rank(&with_order(None)), 1);
     }
 
     #[test]

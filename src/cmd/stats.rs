@@ -682,6 +682,12 @@ pub struct StatsData {
     pub antimode: Option<String>,
     pub antimode_count: Option<u64>,
     pub antimode_occurrences: Option<u64>,
+    // `Some(true)` when the column is a zero-padded numeric code (zip/FIPS/ICD-9 style — see
+    // the `--zero-padded-numeric` flag); `None` otherwise (the stats CSV emits an empty cell
+    // for non-flagged columns, which the jsonl conversion drops entirely, and older caches
+    // never carried the column at all).
+    #[serde(default)]
+    pub zero_padded_numeric: Option<bool>,
     // moarstats fields (populated when moarstats has been run)
     #[serde(default)]
     pub kurtosis: Option<f64>,

@@ -6982,3 +6982,72 @@ fn viz_smart_no_dominance_hint_on_null_heavy_column() {
         "a 4%-of-rows category must not inherit the empty bucket's 96% share; html: {html}"
     );
 }
+
+#[test]
+fn viz_smart_zero_padded_codes_never_box() {
+    // a Float column of zero-padded decimal codes (ICD-9 style: 007.1) must not be charted as
+    // a box plot — quartiles of code values are meaningless. With 40 distinct codes (above the
+    // categorical cap) and no moarstats entropy signal, the column is skipped as ID-like.
+    let wrk = Workdir::new("viz_smart_zero_padded_codes_never_box");
+    let mut rows = String::from("icd9,status\n");
+    for i in 0..200 {
+        let code_n = i % 40;
+        let status = if i % 3 == 0 { "open" } else { "closed" };
+        rows.push_str(&format!("0{:02}.{},{status}\n", code_n, code_n % 10));
+    }
+    wrk.create_from_string("diagnoses.csv", &rows);
+
+    let out_html = wrk.path("diagnoses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "diagnoses.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("diagnoses.html").unwrap();
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "zero-padded decimal codes must never render as a box plot; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""name":"icd9"#),
+        "the high-cardinality code column should be skipped as ID-like, not charted; html: {html}"
+    );
+    // the companion categorical still charts, so the dashboard itself succeeds
+    assert!(html.contains(r#""name":"status"#));
+}
+
+#[test]
+fn viz_smart_timeseries_prefers_sorted_date_column() {
+    // two undated-concept (no dictionary) date columns tie on timestamp_rank; the sort_order
+    // tiebreak must pick the column the file is physically ordered by (`created`, ascending)
+    // over the leftmost-but-unsorted `updated` as the trend panel's time axis.
+    let wrk = Workdir::new("viz_smart_timeseries_prefers_sorted_date_column");
+    let mut rows = String::from("updated,created,value\n");
+    for i in 0..100u32 {
+        // `created`: strictly ascending ISO timestamps (day 1..5, hour cycling — ISO order ==
+        // lexicographic order); `updated`: the same 100 timestamps deterministically shuffled
+        // (multiplicative stride mod 100), so stats reads them as UNSORTED
+        let stamp = |n: u32| format!("2024-01-{:02}T{:02}:00:00Z", n / 24 + 1, n % 24);
+        rows.push_str(&format!(
+            "{},{},{}\n",
+            stamp((i * 37) % 100),
+            stamp(i),
+            100.0 + f64::from(i) * 1.37
+        ));
+    }
+    wrk.create_from_string("events.csv", &rows);
+
+    let out_html = wrk.path("events.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("events.html").unwrap();
+    assert!(
+        html.contains("over created"),
+        "the physically-sorted date column should win the time-series axis; html: {html}"
+    );
+    assert!(
+        !html.contains("over updated"),
+        "the unsorted leftmost date column should lose the tiebreak; html: {html}"
+    );
+}

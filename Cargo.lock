@@ -8198,13 +8198,13 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "self_update"
-version = "0.44.0"
-source = "git+https://github.com/jaemk/self_update?rev=cad8bb9#cad8bb9c5efa64ff9131c424bcd20c84463b32f2"
+version = "1.0.0-rc.1"
+source = "git+https://github.com/jqnatividad/self_update?branch=deps-bump-202607#96641fc88c7a5472902b58b59a029d4df46bc184"
 dependencies = [
  "http 1.4.2",
  "indicatif",
  "log",
- "quick-xml 0.38.4",
+ "quick-xml 0.41.0",
  "regex",
  "reqwest 0.13.4",
  "self-replace",
@@ -8214,7 +8214,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "urlencoding",
- "zip 6.0.0",
+ "zip 8.6.0",
  "zipsign-api",
 ]
 
@@ -11101,9 +11101,9 @@ dependencies = [
 
 [[package]]
 name = "zipsign-api"
-version = "0.1.5"
+version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dba6063ff82cdbd9a765add16d369abe81e520f836054e997c2db217ceca40c0"
+checksum = "32a55ebb27e67d9a9d116dd3a19637ee8cc0570c8ef816fb504c453f15448c99"
 dependencies = [
  "ed25519-dalek",
  "thiserror 2.0.18",

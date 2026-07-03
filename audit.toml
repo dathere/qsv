@@ -1,5 +1,4 @@
 [advisories]
-yanked = "deny"
 ignore = [
   # THESE ISSUES ARE ALLOW-LISTED HERE TO SILENCE THE CI TEMPORARILY
   # THESE ISSUES NEED TO BE FIXED
@@ -9,3 +8,8 @@ ignore = [
   # error[vulnerability]: Unbounded namespace-declaration allocation in `NsReader` enables memory-exhaustion denial of service in quick-xml
   "RUSTSEC-2026-0195",
 ]
+
+
+[yanked]
+enabled = true # Warn for yanked crates in Cargo.lock (default: true)
+update_index = true # Auto-update the crates.io index (default: true)

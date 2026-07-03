@@ -301,6 +301,11 @@ choropleth options:
                            binning: with --lat/--lon (and without --geocode), each row's
                            point is binned into the region whose polygon contains it
                            (exact, no geocoding) and colored by --value/--agg or counts.
+                           In `viz smart`, it also overlays the region boundaries on the
+                           map, labelling each with its --feature-name-key value (falling
+                           back to its id) — as on-map text on the projection/static map,
+                           or as a centroid hover marker on the interactive tile map (which
+                           culls on-map text). Labels are omitted above 60 regions.
     --feature-id-key <k>   Property path in each GeoJSON feature whose value matches an
                            entry in the locations column, or that labels each binned
                            region (e.g. id, properties.fips). [default: id]
@@ -366,7 +371,11 @@ smart options:
                            high-cardinality columns, and skew/outlier hints on box panels.
                            Costs one extra pass over the data and writes <stem>.stats.csv,
                            its sidecars, and an .idx index (like running `qsv moarstats`
-                           manually). Only affects `smart`. Applied only with default
+                           manually). On geocode-enabled builds it also enriches map point
+                           hovers with the US FIPS code and annotates the spatial-extent
+                           summary with the country's continent; the county is always shown
+                           in map hovers, with or without --smarter. Only affects `smart`.
+                           Applied only with default
                            parsing; inputs using --no-headers or a custom --delimiter
                            fall back to the standard dashboard.
     --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
@@ -1863,7 +1872,10 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
         let (ax, ay) = (xs[a], ys[a]);
         let (mut max_area, mut chosen) = (-1.0_f64, range_start);
         for j in range_start..range_end {
-            let area = ((ax - avg_x) * (ys[j] - ay) - (ax - xs[j]) * (avg_y - ay)).abs();
+            // FMA version of ((ax - avg_x) * (ys[j] - ay) - (ax - xs[j]) * (avg_y - ay)).abs();
+            let area = (ax - xs[j])
+                .mul_add(-(avg_y - ay), (ax - avg_x) * (ys[j] - ay))
+                .abs();
             if area > max_area {
                 max_area = area;
                 chosen = j;
@@ -2884,22 +2896,32 @@ fn assemble_map_hover(
     lines.join("<br>")
 }
 
-/// Format a reverse-geocoded `GeoLabel` into a "City, Admin1, Country" hover line for gap-filling —
-/// dataset fields win, so a component is dropped when (a) a chosen dataset column already covers it
-/// by concept (`sup_*`), or (b) its value already appears in this point's `dataset_line` (so e.g. a
-/// city-name identifier isn't echoed by the geocoded city). Components are HTML-escaped.
+/// Format a reverse-geocoded `GeoLabel` into a "City, County, Admin1, Country" hover line for
+/// gap-filling — dataset fields win, so a component is dropped when (a) a chosen dataset column
+/// already covers it by concept (`sup_*`), or (b) its value already appears in this point's
+/// `dataset_line` (so e.g. a city-name identifier isn't echoed by the geocoded city). When
+/// `verbose` (driven by `--smarter`) and the place resolved to a US location, the combined 5-digit
+/// county FIPS (else the 2-digit state FIPS) is appended as "(FIPS …)". Components are
+/// HTML-escaped.
 #[cfg(feature = "geocode")]
 fn geocode_hover_place(
     label: &crate::cmd::geocode::GeoLabel,
     sup_city: bool,
     sup_admin1: bool,
     sup_country: bool,
+    verbose: bool,
     dataset_line: &str,
 ) -> String {
     let dataset_lc = dataset_line.to_lowercase();
     let shown = |s: &str| !s.trim().is_empty() && dataset_lc.contains(&s.to_lowercase());
-    [
+    // county (admin2) sits between city and admin1 (state) — the natural City, County, State,
+    // Country hierarchy. It's always-on — there's no `geo.county` concept to gap-fill against (only
+    // city/state/country exist in the dictionary vocab) — but the `shown` value-match still drops
+    // it when the county literally appears in this point's dataset line. Geonames US county
+    // names already include "County", so no suffix is appended here.
+    let place = [
         (!sup_city && !shown(&label.city)).then_some(label.city.as_str()),
+        (!shown(&label.admin2)).then_some(label.admin2.as_str()),
         (!sup_admin1 && !shown(&label.admin1)).then_some(label.admin1.as_str()),
         (!sup_country && !shown(&label.country)).then_some(label.country.as_str()),
     ]
@@ -2908,7 +2930,23 @@ fn geocode_hover_place(
     .filter(|s| !s.trim().is_empty())
     .map(escape_hover)
     .collect::<Vec<_>>()
-    .join(", ")
+    .join(", ");
+
+    // FIPS is a verbose detail (US only): prefer the full county FIPS, else the state FIPS. Only
+    // appended to an already-resolved place so it never appears as a bare "(FIPS …)".
+    if verbose && !place.is_empty() {
+        let fips = if !label.us_county_fips.is_empty() {
+            Some(label.us_county_fips.as_str())
+        } else if !label.us_state_fips.is_empty() {
+            Some(label.us_state_fips.as_str())
+        } else {
+            None
+        };
+        if let Some(fips) = fips {
+            return format!("{place} (FIPS {fips})");
+        }
+    }
+    place
 }
 
 /// Build per-location region names aligned 1:1 to `locs` from binned/matched GeoJSON features: the
@@ -3036,7 +3074,8 @@ fn unwrap_ring_across_seam(ring: &[[f64; 2]]) -> Option<Vec<[f64; 2]>> {
     let mut out = Vec::with_capacity(ring.len());
     let mut prev = ring.first()?[0];
     for &[lon, lat] in ring {
-        let lon = lon + ((prev - lon) / 360.0).round() * 360.0;
+        // FMA version of let lon = lon + ((prev - lon) / 360.0).round() * 360.0;
+        let lon = ((prev - lon) / 360.0).round().mul_add(360.0, lon);
         out.push([lon, lat]);
         prev = lon;
     }
@@ -3240,15 +3279,18 @@ const DEFAULT_SNAP_MAX_KM: f64 = 10.0;
 /// Squared Euclidean (degree-space) distance from a point to a line segment.
 fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
-    let len2 = dx * dx + dy * dy;
+    // FMA version of let len2 = dx * dx + dy * dy;
+    let len2 = dy.mul_add(dy, dx * dx);
     let t = if len2 <= f64::EPSILON {
         0.0
     } else {
-        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+        // (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+        ((py - ay).mul_add(dy, (px - ax) * dx) / len2).clamp(0.0, 1.0)
     };
     let (cx, cy) = (ax + t * dx, ay + t * dy);
     let (ex, ey) = (px - cx, py - cy);
-    ex * ex + ey * ey
+    // ex * ex + ey * ey
+    ey.mul_add(ey, ex * ex)
 }
 
 /// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings, in the
@@ -6737,18 +6779,21 @@ fn sort_line_xy(xs: Vec<String>, ys: Vec<f64>) -> (Vec<String>, Vec<f64>) {
 
 /// A single dashboard panel: a column and the chart chosen for it.
 struct Panel {
-    name:     String,
+    name:            String,
     /// Optional secondary line shown beneath the title (smaller, muted). Carries the
     /// dictionary's human-readable label so `name` can stay the raw field name (which also
     /// feeds trace names and status messages, so it must stay plain — no markup).
-    subtitle: Option<String>,
-    kind:     PanelKind,
+    subtitle:        Option<String>,
+    kind:            PanelKind,
     /// Reverse-geocoded spatial-extent metadata for a `Map`/`Geo` panel (the 4 bounding-box
     /// corners + center, plus a consolidated jurisdiction summary). `None` for non-map panels,
     /// when geocoding was skipped (e.g. antimeridian-spanning data), or when the lookup failed
     /// (offline/missing index) — the map then renders without the overlay.
     #[cfg(feature = "geocode")]
-    geo_meta: Option<GeoMeta>,
+    geo_meta:        Option<GeoMeta>,
+    /// `--geojson` region boundaries + labels to overlay on a `Map`/`Geo` panel (no geocoding
+    /// needed). `None` for non-map panels or when no `--geojson` was supplied.
+    geojson_overlay: Option<GeoJsonOverlay>,
 }
 
 impl Panel {
@@ -6760,6 +6805,7 @@ impl Panel {
             kind,
             #[cfg(feature = "geocode")]
             geo_meta: None,
+            geojson_overlay: None,
         }
     }
 
@@ -9239,6 +9285,311 @@ fn build_smart_pip_choropleth_panel(
     Ok(Some(Panel::new(panel_name, kind)))
 }
 
+/// Max `--geojson` features to label on a map overlay. Above this, the region boundaries are still
+/// drawn but the per-region text labels are suppressed to avoid a cluttered map.
+const GEOJSON_OVERLAY_LABEL_MAX: usize = 60;
+
+/// Outline color for `--geojson` region boundaries overlaid on a smart map. A teal, distinct from
+/// the warm data points, the purple core-extent box, and the magenta full-extent box.
+const GEOJSON_OVERLAY_LINE_COLOR: &str = "#00695c";
+
+/// Outline width (px) for the `--geojson` region boundary overlay.
+const GEOJSON_OVERLAY_LINE_WIDTH: f64 = 1.5;
+
+/// Region boundaries (as one gap-separated polyline) plus per-feature labels for overlaying a
+/// user `--geojson` on a `viz smart` map panel. Built once in `build_map_panel`, rendered by
+/// [`geojson_overlay_mapbox_traces`] / [`geojson_overlay_geo_traces`] on both the mapbox and the
+/// offline `ScatterGeo` (global / static-export) paths.
+struct GeoJsonOverlay {
+    /// All feature ring vertices; a `NaN` gap separates consecutive rings so plotly breaks the
+    /// line there and a single trace draws every boundary.
+    boundary_lats: Vec<f64>,
+    boundary_lons: Vec<f64>,
+    /// Per-feature label anchors (a representative interior point; see [`feature_label_anchor`])
+    /// and text (HTML-escaped). Empty when there are more than `GEOJSON_OVERLAY_LABEL_MAX`
+    /// features.
+    label_lats:    Vec<f64>,
+    label_lons:    Vec<f64>,
+    labels:        Vec<String>,
+}
+
+/// Absolute planar (shoelace) area of a polygon ring, in squared degrees. Used only to pick the
+/// largest part of a MultiPolygon for label placement, so the planar/`deg²` approximation is fine
+/// at the local/regional scales this overlay targets. Rings may be open or closed (first==last).
+fn ring_area(ring: &[[f64; 2]]) -> f64 {
+    let n = ring.len();
+    if n < 3 {
+        return 0.0;
+    }
+    let mut a = 0.0;
+    let mut j = n - 1;
+    for i in 0..n {
+        let [xi, yi] = ring[i];
+        let [xj, yj] = ring[j];
+        a += (xj + xi) * (yj - yi);
+        j = i;
+    }
+    (a / 2.0).abs()
+}
+
+/// Area-weighted centroid (shoelace) of a polygon ring, as `[lon, lat]`. `None` when the ring is
+/// degenerate (near-zero area). Rings may be open or closed.
+fn ring_centroid(ring: &[[f64; 2]]) -> Option<[f64; 2]> {
+    let n = ring.len();
+    if n < 3 {
+        return None;
+    }
+    let (mut a2, mut cx, mut cy) = (0.0, 0.0, 0.0);
+    let mut j = n - 1;
+    for i in 0..n {
+        let [xi, yi] = ring[i];
+        let [xj, yj] = ring[j];
+        let cross = xj * yi - xi * yj;
+        a2 += cross;
+        cx += (xj + xi) * cross;
+        cy += (yj + yi) * cross;
+        j = i;
+    }
+    if a2.abs() < 1e-12 {
+        return None;
+    }
+    Some([cx / (3.0 * a2), cy / (3.0 * a2)])
+}
+
+/// Point guaranteed on the polygon's surface at latitude `y`: intersect the horizontal line with
+/// every ring edge, sort the crossings, and return the midpoint of the widest interior (even-odd)
+/// span as `[lon, lat]`. `None` when the line misses the polygon entirely.
+fn point_on_surface(rings: &[Vec<[f64; 2]>], y: f64) -> Option<[f64; 2]> {
+    let mut xs: Vec<f64> = Vec::new();
+    for ring in rings {
+        let n = ring.len();
+        if n < 3 {
+            continue;
+        }
+        let mut j = n - 1;
+        for i in 0..n {
+            let [xi, yi] = ring[i];
+            let [xj, yj] = ring[j];
+            if (yi > y) != (yj > y) {
+                xs.push((xj - xi) * (y - yi) / (yj - yi) + xi);
+            }
+            j = i;
+        }
+    }
+    xs.sort_by(f64::total_cmp);
+    let mut best: Option<f64> = None;
+    let mut best_w = f64::NEG_INFINITY;
+    let mut k = 0;
+    while k + 1 < xs.len() {
+        let w = xs[k + 1] - xs[k];
+        if w > best_w {
+            best_w = w;
+            best = Some((xs[k] + xs[k + 1]) / 2.0);
+        }
+        k += 2;
+    }
+    best.map(|x| [x, y])
+}
+
+/// A representative interior point (`[lon, lat]`) of a single polygon (rings: `[0]` exterior, rest
+/// holes): the area-weighted centroid when it lands inside, otherwise a point-on-surface at the
+/// centroid's latitude (falling back to the ring's vertical midline). `None` for a degenerate ring.
+fn representative_point(rings: &[Vec<[f64; 2]>]) -> Option<[f64; 2]> {
+    let exterior = rings.first()?;
+    let centroid = ring_centroid(exterior)?;
+    if point_in_polygon(rings, centroid[0], centroid[1]) {
+        return Some(centroid);
+    }
+    // concave or holed: the centroid fell outside — fall back to an on-surface scanline point.
+    let mid_y = {
+        let (mut lo, mut hi) = (f64::INFINITY, f64::NEG_INFINITY);
+        for &[_, y] in exterior {
+            lo = lo.min(y);
+            hi = hi.max(y);
+        }
+        (lo + hi) / 2.0
+    };
+    point_on_surface(rings, centroid[1]).or_else(|| point_on_surface(rings, mid_y))
+}
+
+/// Label anchor (`[lon, lat]`) for a `--geojson` feature: a representative interior point of its
+/// LARGEST sub-polygon (so a MultiPolygon labels its main part, not the empty gap between parts),
+/// falling back to the whole-feature bounding-box center when the geometry is degenerate.
+fn feature_label_anchor(feature: &PipFeature) -> [f64; 2] {
+    let largest = feature
+        .polygons
+        .iter()
+        .filter(|poly| poly.first().is_some_and(|r| r.len() >= 3))
+        .max_by(|a, b| ring_area(&a[0]).total_cmp(&ring_area(&b[0])));
+    if let Some(poly) = largest
+        && let Some(pt) = representative_point(poly)
+    {
+        return pt;
+    }
+    let [min_lon, min_lat, max_lon, max_lat] = feature.bbox;
+    [(min_lon + max_lon) / 2.0, (min_lat + max_lat) / 2.0]
+}
+
+/// Build the [`GeoJsonOverlay`] for a `--geojson` map overlay: every feature's boundary rings as
+/// one `NaN`-gap-separated polyline, plus a per-feature label (its `--feature-name-key` value,
+/// falling back to the id) at a representative interior point (see [`feature_label_anchor`]) —
+/// suppressed above `GEOJSON_OVERLAY_LABEL_MAX` features. Best-effort: returns `None` when the file
+/// can't be loaded/parsed (the choropleth-panel builder already hard-errors on a bad `--geojson`
+/// before this runs) or yields no drawable rings. Antimeridian-crossing features are drawn from
+/// their stored (continuity-unwrapped) vertices, so a region straddling ±180° may draw imperfectly
+/// — a non-issue for the local/regional GeoJSON this overlay targets.
+fn build_geojson_overlay(
+    spec: &str,
+    feature_id_key: &str,
+    feature_name_key: Option<&str>,
+) -> Option<GeoJsonOverlay> {
+    let geojson = load_geojson(spec).ok()?;
+    let features = build_pip_features(&geojson, feature_id_key, feature_name_key).ok()?;
+    if features.is_empty() {
+        return None;
+    }
+    let label_them = features.len() <= GEOJSON_OVERLAY_LABEL_MAX;
+    let mut boundary_lats: Vec<f64> = Vec::new();
+    let mut boundary_lons: Vec<f64> = Vec::new();
+    let mut label_lats: Vec<f64> = Vec::new();
+    let mut label_lons: Vec<f64> = Vec::new();
+    let mut labels: Vec<String> = Vec::new();
+    for feature in &features {
+        for polygon in &feature.polygons {
+            for ring in polygon {
+                if ring.len() < 2 {
+                    continue;
+                }
+                if !boundary_lats.is_empty() {
+                    // gap so plotly breaks the line between this ring and the previous one
+                    boundary_lats.push(f64::NAN);
+                    boundary_lons.push(f64::NAN);
+                }
+                for &[lon, lat] in ring {
+                    boundary_lats.push(lat);
+                    boundary_lons.push(lon);
+                }
+            }
+        }
+        if label_them {
+            let [lon, lat] = feature_label_anchor(feature);
+            label_lons.push(lon);
+            label_lats.push(lat);
+            // `name` is HTML-escaped at construction; the id fallback is raw, so escape it here.
+            labels.push(
+                feature
+                    .name
+                    .clone()
+                    .unwrap_or_else(|| escape_hover(&feature.id)),
+            );
+        }
+    }
+    if boundary_lats.is_empty() {
+        return None;
+    }
+    Some(GeoJsonOverlay {
+        boundary_lats,
+        boundary_lons,
+        label_lats,
+        label_lons,
+        labels,
+    })
+}
+
+/// Shared line style for the `--geojson` region boundary overlay.
+fn geojson_overlay_line() -> Line {
+    Line::new()
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+        .width(GEOJSON_OVERLAY_LINE_WIDTH)
+}
+
+/// Shared text font for the on-map `--geojson` region labels on the `ScatterGeo` projection
+/// (global / static export), where text glyphs render reliably: small, in the overlay's teal.
+fn geojson_overlay_label_font() -> Font {
+    Font::new()
+        .family(FONT_FAMILY)
+        .size(10)
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+}
+
+/// Small centroid marker carrying each region's name as hover text on the mapbox tile map. Raster
+/// mapbox basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
+/// haloed circles, not text), so the region label is delivered on hover of this dot instead — a
+/// white-haloed teal circle that reads on both light and dark basemaps.
+fn geojson_overlay_label_marker() -> Marker {
+    Marker::new()
+        .color(GEOJSON_OVERLAY_LINE_COLOR)
+        .size(7)
+        .opacity(0.9)
+        .line(Line::new().color("#ffffff").width(1.0))
+}
+
+/// Boundary + label traces for a `--geojson` overlay on a mapbox tile map (`ScatterMapbox`). The
+/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (raster
+/// mapbox culls colliding on-map text, so the region name is shown on hover of a small dot
+/// instead).
+fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
+    let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
+    let boundary: Box<dyn Trace> =
+        ScatterMapbox::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+            .name("regions")
+            .mode(Mode::Lines)
+            .line(geojson_overlay_line())
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false);
+    out.push(boundary);
+    if !overlay.labels.is_empty() {
+        let label_trace: Box<dyn Trace> =
+            ScatterMapbox::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+                .name("region labels")
+                .mode(Mode::Markers)
+                .marker(geojson_overlay_label_marker())
+                .hover_text_array(overlay.labels.clone())
+                .hover_info(HoverInfo::Text)
+                .show_legend(false);
+        out.push(label_trace);
+    }
+    out
+}
+
+/// Boundary + label traces for a `--geojson` overlay on an offline `ScatterGeo` projection (global
+/// HTML + static image export). `subplot` binds each trace to a specific `geo{n}` cell when set
+/// (the typed-subplot / static path); pass `None` for the single-panel inline plot.
+fn geojson_overlay_geo_traces(
+    overlay: &GeoJsonOverlay,
+    subplot: Option<&str>,
+) -> Vec<Box<dyn Trace>> {
+    let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
+    let mut boundary =
+        ScatterGeo::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+            .name("regions")
+            .mode(Mode::Lines)
+            .line(geojson_overlay_line())
+            .hover_info(HoverInfo::Skip)
+            .show_legend(false);
+    if let Some(sp) = subplot {
+        boundary = boundary.subplot(sp);
+    }
+    let boundary: Box<dyn Trace> = boundary;
+    out.push(boundary);
+    if !overlay.labels.is_empty() {
+        let mut label_trace =
+            ScatterGeo::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+                .name("region labels")
+                .mode(Mode::Text)
+                .text_array(overlay.labels.clone())
+                .text_font(geojson_overlay_label_font())
+                .hover_info(HoverInfo::Skip)
+                .show_legend(false);
+        if let Some(sp) = subplot {
+            label_trace = label_trace.subplot(sp);
+        }
+        let label_trace: Box<dyn Trace> = label_trace;
+        out.push(label_trace);
+    }
+    out
+}
+
 /// Detect a latitude/longitude column pair and, if a usable pair exists, build a `viz smart` map
 /// panel. The pair comes from `coord_hint` (dictionary `geo.latitude`/`geo.longitude` signals) when
 /// supplied, else the header-name heuristic (`latlon_indices`). Does one extra data pass to collect
@@ -9396,6 +9747,7 @@ fn build_map_panel(
         &out_lats,
         &out_lons,
         out_lats.len(),
+        args.flag_smarter,
     );
 
     // downsample coords AND the row-aligned dataset hover lines together (pack the line into the
@@ -9431,10 +9783,10 @@ fn build_map_panel(
     );
     let (outlier_lons, out_lines): (Vec<f64>, Vec<String>) = out_pl.into_iter().unzip();
 
-    // per-point reverse-geocoded place (City, Admin1, Country), gap-filtered so it never duplicates
-    // a dataset geo.* column already in the hover. One batched engine load for core+outliers;
-    // degrades to no place on failure. Empty strings (and an all-empty result) when the geocode
-    // feature is off or every geo component is already covered by dataset fields.
+    // per-point reverse-geocoded place (City, County, Admin1, Country [+ FIPS under --smarter]),
+    // gap-filtered so it never duplicates a dataset geo.* column already in the hover. One batched
+    // engine load for core+outliers; degrades to no place on failure. Empty strings when the
+    // geocode feature is off or a point didn't resolve.
     #[cfg(feature = "geocode")]
     let (core_places, out_places): (Vec<String>, Vec<String>) = {
         // which geocoded components are already supplied by a chosen dataset column (gap-filling)
@@ -9449,46 +9801,48 @@ fn build_map_panel(
                 _ => {},
             }
         }
-        if sup_city && sup_admin1 && sup_country {
-            // nothing a geocoded place could add — skip the lookup entirely
-            (
-                vec![String::new(); lats.len()],
-                vec![String::new(); outlier_lats.len()],
-            )
-        } else {
-            let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
-            pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
-            pts.extend(
-                outlier_lats
-                    .iter()
-                    .zip(&outlier_lons)
-                    .map(|(&a, &o)| (a, o)),
-            );
-            let labels =
-                crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
-            // dataset_line lets the place drop any component the dataset already shows for this
-            // point (e.g. a city-name identifier).
-            let place = |i: usize, dataset_line: &str| -> String {
-                labels
-                    .get(i)
-                    .and_then(Option::as_ref)
-                    .map(|l| {
-                        geocode_hover_place(l, sup_city, sup_admin1, sup_country, dataset_line)
-                    })
-                    .unwrap_or_default()
-            };
-            let core: Vec<String> = core_lines
+        // Always reverse-geocode when a map renders: even if the dataset already supplies
+        // city/state/country, the lookup still contributes the county (always-on) and — under
+        // --smarter — the US FIPS code. `geocode_hover_place` suppresses (via the sup_* flags) any
+        // component the dataset already shows, so nothing is duplicated.
+        let mut pts: Vec<(f64, f64)> = Vec::with_capacity(lats.len() + outlier_lats.len());
+        pts.extend(lats.iter().zip(&lons).map(|(&a, &o)| (a, o)));
+        pts.extend(
+            outlier_lats
                 .iter()
-                .enumerate()
-                .map(|(i, l)| place(i, l))
-                .collect();
-            let out: Vec<String> = out_lines
-                .iter()
-                .enumerate()
-                .map(|(j, l)| place(lats.len() + j, l))
-                .collect();
-            (core, out)
-        }
+                .zip(&outlier_lons)
+                .map(|(&a, &o)| (a, o)),
+        );
+        let labels = crate::cmd::geocode::reverse_geocode_points(&pts, None).unwrap_or_default();
+        // dataset_line lets the place drop any component the dataset already shows for this
+        // point (e.g. a city-name identifier).
+        let place = |i: usize, dataset_line: &str| -> String {
+            labels
+                .get(i)
+                .and_then(Option::as_ref)
+                .map(|l| {
+                    geocode_hover_place(
+                        l,
+                        sup_city,
+                        sup_admin1,
+                        sup_country,
+                        args.flag_smarter,
+                        dataset_line,
+                    )
+                })
+                .unwrap_or_default()
+        };
+        let core: Vec<String> = core_lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| place(i, l))
+            .collect();
+        let out: Vec<String> = out_lines
+            .iter()
+            .enumerate()
+            .map(|(j, l)| place(lats.len() + j, l))
+            .collect();
+        (core, out)
     };
     #[cfg(not(feature = "geocode"))]
     let (core_places, out_places): (Vec<String>, Vec<String>) = (
@@ -9533,7 +9887,7 @@ fn build_map_panel(
     // intent, so a small custom-district file shouldn't be span-suppressed. Without
     // `--geojson`, fall back to the geocode-derived iso3/US-state panel (gated, span-gated as
     // before).
-    let choropleth_panel = if let Some(spec) = args.flag_geojson.as_deref() {
+    let (choropleth_panel, geojson_overlay) = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
         // smart shares the command's default cap; the value is validated up front in run()
         // (non-negative finite, not with --no-snap), so no clamping is needed here. Do NOT revert
@@ -9542,7 +9896,7 @@ fn build_map_panel(
         let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
-        build_smart_pip_choropleth_panel(
+        let panel = build_smart_pip_choropleth_panel(
             spec,
             key,
             name_key,
@@ -9550,18 +9904,21 @@ fn build_map_panel(
             &core_lons,
             snap,
             snap_max_km,
-        )?
+        )?;
+        // overlay the region boundaries + labels directly on the point map (best-effort; the panel
+        // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
+        // 2-region minimum — even a single region is worth outlining on the map.
+        let overlay = build_geojson_overlay(spec, key, name_key);
+        (panel, overlay)
     } else {
         #[cfg(feature = "geocode")]
-        {
-            (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
-                .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
-                .flatten()
-        }
+        let choropleth = (lon_span >= SMART_CHOROPLETH_MIN_SPAN_DEG
+            || lat_span >= SMART_CHOROPLETH_MIN_SPAN_DEG)
+            .then(|| build_smart_choropleth_panel(&core_lats, &core_lons))
+            .flatten();
         #[cfg(not(feature = "geocode"))]
-        {
-            None
-        }
+        let choropleth = None;
+        (choropleth, None)
     };
 
     let kind = if global {
@@ -9593,6 +9950,7 @@ fn build_map_panel(
             kind,
             #[cfg(feature = "geocode")]
             geo_meta,
+            geojson_overlay,
         },
         choropleth_panel,
         (lat_idx, lon_idx),
@@ -10019,6 +10377,12 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
     if cities.len() == 1 {
         return format!("{}, {admin1}{suffix}", cities[0]);
     }
+    // multiple cities but a single county: name the county for tighter context (mirrors the
+    // single-city rule). A multi-county metro keeps the plain "Admin1, Country" form.
+    let counties = distinct_jurisdictions(labels.iter().map(|l| l.admin2.as_str()));
+    if counties.len() == 1 {
+        return format!("{}, {admin1}{suffix}", counties[0]);
+    }
     format!("{admin1}{suffix}")
 }
 
@@ -10027,6 +10391,29 @@ fn consolidate_geo(points: &[GeoPoint]) -> String {
 /// NAME the jurisdictions, so a far-flung set is still represented without ballooning the lookup.
 #[cfg(feature = "geocode")]
 const GEO_OUTLIER_GEOCODE_SAMPLE: usize = 12;
+
+/// Build the `--smarter` country-context annotation appended to a map's extent summary: the shared
+/// continent of the resolved extent countries. `labels` must be EXACTLY the jurisdictions named in
+/// the summary (the core points, plus the outliers when their call-out is present) so the continent
+/// can't contradict a cross-continent outlier. Returns `None` when geocoding is unavailable,
+/// nothing resolves, or the named extent spans more than one continent. Costs one extra batched
+/// engine load over the (<=5) distinct countries — the continent is country-level, not on the point
+/// lookup.
+#[cfg(feature = "geocode")]
+fn country_context_note(labels: &[&crate::cmd::geocode::GeoLabel]) -> Option<String> {
+    let iso2s = distinct_jurisdictions(labels.iter().map(|l| l.country_iso2.as_str()));
+    if iso2s.is_empty() {
+        return None;
+    }
+    let refs: Vec<&str> = iso2s.iter().map(String::as_str).collect();
+    let ctxs = crate::cmd::geocode::country_context(&refs).ok()?;
+    let continents = distinct_jurisdictions(ctxs.iter().flatten().map(|c| c.continent.as_str()));
+    if continents.len() != 1 {
+        // no continent resolved, or the named extent spans multiple continents — skip the note.
+        return None;
+    }
+    Some(format!(" · {}", continents[0]))
+}
 
 /// Reverse-geocode the CORE bounding box (4 corners + center) into the `GeoMeta` overlay + summary,
 /// plus a capped, stride-sampled set of the outlier points — all in ONE batched lookup (the engine
@@ -10044,6 +10431,7 @@ fn build_geo_meta(
     outlier_lats: &[f64],
     outlier_lons: &[f64],
     n_outliers: usize,
+    smarter: bool,
 ) -> Option<GeoMeta> {
     // a dataset straddling +/-180 yields a near-global box whose center lands mid-ocean; skip.
     if extent_spans_antimeridian(&core_extent) {
@@ -10093,15 +10481,32 @@ fn build_geo_meta(
     }
     // suppress the call-out when the outliers fall within the core's own jurisdiction(s) — they're
     // the cluster's far edge, not strays "elsewhere", so naming them would just be redundant noise.
-    let summary = if n_outliers == 0 || outliers_share_core_region(&points, &outlier_labels) {
-        core_summary
-    } else {
+    let outliers_in_summary =
+        n_outliers != 0 && !outliers_share_core_region(&points, &outlier_labels);
+    let mut summary = if outliers_in_summary {
         outlier_summary(
             &core_summary,
             n_outliers,
             &outlier_jurisdictions(&outlier_labels),
         )
+    } else {
+        core_summary
     };
+    // under `--smarter`, annotate with the extent's shared continent. A second, small batched
+    // engine load over the <=5 distinct extent countries. Derive the context from EXACTLY the
+    // jurisdictions the summary names — the core plus the outliers when their call-out is
+    // present — so a cross-continent outlier suppresses the note rather than contradicting it
+    // (e.g. a US core with a European outlier).
+    if smarter {
+        let mut ctx_labels: Vec<&crate::cmd::geocode::GeoLabel> =
+            points.iter().filter_map(|p| p.label.as_ref()).collect();
+        if outliers_in_summary {
+            ctx_labels.extend(outlier_labels.iter().filter_map(Option::as_ref));
+        }
+        if let Some(note) = country_context_note(&ctx_labels) {
+            summary.push_str(&note);
+        }
+    }
     // the full extent (core + all outliers) is drawn as a second, no-fill box. Only meaningful when
     // there ARE outliers; skip it if a stray pushes the box across the antimeridian (it would
     // wrap).
@@ -10564,6 +10969,7 @@ fn build_smart(
                         kind,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
+                        geojson_overlay: p.geojson_overlay,
                     };
                     (Some((p, cols)), None)
                 } else {
@@ -11911,6 +12317,9 @@ fn smart_grid_parts(
                     );
                 }
             }
+            if let Some(overlay) = &panel.geojson_overlay {
+                traces.extend(geojson_overlay_geo_traces(overlay, Some(&geo_ref(pos))));
+            }
             let mut geo_json = serde_json::to_value(&geo).unwrap_or(serde_json::Value::Null);
             if let Some(obj) = geo_json.as_object_mut() {
                 obj.insert(
@@ -12268,6 +12677,11 @@ fn smart_inline_panel_plot(
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_mapbox(&mut plot, meta);
         }
+        if let Some(overlay) = &panel.geojson_overlay {
+            for trace in geojson_overlay_mapbox_traces(overlay) {
+                plot.add_trace(trace);
+            }
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -12350,6 +12764,11 @@ fn smart_inline_panel_plot(
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
             add_extent_overlay_geo(&mut plot, meta);
+        }
+        if let Some(overlay) = &panel.geojson_overlay {
+            for trace in geojson_overlay_geo_traces(overlay, None) {
+                plot.add_trace(trace);
+            }
         }
         let (geo_land, geo_water, geo_bg) = geo_palette(theme);
         // when every plotted point (core + outliers) sits in a single plotly continent, frame the
@@ -13907,9 +14326,10 @@ mod tests {
             lat: 0.0,
             lon: 0.0,
             label: Some(crate::cmd::geocode::GeoLabel {
-                city:    city.to_string(),
-                admin1:  admin1.to_string(),
+                city: city.to_string(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             }),
         }
     }
@@ -13950,6 +14370,84 @@ mod tests {
             gp("NE", "Vancouver", "British Columbia", "Canada"),
         ];
         assert_eq!(consolidate_geo(&pts), "United States & Canada");
+    }
+
+    #[cfg(feature = "geocode")]
+    fn gp_county(
+        tag: &'static str,
+        city: &str,
+        admin2: &str,
+        admin1: &str,
+        country: &str,
+    ) -> GeoPoint {
+        GeoPoint {
+            tag,
+            lat: 0.0,
+            lon: 0.0,
+            label: Some(crate::cmd::geocode::GeoLabel {
+                city: city.to_string(),
+                admin1: admin1.to_string(),
+                country: country.to_string(),
+                admin2: admin2.to_string(),
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_single_county() {
+        // multiple cities but a single county within one state -> name the county for tight context
+        let pts = vec![
+            gp_county(
+                "NW",
+                "Pittsburgh",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "NE",
+                "McKeesport",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "SE",
+                "Bethel Park",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+        ];
+        assert_eq!(
+            consolidate_geo(&pts),
+            "Allegheny County, Pennsylvania, United States"
+        );
+    }
+
+    #[cfg(feature = "geocode")]
+    #[test]
+    fn consolidate_geo_multi_county_no_regression() {
+        // several counties in one state -> stays the plain "State, Country" form (no county name)
+        let pts = vec![
+            gp_county(
+                "NW",
+                "Pittsburgh",
+                "Allegheny County",
+                "Pennsylvania",
+                "United States",
+            ),
+            gp_county(
+                "NE",
+                "Greensburg",
+                "Westmoreland County",
+                "Pennsylvania",
+                "United States",
+            ),
+        ];
+        assert_eq!(consolidate_geo(&pts), "Pennsylvania, United States");
     }
 
     #[cfg(feature = "geocode")]
@@ -14131,9 +14629,10 @@ mod tests {
     fn outlier_jurisdictions_lists_admin1_then_countries() {
         let label = |admin1: &str, country: &str| {
             Some(crate::cmd::geocode::GeoLabel {
-                city:    String::new(),
-                admin1:  admin1.to_string(),
+                city: String::new(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             })
         };
         // single admin1
@@ -14163,9 +14662,10 @@ mod tests {
     fn outliers_share_core_region_suppression() {
         let label = |admin1: &str, country: &str| {
             Some(crate::cmd::geocode::GeoLabel {
-                city:    String::new(),
-                admin1:  admin1.to_string(),
+                city: String::new(),
+                admin1: admin1.to_string(),
                 country: country.to_string(),
+                ..Default::default()
             })
         };
         let core = vec![
@@ -14709,24 +15209,62 @@ mod tests {
     #[test]
     fn geocode_hover_place_gap_fills() {
         let label = crate::cmd::geocode::GeoLabel {
-            city:    "Kinshasa".to_string(),
-            admin1:  "Kinshasa City".to_string(),
+            city: "Kinshasa".to_string(),
+            admin1: "Kinshasa City".to_string(),
             country: "Democratic Republic of Congo".to_string(),
+            ..Default::default()
         };
         // nothing suppressed, empty dataset line -> the full place
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, ""),
+            geocode_hover_place(&label, false, false, false, false, ""),
             "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
         // the city already appears in the dataset line (it's the identifier) -> dropped
         assert_eq!(
-            geocode_hover_place(&label, false, false, false, "<b>Kinshasa</b>"),
+            geocode_hover_place(&label, false, false, false, false, "<b>Kinshasa</b>"),
             "Kinshasa City, Democratic Republic of Congo"
         );
         // concept suppression (a chosen geo.country column) drops the country
         assert_eq!(
-            geocode_hover_place(&label, false, false, true, ""),
+            geocode_hover_place(&label, false, false, true, false, ""),
             "Kinshasa, Kinshasa City"
+        );
+
+        // county (admin2) is always-on, between admin1 and country
+        let us = crate::cmd::geocode::GeoLabel {
+            city: "Pittsburgh".to_string(),
+            admin1: "Pennsylvania".to_string(),
+            country: "United States".to_string(),
+            admin2: "Allegheny County".to_string(),
+            us_state_fips: "42".to_string(),
+            us_county_fips: "42003".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            geocode_hover_place(&us, false, false, false, false, ""),
+            "Pittsburgh, Allegheny County, Pennsylvania, United States"
+        );
+        // FIPS appended only when verbose (--smarter): prefer the 5-digit county FIPS
+        assert_eq!(
+            geocode_hover_place(&us, false, false, false, true, ""),
+            "Pittsburgh, Allegheny County, Pennsylvania, United States (FIPS 42003)"
+        );
+        // verbose but only a state FIPS -> the 2-digit state FIPS
+        let state_only = crate::cmd::geocode::GeoLabel {
+            city: "Somewhere".to_string(),
+            admin1: "Pennsylvania".to_string(),
+            country: "United States".to_string(),
+            us_state_fips: "42".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(
+            geocode_hover_place(&state_only, false, false, false, true, ""),
+            "Somewhere, Pennsylvania, United States (FIPS 42)"
+        );
+        // non-US place under verbose -> no FIPS tail
+        assert_eq!(
+            geocode_hover_place(&label, false, false, false, true, ""),
+            "Kinshasa, Kinshasa City, Democratic Republic of Congo"
         );
     }
 
@@ -17256,5 +17794,79 @@ mod tests {
         let before = std::time::UNIX_EPOCH;
         let after = before + std::time::Duration::from_secs(1);
         assert!(bivariate_sidecar_is_fresh(Some(before), Some(after), false));
+    }
+
+    // A convex polygon (square): the area-weighted centroid is inside, so it IS the label anchor.
+    #[test]
+    fn geojson_label_anchor_convex_is_centroid() {
+        let square = vec![vec![
+            [0.0, 0.0],
+            [0.0, 10.0],
+            [10.0, 10.0],
+            [10.0, 0.0],
+            [0.0, 0.0],
+        ]];
+        let pt = representative_point(&square).expect("anchor");
+        assert!((pt[0] - 5.0).abs() < 1e-9 && (pt[1] - 5.0).abs() < 1e-9);
+        assert!(point_in_polygon(&square, pt[0], pt[1]));
+    }
+
+    // A concave U-shaped polygon: the bbox center AND the naive centroid fall in the notch
+    // (outside), so the anchor must be pulled onto the surface (guaranteed inside).
+    #[test]
+    fn geojson_label_anchor_concave_stays_inside() {
+        // a "U": full width at the bottom, two prongs up the sides, hollow center-top.
+        let u = vec![vec![
+            [0.0, 0.0],
+            [10.0, 0.0],
+            [10.0, 10.0],
+            [7.0, 10.0],
+            [7.0, 3.0],
+            [3.0, 3.0],
+            [3.0, 10.0],
+            [0.0, 10.0],
+            [0.0, 0.0],
+        ]];
+        // sanity: the whole-bbox center (5,5) is in the hollow notch => outside
+        assert!(!point_in_polygon(&u, 5.0, 5.0));
+        let pt = representative_point(&u).expect("anchor");
+        assert!(
+            point_in_polygon(&u, pt[0], pt[1]),
+            "anchor {pt:?} must be inside the U"
+        );
+    }
+
+    // A MultiPolygon (a tiny part + a large part with a wide gap between them): the anchor must
+    // land inside the LARGE part, never in the empty gap that a whole-feature bbox center would
+    // pick.
+    #[test]
+    fn geojson_label_anchor_multipolygon_picks_largest_part() {
+        let small = vec![vec![
+            [0.0, 0.0],
+            [0.0, 1.0],
+            [1.0, 1.0],
+            [1.0, 0.0],
+            [0.0, 0.0],
+        ]];
+        let large = vec![vec![
+            [50.0, 50.0],
+            [50.0, 60.0],
+            [60.0, 60.0],
+            [60.0, 50.0],
+            [50.0, 50.0],
+        ]];
+        let feature = PipFeature {
+            id:                 "m".to_string(),
+            name:               Some("Multi".to_string()),
+            polygons:           vec![small, large.clone()],
+            bbox:               [0.0, 0.0, 60.0, 60.0],
+            wraps_antimeridian: false,
+        };
+        let [lon, lat] = feature_label_anchor(&feature);
+        // inside the large square, not in the (0,0)-(60,60) union-bbox gap (~30,30)
+        assert!(
+            point_in_polygon(&large, lon, lat),
+            "anchor ({lon},{lat}) not in large part"
+        );
     }
 }

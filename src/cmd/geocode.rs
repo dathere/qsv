@@ -3540,11 +3540,20 @@ fn resolve_geocode_cache_dir(fallback_cache_dir: &str) -> CliResult<PathBuf> {
 /// Structured reverse-geocoding result for a single coordinate, used by callers outside
 /// `geocode` (e.g. `viz smart`) that need the location components rather than a preformatted
 /// string. `country` is the localized country name when available, otherwise the 2-letter code.
-#[derive(Clone, Debug)]
+///
+/// The trailing fields are `viz`-only enrichment (empty/zero when unavailable): `admin2` is the
+/// localized county name; `country_iso2` is the ISO-3166-1 alpha-2 code (for a follow-up
+/// [`country_context`] lookup); `us_state_fips`/`us_county_fips` are the 2-digit state and 5-digit
+/// combined county FIPS codes for US matches. `Default` lets test literals spread `..`.
+#[derive(Clone, Debug, Default)]
 pub struct GeoLabel {
-    pub city:    String,
-    pub admin1:  String,
-    pub country: String,
+    pub city:           String,
+    pub admin1:         String,
+    pub country:        String,
+    pub admin2:         String,
+    pub country_iso2:   String,
+    pub us_state_fips:  String,
+    pub us_county_fips: String,
 }
 
 /// Reverse-geocode a batch of `(lat, lon)` points against the local Geonames index, loading
@@ -3602,10 +3611,19 @@ pub fn reverse_geocode_points(
             } else {
                 nameslang.countryname.clone()
             };
+            let (us_state_fips, us_county_fips) = us_fips_strings(cityrecord);
             Some(GeoLabel {
                 city: nameslang.cityname.clone(),
                 admin1: nameslang.admin1name.clone(),
                 country,
+                admin2: nameslang.admin2name.clone(),
+                country_iso2: cityrecord
+                    .country
+                    .as_ref()
+                    .map(|c| c.code.as_str().to_string())
+                    .unwrap_or_default(),
+                us_state_fips,
+                us_county_fips,
             })
         })();
         results.push(label);
@@ -3754,9 +3772,90 @@ pub fn forward_geocode_regions(
     })
 }
 
+/// Per-country context for a batch of ISO-3166-1 alpha-2 codes, used by `viz smart` to annotate a
+/// map's spatial-extent summary. `continent` is the Geonames continent name (`""` when
+/// unavailable).
+#[derive(Clone, Debug, Default)]
+pub struct CountryContext {
+    pub continent: String,
+}
+
+/// Resolve [`CountryContext`] for each ISO-2 code (in order), loading the engine ONCE. Returns
+/// `None` for a code that doesn't resolve (or carries no continent). `Err` only on a hard setup
+/// failure — callers (like `viz smart`) treat `Err` as "no context" and degrade gracefully.
+/// `continent` is expanded to a human-readable name (Geonames stores a 2-letter continent code).
+pub fn country_context(iso2s: &[&str]) -> CliResult<Vec<Option<CountryContext>>> {
+    with_geocode_engine(|engine| {
+        iso2s
+            .iter()
+            .map(|&iso2| {
+                let countryrecord = engine.country_info(iso2)?;
+                let continent = continent_name(&countryrecord.info.continent).to_string();
+                if continent.is_empty() {
+                    return None;
+                }
+                Some(CountryContext { continent })
+            })
+            .collect()
+    })
+}
+
+/// Expand a Geonames 2-letter continent code to its human-readable name; unknown codes pass through
+/// unchanged (so a future/unrecognized code still shows something rather than nothing).
+fn continent_name(code: &str) -> &str {
+    match code {
+        "AF" => "Africa",
+        "AN" => "Antarctica",
+        "AS" => "Asia",
+        "EU" => "Europe",
+        "NA" => "North America",
+        "OC" => "Oceania",
+        "SA" => "South America",
+        other => other,
+    }
+}
+
 #[inline]
 fn lookup_us_state_fips_code(state: &str) -> Option<&'static str> {
     US_STATES_FIPS_CODES.get(state).copied()
+}
+
+/// Derive `(us_state_fips, us_county_fips)` string codes for a matched city, for the enriched
+/// [`GeoLabel`]. Thin wrapper over [`us_fips_from_codes`] that pulls the admin1/admin2 codes off
+/// the record.
+fn us_fips_strings(cityrecord: &CitiesRecord) -> (String, String) {
+    us_fips_from_codes(
+        cityrecord
+            .admin_division
+            .as_ref()
+            .map(|admin1| &*admin1.code),
+        cityrecord
+            .admin2_division
+            .as_ref()
+            .map(|admin2| &*admin2.code),
+    )
+}
+
+/// Pure FIPS derivation from Geonames admin1/admin2 codes (e.g. `US.PA` / `US.PA.003`).
+/// `us_state_fips` is the 2-digit state FIPS ("42") or `""` when the admin1 isn't a US state;
+/// `us_county_fips` is the 5-digit combined state+county FIPS ("42003") or `""` when no valid US
+/// county code is present. The county segment is the LAST dotted component of the admin2 code (e.g.
+/// `US.NY.119` -> `119`), which is robust regardless of its leading digit.
+fn us_fips_from_codes(admin1_code: Option<&str>, admin2_code: Option<&str>) -> (String, String) {
+    let state_fips = admin1_code
+        .and_then(|code| code.strip_prefix("US."))
+        .and_then(lookup_us_state_fips_code)
+        .unwrap_or_default();
+    if state_fips.is_empty() {
+        // without a state FIPS a combined county FIPS can't be formed
+        return (String::new(), String::new());
+    }
+    let us_county_fips = admin2_code
+        .filter(|code| code.starts_with("US."))
+        .and_then(|code| code.rsplit('.').next())
+        .filter(|county| !county.is_empty() && county.bytes().all(|b| b.is_ascii_digit()))
+        .map_or_else(String::new, |county| format!("{state_fips}{county:0>3}"));
+    (state_fips.to_string(), us_county_fips)
 }
 
 fn get_us_fips_codes(cityrecord: &CitiesRecord, nameslang: &NamesLang) -> serde_json::Value {
@@ -3815,6 +3914,50 @@ mod tests {
         assert_eq!(parse_relative_age("2h"), Some(Duration::from_secs(7_200)));
         assert_eq!(parse_relative_age("3d"), Some(Duration::from_secs(259_200)));
         assert_eq!(parse_relative_age("1w"), Some(Duration::from_secs(604_800)));
+    }
+
+    #[test]
+    fn us_fips_from_codes_derivation() {
+        // state + county -> 5-digit combined FIPS (Allegheny County, PA)
+        assert_eq!(
+            us_fips_from_codes(Some("US.PA"), Some("US.PA.003")),
+            ("42".to_string(), "42003".to_string())
+        );
+        // county code whose LAST segment does NOT lead with 0 must not be mangled (New York County)
+        assert_eq!(
+            us_fips_from_codes(Some("US.NY"), Some("US.NY.061")),
+            ("36".to_string(), "36061".to_string())
+        );
+        // a 2-digit county segment is left-padded to 3 before combining
+        assert_eq!(
+            us_fips_from_codes(Some("US.CA"), Some("US.CA.37")),
+            ("06".to_string(), "06037".to_string())
+        );
+        // state only (no admin2) -> state FIPS, empty county FIPS
+        assert_eq!(
+            us_fips_from_codes(Some("US.PA"), None),
+            ("42".to_string(), String::new())
+        );
+        // non-US admin1 -> both empty (no state FIPS, so no county FIPS either)
+        assert_eq!(
+            us_fips_from_codes(Some("CA.ON"), Some("CA.ON.something")),
+            (String::new(), String::new())
+        );
+        // a non-US admin2 alongside a US state is ignored
+        assert_eq!(
+            us_fips_from_codes(Some("US.PA"), Some("XX.PA.003")),
+            ("42".to_string(), String::new())
+        );
+    }
+
+    #[test]
+    fn continent_name_expands_known_codes() {
+        assert_eq!(continent_name("NA"), "North America");
+        assert_eq!(continent_name("EU"), "Europe");
+        assert_eq!(continent_name("SA"), "South America");
+        // unknown/empty codes pass through unchanged
+        assert_eq!(continent_name("ZZ"), "ZZ");
+        assert_eq!(continent_name(""), "");
     }
 
     #[test]

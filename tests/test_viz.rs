@@ -2536,6 +2536,85 @@ fn viz_smart_heatmap_density_threshold() {
     assert!(stderr.contains("--heatmap-density 2"));
 }
 
+// A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the
+// mapbox tile map: a single gap-separated `scattermapbox` line trace named "regions", plus a
+// "region labels" trace of centroid HOVER markers (raster mapbox culls on-map text, so the region
+// name is delivered on hover of a dot instead of as a visible glyph).
+#[test]
+fn viz_smart_geojson_overlay() {
+    let wrk = Workdir::new("viz_smart_geojson_overlay");
+    // locally-clustered points so smart renders a mapbox tile map (not the global ScatterGeo)
+    wrk.create_from_string(
+        "local_geo.csv",
+        "id,lat,lon,val\n1,40.46,-79.98,a\n2,40.47,-79.97,b\n3,40.46,-79.92,c\n4,40.47,-79.91,d\n",
+    );
+    // two adjacent wards straddling the cluster, each with a human-readable name
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"N","name":"North Ward"},"geometry":{"type":"Polygon","coordinates":[[[-80.0,40.44],[-80.0,40.50],[-79.95,40.50],[-79.95,40.44],[-80.0,40.44]]]}},{"type":"Feature","properties":{"id":"S","name":"South Ward"},"geometry":{"type":"Polygon","coordinates":[[[-79.95,40.44],[-79.95,40.50],[-79.90,40.50],[-79.90,40.44],[-79.95,40.44]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "local_geo.csv",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--feature-name-key",
+        "properties.name",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // local mapbox map with the boundary + label overlay traces
+    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""name":"regions""#));
+    assert!(html.contains(r#""name":"region labels""#));
+    // labels ride in hover text (mapbox culls on-map glyphs), carrying the --feature-name-key
+    // values rather than the ids
+    assert!(html.contains(r#""hovertext":["North Ward","South Ward"]"#));
+}
+
+// The same `--geojson` overlay on a GLOBE-spanning `viz smart` map renders on the offline
+// `ScatterGeo` projection, where on-map text glyphs ARE reliable: a "regions" boundary line trace
+// plus a "region labels" `text`-mode trace carrying the visible feature names.
+#[test]
+fn viz_smart_geojson_overlay_global_geo() {
+    let wrk = Workdir::new("viz_smart_geojson_overlay_global_geo");
+    // points on multiple continents force the global ScatterGeo world-overview path
+    wrk.create_from_string(
+        "global_geo.csv",
+        "id,lat,lon,val\n1,40.44,-79.99,a\n2,48.85,2.35,b\n3,-33.86,151.20,c\n4,35.68,139.69,d\n",
+    );
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"N","name":"North Ward"},"geometry":{"type":"Polygon","coordinates":[[[-80.0,40.44],[-80.0,40.50],[-79.95,40.50],[-79.95,40.44],[-80.0,40.44]]]}},{"type":"Feature","properties":{"id":"S","name":"South Ward"},"geometry":{"type":"Polygon","coordinates":[[[-79.95,40.44],[-79.95,40.50],[-79.90,40.50],[-79.90,40.44],[-79.95,40.44]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "global_geo.csv",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+        "--feature-name-key",
+        "properties.name",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // global map => ScatterGeo overlay with VISIBLE on-map text labels
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(html.contains(r#""name":"regions""#));
+    assert!(html.contains(r#""name":"region labels""#));
+    assert!(html.contains(r#""mode":"text""#));
+    assert!(html.contains(r#""text":["North Ward","South Ward"]"#));
+}
+
 // A globe-spanning dataset renders the smart map as an offline ScatterGeo world-overview, NOT a
 // DensityMapbox — so even with a low --heatmap-density threshold, no heatmap is drawn and the
 // heatmap note must NOT be emitted (it would misdescribe the ScatterGeo markers as a heatmap).
@@ -2755,6 +2834,155 @@ fn viz_smart_geo_hover_geocoded_identifier() {
     // with no identifier column, hover text only appears when reverse-geocoding resolved a place
     if html.contains(r#""hovertext""#) {
         assert!(html.contains(r#""hoverinfo":"text""#));
+    }
+}
+
+// Geocoding enrichment: the county is always shown in a US map hover; the US FIPS code appears only
+// under --smarter. Tolerant of an unavailable geocode index (offline CI) — the enrichment is only
+// asserted when reverse-geocoding actually resolved the county.
+#[test]
+fn viz_smart_geocode_enrichment_county_and_fips() {
+    let wrk = Workdir::new("viz_smart_geocode_enrichment_county_and_fips");
+    // a tight Allegheny County, PA cluster -> a local mapbox map with per-point hovers
+    wrk.create_from_string(
+        "pitt.csv",
+        "id,lat,lon,val
+Pittsburgh,40.4406,-79.9959,10
+McKeesport,40.3487,-79.8642,20
+BethelPark,40.3273,-80.0373,30
+Monroeville,40.4212,-79.7883,40
+Wilkinsburg,40.4445,-79.8811,50
+",
+    );
+
+    // plain: county appears (when geocoding resolved); the FIPS tail does NOT (it's --smarter-only)
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pitt.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let plain = String::from_utf8_lossy(&out.stdout);
+    let geocoded = plain.contains("Allegheny County");
+    if geocoded {
+        assert!(!plain.contains("(FIPS "));
+    }
+
+    // --smarter: when the county resolved, the combined 5-digit county FIPS tail is present
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pitt.csv", "--smarter"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let smart = String::from_utf8_lossy(&out.stdout);
+    if smart.contains("Allegheny County") {
+        assert!(smart.contains("(FIPS 42003)"));
+    }
+}
+
+// The --smarter country-context continent note must reflect EXACTLY the summarized extent: a US
+// core with a European (Paris) outlier spans two continents, so the note must be suppressed rather
+// than claiming a single continent. Tolerant of an unavailable geocode index (offline CI).
+#[test]
+fn viz_smart_country_context_suppressed_across_continents() {
+    let wrk = Workdir::new("viz_smart_country_context_suppressed_across_continents");
+    // a tight US core plus one far outlier in France
+    wrk.create_from_string(
+        "mixed.csv",
+        "id,lat,lon,val
+Pittsburgh,40.4406,-79.9959,10
+McKeesport,40.3487,-79.8642,20
+BethelPark,40.3273,-80.0373,30
+Monroeville,40.4212,-79.7883,40
+Wilkinsburg,40.4445,-79.8811,50
+Paris,48.8566,2.3522,999
+",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "mixed.csv", "--smarter"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // when geocoding resolved the US core, the outlier call-out is present but NO single-continent
+    // annotation may follow (the extent spans North America AND Europe).
+    if html.contains("Pennsylvania") && html.contains("outlier") {
+        assert!(!html.contains(" · North America"));
+        assert!(!html.contains(" · Europe"));
+    }
+}
+
+// Regression for the removed "all geo fields supplied" hover-geocode skip: even when the dataset
+// already exposes dictionary-recognized geo.city / geo.state / geo.country columns, the always-on
+// county and --smarter FIPS enrichment must still be added (the dataset's own city/country values
+// are deduped, but county/FIPS are net-new). A dictionary makes the geo concepts deterministic (no
+// LLM). Anchored on an independent control run WITHOUT the geo columns so the county assertion
+// can't pass vacuously: the control proves the geocode index resolves these coordinates (its county
+// can ONLY come from geocoding), and whenever it does, the geo-column run must resolve the county
+// and FIPS too. Tolerant of an unavailable geocode index (offline CI) — both gate on the control.
+#[test]
+fn viz_smart_geocode_enrichment_with_geo_columns() {
+    let wrk = Workdir::new("viz_smart_geocode_enrichment_with_geo_columns");
+
+    // control: identical coordinates, NO geo-name columns — the county can only be geocoded, so its
+    // presence establishes that the index is available for these points.
+    wrk.create_from_string(
+        "control.csv",
+        "id,lat,lon,val
+a,40.4406,-79.9959,10
+b,40.3487,-79.8642,20
+c,40.3273,-80.0373,30
+d,40.4212,-79.7883,40
+",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "control.csv"]);
+    let control = wrk.output(&mut cmd);
+    assert!(control.status.success());
+    let index_resolves = String::from_utf8_lossy(&control.stdout).contains("Allegheny County");
+
+    // main run: city/state/country are recognized (dictionary-tagged) geo concepts.
+    wrk.create_from_string(
+        "geo_cols.csv",
+        "id,city,state,country,lat,lon,val
+a,Pittsburgh,Pennsylvania,United States,40.4406,-79.9959,10
+b,McKeesport,Pennsylvania,United States,40.3487,-79.8642,20
+c,Bethel Park,Pennsylvania,United States,40.3273,-80.0373,30
+d,Monroeville,Pennsylvania,United States,40.4212,-79.7883,40
+",
+    );
+    wrk.create_from_string(
+        "geo_dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" } },
+            "city": { "type": "string", "x-qsv": { "qsv_type": "String", "concept": "geo.city" } },
+            "state": { "type": "string", "x-qsv": { "qsv_type": "String", "concept": "geo.state" } },
+            "country": { "type": "string", "x-qsv": { "qsv_type": "String", "concept": "geo.country" } },
+            "lat": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.latitude" } },
+            "lon": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.longitude" } },
+            "val": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "geo_cols.csv", "--dictionary"])
+        .arg(wrk.path("geo_dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // gated on the CONTROL (not the main run's own output): whenever geocoding resolves the county,
+    // the geo-column run MUST still surface county + FIPS despite already carrying
+    // city/state/country.
+    if index_resolves {
+        assert!(
+            html.contains("Allegheny County"),
+            "county enrichment dropped when the dataset already has geo columns"
+        );
+        assert!(
+            html.contains("(FIPS 42003)"),
+            "FIPS enrichment dropped when the dataset already has geo columns"
+        );
     }
 }
 

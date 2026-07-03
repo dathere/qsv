@@ -1872,7 +1872,10 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
         let (ax, ay) = (xs[a], ys[a]);
         let (mut max_area, mut chosen) = (-1.0_f64, range_start);
         for j in range_start..range_end {
-            let area = ((ax - avg_x) * (ys[j] - ay) - (ax - xs[j]) * (avg_y - ay)).abs();
+            // FMA version of ((ax - avg_x) * (ys[j] - ay) - (ax - xs[j]) * (avg_y - ay)).abs();
+            let area = (ax - xs[j])
+                .mul_add(-(avg_y - ay), (ax - avg_x) * (ys[j] - ay))
+                .abs();
             if area > max_area {
                 max_area = area;
                 chosen = j;
@@ -3071,7 +3074,8 @@ fn unwrap_ring_across_seam(ring: &[[f64; 2]]) -> Option<Vec<[f64; 2]>> {
     let mut out = Vec::with_capacity(ring.len());
     let mut prev = ring.first()?[0];
     for &[lon, lat] in ring {
-        let lon = lon + ((prev - lon) / 360.0).round() * 360.0;
+        // FMA version of let lon = lon + ((prev - lon) / 360.0).round() * 360.0;
+        let lon = ((prev - lon) / 360.0).round().mul_add(360.0, lon);
         out.push([lon, lat]);
         prev = lon;
     }
@@ -3275,15 +3279,18 @@ const DEFAULT_SNAP_MAX_KM: f64 = 10.0;
 /// Squared Euclidean (degree-space) distance from a point to a line segment.
 fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
-    let len2 = dx * dx + dy * dy;
+    // FMA version of let len2 = dx * dx + dy * dy;
+    let len2 = dy.mul_add(dy, dx * dx);
     let t = if len2 <= f64::EPSILON {
         0.0
     } else {
-        (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+        // (((px - ax) * dx + (py - ay) * dy) / len2).clamp(0.0, 1.0)
+        ((py - ay).mul_add(dy, (px - ax) * dx) / len2).clamp(0.0, 1.0)
     };
     let (cx, cy) = (ax + t * dx, ay + t * dy);
     let (ex, ey) = (px - cx, py - cy);
-    ex * ex + ey * ey
+    // ex * ex + ey * ey
+    ey.mul_add(ey, ex * ex)
 }
 
 /// Squared distance from `(lon, lat)` to the nearest edge of any of the feature's rings, in the

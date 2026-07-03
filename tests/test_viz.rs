@@ -549,6 +549,36 @@ fn viz_smart_grouped_violin_panel() {
 }
 
 #[test]
+fn viz_smart_grouped_violin_alternating_categories_above_sample_cap() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_alternating_categories_above_sample_cap");
+    // Regression: two categories STRICTLY alternating by row, with a non-null measure count
+    // (100_000) that puts the collection stride at exactly 2 (> MAX_SMART_POINTS = 50_000). A
+    // global `seen % stride` sampler would keep only the even-position category ("east"), starve
+    // "west", and drop the panel to a single violin (or skip it). The per-category stride must
+    // sample both, so both categories survive in the grouped violin.
+    let mut rows = String::from("grp,val\n");
+    for i in 0..100_000_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        let val = i % 1000;
+        rows.push_str(&format!("{grp},{val}\n"));
+    }
+    wrk.create_from_string("alt.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "alt.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the grouped-violin panel is present (not collapsed to <2 categories and skipped) ...
+    assert!(html.contains("val distribution by grp"));
+    // ... and BOTH alternating categories appear as violin x data (the aliasing bug would have
+    // sampled only one of them)
+    assert!(html.contains(r#""east""#));
+    assert!(html.contains(r#""west""#));
+}
+
+#[test]
 fn viz_smart_box_all_points_gated_on_nonnull_count() {
     let wrk = Workdir::new("viz_smart_box_all_points_gated_on_nonnull_count");
     // 2,000 rows but only 800 non-null values (60% null): the all-points tier is measured

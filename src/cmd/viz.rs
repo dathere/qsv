@@ -6599,7 +6599,6 @@ fn grouped_violin_panel(
     let mut sampled: HashMap<String, Vec<f64>> = HashMap::new();
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
-    let mut seen: u64 = 0; // non-null measure values seen, for the global stride
     while rdr.read_byte_record(&mut record)? {
         let Some(y) = parse_f64(record.get(m_idx)) else {
             continue;
@@ -6610,11 +6609,21 @@ fn grouped_violin_panel(
         } else {
             raw.trim().to_string()
         };
-        *counts.entry(key.clone()).or_default() += 1;
-        if seen.is_multiple_of(stride) {
+        // stride PER CATEGORY (on each category's own 0-based value position), not on a global
+        // counter: a global `seen % stride` aliases with row/category ordering — e.g. two
+        // categories alternating by row with stride 2 would sample only one of them — whereas a
+        // per-category counter samples every category's 1st, (stride+1)-th, … value independently,
+        // so each keeps ~count/stride points and no populous category is starved. The retained
+        // total stays ~MAX_SMART_POINTS (Σ count/stride), plus at most one extra value per
+        // category.
+        let pos = {
+            let n = counts.entry(key.clone()).or_insert(0);
+            *n += 1;
+            *n - 1
+        };
+        if pos.is_multiple_of(stride) {
             sampled.entry(key).or_default().push(y);
         }
-        seen += 1;
     }
 
     // rank by full count, keep the top-N most-populous categories (descending count, then label

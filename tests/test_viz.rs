@@ -6808,3 +6808,273 @@ fn viz_smart_bivariate_top_relationships_excludes_low_support_pairs() {
          somewhere in its labels; html: {html}"
     );
 }
+
+#[test]
+fn viz_smart_derives_skew_hint_without_smarter() {
+    // Plain `viz smart` (no moarstats): the skew hint is derived from the BASE stats cache
+    // (3 * (mean - median) / stddev — the same formula moarstats uses), so a right-skewed box
+    // panel is annotated even though pearson_skewness was never computed.
+    let wrk = Workdir::new("viz_smart_derives_skew_hint_without_smarter");
+    // continuous right-skewed column: bulk at 1..=40 with a heavy tail of 1000s
+    let mut rows = String::from("id,amount\n");
+    for i in 1..=280 {
+        rows.push_str(&format!("{i},{}\n", i % 40 + 1));
+    }
+    for i in 281..=300 {
+        rows.push_str(&format!("{i},1000\n"));
+    }
+    wrk.create_from_string("amounts.csv", &rows);
+
+    let out_html = wrk.path("amounts.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "amounts.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("amounts.html").unwrap();
+    assert!(
+        html.contains("right-skewed"),
+        "box panel title should carry the derived skew hint without --smarter; html: {html}"
+    );
+    assert!(html.contains(r#""type":"box""#));
+}
+
+#[test]
+fn viz_smart_dominant_category_hint() {
+    // when one real category holds >= 90% of all rows, the frequency bar panel's title says so
+    let wrk = Workdir::new("viz_smart_dominant_category_hint");
+    let mut rows = String::from("status\n");
+    for _ in 0..95 {
+        rows.push_str("active\n");
+    }
+    for _ in 0..5 {
+        rows.push_str("inactive\n");
+    }
+    wrk.create_from_string("statuses.csv", &rows);
+
+    let out_html = wrk.path("statuses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "statuses.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("statuses.html").unwrap();
+    assert!(
+        html.contains("(dominated by active, 95%)"),
+        "dominated freq bar panel should carry the dominance hint; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_log_scale_auto_logs_high_range_box() {
+    // an all-positive continuous column whose observed max/min ratio clears
+    // LOG_SCALE_MIN_RATIO gets a logarithmic value axis under the default --log-scale auto,
+    // cued by the "log scale" y-axis title (distinct from the bars' "count (log)").
+    let wrk = Workdir::new("viz_smart_log_scale_auto_logs_high_range_box");
+    let mut rows = String::from("load\n");
+    for i in 1..=300 {
+        rows.push_str(&format!("{i}.5\n"));
+    }
+    wrk.create_from_string("loads.csv", &rows);
+
+    let out_html = wrk.path("loads.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "loads.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("loads.html").unwrap();
+    assert!(
+        html.contains("log scale"),
+        "high-dynamic-range box panel should carry the log value-axis cue; html: {html}"
+    );
+    assert!(
+        html.contains(r#""type":"log""#),
+        "box panel's y-axis should be logarithmic; html: {html}"
+    );
+
+    // --log-scale off keeps it linear
+    let out_lin = wrk.path("loads_linear.html").to_string_lossy().to_string();
+    let mut lin = wrk.command("viz");
+    lin.args(["smart", "loads.csv", "--log-scale", "off", "-o", &out_lin]);
+    wrk.assert_success(&mut lin);
+    let linear_html = wrk.read_to_string("loads_linear.html").unwrap();
+    assert!(
+        !linear_html.contains(r#""type":"log""#),
+        "--log-scale off must keep the box value axis linear; html: {linear_html}"
+    );
+}
+
+#[test]
+fn viz_smart_max_charts_keeps_most_interesting_panels() {
+    // when the dashboard overflows --max-charts, survivors are chosen by the stats-driven
+    // interestingness ranking, not by column position: a varied 12-category bar (later column)
+    // outranks a 96%-dominated 2-category bar (earlier column).
+    let wrk = Workdir::new("viz_smart_max_charts_keeps_most_interesting_panels");
+    let mut rows = String::from("flag,category\n");
+    for i in 0..100 {
+        let flag = if i < 96 { "y" } else { "n" };
+        rows.push_str(&format!("{flag},cat_{:02}\n", i % 12));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    let out_html = wrk.path("wide.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "--max-charts", "1", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("wide.html").unwrap();
+    assert!(
+        html.contains("cat_00"),
+        "the varied 12-category panel should survive the overflow ranking; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""name":"flag"#),
+        "the dominated 2-category panel (leftmost column) should be the one skipped; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_dominance_share_survives_no_nulls() {
+    // regression (roborev 3387): the dominance share must come from the full row count, not the
+    // rendered bars — with 85% "active" + 15% nulls and --no-nulls suppressing the NULL bar,
+    // the surviving bar is 100% of what's drawn but only 85% of the rows: NOT dominant.
+    let wrk = Workdir::new("viz_smart_dominance_share_survives_no_nulls");
+    let mut rows = String::from("id,status\n");
+    for i in 0..100 {
+        let status = if i < 85 { "active" } else { "" };
+        rows.push_str(&format!("{i},{status}\n"));
+    }
+    wrk.create_from_string("statuses.csv", &rows);
+
+    let out_html = wrk.path("statuses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "statuses.csv", "--no-nulls", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("statuses.html").unwrap();
+    assert!(
+        !html.contains("dominated by"),
+        "an 85%-of-rows category must not be reported as dominant just because --no-nulls hid the \
+         NULL bar; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_no_dominance_hint_on_null_heavy_column() {
+    // regression (roborev 3389): with >90% blank rows the stats cache's mode IS the empty
+    // bucket (mode_occurrences counts empties), so a share derived from mode stats would label
+    // the tallest real category with the null bucket's share. The hint must stay silent: the
+    // tallest REAL category here holds only 4% of the rows.
+    let wrk = Workdir::new("viz_smart_no_dominance_hint_on_null_heavy_column");
+    let mut rows = String::from("id,status\n");
+    for i in 0..100 {
+        let status = if i < 4 { "active" } else { "" };
+        rows.push_str(&format!("{i},{status}\n"));
+    }
+    wrk.create_from_string("nullheavy.csv", &rows);
+
+    let out_html = wrk.path("nullheavy.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "nullheavy.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("nullheavy.html").unwrap();
+    assert!(
+        !html.contains("dominated by"),
+        "a 4%-of-rows category must not inherit the empty bucket's 96% share; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_timeseries_prefers_sorted_date_column() {
+    // two undated-concept (no dictionary) date columns tie on timestamp_rank; the sort_order
+    // tiebreak must pick the column the file is physically ordered by (`created`, ascending)
+    // over the leftmost-but-unsorted `updated` as the trend panel's time axis.
+    let wrk = Workdir::new("viz_smart_timeseries_prefers_sorted_date_column");
+    let mut rows = String::from("updated,created,value\n");
+    for i in 0..100u32 {
+        // `created`: strictly ascending ISO timestamps (day 1..5, hour cycling — ISO order ==
+        // lexicographic order); `updated`: the same 100 timestamps deterministically shuffled
+        // (multiplicative stride mod 100), so stats reads them as UNSORTED
+        let stamp = |n: u32| format!("2024-01-{:02}T{:02}:00:00Z", n / 24 + 1, n % 24);
+        rows.push_str(&format!(
+            "{},{},{}\n",
+            stamp((i * 37) % 100),
+            stamp(i),
+            100.0 + f64::from(i) * 1.37
+        ));
+    }
+    wrk.create_from_string("events.csv", &rows);
+
+    let out_html = wrk.path("events.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("events.html").unwrap();
+    assert!(
+        html.contains("over created"),
+        "the physically-sorted date column should win the time-series axis; html: {html}"
+    );
+    assert!(
+        !html.contains("over updated"),
+        "the unsorted leftmost date column should lose the tiebreak; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar() {
+    // regression (roborev 3392): stats emits zero_padded_numeric only for String-typed columns
+    // (leading zeros force String inference), so the reachable hazard is a DICTIONARY mistag —
+    // an LLM calling an ICD-9-style code column a measure. The guardrail must downgrade that
+    // verdict to a dimension: without it the column is dropped outright (a String column has no
+    // quartiles for the measure path); with it, it charts as a frequency bar.
+    let wrk = Workdir::new("viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar");
+    let mut rows = String::from("icd9,status\n");
+    for i in 0..200 {
+        let code_n = i % 40;
+        let status = if i % 3 == 0 { "open" } else { "closed" };
+        rows.push_str(&format!("0{:02}.{},{status}\n", code_n, code_n % 10));
+    }
+    wrk.create_from_string("diagnoses.csv", &rows);
+    // a dictionary that (wrongly) tags the zero-padded code column as an explicit measure
+    wrk.create_from_string(
+        "diagnoses.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "icd9": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "measure", "concept": "measure.amount" } },
+            "status": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("diagnoses.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "diagnoses.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("diagnoses.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("diagnoses.html").unwrap();
+    assert!(
+        html.contains(r#""name":"icd9"#),
+        "the mistagged code column should be rescued as a frequency bar, not dropped; html: {html}"
+    );
+    assert!(
+        !html.contains(r#""type":"box""#),
+        "the code column must not chart as a measure; html: {html}"
+    );
+
+    // contrast: stats-only routing (no dictionary) skips the same 40-category String column as
+    // ID-like noise — proving the bar above comes from the guardrail downgrade, not classify
+    let out_plain = wrk.path("plain.html").to_string_lossy().to_string();
+    let mut plain = wrk.command("viz");
+    plain.args(["smart", "diagnoses.csv", "-o", &out_plain]);
+    wrk.assert_success(&mut plain);
+    let plain_html = wrk.read_to_string("plain.html").unwrap();
+    assert!(
+        !plain_html.contains(r#""name":"icd9"#),
+        "without a dictionary the high-cardinality code column stays skipped; html: {plain_html}"
+    );
+}

@@ -429,13 +429,17 @@ smart options:
                            wider datasets skip these panels with a warning (run
                            `qsv moarstats --bivariate` directly for the full pairwise output).
                            Only affects `smart`.
-    --log-scale <mode>     Use a logarithmic y-axis for frequency bar panels whose
-                           tallest bar dwarfs the rest (e.g. a large "(NULL)" or
-                           "Other (N)" bucket), so the small categories stay visible.
+    --log-scale <mode>     Use a logarithmic y-axis for panels with a high dynamic
+                           range: frequency bar panels whose tallest bar dwarfs the
+                           rest (e.g. a large "(NULL)" or "Other (N)" bucket), so the
+                           small categories stay visible; and box panels of an
+                           all-positive column whose observed max/min ratio is huge
+                           (a box otherwise squashed against its extremes).
                            One of: auto, on, off. "auto" (the default) switches a panel
                            to a log y-axis only when its dynamic range is high; "on"
-                           forces a log y-axis on every frequency panel; "off" keeps the
-                           linear axes. Only affects `smart`. [default: auto]
+                           forces a log y-axis on every frequency panel and every
+                           all-positive box panel; "off" keeps the linear axes.
+                           Only affects `smart`. [default: auto]
 
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
@@ -794,6 +798,9 @@ const DEFAULT_LEFT_MARGIN_PX: usize = 60;
 /// title-less to keep the cells compact. The rotated title needs a little extra left margin
 /// (`LOG_AXIS_TITLE_MARGIN_PX`) so it isn't clipped against the page edge.
 const LOG_AXIS_TITLE: &str = "count (log)";
+/// The log-cue y-axis title for a VALUE axis (a log box panel), where "count (log)" would be
+/// wrong — the axis carries the column's values, not frequencies.
+const VALUE_LOG_AXIS_TITLE: &str = "log scale";
 const LOG_AXIS_TITLE_MARGIN_PX: usize = 20;
 
 /// `viz smart` correlation-heatmap panel tuning. Long numeric-column names would clip against
@@ -6078,9 +6085,31 @@ fn freq_panel_logs(mode: LogScale, counts: &[u64]) -> bool {
     }
 }
 
+/// Whether a smart box panel's VALUE axis should be logarithmic under the resolved `--log-scale`
+/// mode, from the column's observed min/max. Log is only possible when every value is strictly
+/// positive (`min > 0` — a log axis can't place 0 or negatives, and `min > 0` also implies
+/// `n_zero == n_negative == 0`). Under `Auto`, additionally requires the observed max/min ratio
+/// to span `LOG_SCALE_MIN_RATIO` — the high-dynamic-range case where the linear box squashes
+/// into a sliver against its extremes.
+fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
+    let (Some(lo), Some(hi)) = (min, max) else {
+        return false;
+    };
+    if lo <= 0.0 || hi < lo {
+        return false;
+    }
+    match mode {
+        LogScale::Off => false,
+        LogScale::On => true,
+        LogScale::Auto => hi >= lo * LOG_SCALE_MIN_RATIO,
+    }
+}
+
 /// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
-/// Only frequency bar panels can be log; every other panel kind is always linear. Used both to
-/// gate the panel's y-axis title cue and to size the dashboard's left margin to fit it.
+/// Frequency bars decide from their counts (high dynamic range); box panels carry the verdict
+/// resolved at classification time (`Panel::value_log`, from the cached min/max — see
+/// `box_panel_logs`); every other panel kind is always linear. Used both to gate the panel's
+/// y-axis title cue and to size the dashboard's left margin to fit it.
 fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
     match panel.kind {
         PanelKind::FreqBar { idx } => {
@@ -6089,6 +6118,9 @@ fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
                 .map(|bars| bars.iter().map(|b| b.count).collect())
                 .unwrap_or_default();
             freq_panel_logs(log_scale, &counts)
+        },
+        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => {
+            panel.value_log
         },
         _ => false,
     }
@@ -6792,6 +6824,15 @@ struct Panel {
     /// feeds trace names and status messages, so it must stay plain — no markup).
     subtitle:        Option<String>,
     kind:            PanelKind,
+    /// Whether this panel's VALUE axis renders logarithmic (box panels only, resolved at
+    /// classification time from the cached stats + `--log-scale`; frequency bars decide from
+    /// their counts at render time instead — see `panel_is_log`).
+    value_log:       bool,
+    /// How much this panel is worth keeping when the dashboard overflows `--max-charts`:
+    /// per-column panels get a stats-driven `panel_interest` score; overview panels
+    /// (correlation, time-series, map, …) keep the `Panel::new` default of `f64::INFINITY`
+    /// so they always survive. Ties (and the no-overflow case) preserve document order.
+    interest:        f64,
     /// Reverse-geocoded spatial-extent metadata for a `Map`/`Geo` panel (the 4 bounding-box
     /// corners + center, plus a consolidated jurisdiction summary). `None` for non-map panels,
     /// when geocoding was skipped (e.g. antimeridian-spanning data), or when the lookup failed
@@ -6804,16 +6845,32 @@ struct Panel {
 }
 
 impl Panel {
-    /// Construct a panel with no geo metadata (the common case for non-map panels).
+    /// Construct a panel with no geo metadata (the common case for non-map panels). Defaults to
+    /// a linear value axis and infinite `interest` (never dropped on overflow) — per-column
+    /// panels override both via `with_value_log`/`with_interest`.
     fn new(name: String, kind: PanelKind) -> Self {
         Panel {
             name,
             subtitle: None,
             kind,
+            value_log: false,
+            interest: f64::INFINITY,
             #[cfg(feature = "geocode")]
             geo_meta: None,
             geojson_overlay: None,
         }
+    }
+
+    /// Set whether this panel's value axis is logarithmic (box panels, per `--log-scale`).
+    fn with_value_log(mut self, value_log: bool) -> Self {
+        self.value_log = value_log;
+        self
+    }
+
+    /// Set the panel's interestingness score used for overflow survival ranking.
+    fn with_interest(mut self, interest: f64) -> Self {
+        self.interest = interest;
+        self
     }
 
     /// Attach an optional subtitle (the dictionary label) shown beneath the title.
@@ -7430,6 +7487,18 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
 ///   tagged `measure.count`, e.g. items-per-order 1-6, is also charted as a bar — which is arguably
 ///   an improvement anyway.)
 fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
+    // a zero-padded numeric code (zip/FIPS/ICD-9, per stats' zero_padded_numeric detection) can
+    // never be a measure, whatever the dictionary said: leading zeros only survive in codes,
+    // which is harder evidence than an LLM role/concept tag. The flag is only ever emitted for
+    // String-typed columns (`is_zpn` in stats.rs requires `typ == TString` — padded integer
+    // codes AND zero-padded decimal codes like `007.1` both infer as String), so without this
+    // downgrade a dictionary-mistagged code column wouldn't box — it would be DROPPED entirely
+    // (`classify_measure` finds no quartiles on a String column); with it, the column charts as
+    // the frequency bar it deserves.
+    if sem.route == Route::Measure && s.zero_padded_numeric == Some(true) {
+        sem.route = Route::Dimension;
+        return sem;
+    }
     if sem.route != Route::Measure || s.r#type.as_str() != "Integer" {
         return sem;
     }
@@ -8043,6 +8112,10 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         // continuous numeric -> box plot / histogram from precomputed quartiles. Shared with the
         // dictionary `measure` verdict (see `classify_measure`) so a measure is charted the same
         // way however it was identified; returns None when the column lacks quartiles.
+        // (Zero-padded numeric CODES need no exclusion here: stats only emits
+        // `zero_padded_numeric` for String-typed columns — see `is_zpn` in stats.rs — so a
+        // flagged column never reaches this numeric arm; it takes the categorical path below.
+        // The flag matters in `guardrail`, where it overrides a dictionary measure verdict.)
         return classify_measure(idx, s);
     }
 
@@ -8307,17 +8380,79 @@ fn select_map_hover_fields(
     chosen
 }
 
-/// Build a short parenthetical title hint for a box-plot panel from moarstats shape statistics:
-/// skew direction (from `pearson_skewness`) and the outlier share (from `outliers_percentage`).
-/// Returns None when neither extended stat is present (moarstats hasn't been run) or the column
-/// is roughly symmetric with no notable outliers — so the title is left unchanged.
+/// Parse a stats-cache min/max cell (stored as a string) as a finite f64.
+fn parse_stat_f64(v: Option<&str>) -> Option<f64> {
+    v.and_then(|v| v.trim().parse::<f64>().ok())
+        .filter(|v| v.is_finite())
+}
+
+/// Pearson's second skewness coefficient for a column: moarstats' precomputed value when present
+/// (`--smarter`), else derived from the base stats cache with the same formula moarstats uses —
+/// `3 * (mean - median) / stddev` — so plain `viz smart` gets the same signal with no extra pass.
+fn pearson_skewness_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
+    s.pearson_skewness.or_else(|| {
+        let (Some(mean), Some(median), Some(stddev)) = (s.mean, s.q2_median, s.stddev) else {
+            return None;
+        };
+        (stddev > 0.0).then(|| 3.0 * (mean - median) / stddev)
+    })
+}
+
+/// Share of zero values among a numeric column's non-null values, from the streaming sign
+/// counts (`n_negative`/`n_zero`/`n_positive`) in the base stats cache. `None` for non-numeric
+/// columns (the counts are only computed for Integer/Float) or when there are no numeric values.
+fn zero_share(s: &crate::cmd::stats::StatsData) -> Option<f64> {
+    let (Some(neg), Some(zero), Some(pos)) = (s.n_negative, s.n_zero, s.n_positive) else {
+        return None;
+    };
+    let total = neg + zero + pos;
+    #[allow(clippy::cast_precision_loss)]
+    (total > 0).then(|| zero as f64 / total as f64)
+}
+
+/// Build a short parenthetical title hint for a box/histogram panel from cached statistics.
+/// Parts are gathered in priority order — data-quality first (nulls and zeros are invisible in
+/// a box and change how its quartiles should be read), then distribution shape — and capped at
+/// `MAX_PARTS` so titles stay readable:
+///
+/// 1. null share (`sparsity`, base cache)
+/// 2. zero share (streaming sign counts, base cache)
+/// 3. skew direction (moarstats `pearson_skewness`, or derived from the base cache — see
+///    `pearson_skewness_stat` — so plain `viz smart` gets it too)
+/// 4. outlier share (moarstats scan), with a `mad_stddev_ratio` "heavy tails" fallback when the
+///    outlier scan is absent
+/// 5. outlier impact on the mean (moarstats `outlier_impact_ratio`)
+/// 6. concentration (moarstats `gini_coefficient`)
+///
+/// Returns None when nothing notable — the title is left unchanged.
 fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
+    // nulls/zeros below ~a third of the column read as ordinary; above, they reshape the box.
+    const NULL_SHARE_MIN: f64 = 0.30;
+    const ZERO_SHARE_MIN: f64 = 0.30;
     // |Pearson skewness| below this reads as ~symmetric; outlier shares below 1% are negligible.
     const SKEW_MIN_ABS: f64 = 0.5;
     const OUTLIER_MIN_PCT: f64 = 1.0;
+    // outliers shifting the mean by less than 5% aren't worth a title callout.
+    const MEAN_IMPACT_MIN_ABS: f64 = 0.05;
+    const GINI_MIN: f64 = 0.6;
+    // MAD/stddev is ~0.6745 for a normal distribution; well below it means stddev is inflated
+    // by heavy tails. Only consulted when the moarstats outlier scan (`outliers_percentage`)
+    // is absent, so it never duplicates the outlier-share part.
+    const MAD_STDDEV_HEAVY_TAILS_MAX: f64 = 0.4;
+    const MAX_PARTS: usize = 2;
 
     let mut parts: Vec<String> = Vec::new();
-    if let Some(skew) = s.pearson_skewness
+    if let Some(sp) = s.sparsity
+        && (NULL_SHARE_MIN..=1.0).contains(&sp)
+    {
+        parts.push(format!("{:.0}% null", sp * 100.0));
+    }
+    if let Some(z) = zero_share(s)
+        && z >= ZERO_SHARE_MIN
+    {
+        parts.push(format!("{:.0}% zeros", z * 100.0));
+    }
+    if let Some(skew) = pearson_skewness_stat(s)
         && skew.abs() >= SKEW_MIN_ABS
     {
         parts.push(
@@ -8329,16 +8464,118 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
             .to_string(),
         );
     }
-    if let Some(pct) = s.outliers_percentage
-        && pct >= OUTLIER_MIN_PCT
-    {
-        parts.push(format!("{pct:.1}% outliers"));
+    match s.outliers_percentage {
+        Some(pct) if pct >= OUTLIER_MIN_PCT => parts.push(format!("{pct:.1}% outliers")),
+        Some(_) => {},
+        None => {
+            if let Some(r) = s.mad_stddev_ratio
+                && r > 0.0
+                && r <= MAD_STDDEV_HEAVY_TAILS_MAX
+            {
+                parts.push("heavy tails".to_string());
+            }
+        },
     }
+    if let Some(r) = s.outlier_impact_ratio
+        && r.is_finite()
+        && r.abs() >= MEAN_IMPACT_MIN_ABS
+    {
+        parts.push(format!("mean {:+.0}% from outliers", r * 100.0));
+    }
+    if let Some(g) = s.gini_coefficient
+        && g >= GINI_MIN
+    {
+        parts.push(format!("Gini {g:.2}"));
+    }
+    parts.truncate(MAX_PARTS);
     if parts.is_empty() {
         None
     } else {
         Some(format!("({})", parts.join(", ")))
     }
+}
+
+/// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
+/// `mode_occurrences / record_count`, where the record count is recovered as
+/// `cardinality / uniqueness_ratio` (its defining ratio) so no data pass is needed.
+///
+/// Heuristic-quality only — used solely as a `panel_interest` ranking penalty, never for a
+/// user-facing claim: the mode tracker includes empty cells (a NULL-heavy column's "mode" is
+/// the empty bucket — penalizing that as dominance is fine for ranking, since such a column is
+/// equally uninformative), and the cached `uniqueness_ratio` is rounded, so the reconstructed
+/// count drifts on large low-cardinality columns. The user-facing dominance TITLE hint uses
+/// exact counts instead (see `dominant_category_hint`).
+fn dominant_share_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
+    let occurrences = s.mode_occurrences?;
+    let ur = s.uniqueness_ratio?;
+    if ur <= 0.0 || !ur.is_finite() || s.cardinality == 0 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let record_count = s.cardinality as f64 / ur;
+    #[allow(clippy::cast_precision_loss)]
+    let share = occurrences as f64 / record_count;
+    share.is_finite().then_some(share)
+}
+
+/// Score how much a per-column panel is worth keeping when the dashboard overflows
+/// `--max-charts`, from the column's cached statistics alone (no data pass). This is a
+/// heuristic, not a science: the goal is that on a wide dataset the surviving panels are the
+/// informative ones, not the leftmost ones.
+///
+/// - every panel starts at 1.0, discounted by its null share (a mostly-null column has little to
+///   show whatever its chart);
+/// - a histogram means the column was flagged bimodal — always notable;
+/// - a box/histogram measure earns interest from relative spread (|cv|), outlier share (moarstats,
+///   when present), and skew;
+/// - a frequency bar earns interest from its category count (a 2-bar panel says less than a 12-bar
+///   one) and loses it when a single category dominates the rows.
+///
+/// Overview panels (correlation, map, time-series, …) never come through here — they keep
+/// `Panel::new`'s infinite default and always survive.
+fn panel_interest(s: &crate::cmd::stats::StatsData, kind: &PanelKind) -> f64 {
+    let mut score = 1.0_f64;
+    if let Some(sp) = s.sparsity
+        && sp.is_finite()
+    {
+        // keep a small floor so a sparse-but-remarkable column can still outrank a constant one
+        score *= (1.0 - sp.clamp(0.0, 1.0)).max(0.05);
+    }
+    match kind {
+        // flagged bimodal/multimodal — a shape worth seeing
+        PanelKind::Histogram { .. } => score += 1.5,
+        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => {
+            if let Some(cv) = s.cv
+                && cv.is_finite()
+            {
+                // cv is a percentage; 100% relative spread buys 1 point, capped at 2
+                score += (cv.abs() / 100.0).min(2.0);
+            }
+            if let Some(pct) = s.outliers_percentage
+                && pct.is_finite()
+            {
+                score += (pct / 10.0).clamp(0.0, 1.0);
+            }
+            if let Some(skew) = pearson_skewness_stat(s)
+                && skew.is_finite()
+            {
+                score += (skew.abs() / 2.0).min(1.0);
+            }
+        },
+        PanelKind::FreqBar { .. } => {
+            #[allow(clippy::cast_precision_loss)]
+            let card = s.cardinality.min(CATEGORICAL_MAX_CARDINALITY) as f64;
+            #[allow(clippy::cast_precision_loss)]
+            {
+                score += card / CATEGORICAL_MAX_CARDINALITY as f64;
+            }
+            if let Some(dom) = dominant_share_stat(s) {
+                score -= dom.clamp(0.0, 1.0) * 0.75;
+            }
+        },
+        _ => {},
+    }
+    score.max(0.0)
 }
 
 /// If `name` (already lower-cased) is a key/code twin of a sibling — ending in `_code`/`_id`/`_key`
@@ -8395,6 +8632,27 @@ fn timestamp_rank(concept: &str) -> u8 {
         "time.created_at" => 1,
         "time.closed_at" | "time.updated_at" | "time.due_at" => 2,
         _ => 3,
+    }
+}
+
+/// Sortedness tiebreak for the canonical-date choice: a date column the file is physically
+/// ordered by (ascending or descending — e.g. an export ordered newest-first) is more likely
+/// the primary event timestamp than an unsorted one (an edited/backfilled modified_date), so
+/// among equal-concept-rank candidates it wins. Matched case-insensitively: stats currently
+/// emits "Ascending"/"Descending"/"Unsorted" (STATS_DEFINITIONS.md documents the uppercase
+/// forms). Heuristic caveat: stats' `sort_order` is evaluated on the raw values, so a
+/// chronologically-sorted column in a non-lexicographic date format (e.g. `M/D/YYYY`) may read
+/// unsorted — the tiebreak then simply doesn't fire and selection falls back to column order,
+/// exactly as before.
+fn sort_order_rank(s: &crate::cmd::stats::StatsData) -> u8 {
+    match s.sort_order.as_deref() {
+        Some(order)
+            if order.eq_ignore_ascii_case("ascending")
+                || order.eq_ignore_ascii_case("descending") =>
+        {
+            0
+        },
+        _ => 1,
     }
 }
 
@@ -8498,8 +8756,9 @@ fn build_timeseries_panel(
     use qsv_dateparser::parse_with_preference;
 
     // pick the canonical date/datetime column: when a dictionary tagged timestamps, prefer the
-    // event/created one (timestamp_rank); otherwise the first date column (rank ties break on
-    // column order). stats emits "Date"/"DateTime" once dates are inferred.
+    // event/created one (timestamp_rank); among equal ranks prefer a column the file is
+    // physically sorted by (sort_order_rank — likely the primary event time); remaining ties
+    // break on column order. stats emits "Date"/"DateTime" once dates are inferred.
     let Some((date_idx, is_datetime)) = stats
         .iter()
         .enumerate()
@@ -8511,6 +8770,7 @@ fn build_timeseries_panel(
         .min_by_key(|&(i, _)| {
             (
                 timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                sort_order_rank(&stats[i]),
                 i,
             )
         })
@@ -8803,6 +9063,7 @@ fn build_cyclic_panel(
         .min_by_key(|&(i, _)| {
             (
                 timestamp_rank(sems.get(i).map_or("", |s| s.concept.as_str())),
+                sort_order_rank(&stats[i]),
                 i,
             )
         })
@@ -9974,6 +10235,8 @@ fn build_map_panel(
             name: "Map".to_string(),
             subtitle: None,
             kind,
+            value_log: false,
+            interest: f64::INFINITY,
             #[cfg(feature = "geocode")]
             geo_meta,
             geojson_overlay,
@@ -10993,6 +11256,8 @@ fn build_smart(
                         name: p.name,
                         subtitle: p.subtitle,
                         kind,
+                        value_log: p.value_log,
+                        interest: p.interest,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
                         geojson_overlay: p.geojson_overlay,
@@ -11036,6 +11301,9 @@ fn build_smart(
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
     let mut nrows: Option<u64> = None;
+    // resolved here (not at render time) because box panels bake their value-axis log verdict
+    // into the Panel during classification below.
+    let log_scale = parse_log_scale(&args.flag_log_scale)?;
 
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
@@ -11099,19 +11367,39 @@ fn build_smart(
                         };
                     }
                 }
-                // for box panels, append moarstats shape hints (skew direction, outlier share)
-                // to the panel title when those extended stats are present. Cache-only, no cost;
-                // without moarstats the hint is None and the title is unchanged.
+                // for box/histogram panels, append cache-derived shape hints (null/zero share,
+                // skew direction, outlier share, …) to the panel title when notable. Cache-only,
+                // no cost; when nothing is notable the hint is None and the title is unchanged.
                 let name = match &kind {
                     PanelKind::BoxStats { .. }
                     | PanelKind::BoxRaw { .. }
-                    | PanelKind::BoxOutliers { .. } => match box_shape_hint(s) {
+                    | PanelKind::BoxOutliers { .. }
+                    | PanelKind::Histogram { .. } => match box_shape_hint(s) {
                         Some(hint) => format!("{name} {hint}"),
                         None => name,
                     },
                     _ => name,
                 };
-                panels.push(Panel::new(name, kind).with_subtitle(subtitle));
+                // box panels resolve their value-axis log verdict now, while the cached observed
+                // min/max are at hand (frequency bars decide from their counts at render time)
+                let value_log = match &kind {
+                    PanelKind::BoxStats { lower, upper, .. } => {
+                        box_panel_logs(log_scale, *lower, *upper)
+                    },
+                    PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => box_panel_logs(
+                        log_scale,
+                        parse_stat_f64(s.min.as_deref()),
+                        parse_stat_f64(s.max.as_deref()),
+                    ),
+                    _ => false,
+                };
+                let interest = panel_interest(s, &kind);
+                panels.push(
+                    Panel::new(name, kind)
+                        .with_subtitle(subtitle)
+                        .with_value_log(value_log)
+                        .with_interest(interest),
+                );
             },
             None => skipped.push(name),
         }
@@ -11510,9 +11798,32 @@ fn build_smart(
     let max_panels = requested.min(MAX_PANELS_INLINE);
 
     if panels.len() > max_panels {
-        for p in panels.drain(max_panels..) {
-            skipped.push(p.name);
+        // rank by interestingness rather than dropping the rightmost columns: overview panels
+        // (correlation, map, time-series, …) carry infinite interest so they always survive;
+        // per-column panels keep the stats-driven `panel_interest` score computed at
+        // classification time. Survivors are re-emitted in their original display order, so
+        // panel ordering — and everything when nothing overflows — is unchanged; only WHICH
+        // panels survive changes. Ties fall back to document order (also the pre-ranking
+        // behavior when every score ties).
+        let mut order: Vec<usize> = (0..panels.len()).collect();
+        order.sort_by(|&a, &b| {
+            panels[b]
+                .interest
+                .partial_cmp(&panels[a].interest)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| a.cmp(&b))
+        });
+        order.truncate(max_panels);
+        let keep: std::collections::HashSet<usize> = order.into_iter().collect();
+        let mut kept: Vec<Panel> = Vec::with_capacity(max_panels);
+        for (i, p) in panels.drain(..).enumerate() {
+            if keep.contains(&i) {
+                kept.push(p);
+            } else {
+                skipped.push(p.name);
+            }
         }
+        panels = kept;
     }
     if panels.is_empty() {
         return fail_clierror!(
@@ -11569,6 +11880,22 @@ fn build_smart(
         }
     };
 
+    // dominant-category title hint: when one real category holds nearly all the rows, the bar
+    // chart is one tall bar — say so in the title so the panel reads at a glance. Appended here
+    // (not at classification) because it needs the finalized per-bar counts.
+    for p in &mut panels {
+        if let PanelKind::FreqBar { idx } = p.kind
+            && let Some(bars) = freq.get(&idx)
+            && let Some(hint) = dominant_category_hint(bars, || {
+                // exact row count, shared with the box-points heuristic's lazy fetch above and
+                // only computed when a panel's drawn share already clears the threshold
+                *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0))
+            })
+        {
+            p.name = format!("{} {hint}", p.name);
+        }
+    }
+
     // gather raw values for the panels that need them — histogram panels (moarstats-flagged
     // bimodal columns) and opt-in raw box panels (`--box-points`) — in a single batched pass.
     // Taken only when at least one such panel exists.
@@ -11609,7 +11936,6 @@ fn build_smart(
         format!("{dataset} \u{2014} data overview")
     });
 
-    let log_scale = parse_log_scale(&args.flag_log_scale)?;
     // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned `geo`
     // subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't express.
     let has_geo_image = out_format.is_image()
@@ -11657,7 +11983,8 @@ fn build_smart(
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
 /// to add vertical headroom for the outside value labels) and whether that panel's y-axis
-/// should be logarithmic (per `--log-scale`; always `false` for non-bar panels).
+/// should be logarithmic (per `--log-scale`; bar panels decide from their counts, box panels
+/// from the verdict baked in at classification time; `false` for every other panel kind).
 fn panel_trace(
     panel: &Panel,
     color: &'static str,
@@ -11690,6 +12017,8 @@ fn panel_trace(
             upper,
             mean,
         } => {
+            // value-axis log verdict resolved at classification time (see `box_panel_logs`)
+            log_y = panel.value_log;
             let mut b = BoxPlot::new(Vec::<f64>::new())
                 .name(panel.name.clone())
                 .q1(vec![*q1])
@@ -11717,6 +12046,7 @@ fn panel_trace(
         PanelKind::BoxRaw { idx, points } => {
             // opt-in / heuristic raw box: plotly computes the quartiles + true Tukey whiskers from
             // the values and overlays the sample points per this panel's chosen --box-points mode
+            log_y = panel.value_log;
             let values = hist.get(idx).cloned().unwrap_or_default();
             let mut b = BoxPlot::new(values)
                 .name(panel.name.clone())
@@ -11745,6 +12075,7 @@ fn panel_trace(
             // points. The outliers are passed as a 2D `y` (`[[...]]`, via `Y = Vec<f64>`), which
             // makes plotly draw them as points WITHOUT recomputing the box from them — a 1D `y`
             // renders the box but drops the points.
+            log_y = panel.value_log;
             let stats = outliers.get(idx);
             let pts = stats.map(|o| o.outliers.clone()).unwrap_or_default();
             let whisker_low = stats.map_or(*q1, |o| o.whisker_low);
@@ -13290,6 +13621,50 @@ fn freq_bar_pattern_shapes(bars: &[FreqBar], log_y: bool) -> Option<Vec<PatternS
     )
 }
 
+/// Build the "(dominated by X, NN%)" title hint for a frequency bar panel whose single most
+/// frequent REAL category holds at least `DOMINANT_MIN_SHARE` of all rows — the one-tall-bar
+/// case, worth saying in the title so the panel reads at a glance.
+///
+/// The share is EXACT on both sides: the numerator is the top real bar's frequency count, and
+/// the denominator is the dataset's true row count (`row_count`, fetched lazily — see below).
+/// Deliberately NOT derived from the rendered bar total (`--no-nulls`/`--no-other` remove
+/// aggregate bars, shrinking that denominator and inflating an 85%-of-rows category to a false
+/// "100%") nor from the stats cache's `mode`/`uniqueness_ratio` (the mode tracker includes
+/// empty cells, so a NULL-heavy column's mode is the empty bucket; and the cached ratio is
+/// rounded to 4 decimals, which materially undercounts rows on large low-cardinality columns).
+///
+/// `row_count` is a lazy thunk: the drawn bar total is a LOWER bound on the true row count, so
+/// when the top category can't clear the threshold even against the drawn bars it can't clear
+/// it against the (>=) true count either, and the row count is never fetched.
+fn dominant_category_hint(bars: &[FreqBar], row_count: impl FnOnce() -> u64) -> Option<String> {
+    const DOMINANT_MIN_SHARE: f64 = 0.90;
+    let drawn_total: u64 = bars.iter().map(|b| b.count).sum();
+    if drawn_total == 0 {
+        return None;
+    }
+    let top = bars
+        .iter()
+        .filter(|b| b.kind == FreqBarKind::Category)
+        .max_by_key(|b| b.count)?;
+    #[allow(clippy::cast_precision_loss)]
+    if (top.count as f64) < DOMINANT_MIN_SHARE * drawn_total as f64 {
+        return None;
+    }
+    let total = row_count();
+    if total == 0 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let share = top.count as f64 / total as f64;
+    (share >= DOMINANT_MIN_SHARE).then(|| {
+        format!(
+            "(dominated by {}, {:.0}%)",
+            truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
+            share * 100.0
+        )
+    })
+}
+
 /// Turn a column's non-null `(value, count)` pairs into the panel's frequency bars, appending
 /// the aggregate `(NULL)` and `Other (N)` buckets to match `qsv frequency`'s default output.
 /// `counts` is the full set of non-null pairs (already sorted: count desc, then value asc);
@@ -14138,7 +14513,8 @@ fn styled_x_axis(
 /// When `headroom_max` is given (bar panels), the range is fixed so the tallest bar's outside
 /// value label has room and isn't clipped at the cell top: `0..=max*1.15` on a linear axis, or
 /// (when `log`) a log10 range from just under 1 up to `log10(max)` plus a margin. A `log` axis
-/// also carries a `LOG_AXIS_TITLE` ("count (log)") as the visual cue that it's logarithmic.
+/// also carries a title as the visual cue that it's logarithmic: `LOG_AXIS_TITLE` ("count
+/// (log)") for bar panels, `VALUE_LOG_AXIS_TITLE` ("log scale") for box value axes.
 fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinTheme>) -> Axis {
     let mut a = Axis::new()
         .show_grid(true)
@@ -14160,7 +14536,8 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
         (true, Some(m)) if m > 0.0 => {
             a = a.type_(AxisType::Log).range(vec![-0.05, m.log10() + 0.15]);
         },
-        // log axis without a known max (shouldn't happen for bar panels): let plotly autorange.
+        // log axis without a known max: a box panel's value axis (bar panels always pass their
+        // tallest bar). Let plotly autorange the log domain.
         (true, _) => {
             a = a.type_(AxisType::Log);
         },
@@ -14171,13 +14548,20 @@ fn styled_y_axis(headroom_max: Option<f64>, log: bool, theme: Option<BuiltinThem
     }
     if log {
         // the visual cue: only log panels get a y-axis title, so a log scale is never mistaken
-        // for linear. Linear panels stay title-less to keep the cells compact.
+        // for linear. Linear panels stay title-less to keep the cells compact. Bar panels (which
+        // always carry a headroom max) label the axis as a log COUNT; box panels label it as a
+        // log VALUE axis.
         let mut title_font = Font::new().size(11);
         if theme.is_none() {
             // no explicit color: inherit the layout font (ink) so the toggle can flip it.
             title_font = title_font.family(FONT_FAMILY);
         }
-        a = a.title(Title::with_text(LOG_AXIS_TITLE).font(title_font));
+        let cue = if headroom_max.is_some() {
+            LOG_AXIS_TITLE
+        } else {
+            VALUE_LOG_AXIS_TITLE
+        };
+        a = a.title(Title::with_text(cue).font(title_font));
     }
     a
 }
@@ -15893,6 +16277,218 @@ mod tests {
 
         // no moarstats stats at all => no hint
         assert_eq!(box_shape_hint(&stat("Float", 100, Some(0.8))), None);
+    }
+
+    #[test]
+    fn box_shape_hint_derives_skew_from_base_stats() {
+        // no moarstats pearson_skewness: derived from the base cache as 3*(mean-median)/stddev
+        let mut s = stat("Float", 100, Some(0.8));
+        s.mean = Some(100.0);
+        s.q2_median = Some(50.0);
+        s.stddev = Some(100.0); // -> +1.5
+        assert_eq!(box_shape_hint(&s).as_deref(), Some("(right-skewed)"));
+
+        s.mean = Some(50.0);
+        s.q2_median = Some(100.0); // -> -1.5
+        assert_eq!(box_shape_hint(&s).as_deref(), Some("(left-skewed)"));
+
+        // an explicit moarstats value wins over the derived one
+        s.pearson_skewness = Some(2.0);
+        assert_eq!(box_shape_hint(&s).as_deref(), Some("(right-skewed)"));
+
+        // zero spread -> no derived skew, no hint
+        let mut flat = stat("Float", 1, Some(0.01));
+        flat.mean = Some(5.0);
+        flat.q2_median = Some(5.0);
+        flat.stddev = Some(0.0);
+        assert_eq!(box_shape_hint(&flat), None);
+    }
+
+    #[test]
+    fn box_shape_hint_puts_data_quality_first_and_caps_parts() {
+        // nulls + zeros outrank (and, at the 2-part cap, crowd out) the shape parts
+        let mut s = stat("Integer", 500, Some(0.5));
+        s.sparsity = Some(0.40);
+        s.n_negative = Some(0);
+        s.n_zero = Some(50);
+        s.n_positive = Some(50); // zero share 50%
+        s.pearson_skewness = Some(1.2);
+        s.outliers_percentage = Some(4.2);
+        assert_eq!(box_shape_hint(&s).as_deref(), Some("(40% null, 50% zeros)"));
+
+        // below the thresholds neither fires and the shape parts show through
+        s.sparsity = Some(0.05);
+        s.n_zero = Some(10);
+        s.n_positive = Some(90);
+        assert_eq!(
+            box_shape_hint(&s).as_deref(),
+            Some("(right-skewed, 4.2% outliers)")
+        );
+    }
+
+    #[test]
+    fn box_shape_hint_reports_moarstats_extras() {
+        // outliers inflating the mean
+        let mut s = stat("Float", 100, Some(0.8));
+        s.outlier_impact_ratio = Some(0.07);
+        assert_eq!(
+            box_shape_hint(&s).as_deref(),
+            Some("(mean +7% from outliers)")
+        );
+
+        // concentration via Gini
+        let mut g = stat("Float", 100, Some(0.8));
+        g.gini_coefficient = Some(0.87);
+        assert_eq!(box_shape_hint(&g).as_deref(), Some("(Gini 0.87)"));
+
+        // heavy-tails fallback fires only when the outlier scan is absent...
+        let mut h = stat("Float", 100, Some(0.8));
+        h.mad_stddev_ratio = Some(0.3);
+        assert_eq!(box_shape_hint(&h).as_deref(), Some("(heavy tails)"));
+        // ...and stays silent when outliers_percentage is present (even a negligible one)
+        h.outliers_percentage = Some(0.2);
+        assert_eq!(box_shape_hint(&h), None);
+    }
+
+    #[test]
+    fn dominant_category_hint_fires_only_on_real_dominance() {
+        let bar = |label: &str, count: u64, kind: FreqBarKind| FreqBar {
+            x_key: label.to_string(),
+            label: label.to_string(),
+            count,
+            kind,
+        };
+        // one real category holds 95% of the 100 rows
+        let dominated = vec![
+            bar("Yes", 95, FreqBarKind::Category),
+            bar("No", 5, FreqBarKind::Category),
+        ];
+        assert_eq!(
+            dominant_category_hint(&dominated, || 100).as_deref(),
+            Some("(dominated by Yes, 95%)")
+        );
+        // balanced -> no hint, and the drawn-share pre-check means the (potentially costly)
+        // row count is never even fetched
+        let balanced = vec![
+            bar("Yes", 60, FreqBarKind::Category),
+            bar("No", 40, FreqBarKind::Category),
+        ];
+        assert_eq!(
+            dominant_category_hint(&balanced, || unreachable!("pre-check must skip row count")),
+            None
+        );
+        // the denominator is the TRUE row count, so bars filtered by --no-nulls/--no-other
+        // can't inflate the share: 85 of 100 rows (15 nulls suppressed from the bars) is NOT
+        // dominant, even though the surviving bar is 100% of what's drawn
+        let only_bar = vec![bar("active", 85, FreqBarKind::Category)];
+        assert_eq!(dominant_category_hint(&only_bar, || 100), None);
+        // a dominant AGGREGATE bucket (NULL/Other) is not a dominant category: with >90% blank
+        // rows the tallest REAL category (4 of 100) stays far below the threshold, even though
+        // the stats cache's mode for such a column is the empty bucket
+        let null_heavy = vec![
+            bar("(NULL)", 96, FreqBarKind::Aggregate),
+            bar("A", 3, FreqBarKind::Category),
+            bar("B", 1, FreqBarKind::Category),
+        ];
+        assert_eq!(
+            dominant_category_hint(&null_heavy, || unreachable!(
+                "pre-check must skip row count"
+            )),
+            None
+        );
+        // no real category bars, or no bars at all -> no hint
+        let only_aggregates = vec![bar("(NULL)", 100, FreqBarKind::Aggregate)];
+        assert_eq!(dominant_category_hint(&only_aggregates, || 100), None);
+        assert_eq!(dominant_category_hint(&[], || 100), None);
+    }
+
+    #[test]
+    fn box_panel_logs_requires_positive_values_and_range() {
+        // Auto: needs min > 0 and max/min >= LOG_SCALE_MIN_RATIO
+        assert!(box_panel_logs(LogScale::Auto, Some(1.0), Some(100.0)));
+        assert!(!box_panel_logs(LogScale::Auto, Some(1.0), Some(10.0)));
+        assert!(!box_panel_logs(LogScale::Auto, Some(0.0), Some(1000.0))); // zero -> linear
+        assert!(!box_panel_logs(LogScale::Auto, Some(-5.0), Some(1000.0))); // negatives -> linear
+        assert!(!box_panel_logs(LogScale::Auto, None, Some(1000.0)));
+        // On: forces log, but never on a column log can't render
+        assert!(box_panel_logs(LogScale::On, Some(2.0), Some(3.0)));
+        assert!(!box_panel_logs(LogScale::On, Some(0.0), Some(3.0)));
+        // Off: always linear
+        assert!(!box_panel_logs(LogScale::Off, Some(1.0), Some(1e9)));
+    }
+
+    #[test]
+    fn panel_interest_prefers_informative_panels() {
+        let boxkind = PanelKind::BoxStats {
+            q1:     1.0,
+            median: 2.0,
+            q3:     3.0,
+            lower:  Some(0.5),
+            upper:  Some(10.0),
+            mean:   Some(2.5),
+        };
+        // a high-spread measure outranks a near-constant one
+        let mut spread = stat("Float", 1000, Some(0.5));
+        spread.cv = Some(150.0);
+        let mut constant = stat("Float", 1000, Some(0.5));
+        constant.cv = Some(1.0);
+        assert!(panel_interest(&spread, &boxkind) > panel_interest(&constant, &boxkind));
+
+        // a mostly-null column is discounted
+        let mut sparse = spread.clone();
+        sparse.sparsity = Some(0.9);
+        assert!(panel_interest(&spread, &boxkind) > panel_interest(&sparse, &boxkind));
+
+        // a multi-category bar outranks a single-category one dominated by its mode
+        let barkind = PanelKind::FreqBar { idx: 0 };
+        let varied = stat("String", 12, Some(0.01));
+        let mut dominated = stat("String", 2, Some(0.002));
+        dominated.mode_occurrences = Some(950);
+        dominated.uniqueness_ratio = Some(0.002); // 2/0.002 = 1000 rows -> 95% dominance
+        assert!(panel_interest(&varied, &barkind) > panel_interest(&dominated, &barkind));
+
+        // a bimodal histogram is always notable
+        let hist = PanelKind::Histogram { idx: 0 };
+        let plain = stat("Float", 1000, Some(0.5));
+        assert!(panel_interest(&plain, &hist) > panel_interest(&plain, &boxkind));
+    }
+
+    #[test]
+    fn guardrail_bars_zero_padded_measures_whatever_the_dictionary_says() {
+        // stats only emits zero_padded_numeric for String-typed columns (leading zeros force
+        // String inference), so the realistic mistag is an LLM calling a String code column a
+        // measure. An explicit measure.* concept normally wins, but leading zeros are harder
+        // evidence: the guardrail downgrades to a Dimension bar. Without it the column would be
+        // DROPPED (a String column has no quartiles for the measure path).
+        let mut code = stat("String", 200, Some(0.2));
+        code.zero_padded_numeric = Some(true);
+        assert_eq!(
+            derive_semantics(&code, Some(&dict_row("", "measure", "measure.amount", ""))).route,
+            Route::Dimension
+        );
+        // without the flag, the same explicit measure verdict is trusted as-is
+        let plain = stat("Float", 200, Some(0.2));
+        assert_eq!(
+            derive_semantics(&plain, Some(&dict_row("", "measure", "measure.amount", ""))).route,
+            Route::Measure
+        );
+    }
+
+    #[test]
+    fn sort_order_rank_prefers_physically_sorted_columns() {
+        let with_order = |order: Option<&str>| {
+            let mut s = stat("Date", 100, Some(0.5));
+            s.sort_order = order.map(String::from);
+            s
+        };
+        // a column the file is ordered by (either direction) outranks an unsorted/unknown one,
+        // whatever the casing (stats emits "Ascending"; STATS_DEFINITIONS.md says "ASCENDING")
+        assert_eq!(sort_order_rank(&with_order(Some("Ascending"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("ASCENDING"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("Descending"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("DESCENDING"))), 0);
+        assert_eq!(sort_order_rank(&with_order(Some("Unsorted"))), 1);
+        assert_eq!(sort_order_rank(&with_order(None)), 1);
     }
 
     #[test]

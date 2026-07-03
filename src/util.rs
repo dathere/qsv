@@ -2988,6 +2988,11 @@ pub fn write_json_record<W: std::io::Write>(
 ///     mistaken for a lean cache and needlessly regenerated on every run.
 ///   * `--quartiles` populates `q2_median` for numeric columns, so require it only when the dataset
 ///     actually has a numeric column.
+///   * `--zero-padded-numeric` is NOT detectable from the data (the column is empty for every
+///     non-flagged column, so a dataset with no zero-padded codes looks identical with or without
+///     the flag) and is therefore not required here: a pre-existing cache without it is still
+///     reused, and `viz smart` simply falls back to its statistical routing for such columns until
+///     the cache is naturally regenerated.
 fn stats_satisfy_mode(stats: &[StatsData], mode: StatsMode) -> bool {
     if mode != StatsMode::ProfileSchema {
         return true;
@@ -3212,10 +3217,13 @@ pub fn get_stats_records(
                 // mode is StatsMode::ProfileSchema
                 // same as Schema, plus quartiles (q1/median/q3) and mode so
                 // `qsv profile`'s descriptive-statistics projection has the
-                // full extended stat set without a pre-built stats cache.
+                // full extended stat set without a pre-built stats cache, and
+                // zero-padded-numeric detection (a streaming, constant-memory
+                // stat) so `viz smart` can route zip/FIPS/ICD-style code
+                // columns as dimensions instead of measures.
                 format!(
                     "stats\t{input}\t--round\t4\t--cardinality\
-                    \t--quartiles\t--mode\
+                    \t--quartiles\t--mode\t--zero-padded-numeric\
                     \t--infer-dates\t--dates-whitelist\t{dates_whitelist}\
                     \t--stats-jsonl\t--force\t--output\t{tempfile_path}"
                 )

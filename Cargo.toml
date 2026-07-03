@@ -383,6 +383,7 @@ serde_json = { version = "1", features = ["preserve_order"] }
 serde_urlencoded = { version = "0.7", optional = true }
 sha2 = { version = "0.11", optional = true }
 simdutf8 = "0.1"
+spreadsheet-ods = { version = "1", optional = true }
 toml = "1.1"
 toon-format = { version = "0.5", default-features = false }
 sled = { version = "0.34", optional = true }
@@ -496,6 +497,9 @@ plotly = { git = "https://github.com/dathere/plotly", branch = "feat/choropleth-
 #      don't need the forked method; OR
 #   3. qsv pins to a polars rev predating the with_dns_resolver change.
 object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", branch = "feat_with_dns_resolver" }
+
+# use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
+spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
@@ -627,7 +631,7 @@ profile = ["dep:sha2", "polars", "yaml_serde"]
 # opt-in for qsvdp; NOT in qsvlite or qsvmcp.
 geoconnex = ["profile"]
 synthesize = ["dep:fake", "dep:time"]
-to = ["csvs_convert"]
+to = ["csvs_convert", "dep:spreadsheet-ods"]
 # viz: generate charts (bar/line/scatter/histogram/box) and an auto-dashboard
 # (`viz smart`) from CSV data via the plotly crate. Base feature = self-contained
 # interactive HTML output (plotly_embed_js); NO polars dependency. `viz smart`

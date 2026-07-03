@@ -719,14 +719,20 @@ const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 /// such columns keep their box panel under `--violin auto`.
 const VIOLIN_MIN_CARDINALITY: u64 = 20;
 
-/// Target sample size for a violin drawn from a column with more than `SMART_BOX_OUTLIERS_MAX`
-/// non-null values: the values are deterministically strided down to at most this many during
-/// the batched collection pass. A KDE silhouette (and sample quartiles for the inner box) from
-/// ~10k evenly spaced values is visually indistinguishable from one drawn from millions, at a
+/// Target sample size for a violin (single-column or grouped) drawn from a column with more than
+/// `SMART_BOX_OUTLIERS_MAX` non-null values: the values are deterministically strided down to at
+/// most this many during collection. A KDE silhouette (and sample quartiles for the inner box)
+/// from ~10k evenly spaced values is visually indistinguishable from one drawn from millions, at a
 /// bounded (~70KB/panel) embed cost — so violins have NO dataset-size ceiling. Sampled violins
 /// drop their point overlay: a strided sample misses the extremes, so sampled "outliers" would
 /// mislead (boxes keep exact outliers via the separate fence-filtered `BoxOutliers` pass).
-const VIOLIN_SAMPLE_MAX: u64 = SMART_BOX_OUTLIERS_MAX;
+///
+/// Derived as one-fifth of the `MAX_SMART_POINTS` budget (10k at the 50k default), so
+/// `QSV_VIZ_MAX_POINTS` scales the violin sample proportionally with the scatter/map budget. The
+/// box-vs-sample classification threshold (`SMART_BOX_OUTLIERS_MAX`) stays fixed, so the env var
+/// changes point density, not chart-type decisions.
+static VIOLIN_SAMPLE_MAX: std::sync::LazyLock<u64> =
+    std::sync::LazyLock::new(|| ((*MAX_SMART_POINTS as u64) / 5).max(1));
 
 /// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
 /// only when moarstats says its distribution is concentrated rather than near-uniform: a
@@ -743,7 +749,19 @@ const LABEL_MAX_BARS: usize = 40;
 /// case: a 1M-row dataset's map embedded 745K opaque markers — an unreadable blob, a ~25 MB
 /// payload, and a browser that froze on the first pan/zoom. Uniform stride sampling preserves the
 /// overall shape/distribution of the data.
-const MAX_SMART_POINTS: usize = 50_000;
+const DEFAULT_MAX_SMART_POINTS: usize = 50_000;
+
+/// The resolved per-panel point budget, overridable with the `QSV_VIZ_MAX_POINTS` env var (an
+/// advanced knob for denser/leaner output — larger values embed more points at the cost of a
+/// heavier, slower-to-render HTML). A non-numeric or zero value falls back to
+/// `DEFAULT_MAX_SMART_POINTS`. The violin sample budget (`VIOLIN_SAMPLE_MAX`) derives from this.
+static MAX_SMART_POINTS: std::sync::LazyLock<usize> = std::sync::LazyLock::new(|| {
+    std::env::var("QSV_VIZ_MAX_POINTS")
+        .ok()
+        .and_then(|v| v.trim().parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(DEFAULT_MAX_SMART_POINTS)
+});
 
 /// Max geographic outlier points embedded per `viz smart` map panel. Outliers are the whole point
 /// of the call-out, so this is set generously, but still bounds the embedded payload; if there are
@@ -6589,8 +6607,8 @@ fn grouped_violin_panel(
     // Bound the buffer: keep only every stride-th non-null measure value so a large input can't
     // allocate an O(rows) Vec before sampling. Full per-category counts (cheap, O(cardinality))
     // still rank the top-N categories; a global stride samples proportionally across them.
-    let stride = if measure_nonnull > VIOLIN_SAMPLE_MAX {
-        measure_nonnull.div_ceil(VIOLIN_SAMPLE_MAX).max(1)
+    let stride = if measure_nonnull > *VIOLIN_SAMPLE_MAX {
+        measure_nonnull.div_ceil(*VIOLIN_SAMPLE_MAX).max(1)
     } else {
         1
     };
@@ -9216,10 +9234,10 @@ fn build_timeseries_panel(
         points.sort_by_key(|p| p.0);
         // points are chronologically sorted (monotonic x), so LTTB can downsample by triangle area,
         // preserving spikes/peaks a uniform stride would step over.
-        let (xs, ys) = if points.len() > MAX_SMART_POINTS {
+        let (xs, ys) = if points.len() > *MAX_SMART_POINTS {
             let ts: Vec<f64> = points.iter().map(|p| p.0 as f64).collect();
             let yv: Vec<f64> = points.iter().map(|p| p.2).collect();
-            let keep = lttb_indices(&ts, &yv, MAX_SMART_POINTS);
+            let keep = lttb_indices(&ts, &yv, *MAX_SMART_POINTS);
             let xs = keep.iter().map(|&i| points[i].1.clone()).collect();
             let ys = keep.iter().map(|&i| points[i].2).collect();
             (xs, ys)
@@ -10408,7 +10426,7 @@ fn build_map_panel(
         .zip(core_sizes_raw.iter().copied())
         .map(|((lo, line), sz)| (lo, line, sz))
         .collect();
-    let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, MAX_SMART_POINTS);
+    let (lats, core_pl) = downsample_pair(&core_lats, &core_packed, *MAX_SMART_POINTS);
     let lons: Vec<f64> = core_pl.iter().map(|t| t.0).collect();
     let core_lines: Vec<String> = core_pl.iter().map(|t| t.1.clone()).collect();
     // size only when a measure was tagged AND at least one core point has a finite value (else
@@ -11747,7 +11765,7 @@ fn build_smart(
                         // would mislead).
                         #[allow(clippy::cast_possible_truncation)]
                         let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
-                            n_points.div_ceil(VIOLIN_SAMPLE_MAX).max(1) as usize
+                            n_points.div_ceil(*VIOLIN_SAMPLE_MAX).max(1) as usize
                         } else {
                             1
                         };
@@ -11898,7 +11916,7 @@ fn build_smart(
                     let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
                     Panel::new(name, PanelKind::ContourPair { x, y, z })
                 } else {
-                    let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
+                    let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
                     // Encode a third numeric (the axis MOST associated with the pair, so size
                     // shows a real gradient — the complement of the least-redundant axis
                     // `Scatter3D` picks) as marker size: a 3-variable bubble
@@ -11908,7 +11926,7 @@ fn build_smart(
                     let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
                         Some(k) => {
                             let (_, sizes) =
-                                downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
+                                downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
                             (
                                 format!("{name} \u{b7} size: {}", labels[k]),
                                 Some(sizes),
@@ -11948,8 +11966,8 @@ fn build_smart(
                     third.map(|k| {
                         // both downsamples share (n, cap) so they pick the same row indices ->
                         // aligned
-                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], MAX_SMART_POINTS);
-                        let (_, zs) = downsample_pair(&columns[i], &columns[k], MAX_SMART_POINTS);
+                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                        let (_, zs) = downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
                         Panel::new(
                             format!("{} / {} / {} (3D)", labels[i], labels[j], labels[k]),
                             PanelKind::Scatter3D {
@@ -14774,8 +14792,8 @@ fn collect_smart_values(
 
     // downsample full columns so the embedded HTML stays small (outlier columns are already capped)
     for col in full.values_mut() {
-        if col.len() > MAX_SMART_POINTS {
-            let (sampled, _) = downsample_pair(col, col, MAX_SMART_POINTS);
+        if col.len() > *MAX_SMART_POINTS {
+            let (sampled, _) = downsample_pair(col, col, *MAX_SMART_POINTS);
             *col = sampled;
         }
     }

@@ -579,6 +579,47 @@ fn viz_smart_grouped_violin_alternating_categories_above_sample_cap() {
 }
 
 #[test]
+fn viz_smart_grouped_violin_max_points_env_override() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_max_points_env_override");
+    // 60k rows across two categories (30k each). At the default budget the violin sample target is
+    // 10k (MAX_SMART_POINTS/5), so each category is strided down (~5k kept); raising
+    // QSV_VIZ_MAX_POINTS lifts the target above the row count, so all values are kept. The count of
+    // a category label in the violin's x-array reflects how many of its points were embedded.
+    let mut rows = String::from("grp,val\n");
+    for i in 0..60_000_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{grp},{}\n", i % 1000));
+    }
+    wrk.create_from_string("big.csv", &rows);
+
+    let count_east = |env: Option<&str>| -> usize {
+        let out = wrk.path("d.html").to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "big.csv", "-o", &out]);
+        if let Some(v) = env {
+            cmd.env("QSV_VIZ_MAX_POINTS", v);
+        }
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string("d.html")
+            .unwrap()
+            .matches(r#""east""#)
+            .count()
+    };
+
+    // default: strided to ~5k per category; raised budget keeps all 30k
+    let default_east = count_east(None);
+    let raised_east = count_east(Some("1000000"));
+    assert!(
+        default_east < 10_000,
+        "default budget should stride-sample (got {default_east} east points)"
+    );
+    assert!(
+        raised_east > 20_000,
+        "raised QSV_VIZ_MAX_POINTS should embed more points (got {raised_east} east points)"
+    );
+}
+
+#[test]
 fn viz_smart_box_all_points_gated_on_nonnull_count() {
     let wrk = Workdir::new("viz_smart_box_all_points_gated_on_nonnull_count");
     // 2,000 rows but only 800 non-null values (60% null): the all-points tier is measured

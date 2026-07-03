@@ -62,6 +62,7 @@
 | `QSV_GEOIP2_FILENAME` | the filename of the GeoIP2 database to use for the `geocode iplookup*` commands. (default: `GeoLite2-City.mmdb`) |
 | `QSV_GEOCODE_INDEX_FILENAME` | The filename of the Geonames index file to use for the `geocode` command. If not set, the default index file for that qsv version is downloaded and saved to `QSV_CACHE_DIR`. Set this only if you have a custom Geonames index file. |
 | `QSV_MAPBOX_TOKEN` | the Mapbox access token used by the `viz map` command for Mapbox-hosted basemap styles (basic, streets, outdoors, light, dark, satellite, satellite-streets). Can also be set with the `--mapbox-token` option, which takes precedence. Token-free styles (e.g. open-street-map, carto-positron) do not require it. Requires the `viz` feature. |
+| `QSV_VIZ_MAX_POINTS` | the maximum number of data points `viz smart` embeds per panel (map, time-series, correlated-pair scatter, 3D scatter); above this, points are uniformly downsampled. The violin/box sample budget derives from this (one-fifth, so the box-vs-sample classification threshold is unaffected — only point density changes). An advanced knob: larger values embed more points for higher fidelity at the cost of a heavier, slower-to-render HTML; smaller values keep the output leaner. A non-numeric or zero value falls back to the default. (default: 50000). Requires the `viz` feature. |
 
 Several dependencies also have environment variables that influence qsv's performance & behavior:
 

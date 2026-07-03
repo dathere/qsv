@@ -518,6 +518,13 @@ const MAX_PANELS_INLINE: usize = 64;
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 
+/// A discrete integer scale with at most this many distinct levels — a 1..N ordinal rating
+/// (satisfaction 1-5, 1-7 Likert, 1-10 / 0-10 NPS) — is treated as categorical even when a
+/// dictionary tagged it an explicit `measure.*` concept. Much tighter than
+/// `CATEGORICAL_MAX_CARDINALITY` so a genuine continuous measure (which spans far more than a
+/// handful of integer values) is never demoted. 12 comfortably covers 0-10 / 1-10 scales.
+const RATING_MAX_CARDINALITY: u64 = 12;
+
 /// `viz smart` categorical part-to-whole (treemap/sunburst) panel tuning.
 /// Maximum nesting levels (root excluded): with 3+ eligible low-cardinality dimensions a
 /// 3-level hierarchy is built (rendered as a sunburst per best practice for deep paths),
@@ -7406,22 +7413,39 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
 
 /// Defend against describegpt's numeric `role` defaulting to `measure` (see
 /// `describegpt::dictionary::coerce_role_concept`): downgrade a `Measure` verdict to a `Dimension`
-/// (bar) when the column looks like an integer *code* — few distinct values spread over many rows
-/// — rather than a quantity. Only ever touches `Measure`; an explicit `measure.*` concept, a
-/// non-integer, or a (near-)unique column is trusted as-is. Reuses `CATEGORICAL_MAX_CARDINALITY`
-/// so "is it categorical?" means the same here as in `classify`.
+/// (bar) when the column is really a discrete code or ordinal scale — few distinct integer values
+/// spread over many rows — rather than a continuous quantity. Only ever touches an integer
+/// `Measure`; a non-integer or a (near-)unique column is trusted as-is.
+///
+/// Two thresholds, because the trust owed to the signal differs:
+/// - A *role-defaulted* measure (no `measure.*` concept) is only weakly a measure, so any
+///   categorical-cardinality integer code (ward, police_zone, census_tract, ...) is barred, up to
+///   `CATEGORICAL_MAX_CARDINALITY`.
+/// - An *explicit* `measure.*` concept is a considered LLM verdict, so it is trusted for anything
+///   with real spread — EXCEPT a tiny fixed integer scale (`RATING_MAX_CARDINALITY`). The measure
+///   concept vocab has no `rating`/`ordinal` leaf, so a 1-5 satisfaction score lands on
+///   `measure.count`/`measure.amount` and would otherwise box; a box plot of a handful of discrete
+///   levels puts quartiles on category boundaries and turns every value into an "outlier" point, so
+///   a frequency bar of the levels is far more honest. (Tradeoff: a genuine small-range count
+///   tagged `measure.count`, e.g. items-per-order 1-6, is also charted as a bar — which is arguably
+///   an improvement anyway.)
 fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
-    if sem.route != Route::Measure
-        || sem.concept.starts_with("measure.")
-        || s.r#type.as_str() != "Integer"
-    {
+    if sem.route != Route::Measure || s.r#type.as_str() != "Integer" {
         return sem;
     }
     let ratio = s.uniqueness_ratio;
     if ratio.is_some_and(|r| r > 0.95) {
         return sem; // genuinely (near-)continuous, e.g. a monetary integer
     }
-    if s.cardinality <= CATEGORICAL_MAX_CARDINALITY && ratio.is_some_and(|r| r < 0.05) {
+    let spread_over_many = ratio.is_some_and(|r| r < 0.05);
+    let explicit_measure = sem.concept.starts_with("measure.");
+    // role-defaulted numeric measure on a categorical-cardinality integer code -> bar.
+    if !explicit_measure && s.cardinality <= CATEGORICAL_MAX_CARDINALITY && spread_over_many {
+        sem.route = Route::Dimension;
+        return sem;
+    }
+    // a tiny fixed integer scale (ordinal rating) -> bar, even with an explicit measure.* concept.
+    if s.cardinality <= RATING_MAX_CARDINALITY && spread_over_many {
         sem.route = Route::Dimension;
     }
     sem
@@ -15277,9 +15301,31 @@ mod tests {
             derive_semantics(&code, Some(&dict_row("", "measure", "", ""))).route,
             Route::Dimension
         );
-        // an EXPLICIT measure.* concept is trusted even when low-card -> stays Measure
+        // a tiny fixed integer scale (ordinal rating) is barred even with an EXPLICIT measure.*
+        // concept: a 1-5 satisfaction score lands on measure.count/amount but charts far better as
+        // a frequency bar of its levels than as a box plot.
         assert_eq!(
             derive_semantics(&code, Some(&dict_row("", "measure", "measure.count", ""))).route,
+            Route::Dimension
+        );
+        let rating = stat("Integer", 5, Some(0.01));
+        assert_eq!(
+            derive_semantics(
+                &rating,
+                Some(&dict_row("", "measure", "measure.amount", ""))
+            )
+            .route,
+            Route::Dimension
+        );
+        // an EXPLICIT measure.* concept whose cardinality is above RATING_MAX_CARDINALITY but still
+        // categorical (13..=30) is trusted as a genuine measure -> stays Measure. The tighter
+        // rating threshold only bars a handful of discrete levels, unlike the role-defaulted path.
+        assert_eq!(
+            derive_semantics(
+                &stat("Integer", 20, Some(0.001)),
+                Some(&dict_row("", "measure", "measure.count", ""))
+            )
+            .route,
             Route::Measure
         );
         // a float is ~never a code -> stays Measure

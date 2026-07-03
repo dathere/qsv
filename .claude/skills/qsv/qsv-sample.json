@@ -94,7 +94,7 @@
       {
         "flag": "--timeout",
         "type": "string",
-        "description": "Timeout for downloading URLs in seconds. If 0, no timeout is used.",
+        "description": "Inactivity timeout for downloading URLs in seconds. Aborts only if no data is received from the server for this long. If 0, no timeout.",
         "default": "30"
       },
       {

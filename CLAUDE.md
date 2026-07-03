@@ -60,3 +60,15 @@ Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7
 - Prefer `mcp__serena__replace_symbol_body` for whole-symbol replacement; verify the file after edit to catch duplicated tails or lost function bodies.
 - Avoid `sed` with backreferences (`\1`) for multi-line edits — use the Edit tool instead.
 
+## docopt / USAGE Editing Conventions
+
+When editing docopt USAGE strings, never let a wrapped help line begin with a flag (e.g., `--grid-cols-wide`); docopt will parse it as an option definition and break arg parsing for all commands. Verify by running the viz test suite after any USAGE edit.
+
+## Visualization Workflow
+
+After implementing or fixing a viz/dashboard feature, always verify the result visually in-browser and regenerate the gallery before opening a PR.
+
+## Testing / Plotly JSON
+
+When editing plotly JSON in tests, edit programmatically rather than with the Edit tool, since plotly unicode-escapes angle brackets and the Edit tool normalizes the escaped form, causing assertion failures.
+

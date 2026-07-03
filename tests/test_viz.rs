@@ -6984,38 +6984,6 @@ fn viz_smart_no_dominance_hint_on_null_heavy_column() {
 }
 
 #[test]
-fn viz_smart_zero_padded_codes_never_box() {
-    // a Float column of zero-padded decimal codes (ICD-9 style: 007.1) must not be charted as
-    // a box plot — quartiles of code values are meaningless. With 40 distinct codes (above the
-    // categorical cap) and no moarstats entropy signal, the column is skipped as ID-like.
-    let wrk = Workdir::new("viz_smart_zero_padded_codes_never_box");
-    let mut rows = String::from("icd9,status\n");
-    for i in 0..200 {
-        let code_n = i % 40;
-        let status = if i % 3 == 0 { "open" } else { "closed" };
-        rows.push_str(&format!("0{:02}.{},{status}\n", code_n, code_n % 10));
-    }
-    wrk.create_from_string("diagnoses.csv", &rows);
-
-    let out_html = wrk.path("diagnoses.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "diagnoses.csv", "-o", &out_html]);
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("diagnoses.html").unwrap();
-    assert!(
-        !html.contains(r#""type":"box""#),
-        "zero-padded decimal codes must never render as a box plot; html: {html}"
-    );
-    assert!(
-        !html.contains(r#""name":"icd9"#),
-        "the high-cardinality code column should be skipped as ID-like, not charted; html: {html}"
-    );
-    // the companion categorical still charts, so the dashboard itself succeeds
-    assert!(html.contains(r#""name":"status"#));
-}
-
-#[test]
 fn viz_smart_timeseries_prefers_sorted_date_column() {
     // two undated-concept (no dictionary) date columns tie on timestamp_rank; the sort_order
     // tiebreak must pick the column the file is physically ordered by (`created`, ascending)
@@ -7053,47 +7021,60 @@ fn viz_smart_timeseries_prefers_sorted_date_column() {
 }
 
 #[test]
-fn viz_smart_zero_padded_codes_excluded_from_overview_panels() {
-    // regression (roborev 3391): the zero-padded exclusion must cover EVERY continuous-measure
-    // candidate path, not just per-column classification — a flagged code column must not be
-    // picked as the time-series y-axis, join the correlation pool, or serve as a
-    // measure-by-dimension measure.
-    let wrk = Workdir::new("viz_smart_zero_padded_codes_excluded_from_overview_panels");
-    let mut rows = String::from("icd9,visit_date,cost,status\n");
-    for i in 0..200u32 {
+fn viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar() {
+    // regression (roborev 3392): stats emits zero_padded_numeric only for String-typed columns
+    // (leading zeros force String inference), so the reachable hazard is a DICTIONARY mistag —
+    // an LLM calling an ICD-9-style code column a measure. The guardrail must downgrade that
+    // verdict to a dimension: without it the column is dropped outright (a String column has no
+    // quartiles for the measure path); with it, it charts as a frequency bar.
+    let wrk = Workdir::new("viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar");
+    let mut rows = String::from("icd9,status\n");
+    for i in 0..200 {
         let code_n = i % 40;
         let status = if i % 3 == 0 { "open" } else { "closed" };
-        rows.push_str(&format!(
-            "0{:02}.{},2024-01-{:02}T{:02}:00:00Z,{},{status}\n",
-            code_n,
-            code_n % 10,
-            i / 48 + 1,
-            (i / 2) % 24,
-            50.0 + f64::from(i) * 1.73
-        ));
+        rows.push_str(&format!("0{:02}.{},{status}\n", code_n, code_n % 10));
     }
-    wrk.create_from_string("visits.csv", &rows);
+    wrk.create_from_string("diagnoses.csv", &rows);
+    // a dictionary that (wrongly) tags the zero-padded code column as an explicit measure
+    wrk.create_from_string(
+        "diagnoses.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "icd9": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "measure", "concept": "measure.amount" } },
+            "status": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } }
+          }
+        }"#,
+    );
 
-    let out_html = wrk.path("visits.html").to_string_lossy().to_string();
+    let out_html = wrk.path("diagnoses.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "visits.csv", "-o", &out_html]);
+    cmd.args(["smart", "diagnoses.csv", "-o", &out_html, "--dictionary"])
+        .arg(wrk.path("diagnoses.schema.json"));
     wrk.assert_success(&mut cmd);
 
-    let html = wrk.read_to_string("visits.html").unwrap();
-    // the genuine measure trends over the date; the code column appears in NO panel at all
+    let html = wrk.read_to_string("diagnoses.html").unwrap();
     assert!(
-        html.contains("cost over"),
-        "the genuine measure should drive the trend panel; html: {html}"
+        html.contains(r#""name":"icd9"#),
+        "the mistagged code column should be rescued as a frequency bar, not dropped; html: {html}"
     );
     assert!(
-        !html.contains("icd9"),
-        "the zero-padded code column must be excluded from every panel (trend y-axis, correlation \
-         pool, measure-by-dimension); html: {html}"
+        !html.contains(r#""type":"box""#),
+        "the code column must not chart as a measure; html: {html}"
     );
-    // with only ONE genuine numeric column, no correlation panel should be manufactured by
-    // letting the code column into the numeric pool
+
+    // contrast: stats-only routing (no dictionary) skips the same 40-category String column as
+    // ID-like noise — proving the bar above comes from the guardrail downgrade, not classify
+    let out_plain = wrk.path("plain.html").to_string_lossy().to_string();
+    let mut plain = wrk.command("viz");
+    plain.args(["smart", "diagnoses.csv", "-o", &out_plain]);
+    wrk.assert_success(&mut plain);
+    let plain_html = wrk.read_to_string("plain.html").unwrap();
     assert!(
-        !html.contains(r#""name":"correlation"#),
-        "the code column must not pad the correlation pool to 2 numerics; html: {html}"
+        !plain_html.contains(r#""name":"icd9"#),
+        "without a dictionary the high-cardinality code column stays skipped; html: {plain_html}"
     );
 }

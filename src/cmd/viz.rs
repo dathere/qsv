@@ -7489,8 +7489,12 @@ fn route_from_content_type(content_type: &str) -> (Route, Option<Agg>) {
 fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSemantics {
     // a zero-padded numeric code (zip/FIPS/ICD-9, per stats' zero_padded_numeric detection) can
     // never be a measure, whatever the dictionary said: leading zeros only survive in codes,
-    // which is harder evidence than an LLM role/concept tag. Applies to any type (zero-padded
-    // decimal codes like `007.1` infer as Float, padded integer codes as String).
+    // which is harder evidence than an LLM role/concept tag. The flag is only ever emitted for
+    // String-typed columns (`is_zpn` in stats.rs requires `typ == TString` — padded integer
+    // codes AND zero-padded decimal codes like `007.1` both infer as String), so without this
+    // downgrade a dictionary-mistagged code column wouldn't box — it would be DROPPED entirely
+    // (`classify_measure` finds no quartiles on a String column); with it, the column charts as
+    // the frequency bar it deserves.
     if sem.route == Route::Measure && s.zero_padded_numeric == Some(true) {
         sem.route = Route::Dimension;
         return sem;
@@ -7720,7 +7724,6 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
             let low_card = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
             s.bimodality_coefficient.is_none()
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
-                && s.zero_padded_numeric != Some(true) // codes never become boxes/histograms
                 && s.cardinality > 1
                 && !low_card
                 && s.q1.is_some()
@@ -8106,22 +8109,17 @@ fn classify(idx: usize, s: &crate::cmd::stats::StatsData) -> Option<PanelKind> {
         if low_cardinality {
             return Some(PanelKind::FreqBar { idx });
         }
-        // a zero-padded numeric code (zip/FIPS/ICD-9 style, per stats' zero_padded_numeric
-        // detection) is a CODE, never a quantity: quartiles/means of code values are
-        // meaningless, so it must not become a box/histogram. Fall through to the categorical
-        // path below instead — a concentrated code column still makes an informative top-N bar
-        // (per the entropy check), while a near-uniform one is skipped as ID-like noise.
-        if s.zero_padded_numeric != Some(true) {
-            // continuous numeric -> box plot / histogram from precomputed quartiles. Shared
-            // with the dictionary `measure` verdict (see `classify_measure`) so a measure is
-            // charted the same way however it was identified; returns None when the column
-            // lacks quartiles.
-            return classify_measure(idx, s);
-        }
+        // continuous numeric -> box plot / histogram from precomputed quartiles. Shared with the
+        // dictionary `measure` verdict (see `classify_measure`) so a measure is charted the same
+        // way however it was identified; returns None when the column lacks quartiles.
+        // (Zero-padded numeric CODES need no exclusion here: stats only emits
+        // `zero_padded_numeric` for String-typed columns — see `is_zpn` in stats.rs — so a
+        // flagged column never reaches this numeric arm; it takes the categorical path below.
+        // The flag matters in `guardrail`, where it overrides a dictionary measure verdict.)
+        return classify_measure(idx, s);
     }
 
-    // String / Date / DateTime (and zero-padded numeric codes) -> frequency bar when
-    // low-cardinality
+    // String / Date / DateTime -> frequency bar when low-cardinality
     if low_cardinality {
         return Some(PanelKind::FreqBar { idx });
     }
@@ -8788,11 +8786,6 @@ fn build_timeseries_panel(
     let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
     let continuous_numeric = |s: &crate::cmd::stats::StatsData| {
         if !matches!(s.r#type.as_str(), "Integer" | "Float") || s.cardinality <= 1 {
-            return false;
-        }
-        // a zero-padded numeric code (zip/FIPS/ICD-9) is never a measure — trending the
-        // "average code value" over time is meaningless (mirrors `classify`)
-        if s.zero_padded_numeric == Some(true) {
             return false;
         }
         let near_unique = s.uniqueness_ratio.is_some_and(|r| r > 0.95);
@@ -11450,10 +11443,6 @@ fn build_smart(
                 // as before.
                 && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
-                // zero-padded numeric codes are identifiers, not quantities: correlating code
-                // VALUES (and the scatter/contour/3D drill-downs fed from this list) is
-                // meaningless (mirrors `classify`)
-                && s.zero_padded_numeric != Some(true)
                 && s.cardinality > 1
                 && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
         })
@@ -11600,9 +11589,6 @@ fn build_smart(
             !is_map_col(*i)
                 && matches!(route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
-                // a zero-padded numeric code aggregated per category (mean/sum of code
-                // values) is meaningless — never a measure (mirrors `classify`)
-                && s.zero_padded_numeric != Some(true)
                 && s.cardinality > 1
                 && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
         })
@@ -16468,40 +16454,13 @@ mod tests {
     }
 
     #[test]
-    fn classify_routes_zero_padded_codes_as_dimensions() {
-        // a high-cardinality Float column with quartiles: a genuine measure -> box plot ...
-        let mut measure = stat("Float", 40, Some(0.1));
-        measure.q1 = Some(10.0);
-        measure.q2_median = Some(50.0);
-        measure.q3 = Some(90.0);
-        assert!(matches!(
-            classify(0, &measure),
-            Some(PanelKind::BoxStats { .. })
-        ));
-        // ... but the SAME statistics with the zero-padded flag (ICD-9 style decimal codes like
-        // 007.1 infer as Float) must never box: quartiles of code values are meaningless. With
-        // no entropy signal it's skipped as ID-like ...
-        let mut code = measure.clone();
-        code.zero_padded_numeric = Some(true);
-        assert!(classify(0, &code).is_none());
-        // ... and with a concentrated distribution (moarstats normalized_entropy) it becomes an
-        // informative top-N frequency bar, exactly like a high-cardinality text categorical.
-        code.normalized_entropy = Some(0.4);
-        assert!(matches!(
-            classify(0, &code),
-            Some(PanelKind::FreqBar { .. })
-        ));
-        // low-cardinality zero-padded codes were already bars; the flag doesn't change that
-        let mut low = stat("Float", 10, Some(0.01));
-        low.zero_padded_numeric = Some(true);
-        assert!(matches!(classify(0, &low), Some(PanelKind::FreqBar { .. })));
-    }
-
-    #[test]
     fn guardrail_bars_zero_padded_measures_whatever_the_dictionary_says() {
-        // an explicit measure.* concept normally wins, but leading zeros are harder evidence:
-        // a zero-padded code column is downgraded to a Dimension bar even then.
-        let mut code = stat("Float", 200, Some(0.2));
+        // stats only emits zero_padded_numeric for String-typed columns (leading zeros force
+        // String inference), so the realistic mistag is an LLM calling a String code column a
+        // measure. An explicit measure.* concept normally wins, but leading zeros are harder
+        // evidence: the guardrail downgrades to a Dimension bar. Without it the column would be
+        // DROPPED (a String column has no quartiles for the measure path).
+        let mut code = stat("String", 200, Some(0.2));
         code.zero_padded_numeric = Some(true);
         assert_eq!(
             derive_semantics(&code, Some(&dict_row("", "measure", "measure.amount", ""))).route,

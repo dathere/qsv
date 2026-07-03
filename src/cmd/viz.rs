@@ -6551,8 +6551,9 @@ fn measure_by_dim_panel(
 /// per-category values (the measure-by-dim/hierarchy passes only accumulate aggregates/counts).
 ///
 /// Collection is bounded: the pass keeps only every stride-th non-null measure value (the stride
-/// derived from `measure_nonnull` so the retained set is ~`MAX_SMART_POINTS` regardless of input
-/// size), mirroring the single-violin `sample_stride`. Full per-category counts are tracked
+/// derived from `measure_nonnull` so the retained set is ~`VIOLIN_SAMPLE_MAX` regardless of input
+/// size — the same per-violin budget the single-column violin uses). Full per-category counts are
+/// tracked
 /// separately (O(cardinality)) to rank the `top_n` most-populous categories — capping the number
 /// of violins limits readability, but only striding limits the buffered value count, since a
 /// single dominant category can hold most rows. Returns `Ok(None)` when fewer than 2 categories
@@ -6588,8 +6589,8 @@ fn grouped_violin_panel(
     // Bound the buffer: keep only every stride-th non-null measure value so a large input can't
     // allocate an O(rows) Vec before sampling. Full per-category counts (cheap, O(cardinality))
     // still rank the top-N categories; a global stride samples proportionally across them.
-    let stride = if measure_nonnull > MAX_SMART_POINTS as u64 {
-        measure_nonnull.div_ceil(MAX_SMART_POINTS as u64).max(1)
+    let stride = if measure_nonnull > VIOLIN_SAMPLE_MAX {
+        measure_nonnull.div_ceil(VIOLIN_SAMPLE_MAX).max(1)
     } else {
         1
     };
@@ -6614,7 +6615,7 @@ fn grouped_violin_panel(
         // categories alternating by row with stride 2 would sample only one of them — whereas a
         // per-category counter samples every category's 1st, (stride+1)-th, … value independently,
         // so each keeps ~count/stride points and no populous category is starved. The retained
-        // total stays ~MAX_SMART_POINTS (Σ count/stride), plus at most one extra value per
+        // total stays ~VIOLIN_SAMPLE_MAX (Σ count/stride), plus at most one extra value per
         // category.
         let pos = {
             let n = counts.entry(key.clone()).or_insert(0);
@@ -12055,9 +12056,9 @@ fn build_smart(
     {
         let top_n = args.flag_limit.max(1);
         // the measure's non-null count drives the collection stride so the pass never buffers more
-        // than ~MAX_SMART_POINTS values (mirrors the single-violin `sample_stride`, which tiers on
-        // `n - nullcount`). Row count is pulled once from the stats/index cache (shared with the
-        // box-points heuristic's lazy fetch).
+        // than ~VIOLIN_SAMPLE_MAX values (the same per-violin budget as the single-column violin,
+        // which tiers on `n - nullcount`). Row count is pulled once from the stats/index cache
+        // (shared with the box-points heuristic's lazy fetch).
         let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
         let measure_nonnull = n.saturating_sub(stats[m_idx].nullcount);
         match grouped_violin_panel(

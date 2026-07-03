@@ -293,8 +293,8 @@ choropleth options:
                            rdbu, portland, electric, jet, hot, blackbody, earth, picnic,
                            rainbow. [default: viridis]
     --map                  Render on a token-free MapLibre tile basemap (a ChoroplethMap)
-                           instead of the default projection basemap. Requires --geojson
-                           and --feature-id-key. Reuses --style for the basemap.
+                           instead of the default projection basemap. Requires --geojson;
+                           feature-id-key defaults to id. Reuses --style for the basemap.
     --geojson <src>        Custom region polygons as a local file path or an http(s) URL
                            to a GeoJSON FeatureCollection. Required for --map, and for
                            the geojson-id location mode. Also enables point-in-polygon
@@ -3492,10 +3492,8 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
 
     // --map (ChoroplethMap) is MapLibre + GeoJSON-only; the default geo Choropleth has built-in
     // country/state geometries and needs a GeoJSON only for the geojson-id location mode.
-    if args.flag_map && (args.flag_geojson.is_none() || args.flag_feature_id_key.is_none()) {
-        return fail_incorrectusage_clierror!(
-            "--map (ChoroplethMap) requires both --geojson and --feature-id-key."
-        );
+    if args.flag_map && args.flag_geojson.is_none() {
+        return fail_incorrectusage_clierror!("--map (ChoroplethMap) requires --geojson.");
     }
     if matches!(mode, LocationMode::GeoJsonId) && args.flag_geojson.is_none() {
         return fail_incorrectusage_clierror!(
@@ -3556,7 +3554,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
         let (g_lats, g_lons) = geojson_lat_lons(&geojson);
         let trace = ChoroplethMap::new(locations, z)
             .geojson(geojson)
-            .feature_id_key(args.flag_feature_id_key.as_deref().unwrap())
+            .feature_id_key(args.flag_feature_id_key.as_deref().unwrap_or("id"))
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))

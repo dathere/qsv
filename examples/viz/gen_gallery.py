@@ -311,8 +311,7 @@ FIGURES = [
      "are shown on the map only, not re-charted as distributions. Rendered with the built-in "
      "<code>plotly_dark</code> theme.",
      True, ["smart", "seismic_events.csv", "--smarter", "--bivariate", "--theme", "plotly_dark",
-            "--grid-cols", "3", "--geojson", "japan_prefectures.geojson", "--feature-id-key",
-            "properties.id"]),
+            "--grid-cols", "3", "--geojson", "japan_prefectures.geojson"]),
     ("smart dashboard (geographic outliers)",
      "Delivery stops clustered in metro Denver with four "
      "bad-geocode strays. Points far from the cluster centroid (beyond the Tukey far-out fence of "

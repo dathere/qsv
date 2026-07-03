@@ -596,6 +596,9 @@ fn viz_smart_grouped_violin_max_points_env_override() {
         let out = wrk.path("d.html").to_string_lossy().to_string();
         let mut cmd = wrk.command("viz");
         cmd.args(["smart", "big.csv", "-o", &out]);
+        // don't inherit a QSV_VIZ_MAX_POINTS a developer/CI may already have set, so the default
+        // branch actually exercises the default budget
+        cmd.env_remove("QSV_VIZ_MAX_POINTS");
         if let Some(v) = env {
             cmd.env("QSV_VIZ_MAX_POINTS", v);
         }

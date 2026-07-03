@@ -6549,10 +6549,14 @@ fn measure_by_dim_panel(
 /// categorical dimension — the distribution companion to `measure_by_dim_panel`'s aggregate bar,
 /// and to the categorical hierarchy it sits beneath. Does one extra data pass to gather the raw
 /// per-category values (the measure-by-dim/hierarchy passes only accumulate aggregates/counts).
-/// The `top_n` most-populous categories are kept so the panel stays readable; when the collected
-/// point count exceeds `MAX_SMART_POINTS` the values are deterministically stride-sampled (every
-/// stride-th value per category) to bound the embedded HTML. Returns `Ok(None)` when fewer than 2
-/// categories carry values (a single violin conveys no grouping).
+///
+/// Collection is bounded: the pass keeps only every stride-th non-null measure value (the stride
+/// derived from `measure_nonnull` so the retained set is ~`MAX_SMART_POINTS` regardless of input
+/// size), mirroring the single-violin `sample_stride`. Full per-category counts are tracked
+/// separately (O(cardinality)) to rank the `top_n` most-populous categories — capping the number
+/// of violins limits readability, but only striding limits the buffered value count, since a
+/// single dominant category can hold most rows. Returns `Ok(None)` when fewer than 2 categories
+/// carry sampled values (a single violin conveys no grouping).
 fn grouped_violin_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -6560,6 +6564,7 @@ fn grouped_violin_panel(
     measure_indices: &[usize],
     dim_indices: &[usize],
     top_n: usize,
+    measure_nonnull: u64,
     explicit_points: Option<&BoxPoints>,
 ) -> CliResult<Option<Panel>> {
     let Some(&m_idx) = measure_indices.first() else {
@@ -6580,10 +6585,21 @@ fn grouped_violin_panel(
         return Ok(None);
     };
 
-    // one pass: collect the measure's raw values partitioned by the dimension's category
-    let mut by_cat: HashMap<String, Vec<f64>> = HashMap::new();
+    // Bound the buffer: keep only every stride-th non-null measure value so a large input can't
+    // allocate an O(rows) Vec before sampling. Full per-category counts (cheap, O(cardinality))
+    // still rank the top-N categories; a global stride samples proportionally across them.
+    let stride = if measure_nonnull > MAX_SMART_POINTS as u64 {
+        measure_nonnull.div_ceil(MAX_SMART_POINTS as u64).max(1)
+    } else {
+        1
+    };
+    let sampled_flag = stride > 1;
+
+    let mut counts: HashMap<String, u64> = HashMap::new();
+    let mut sampled: HashMap<String, Vec<f64>> = HashMap::new();
     let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
     let mut record = csv::ByteRecord::new();
+    let mut seen: u64 = 0; // non-null measure values seen, for the global stride
     while rdr.read_byte_record(&mut record)? {
         let Some(y) = parse_f64(record.get(m_idx)) else {
             continue;
@@ -6594,35 +6610,39 @@ fn grouped_violin_panel(
         } else {
             raw.trim().to_string()
         };
-        by_cat.entry(key).or_default().push(y);
+        *counts.entry(key.clone()).or_default() += 1;
+        if seen.is_multiple_of(stride) {
+            sampled.entry(key).or_default().push(y);
+        }
+        seen += 1;
     }
 
-    // keep the top-N most-populous categories (descending count, then label for a stable order)
-    let mut cats: Vec<(String, Vec<f64>)> = by_cat.into_iter().collect();
-    cats.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
-    let total_cats = cats.len();
-    cats.truncate(top_n.max(1));
-    if cats.len() < 2 {
-        return Ok(None);
-    }
-    let truncated = total_cats > cats.len();
+    // rank by full count, keep the top-N most-populous categories (descending count, then label
+    // for a stable order), then emit their sampled values as parallel (group, value) arrays.
+    let mut ranked: Vec<(String, u64)> = counts.into_iter().collect();
+    ranked.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    let total_cats = ranked.len();
+    ranked.truncate(top_n.max(1));
 
-    // bound the embedded point count: stride-sample each category's values when the total is
-    // large. step_by always yields index 0, so every kept category retains at least one point.
-    let total: usize = cats.iter().map(|(_, v)| v.len()).sum();
-    let stride = if total > MAX_SMART_POINTS {
-        total.div_ceil(MAX_SMART_POINTS)
-    } else {
-        1
-    };
-    let sampled = stride > 1;
     let mut groups: Vec<String> = Vec::new();
     let mut values: Vec<f64> = Vec::new();
-    for (cat, vals) in &cats {
-        for v in vals.iter().step_by(stride) {
-            groups.push(cat.clone());
-            values.push(*v);
+    let mut kept_cats = 0_usize;
+    for (cat, _) in &ranked {
+        // a top category striped to zero samples (only possible for a tiny category under a large
+        // stride) would draw an empty violin — skip it rather than render a blank slot.
+        match sampled.get(cat) {
+            Some(vals) if !vals.is_empty() => {
+                kept_cats += 1;
+                for &v in vals {
+                    groups.push(cat.clone());
+                    values.push(v);
+                }
+            },
+            _ => {},
         }
+    }
+    if kept_cats < 2 {
+        return Ok(None);
     }
 
     // an explicit --box-points is the user's call; otherwise overlay outliers, but draw NO points
@@ -6630,7 +6650,7 @@ fn grouped_violin_panel(
     // overlay would be misleading — the KDE silhouette still shows the shape).
     let points = match explicit_points {
         Some(p) => p.clone(),
-        None if sampled => BoxPoints::False,
+        None if sampled_flag => BoxPoints::False,
         None => BoxPoints::Outliers,
     };
 
@@ -6646,8 +6666,8 @@ fn grouped_violin_panel(
         }
     };
     let mut title = format!("{} distribution by {}", label(m_idx), label(d_idx));
-    if truncated {
-        title.push_str(&format!(" \u{2014} top {}", cats.len()));
+    if total_cats > kept_cats {
+        title.push_str(&format!(" \u{2014} top {kept_cats}"));
     }
 
     Ok(Some(Panel::new(
@@ -12021,8 +12041,16 @@ fn build_smart(
     // hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin → measure-by-dim:
     // part-to-whole counts, then distribution-by-category, then the aggregate. A plain cartesian
     // Violin::new_xy, so (unlike the hierarchy) it composes with the typed grid and static export.
-    if !measure_indices.is_empty() && !dim_indices.is_empty() {
+    if let Some(&m_idx) = measure_indices.first()
+        && !dim_indices.is_empty()
+    {
         let top_n = args.flag_limit.max(1);
+        // the measure's non-null count drives the collection stride so the pass never buffers more
+        // than ~MAX_SMART_POINTS values (mirrors the single-violin `sample_stride`, which tiers on
+        // `n - nullcount`). Row count is pulled once from the stats/index cache (shared with the
+        // box-points heuristic's lazy fetch).
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        let measure_nonnull = n.saturating_sub(stats[m_idx].nullcount);
         match grouped_violin_panel(
             args,
             &stats,
@@ -12030,6 +12058,7 @@ fn build_smart(
             &measure_indices,
             &dim_indices,
             top_n,
+            measure_nonnull,
             explicit_box_points.as_ref(),
         ) {
             Ok(Some(panel)) => panels.insert(0, panel),

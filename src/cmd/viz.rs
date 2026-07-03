@@ -7437,7 +7437,9 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
     if ratio.is_some_and(|r| r > 0.95) {
         return sem; // genuinely (near-)continuous, e.g. a monetary integer
     }
-    let spread_over_many = ratio.is_some_and(|r| r < 0.05);
+    // `<=` (not `<`) so a rating that lands exactly on the boundary still bars: a 1-5 scale over
+    // 100 rows or a 0-10 scale over 220 rows both give a uniqueness ratio of exactly 0.05.
+    let spread_over_many = ratio.is_some_and(|r| r <= 0.05);
     let explicit_measure = sem.concept.starts_with("measure.");
     // role-defaulted numeric measure on a categorical-cardinality integer code -> bar.
     if !explicit_measure && s.cardinality <= CATEGORICAL_MAX_CARDINALITY && spread_over_many {
@@ -15312,6 +15314,16 @@ mod tests {
         assert_eq!(
             derive_semantics(
                 &rating,
+                Some(&dict_row("", "measure", "measure.amount", ""))
+            )
+            .route,
+            Route::Dimension
+        );
+        // boundary: a 1-5 rating over exactly 100 rows -> uniqueness ratio == 0.05. The `<=`
+        // threshold bars it (a `<` would leave it a box).
+        assert_eq!(
+            derive_semantics(
+                &stat("Integer", 5, Some(0.05)),
                 Some(&dict_row("", "measure", "measure.amount", ""))
             )
             .route,

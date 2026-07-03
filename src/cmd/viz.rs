@@ -25,6 +25,9 @@ Chart types (subcommands):
     scatter3d   3D scatter plot.  --x, --y, --z = three numeric columns.
     histogram   Distribution.     --x = numeric column to bin.
     box         Box plot.         --y = value column, optional --x = group column.
+    violin      Violin plot: a box plot plus a KDE density curve revealing the
+                distribution's shape (modes, shoulders). Same inputs as box
+                (--y = value column, optional --x = group column).
     pie         Proportions.      --x = label column, optional --y = value column.
     heatmap     Color grid. Correlation matrix of numeric columns (default; an
                 optional column subset via --cols), or a category x category pivot
@@ -117,6 +120,9 @@ Examples:
   # Box plot with every sample point overlaid (jittered) instead of just the outliers
   qsv viz box data.csv --y measurement --box-points all -o box.html
 
+  # Violin plot (KDE density curve + inner box) of a value column grouped by a category
+  qsv viz violin data.csv --y measurement --x group -o violin.html
+
   # Pie chart of category proportions (counts), as a donut
   qsv viz pie data.csv --x category --donut -o pie.html
 
@@ -182,6 +188,7 @@ Usage:
     qsv viz scatter3d   [options] <input>
     qsv viz histogram   [options] <input>
     qsv viz box         [options] <input>
+    qsv viz violin      [options] <input>
     qsv viz pie         [options] <input>
     qsv viz heatmap     [options] <input>
     qsv viz contour     [options] <input>
@@ -243,15 +250,23 @@ viz options:
                            suspected (mark suspected outliers), none (no points, but
                            still real Tukey whiskers). For `viz box` the default is
                            outliers. For `viz smart` this flag OVERRIDES the default
-                           size-based heuristic, which overlays all points for small
-                           data (<=1,000 rows) and only the outliers for medium data
-                           (<=10,000 rows). Above that, a column that HAS outliers shows
+                           size-based heuristic, which overlays all points on a column
+                           with few non-null values (<=1,000) — unless the dashboard has
+                           more than 8 panels, where all-points cells turn to noise, so
+                           the overlay drops to outliers-only — and only the outliers
+                           for a medium one (<=10,000 values). Above that, a
+                           column that HAS outliers shows
                            them as points on a precomputed quartile box (a single pass
                            collects only the out-of-fence values, capped); a column with
                            no outliers stays a fast cache-only quartile summary with no
                            data re-scan. An explicit mode is applied to every box panel
                            (one batched pass to read the values), except `none`, which
-                           always keeps the cache-only box.
+                           always keeps the cache-only box. The same modes also pick
+                           the sample points drawn beside a violin, for `viz violin`
+                           and for the violin panels of `viz smart` — though a smart
+                           violin panel skips the size-based `all` upgrade (its KDE
+                           silhouette already shows the distribution) and overlays
+                           only the outliers unless an explicit mode is given.
 
 map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
@@ -440,6 +455,26 @@ smart options:
                            forces a log y-axis on every frequency panel and every
                            all-positive box panel; "off" keeps the linear axes.
                            Only affects `smart`. [default: auto]
+    --violin <mode>        Draw distribution panels as violins (a box plot
+                           wrapped in a KDE density silhouette — a strict
+                           superset of a plain box) instead of boxes.
+                           One of: auto, on, off. "auto" (the default) draws a
+                           violin for every continuous column EXCEPT those on
+                           a log value axis (the KDE is estimated in linear
+                           space, which a log axis would geometrically distort)
+                           and those with fewer than 20 distinct values (too
+                           few for a meaningful KDE) — both keep an honest box;
+                           "on" also violins those; "off" never draws violins.
+                           A column with at most 10,000 non-null values gets an
+                           exact violin (with outlier points, like a raw box);
+                           a larger column draws its silhouette and inner box
+                           from a deterministic sample of at most 10,000 evenly
+                           strided values, carries no point overlay (a sample
+                           misses the true extremes), and is titled "(sampled)".
+                           An explicit mode given via the box-points option
+                           instead collects every value for every panel,
+                           violins included. Only affects `smart`.
+                           [default: auto]
 
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
@@ -483,7 +518,7 @@ use plotly::layout::update_menu::{
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMapbox,
     HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox,
-    ScatterPolar, Sunburst, Trace, Treemap,
+    ScatterPolar, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -499,6 +534,7 @@ use plotly::{
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
+    violin::{MeanLine, ViolinBox, ViolinPoints},
 };
 use serde::Deserialize;
 
@@ -618,15 +654,25 @@ const SMART_CONTOUR_MIN_POINTS: usize = 5_000;
 /// Bin resolution (per axis) for `viz smart`'s correlated-pair density contour panel.
 const SMART_CONTOUR_BINS: usize = 30;
 
-/// `viz smart` row-count thresholds for the default (no explicit `--box-points`) box-overlay
-/// heuristic: at or below ALL, every sample point is overlaid on a box (via `BoxRaw`); at or below
-/// OUTLIERS, only the Tukey outliers (via `BoxRaw`). ABOVE OUTLIERS, embedding the full column is
-/// an unreadable smear and a large payload, so the box stays a precomputed quartile box — but if
-/// the column actually HAS outliers (cached min/max fall outside the Tukey fences), they're
-/// overlaid as native box points via a single fence-filtered pass (`BoxOutliers`); a column with
-/// no outliers stays a pure cache-only `BoxStats` with no pass at all.
+/// `viz smart` point-count thresholds for the default (no explicit `--box-points`) box-overlay
+/// heuristic, measured against each column's NON-NULL value count (only those values are
+/// collected, embedded and rendered — a mostly-null column shouldn't be denied an overlay tier
+/// by rows it doesn't have): at or below ALL, every sample point is overlaid on a box (via
+/// `BoxRaw`); at or below OUTLIERS, only the Tukey outliers (via `BoxRaw`). ABOVE OUTLIERS,
+/// embedding the full column is an unreadable smear and a large payload, so the box stays a
+/// precomputed quartile box — but if the column actually HAS outliers (cached min/max fall
+/// outside the Tukey fences), they're overlaid as native box points via a single fence-filtered
+/// pass (`BoxOutliers`); a column with no outliers stays a pure cache-only `BoxStats` with no
+/// pass at all.
 const SMART_BOX_ALL_MAX: u64 = 1_000;
 const SMART_BOX_OUTLIERS_MAX: u64 = 10_000;
+
+/// Above this many surviving dashboard panels, the size-based all-points box overlay
+/// (`SMART_BOX_ALL_MAX`) is demoted to outliers-only: a thousand jittered points per panel reads
+/// fine at 2-panel size but turns to noise at postage-stamp cell size. Matches `MAX_SUBPLOTS` —
+/// past the typed-grid cap the dashboard switches to the denser inline grid. An explicit
+/// `--box-points` mode is the user's call and is never demoted.
+const SMART_ALL_POINTS_MAX_PANELS: usize = MAX_SUBPLOTS;
 
 /// Max number of outlier points embedded per `BoxOutliers` panel, keeping the HTML bounded for
 /// heavy-tailed columns. When a column has more outliers than this, the rest are dropped (the
@@ -662,6 +708,19 @@ const SMART_CHOROPLETH_MIN_SPAN_DEG: f64 = 8.0;
 /// over-flags flat-but-unimodal data as "bimodal". A small margin (0.60) keeps genuinely two-peaked
 /// columns (BC typically 0.7-1.0) while letting near-uniform columns stay box plots.
 const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
+
+/// A violin's KDE over fewer distinct values than this reads as a lumpy comb, not a shape —
+/// such columns keep their box panel under `--violin auto`.
+const VIOLIN_MIN_CARDINALITY: u64 = 20;
+
+/// Target sample size for a violin drawn from a column with more than `SMART_BOX_OUTLIERS_MAX`
+/// non-null values: the values are deterministically strided down to at most this many during
+/// the batched collection pass. A KDE silhouette (and sample quartiles for the inner box) from
+/// ~10k evenly spaced values is visually indistinguishable from one drawn from millions, at a
+/// bounded (~70KB/panel) embed cost — so violins have NO dataset-size ceiling. Sampled violins
+/// drop their point overlay: a strided sample misses the extremes, so sampled "outliers" would
+/// mislead (boxes keep exact outliers via the separate fence-filtered `BoxOutliers` pass).
+const VIOLIN_SAMPLE_MAX: u64 = SMART_BOX_OUTLIERS_MAX;
 
 /// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
 /// only when moarstats says its distribution is concentrated rather than near-uniform: a
@@ -917,6 +976,7 @@ struct Args {
     cmd_scatter3d:           bool,
     cmd_histogram:           bool,
     cmd_box:                 bool,
+    cmd_violin:              bool,
     cmd_pie:                 bool,
     cmd_heatmap:             bool,
     cmd_contour:             bool,
@@ -984,6 +1044,7 @@ struct Args {
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
     flag_log_scale:          String,
+    flag_violin:             String,
     flag_title:              Option<String>,
     flag_x_title:            Option<String>,
     flag_y_title:            Option<String>,
@@ -1304,6 +1365,11 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
             plot.add_trace(trace);
             (x_label, Some(y_label))
         },
+        Chart::Violin => {
+            let (trace, y_label, x_label) = build_violin(args)?;
+            plot.add_trace(trace);
+            (x_label, Some(y_label))
+        },
         // pie / sankey / radar are not cartesian, so they get no x/y axis titles
         Chart::Pie => {
             plot.add_trace(build_pie(args)?);
@@ -1373,6 +1439,7 @@ enum Chart {
     Scatter3D,
     Histogram,
     Box,
+    Violin,
     Pie,
     Heatmap,
     Contour,
@@ -1400,6 +1467,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Histogram
     } else if args.cmd_box {
         Chart::Box
+    } else if args.cmd_violin {
+        Chart::Violin
     } else if args.cmd_pie {
         Chart::Pie
     } else if args.cmd_heatmap {
@@ -4274,6 +4343,54 @@ fn build_box(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)>
     Ok((trace, y_label, x_label))
 }
 
+/// Build a violin trace: a KDE density silhouette around an inner quartile box and mean
+/// line. Same inputs as `build_box` (--y values, optional --x group); like `viz box`, it
+/// reads the raw values — a violin's KDE cannot be drawn from precomputed quartiles.
+fn build_violin(args: &Args) -> CliResult<(Box<dyn Trace>, String, Option<String>)> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let group_idx = match args.flag_x.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "x")?),
+        None => None,
+    };
+
+    let mut ys: Vec<f64> = Vec::new();
+    let mut groups: Vec<String> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(y) = parse_f64(record.get(y_idx)) else {
+            continue;
+        };
+        ys.push(y);
+        if let Some(i) = group_idx {
+            groups.push(cell_to_string(record.get(i)));
+        }
+    }
+    if ys.is_empty() {
+        return fail_clierror!("No numeric values found in the --y column for the violin plot.");
+    }
+
+    let points = violin_points(&parse_box_points(args.flag_box_points.as_deref())?);
+
+    let y_label = col_label(&headers, y_idx, nh);
+    let x_label = group_idx.map(|i| col_label(&headers, i, nh));
+    let trace: Box<dyn Trace> = if group_idx.is_some() {
+        Violin::new_xy(groups, ys)
+            .quartile_method(QuartileMethod::Linear)
+            .box_plot(ViolinBox::new().visible(true))
+            .mean_line(MeanLine::new().visible(true))
+            .points(points)
+    } else {
+        Violin::new(ys)
+            .name(y_label.clone())
+            .quartile_method(QuartileMethod::Linear)
+            .box_plot(ViolinBox::new().visible(true))
+            .mean_line(MeanLine::new().visible(true))
+            .points(points)
+    };
+    Ok((trace, y_label, x_label))
+}
+
 /// Resolve a required multi-column selector to its column indices (one or more).
 fn resolve_many(
     sel: Option<&SelectColumns>,
@@ -6056,6 +6173,30 @@ fn parse_log_scale(mode: &str) -> CliResult<LogScale> {
     }
 }
 
+/// Resolved `--violin` mode for `viz smart` raw box panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ViolinMode {
+    /// Per-panel: violin only when the cached shape statistics suggest a quartile box
+    /// would hide structure (see `wants_violin`).
+    Auto,
+    /// Draw every raw-value box panel as a violin.
+    On,
+    /// Never draw violins (box panels only).
+    Off,
+}
+
+/// Parse the `--violin` flag (defaults to `auto`).
+fn parse_violin_mode(mode: &str) -> CliResult<ViolinMode> {
+    match mode.to_ascii_lowercase().as_str() {
+        "auto" => Ok(ViolinMode::Auto),
+        "on" | "true" => Ok(ViolinMode::On),
+        "off" | "false" => Ok(ViolinMode::Off),
+        other => {
+            fail_incorrectusage_clierror!("Unknown --violin '{other}'. Use auto, on, or off.")
+        },
+    }
+}
+
 /// Decide whether a frequency bar panel should use a logarithmic y-axis, given its resolved
 /// `--log-scale` mode and the panel's bar counts. `On` always logs (when there are 2+ positive
 /// bars to compare), `Off` never does, and `Auto` logs only when the tallest positive bar is at
@@ -6103,6 +6244,24 @@ fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
     }
 }
 
+/// Whether a `viz smart` distribution panel should render as a violin instead of a box, under
+/// the resolved `--violin` mode. A violin (KDE silhouette + inner quartile box + mean line) is a
+/// strict superset of a box plot, so under `auto` it's the DEFAULT representation whenever it can
+/// be drawn faithfully — with two guards: `value_log` panels keep the box (plotly estimates the
+/// KDE in linear space, so a log value axis geometrically distorts the density silhouette, while
+/// a box's five-number summary survives log scaling honestly), and columns with fewer than
+/// `VIOLIN_MIN_CARDINALITY` distinct values keep the box (their KDE reads as a lumpy comb, not a
+/// shape). `on` is the user's explicit choice and overrides both guards; `off` always boxes.
+/// Confirmed-bimodal columns never reach this — `classify_measure` routes them to a histogram
+/// first.
+fn wants_violin(mode: ViolinMode, s: &crate::cmd::stats::StatsData, value_log: bool) -> bool {
+    match mode {
+        ViolinMode::Off => false,
+        ViolinMode::On => true,
+        ViolinMode::Auto => !value_log && s.cardinality >= VIOLIN_MIN_CARDINALITY,
+    }
+}
+
 /// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
 /// Frequency bars decide from their counts (high dynamic range); box panels carry the verdict
 /// resolved at classification time (`Panel::value_log`, from the cached min/max — see
@@ -6117,9 +6276,10 @@ fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
                 .unwrap_or_default();
             freq_panel_logs(log_scale, &counts)
         },
-        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => {
-            panel.value_log
-        },
+        PanelKind::BoxStats { .. }
+        | PanelKind::BoxRaw { .. }
+        | PanelKind::BoxOutliers { .. }
+        | PanelKind::Violin { .. } => panel.value_log,
         _ => false,
     }
 }
@@ -6143,13 +6303,25 @@ fn parse_box_points(points: Option<&str>) -> CliResult<BoxPoints> {
     }
 }
 
+/// Map a resolved `--box-points` mode onto the violin trace's identical points enum, so
+/// the box and violin paths share one flag and one parser.
+const fn violin_points(points: &BoxPoints) -> ViolinPoints {
+    match points {
+        BoxPoints::All => ViolinPoints::All,
+        BoxPoints::Outliers => ViolinPoints::Outliers,
+        BoxPoints::SuspectedOutliers => ViolinPoints::SuspectedOutliers,
+        BoxPoints::False => ViolinPoints::False,
+    }
+}
+
 /// Resolve the box-overlay mode for a `viz smart` box panel. An explicit user `--box-points` mode
 /// always wins (an explicit `none` means "no overlay" — keep the cheap cache-only quartile box, so
-/// this returns `None`). Without an explicit mode, a size-based heuristic on the dataset row count
-/// picks the mode: all points for small data, just outliers for medium, and none for large data
-/// (returning `None` so no raw-values pass is done and the box stays a cache-only summary).
+/// this returns `None`). Without an explicit mode, a size-based heuristic on the column's
+/// non-null value count (see `SMART_BOX_ALL_MAX`) picks the mode: all points for small data, just
+/// outliers for medium, and none for large data (returning `None` so no raw-values pass is done
+/// and the box stays a cache-only summary).
 /// A `None` return means "don't build a raw box for this column".
-fn smart_box_points(explicit: Option<&BoxPoints>, nrows: u64) -> Option<BoxPoints> {
+fn smart_box_points(explicit: Option<&BoxPoints>, n_points: u64) -> Option<BoxPoints> {
     if let Some(mode) = explicit {
         return if matches!(mode, BoxPoints::False) {
             None
@@ -6157,9 +6329,9 @@ fn smart_box_points(explicit: Option<&BoxPoints>, nrows: u64) -> Option<BoxPoint
             Some(mode.clone())
         };
     }
-    if nrows <= SMART_BOX_ALL_MAX {
+    if n_points <= SMART_BOX_ALL_MAX {
         Some(BoxPoints::All)
-    } else if nrows <= SMART_BOX_OUTLIERS_MAX {
+    } else if n_points <= SMART_BOX_OUTLIERS_MAX {
         Some(BoxPoints::Outliers)
     } else {
         None
@@ -6973,6 +7145,22 @@ enum PanelKind {
         mean:       Option<f64>,
         fence_low:  f64,
         fence_high: f64,
+    },
+    /// Violin (KDE density silhouette + inner quartile box) drawn from the raw column values —
+    /// the DEFAULT representation for a continuous column under `--violin auto` (see
+    /// `wants_violin` for the guards that keep a box instead). Same raw-values contract as
+    /// `BoxRaw`: `idx` keys the batched-pass value map and `points` is this panel's resolved
+    /// `--box-points` overlay mode (converted to `ViolinPoints` at render time) — capped at
+    /// `Outliers` unless the flag was explicit, since the KDE silhouette already shows what the
+    /// size-based `all` point cloud would. A violin has no precomputed-quartile path, so a column
+    /// with more than `SMART_BOX_OUTLIERS_MAX` non-null values is drawn from a deterministic
+    /// sample instead: `sample_stride > 1` makes the collection pass keep every stride-th
+    /// non-null value (at most `VIOLIN_SAMPLE_MAX` of them), and such panels carry NO point
+    /// overlay (`points: False`) since a strided sample misses the true extremes.
+    Violin {
+        idx:           usize,
+        points:        BoxPoints,
+        sample_stride: usize,
     },
     /// Frequency bar chart; `idx` is the source column index.
     FreqBar { idx: usize },
@@ -8542,7 +8730,10 @@ fn panel_interest(s: &crate::cmd::stats::StatsData, kind: &PanelKind) -> f64 {
     match kind {
         // flagged bimodal/multimodal — a shape worth seeing
         PanelKind::Histogram { .. } => score += 1.5,
-        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => {
+        PanelKind::BoxStats { .. }
+        | PanelKind::BoxRaw { .. }
+        | PanelKind::BoxOutliers { .. }
+        | PanelKind::Violin { .. } => {
             if let Some(cv) = s.cv
                 && cv.is_finite()
             {
@@ -11302,6 +11493,7 @@ fn build_smart(
     // resolved here (not at render time) because box panels bake their value-axis log verdict
     // into the Panel during classification below.
     let log_scale = parse_log_scale(&args.flag_log_scale)?;
+    let violin_mode = parse_violin_mode(&args.flag_violin)?;
 
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
@@ -11344,25 +11536,72 @@ fn build_smart(
                 {
                     let n =
                         *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-                    if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n) {
-                        kind = PanelKind::BoxRaw { idx, points };
-                    } else if explicit_box_points.is_none()
-                        && n > SMART_BOX_OUTLIERS_MAX
-                        && let Some((fence_low, fence_high)) = box_fences(s)
-                        && (lower.is_some_and(|lo| lo < fence_low)
-                            || upper.is_some_and(|hi| hi > fence_high))
-                    {
-                        // `lower`/`upper` are the column's observed min/max — outside the Tukey
-                        // fences means real outliers exist, so overlay them.
-                        kind = PanelKind::BoxOutliers {
-                            idx,
-                            q1,
-                            median,
-                            q3,
-                            mean,
-                            fence_low,
-                            fence_high,
+                    // tier on the column's actual point count, not the dataset row count:
+                    // only the non-null values are collected, embedded and rendered, so a
+                    // mostly-null column shouldn't be denied an overlay tier (or the raw
+                    // pass) by rows it doesn't have.
+                    let n_points = n.saturating_sub(s.nullcount);
+                    // the violin verdict needs the panel's value-axis log verdict (a KDE and a
+                    // log axis mix poorly); it is recomputed cheaply below when the panel bakes
+                    // in `value_log`.
+                    let would_log = box_panel_logs(
+                        log_scale,
+                        parse_stat_f64(s.min.as_deref()),
+                        parse_stat_f64(s.max.as_deref()),
+                    );
+                    if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n_points) {
+                        // the raw values will be collected in full — exact violin (the default
+                        // representation; see `wants_violin`) or raw box.
+                        kind = if wants_violin(violin_mode, s, would_log) {
+                            // the KDE silhouette already shows what a full point cloud would,
+                            // so the size-based `all` upgrade (valuable on a box, whose five
+                            // numbers hide the distribution) is redundant clutter on a violin:
+                            // only an explicit --box-points mode overlays more than the
+                            // outliers, which the KDE's smoothed tail can't show individually.
+                            let points = if explicit_box_points.is_some() {
+                                points
+                            } else {
+                                BoxPoints::Outliers
+                            };
+                            PanelKind::Violin {
+                                idx,
+                                points,
+                                sample_stride: 1,
+                            }
+                        } else {
+                            PanelKind::BoxRaw { idx, points }
                         };
+                    } else if explicit_box_points.is_none() && n_points > SMART_BOX_OUTLIERS_MAX {
+                        if wants_violin(violin_mode, s, would_log) {
+                            // too many values to embed exactly, but a violin doesn't need them
+                            // all: draw the KDE + inner box from a deterministic stride sample
+                            // (at most VIOLIN_SAMPLE_MAX values), with no point overlay — a
+                            // strided sample misses the true extremes, so sampled "outliers"
+                            // would mislead.
+                            #[allow(clippy::cast_possible_truncation)]
+                            let sample_stride =
+                                n_points.div_ceil(VIOLIN_SAMPLE_MAX).max(1) as usize;
+                            kind = PanelKind::Violin {
+                                idx,
+                                points: BoxPoints::False,
+                                sample_stride,
+                            };
+                        } else if let Some((fence_low, fence_high)) = box_fences(s)
+                            && (lower.is_some_and(|lo| lo < fence_low)
+                                || upper.is_some_and(|hi| hi > fence_high))
+                        {
+                            // `lower`/`upper` are the column's observed min/max — outside the
+                            // Tukey fences means real outliers exist, so overlay them.
+                            kind = PanelKind::BoxOutliers {
+                                idx,
+                                q1,
+                                median,
+                                q3,
+                                mean,
+                                fence_low,
+                                fence_high,
+                            };
+                        }
                     }
                 }
                 // for box/histogram panels, append cache-derived shape hints (null/zero share,
@@ -11372,11 +11611,19 @@ fn build_smart(
                     PanelKind::BoxStats { .. }
                     | PanelKind::BoxRaw { .. }
                     | PanelKind::BoxOutliers { .. }
+                    | PanelKind::Violin { .. }
                     | PanelKind::Histogram { .. } => match box_shape_hint(s) {
                         Some(hint) => format!("{name} {hint}"),
                         None => name,
                     },
                     _ => name,
+                };
+                // an honesty cue for violins drawn from a stride sample rather than every value
+                let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
+                {
+                    format!("{name} (sampled)")
+                } else {
+                    name
                 };
                 // box panels resolve their value-axis log verdict now, while the cached observed
                 // min/max are at hand (frequency bars decide from their counts at render time)
@@ -11384,7 +11631,9 @@ fn build_smart(
                     PanelKind::BoxStats { lower, upper, .. } => {
                         box_panel_logs(log_scale, *lower, *upper)
                     },
-                    PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. } => box_panel_logs(
+                    PanelKind::BoxRaw { .. }
+                    | PanelKind::BoxOutliers { .. }
+                    | PanelKind::Violin { .. } => box_panel_logs(
                         log_scale,
                         parse_stat_f64(s.min.as_deref()),
                         parse_stat_f64(s.max.as_deref()),
@@ -11838,6 +12087,21 @@ fn build_smart(
         ));
     }
 
+    // a jittered all-points overlay reads fine at 2-panel size but turns to noise at
+    // postage-stamp cell size: in a dense grid (counted AFTER the --max-charts trim, so it
+    // reflects what actually renders), demote the size-based `all` box overlay to
+    // outliers-only. An explicit --box-points mode is the user's call and is never demoted;
+    // violin panels already default to outliers (their KDE shows the distribution).
+    if explicit_box_points.is_none() && panels.len() > SMART_ALL_POINTS_MAX_PANELS {
+        for p in &mut panels {
+            if let PanelKind::BoxRaw { points, .. } = &mut p.kind
+                && matches!(points, BoxPoints::All)
+            {
+                *points = BoxPoints::Outliers;
+            }
+        }
+    }
+
     // gather frequency counts for the bar panels in a single pass
     let bar_indices: Vec<usize> = panels
         .iter()
@@ -11846,6 +12110,7 @@ fn build_smart(
             PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
+            | PanelKind::Violin { .. }
             | PanelKind::CorrHeatmap { .. }
             | PanelKind::AssocHeatmap { .. }
             | PanelKind::TopRelationships { .. }
@@ -11895,12 +12160,24 @@ fn build_smart(
     }
 
     // gather raw values for the panels that need them — histogram panels (moarstats-flagged
-    // bimodal columns) and opt-in raw box panels (`--box-points`) — in a single batched pass.
-    // Taken only when at least one such panel exists.
+    // bimodal columns), raw box panels and violin panels — in a single batched pass. Taken only
+    // when at least one such panel exists. Sampled violins carry a per-column stride so the
+    // pass keeps every stride-th non-null value (bounding both memory and the embedded HTML).
     let raw_indices: Vec<usize> = panels
         .iter()
         .filter_map(|p| match p.kind {
-            PanelKind::Histogram { idx } | PanelKind::BoxRaw { idx, .. } => Some(idx),
+            PanelKind::Histogram { idx }
+            | PanelKind::BoxRaw { idx, .. }
+            | PanelKind::Violin { idx, .. } => Some(idx),
+            _ => None,
+        })
+        .collect();
+    let raw_strides: HashMap<usize, usize> = panels
+        .iter()
+        .filter_map(|p| match p.kind {
+            PanelKind::Violin {
+                idx, sample_stride, ..
+            } if sample_stride > 1 => Some((idx, sample_stride)),
             _ => None,
         })
         .collect();
@@ -11922,7 +12199,7 @@ fn build_smart(
         (HashMap::new(), HashMap::new())
     } else {
         progress.set_message("Preparing panel data…");
-        collect_smart_values(args, &raw_indices, &fence_bounds)?
+        collect_smart_values(args, &raw_indices, &raw_strides, &fence_bounds)?
     };
 
     // dashboard title: the user's --title, else the dataset's file name
@@ -12059,6 +12336,29 @@ fn panel_trace(
                 b = b.x_axis(x.clone()).y_axis(y.clone());
             }
             b
+        },
+        PanelKind::Violin { idx, points, .. } => {
+            // the default distribution panel: plotly estimates the KDE silhouette from the
+            // (possibly stride-sampled) values and draws the quartile box + mean line inside
+            // it, with the sample points overlaid per this panel's resolved --box-points mode
+            // (no overlay at all for sampled violins)
+            log_y = panel.value_log;
+            let values = hist.get(idx).cloned().unwrap_or_default();
+            let mut v = Violin::new(values)
+                .name(panel.name.clone())
+                .quartile_method(QuartileMethod::Linear)
+                .box_plot(ViolinBox::new().visible(true))
+                .mean_line(MeanLine::new().visible(true))
+                .points(violin_points(points))
+                .marker(Marker::new().color(color))
+                .line(Line::new().color(color))
+                // show only the y stats in the hover, not plotly's default "(<trace name>,
+                // ...)" which repeats the (long) column name — it's already the panel title.
+                .hover_info(HoverInfo::Y);
+            if let Some((x, y)) = &axes {
+                v = v.x_axis(x.clone()).y_axis(y.clone());
+            }
+            v
         },
         PanelKind::BoxOutliers {
             idx,
@@ -12400,6 +12700,7 @@ fn smart_grid_parts(
             PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
+            | PanelKind::Violin { .. }
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
@@ -12700,7 +13001,10 @@ fn smart_grid_parts(
 
         let is_box = matches!(
             panel.kind,
-            PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
+            PanelKind::BoxStats { .. }
+                | PanelKind::BoxRaw { .. }
+                | PanelKind::BoxOutliers { .. }
+                | PanelKind::Violin { .. }
         );
         let is_date = matches!(panel.kind, PanelKind::TimeSeries { .. });
         let (trace, bar_max, log_y) = panel_trace(
@@ -13388,7 +13692,10 @@ fn smart_inline_panel_plot(
 
     let is_box = matches!(
         panel.kind,
-        PanelKind::BoxStats { .. } | PanelKind::BoxRaw { .. } | PanelKind::BoxOutliers { .. }
+        PanelKind::BoxStats { .. }
+            | PanelKind::BoxRaw { .. }
+            | PanelKind::BoxOutliers { .. }
+            | PanelKind::Violin { .. }
     );
     let is_corr = matches!(
         panel.kind,
@@ -14167,8 +14474,11 @@ struct OutlierStats {
 }
 
 /// One streaming pass serving both `viz smart` raw-value panels and outlier-box panels:
-/// - `full_indices` (histograms / small raw boxes) collect EVERY numeric value, each downsampled to
-///   at most `MAX_SMART_POINTS` via uniform stride (preserving the distribution shape).
+/// - `full_indices` (histograms / small raw boxes / violins) collect numeric values, each
+///   downsampled to at most `MAX_SMART_POINTS` via uniform stride (preserving the distribution
+///   shape). An entry in `strides` (sampled violins over large columns) keeps only every stride-th
+///   non-null value DURING the scan, bounding memory as well as the embedded HTML — the stride is
+///   precomputed from the column's cached non-null count.
 /// - `fence_bounds` (large boxes that have outliers) collect ONLY the out-of-fence values (capped
 ///   at `SMART_BOX_OUTLIERS_CAP`; never uniform-downsampled, which would drop the extremes) and
 ///   track the in-fence min/max for honest whisker ends.
@@ -14178,6 +14488,7 @@ struct OutlierStats {
 fn collect_smart_values(
     args: &Args,
     full_indices: &[usize],
+    strides: &HashMap<usize, usize>,
     fence_bounds: &HashMap<usize, (f64, f64)>,
 ) -> CliResult<(HashMap<usize, Vec<f64>>, HashMap<usize, OutlierStats>)> {
     let rconfig = Config::new(args.arg_input.as_ref())
@@ -14202,13 +14513,19 @@ fn collect_smart_values(
         })
         .collect();
 
+    let mut seen: HashMap<usize, u64> = full_indices.iter().map(|&i| (i, 0)).collect();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         for &i in full_indices {
             if let Some(v) = parse_f64(record.get(i))
                 && let Some(col) = full.get_mut(&i)
             {
-                col.push(v);
+                let k = strides.get(&i).copied().unwrap_or(1).max(1) as u64;
+                let c = seen.entry(i).or_insert(0);
+                if c.is_multiple_of(k) {
+                    col.push(v);
+                }
+                *c += 1;
             }
         }
         for (&i, &(lo, hi)) in fence_bounds {
@@ -14329,6 +14646,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
+        | PanelKind::Violin { .. }
         | PanelKind::FreqBar { .. }
         | PanelKind::Histogram { .. } => false,
     }
@@ -16136,6 +16454,67 @@ mod tests {
         s.max = Some("4.0".to_string());
         s.bimodality_coefficient = Some(0.40); // unimodal
         assert!(matches!(classify(0, &s), Some(PanelKind::BoxStats { .. })));
+    }
+
+    #[test]
+    fn parse_violin_mode_accepts_auto_on_off() {
+        assert!(matches!(parse_violin_mode("auto"), Ok(ViolinMode::Auto)));
+        assert!(matches!(parse_violin_mode("AUTO"), Ok(ViolinMode::Auto)));
+        assert!(matches!(parse_violin_mode("on"), Ok(ViolinMode::On)));
+        assert!(matches!(parse_violin_mode("true"), Ok(ViolinMode::On)));
+        assert!(matches!(parse_violin_mode("off"), Ok(ViolinMode::Off)));
+        assert!(matches!(parse_violin_mode("false"), Ok(ViolinMode::Off)));
+        assert!(parse_violin_mode("bogus").is_err());
+    }
+
+    #[test]
+    fn wants_violin_auto_defaults_to_violin_with_guards() {
+        // a violin is the DEFAULT representation for a continuous column: any shape, no
+        // bimodality/kurtosis signal required
+        let s = stat("Float", 100, Some(0.9));
+        assert!(wants_violin(ViolinMode::Auto, &s, false));
+
+        // too few distinct values for a meaningful KDE (a lumpy comb) -> box
+        let mut few = stat("Float", 100, Some(0.9));
+        few.cardinality = VIOLIN_MIN_CARDINALITY - 1;
+        assert!(!wants_violin(ViolinMode::Auto, &few, false));
+
+        // a would-log panel keeps its box under auto (the KDE is estimated in linear
+        // space, so a log axis distorts the silhouette); `on` is the user's explicit
+        // choice and still wins
+        assert!(!wants_violin(ViolinMode::Auto, &s, true));
+        assert!(wants_violin(ViolinMode::On, &s, true));
+    }
+
+    #[test]
+    fn wants_violin_on_off_override_guards() {
+        // `on`/`off` ignore the guards entirely
+        let bland = stat("Float", 5, Some(0.9)); // fails the cardinality guard
+        assert!(wants_violin(ViolinMode::On, &bland, false));
+        assert!(!wants_violin(
+            ViolinMode::Off,
+            &stat("Float", 100, Some(0.9)),
+            false
+        ));
+    }
+
+    #[test]
+    fn panel_interest_violin_scores_like_raw_box() {
+        // violins are the default representation, not a special signal — they must rank
+        // exactly like the equivalent raw box so --max-charts overflow is shape-neutral
+        let mut s = stat("Float", 100, Some(0.9));
+        s.cv = Some(85.0);
+        let violin = PanelKind::Violin {
+            idx:           0,
+            points:        BoxPoints::Outliers,
+            sample_stride: 1,
+        };
+        let boxraw = PanelKind::BoxRaw {
+            idx:    0,
+            points: BoxPoints::Outliers,
+        };
+        let (vi, bi) = (panel_interest(&s, &violin), panel_interest(&s, &boxraw));
+        assert!((vi - bi).abs() < f64::EPSILON, "violin {vi} != boxraw {bi}");
     }
 
     #[test]

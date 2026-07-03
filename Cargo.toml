@@ -464,7 +464,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 
 # Our Treemap/Sunburst PR has been merged (https://github.com/plotly/plotly.rs/pull/406)
 # use this patch until the Choropleth PR is merged (https://github.com/plotly/plotly.rs/pull/410)
-plotly = { git = "https://github.com/dathere/plotly", branch = "feat/choropleth-maps-upstream" }
+plotly = { git = "https://github.com/dathere/plotly", branch = "feat/choropleth-violin" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #

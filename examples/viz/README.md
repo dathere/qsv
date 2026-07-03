@@ -250,6 +250,9 @@ qsv viz box sales_sample.csv --y revenue -o box.html
 # box (grouped) — revenue per region; --box-points all overlays every (jittered) point
 qsv viz box sales_sample.csv --y revenue --x region --box-points all -o box_grouped.html
 
+# violin — revenue per region as a KDE density silhouette around an inner quartile box
+qsv viz violin sales_sample.csv --y revenue --x region -o violin.html
+
 # pie (donut) — revenue share by product category
 qsv viz pie sales_sample.csv --x product_category --y revenue --donut -o pie.html
 

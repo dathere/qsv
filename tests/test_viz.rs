@@ -6937,12 +6937,10 @@ fn viz_smart_dominance_share_survives_no_nulls() {
     // rendered bars — with 85% "active" + 15% nulls and --no-nulls suppressing the NULL bar,
     // the surviving bar is 100% of what's drawn but only 85% of the rows: NOT dominant.
     let wrk = Workdir::new("viz_smart_dominance_share_survives_no_nulls");
-    let mut rows = String::from("status\n");
-    for _ in 0..85 {
-        rows.push_str("active\n");
-    }
-    for _ in 0..15 {
-        rows.push('\n');
+    let mut rows = String::from("id,status\n");
+    for i in 0..100 {
+        let status = if i < 85 { "active" } else { "" };
+        rows.push_str(&format!("{i},{status}\n"));
     }
     wrk.create_from_string("statuses.csv", &rows);
 
@@ -6956,5 +6954,31 @@ fn viz_smart_dominance_share_survives_no_nulls() {
         !html.contains("dominated by"),
         "an 85%-of-rows category must not be reported as dominant just because --no-nulls hid the \
          NULL bar; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_no_dominance_hint_on_null_heavy_column() {
+    // regression (roborev 3389): with >90% blank rows the stats cache's mode IS the empty
+    // bucket (mode_occurrences counts empties), so a share derived from mode stats would label
+    // the tallest real category with the null bucket's share. The hint must stay silent: the
+    // tallest REAL category here holds only 4% of the rows.
+    let wrk = Workdir::new("viz_smart_no_dominance_hint_on_null_heavy_column");
+    let mut rows = String::from("id,status\n");
+    for i in 0..100 {
+        let status = if i < 4 { "active" } else { "" };
+        rows.push_str(&format!("{i},{status}\n"));
+    }
+    wrk.create_from_string("nullheavy.csv", &rows);
+
+    let out_html = wrk.path("nullheavy.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "nullheavy.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("nullheavy.html").unwrap();
+    assert!(
+        !html.contains("dominated by"),
+        "a 4%-of-rows category must not inherit the empty bucket's 96% share; html: {html}"
     );
 }

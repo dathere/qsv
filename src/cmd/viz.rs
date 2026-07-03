@@ -8479,9 +8479,16 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     }
 }
 
-/// The most frequent value's share of ALL rows, reconstructed entirely from the stats cache:
+/// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
 /// `mode_occurrences / record_count`, where the record count is recovered as
-/// `cardinality / uniqueness_ratio` (its defining ratio) so no data pass or row count is needed.
+/// `cardinality / uniqueness_ratio` (its defining ratio) so no data pass is needed.
+///
+/// Heuristic-quality only — used solely as a `panel_interest` ranking penalty, never for a
+/// user-facing claim: the mode tracker includes empty cells (a NULL-heavy column's "mode" is
+/// the empty bucket — penalizing that as dominance is fine for ranking, since such a column is
+/// equally uninformative), and the cached `uniqueness_ratio` is rounded, so the reconstructed
+/// count drifts on large low-cardinality columns. The user-facing dominance TITLE hint uses
+/// exact counts instead (see `dominant_category_hint`).
 fn dominant_share_stat(s: &crate::cmd::stats::StatsData) -> Option<f64> {
     let occurrences = s.mode_occurrences?;
     let ur = s.uniqueness_ratio?;
@@ -11839,7 +11846,11 @@ fn build_smart(
     for p in &mut panels {
         if let PanelKind::FreqBar { idx } = p.kind
             && let Some(bars) = freq.get(&idx)
-            && let Some(hint) = dominant_category_hint(&stats[idx], bars)
+            && let Some(hint) = dominant_category_hint(bars, || {
+                // exact row count, shared with the box-points heuristic's lazy fetch above and
+                // only computed when a panel's drawn share already clears the threshold
+                *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0))
+            })
         {
             p.name = format!("{} {hint}", p.name);
         }
@@ -13574,30 +13585,44 @@ fn freq_bar_pattern_shapes(bars: &[FreqBar], log_y: bool) -> Option<Vec<PatternS
 /// frequent REAL category holds at least `DOMINANT_MIN_SHARE` of all rows — the one-tall-bar
 /// case, worth saying in the title so the panel reads at a glance.
 ///
-/// The share comes from the STATS CACHE (`dominant_share_stat`: `mode_occurrences` over the
-/// record count reconstructed from `cardinality / uniqueness_ratio`), NOT from the rendered
-/// bars — `--no-nulls`/`--no-other` remove aggregate bars before this runs, which would
-/// understate the denominator and inflate an 85%-of-rows category to a false "100%". The bars
-/// are used only to label the dominant category (the tallest real bar — necessarily the mode
-/// when it holds >= 90% of rows); aggregate buckets themselves can't be "dominant" (the mode is
-/// computed over non-null values, while the share's denominator counts every row, so a
-/// NULL-heavy column's top category share stays honest and small).
-fn dominant_category_hint(s: &crate::cmd::stats::StatsData, bars: &[FreqBar]) -> Option<String> {
+/// The share is EXACT on both sides: the numerator is the top real bar's frequency count, and
+/// the denominator is the dataset's true row count (`row_count`, fetched lazily — see below).
+/// Deliberately NOT derived from the rendered bar total (`--no-nulls`/`--no-other` remove
+/// aggregate bars, shrinking that denominator and inflating an 85%-of-rows category to a false
+/// "100%") nor from the stats cache's `mode`/`uniqueness_ratio` (the mode tracker includes
+/// empty cells, so a NULL-heavy column's mode is the empty bucket; and the cached ratio is
+/// rounded to 4 decimals, which materially undercounts rows on large low-cardinality columns).
+///
+/// `row_count` is a lazy thunk: the drawn bar total is a LOWER bound on the true row count, so
+/// when the top category can't clear the threshold even against the drawn bars it can't clear
+/// it against the (>=) true count either, and the row count is never fetched.
+fn dominant_category_hint(bars: &[FreqBar], row_count: impl FnOnce() -> u64) -> Option<String> {
     const DOMINANT_MIN_SHARE: f64 = 0.90;
-    // .min(1.0) guards the tiny reconstruction error from the cache's rounded uniqueness_ratio
-    let share = dominant_share_stat(s)?.min(1.0);
-    if share < DOMINANT_MIN_SHARE {
+    let drawn_total: u64 = bars.iter().map(|b| b.count).sum();
+    if drawn_total == 0 {
         return None;
     }
     let top = bars
         .iter()
         .filter(|b| b.kind == FreqBarKind::Category)
         .max_by_key(|b| b.count)?;
-    Some(format!(
-        "(dominated by {}, {:.0}%)",
-        truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
-        share * 100.0
-    ))
+    #[allow(clippy::cast_precision_loss)]
+    if (top.count as f64) < DOMINANT_MIN_SHARE * drawn_total as f64 {
+        return None;
+    }
+    let total = row_count();
+    if total == 0 {
+        return None;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let share = top.count as f64 / total as f64;
+    (share >= DOMINANT_MIN_SHARE).then(|| {
+        format!(
+            "(dominated by {}, {:.0}%)",
+            truncate_label(&top.label, BAR_LABEL_MAX_CHARS),
+            share * 100.0
+        )
+    })
 }
 
 /// Turn a column's non-null `(value, count)` pairs into the panel's frequency bars, appending
@@ -16293,48 +16318,48 @@ mod tests {
             count,
             kind,
         };
-        // stats for a 100-row, 2-category column: cardinality 2, uniqueness_ratio 0.02
-        let col = |mode_occurrences: u64| {
-            let mut s = stat("String", 2, Some(0.02));
-            s.mode_occurrences = Some(mode_occurrences);
-            s
-        };
-        // one real category holds 95% of all rows
+        // one real category holds 95% of the 100 rows
         let dominated = vec![
             bar("Yes", 95, FreqBarKind::Category),
             bar("No", 5, FreqBarKind::Category),
         ];
         assert_eq!(
-            dominant_category_hint(&col(95), &dominated).as_deref(),
+            dominant_category_hint(&dominated, || 100).as_deref(),
             Some("(dominated by Yes, 95%)")
         );
-        // balanced -> no hint
+        // balanced -> no hint, and the drawn-share pre-check means the (potentially costly)
+        // row count is never even fetched
         let balanced = vec![
             bar("Yes", 60, FreqBarKind::Category),
             bar("No", 40, FreqBarKind::Category),
         ];
-        assert_eq!(dominant_category_hint(&col(60), &balanced), None);
-        // the share denominator is the FULL row count from the stats cache, so bars filtered by
-        // --no-nulls/--no-other can't inflate it: 85 of 100 rows (15 nulls suppressed from the
-        // bars) is NOT dominant, even though the surviving bar is 100% of what's drawn
-        let mut null_suppressed = stat("String", 1, Some(0.01)); // 1/0.01 = 100 rows
-        null_suppressed.mode_occurrences = Some(85);
-        let only_bar = vec![bar("active", 85, FreqBarKind::Category)];
-        assert_eq!(dominant_category_hint(&null_suppressed, &only_bar), None);
-        // a dominant AGGREGATE bucket (NULL/Other) is not a dominant category: the mode is
-        // computed over non-null values, so its share of ALL rows stays small
-        let null_heavy = vec![
-            bar("(NULL)", 95, FreqBarKind::Aggregate),
-            bar("A", 3, FreqBarKind::Category),
-            bar("B", 2, FreqBarKind::Category),
-        ];
-        assert_eq!(dominant_category_hint(&col(3), &null_heavy), None);
-        // no stats mode info, or no real category bars -> no hint
         assert_eq!(
-            dominant_category_hint(&stat("String", 2, Some(0.02)), &dominated),
+            dominant_category_hint(&balanced, || unreachable!("pre-check must skip row count")),
             None
         );
-        assert_eq!(dominant_category_hint(&col(95), &[]), None);
+        // the denominator is the TRUE row count, so bars filtered by --no-nulls/--no-other
+        // can't inflate the share: 85 of 100 rows (15 nulls suppressed from the bars) is NOT
+        // dominant, even though the surviving bar is 100% of what's drawn
+        let only_bar = vec![bar("active", 85, FreqBarKind::Category)];
+        assert_eq!(dominant_category_hint(&only_bar, || 100), None);
+        // a dominant AGGREGATE bucket (NULL/Other) is not a dominant category: with >90% blank
+        // rows the tallest REAL category (4 of 100) stays far below the threshold, even though
+        // the stats cache's mode for such a column is the empty bucket
+        let null_heavy = vec![
+            bar("(NULL)", 96, FreqBarKind::Aggregate),
+            bar("A", 3, FreqBarKind::Category),
+            bar("B", 1, FreqBarKind::Category),
+        ];
+        assert_eq!(
+            dominant_category_hint(&null_heavy, || unreachable!(
+                "pre-check must skip row count"
+            )),
+            None
+        );
+        // no real category bars, or no bars at all -> no hint
+        let only_aggregates = vec![bar("(NULL)", 100, FreqBarKind::Aggregate)];
+        assert_eq!(dominant_category_hint(&only_aggregates, || 100), None);
+        assert_eq!(dominant_category_hint(&[], || 100), None);
     }
 
     #[test]

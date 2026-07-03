@@ -361,6 +361,10 @@ FIGURES = [
      False, ["box", "sales_sample.csv", "--y", "revenue"]),
     ("box (grouped)", "Revenue spread per region — real Tukey whiskers + every (jittered) point overlaid (--box-points all).",
      False, ["box", "sales_sample.csv", "--y", "revenue", "--x", "region", "--box-points", "all"]),
+    ("violin", "Revenue distribution per region — a KDE density silhouette around an inner "
+     "quartile box + mean line, revealing shape (modes, shoulders) a box hides. viz smart "
+     "auto-picks this for columns in the bimodality ambiguity band (--violin auto).",
+     False, ["violin", "sales_sample.csv", "--y", "revenue", "--x", "region"]),
     ("pie (donut)", "Revenue share by product category.",
      False, ["pie", "sales_sample.csv", "--x", "product_category", "--y", "revenue", "--donut"]),
     ("heatmap (correlation)", "Pearson correlation matrix over numeric columns.",

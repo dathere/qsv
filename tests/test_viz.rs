@@ -384,6 +384,308 @@ fn viz_box_points_invalid_errors() {
 }
 
 #[test]
+fn viz_violin_basic() {
+    let wrk = Workdir::new("viz_violin_basic");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["violin", "fruits.csv", "--y", "Price"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"violin""#));
+    // a violin reads the raw values (its KDE can't come from precomputed quartiles) and
+    // draws the quartile box + mean line inside the density silhouette by default, with
+    // the same default points overlay as `viz box`
+    assert!(html.contains(r#""quartilemethod":"linear""#));
+    assert!(html.contains(r#""box":{"visible":true}"#));
+    assert!(html.contains(r#""meanline":{"visible":true}"#));
+    assert!(html.contains(r#""points":"outliers""#));
+}
+
+#[test]
+fn viz_violin_grouped() {
+    let wrk = Workdir::new("viz_violin_grouped");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["violin", "fruits.csv", "--y", "Price", "--x", "Fruit"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"violin""#));
+    // grouped: one violin per --x category, so the trace carries a category x array
+    assert!(html.contains(r#""x":["#));
+}
+
+#[test]
+fn viz_violin_points_all() {
+    let wrk = Workdir::new("viz_violin_points_all");
+    fruits(&wrk);
+
+    // violins share the --box-points flag (and modes) with boxes; plotly serializes the
+    // violin overlay as "points" rather than "boxpoints"
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "violin",
+        "fruits.csv",
+        "--y",
+        "Price",
+        "--box-points",
+        "all",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""points":"all""#));
+}
+
+#[test]
+fn viz_violin_no_numeric_errors() {
+    let wrk = Workdir::new("viz_violin_no_numeric_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["violin", "fruits.csv", "--y", "Fruit"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("violin plot"));
+}
+
+/// A continuous numeric column whose two clusters sit in the bimodality ambiguity band:
+/// Sarle's BC at or above the uniform benchmark (5/9) but below the histogram threshold
+/// (0.60), platykurtic, 40 distinct values over 200 rows. Cluster gaps of 5.1-5.8 land in
+/// the band with this shape (verified empirically); 5.5 sits mid-band, with smaller gaps
+/// classifying as a plain box and larger ones as a histogram.
+fn ambiguous_band_column(wrk: &Workdir) {
+    let mut rows = String::from("val\n");
+    for center in [50.0_f64, 55.5] {
+        for i in 0..20 {
+            let v = format!("{:.2}\n", center + f64::from(i) * 0.25);
+            for _ in 0..5 {
+                rows.push_str(&v);
+            }
+        }
+    }
+    wrk.create_from_string("band.csv", &rows);
+}
+
+#[test]
+fn viz_smart_violin_auto_default() {
+    let wrk = Workdir::new("viz_smart_violin_auto_default");
+    ambiguous_band_column(&wrk);
+
+    // default --violin auto: a continuous column renders as a violin (the default
+    // distribution panel), not a box — and this mildly-two-peaked column stays below the
+    // histogram threshold, so not a histogram either
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "band.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(!html.contains(r#""type":"box""#));
+    assert!(!html.contains(r#""type":"histogram""#));
+    // the violin panel carries the same raw-values contract as a raw box: inner quartile
+    // box + mean line inside the KDE silhouette
+    assert!(html.contains(r#""box":{"visible":true}"#));
+    assert!(html.contains(r#""meanline":{"visible":true}"#));
+    // 200 rows would earn a box the size-based `all` upgrade, but the KDE silhouette
+    // already shows the distribution — a smart violin overlays only the outliers
+    assert!(html.contains(r#""points":"outliers""#));
+    assert!(!html.contains(r#""points":"all""#));
+}
+
+#[test]
+fn viz_smart_violin_explicit_all_points() {
+    let wrk = Workdir::new("viz_smart_violin_explicit_all_points");
+    ambiguous_band_column(&wrk);
+
+    // an explicit --box-points mode overrides the violin's outliers-only default
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "band.csv", "--box-points", "all", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(html.contains(r#""points":"all""#));
+}
+
+#[test]
+fn viz_smart_box_all_points_gated_on_nonnull_count() {
+    let wrk = Workdir::new("viz_smart_box_all_points_gated_on_nonnull_count");
+    // 2,000 rows but only 800 non-null values (60% null): the all-points tier is measured
+    // against the column's actual point count — only non-null values are collected and
+    // rendered — so this column still earns the `all` overlay. The value shape is a
+    // triangular sum of two cycles (unimodal, BC well below 5/9) so it stays a box, not a
+    // violin or histogram.
+    let mut rows = String::from("id,measure\n");
+    for i in 1..=2000_u32 {
+        let measure = if i % 5 < 3 {
+            String::new()
+        } else {
+            format!("{}", (i % 20) + ((i * 3) % 23))
+        };
+        rows.push_str(&format!("{i},{measure}\n"));
+    }
+    wrk.create_from_string("sparse.csv", &rows);
+
+    // --violin off pins the BOX overlay tiers (violins cap their overlay at outliers)
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sparse.csv", "--violin", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    assert!(html.contains(r#""boxpoints":"all""#));
+}
+
+#[test]
+fn viz_smart_dense_grid_demotes_all_points_to_outliers() {
+    let wrk = Workdir::new("viz_smart_dense_grid_demotes_all_points_to_outliers");
+    // 10 small continuous columns (200 rows each — well under the all-points tier) whose
+    // dashboard exceeds SMART_ALL_POINTS_MAX_PANELS: the size-based `all` overlay turns to
+    // noise at postage-stamp cell size, so it's demoted to outliers-only. Triangular sums
+    // keep every column unimodal (box, not violin/histogram).
+    let mut rows = String::from("m0,m1,m2,m3,m4,m5,m6,m7,m8,m9\n");
+    for i in 1..=200_u32 {
+        let cells: Vec<String> = (0..10_u32)
+            .map(|j| format!("{}", (i % 20) + ((i * 3) % 23) + j * 100))
+            .collect();
+        rows.push_str(&format!("{}\n", cells.join(",")));
+    }
+    wrk.create_from_string("wide.csv", &rows);
+
+    // --violin off pins the BOX demotion path (violins never carry an `all` overlay
+    // unless --box-points is explicit)
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "wide.csv", "--violin", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    assert!(html.contains(r#""boxpoints":"outliers""#));
+    assert!(!html.contains(r#""boxpoints":"all""#));
+
+    // an explicit --box-points mode is the user's call and is never demoted
+    let out_html2 = wrk.path("dash_all.html").to_string_lossy().to_string();
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args([
+        "smart",
+        "wide.csv",
+        "--violin",
+        "off",
+        "--box-points",
+        "all",
+        "-o",
+        &out_html2,
+    ]);
+    wrk.assert_success(&mut cmd_2);
+    let html2 = wrk.read_to_string("dash_all.html").unwrap();
+    assert!(html2.contains(r#""boxpoints":"all""#));
+}
+
+#[test]
+fn viz_smart_violin_sampled_above_exact_threshold() {
+    let wrk = Workdir::new("viz_smart_violin_sampled_above_exact_threshold");
+    // 12,000 non-null values: past the 10k exact-data threshold, the violin is drawn from
+    // a deterministic stride sample — no point overlay (a sample misses the true extremes)
+    // and a "(sampled)" title cue. Triangular sum keeps it unimodal (violin, not histogram);
+    // the +1000 offset keeps the max/min ratio low so `--log-scale auto` stays linear
+    // (a would-log panel correctly declines the violin).
+    let mut rows = String::from("id,measure\n");
+    for i in 1..=12_000_u32 {
+        rows.push_str(&format!("{i},{}\n", 1000 + (i % 200) + ((i * 3) % 231)));
+    }
+    wrk.create_from_string("big.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "big.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(html.contains("(sampled)"));
+    // sampled violins carry no point overlay ("points":false), never "outliers"/"all"
+    assert!(html.contains(r#""points":false"#));
+    assert!(!html.contains(r#""points":"outliers""#));
+    assert!(!html.contains(r#""type":"box""#));
+}
+
+#[test]
+fn viz_smart_violin_off_keeps_box() {
+    let wrk = Workdir::new("viz_smart_violin_off_keeps_box");
+    ambiguous_band_column(&wrk);
+
+    // --violin off: even an ambiguity-band column stays a box panel
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "band.csv", "--violin", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"box""#));
+    assert!(!html.contains(r#""type":"violin""#));
+}
+
+#[test]
+fn viz_smart_violin_on_forces_violins() {
+    // also pins the docopt coexistence of the `violin` subcommand with the `--violin` flag
+    let wrk = Workdir::new("viz_smart_violin_on_forces_violins");
+    // a bland continuous column (uniform cycle, no bimodality signal) that --violin auto
+    // would keep as a box
+    let mut rows = String::from("id,age\n");
+    for i in 1..=100 {
+        rows.push_str(&format!("{i},{}\n", 20 + i % 50));
+    }
+    wrk.create_from_string("people.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "people.csv", "--violin", "on", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(!html.contains(r#""type":"box""#));
+    // 100 rows would earn a box the size-based `all` upgrade; a violin defaults to
+    // outliers-only (the KDE already shows the shape)
+    assert!(html.contains(r#""points":"outliers""#));
+}
+
+#[test]
+fn viz_smart_violin_box_points_none_still_violin() {
+    let wrk = Workdir::new("viz_smart_violin_box_points_none_still_violin");
+    ambiguous_band_column(&wrk);
+
+    // `--box-points none` only suppresses the point overlay — the violin (which needs the
+    // raw values for its KDE regardless of points) still renders; the cache-only escape
+    // hatch is `--violin off --box-points none`
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "band.csv", "--box-points", "none", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"violin""#));
+    assert!(html.contains(r#""points":false"#));
+    assert!(!html.contains(r#""type":"box""#));
+    // exact data (200 rows), so no sampling cue
+    assert!(!html.contains("(sampled)"));
+}
+
+#[test]
+fn viz_smart_violin_invalid_errors() {
+    let wrk = Workdir::new("viz_smart_violin_invalid_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "fruits.csv", "--violin", "bogus"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("Unknown --violin"));
+}
+
+#[test]
 fn viz_smart_dashboard() {
     let wrk = Workdir::new("viz_smart_dashboard");
     // a mix of: near-unique id (skipped), continuous numeric (box), categorical (bar),
@@ -411,13 +713,13 @@ fn viz_smart_dashboard() {
 
     let html = wrk.read_to_string("dash.html").unwrap();
     // a multi-panel dashboard: explicit row-scaled height, per-cell axis domains, and a
-    // title annotation above each panel, with at least one box (continuous) and one bar
-    // (categorical)
+    // title annotation above each panel, with at least one violin (continuous — the default
+    // distribution panel) and one bar (categorical)
     assert!(html.contains(r#""height":"#));
     assert!(html.contains(r#""annotations":["#));
     assert!(html.contains(r#""xaxis2":{"#));
     assert!(html.contains(r#""domain":["#));
-    assert!(html.contains(r#""type":"box""#));
+    assert!(html.contains(r#""type":"violin""#));
     assert!(html.contains(r#""type":"bar""#));
 }
 
@@ -685,8 +987,8 @@ fn viz_smart_plain_promotes_bimodal_to_histogram() {
         "plain viz smart should detect bimodality and render a histogram; html: {html}"
     );
     assert!(
-        !html.contains(r#""type":"box""#),
-        "the bimodal column should NOT be a box plot; html: {html}"
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
+        "the bimodal column should NOT be a box or violin; html: {html}"
     );
 }
 
@@ -1742,12 +2044,13 @@ fn continuous_box_csv(rows: usize) -> String {
 #[test]
 fn viz_smart_box_points_heuristic_small_overlays_all() {
     // small dataset (<= SMART_BOX_ALL_MAX rows): the size heuristic overlays every sample point on
-    // the box (no explicit --box-points needed).
+    // the box (no explicit --box-points needed). --violin off pins the box path (violins are the
+    // default distribution panel and cap their overlay at outliers).
     let wrk = Workdir::new("viz_smart_box_points_heuristic_small_overlays_all");
     wrk.create_from_string("d.csv", &continuous_box_csv(100));
 
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "d.csv"]);
+    cmd.args(["smart", "d.csv", "--violin", "off"]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
 
@@ -1761,14 +2064,15 @@ fn viz_smart_box_points_heuristic_small_overlays_all() {
 
 #[test]
 fn viz_smart_box_points_heuristic_large_none() {
-    // large dataset (> SMART_BOX_OUTLIERS_MAX rows): the heuristic draws NO points and the box
-    // stays a cache-only quartile summary (no `boxpoints` key on the trace).
+    // large dataset (> SMART_BOX_OUTLIERS_MAX rows) with --violin off: the heuristic draws NO
+    // points and the box stays a cache-only quartile summary (no `boxpoints` key on the trace).
+    // (Under the default --violin auto, such a column becomes a SAMPLED violin instead.)
     let wrk = Workdir::new("viz_smart_box_points_heuristic_large_none");
     wrk.create_from_string("d.csv", &continuous_box_csv(12_000));
 
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    cmd.args(["smart", "d.csv", "--violin", "off", "-o", &out_html]);
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
@@ -1781,13 +2085,14 @@ fn viz_smart_box_points_heuristic_large_none() {
 
 #[test]
 fn viz_smart_box_points_explicit_overrides_heuristic() {
-    // an explicit --box-points wins over the size heuristic: `none` keeps the cache-only box even
-    // though the small dataset would otherwise overlay all points.
+    // an explicit --box-points wins over the size heuristic: `none` (with --violin off, which
+    // pins box panels) keeps the cache-only box even though the small dataset would otherwise
+    // overlay all points.
     let wrk = Workdir::new("viz_smart_box_points_explicit_overrides_heuristic");
     wrk.create_from_string("d.csv", &continuous_box_csv(100));
 
     let mut none_cmd = wrk.command("viz");
-    none_cmd.args(["smart", "d.csv", "--box-points", "none"]);
+    none_cmd.args(["smart", "d.csv", "--violin", "off", "--box-points", "none"]);
     let none_out = wrk.output(&mut none_cmd);
     assert!(none_out.status.success());
     let none_html = String::from_utf8_lossy(&none_out.stdout);
@@ -1795,9 +2100,16 @@ fn viz_smart_box_points_explicit_overrides_heuristic() {
     assert!(!none_html.contains(r#""boxpoints":"#));
 
     // and an explicit `outliers` forces outliers regardless of the small size (which would be
-    // `all`)
+    // `all`); --violin off pins the box trace (a violin serializes the overlay as "points")
     let mut out_cmd = wrk.command("viz");
-    out_cmd.args(["smart", "d.csv", "--box-points", "outliers"]);
+    out_cmd.args([
+        "smart",
+        "d.csv",
+        "--violin",
+        "off",
+        "--box-points",
+        "outliers",
+    ]);
     let out = wrk.output(&mut out_cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -1845,14 +2157,14 @@ fn viz_smart_box_outliers_large() {
 
 #[test]
 fn viz_smart_box_no_outliers_large() {
-    // a > 10k column with NO Tukey outliers (uniform spread) stays a cache-only quartile box:
-    // a box trace, but no native points (no boxpoints key, no 2D y) and so no data pass.
+    // a > 10k column with NO Tukey outliers (uniform spread), --violin off: stays a cache-only
+    // quartile box — a box trace, but no native points (no boxpoints key, no 2D y), no data pass.
     let wrk = Workdir::new("viz_smart_box_no_outliers_large");
     wrk.create_from_string("d.csv", &continuous_box_csv(12_000));
 
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    cmd.args(["smart", "d.csv", "--violin", "off", "-o", &out_html]);
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
@@ -3045,8 +3357,8 @@ fn viz_smart_dictionary_recodes_numeric_to_bar() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        html.contains(r#""type":"box""#),
-        "zone should be a box without a dictionary"
+        html.contains(r#""type":"violin""#),
+        "zone should be a violin (the default distribution panel) without a dictionary"
     );
 
     // WITH a dictionary tagging `zone` as a category: it becomes a frequency bar, no box.
@@ -3064,8 +3376,8 @@ fn viz_smart_dictionary_recodes_numeric_to_bar() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !html.contains(r#""type":"box""#),
-        "zone should be a bar (not a box) with the dictionary"
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
+        "zone should be a bar (not a distribution panel) with the dictionary"
     );
     assert!(html.contains(r#""type":"bar""#));
 }
@@ -3115,8 +3427,8 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        html.contains(r#""type":"box""#),
-        "census_tract should be a box without a dictionary"
+        html.contains(r#""type":"violin""#),
+        "census_tract should be a violin (distribution) without a dictionary"
     );
 
     // WITH a jsonschema dictionary: concept geo.census_tract (a place key) -> bar, label via
@@ -3142,8 +3454,8 @@ fn viz_smart_dictionary_jsonschema_routes_and_labels() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !html.contains(r#""type":"box""#),
-        "census_tract should be a bar (not a box) with the jsonschema dictionary"
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
+        "census_tract should be a bar (not a distribution panel) with the jsonschema dictionary"
     );
     assert!(html.contains(r#""type":"bar""#));
     // the human labels from `title` are surfaced (now as the panel subtitle beneath the field
@@ -3201,8 +3513,9 @@ fn viz_smart_dictionary_infer_reuses_sidecar() {
     let html = String::from_utf8_lossy(&out.stdout);
     // reused sidecar -> census_tract routed as a bar (not a box) with its human label
     assert!(
-        !html.contains(r#""type":"box""#),
-        "census_tract should be a bar (not a box) when the sidecar dictionary is reused"
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
+        "census_tract should be a bar (not a distribution panel) when the sidecar dictionary is \
+         reused"
     );
     assert!(html.contains(r#""type":"bar""#));
     assert!(
@@ -3362,10 +3675,10 @@ fn viz_smart_dictionary_context_ignored_with_file_dict() {
         stderr.contains("--dictionary-context"),
         "expected an ignore warning on stderr; got: {stderr}"
     );
-    // the file dictionary still routes zone -> bar (not a box)
+    // the file dictionary still routes zone -> bar (not a distribution panel)
     let html = wrk.read_to_string("d.html").unwrap();
     assert!(html.contains(r#""type":"bar""#));
-    assert!(!html.contains(r#""type":"box""#));
+    assert!(!html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#));
 }
 
 // Coordinates with non-standard headers (`X Coordinate` / `Y Coordinate`) aren't found by the
@@ -3399,8 +3712,8 @@ fn viz_smart_dictionary_maps_nonstandard_coord_names() {
         "no map should render for non-standard coord names without a dictionary"
     );
     assert!(
-        html.contains(r#""type":"box""#),
-        "without a dictionary the coords are charted as distributions"
+        html.contains(r#""type":"violin""#),
+        "without a dictionary the coords are charted as distributions (violins)"
     );
 
     // WITH a jsonschema dictionary tagging them geo.latitude/geo.longitude: the map renders and the
@@ -3431,7 +3744,9 @@ fn viz_smart_dictionary_maps_nonstandard_coord_names() {
         "map should render from the dictionary geo.latitude/geo.longitude tags; html: {html}"
     );
     assert!(
-        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"histogram""#),
+        !html.contains(r#""type":"box""#)
+            && !html.contains(r#""type":"violin""#)
+            && !html.contains(r#""type":"histogram""#),
         "dictionary-mapped coords must not also be charted as distributions; html: {html}"
     );
 }
@@ -3573,8 +3888,10 @@ fn viz_smart_map_coords_not_charted_as_distributions() {
     );
     // the coordinates must NOT be re-charted as their own distribution panels
     assert!(
-        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"histogram""#),
-        "lat/lon must not be charted as box/histogram distribution panels; html: {html}"
+        !html.contains(r#""type":"box""#)
+            && !html.contains(r#""type":"violin""#)
+            && !html.contains(r#""type":"histogram""#),
+        "lat/lon must not be charted as distribution panels; html: {html}"
     );
 }
 
@@ -3606,7 +3923,7 @@ fn viz_smart_named_coords_without_valid_range_still_charted() {
         "no map should render for out-of-range coords"
     );
     assert!(
-        html.contains(r#""type":"box""#),
+        html.contains(r#""type":"violin""#),
         "out-of-range lat/lon should still be charted as distributions, not hidden; html: {html}"
     );
 }
@@ -7095,7 +7412,7 @@ fn viz_smart_dictionary_measure_on_zero_padded_code_becomes_bar() {
         "the mistagged code column should be rescued as a frequency bar, not dropped; html: {html}"
     );
     assert!(
-        !html.contains(r#""type":"box""#),
+        !html.contains(r#""type":"box""#) && !html.contains(r#""type":"violin""#),
         "the code column must not chart as a measure; html: {html}"
     );
 

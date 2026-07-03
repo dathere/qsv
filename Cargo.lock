@@ -2200,9 +2200,9 @@ checksum = "ac6b926516df9c60bfa16e107b21086399f8285a44ca9711344b9e553c5146e2"
 
 [[package]]
 name = "defmt"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6e524506490a1953d237cb87b1cfc1e46f88c18f10a22dfe0f507dc6bfc7f7f"
+checksum = "e2953bfe4f93bbd20cc71198842756f77d161884c99ebbabc41d80231ded88d1"
 dependencies = [
  "bitflags 1.3.2",
  "defmt-macros",
@@ -2210,12 +2210,11 @@ dependencies = [
 
 [[package]]
 name = "defmt-macros"
-version = "1.1.0"
+version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0a27770e9c8f719a79d8b638281f4d828f77d8fd61e0bd94451b9b85e576a0b"
+checksum = "bad9c72e7ca2137e0dc3813245a0d282fd6daad32fd800af018306a9169b5fe8"
 dependencies = [
  "defmt-parser",
- "proc-macro-error2",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -5830,7 +5829,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-violin#c63304461e4e7622480750855699ef42ab1fac9d"
 dependencies = [
  "askama",
  "async-trait",
@@ -5853,7 +5852,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-violin#c63304461e4e7622480750855699ef42ab1fac9d"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5864,7 +5863,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-maps-upstream#14bc447aee51ea870020b1b1a8addd6218d5bf9f"
+source = "git+https://github.com/dathere/plotly?branch=feat%2Fchoropleth-violin#c63304461e4e7622480750855699ef42ab1fac9d"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -6634,28 +6633,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e67ba7e9b2b56446f1d419b1d807906278ffa1a658a8a5d8a39dcb1f5a78614f"
 dependencies = [
  "toml_edit",
-]
-
-[[package]]
-name = "proc-macro-error-attr2"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "96de42df36bb9bba5542fe9f1a054b8cc87e172759a1868aa05c1f3acc89dfc5"
-dependencies = [
- "proc-macro2",
- "quote",
-]
-
-[[package]]
-name = "proc-macro-error2"
-version = "2.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11ec05c52be0a07b08061f7dd003e7d7092e0472bc731b4af7bb1ef876109802"
-dependencies = [
- "proc-macro-error-attr2",
- "proc-macro2",
- "quote",
- "syn 2.0.118",
 ]
 
 [[package]]

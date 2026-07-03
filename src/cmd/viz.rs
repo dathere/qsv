@@ -8790,6 +8790,11 @@ fn build_timeseries_panel(
         if !matches!(s.r#type.as_str(), "Integer" | "Float") || s.cardinality <= 1 {
             return false;
         }
+        // a zero-padded numeric code (zip/FIPS/ICD-9) is never a measure — trending the
+        // "average code value" over time is meaningless (mirrors `classify`)
+        if s.zero_padded_numeric == Some(true) {
+            return false;
+        }
         let near_unique = s.uniqueness_ratio.is_some_and(|r| r > 0.95);
         let low_cardinality = s.cardinality <= CATEGORICAL_MAX_CARDINALITY && !near_unique;
         !low_cardinality
@@ -11445,6 +11450,10 @@ fn build_smart(
                 // as before.
                 && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
+                // zero-padded numeric codes are identifiers, not quantities: correlating code
+                // VALUES (and the scatter/contour/3D drill-downs fed from this list) is
+                // meaningless (mirrors `classify`)
+                && s.zero_padded_numeric != Some(true)
                 && s.cardinality > 1
                 && !s.uniqueness_ratio.is_some_and(|r| r > 0.95)
         })
@@ -11591,6 +11600,9 @@ fn build_smart(
             !is_map_col(*i)
                 && matches!(route, Route::Defer | Route::Measure)
                 && matches!(s.r#type.as_str(), "Integer" | "Float")
+                // a zero-padded numeric code aggregated per category (mean/sum of code
+                // values) is meaningless — never a measure (mirrors `classify`)
+                && s.zero_padded_numeric != Some(true)
                 && s.cardinality > 1
                 && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
         })

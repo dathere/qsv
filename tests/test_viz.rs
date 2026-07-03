@@ -7051,3 +7051,49 @@ fn viz_smart_timeseries_prefers_sorted_date_column() {
         "the unsorted leftmost date column should lose the tiebreak; html: {html}"
     );
 }
+
+#[test]
+fn viz_smart_zero_padded_codes_excluded_from_overview_panels() {
+    // regression (roborev 3391): the zero-padded exclusion must cover EVERY continuous-measure
+    // candidate path, not just per-column classification — a flagged code column must not be
+    // picked as the time-series y-axis, join the correlation pool, or serve as a
+    // measure-by-dimension measure.
+    let wrk = Workdir::new("viz_smart_zero_padded_codes_excluded_from_overview_panels");
+    let mut rows = String::from("icd9,visit_date,cost,status\n");
+    for i in 0..200u32 {
+        let code_n = i % 40;
+        let status = if i % 3 == 0 { "open" } else { "closed" };
+        rows.push_str(&format!(
+            "0{:02}.{},2024-01-{:02}T{:02}:00:00Z,{},{status}\n",
+            code_n,
+            code_n % 10,
+            i / 48 + 1,
+            (i / 2) % 24,
+            50.0 + f64::from(i) * 1.73
+        ));
+    }
+    wrk.create_from_string("visits.csv", &rows);
+
+    let out_html = wrk.path("visits.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "visits.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("visits.html").unwrap();
+    // the genuine measure trends over the date; the code column appears in NO panel at all
+    assert!(
+        html.contains("cost over"),
+        "the genuine measure should drive the trend panel; html: {html}"
+    );
+    assert!(
+        !html.contains("icd9"),
+        "the zero-padded code column must be excluded from every panel (trend y-axis, correlation \
+         pool, measure-by-dimension); html: {html}"
+    );
+    // with only ONE genuine numeric column, no correlation panel should be manufactured by
+    // letting the code column into the numeric pool
+    assert!(
+        !html.contains(r#""name":"correlation"#),
+        "the code column must not pad the correlation pool to 2 numerics; html: {html}"
+    );
+}

@@ -5989,7 +5989,15 @@ fn smart_html_page(
                 .to_string(),
             format!(
                 "<script type=\"text/html\" id=\"qsv-dict-src\">{page}</script>\n{}",
-                DICT_SCRIPT_TEMPLATE.replace("__QSVDICTKEY__", &dict_short_hash(title_text))
+                // key on title AND dictionary content: two dashboards can share a title (e.g.
+                // same file basename in different directories), and qsvOpenDict skips
+                // rewriting an existing dict tab — a title-only key would then show the
+                // FIRST dashboard's dictionary for both. Hashing the page in keeps the tab
+                // per-dictionary while a same-content reload still reuses it.
+                DICT_SCRIPT_TEMPLATE.replace(
+                    "__QSVDICTKEY__",
+                    &dict_short_hash(&format!("{title_text}\n{page}"))
+                )
             ),
         ),
         None => (String::new(), String::new()),

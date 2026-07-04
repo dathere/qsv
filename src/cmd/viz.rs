@@ -1167,7 +1167,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
     // any plotting work. Only the choropleth & smart subcommands consume --geojson.
     if args.flag_geojson.is_some() && (args.cmd_choropleth || args.cmd_smart) {
-        resolve_and_validate_geojson(&mut args)?;
+        // Detect whether --feature-id-key was explicitly passed (docopt fills its `id` default, so
+        // the parsed value alone can't tell an explicit `--feature-id-key id` from the default).
+        // Scan argv so an explicit key — including `--feature-id-key id` — always wins over a
+        // shortcut's id.
+        let feature_id_key_explicit = argv
+            .iter()
+            .any(|a| *a == "--feature-id-key" || a.starts_with("--feature-id-key="));
+        resolve_and_validate_geojson(&mut args, feature_id_key_explicit)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -2800,9 +2807,9 @@ fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
 
 /// Resolve a shortcut name and validate the GeoJSON up front (fail-fast, before any plotting).
 /// Rewrites `args.flag_geojson` to the concrete path/URL and, when the value resolved via a
-/// shortcut that carries an `id`, adopts it as the feature-id-key unless the user set a
-/// non-default one.
-fn resolve_and_validate_geojson(args: &mut Args) -> CliResult<()> {
+/// shortcut that carries an `id`, adopts it as the feature-id-key unless the user explicitly
+/// passed `--feature-id-key` (see `feature_id_key_explicit`).
+fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) -> CliResult<()> {
     let Some(spec) = args.flag_geojson.clone() else {
         return Ok(());
     };
@@ -2817,12 +2824,10 @@ fn resolve_and_validate_geojson(args: &mut Args) -> CliResult<()> {
         lookup_geojson_shortcut(&spec)?
     };
 
-    // A shortcut's id fills in for the bare default only; an explicit --feature-id-key wins.
+    // A shortcut's id fills in only when the user didn't explicitly pass --feature-id-key; an
+    // explicit flag (including `--feature-id-key id`) always wins.
     if let Some(id) = shortcut_id
-        && args
-            .flag_feature_id_key
-            .as_deref()
-            .is_none_or(|k| k == "id")
+        && !feature_id_key_explicit
     {
         args.flag_feature_id_key = Some(id);
     }

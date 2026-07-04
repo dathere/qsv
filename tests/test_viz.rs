@@ -5910,6 +5910,39 @@ fn viz_choropleth_geojson_shortcut_explicit_key_wins() {
     assert!(html.contains(r#""featureidkey":"properties.id""#));
 }
 
+// an explicit `--feature-id-key id` (matching the docopt default) still wins over the shortcut's
+// id — argv is scanned so the explicit flag is distinguished from the default.
+#[test]
+fn viz_choropleth_geojson_shortcut_explicit_default_key_wins() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_explicit_default_key_wins");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("regions.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions",
+        "--feature-id-key",
+        "id",
+    ])
+    .env(
+        "QSV_GEOJSON_SHORTCUTS",
+        r#"{"regions":{"path":"regions.geojson","id":"properties.id"}}"#,
+    );
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the explicit "id" wins over the shortcut's "properties.id"
+    assert!(html.contains(r#""featureidkey":"id""#));
+}
+
 // an unknown shortcut name errors and lists the available shortcut keys.
 #[test]
 fn viz_choropleth_geojson_shortcut_unknown_errors() {

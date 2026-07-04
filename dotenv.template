@@ -286,6 +286,17 @@ QSV_TIMEOUT = 30
 # Requires the `viz` feature.
 # QSV_MAPBOX_TOKEN = pk.your_mapbox_access_token
 
+# convenience shortcuts for commonly used GeoJSON files, resolved by the `--geojson` option of
+# the `viz choropleth` (including `--map`) and `viz smart` commands. Each entry maps a shortcut
+# name to a "path" (local file or http(s) URL) and an "id" (the --feature-id-key to use).
+# The value is a JSON object; wrap it in single quotes so dotenv parses the whole (multi-line)
+# value literally — its inner double quotes stay intact.
+QSV_GEOJSON_SHORTCUTS = '{
+  "us-counties": { "path": "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json", "id": "properties.NAME" },
+  "nyc-neighborhoods": { "path": "https://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/Neighborhood_Names/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=pgeojson", "id": "properties.Name" },
+  "pittsburgh-neighborhoods": { "path": "https://data.wprdc.org/dataset/e672f13d-71c4-4a66-8f38-710e75ed80a4/resource/4af8e160-57e9-4ebf-a501-76ca1b42fc99/download/neighborhoods.geojson", "id": "properties.hood" }
+  }'
+
 # ==============================================================================
 # MCP SERVER ENVIRONMENT VARIABLES
 # ==============================================================================

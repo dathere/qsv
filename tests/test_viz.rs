@@ -5814,6 +5814,216 @@ fn viz_choropleth_map_default_feature_id_key() {
     assert!(html.contains(r#""featureidkey":"id""#));
 }
 
+// shared GeoJSON fixture body for the shortcut/validation tests below: two id-keyed polygons that
+// also carry a `properties.id` label.
+const SHORTCUT_GEOJSON: &str = r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"A","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}},{"type":"Feature","id":"B","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[1,0],[1,1],[2,1],[2,0],[1,0]]]}}]}"#;
+
+// a --geojson that points at a nonexistent file (and no QSV_GEOJSON_SHORTCUTS defined) fails fast
+// with a clear message instead of erroring lazily deep inside a plot builder.
+#[test]
+fn viz_choropleth_geojson_missing_file_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_missing_file_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "nope.geojson",
+    ])
+    .env_remove("QSV_GEOJSON_SHORTCUTS");
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("no QSV_GEOJSON_SHORTCUTS are defined"));
+}
+
+// a --geojson value that names a QSV_GEOJSON_SHORTCUTS entry resolves to the entry's path, and the
+// entry's `id` fills in --feature-id-key when the user doesn't pass one.
+#[test]
+fn viz_choropleth_geojson_shortcut_resolves() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_resolves");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("regions.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions",
+    ])
+    .env(
+        "QSV_GEOJSON_SHORTCUTS",
+        r#"{"regions":{"path":"regions.geojson","id":"properties.id"}}"#,
+    );
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"choroplethmap""#));
+    // the shortcut's id became the feature-id-key
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+    assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
+}
+
+// an explicitly-passed --feature-id-key wins over the shortcut's id.
+#[test]
+fn viz_choropleth_geojson_shortcut_explicit_key_wins() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_explicit_key_wins");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("regions.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions",
+        "--feature-id-key",
+        "properties.id",
+    ])
+    .env(
+        "QSV_GEOJSON_SHORTCUTS",
+        r#"{"regions":{"path":"regions.geojson","id":"id"}}"#,
+    );
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the explicit properties.id wins over the shortcut's "id"
+    assert!(html.contains(r#""featureidkey":"properties.id""#));
+}
+
+// an explicit `--feature-id-key id` (matching the docopt default) still wins over the shortcut's
+// id — argv is scanned so the explicit flag is distinguished from the default.
+#[test]
+fn viz_choropleth_geojson_shortcut_explicit_default_key_wins() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_explicit_default_key_wins");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("regions.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions",
+        "--feature-id-key",
+        "id",
+    ])
+    .env(
+        "QSV_GEOJSON_SHORTCUTS",
+        r#"{"regions":{"path":"regions.geojson","id":"properties.id"}}"#,
+    );
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the explicit "id" wins over the shortcut's "properties.id"
+    assert!(html.contains(r#""featureidkey":"id""#));
+}
+
+// an unknown shortcut name errors and lists the available shortcut keys.
+#[test]
+fn viz_choropleth_geojson_shortcut_unknown_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_unknown_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "counties",
+    ])
+    .env(
+        "QSV_GEOJSON_SHORTCUTS",
+        r#"{"regions":{"path":"regions.geojson"},"wards":{"path":"wards.geojson"}}"#,
+    );
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("Unknown --geojson shortcut 'counties'"));
+    assert!(stderr.contains("regions, wards"));
+}
+
+// a malformed QSV_GEOJSON_SHORTCUTS value (when consulted) errors clearly.
+#[test]
+fn viz_choropleth_geojson_shortcut_malformed_json_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_shortcut_malformed_json_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions",
+    ])
+    .env("QSV_GEOJSON_SHORTCUTS", r#"{"regions": not json}"#);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("QSV_GEOJSON_SHORTCUTS is not valid JSON"));
+}
+
+// a --feature-id-key that resolves on no feature fails up front with a helpful message.
+#[test]
+fn viz_choropleth_geojson_bad_feature_id_key_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_bad_feature_id_key_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    wrk.create_from_string("regions.geojson", SHORTCUT_GEOJSON);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.nonesuch",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("resolves on no feature"));
+}
+
 // the geojson-extent framing must read coordinates ONLY from geometry, never from numeric arrays in
 // feature `properties` — otherwise a stray property array would drag the map center off the data.
 #[test]

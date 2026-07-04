@@ -2629,6 +2629,13 @@ fn get_prompt(
     ))
 }
 
+/// An empty or whitespace-only completion is a failed inference, not a valid result.
+/// Pure fn so it can be unit-tested without a live LLM.
+#[inline]
+fn is_blank_completion(content: &str) -> bool {
+    content.trim().is_empty()
+}
+
 fn get_completion(
     args: &Args,
     client: &Client,
@@ -2675,6 +2682,19 @@ fn get_completion(
             e
         }
     })?;
+
+    // An empty/whitespace-only body is a failed inference: some OpenAI-compatible
+    // endpoints return HTTP 200 with empty content. Reject BEFORE attribution rewriting
+    // so the cache wrappers (which call get_completion via `?`) never persist it.
+    // Plain CliError::Other (not fail_clierror!) so a Fix-1-tolerated phase doesn't emit
+    // an ERROR log line on top of its wwarn!; fatal cases still surface once via the
+    // top-level handler.
+    if is_blank_completion(&llm_response.content) {
+        return Err(CliError::Other(format!(
+            "The LLM ({model}) returned an empty response. This is treated as a failed inference \
+             and is not cached. Retry, or try a different model or prompt."
+        )));
+    }
 
     let token_usage = TokenUsage {
         prompt:     llm_response.prompt_tokens,
@@ -5408,6 +5428,7 @@ fn run_inference_options(
     let mut total_json_output: serde_json::Value = json!({});
     let mut data_dict = CompletionResponse::default();
     let mut last_completion = CompletionResponse::default();
+    let mut any_phase_ok = false;
     let mut has_sql_query = false;
     let mut session_state: Option<SessionState> = None;
     let mut prompt_system_prompt = String::new();
@@ -5433,10 +5454,11 @@ fn run_inference_options(
         // behavior is that the max-tokens gate only fires against a
         // description/tags/prompt completion, so a dictionary-only run with
         // high token usage is not treated as an error.
+        any_phase_ok = true;
     }
 
     if args.flag_description || args.flag_all {
-        last_completion = run_description_phase(
+        match run_description_phase(
             args,
             &client,
             &model,
@@ -5447,7 +5469,20 @@ fn run_inference_options(
             &mut total_json_output,
             &base_url,
             output_format,
-        )?;
+        ) {
+            Ok(cr) => {
+                last_completion = cr;
+                any_phase_ok = true;
+            },
+            // Non-fatal when an earlier requested phase already produced emittable
+            // output (normally the dictionary): warn, leave last_completion at its
+            // prior value, add nothing to total_json_output for this phase, and let
+            // control reach finalize_structured_output.
+            Err(e) if any_phase_ok => {
+                wwarn!("Description inference failed; continuing with available output: {e}");
+            },
+            Err(e) => return Err(e),
+        }
     }
 
     if args.flag_tags || args.flag_all {
@@ -5457,7 +5492,7 @@ fn run_inference_options(
         } else {
             ""
         };
-        last_completion = run_tags_phase(
+        match run_tags_phase(
             args,
             &client,
             &model,
@@ -5468,7 +5503,15 @@ fn run_inference_options(
             &mut total_json_output,
             &base_url,
             output_format,
-        )?;
+        ) {
+            // No `any_phase_ok = true` here: Tags is the last phase that consults it
+            // (Prompt stays fatal), so setting it would be a dead assignment.
+            Ok(cr) => last_completion = cr,
+            Err(e) if any_phase_ok => {
+                wwarn!("Tags inference failed; continuing with available output: {e}");
+            },
+            Err(e) => return Err(e),
+        }
     }
 
     if let Some(ref user_prompt) = args.flag_prompt {
@@ -6743,6 +6786,15 @@ fn get_cached_analysis(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_blank_completion_detects_empty_and_whitespace() {
+        assert!(is_blank_completion(""));
+        assert!(is_blank_completion("   "));
+        assert!(is_blank_completion("\n\t \r\n"));
+        assert!(!is_blank_completion("x"));
+        assert!(!is_blank_completion("  hello  "));
+    }
 
     #[test]
     fn token_usage_completion_tps_math() {

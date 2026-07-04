@@ -2650,6 +2650,13 @@ fn get_completion(
 
     let max_tokens = (prompt_file.tokens > 0).then_some(prompt_file.tokens);
 
+    // Validate client-side request construction (notably --addl-props JSON) up front, BEFORE
+    // the inference call below, so a usage/config error stays a fatal error rather than being
+    // mistagged as a degradable CliError::Inference. build_request's only failure mode is an
+    // invalid --addl-props value; every failure of chat_completion after this point is a
+    // genuine inference failure (transport, API error, malformed/empty response).
+    llmutil::build_request(model, max_tokens, messages, args.flag_addl_props.as_deref())?;
+
     // Delegate the HTTP request/response plumbing to the shared llmutil helper.
     let llm_response = llmutil::chat_completion(
         client,

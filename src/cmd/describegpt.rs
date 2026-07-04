@@ -2660,6 +2660,8 @@ fn get_completion(
         messages,
         args.flag_addl_props.as_deref(),
     )
+    // Tag every chat_completion failure as CliError::Inference so callers can degrade on a
+    // failed inference while still propagating infrastructure errors (cache backend, IO).
     .map_err(|e| {
         // A PDF --context-file rides as a Chat Completions `file` content block, which only
         // some OpenAI-compatible endpoints accept (OpenAI does; many local servers like LM
@@ -2672,25 +2674,25 @@ fn get_completion(
                 ..
             })
         ) {
-            CliError::Other(format!(
+            CliError::Inference(format!(
                 "{e}\n\nHint: the --context-file is a PDF sent as a 'file' attachment, but the \
                  LLM endpoint may not support PDF file inputs. Use an OpenAI-compatible endpoint \
                  that supports 'file' content blocks (e.g. OpenAI), or convert the PDF to images \
                  or text first."
             ))
         } else {
-            e
+            CliError::Inference(e.to_string())
         }
     })?;
 
     // An empty/whitespace-only body is a failed inference: some OpenAI-compatible
     // endpoints return HTTP 200 with empty content. Reject BEFORE attribution rewriting
     // so the cache wrappers (which call get_completion via `?`) never persist it.
-    // Plain CliError::Other (not fail_clierror!) so a Fix-1-tolerated phase doesn't emit
-    // an ERROR log line on top of its wwarn!; fatal cases still surface once via the
-    // top-level handler.
+    // CliError::Inference (not fail_clierror!/Other) so a Fix-1-tolerated phase can degrade
+    // it without an ERROR log line on top of its wwarn!; fatal cases still surface once via
+    // the top-level handler.
     if is_blank_completion(&llm_response.content) {
-        return Err(CliError::Other(format!(
+        return Err(CliError::Inference(format!(
             "The LLM ({model}) returned an empty response. This is treated as a failed inference \
              and is not cached. Retry, or try a different model or prompt."
         )));
@@ -4328,9 +4330,11 @@ fn run_description_phase(
         &messages,
     ) {
         Ok(cr) => cr,
-        // Only the LLM completion is degradable, and only when an earlier phase succeeded:
-        // warn, add nothing to total_json_output, and let the caller keep going.
-        Err(e) if degradable => {
+        // Only a failed LLM inference (CliError::Inference) is degradable, and only when an
+        // earlier phase succeeded: warn, add nothing to total_json_output, and let the caller
+        // keep going. Infrastructure errors (cache backend, IO) stay CliError::Other and
+        // propagate as fatal even here.
+        Err(e) if degradable && matches!(e, CliError::Inference(_)) => {
             wwarn!("Description inference failed; continuing with available output: {e}");
             return Ok(None);
         },
@@ -4405,9 +4409,11 @@ fn run_tags_phase(
         &messages,
     ) {
         Ok(cr) => cr,
-        // Only the LLM completion is degradable, and only when an earlier phase succeeded:
-        // warn, add nothing to total_json_output, and let the caller keep going.
-        Err(e) if degradable => {
+        // Only a failed LLM inference (CliError::Inference) is degradable, and only when an
+        // earlier phase succeeded: warn, add nothing to total_json_output, and let the caller
+        // keep going. Infrastructure errors (cache backend, IO) stay CliError::Other and
+        // propagate as fatal even here.
+        Err(e) if degradable && matches!(e, CliError::Inference(_)) => {
             wwarn!("Tags inference failed; continuing with available output: {e}");
             return Ok(None);
         },

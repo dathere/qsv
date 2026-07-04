@@ -155,6 +155,10 @@ pub enum CliError {
     Network(String),
     OutOfMemory(String),
     Encoding(String),
+    // An LLM inference/completion failure (HTTP/API error, empty response, etc.), as opposed
+    // to an infrastructure error (cache backend, IO). Lets callers degrade gracefully on a
+    // failed inference while still propagating infrastructure failures.
+    Inference(String),
     Other(String),
 }
 
@@ -170,6 +174,7 @@ impl fmt::Display for CliError {
             | CliError::IncorrectUsage(s)
             | CliError::Encoding(s)
             | CliError::OutOfMemory(s)
+            | CliError::Inference(s)
             | CliError::Network(s) => f.write_str(s),
         }
     }

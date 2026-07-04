@@ -7950,3 +7950,58 @@ fn viz_smart_dict_info_escapes_llm_text() {
     assert!(html.contains("&lt;/script&gt;&lt;b&gt;&amp;&quot;desc."));
     assert!(html.contains("&lt;/script&gt;&lt;b&gt;&amp;&quot;bold claim."));
 }
+
+// The dictionary tab's named window is keyed on title AND dictionary content (roborev 3416):
+// two dashboards sharing a title but carrying different dictionaries must get distinct
+// `qsv_dict_<hash>` window names (else the second shows the first's dictionary, since
+// qsvOpenDict skips rewriting an existing tab), while an identical title + dictionary must
+// keep a stable name so a reload reuses its tab.
+#[test]
+fn viz_smart_dict_info_window_key_is_per_dictionary() {
+    fn window_key(html: &str) -> String {
+        let start = html
+            .find("qsv_dict_")
+            .expect("qsv_dict_ window name missing");
+        html[start..start + "qsv_dict_".len() + 8].to_string()
+    }
+    fn render(wrk: &Workdir, dict: &str) -> String {
+        let mut cmd = wrk.command("viz");
+        cmd.args([
+            "smart",
+            "codes.csv",
+            "--title",
+            "Same Title",
+            "--dict-info",
+            "--dictionary",
+        ])
+        .arg(wrk.path(dict));
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    }
+
+    let wrk = Workdir::new("viz_smart_dict_info_window_key_is_per_dictionary");
+    dict_info_codes_csv(&wrk);
+    wrk.create_from_string("dict_a.schema.json", dict_info_schema());
+    // same shape, different description -> different embedded dictionary page
+    wrk.create_from_string(
+        "dict_b.schema.json",
+        &dict_info_schema().replace(
+            "The 2020 census tract containing the incident.",
+            "A completely different tract description.",
+        ),
+    );
+
+    let key_a = window_key(&render(&wrk, "dict_a.schema.json"));
+    let key_b = window_key(&render(&wrk, "dict_b.schema.json"));
+    let key_a_again = window_key(&render(&wrk, "dict_a.schema.json"));
+
+    assert_ne!(
+        key_a, key_b,
+        "same title + different dictionaries must open distinct dictionary tabs"
+    );
+    assert_eq!(
+        key_a, key_a_again,
+        "identical title + dictionary must keep a stable window name (tab reuse)"
+    );
+}

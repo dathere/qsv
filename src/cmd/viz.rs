@@ -416,9 +416,10 @@ smart options:
                            free-text are skipped, and lat/lon feed the map. Field labels are shown
                            as panel subtitles beneath the field-name titles. Columns the dictionary
                            cannot classify still use the statistical heuristic. <src> is one of:
-                           "infer" to run describegpt on the input now (with infer-content-type,
-                           two-pass and jsonschema output; requires an LLM configured) and use
-                           its output; or a path to an existing describegpt dictionary file
+                           "infer" to run describegpt on the input now (with description,
+                           infer-content-type, two-pass and jsonschema output; requires an LLM
+                           configured) and use its output; or a path to an existing describegpt
+                           dictionary file
                            (jsonschema or json). With "infer", the generated dictionary is saved
                            beside the input as <stem>.schema.json so you can fine-tune it; if that
                            file already exists, it is reused as-is (skipping the LLM) - edit it to
@@ -432,6 +433,16 @@ smart options:
                            tags, hence a better dashboard. Ignored unless `--dictionary infer`
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
+    --dict-info            When a usable Data Dictionary is available (per --dictionary), add
+                           a "Data Dictionary" link beneath the dashboard title that opens a
+                           human-friendly rendering of the dictionary in its own browser tab
+                           (embedded in the dashboard file - no extra file is written), and an
+                           info icon beside each column panel title: hovering shows that
+                           column's dictionary description, clicking jumps to its entry in the
+                           Data Dictionary tab. The link and icons need a browser that allows
+                           user-initiated pop-ups (the tab is opened on click). HTML output
+                           only; ignored with a note when no dictionary is available or when
+                           exporting an image. Only affects `smart`.
     --bivariate            Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (works for numeric AND categorical
@@ -1071,6 +1082,7 @@ struct Args {
     flag_hierarchy_style:    Option<String>,
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
+    flag_dict_info:          bool,
     flag_log_scale:          String,
     flag_violin:             String,
     flag_title:              Option<String>,
@@ -1248,12 +1260,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 dims,
                 title,
                 theme,
+                dict_page,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
                 // point. Static image export keeps the typed `Plot` path below.
                 if matches!(out_format, OutFormat::Html) {
-                    let html = render_smart_grid_page(*plot, theme, &title);
+                    let html = render_smart_grid_page(*plot, theme, &title, dict_page.as_deref());
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
                 }
@@ -1292,12 +1305,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
 enum SmartRender {
     // `Plot` is large; box it so the enum isn't bloated by the rarely-larger variant.
     Grid {
-        plot:  Box<Plot>,
-        dims:  (usize, usize),
+        plot:      Box<Plot>,
+        dims:      (usize, usize),
         // carried out so the HTML path can wrap the plot in qsv's own toggle-enabled page
-        // (`render_smart_grid_page`); the image-export path ignores both.
-        title: String,
-        theme: Option<BuiltinTheme>,
+        // (`render_smart_grid_page`); the image-export path ignores all three.
+        title:     String,
+        theme:     Option<BuiltinTheme>,
+        /// The embedded `--dict-info` Data Dictionary document (HTML output only).
+        dict_page: Option<String>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -5940,6 +5955,7 @@ fn smart_html_page(
     extra_style: &str,
     body: &str,
     show_heading: bool,
+    dict_page: Option<&str>,
 ) -> String {
     let js = plotly_js_only();
     let title = html_escape(title_text);
@@ -5962,6 +5978,22 @@ fn smart_html_page(
     } else {
         String::new()
     };
+    // --dict-info chrome: the "Data Dictionary" link under the title (rendered whether or not the
+    // page shows an <h1>, since the typed-grid page bakes its title into the plot) plus the
+    // embedded dictionary document + `qsvOpenDict` script. All empty when --dict-info is off, so
+    // those dashboards stay byte-identical.
+    let (dict_link, dict_chrome) = match dict_page {
+        Some(page) => (
+            "<div class=\"qsv-viz-dict-link\"><a href=\"#\" onclick=\"return \
+             qsvOpenDict('')\">Data Dictionary</a></div>"
+                .to_string(),
+            format!(
+                "<script type=\"text/html\" id=\"qsv-dict-src\">{page}</script>\n{}",
+                DICT_SCRIPT_TEMPLATE.replace("__QSVDICTKEY__", &dict_short_hash(title_text))
+            ),
+        ),
+        None => (String::new(), String::new()),
+    };
     // A RAW-string template (actual newlines, not `\n` escapes) so rustfmt's `format_strings` can't
     // split an escape across a line wrap and corrupt the output — it once mangled `\n{script}` into
     // a stray `\` + `n` in every page. `format!` still doubles the literal CSS braces (`{{`/`}}`)
@@ -5979,6 +6011,10 @@ fn smart_html_page(
   body {{ font-family: {FONT_FAMILY}; color: var(--qsv-page-ink); background: var(--qsv-page-bg); margin: 0; padding: 16px; }}
   h1.qsv-viz-title {{ font-size: 20px; font-weight: 600; text-align: center; margin: 8px 0 20px; }}
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
+  .qsv-viz-dict-link {{ font-size: 13px; text-align: center; margin: -12px 0 16px; }}
+  .qsv-viz-dict-link a {{ color: var(--qsv-geo-meta); }}
+  .qsv-viz-dict-ico {{ position: absolute; top: 6px; left: 8px; z-index: 10; font-size: 15px; line-height: 1; text-decoration: none; color: var(--qsv-geo-meta); opacity: 0.75; }}
+  .qsv-viz-dict-ico:hover {{ opacity: 1; }}
   #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.95; line-height: 0; }}
   #qsv-logo:hover {{ opacity: 1; }}
   /* Theme-aware halo so the logo stays legible on any paper color: a faint dark
@@ -5999,9 +6035,11 @@ fn smart_html_page(
 {button}
 {logo}
 {heading}
+{dict_link}
 {body}
 {fs_prelude}
 {FULLSCREEN_SCRIPT}
+{dict_chrome}
 {script}
 </body>
 </html>
@@ -7285,6 +7323,13 @@ struct Panel {
     /// `--geojson` region boundaries + labels to overlay on a `Map`/`Geo` panel (no geocoding
     /// needed). `None` for non-map panels or when no `--geojson` was supplied.
     geojson_overlay: Option<GeoJsonOverlay>,
+    /// The column's Data Dictionary (anchor id, description), populated only under
+    /// `--dict-info` on HTML output (so image exports never grow icons). Drives the
+    /// panel-title info icon: its hover box shows the description, and clicking jumps to the
+    /// anchor's entry in the embedded Data Dictionary tab. The anchor is computed from the
+    /// RAW field name at classification time — the panel `name` can be decorated later
+    /// (e.g. "foo (sampled)") and would no longer match the page's section ids.
+    dict_info:       Option<(String, String)>,
 }
 
 impl Panel {
@@ -7301,6 +7346,7 @@ impl Panel {
             #[cfg(feature = "geocode")]
             geo_meta: None,
             geojson_overlay: None,
+            dict_info: None,
         }
     }
 
@@ -7322,18 +7368,38 @@ impl Panel {
         self
     }
 
+    /// Attach the column's Data Dictionary (anchor id, description) — `--dict-info` on HTML
+    /// output only — which turns on the panel-title info icon.
+    fn with_dict_info(mut self, dict_info: Option<(String, String)>) -> Self {
+        self.dict_info = dict_info;
+        self
+    }
+
     /// The on-screen title markup: the field name, with the dictionary label as a smaller muted
     /// subtitle line when present. Plotly renders `<br>`/`<span style>` in both annotation and
     /// title text. `self.name` itself stays plain (it also feeds trace names / status messages).
     fn display_title(&self) -> String {
+        self.display_title_with_icon(false)
+    }
+
+    /// `display_title`, optionally with a trailing muted ⓘ on the TITLE line (before any
+    /// subtitle line) when a `--dict-info` description is attached. Used by the typed-grid
+    /// title annotations, whose hover box / click event carry the dictionary lookup; the
+    /// inline-div path overlays an HTML icon instead and keeps the plain title.
+    fn display_title_with_icon(&self, icon: bool) -> String {
+        let icon_sfx = if icon && self.dict_info.is_some() {
+            format!(" <span style=\"font-size:12px;color:{MUTED_COLOR}\">\u{24D8}</span>")
+        } else {
+            String::new()
+        };
         match &self.subtitle {
             Some(sub) => format!(
-                "{}<br><span style=\"font-size:11px;color:{}\">{}</span>",
+                "{}{icon_sfx}<br><span style=\"font-size:11px;color:{}\">{}</span>",
                 html_escape(&self.name),
                 MUTED_COLOR,
                 html_escape(sub)
             ),
-            None => self.name.clone(),
+            None => format!("{}{icon_sfx}", self.name),
         }
     }
 }
@@ -7863,14 +7929,20 @@ struct DictRow {
     role:         String,
     concept:      String,
     label:        String,
+    description:  String,
 }
 
 /// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
 /// dataset `grain` ("one row = one X"). Drives `viz smart` semantic routing.
 #[derive(Clone, Debug, Default)]
 struct DictData {
-    rows:  HashMap<String, DictRow>,
-    grain: Option<String>,
+    rows:                HashMap<String, DictRow>,
+    grain:               Option<String>,
+    /// Dataset-level prose description (jsonschema top-level `description`, produced by
+    /// describegpt --description). Legacy json dictionaries don't carry one.
+    dataset_description: Option<String>,
+    /// Provenance blurb from the jsonschema top-level `x-qsv.generated_by` (model, timestamp).
+    generated_by:        Option<String>,
 }
 
 /// Map a `concept` token (the most specific, highest-confidence signal) to a route. Returns `None`
@@ -8334,6 +8406,11 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 .and_then(serde_json::Value::as_str)
                 .unwrap_or_default()
                 .to_string();
+            let description = prop
+                .get("description")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or_default()
+                .to_string();
             rows.insert(
                 name.clone(),
                 DictRow {
@@ -8341,19 +8418,28 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     role: from_xq("role"),
                     concept: from_xq("concept"),
                     label,
+                    description,
                 },
             );
         }
         if rows.is_empty() {
             return None;
         }
-        let grain = v
-            .get("x-qsv")
-            .and_then(|x| x.get("grain"))
-            .and_then(serde_json::Value::as_str)
-            .filter(|g| !g.is_empty())
-            .map(ToString::to_string);
-        return Some(DictData { rows, grain });
+        let top_str = |val: Option<&serde_json::Value>| {
+            val.and_then(serde_json::Value::as_str)
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+        };
+        let grain = top_str(v.get("x-qsv").and_then(|x| x.get("grain")));
+        let dataset_description = top_str(v.get("description"));
+        let generated_by = top_str(v.get("x-qsv").and_then(|x| x.get("generated_by")));
+        return Some(DictData {
+            rows,
+            grain,
+            dataset_description,
+            generated_by,
+        });
     }
 
     // Legacy plain-json dictionary shape.
@@ -8384,13 +8470,349 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 role:         from_field("role"),
                 concept:      from_field("concept"),
                 label:        from_field("label"),
+                description:  from_field("description"),
             },
         );
     }
-    (!rows.is_empty()).then_some(DictData { rows, grain: None })
+    (!rows.is_empty()).then_some(DictData {
+        rows,
+        ..Default::default()
+    })
 }
 
-fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
+/// Deterministic 8-hex-digit FNV-1a hash. Stable across runs and toolchains (unlike
+/// `DefaultHasher`), so tests can assert dictionary anchor ids and each dashboard gets a
+/// reproducible dictionary-tab window name.
+fn dict_short_hash(s: &str) -> String {
+    let mut h: u32 = 0x811c_9dc5;
+    for b in s.as_bytes() {
+        h ^= u32::from(*b);
+        h = h.wrapping_mul(0x0100_0193);
+    }
+    format!("{h:08x}")
+}
+
+/// Stable element id for a column's Data Dictionary entry — shared by the dictionary page's
+/// per-column sections and the panel info icons that jump to them. Sanitized for use as an
+/// HTML id / JS string literal; the hash suffix keeps sanitization collisions apart
+/// ("a b" vs "a_b") and non-ASCII names unique.
+fn dict_anchor_id(col: &str) -> String {
+    let mut slug: String = col
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    slug.truncate(40);
+    format!("qsvdict-{slug}-{}", dict_short_hash(col))
+}
+
+/// The `--dict-info` chrome `<script>`: `qsvOpenDict(anchor)` opens the embedded Data Dictionary
+/// document (the `<script type="text/html" id="qsv-dict-src">` template) in a NAMED browser tab —
+/// so the title link and every info icon reuse ONE tab — syncs the opener's light/dark mode onto
+/// it, and scrolls to the requested per-column anchor. The trailing IIFE hooks
+/// `plotly_clickannotation` on the typed-grid plot (when present) so clicking a title's info icon
+/// annotation jumps to its dictionary entry; the `qsvdict-` name-prefix filter keeps other
+/// captured annotations from opening the tab. Polling mirrors `FULLSCREEN_SCRIPT`: plotly renders
+/// in a deferred module script, so `gd.on` appears only after render (capped so a render error
+/// can't loop forever). `__QSVDICTKEY__` is substituted at page-build time so two open dashboards
+/// don't clobber each other's dictionary tab. Raw string (like `SCRIPT_TEMPLATE`) so the
+/// brace-heavy JS needs no escaping.
+const DICT_SCRIPT_TEMPLATE: &str = r#"<script>
+function qsvOpenDict(anchor) {
+  var src = document.getElementById("qsv-dict-src");
+  if (!src) return false;
+  var w = window.open("", "qsv_dict___QSVDICTKEY__");
+  if (!w) return false;
+  var needsWrite = true;
+  // reading a foreign document (user navigated the tab elsewhere) throws: rewrite in that case.
+  try { needsWrite = !w.document.getElementById("qsv-dict-root"); } catch (e) {}
+  try {
+    if (needsWrite) { w.document.open(); w.document.write(src.textContent); w.document.close(); }
+  } catch (e) {
+    // cross-origin document.open also throws; fall back to a fresh unnamed tab.
+    w = window.open("", "_blank");
+    if (!w) return false;
+    w.document.open(); w.document.write(src.textContent); w.document.close();
+  }
+  try {
+    w.document.body.classList.toggle("qsv-dark", document.body.classList.contains("qsv-dark"));
+    if (anchor) { var el = w.document.getElementById(anchor); if (el) el.scrollIntoView(); }
+  } catch (e) {}
+  w.focus();
+  return false;
+}
+(function () {
+  var tries = 0;
+  function hook() {
+    var gd = document.getElementById("qsv-viz-smart-grid");
+    if (!gd) return;
+    // Wait for BOTH the plotly render (gd.on) AND the fullscreen enhancer's one-time
+    // Plotly.newPlot re-render (marked gd.__qsvFs): attaching before that re-render would
+    // silently lose the listener when the plot is re-created. If the enhancement never
+    // completes (render error), fall back and attach anyway after ~10s so dictionary
+    // clicks aren't disabled with it.
+    if (!gd.on || (!gd.__qsvFs && tries < 100)) {
+      if (++tries < 200) setTimeout(hook, 100);
+      return;
+    }
+    gd.on("plotly_clickannotation", function (ev) {
+      var a = ev.annotation;
+      if (a && a.name && a.name.indexOf("qsvdict-") === 0) qsvOpenDict(a.name);
+    });
+  }
+  hook();
+})();
+</script>"#;
+
+/// Render the human-friendly Data Dictionary document for `--dict-info`: a standalone,
+/// script-free HTML page embedded in the dashboard (inside a `<script type="text/html">`
+/// template) and opened in its own browser tab by `qsvOpenDict`.
+///
+/// Renders straight from the raw dictionary JSON so it can show fields (ranges, cardinality,
+/// examples) that the lean routing structs deliberately don't carry; `dict` supplies the
+/// shape-normalized dataset description / grain / provenance. Handles both dictionary shapes
+/// `parse_dictionary_semantics` accepts (JSON Schema `properties` and legacy `fields`). Sections
+/// follow `column_order` (the dataset's header order) so output is deterministic — never the
+/// `rows` HashMap order; dictionary-only columns are appended sorted. Every dynamic string is
+/// `html_escape`d (this is LLM text!), which also guarantees the document can never contain a
+/// literal `</script>` that would terminate the embedding template.
+fn render_dict_page_html(
+    dict_json: &serde_json::Value,
+    dict: &DictData,
+    dataset_title: &str,
+    column_order: &[String],
+) -> String {
+    use serde_json::Value;
+
+    // compact human rendering of a JSON scalar/array meta value
+    fn disp(v: &Value) -> String {
+        const MAX_LIST: usize = 12;
+        match v {
+            Value::String(s) => s.clone(),
+            Value::Array(a) => {
+                let mut parts: Vec<String> = a.iter().take(MAX_LIST).map(disp).collect();
+                if a.len() > MAX_LIST {
+                    parts.push(format!("… ({} total)", a.len()));
+                }
+                parts.join(", ")
+            },
+            Value::Null => String::new(),
+            other => other.to_string(),
+        }
+    }
+
+    let props = dict_json.get("properties").and_then(Value::as_object);
+    let legacy_fields = dict_json
+        .get("Dictionary")
+        .and_then(|d| d.get("response"))
+        .and_then(|r| r.get("fields"))
+        .or_else(|| dict_json.get("fields"))
+        .and_then(Value::as_array);
+    let entry_for = |col: &str| -> Option<&Value> {
+        if let Some(p) = props {
+            return p.get(col);
+        }
+        legacy_fields?
+            .iter()
+            .find(|f| f.get("name").and_then(Value::as_str) == Some(col))
+    };
+
+    // display order: the dataset's header order first, then dictionary-only columns (sorted).
+    let mut order: Vec<String> = column_order
+        .iter()
+        .filter(|c| !c.is_empty() && entry_for(c).is_some())
+        .cloned()
+        .collect();
+    let mut extras: Vec<String> = dict
+        .rows
+        .keys()
+        .filter(|k| !order.contains(k))
+        .cloned()
+        .collect();
+    extras.sort_unstable();
+    order.extend(extras);
+
+    let mut sections = String::new();
+    for col in &order {
+        let Some(entry) = entry_for(col) else {
+            continue;
+        };
+        let xq = entry.get("x-qsv");
+        let get = |keys: &[&str]| -> Option<&Value> {
+            keys.iter()
+                .find_map(|k| entry.get(k).filter(|v| !v.is_null()))
+        };
+        let get_xq = |k: &str| xq.and_then(|x| x.get(k)).filter(|v| !v.is_null());
+
+        let label = get(&["title", "label"])
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let description = get(&["description"])
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+
+        let mut meta: Vec<(&str, String)> = Vec::new();
+        if let Some(v) = get(&["type"]) {
+            meta.push(("Type", disp(v)));
+        }
+        if let Some(v) = get_xq("content_type").or_else(|| get(&["content_type"])) {
+            meta.push(("Content type", disp(v)));
+        }
+        if let Some(v) = get_xq("role").or_else(|| get(&["role"])) {
+            meta.push(("Role", disp(v)));
+        }
+        if let Some(v) = get_xq("concept").or_else(|| get(&["concept"])) {
+            meta.push(("Concept", disp(v)));
+        }
+        // jsonschema numerics ride as minimum/maximum; dates as x-qsv.min/max; legacy as min/max.
+        let min = get(&["minimum", "min"]).or_else(|| get_xq("min"));
+        let max = get(&["maximum", "max"]).or_else(|| get_xq("max"));
+        if min.is_some() || max.is_some() {
+            meta.push((
+                "Range",
+                format!(
+                    "{} \u{2013} {}",
+                    min.map(disp).unwrap_or_default(),
+                    max.map(disp).unwrap_or_default()
+                ),
+            ));
+        }
+        if let Some(v) = get_xq("cardinality").or_else(|| get(&["cardinality"])) {
+            meta.push(("Cardinality", disp(v)));
+        }
+        if let Some(v) = get_xq("null_count").or_else(|| get(&["null_count"])) {
+            meta.push(("Null count", disp(v)));
+        }
+        if let Some(v) = get(&["enum", "enumeration"]) {
+            meta.push(("Values", disp(v)));
+        }
+        if let Some(v) = get(&["examples"]) {
+            meta.push(("Examples", disp(v)));
+        }
+
+        sections.push_str(&format!(
+            "<section class=\"qsv-dict-col\" id=\"{}\">\n<h2>{}</h2>\n",
+            dict_anchor_id(col),
+            html_escape(col)
+        ));
+        if !label.is_empty() && !label.eq_ignore_ascii_case(col) {
+            sections.push_str(&format!(
+                "<p class=\"qsv-dict-label\">{}</p>\n",
+                html_escape(label)
+            ));
+        }
+        if !description.is_empty() {
+            sections.push_str(&format!(
+                "<p class=\"qsv-dict-desc\">{}</p>\n",
+                html_escape(description)
+            ));
+        }
+        if !meta.is_empty() {
+            sections.push_str("<dl class=\"qsv-dict-meta\">\n");
+            for (k, v) in &meta {
+                if v.is_empty() {
+                    continue;
+                }
+                sections.push_str(&format!("<dt>{k}</dt><dd>{}</dd>\n", html_escape(v)));
+            }
+            sections.push_str("</dl>\n");
+        }
+        sections.push_str("</section>\n");
+    }
+
+    let title = html_escape(dataset_title);
+    let mut intro = String::new();
+    if let Some(desc) = dict.dataset_description.as_deref() {
+        intro.push_str(&format!(
+            "<p class=\"qsv-dict-dataset-desc\">{}</p>\n",
+            html_escape(desc)
+        ));
+    }
+    if let Some(grain) = dict.grain.as_deref() {
+        intro.push_str(&format!(
+            "<p class=\"qsv-dict-grain\"><strong>Grain:</strong> {}</p>\n",
+            html_escape(grain)
+        ));
+    }
+    let provenance = dict
+        .generated_by
+        .as_deref()
+        .map(|g| {
+            format!(
+                "<footer class=\"qsv-dict-prov\"><pre>{}</pre></footer>\n",
+                html_escape(g)
+            )
+        })
+        .unwrap_or_default();
+
+    // Fixed neutral light/dark palettes keyed on `body.qsv-dark` (the class `qsvOpenDict` copies
+    // from the opener), mirroring the dashboard's theme-toggle convention.
+    format!(
+        r#"<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Data Dictionary — {title}</title>
+<style>
+  body {{ font-family: {FONT_FAMILY}; margin: 0; padding: 24px; background: #ffffff; color: #222222; }}
+  body.qsv-dark {{ background: #14171c; color: #d7dce2; }}
+  .qsv-dict-wrap {{ max-width: 860px; margin: 0 auto; }}
+  h1 {{ font-size: 20px; font-weight: 600; margin: 8px 0 12px; }}
+  .qsv-dict-dataset-desc {{ font-size: 14px; line-height: 1.5; }}
+  .qsv-dict-grain {{ font-size: 13px; }}
+  section.qsv-dict-col {{ border-top: 1px solid rgba(128, 128, 128, 0.35); padding: 12px 0 8px; scroll-margin-top: 8px; }}
+  section.qsv-dict-col h2 {{ font-size: 15px; font-weight: 600; margin: 4px 0; }}
+  .qsv-dict-label {{ font-size: 13px; color: #888888; margin: 2px 0 6px; }}
+  .qsv-dict-desc {{ font-size: 13px; line-height: 1.5; margin: 4px 0 8px; }}
+  dl.qsv-dict-meta {{ display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 12px; margin: 4px 0 8px; }}
+  dl.qsv-dict-meta dt {{ color: #888888; }}
+  dl.qsv-dict-meta dd {{ margin: 0; overflow-wrap: anywhere; }}
+  footer.qsv-dict-prov {{ margin-top: 20px; font-size: 11px; color: #888888; }}
+  footer.qsv-dict-prov pre {{ white-space: pre-wrap; font-family: inherit; }}
+</style>
+</head>
+<body id="qsv-dict-root">
+<div class="qsv-dict-wrap">
+<h1>Data Dictionary — {title}</h1>
+{intro}{sections}{provenance}</div>
+</body>
+</html>"#
+    )
+}
+
+/// The typed-grid panel-title annotation (both cartesian and geo cells). When the panel carries
+/// a `--dict-info` description, the title line grows a muted ⓘ, the annotation hover box shows
+/// the description, and `capture_events` + a `qsvdict-` prefixed `name` route its click through
+/// the `plotly_clickannotation` hook to the Data Dictionary tab. No OTHER annotation may set
+/// `capture_events`: the hook's name-prefix filter plus this exclusivity keep corr-cell and
+/// geo-meta annotations from opening the tab.
+fn panel_title_annotation(panel: &Panel, title_x: f64, title_y: f64, font: Font) -> Annotation {
+    let mut ann = Annotation::new()
+        .text(panel.display_title_with_icon(true))
+        .x(title_x)
+        .y(title_y)
+        .x_ref("paper")
+        .y_ref("paper")
+        .x_anchor(Anchor::Center)
+        .y_anchor(Anchor::Bottom)
+        .show_arrow(false)
+        .font(font);
+    if let Some((anchor, desc)) = &panel.dict_info {
+        ann = ann
+            .hover_text(html_escape(desc))
+            .capture_events(true)
+            .name(anchor.clone());
+    }
+    ann
+}
+
+fn load_dictionary_semantics(args: &Args) -> CliResult<Option<(DictData, String)>> {
     let Some(spec) = args.flag_dictionary.as_deref() else {
         if args.flag_dictionary_context.is_some() {
             viz_note("viz smart --dictionary-context: ignored without --dictionary infer.");
@@ -8461,6 +8883,7 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
             // LLM's role/concept/label/grain inference is conditioned on the user's domain context.
             let mut dg_args: Vec<&str> = vec![
                 "--dictionary",
+                "--description",
                 "--infer-content-type",
                 "--two-pass",
                 "--format",
@@ -8554,7 +8977,9 @@ fn load_dictionary_semantics(args: &Args) -> CliResult<Option<DictData>> {
              dictionary (JSON Schema or JSON); building the dashboard from statistics alone."
         ));
     }
-    Ok(data)
+    // The raw JSON rides along so --dict-info can render the full dictionary page from fields
+    // (descriptions, ranges, examples) that the lean routing structs deliberately don't carry.
+    Ok(data.map(|d| (d, json_text)))
 }
 
 /// Decide which chart (if any) suits a column, from its computed statistics.
@@ -10711,6 +11136,7 @@ fn build_map_panel(
             kind,
             value_log: false,
             interest: f64::INFINITY,
+            dict_info: None,
             #[cfg(feature = "geocode")]
             geo_meta,
             geojson_overlay,
@@ -11666,7 +12092,10 @@ fn build_smart(
     // Keep the spinner live during describegpt (the slowest phase): its output is captured by
     // run_qsv_cmd, and load_dictionary_semantics suspends the bar only around its own messages.
     progress.set_message("Inferring data dictionary…");
-    let dict_data = load_dictionary_semantics(args)?;
+    let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
+        Some((data, json_text)) => (Some(data), Some(json_text)),
+        None => (None, None),
+    };
     let col_sems: Vec<ColSemantics> = stats
         .iter()
         .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
@@ -11732,6 +12161,7 @@ fn build_smart(
                         kind,
                         value_log: p.value_log,
                         interest: p.interest,
+                        dict_info: p.dict_info,
                         #[cfg(feature = "geocode")]
                         geo_meta: p.geo_meta,
                         geojson_overlay: p.geojson_overlay,
@@ -11798,6 +12228,21 @@ fn build_smart(
         };
         let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
             .then(|| sem.label.clone());
+        // --dict-info: the column's dictionary description + pre-computed anchor. HTML-gated at
+        // build time so the image-export paths never grow icons. Skips empty descriptions and
+        // a "<name> column" placeholder that just echoes the field name.
+        let dict_info = if args.flag_dict_info && matches!(out_format, OutFormat::Html) {
+            dict_data
+                .as_ref()
+                .and_then(|d| d.rows.get(&s.field))
+                .map(|r| r.description.trim())
+                .filter(|desc| {
+                    !desc.is_empty() && !desc.eq_ignore_ascii_case(&format!("{} column", s.field))
+                })
+                .map(|desc| (dict_anchor_id(&s.field), desc.to_string()))
+        } else {
+            None
+        };
         // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
         if twin_suppress.contains(&idx) {
             skipped.push(name);
@@ -11936,6 +12381,7 @@ fn build_smart(
                 panels.push(
                     Panel::new(name, kind)
                         .with_subtitle(subtitle)
+                        .with_dict_info(dict_info)
                         .with_value_log(value_log)
                         .with_interest(interest),
                 );
@@ -12538,6 +12984,37 @@ fn build_smart(
         format!("{dataset} \u{2014} data overview")
     });
 
+    // --dict-info: render the embedded Data Dictionary page when a usable dictionary is present
+    // and the output is HTML; soft no-op (with a note) otherwise, matching the dictionary
+    // loader's fail-to-stats philosophy.
+    let dict_page: Option<String> = if !args.flag_dict_info {
+        None
+    } else if !matches!(out_format, OutFormat::Html) {
+        viz_note("viz smart --dict-info: only applies to HTML output; ignored for image export.");
+        None
+    } else if let (Some(dict), Some(json_text)) = (dict_data.as_ref(), dict_json_text.as_deref()) {
+        match serde_json::from_str::<serde_json::Value>(json_text) {
+            Ok(dict_json) => {
+                // section order = the dataset's header order (dictionary-only columns follow)
+                let column_order: Vec<String> = stats.iter().map(|s| s.field.clone()).collect();
+                Some(render_dict_page_html(
+                    &dict_json,
+                    dict,
+                    &title_text,
+                    &column_order,
+                ))
+            },
+            // unreachable in practice: dict_data only parses from valid JSON
+            Err(_) => None,
+        }
+    } else {
+        viz_note(
+            "viz smart --dict-info: no usable data dictionary (see --dictionary); showing the \
+             dashboard without dictionary info.",
+        );
+        None
+    };
+
     // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned `geo`
     // subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't express.
     let has_geo_image = out_format.is_image()
@@ -12554,6 +13031,7 @@ fn build_smart(
             &outlier_stats,
             &title_text,
             log_scale,
+            dict_page.as_deref(),
         )))
     } else if panels.len() > MAX_SUBPLOTS || has_geo_image {
         // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
@@ -12577,6 +13055,7 @@ fn build_smart(
             &outlier_stats,
             &title_text,
             log_scale,
+            dict_page,
         )
     }
 }
@@ -13332,18 +13811,12 @@ fn smart_grid_parts(
                 );
             }
             geos.push((pos, geo_json));
-            annotations.push(
-                Annotation::new()
-                    .text(panel.display_title())
-                    .x(geom.title_x)
-                    .y(geom.title_y)
-                    .x_ref("paper")
-                    .y_ref("paper")
-                    .x_anchor(Anchor::Center)
-                    .y_anchor(Anchor::Bottom)
-                    .show_arrow(false)
-                    .font(ann_font(13)),
-            );
+            annotations.push(panel_title_annotation(
+                panel,
+                geom.title_x,
+                geom.title_y,
+                ann_font(13),
+            ));
             continue;
         }
 
@@ -13400,18 +13873,12 @@ fn smart_grid_parts(
                 )
             };
         axes.push((pos, x_axis, y_axis));
-        annotations.push(
-            Annotation::new()
-                .text(panel.display_title())
-                .x(geom.title_x)
-                .y(geom.title_y)
-                .x_ref("paper")
-                .y_ref("paper")
-                .x_anchor(Anchor::Center)
-                .y_anchor(Anchor::Bottom)
-                .show_arrow(false)
-                .font(ann_font(13)),
-        );
+        annotations.push(panel_title_annotation(
+            panel,
+            geom.title_x,
+            geom.title_y,
+            ann_font(13),
+        ));
 
         // in-cell `r` value labels for the correlation panel, drawn only when the matrix is
         // small enough to stay legible in one dashboard cell. Category axes index annotations
@@ -13446,6 +13913,7 @@ fn render_smart_grid(
     outliers: &HashMap<usize, OutlierStats>,
     title_text: &str,
     log_scale: LogScale,
+    dict_page: Option<String>,
 ) -> CliResult<SmartRender> {
     let SmartGridParts {
         traces,
@@ -13474,10 +13942,16 @@ fn render_smart_grid(
         dims,
         title: title_text.to_string(),
         theme,
+        dict_page,
     })
 }
 
-fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_text: &str) -> String {
+fn render_smart_grid_page(
+    mut plot: Plot,
+    theme: Option<BuiltinTheme>,
+    title_text: &str,
+    dict_page: Option<&str>,
+) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
     // raw strings (actual newlines, real quotes) so rustfmt's `format_strings` can't split a `\n`
@@ -13493,7 +13967,7 @@ fn render_smart_grid_page(mut plot: Plot, theme: Option<BuiltinTheme>, title_tex
 </div>"#
     );
     // the typed plot already carries the dashboard title in its layout, so suppress the page <h1>.
-    smart_html_page(title_text, theme, extra_style, &body, false)
+    smart_html_page(title_text, theme, extra_style, &body, false, dict_page)
 }
 
 /// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
@@ -14129,6 +14603,7 @@ fn render_smart_inline(
     outliers: &HashMap<usize, OutlierStats>,
     title_text: &str,
     log_scale: LogScale,
+    dict_page: Option<&str>,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -14145,6 +14620,17 @@ fn render_smart_inline(
             cells.push_str("    <div class=\"qsv-viz-cell full-width\">\n");
         } else {
             cells.push_str("    <div class=\"qsv-viz-cell\">\n");
+        }
+        // `--dict-info` icon: a plain HTML overlay pinned to the cell's top-LEFT corner (the
+        // top-right belongs to plotly's hover-revealed modebar), so this path needs no plotly
+        // API at all. The native `title` tooltip is the hover box; clicking jumps to the
+        // column's entry in the Data Dictionary tab.
+        if let Some((anchor, desc)) = &panel.dict_info {
+            cells.push_str(&format!(
+                "      <a class=\"qsv-viz-dict-ico\" href=\"#\" title=\"{}\" onclick=\"return \
+                 qsvOpenDict('{anchor}')\">&#9432;</a>\n",
+                html_escape(desc)
+            ));
         }
         // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
         // a concrete height instead of expanding to fill the whole cell (which would otherwise
@@ -14172,7 +14658,7 @@ fn render_smart_inline(
 
     let extra_style = format!(
         r"  .qsv-viz-grid {{ display: grid; grid-template-columns: repeat({cols}, minmax(0, 1fr)); gap: 16px; }}
-  .qsv-viz-cell {{ min-width: 0; }}
+  .qsv-viz-cell {{ min-width: 0; position: relative; }}
   .qsv-viz-cell.full-width {{ grid-column: 1 / -1; }}
   .qsv-viz-plot {{ width: 100%; }}"
     );
@@ -14181,7 +14667,7 @@ fn render_smart_inline(
 {cells}</div>"#
     );
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
-    smart_html_page(title_text, theme, &extra_style, &body, true)
+    smart_html_page(title_text, theme, &extra_style, &body, true, dict_page)
 }
 
 /// Minimal HTML-escaping for text interpolated into the inline dashboard page.
@@ -15906,9 +16392,10 @@ mod tests {
     fn dict_row(content_type: &str, role: &str, concept: &str, label: &str) -> DictRow {
         DictRow {
             content_type: content_type.to_string(),
-            role:         role.to_string(),
-            concept:      concept.to_string(),
-            label:        label.to_string(),
+            role: role.to_string(),
+            concept: concept.to_string(),
+            label: label.to_string(),
+            ..Default::default()
         }
     }
 
@@ -16540,6 +17027,50 @@ mod tests {
             derive_semantics(&stat("Integer", 33, Some(0.00003)), Some(tract)).route,
             Route::Dimension
         );
+    }
+
+    #[test]
+    fn parse_dictionary_semantics_captures_descriptions() {
+        // jsonschema shape: per-field `description`, dataset description at the top level
+        // (describegpt --description folds it there under --format jsonschema), provenance
+        // in x-qsv.generated_by.
+        let schema = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "description": "311 service requests for 2026.",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "description": "The 2020 census tract containing the incident.",
+              "x-qsv": { "role": "dimension", "concept": "geo.census_tract" } },
+            "amount": { "type": "number", "title": "Amount" }
+          },
+          "x-qsv": { "grain": "one row = one request",
+            "generated_by": "Generated by qsv describegpt\nModel: test-model" }
+        }"#;
+        let data = parse_dictionary_semantics(schema).expect("schema should parse");
+        assert_eq!(
+            data.rows["census_tract"].description,
+            "The 2020 census tract containing the incident."
+        );
+        assert_eq!(data.rows["amount"].description, "");
+        assert_eq!(
+            data.dataset_description.as_deref(),
+            Some("311 service requests for 2026.")
+        );
+        assert!(
+            data.generated_by
+                .as_deref()
+                .is_some_and(|g| g.contains("Model: test-model"))
+        );
+
+        // legacy shape: per-field `description` only; no dataset description / provenance.
+        let legacy = r#"{"fields":[
+            {"name":"a","content_type":"category","description":"Column A holds categories."}
+        ]}"#;
+        let data = parse_dictionary_semantics(legacy).expect("legacy should parse");
+        assert_eq!(data.rows["a"].description, "Column A holds categories.");
+        assert!(data.dataset_description.is_none());
+        assert!(data.generated_by.is_none());
     }
 
     #[test]

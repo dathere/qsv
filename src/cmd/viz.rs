@@ -315,8 +315,12 @@ choropleth options:
                            instead of the default projection basemap. Requires --geojson;
                            feature-id-key defaults to id. Reuses --style for the basemap.
     --geojson <src>        Custom region polygons as a local file path or an http(s) URL
-                           to a GeoJSON FeatureCollection. Required for --map, and for
-                           the geojson-id location mode. Also enables point-in-polygon
+                           to a GeoJSON FeatureCollection. May also be a shortcut name
+                           defined in the QSV_GEOJSON_SHORTCUTS env var (a JSON map of
+                           name to {path, id}); the shortcut's id sets --feature-id-key
+                           when you don't pass one. The source is validated up front.
+                           Required for --map, and for the geojson-id location mode. Also
+                           enables point-in-polygon
                            binning: with --lat/--lon (and without --geocode), each row's
                            point is binned into the region whose polygon contains it
                            (exact, no geocoding) and colored by --value/--agg or counts.
@@ -1157,6 +1161,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         && !token.is_empty()
     {
         args.flag_mapbox_token = Some(token);
+    }
+
+    // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
+    // up front — fail fast on a bad source, unknown shortcut, or unusable feature-id-key before
+    // any plotting work. Only the choropleth & smart subcommands consume --geojson.
+    if args.flag_geojson.is_some() && (args.cmd_choropleth || args.cmd_smart) {
+        resolve_and_validate_geojson(&mut args)?;
     }
 
     let out_format = match args.flag_output.as_deref() {
@@ -2750,6 +2761,93 @@ fn sanitize_geojson_for_render(geojson: &mut serde_json::Value) {
             None => false,
         }
     });
+}
+
+/// A `QSV_GEOJSON_SHORTCUTS` entry: a convenience alias mapping a short name to a GeoJSON
+/// `path` (local file or http(s) URL) and an optional `id` (the feature-id-key to use).
+#[derive(serde::Deserialize)]
+struct GeojsonShortcut {
+    path: String,
+    #[serde(default)]
+    id:   Option<String>,
+}
+
+/// Resolve a `--geojson` value as a `QSV_GEOJSON_SHORTCUTS` entry name.
+/// Returns the resolved path/URL and the optional feature-id-key carried by the shortcut.
+fn lookup_geojson_shortcut(name: &str) -> CliResult<(String, Option<String>)> {
+    let raw = std::env::var("QSV_GEOJSON_SHORTCUTS").map_err(|_| {
+        crate::CliError::Other(format!(
+            "--geojson '{name}' is not an existing file or http(s) URL, and no \
+             QSV_GEOJSON_SHORTCUTS are defined."
+        ))
+    })?;
+    let map: std::collections::HashMap<String, GeojsonShortcut> = serde_json::from_str(&raw)
+        .map_err(|e| {
+            crate::CliError::Other(format!("QSV_GEOJSON_SHORTCUTS is not valid JSON: {e}"))
+        })?;
+    match map.get(name) {
+        Some(s) => Ok((s.path.clone(), s.id.clone())),
+        None => {
+            let mut keys: Vec<&str> = map.keys().map(String::as_str).collect();
+            keys.sort_unstable();
+            fail_incorrectusage_clierror!(
+                "Unknown --geojson shortcut '{name}'. Available QSV_GEOJSON_SHORTCUTS: {}.",
+                keys.join(", ")
+            )
+        },
+    }
+}
+
+/// Resolve a shortcut name and validate the GeoJSON up front (fail-fast, before any plotting).
+/// Rewrites `args.flag_geojson` to the concrete path/URL and, when the value resolved via a
+/// shortcut that carries an `id`, adopts it as the feature-id-key unless the user set a
+/// non-default one.
+fn resolve_and_validate_geojson(args: &mut Args) -> CliResult<()> {
+    let Some(spec) = args.flag_geojson.clone() else {
+        return Ok(());
+    };
+
+    // Disambiguate: a direct source is an http(s) URL or an existing local file; anything else is
+    // treated as a shortcut NAME. (More robust than "try to load, fall back on failure": a 404'd
+    // URL or an existing-but-broken file must NOT be silently reinterpreted as a shortcut name.)
+    let is_url = spec.starts_with("http://") || spec.starts_with("https://");
+    let (resolved, shortcut_id) = if is_url || std::path::Path::new(&spec).is_file() {
+        (spec, None)
+    } else {
+        lookup_geojson_shortcut(&spec)?
+    };
+
+    // A shortcut's id fills in for the bare default only; an explicit --feature-id-key wins.
+    if let Some(id) = shortcut_id
+        && args
+            .flag_feature_id_key
+            .as_deref()
+            .is_none_or(|k| k == "id")
+    {
+        args.flag_feature_id_key = Some(id);
+    }
+
+    // Validate: fetch/read + FeatureCollection + the feature-id-key resolves on >=1 feature.
+    let geojson = load_geojson(&resolved)?;
+    let fc = serde_json::from_value::<geojson::FeatureCollection>(geojson).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson '{resolved}' is not a valid GeoJSON FeatureCollection: {e}"
+        ))
+    })?;
+    let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    if !fc
+        .features
+        .iter()
+        .any(|f| feature_id_by_path(f, key).is_some())
+    {
+        return fail_incorrectusage_clierror!(
+            "--feature-id-key '{key}' resolves on no feature in --geojson '{resolved}'. Use e.g. \
+             'id' or 'properties.<name>'."
+        );
+    }
+
+    args.flag_geojson = Some(resolved);
+    Ok(())
 }
 
 /// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.

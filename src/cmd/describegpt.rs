@@ -4299,7 +4299,11 @@ fn run_description_phase(
     total_json_output: &mut serde_json::Value,
     base_url: &str,
     output_format: OutputFormat,
-) -> CliResult<CompletionResponse> {
+    // When true, a failed LLM completion (only) is downgraded to a warning and the phase
+    // returns Ok(None) so the run can still emit earlier successful phases' output. Prompt
+    // rendering and output formatting/writing errors always propagate regardless.
+    degradable: bool,
+) -> CliResult<Option<CompletionResponse>> {
     let (prompt, system_prompt, template_inlines_dictionary) =
         get_prompt(PromptType::Description, Some(analysis_results), args)?;
     // If the description template already inlines `{{ dictionary }}`, skip the redundant
@@ -4314,7 +4318,7 @@ fn run_description_phase(
     let messages = build_inference_messages(&prompt, &system_prompt, chat_dict_injection, None);
     let start_time = Instant::now();
     print_status("  Inferring Description...", None);
-    let completion_response = get_cached_completion(
+    let completion_response = match get_cached_completion(
         args,
         client,
         model,
@@ -4322,7 +4326,16 @@ fn run_description_phase(
         cache_type,
         PromptType::Description,
         &messages,
-    )?;
+    ) {
+        Ok(cr) => cr,
+        // Only the LLM completion is degradable, and only when an earlier phase succeeded:
+        // warn, add nothing to total_json_output, and let the caller keep going.
+        Err(e) if degradable => {
+            wwarn!("Description inference failed; continuing with available output: {e}");
+            return Ok(None);
+        },
+        Err(e) => return Err(e),
+    };
     print_status(
         format!(
             "   Received Description Inference.\n   {:?}\n  ",
@@ -4341,7 +4354,7 @@ fn run_description_phase(
         base_url,
         output_format,
     )?;
-    Ok(completion_response)
+    Ok(Some(completion_response))
 }
 
 /// Run the Tags inference phase.
@@ -4357,7 +4370,11 @@ fn run_tags_phase(
     total_json_output: &mut serde_json::Value,
     base_url: &str,
     output_format: OutputFormat,
-) -> CliResult<CompletionResponse> {
+    // When true, a failed LLM completion (only) is downgraded to a warning and the phase
+    // returns Ok(None) so the run can still emit earlier successful phases' output. Prompt
+    // rendering and output formatting/writing errors always propagate regardless.
+    degradable: bool,
+) -> CliResult<Option<CompletionResponse>> {
     let (prompt, system_prompt, template_inlines_dictionary) =
         get_prompt(PromptType::Tags, Some(analysis_results), args)?;
     // Skip the redundant chat-message-side dictionary injection when the tags template
@@ -4378,7 +4395,7 @@ fn run_tags_phase(
     } else {
         print_status("  Inferring Tags...", None);
     }
-    let completion_response = get_cached_completion(
+    let completion_response = match get_cached_completion(
         args,
         client,
         model,
@@ -4386,7 +4403,16 @@ fn run_tags_phase(
         cache_type,
         PromptType::Tags,
         &messages,
-    )?;
+    ) {
+        Ok(cr) => cr,
+        // Only the LLM completion is degradable, and only when an earlier phase succeeded:
+        // warn, add nothing to total_json_output, and let the caller keep going.
+        Err(e) if degradable => {
+            wwarn!("Tags inference failed; continuing with available output: {e}");
+            return Ok(None);
+        },
+        Err(e) => return Err(e),
+    };
     print_status(
         &format!(
             "   Received Tags inference.\n   {:?}\n  ",
@@ -4404,7 +4430,7 @@ fn run_tags_phase(
         base_url,
         output_format,
     )?;
-    Ok(completion_response)
+    Ok(Some(completion_response))
 }
 
 /// Outcome of the custom-prompt phase, returned to `run_inference_options` so it can
@@ -5458,7 +5484,10 @@ fn run_inference_options(
     }
 
     if args.flag_description || args.flag_all {
-        match run_description_phase(
+        // `any_phase_ok` is passed as `degradable`: a description LLM completion failure is
+        // downgraded to a warning (returns Ok(None)) only when an earlier phase already
+        // produced emittable output. Prompt-render and output-write errors still propagate.
+        if let Some(cr) = run_description_phase(
             args,
             &client,
             &model,
@@ -5469,19 +5498,10 @@ fn run_inference_options(
             &mut total_json_output,
             &base_url,
             output_format,
-        ) {
-            Ok(cr) => {
-                last_completion = cr;
-                any_phase_ok = true;
-            },
-            // Non-fatal when an earlier requested phase already produced emittable
-            // output (normally the dictionary): warn, leave last_completion at its
-            // prior value, add nothing to total_json_output for this phase, and let
-            // control reach finalize_structured_output.
-            Err(e) if any_phase_ok => {
-                wwarn!("Description inference failed; continuing with available output: {e}");
-            },
-            Err(e) => return Err(e),
+            any_phase_ok,
+        )? {
+            last_completion = cr;
+            any_phase_ok = true;
         }
     }
 
@@ -5492,7 +5512,11 @@ fn run_inference_options(
         } else {
             ""
         };
-        match run_tags_phase(
+        // Same as the description phase: only a tags LLM completion failure is degradable
+        // (when an earlier phase succeeded); render/output errors still propagate. Tags is
+        // the last phase that consults `any_phase_ok` (Prompt stays fatal), so there is no
+        // need to update it on success.
+        if let Some(cr) = run_tags_phase(
             args,
             &client,
             &model,
@@ -5503,14 +5527,9 @@ fn run_inference_options(
             &mut total_json_output,
             &base_url,
             output_format,
-        ) {
-            // No `any_phase_ok = true` here: Tags is the last phase that consults it
-            // (Prompt stays fatal), so setting it would be a dead assignment.
-            Ok(cr) => last_completion = cr,
-            Err(e) if any_phase_ok => {
-                wwarn!("Tags inference failed; continuing with available output: {e}");
-            },
-            Err(e) => return Err(e),
+            any_phase_ok,
+        )? {
+            last_completion = cr;
         }
     }
 

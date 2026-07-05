@@ -7785,6 +7785,12 @@ enum PanelKind {
         /// missing values draw at the smallest size. Never applied to the outlier trace or
         /// in density mode.
         sizes:              Option<Vec<f64>>,
+        /// MapLibre pan constraint (`layout.map.bounds`), computed from the FULL coordinate cloud
+        /// BEFORE `lats`/`lons` are downsampled — so a stride-dropped spatial extreme can't shrink
+        /// the box below the true extent that the "Full extent" zoom button and the geocoded
+        /// extent overlay reference. `None` for near-global / antimeridian extents (see
+        /// `map_pan_bounds`), where no constraint is applied.
+        pan_bounds:         Option<MapBounds>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
     /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
@@ -11245,6 +11251,13 @@ fn build_map_panel(
         (choropleth, None)
     };
 
+    // pan bounds from the FULL (pre-downsample) core + outlier coordinates, so a stride-dropped
+    // extreme can't shrink the box below the true extent the "Full extent" button / overlay use.
+    // Only the tile `Map` render honors it; the `geo` projection ignores map.bounds.
+    let pan_bounds = map_pan_bounds(&[
+        (core_lats.as_slice(), core_lons.as_slice()),
+        (out_lats.as_slice(), out_lons.as_slice()),
+    ]);
     let kind = if global {
         PanelKind::Geo {
             lats,
@@ -11265,6 +11278,7 @@ fn build_map_panel(
             hover_text,
             outlier_hover_text,
             sizes: core_sizes,
+            pan_bounds,
         }
     };
     Ok(Some((
@@ -14230,6 +14244,7 @@ fn smart_inline_panel_plot(
         hover_text,
         outlier_hover_text,
         sizes,
+        pan_bounds,
     } = &panel.kind
     {
         // smart auto panel: trim outliers so a few bad geocodes don't blow up the default view
@@ -14317,13 +14332,12 @@ fn smart_inline_panel_plot(
             .style(smart_map_basemap(is_dark_theme(theme), *density))
             .center(center)
             .zoom(f64::from(zoom));
-        // constrain panning to the data's footprint (core points + geographic outliers, so the
-        // "Full extent" zoom stays reachable) so the map can't be dragged off into empty ocean.
-        if let Some(bounds) = map_pan_bounds(&[
-            (lats.as_slice(), lons.as_slice()),
-            (outlier_lats.as_slice(), outlier_lons.as_slice()),
-        ]) {
-            layout_map = layout_map.bounds(bounds);
+        // constrain panning to the data's footprint so the map can't be dragged off into empty
+        // ocean. Computed in `build_map_panel` from the FULL (pre-downsample) coordinate cloud, so
+        // the box always encloses the true extent the "Full extent" zoom button / overlay use — a
+        // stride-dropped extreme can't shrink it below the rendered core/outlier points.
+        if let Some(bounds) = pan_bounds {
+            layout_map = layout_map.bounds(bounds.clone());
         }
         let mut layout = Layout::new()
             .show_legend(false)

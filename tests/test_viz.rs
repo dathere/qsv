@@ -2875,6 +2875,59 @@ fn viz_smart_with_coords_has_map_panel() {
 }
 
 #[test]
+fn viz_smart_map_pan_bounds_from_full_extent_not_downsampled() {
+    let wrk = Workdir::new("viz_smart_map_pan_bounds_from_full_extent_not_downsampled");
+    // 200 points on a smooth latitude continuum 40.0..50.0 (constant lon), so the extremes are
+    // CORE points, not spatial outliers. The maximum (50.0) is moved to row index 1.
+    // downsample_pair is endpoint-inclusive (always keeps index 0 and n-1), so capped to 50
+    // points it strides right past index 1 — the RENDERED points top out near 49.75, dropping
+    // the true max.
+    //
+    // The MapLibre pan bounds (layout.map.bounds) must be derived from the FULL pre-downsample
+    // extent, not the rendered/downsampled coordinates. With the true extent (min 40.0, max 50.0)
+    // and the 100%-of-span padding (MAP_BOUNDS_PAD_FRAC = 1.0), north == 50.0 + (50.0 - 40.0) ==
+    // 60.0. A regression to computing bounds from the downsampled points (max ~49.75) would instead
+    // yield ~59.5, so the >= 59.99 assertion pins the fix.
+    let n = 200usize;
+    let mut lats: Vec<f64> = (0..n)
+        .map(|r| 40.0 + 10.0 * r as f64 / (n - 1) as f64)
+        .collect();
+    lats.swap(1, n - 1);
+    let mut rows = String::from("lat,lon\n");
+    for la in &lats {
+        rows.push_str(&format!("{la:.5},-74.0\n"));
+    }
+    wrk.create_from_string("ext.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "ext.csv", "-o", &out_html]);
+    // force core downsampling well below the row count so the true max (at a dropped index) can't
+    // survive into the rendered coordinates
+    cmd.env("QSV_VIZ_MAX_POINTS", "50");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // pull "north" out of the map's bounds object (the only "bounds" in the payload)
+    let bpos = html
+        .find(r#""bounds":{"#)
+        .expect("map pan bounds should be present");
+    let seg = &html[bpos..(bpos + 200).min(html.len())];
+    let marker = r#""north":"#;
+    let start = seg.find(marker).expect("north key in bounds") + marker.len();
+    let rest = &seg[start..];
+    let end = rest
+        .find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-'))
+        .unwrap();
+    let north: f64 = rest[..end].parse().unwrap();
+    assert!(
+        north >= 59.99,
+        "pan bounds north should reflect the FULL extent (true max 50.0 -> 60.0), got {north}; \
+         bounds computed from downsampled coords would be ~59.5. seg: {seg}"
+    );
+}
+
+#[test]
 fn viz_smart_heatmap_density_threshold() {
     let wrk = Workdir::new("viz_smart_heatmap_density_threshold");
     // a small, locally-clustered lat/lon dataset so smart renders a MapLibre tile map (not the

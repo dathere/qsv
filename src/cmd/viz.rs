@@ -696,7 +696,7 @@ const SMART_ALL_POINTS_MAX_PANELS: usize = MAX_SUBPLOTS;
 const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 
 /// `viz smart` renders its geographic panel as a `ScatterGeo` projection world-overview (offline,
-/// no tiles) instead of a zoomed mapbox tile map when the coordinates span at least this many
+/// no tiles) instead of a zoomed MapLibre tile map when the coordinates span at least this many
 /// degrees of longitude OR latitude — i.e. continental/global data, where a whole-world projection
 /// gives better context than tiles framed to a wide bounding box. Local extents keep the tile map.
 const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
@@ -816,20 +816,20 @@ const SMART_COL_WIDTH_PX: usize = 500;
 const DEFAULT_IMG_WIDTH: usize = 1000;
 const DEFAULT_IMG_HEIGHT: usize = 600;
 
-/// Web-Mercator tile size (px): mapbox zoom z fits 360° of longitude across `512 * 2^z` px.
+/// Web-Mercator tile size (px): MapLibre zoom z fits 360° of longitude across `512 * 2^z` px.
 /// The unit the slippy-tile zoom math in `fitbounds_zoom` is defined against.
-const MAPBOX_TILE_SIZE_PX: f64 = 512.0;
+const MAP_TILE_SIZE_PX: f64 = 512.0;
 
 /// Anti-clip margin for the `fitbounds_zoom` framing (a 1.15× span pad ≈ a 0.20 zoom reduction).
 const MAP_FIT_PAD: f64 = 1.15;
 
-/// Usable mapbox draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
+/// Usable map draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
 /// (420) minus the map layout's top (48) + bottom (20) margins = 352. This is the *reliable*
 /// dimension at HTML-generation time (width is `responsive`/unknown) and, for the wide-short map
 /// panel, the binding constraint — so the latitude fit is computed against it.
 const MAP_PANEL_USABLE_HEIGHT_PX: f64 = OVERVIEW_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
 
-/// Assumed mapbox draw width (px) for the smart MAP panel longitude fit. The panel spans the full
+/// Assumed map draw width (px) for the smart MAP panel longitude fit. The panel spans the full
 /// grid (`grid-column: 1 / -1`) and its real width is responsive/unknown when the HTML is
 /// generated. The reliable `MAP_PANEL_USABLE_HEIGHT_PX` term binds the common case (a ~square or
 /// tall extent is latitude-bound, so this width is irrelevant to it); the width term only matters
@@ -1367,7 +1367,7 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
         }
     }
 
-    // maps use a `mapbox` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
+    // maps use a `map` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
     // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
     if matches!(chart_kind(args), Chart::Map) {
         return build_map_plot(args, out_format);
@@ -1903,8 +1903,8 @@ const MAP_DENSITY_RADIUS_PX: u8 = 20;
 const MAP_SMART_DENSITY_RADIUS_PX: u8 = 8;
 
 /// Resolve a `--style` name to its plotly MapLibre `MapStyle`. Every MapLibre bundled style
-/// renders without an access token, so — unlike the old Mapbox basemaps — none of these require
-/// `--mapbox-token`. (The Stamen basemaps have no MapLibre equivalent and were dropped.)
+/// renders without an access token (unlike the old Mapbox basemaps, no token is ever needed).
+/// (The Stamen basemaps have no MapLibre equivalent and were dropped.)
 fn parse_map_style(name: &str) -> CliResult<MapStyle> {
     let resolved = match name.to_ascii_lowercase().as_str() {
         "open-street-map" | "osm" => MapStyle::OpenStreetMap,
@@ -2013,8 +2013,8 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
 
 /// Web-Mercator normalized Y for a latitude (0 at +85.05°N, 1 at 85.05°S) — the vertical analogue
 /// of `lon / 360`. Latitude is clamped to the Web-Mercator limit (±85.05°) so `tan`/`ln` can't blow
-/// up. Used by `fitbounds_zoom` to size a latitude span in the same projected units mapbox zoom is
-/// defined in.
+/// up. Used by `fitbounds_zoom` to size a latitude span in the same projected units MapLibre zoom
+/// is defined in.
 fn mercator_y(lat: f64) -> f64 {
     const MERCATOR_MAX_LAT: f64 = 85.05;
     let lat_rad = lat.clamp(-MERCATOR_MAX_LAT, MERCATOR_MAX_LAT).to_radians();
@@ -2042,12 +2042,12 @@ fn fitbounds_zoom(min_lat: f64, max_lat: f64, lon_span: f64, width_px: f64, heig
         return 10;
     }
     let zoom_lon = if lon_frac > 0.0 {
-        ((width_px / MAPBOX_TILE_SIZE_PX) / lon_frac).log2()
+        ((width_px / MAP_TILE_SIZE_PX) / lon_frac).log2()
     } else {
         f64::INFINITY
     };
     let zoom_lat = if lat_frac > 0.0 {
-        ((height_px / MAPBOX_TILE_SIZE_PX) / lat_frac).log2()
+        ((height_px / MAP_TILE_SIZE_PX) / lat_frac).log2()
     } else {
         f64::INFINITY
     };
@@ -2145,7 +2145,7 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
 
 /// Build a markers-mode `ScatterMap` point trace with the given marker (and optional per-point
 /// hover text), mirroring `scatter_with_marker` for the cartesian scatter path.
-fn scatter_mapbox_with_marker(
+fn scatter_map_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
     marker: Marker,
@@ -2367,7 +2367,7 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
                 .color_bar(ColorBar::new().title(color_label));
         }
         let text = (!texts.is_empty()).then_some(texts);
-        plot.add_trace(scatter_mapbox_with_marker(lats, lons, marker, text));
+        plot.add_trace(scatter_map_with_marker(lats, lons, marker, text));
     }
 
     // MapLibre `map` subplot: all bundled styles render token-free, so no access token is embedded.
@@ -2412,7 +2412,7 @@ fn parse_projection(name: &str) -> CliResult<ProjectionType> {
 }
 
 /// Build a markers-mode `ScatterGeo` point trace with the given marker (and optional per-point
-/// hover text), mirroring `scatter_mapbox_with_marker` for the projection-basemap path.
+/// hover text), mirroring `scatter_map_with_marker` for the projection-basemap path.
 fn scatter_geo_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
@@ -3005,7 +3005,7 @@ fn escape_hover(s: &str) -> String {
 }
 
 /// Wrap a pre-rendered hover string as a density-trace `hovertemplate` entry. Density traces
-/// (`DensityMap`/`DensityMapbox`) honor ONLY `hovertemplate`, not `hovertext` — so per-point hover
+/// (`DensityMap`) honors ONLY `hovertemplate`, not `hovertext` — so per-point hover
 /// on a heatmap must go through this. A literal `%` would be misparsed as a `%{...}` template
 /// token, so it's doubled; `<extra></extra>` suppresses the trace-name box. Feed already
 /// `escape_hover`-ed text (this only adds the `%`-escaping and the extra tag).
@@ -5543,7 +5543,7 @@ fn dark_chart_palette(
 /// (so `--theme plotly_dark` always opens dark); only an unthemed dashboard (`theme == None`)
 /// defers to the viewer's saved choice then OS preference. Known limitation: geo/scene/polar/pie
 /// panels flip their background, font, and
-/// container color, but basemap fills, mapbox tiles, and trace marker colors do NOT re-theme
+/// container color, but basemap fills, map tiles, and trace marker colors do NOT re-theme
 /// (that would need a trace-type-aware `Plotly.restyle`, which is out of scope here).
 struct ToggleChrome {
     /// CSS for the `:root`/`body.qsv-dark` variables and the toggle button; goes in `<style>`.
@@ -5644,8 +5644,8 @@ const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page
 const SCRIPT_TEMPLATE: &str = r#"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
-  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
+  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapStyle: "carto-darkmatter" };
+  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapStyle: "carto-positron" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard
     // saved preference (the localStorage key is shared across all qsv viz pages,
@@ -5678,8 +5678,8 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
-      } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
-        u[k + ".style"] = p.mapbox;
+      } else if (/^map\d*$/.test(k)) {
+        u[k + ".style"] = p.mapStyle;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -5761,9 +5761,9 @@ const FULLSCREEN_STYLE: &str =
 /// graph div once with the button added. The button toggles the native Fullscreen API on the
 /// graph div.
 ///
-/// Maps (mapbox / MapLibre) bake an ABSOLUTE `zoom` computed in Rust for a fixed assumed pixel
+/// Maps (MapLibre) bake an ABSOLUTE `zoom` computed in Rust for a fixed assumed pixel
 /// size (`window.__qsvMapAssumedW`/`__qsvMapAssumedH`, published by a per-page prelude). Since
-/// mapbox zoom is logarithmic, the optimal zoom for any real container size is
+/// MapLibre zoom is logarithmic, the optimal zoom for any real container size is
 /// `bakedZoom + log2(min(curW/assumedW, curH/assumedH))` with the baked center unchanged
 /// (`fitTarget`, using each subplot's DOMAIN-scaled px, so it is correct whether the map is
 /// full-bleed or one subplot in a grid). The baked zoom/center are captured ONCE before any
@@ -5775,9 +5775,9 @@ const FULLSCREEN_STYLE: &str =
 ///   - INITIAL display: `applyFitLayout` mutates `gd.layout` BEFORE the button-injection
 ///     `Plotly.newPlot`, so the first paint already fills the real container (newPlot is the only
 ///     primitive that safely sets a map camera at render time — no extra paint, no relayout).
-///   - FULLSCREEN enter/exit: `applyFitCamera` moves the GL map camera directly via the
-///     maplibre/mapbox-gl instance (`gd._fullLayout[k]._subplot.map.jumpTo`), which sits below
-///     plotly's relayout/setData path — no tile reload, works even before the style loads.
+///   - FULLSCREEN enter/exit: `applyFitCamera` moves the GL map camera directly via the MapLibre GL
+///     instance (`gd._fullLayout[k]._subplot.map.jumpTo`), which sits below plotly's
+///     relayout/setData path — no tile reload, works even before the style loads.
 ///
 /// Non-map charts just get `Plotly.Plots.resize`.
 ///
@@ -5804,7 +5804,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       } catch (e) {}
     }
   };
-  // The assumed pixel size the baked mapbox/MapLibre zoom was computed against (published by a
+  // The assumed pixel size the baked MapLibre zoom was computed against (published by a
   // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
   function assumedDims() {
     var w = (typeof window.__qsvMapAssumedW === "number" && window.__qsvMapAssumedW > 0) ? window.__qsvMapAssumedW : 1000;
@@ -5814,7 +5814,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   function mapKeys(gd) {
     var lay = (gd && gd.layout) || {};
     return Object.keys(lay).filter(function (k) {
-      return /^(mapbox|map)\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+      return /^map\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
     });
   }
   // Snapshot the baked (assumed-px) zoom + center ONCE, before any mutation, as the fixed
@@ -5830,7 +5830,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
   }
   // Compute the optimal {zoom, center} for map subplot `k` at the current plot pixel size.
-  // mapbox/MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
+  // MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
   // differs from the assumed px the baked zoom was computed for:
   //   zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)); center = baked center.
   // curW/curH are DOMAIN-scaled (the subplot's own px), so this is correct for a full-bleed map AND
@@ -5861,7 +5861,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       if (t.center) lay[k].center = t.center;
     });
   }
-  // Post-render fit: move the GL map camera directly via the maplibre/mapbox-gl instance
+  // Post-render fit: move the GL map camera directly via the MapLibre GL instance
   // (gd._fullLayout[k]._subplot.map). This sits BELOW plotly's relayout/react/setData path, so it
   // re-aims a choroplethmap's camera without the "setData of undefined" throw, needs no tile
   // reload, and works even before the GL style finishes loading. Used for fullscreen enter/exit.
@@ -5949,7 +5949,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
-/// A tiny prelude `<script>` publishing the assumed map pixel size the baked mapbox/MapLibre
+/// A tiny prelude `<script>` publishing the assumed map pixel size the baked MapLibre
 /// `zoom` was computed against, so `FULLSCREEN_SCRIPT`'s `qsvRefitMaps` can rescale the zoom to the
 /// real rendered size (initial display + fullscreen). Sourced from the Rust constants so it can't
 /// drift: standalone `viz map` HTML frames against `fit_dims` (`DEFAULT_IMG_WIDTH`×
@@ -5999,7 +5999,7 @@ fn smart_html_page(
         script,
     } = toggle_chrome(theme);
     let logo = logo_markup();
-    // Publish the assumed map pixel size the smart-panel mapbox/MapLibre zoom was baked against, so
+    // Publish the assumed map pixel size the smart-panel MapLibre zoom was baked against, so
     // the client can re-fit map zoom to the real rendered size (see `assumed_map_dims_prelude`).
     let fs_prelude =
         assumed_map_dims_prelude(MAP_PANEL_ASSUMED_WIDTH_PX, MAP_PANEL_USABLE_HEIGHT_PX);
@@ -7664,9 +7664,9 @@ enum PanelKind {
     Histogram { idx: usize },
     /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
     /// precomputed, row-aligned coordinates (already downsampled to `MAX_SMART_POINTS`). `density`
-    /// requests a heatmap render instead of discrete markers when the source had many rows. Mapbox
-    /// subplots don't compose with the typed x/y subplot grid, so a dashboard containing this panel
-    /// always renders via the inline path.
+    /// requests a heatmap render instead of discrete markers when the source had many rows.
+    /// MapLibre `map` subplots don't compose with the typed x/y subplot grid, so a dashboard
+    /// containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (far from the cluster centroid),
     /// drawn as a distinct marker trace on top of the core points.
     Map {
@@ -7691,9 +7691,9 @@ enum PanelKind {
         sizes:              Option<Vec<f64>>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
-    /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
-    /// continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the typed x/y
-    /// grid, so a dashboard containing this panel always renders via the inline path.
+    /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
+    /// span a continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the
+    /// typed x/y grid, so a dashboard containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
     Geo {
         lats:               Vec<f64>,
@@ -10526,7 +10526,7 @@ const GEOJSON_OVERLAY_LINE_WIDTH: f64 = 1.5;
 
 /// Region boundaries (as one gap-separated polyline) plus per-feature labels for overlaying a
 /// user `--geojson` on a `viz smart` map panel. Built once in `build_map_panel`, rendered by
-/// [`geojson_overlay_mapbox_traces`] / [`geojson_overlay_geo_traces`] on both the mapbox and the
+/// [`geojson_overlay_map_traces`] / [`geojson_overlay_geo_traces`] on both the map and the
 /// offline `ScatterGeo` (global / static-export) paths.
 struct GeoJsonOverlay {
     /// All feature ring vertices; a `NaN` gap separates consecutive rings so plotly breaks the
@@ -10740,8 +10740,8 @@ fn geojson_overlay_label_font() -> Font {
         .color(GEOJSON_OVERLAY_LINE_COLOR)
 }
 
-/// Small centroid marker carrying each region's name as hover text on the mapbox tile map. Raster
-/// mapbox basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
+/// Small centroid marker carrying each region's name as hover text on the MapLibre tile map. Raster
+/// basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
 /// haloed circles, not text), so the region label is delivered on hover of this dot instead — a
 /// white-haloed teal circle that reads on both light and dark basemaps.
 fn geojson_overlay_label_marker() -> Marker {
@@ -10756,7 +10756,7 @@ fn geojson_overlay_label_marker() -> Marker {
 /// boundaries are one gap-separated line trace; the labels are centroid hover-markers (the raster
 /// basemap culls colliding on-map text, so the region name is shown on hover of a small dot
 /// instead).
-fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
+fn geojson_overlay_map_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
     let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
     let boundary: Box<dyn Trace> =
         ScatterMap::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
@@ -10935,7 +10935,7 @@ fn build_map_panel(
     let density = args.flag_heatmap_density > 0 && mappable_count >= args.flag_heatmap_density;
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
-    // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
+    // (no network tiles, better whole-world context) rather than a zoomed MapLibre tile map.
     // Use the same robust framing semantics as the map view (computed on the full in-range set,
     // before downsampling): an antimeridian-aware, trimmed longitude span and a trimmed latitude
     // span, so a cluster straddling +/-180 or a single far in-range outlier doesn't misclassify a
@@ -11247,9 +11247,9 @@ fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
 
 /// Build a *dashed* bounding-box outline as a single gapped polyline: each edge is split into short
 /// dash segments separated by `NaN` breaks (which serialize to JSON `null`, rendering as gaps).
-/// `scattermapbox` ignores `line.dash` (Mapbox GL can't render dashed lines), so the dashes have to
-/// be drawn as geometry; this gives the full-extent box a dashed look on the tile map. Dash spacing
-/// is proportional to the box size so it reads as dashes at any zoom.
+/// `scattermap` ignores `line.dash` (MapLibre can't render dashed lines on raster tiles), so the
+/// dashes have to be drawn as geometry; this gives the full-extent box a dashed look on the tile
+/// map. Dash spacing is proportional to the box size so it reads as dashes at any zoom.
 #[cfg(feature = "geocode")]
 fn dashed_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon);
@@ -11309,11 +11309,12 @@ fn full_extent_box_line() -> Line {
         .dash(plotly::common::DashType::Dot)
 }
 
-/// Marker for the extent corner/center points on a mapbox tile map: a large, fully opaque purple
-/// circle with a white halo. Mapbox raster basemaps can't render custom marker symbols (no sprite)
-/// or reliably show text glyphs (label collision culls them), so a haloed circle is used here.
+/// Marker for the extent corner/center points on a MapLibre tile map: a large, fully opaque purple
+/// circle with a white halo. MapLibre raster basemaps can't render custom marker symbols (no
+/// sprite) or reliably show text glyphs (label collision culls them), so a haloed circle is used
+/// here.
 #[cfg(feature = "geocode")]
-fn extent_marker_mapbox() -> Marker {
+fn extent_marker_map() -> Marker {
     Marker::new()
         .color(GEO_EXTENT_LINE_COLOR)
         .size(GEO_EXTENT_MARKER_SIZE)
@@ -11321,14 +11322,14 @@ fn extent_marker_mapbox() -> Marker {
         .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.5))
 }
 
-/// Like `extent_marker_mapbox`, but a diamond — `ScatterGeo` (offline projection / static export)
+/// Like `extent_marker_map`, but a diamond — `ScatterGeo` (offline projection / static export)
 /// renders the standard plotly marker symbols, so the points get a distinctive shape there.
 #[cfg(feature = "geocode")]
 fn extent_marker_geo() -> Marker {
-    extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
+    extent_marker_map().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
-/// Mapbox (center lat, center lon, zoom) that frames an extent bounding box as tightly as possible
+/// Map (center lat, center lon, zoom) that frames an extent bounding box as tightly as possible
 /// while keeping the whole box inside the panel, via the aspect-aware `fitbounds_zoom`. A `viz
 /// smart` MAP panel is full grid width but a FIXED short height (`MAP_PANEL_USABLE_HEIGHT_PX`),
 /// i.e. wide and short, so the latitude (height) fit and longitude (width) fit are computed
@@ -11350,7 +11351,7 @@ fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
     (lat_center, lon_center, zoom)
 }
 
-/// Mapbox center + zoom framing the (core) extent — so the default view fills with the core cluster
+/// Map center + zoom framing the (core) extent — so the default view fills with the core cluster
 /// rather than zooming out to include far-flung outliers (those are drawn as distinct markers,
 /// named in the label, and reachable via the "Full extent" zoom button). Thin wrapper over
 /// `extent_center_zoom_raw`.
@@ -11400,8 +11401,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
 
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
 /// possible, for the offline `ScatterGeo` (local Mercator) path — the analogue of
-/// `extent_center_zoom` for projection maps. Unlike mapbox, these are exact ranges, so the small
-/// `GEO_EXTENT_FIT_PAD_*` padding is the only slack.
+/// `extent_center_zoom` for projection maps. Unlike the tile map, these are exact ranges, so the
+/// small `GEO_EXTENT_FIT_PAD_*` padding is the only slack.
 #[cfg(feature = "geocode")]
 fn extent_geo_axes(e: &MapExtent) -> (Axis, Axis) {
     let lat_pad =
@@ -11791,7 +11792,7 @@ const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 /// geographic outliers, a second no-fill dotted magenta box marking the full extent (core +
 /// outliers) is drawn underneath.
 #[cfg(feature = "geocode")]
-fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
+fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
     // the full-extent box (core + outliers) is drawn first, underneath, with no fill. The raster
     // basemap ignores line.dash, so the dashed look is drawn as a gapped polyline.
     if let Some(full) = &meta.full_extent {
@@ -11823,14 +11824,14 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
         ScatterMap::new(mlat, mlon)
             .name("extent points")
             .mode(Mode::Markers)
-            .marker(extent_marker_mapbox())
+            .marker(extent_marker_map())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
     );
 }
 
-/// Like `add_extent_overlay_mapbox` (including the optional full-extent box), but for an offline
+/// Like `add_extent_overlay_map` (including the optional full-extent box), but for an offline
 /// `ScatterGeo` projection `Plot` (used for continental/global extents and static image export).
 /// Hover labels are inert in static images, so the static export simply shows the box + diamond
 /// glyphs, as intended.
@@ -11883,9 +11884,9 @@ const GEO_OUTLIER_MARKER_SIZE: usize = 11;
 /// White halo around outlier markers, for contrast against both tile and projection basemaps.
 const GEO_OUTLIER_MARKER_BORDER: &str = "#ffffff";
 
-/// Outlier marker for mapbox tile maps: a haloed amber circle. Mapbox can't render custom symbols,
-/// so the distinction comes from size + color versus the data points.
-fn outlier_marker_mapbox() -> Marker {
+/// Outlier marker for MapLibre tile maps: a haloed amber circle. MapLibre can't render custom
+/// symbols, so the distinction comes from size + color versus the data points.
+fn outlier_marker_map() -> Marker {
     Marker::new()
         .color(GEO_OUTLIER_COLOR)
         .size(GEO_OUTLIER_MARKER_SIZE)
@@ -11893,10 +11894,10 @@ fn outlier_marker_mapbox() -> Marker {
         .line(Line::new().color(GEO_OUTLIER_MARKER_BORDER).width(1.5))
 }
 
-/// Like `outlier_marker_mapbox`, but an X glyph — `ScatterGeo` renders plotly symbols, giving the
+/// Like `outlier_marker_map`, but an X glyph — `ScatterGeo` renders plotly symbols, giving the
 /// outliers a distinct SHAPE in addition to color (and a readable glyph in inert static images).
 fn outlier_marker_geo() -> Marker {
-    outlier_marker_mapbox().symbol(plotly::common::MarkerSymbol::X)
+    outlier_marker_map().symbol(plotly::common::MarkerSymbol::X)
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
@@ -12157,7 +12158,7 @@ fn build_smart(
     // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
     // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
     //
-    // The map panel is built for BOTH HTML and static image output. The mapbox tile basemap
+    // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
     // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
     // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
     // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
@@ -12824,7 +12825,7 @@ fn build_smart(
     // export. An explicit `--max-charts N` caps the panel count to N instead.
     let is_html = matches!(out_format, OutFormat::Html);
 
-    // non-cartesian panels (mapbox map, geo projection, or 3D scatter) can't share the typed x/y
+    // non-cartesian panels (map subplot, geo projection, or 3D scatter) can't share the typed x/y
     // subplot grid, so any of them forces the inline render path. All are HTML-only (never built
     // for image export above).
     let has_noncartesian = panels.iter().any(|p| {
@@ -13498,7 +13499,7 @@ fn panel_trace(
             }
             bar
         },
-        // map / geo / 3D / hierarchy panels use a non-cartesian layout (mapbox, geo projection,
+        // map / geo / 3D / hierarchy panels use a non-cartesian layout (map, geo projection,
         // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
         // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
         // assembler.
@@ -14121,8 +14122,9 @@ fn smart_inline_panel_plot(
     // overview panels (map/geo, correlation, time-series, …) render a little taller than the
     // per-column box/bar/histogram panels.
     let row_height = panel_render_height(&panel.kind);
-    // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
-    // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
+    // map panels use a MapLibre `map` layout (tile basemap, framed to the points) instead of
+    // cartesian x/y axes, so they're assembled here rather than through the shared
+    // `panel_trace`/axis path.
     if let PanelKind::Map {
         lats,
         lons,
@@ -14194,7 +14196,7 @@ fn smart_inline_panel_plot(
             let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
                 .name("geographic outliers")
                 .mode(Mode::Markers)
-                .marker(outlier_marker_mapbox())
+                .marker(outlier_marker_map())
                 .show_legend(false);
             if !outlier_hover_text.is_empty() {
                 out_trace = out_trace
@@ -14205,10 +14207,10 @@ fn smart_inline_panel_plot(
         }
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
-            add_extent_overlay_mapbox(&mut plot, meta);
+            add_extent_overlay_map(&mut plot, meta);
         }
         if let Some(overlay) = &panel.geojson_overlay {
-            for trace in geojson_overlay_mapbox_traces(overlay) {
+            for trace in geojson_overlay_map_traces(overlay) {
                 plot.add_trace(trace);
             }
         }
@@ -14245,7 +14247,7 @@ fn smart_inline_panel_plot(
     }
 
     // geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
-    // x/y axes, so they're assembled here like the mapbox map panel above.
+    // x/y axes, so they're assembled here like the MapLibre map panel above.
     if let PanelKind::Geo {
         lats,
         lons,

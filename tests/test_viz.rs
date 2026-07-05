@@ -1489,7 +1489,7 @@ fn viz_static_png_export() {
     assert_eq!(&bytes[..4], b"\x89PNG");
 }
 
-// On image export the mapbox tile map can't be rendered, so a local-extent coordinate pair is
+// On image export the MapLibre tile map can't be rendered, so a local-extent coordinate pair is
 // drawn as an offline ScatterGeo projection fit to the extent (the lat/lon columns are consumed by
 // that geo panel, not charted as distributions). A coordinates-only dataset must still produce a
 // chart. Requires a browser/webdriver, so ignored by default.
@@ -2678,11 +2678,11 @@ fn viz_map_basic() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // a token-free ScatterMapbox point map on OpenStreetMap tiles
+    // a token-free ScatterMap point map on OpenStreetMap tiles
     assert!(html.contains("Plotly.newPlot"));
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains("open-street-map"));
-    // auto-centered/zoomed mapbox layout
+    // auto-centered/zoomed MapLibre map layout
     assert!(html.contains(r#""center""#));
     assert!(html.contains(r#""zoom""#));
 }
@@ -2802,7 +2802,7 @@ fn viz_map_series_traces() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // one ScatterMapbox trace per region, named by category
+    // one ScatterMap trace per region, named by category
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""name":"Asia""#));
     assert!(html.contains(r#""name":"Americas""#));
@@ -2914,7 +2914,7 @@ fn viz_smart_with_coords_has_map_panel() {
     let html = String::from_utf8_lossy(&out.stdout);
     // smart auto-detects the lat/lon pair and adds a geographic panel; it forces the inline
     // (self-contained HTML page) render path. The quakes data spans the globe, so the panel is
-    // rendered as an offline ScatterGeo projection world-overview (not a zoomed mapbox tile map).
+    // rendered as an offline ScatterGeo projection world-overview (not a zoomed MapLibre tile map).
     assert!(html.contains("<!doctype html>"));
     assert!(html.contains(r#""type":"scattergeo""#));
     assert!(!html.contains(r#""type":"scattermap""#));
@@ -2925,7 +2925,7 @@ fn viz_smart_with_coords_has_map_panel() {
 #[test]
 fn viz_smart_heatmap_density_threshold() {
     let wrk = Workdir::new("viz_smart_heatmap_density_threshold");
-    // a small, locally-clustered lat/lon dataset so smart renders a mapbox tile map (not the
+    // a small, locally-clustered lat/lon dataset so smart renders a MapLibre tile map (not the
     // global ScatterGeo world-overview), where the heatmap-vs-markers decision applies.
     wrk.create_from_string(
         "local_geo.csv",
@@ -2955,13 +2955,13 @@ fn viz_smart_heatmap_density_threshold() {
 }
 
 // A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the
-// mapbox tile map: a single gap-separated `scattermapbox` line trace named "regions", plus a
-// "region labels" trace of centroid HOVER markers (raster mapbox culls on-map text, so the region
+// MapLibre tile map: a single gap-separated `scattermap` line trace named "regions", plus a
+// "region labels" trace of centroid HOVER markers (the raster basemap culls on-map text, so the region
 // name is delivered on hover of a dot instead of as a visible glyph).
 #[test]
 fn viz_smart_geojson_overlay() {
     let wrk = Workdir::new("viz_smart_geojson_overlay");
-    // locally-clustered points so smart renders a mapbox tile map (not the global ScatterGeo)
+    // locally-clustered points so smart renders a MapLibre tile map (not the global ScatterGeo)
     wrk.create_from_string(
         "local_geo.csv",
         "id,lat,lon,val\n1,40.46,-79.98,a\n2,40.47,-79.97,b\n3,40.46,-79.92,c\n4,40.47,-79.91,d\n",
@@ -2986,11 +2986,11 @@ fn viz_smart_geojson_overlay() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    // local mapbox map with the boundary + label overlay traces
+    // local MapLibre map with the boundary + label overlay traces
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""name":"regions""#));
     assert!(html.contains(r#""name":"region labels""#));
-    // labels ride in hover text (mapbox culls on-map glyphs), carrying the --feature-name-key
+    // labels ride in hover text (the basemap culls on-map glyphs), carrying the --feature-name-key
     // values rather than the ids
     assert!(html.contains(r#""hovertext":["North Ward","South Ward"]"#));
 }
@@ -3034,7 +3034,7 @@ fn viz_smart_geojson_overlay_global_geo() {
 }
 
 // A globe-spanning dataset renders the smart map as an offline ScatterGeo world-overview, NOT a
-// DensityMapbox — so even with a low --heatmap-density threshold, no heatmap is drawn and the
+// DensityMap — so even with a low --heatmap-density threshold, no heatmap is drawn and the
 // heatmap note must NOT be emitted (it would misdescribe the ScatterGeo markers as a heatmap).
 #[test]
 fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
@@ -3060,7 +3060,7 @@ fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
 #[test]
 fn viz_smart_heatmap_density_note_reports_full_count() {
     let wrk = Workdir::new("viz_smart_heatmap_density_note_reports_full_count");
-    // 60_000 tightly-clustered local points (span ~0.01°) so the map renders as a local mapbox
+    // 60_000 tightly-clustered local points (span ~0.01°) so the map renders as a local MapLibre map
     // heatmap and every point is a core point (no outlier split), exceeding the 50_000 cap.
     let mut csv = String::from("id,lat,lon,val\n");
     for i in 0..60_000u32 {
@@ -3261,7 +3261,7 @@ fn viz_smart_geo_hover_geocoded_identifier() {
 #[test]
 fn viz_smart_geocode_enrichment_county_and_fips() {
     let wrk = Workdir::new("viz_smart_geocode_enrichment_county_and_fips");
-    // a tight Allegheny County, PA cluster -> a local mapbox map with per-point hovers
+    // a tight Allegheny County, PA cluster -> a local MapLibre map with per-point hovers
     wrk.create_from_string(
         "pitt.csv",
         "id,lat,lon,val
@@ -3935,7 +3935,7 @@ fn viz_smart_dictionary_grain_labels_count() {
 fn viz_smart_antimeridian_cluster_stays_local_map() {
     // A tight cluster straddling the +/-180 antimeridian has a small TRUE longitude span but a huge
     // raw max-min span. The global/local test must use the antimeridian-aware span, so this stays a
-    // local mapbox tile map rather than being misclassified as a world ScatterGeo overview.
+    // local MapLibre tile map rather than being misclassified as a world ScatterGeo overview.
     let wrk = Workdir::new("viz_smart_antimeridian_cluster_stays_local_map");
     let lons = [177.0_f64, 178.0, 179.0, -179.0, -178.0];
     let mut rows = String::from("lat,lon,grp\n");
@@ -3953,7 +3953,7 @@ fn viz_smart_antimeridian_cluster_stays_local_map() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // local extent (true span ~5 deg) => mapbox tile map, NOT a world projection overview
+    // local extent (true span ~5 deg) => MapLibre tile map, NOT a world projection overview
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(!html.contains(r#""type":"scattergeo""#));
 }
@@ -5025,11 +5025,11 @@ fn viz_smart_grid_has_theme_toggle() {
     assert!(html.contains("qsv-logo-light"));
     assert!(html.contains("qsv-logo-dark"));
     assert!(html.contains("data:image/png;base64,"));
-    // the toggle palette includes Carto mapbox styles for both modes so the tile basemap tracks
-    // the theme button (mapbox*.style is relayout-ed on each toggle click)
-    assert!(html.contains(r#"mapbox: "carto-positron""#));
-    assert!(html.contains(r#"mapbox: "carto-darkmatter""#));
-    assert!(html.contains(r#"/^mapbox\d*$/.test(k)"#));
+    // the toggle palette includes Carto map styles for both modes so the tile basemap tracks
+    // the theme button (map*.style is relayout-ed on each toggle click)
+    assert!(html.contains(r#"mapStyle: "carto-positron""#));
+    assert!(html.contains(r#"mapStyle: "carto-darkmatter""#));
+    assert!(html.contains(r#"/^map\d*$/.test(k)"#));
 }
 
 #[test]
@@ -5201,10 +5201,10 @@ fn viz_smart_map_outlier_markers() {
     );
     // smart map panels use Carto tiles (no Referer policy); OSM blocks local-file requests.
     // Assert the serialized Plotly layout key ("style":"carto-positron"), not just the bare
-    // string which also appears in the theme-toggle palette (mapbox: "carto-positron").
+    // string which also appears in the theme-toggle palette (mapStyle: "carto-positron").
     assert!(
         html.contains(r#""style":"carto-positron""#),
-        "light-theme smart map panel must set layout.mapbox.style to carto-positron, not \
+        "light-theme smart map panel must set layout.map.style to carto-positron, not \
          open-street-map"
     );
 }
@@ -6914,7 +6914,7 @@ fn viz_smart_has_fullscreen_button() {
     assert!(html.contains(".js-plotly-plot:fullscreen"));
 }
 
-// The map zoom auto-fit recomputes mapbox/MapLibre zoom for the real container size from the baked
+// The map zoom auto-fit recomputes MapLibre zoom for the real container size from the baked
 // (assumed-px) zoom on initial display (`applyFitLayout` before the render newPlot) and on
 // fullscreen toggle (`applyFitCamera` via the GL camera). These assert the client-side fit logic
 // and the per-render-path assumed-dims prelude are emitted.

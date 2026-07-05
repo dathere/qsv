@@ -476,9 +476,14 @@ smart options:
                            violin for every continuous column EXCEPT those on
                            a log value axis (the KDE is estimated in linear
                            space, which a log axis would geometrically distort)
-                           and those with fewer than 20 distinct values (too
-                           few for a meaningful KDE) — both keep an honest box;
-                           "on" also violins those; "off" never draws violins.
+                           and those with fewer than 20 distinct values or
+                           fewer than 50 non-null observations (too few for a
+                           meaningful KDE — the curve would be smoothing
+                           artifact) — all keep an honest box; "on" also
+                           violins those; "off" never draws violins. Violin
+                           KDEs are clamped to each column's observed range
+                           (Plotly spanmode "hard") so a bounded or discrete
+                           measure can't show density past a natural limit.
                            A column with at most 10,000 non-null values gets an
                            exact violin (with outlier points, like a raw box);
                            a larger column draws its silhouette and inner box
@@ -550,7 +555,7 @@ use plotly::{
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
-    violin::{MeanLine, ViolinBox, ViolinPoints},
+    violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
 use serde::Deserialize;
 
@@ -728,6 +733,14 @@ const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 /// A violin's KDE over fewer distinct values than this reads as a lumpy comb, not a shape —
 /// such columns keep their box panel under `--violin auto`.
 const VIOLIN_MIN_CARDINALITY: u64 = 20;
+
+/// A KDE needs enough *observations* — not just distinct values — before its silhouette reflects
+/// the data rather than the smoothing bandwidth. `VIOLIN_MIN_CARDINALITY` guards distinct-value
+/// count, but a near-unique column can clear it with only a few dozen rows, where the resulting
+/// curve is bandwidth artifact rather than shape. Under `--violin auto` a column with fewer than
+/// this many non-null values keeps its honest box (five numbers that degrade gracefully); `on`
+/// still violins it at the user's explicit request.
+const VIOLIN_MIN_POINTS: u64 = 50;
 
 /// Target sample size for a violin (single-column or grouped) drawn from a column with more than
 /// `SMART_BOX_OUTLIERS_MAX` non-null values: the values are deterministically strided down to at
@@ -6461,11 +6474,18 @@ fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
 /// shape). `on` is the user's explicit choice and overrides both guards; `off` always boxes.
 /// Confirmed-bimodal columns never reach this — `classify_measure` routes them to a histogram
 /// first.
-fn wants_violin(mode: ViolinMode, s: &crate::cmd::stats::StatsData, value_log: bool) -> bool {
+fn wants_violin(
+    mode: ViolinMode,
+    s: &crate::cmd::stats::StatsData,
+    value_log: bool,
+    n_points: u64,
+) -> bool {
     match mode {
         ViolinMode::Off => false,
         ViolinMode::On => true,
-        ViolinMode::Auto => !value_log && s.cardinality >= VIOLIN_MIN_CARDINALITY,
+        ViolinMode::Auto => {
+            !value_log && s.cardinality >= VIOLIN_MIN_CARDINALITY && n_points >= VIOLIN_MIN_POINTS
+        },
     }
 }
 
@@ -12324,7 +12344,7 @@ fn build_smart(
                     if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n_points) {
                         // the raw values will be collected in full — exact violin (the default
                         // representation; see `wants_violin`) or raw box.
-                        kind = if wants_violin(violin_mode, s, would_log) {
+                        kind = if wants_violin(violin_mode, s, would_log, n_points) {
                             // the KDE silhouette already shows what a full point cloud would,
                             // so the size-based `all` upgrade (valuable on a box, whose five
                             // numbers hide the distribution) is redundant clutter on a violin:
@@ -12343,7 +12363,7 @@ fn build_smart(
                         } else {
                             PanelKind::BoxRaw { idx, points }
                         };
-                    } else if wants_violin(violin_mode, s, would_log) {
+                    } else if wants_violin(violin_mode, s, would_log, n_points) {
                         // `smart_box_points` returned None for one of two reasons, and a violin
                         // still renders in both: an explicit `--box-points none` only means "no
                         // point overlay" (a violin's KDE doesn't need points; the cache-only
@@ -13200,6 +13220,11 @@ fn panel_trace(
                 .points(violin_points(points))
                 .marker(Marker::new().color(color))
                 .line(Line::new().color(color))
+                // clamp the KDE to the observed data range so the silhouette can't bleed past a
+                // natural bound (density below 0 for a count, above 100 for a percentage); the
+                // default "soft" span extends a bandwidth beyond the extremes, which misleads on
+                // bounded/discrete columns.
+                .span_mode(SpanMode::Hard)
                 // show only the y stats in the hover, not plotly's default "(<trace name>,
                 // ...)" which repeats the (long) column name — it's already the panel title.
                 .hover_info(HoverInfo::Y);
@@ -13222,7 +13247,10 @@ fn panel_trace(
                 .mean_line(MeanLine::new().visible(true))
                 .points(violin_points(points))
                 .marker(Marker::new().color(color))
-                .line(Line::new().color(color));
+                .line(Line::new().color(color))
+                // clamp each category's KDE to its observed range (see the single-column violin
+                // above) so a bounded/discrete measure can't render density past a natural limit.
+                .span_mode(SpanMode::Hard);
             if let Some((x, y)) = &axes {
                 v = v.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -17399,31 +17427,41 @@ mod tests {
     #[test]
     fn wants_violin_auto_defaults_to_violin_with_guards() {
         // a violin is the DEFAULT representation for a continuous column: any shape, no
-        // bimodality/kurtosis signal required
+        // bimodality/kurtosis signal required (given enough distinct values AND observations)
         let s = stat("Float", 100, Some(0.9));
-        assert!(wants_violin(ViolinMode::Auto, &s, false));
+        assert!(wants_violin(ViolinMode::Auto, &s, false, 1_000));
 
         // too few distinct values for a meaningful KDE (a lumpy comb) -> box
         let mut few = stat("Float", 100, Some(0.9));
         few.cardinality = VIOLIN_MIN_CARDINALITY - 1;
-        assert!(!wants_violin(ViolinMode::Auto, &few, false));
+        assert!(!wants_violin(ViolinMode::Auto, &few, false, 1_000));
+
+        // too few observations for an honest KDE (the curve would be bandwidth artifact) -> box,
+        // even when the distinct-value count clears its guard
+        assert!(!wants_violin(
+            ViolinMode::Auto,
+            &s,
+            false,
+            VIOLIN_MIN_POINTS - 1
+        ));
 
         // a would-log panel keeps its box under auto (the KDE is estimated in linear
         // space, so a log axis distorts the silhouette); `on` is the user's explicit
         // choice and still wins
-        assert!(!wants_violin(ViolinMode::Auto, &s, true));
-        assert!(wants_violin(ViolinMode::On, &s, true));
+        assert!(!wants_violin(ViolinMode::Auto, &s, true, 1_000));
+        assert!(wants_violin(ViolinMode::On, &s, true, 1_000));
     }
 
     #[test]
     fn wants_violin_on_off_override_guards() {
         // `on`/`off` ignore the guards entirely
-        let bland = stat("Float", 5, Some(0.9)); // fails the cardinality guard
-        assert!(wants_violin(ViolinMode::On, &bland, false));
+        let bland = stat("Float", 5, Some(0.9)); // fails the cardinality AND min-points guards
+        assert!(wants_violin(ViolinMode::On, &bland, false, 5));
         assert!(!wants_violin(
             ViolinMode::Off,
             &stat("Float", 100, Some(0.9)),
-            false
+            false,
+            1_000
         ));
     }
 

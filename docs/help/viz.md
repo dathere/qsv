@@ -346,9 +346,9 @@ qsv viz --help
 | &nbsp;`‑‑lat`&nbsp; | string | Latitude column for a map (decimal degrees, -90 to 90). |  |
 | &nbsp;`‑‑lon`&nbsp; | string | Longitude column for a map (decimal degrees, -180 to 180). |  |
 | &nbsp;`‑‑text`&nbsp; | string | Column whose value labels each point on hover. |  |
-| &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMapbox) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
-| &nbsp;`‑‑style`&nbsp; | string | Map basemap style. Token-free styles: open-street-map (the default), carto-positron, carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted styles (basic, streets, outdoors, light, dark, satellite, satellite-streets) require --mapbox-token. | `open-street-map` |
-| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Mapbox access token, required only for the mapbox-hosted basemap styles listed above. Can also be set with the QSV_MAPBOX_TOKEN environment variable (the --mapbox-token flag takes precedence). |  |
+| &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMap) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
+| &nbsp;`‑‑style`&nbsp; | string | MapLibre basemap style (all render without an access token): open-street-map (the default), carto-positron, carto-darkmatter, carto-voyager, white-bg, basic, streets, outdoors, light, dark, satellite, satellite-streets. | `open-street-map` |
+| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Deprecated and ignored: qsv's maps now use token-free MapLibre basemaps. Accepted for backward compatibility only. Can also be set with the QSV_MAPBOX_TOKEN environment variable. |  |
 
 <a name="geo-options"></a>
 
@@ -383,7 +383,7 @@ qsv viz --help
 |--------|------|-------------|--------|
 | &nbsp;`‑‑max‑charts`&nbsp; | integer | Maximum number of panels in the dashboard. 0 (the default) means auto: draw every eligible column (up to 64), for both HTML and static image export (png/svg/pdf/...). Up to 8 cartesian panels render as one typed subplot grid; beyond 8, HTML switches to an inline-div grid of independent plots, and static image export uses domain-positioned axes to fit them in one image. Set a positive <n> to cap the panel count instead. Eligible columns beyond the cap are reported but not drawn. | `0` |
 | &nbsp;`‑‑grid‑cols`&nbsp; | integer | Number of columns in the dashboard grid for the per-column distribution panels. Overview panels (map/geo, correlation, time-series) always span the full width. | `2` |
-| &nbsp;`‑‑heatmap‑density`&nbsp; | integer | For the `viz smart` map panel: at or above <n> mappable points, draw the core cluster as a density heatmap (DensityMapbox) instead of individual markers, which overplot into a solid, unreadable mass at scale. A heatmap has no per-point hover — only a generic density readout — whereas individual markers keep their full per-point hover. Set to 0 to always render individual markers (never a heatmap), regardless of point count. | `20000` |
+| &nbsp;`‑‑heatmap‑density`&nbsp; | integer | For the `viz smart` map panel: at or above <n> mappable points, draw the core cluster as a density heatmap (DensityMap) instead of individual markers, which overplot into a solid, unreadable mass at scale. The heatmap keeps per-point hover (coordinates, plus the point's label), just like individual markers. Set to 0 to always render individual markers (never a heatmap), regardless of point count. | `20000` |
 | &nbsp;`‑‑limit`&nbsp; | integer | Top-N categories per frequency bar chart. | `10` |
 | &nbsp;`‑‑no‑nulls`&nbsp; | flag | Omit the "(NULL)" bar (empty cells) from frequency bar charts. By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`. |  |
 | &nbsp;`‑‑no‑other`&nbsp; | flag | Omit the "Other (N)" aggregate bar from frequency bar charts. It collects the categories beyond --limit (N = how many distinct categories were rolled up) and is shown by default. |  |

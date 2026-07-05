@@ -2680,7 +2680,7 @@ fn viz_map_basic() {
     let html = String::from_utf8_lossy(&out.stdout);
     // a token-free ScatterMapbox point map on OpenStreetMap tiles
     assert!(html.contains("Plotly.newPlot"));
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains("open-street-map"));
     // auto-centered/zoomed mapbox layout
     assert!(html.contains(r#""center""#));
@@ -2707,7 +2707,7 @@ fn viz_map_color_scale() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""colorscale":"Viridis""#));
     assert!(html.contains(r#""showscale":true"#));
     assert!(html.contains(r#""colorbar":{"title":{"text":"magnitude"#));
@@ -2733,7 +2733,7 @@ fn viz_map_bubble_size() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""marker":{"size":["#));
 }
 
@@ -2756,7 +2756,7 @@ fn viz_map_density() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""type":"densitymapbox""#));
+    assert!(html.contains(r#""type":"densitymap""#));
 }
 
 #[test]
@@ -2803,19 +2803,19 @@ fn viz_map_series_traces() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     // one ScatterMapbox trace per region, named by category
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""name":"Asia""#));
     assert!(html.contains(r#""name":"Americas""#));
 }
 
 #[test]
-fn viz_map_mapbox_style_needs_token_errors() {
-    let wrk = Workdir::new("viz_map_mapbox_style_needs_token_errors");
+fn viz_map_style_no_token_needed() {
+    let wrk = Workdir::new("viz_map_style_no_token_needed");
     quakes(&wrk);
 
+    // MapLibre bundled styles — including the formerly Mapbox-hosted `satellite` — render
+    // without any access token.
     let mut cmd = wrk.command("viz");
-    // isolate from any inherited QSV_MAPBOX_TOKEN, which would satisfy the token
-    // requirement via the env-var fallback and make this error-path test fail.
     cmd.env_remove("QSV_MAPBOX_TOKEN");
     cmd.args([
         "map",
@@ -2828,18 +2828,20 @@ fn viz_map_mapbox_style_needs_token_errors() {
         "satellite",
     ]);
     let out = wrk.output(&mut cmd);
-    assert!(!out.status.success());
-    let stderr = wrk.output_stderr(&mut cmd);
-    assert!(stderr.contains("requires --mapbox-token"));
+    assert!(out.status.success());
+
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""style":"satellite""#));
+    assert!(html.contains(r#""type":"scattermap""#));
 }
 
 #[test]
-fn viz_map_mapbox_token_from_env() {
-    let wrk = Workdir::new("viz_map_mapbox_token_from_env");
+fn viz_map_mapbox_token_ignored() {
+    let wrk = Workdir::new("viz_map_mapbox_token_ignored");
     quakes(&wrk);
 
-    // QSV_MAPBOX_TOKEN satisfies the token requirement for mapbox-hosted styles,
-    // exactly as if --mapbox-token had been passed on the command line.
+    // --mapbox-token / QSV_MAPBOX_TOKEN is accepted for backward compatibility but ignored:
+    // MapLibre basemaps need no token, so it must NOT be embedded in the output.
     let mut cmd = wrk.command("viz");
     cmd.env("QSV_MAPBOX_TOKEN", "pk.test_env_token_value");
     cmd.args([
@@ -2856,8 +2858,7 @@ fn viz_map_mapbox_token_from_env() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    // the env-supplied token is embedded in the mapbox layout
-    assert!(html.contains("pk.test_env_token_value"));
+    assert!(!html.contains("pk.test_env_token_value"));
 }
 
 #[test]
@@ -2921,7 +2922,7 @@ fn viz_smart_with_coords_has_map_panel() {
     // rendered as an offline ScatterGeo projection world-overview (not a zoomed mapbox tile map).
     assert!(html.contains("<!doctype html>"));
     assert!(html.contains(r#""type":"scattergeo""#));
-    assert!(!html.contains(r#""type":"scattermapbox""#));
+    assert!(!html.contains(r#""type":"scattermap""#));
     // quakes span the globe, so the world-overview panel must NOT be scoped to one continent.
     assert!(!html.contains(r#""scope":"#));
 }
@@ -2943,8 +2944,8 @@ fn viz_smart_heatmap_density_threshold() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""type":"scattermapbox""#));
-    assert!(!html.contains(r#""type":"densitymapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(!html.contains(r#""type":"densitymap""#));
 
     // a low threshold (<= point count) => draw the core cluster as a density heatmap, and emit the
     // explanatory note (per-point hover unavailable in heatmap mode) to stderr.
@@ -2953,7 +2954,7 @@ fn viz_smart_heatmap_density_threshold() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""type":"densitymapbox""#));
+    assert!(html.contains(r#""type":"densitymap""#));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--heatmap-density 2"));
 }
@@ -2991,7 +2992,7 @@ fn viz_smart_geojson_overlay() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     // local mapbox map with the boundary + label overlay traces
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(html.contains(r#""name":"regions""#));
     assert!(html.contains(r#""name":"region labels""#));
     // labels ride in hover text (mapbox culls on-map glyphs), carrying the --feature-name-key
@@ -3052,7 +3053,7 @@ fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"scattergeo""#));
-    assert!(!html.contains(r#""type":"densitymapbox""#));
+    assert!(!html.contains(r#""type":"densitymap""#));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(!stderr.contains("--heatmap-density"));
 }
@@ -3818,7 +3819,7 @@ fn viz_smart_dictionary_maps_nonstandard_coord_names() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        !html.contains(r#""type":"scattermapbox""#),
+        !html.contains(r#""type":"scattermap""#),
         "no map should render for non-standard coord names without a dictionary"
     );
     assert!(
@@ -3850,7 +3851,7 @@ fn viz_smart_dictionary_maps_nonstandard_coord_names() {
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        html.contains(r#""type":"scattermapbox""#),
+        html.contains(r#""type":"scattermap""#),
         "map should render from the dictionary geo.latitude/geo.longitude tags; html: {html}"
     );
     assert!(
@@ -3958,7 +3959,7 @@ fn viz_smart_antimeridian_cluster_stays_local_map() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     // local extent (true span ~5 deg) => mapbox tile map, NOT a world projection overview
-    assert!(html.contains(r#""type":"scattermapbox""#));
+    assert!(html.contains(r#""type":"scattermap""#));
     assert!(!html.contains(r#""type":"scattergeo""#));
 }
 
@@ -3989,7 +3990,7 @@ fn viz_smart_map_coords_not_charted_as_distributions() {
 
     let html = wrk.read_to_string("geo.html").unwrap();
     assert!(
-        html.contains(r#""type":"scattermapbox""#),
+        html.contains(r#""type":"scattermap""#),
         "map panel should be present"
     );
     assert!(
@@ -4029,7 +4030,7 @@ fn viz_smart_named_coords_without_valid_range_still_charted() {
 
     let html = wrk.read_to_string("notgeo.html").unwrap();
     assert!(
-        !html.contains(r#""type":"scattermapbox""#),
+        !html.contains(r#""type":"scattermap""#),
         "no map should render for out-of-range coords"
     );
     assert!(
@@ -5196,7 +5197,7 @@ fn viz_smart_map_outlier_markers() {
 
     let html = wrk.read_to_string("geo.html").unwrap();
     assert!(
-        html.contains(r#""type":"scattermapbox""#),
+        html.contains(r#""type":"scattermap""#),
         "map panel should be present"
     );
     assert!(

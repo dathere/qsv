@@ -302,8 +302,12 @@
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
   }
-  function hasChoropleth(gd) {
-    return (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+  function hasMapLibre(gd) {
+    // Any MapLibre `map`-subplot trace (choroplethmap/densitymap/scattermap) throws on a
+    // relayout/react in our pinned plotly fork, so these must take the Plotly.newPlot path below.
+    return (gd.data || []).some(function (t) {
+      return t.type === "choroplethmap" || t.type === "densitymap" || t.type === "scattermap";
+    });
   }
   // Apply a flat dotted-key update (buildUpdate's shape) onto a nested layout, in place — so the
   // same update can feed Plotly.newPlot (which wants nested layout) instead of relayout.
@@ -321,12 +325,12 @@
     document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
       var u = buildUpdate(gd, p);
       try {
-        if (hasChoropleth(gd)) {
-          // A choroplethmap (MapLibre) throws "setData of undefined" on a relayout/react in our
-          // pinned plotly fork, so fold the theme update (incl. the basemap `.style`) into a full
-          // Plotly.newPlot — the only primitive that safely restyles a choroplethmap without
-          // blanking its polygons. Preserve the injected fullscreen modebar button via the div's
-          // existing config.
+        if (hasMapLibre(gd)) {
+          // A MapLibre map trace (choroplethmap/densitymap/scattermap) throws "setData of
+          // undefined" on a relayout/react in our pinned plotly fork, so fold the theme update
+          // (incl. the basemap `.style`) into a full Plotly.newPlot — the only primitive that
+          // safely restyles it without blanking the layer. Preserve the injected fullscreen
+          // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;

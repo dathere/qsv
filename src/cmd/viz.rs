@@ -276,19 +276,17 @@ map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
     --lon <col>            Longitude column for a map (decimal degrees, -180 to 180).
     --text <col>           Column whose value labels each point on hover.
-    --density              Render a density heatmap (DensityMapbox) instead of points.
+    --density              Render a density heatmap (DensityMap) instead of points.
                            Weighted by the --color or --size column when given, else by
                            a uniform weight. Cannot be combined with --series.
-    --style <name>         Map basemap style. Token-free styles: open-street-map (the
-                           default), carto-positron, carto-darkmatter, stamen-terrain,
-                           stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted
-                           styles (basic, streets, outdoors, light, dark, satellite,
-                           satellite-streets) require --mapbox-token.
+    --style <name>         MapLibre basemap style (all render without an access token):
+                           open-street-map (the default), carto-positron,
+                           carto-darkmatter, carto-voyager, white-bg, basic, streets,
+                           outdoors, light, dark, satellite, satellite-streets.
                            [default: open-street-map]
-    --mapbox-token <tok>   Mapbox access token, required only for the mapbox-hosted
-                           basemap styles listed above.
-                           Can also be set with the QSV_MAPBOX_TOKEN environment
-                           variable (the --mapbox-token flag takes precedence).
+    --mapbox-token <tok>   Deprecated and ignored: qsv's maps now use token-free MapLibre
+                           basemaps. Accepted for backward compatibility only.
+                           Can also be set with the QSV_MAPBOX_TOKEN environment variable.
 
 geo options:
     --projection <name>    Map projection for `viz geo`. One of: natural-earth (the
@@ -375,10 +373,10 @@ smart options:
                            time-series) always span the full width. [default: 2]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core cluster as a density heatmap
-                           (DensityMapbox) instead of individual markers, which
-                           overplot into a solid, unreadable mass at scale. A heatmap
-                           has no per-point hover — only a generic density readout —
-                           whereas individual markers keep their full per-point hover.
+                           (DensityMap) instead of individual markers, which
+                           overplot into a solid, unreadable mass at scale. The heatmap
+                           keeps per-point hover (coordinates, plus the point's label),
+                           just like individual markers.
                            Set to 0 to always render individual markers (never a
                            heatmap), regardless of point count. [default: 20000]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
@@ -537,8 +535,8 @@ use plotly::layout::update_menu::{
     Button, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
 };
 use plotly::{
-    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMapbox,
-    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox,
+    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
+    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap,
     ScatterPolar, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
@@ -549,8 +547,8 @@ use plotly::{
     },
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection,
-        ProjectionType, themes::BuiltinTheme,
+        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Margin, Projection, ProjectionType,
+        themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -1916,31 +1914,28 @@ const MAP_DENSITY_RADIUS_PX: u8 = 20;
 /// into one flat blob, hiding the internal hotspots a smaller radius reveals.
 const MAP_SMART_DENSITY_RADIUS_PX: u8 = 8;
 
-/// Resolve a `--style` name to its plotly `MapboxStyle` plus whether it is a Mapbox-hosted style
-/// (which needs an access token). The token-free styles render from public OSM/Carto/Stamen tile
-/// servers; the rest are served by Mapbox and require `--mapbox-token`.
-fn parse_map_style(name: &str) -> CliResult<(MapboxStyle, bool)> {
+/// Resolve a `--style` name to its plotly MapLibre `MapStyle`. Every MapLibre bundled style
+/// renders without an access token, so — unlike the old Mapbox basemaps — none of these require
+/// `--mapbox-token`. (The Stamen basemaps have no MapLibre equivalent and were dropped.)
+fn parse_map_style(name: &str) -> CliResult<MapStyle> {
     let resolved = match name.to_ascii_lowercase().as_str() {
-        "open-street-map" | "osm" => (MapboxStyle::OpenStreetMap, false),
-        "carto-positron" => (MapboxStyle::CartoPositron, false),
-        "carto-darkmatter" => (MapboxStyle::CartoDarkMatter, false),
-        "stamen-terrain" => (MapboxStyle::StamenTerrain, false),
-        "stamen-toner" => (MapboxStyle::StamenToner, false),
-        "stamen-watercolor" => (MapboxStyle::StamenWatercolor, false),
-        "white-bg" => (MapboxStyle::WhiteBg, false),
-        "basic" => (MapboxStyle::Basic, true),
-        "streets" => (MapboxStyle::Streets, true),
-        "outdoors" => (MapboxStyle::Outdoors, true),
-        "light" => (MapboxStyle::Light, true),
-        "dark" => (MapboxStyle::Dark, true),
-        "satellite" => (MapboxStyle::Satellite, true),
-        "satellite-streets" => (MapboxStyle::SatelliteStreets, true),
+        "open-street-map" | "osm" => MapStyle::OpenStreetMap,
+        "carto-positron" => MapStyle::CartoPositron,
+        "carto-darkmatter" | "carto-dark-matter" => MapStyle::CartoDarkMatter,
+        "carto-voyager" => MapStyle::CartoVoyager,
+        "white-bg" => MapStyle::WhiteBg,
+        "basic" => MapStyle::Basic,
+        "streets" => MapStyle::Streets,
+        "outdoors" => MapStyle::Outdoors,
+        "light" => MapStyle::Light,
+        "dark" => MapStyle::Dark,
+        "satellite" => MapStyle::Satellite,
+        "satellite-streets" => MapStyle::SatelliteStreets,
         other => {
             return fail_incorrectusage_clierror!(
-                "Unknown --style '{other}'. Token-free styles: open-street-map, carto-positron, \
-                 carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. \
-                 Mapbox-hosted (need --mapbox-token): basic, streets, outdoors, light, dark, \
-                 satellite, satellite-streets."
+                "Unknown --style '{other}'. Supported MapLibre styles (all token-free): \
+                 open-street-map, carto-positron, carto-darkmatter, carto-voyager, white-bg, \
+                 basic, streets, outdoors, light, dark, satellite, satellite-streets."
             );
         },
     };
@@ -2160,7 +2155,7 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
     }
 }
 
-/// Build a markers-mode `ScatterMapbox` point trace with the given marker (and optional per-point
+/// Build a markers-mode `ScatterMap` point trace with the given marker (and optional per-point
 /// hover text), mirroring `scatter_with_marker` for the cartesian scatter path.
 fn scatter_mapbox_with_marker(
     lats: Vec<f64>,
@@ -2168,7 +2163,7 @@ fn scatter_mapbox_with_marker(
     marker: Marker,
     text: Option<Vec<String>>,
 ) -> Box<dyn Trace> {
-    let mut t = ScatterMapbox::new(lats, lons)
+    let mut t = ScatterMap::new(lats, lons)
         .mode(Mode::Markers)
         .marker(marker);
     if let Some(text) = text {
@@ -2177,7 +2172,7 @@ fn scatter_mapbox_with_marker(
     t
 }
 
-/// Split row-aligned coordinates into one `ScatterMapbox` trace per `--series` category,
+/// Split row-aligned coordinates into one `ScatterMap` trace per `--series` category,
 /// preserving first-seen category order. `texts` is applied as per-point hover text when present.
 fn map_series_traces(
     lats: Vec<f64>,
@@ -2204,7 +2199,7 @@ fn map_series_traces(
         .into_iter()
         .map(|name| {
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
-            let mut t = ScatterMapbox::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterMap::new(la, lo).mode(Mode::Markers).name(name);
             if !tx.is_empty() {
                 t = t.text_array(tx);
             }
@@ -2234,18 +2229,12 @@ fn fit_dims(
     }
 }
 
-/// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
+/// Build the complete `Plot` for `viz map`: a `ScatterMap` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
-/// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
+/// `DensityMap` heatmap, on a MapLibre tile basemap framed to the data's bounding box.
 fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let style_name = args.flag_style.as_deref().unwrap_or("open-street-map");
-    let (style, needs_token) = parse_map_style(style_name)?;
-    if needs_token && args.flag_mapbox_token.is_none() {
-        return fail_incorrectusage_clierror!(
-            "--style '{style_name}' is a Mapbox-hosted style that requires --mapbox-token. Use a \
-             token-free style (e.g. open-street-map, carto-positron) or pass --mapbox-token."
-        );
-    }
+    let style = parse_map_style(style_name)?;
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
@@ -2335,6 +2324,15 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
 
     let mut plot = Plot::new();
     if args.flag_density {
+        // the weight column's label for the hover readout — None when z is the uniform 1.0
+        // fallback (a bare "1" per point is noise, so it's omitted)
+        let weight_label = if !colors.is_empty() {
+            Some(col_label(&headers, color_idx.unwrap(), nh))
+        } else if !sizes.is_empty() {
+            Some(col_label(&headers, size_idx.unwrap(), nh))
+        } else {
+            None
+        };
         // density weight: the --color or --size column when given, else a uniform 1.0
         let z = if !colors.is_empty() {
             colors
@@ -2343,7 +2341,26 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         } else {
             vec![1.0_f64; lats.len()]
         };
-        plot.add_trace(DensityMapbox::new(lats, lons, z).radius(MAP_DENSITY_RADIUS_PX));
+        // per-point hover: coordinates, the --text label (if any), and the labeled weight when
+        // --color/--size supplies one. Density traces honor only hovertemplate (not hovertext).
+        let hover: Vec<String> = (0..lats.len())
+            .map(|i| {
+                let mut parts: Vec<String> = Vec::new();
+                if let Some(t) = texts.get(i) {
+                    parts.push(t.clone());
+                }
+                parts.push(format!("{:.5}, {:.5}", lats[i], lons[i]));
+                if let Some(label) = &weight_label {
+                    parts.push(format!("{}: {}", escape_hover(label), fmt_measure(z[i])));
+                }
+                density_hover_template(&parts.join("<br>"))
+            })
+            .collect();
+        plot.add_trace(
+            DensityMap::new(lats, lons, z)
+                .radius(MAP_DENSITY_RADIUS_PX)
+                .hover_template_array(hover),
+        );
     } else if series_idx.is_some() {
         for trace in map_series_traces(lats, lons, series, texts) {
             plot.add_trace(trace);
@@ -2365,14 +2382,13 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         plot.add_trace(scatter_mapbox_with_marker(lats, lons, marker, text));
     }
 
-    let mut mapbox = Mapbox::new().style(style).center(center).zoom(zoom);
-    // only embed the token when the resolved style actually needs it — otherwise it would leak
-    // into stdout / saved HTML for token-free styles (e.g. the default open-street-map)
-    if needs_token && let Some(token) = args.flag_mapbox_token.clone() {
-        mapbox = mapbox.access_token(token);
-    }
+    // MapLibre `map` subplot: all bundled styles render token-free, so no access token is embedded.
+    let layout_map = LayoutMap::new()
+        .style(style)
+        .center(center)
+        .zoom(f64::from(zoom));
     let mut layout = Layout::new()
-        .mapbox(mapbox)
+        .map(layout_map)
         .show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -2998,6 +3014,15 @@ fn escape_hover(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Wrap a pre-rendered hover string as a density-trace `hovertemplate` entry. Density traces
+/// (`DensityMap`/`DensityMapbox`) honor ONLY `hovertemplate`, not `hovertext` — so per-point hover
+/// on a heatmap must go through this. A literal `%` would be misparsed as a `%{...}` template
+/// token, so it's doubled; `<extra></extra>` suppresses the trace-name box. Feed already
+/// `escape_hover`-ed text (this only adds the `%`-escaping and the extra tag).
+fn density_hover_template(text: &str) -> String {
+    format!("{}<extra></extra>", text.replace('%', "%%"))
 }
 
 /// Format a measure value for a hover label: a whole number prints without a decimal point
@@ -5674,8 +5699,12 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
   }
-  function hasChoropleth(gd) {
-    return (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+  function hasMapLibre(gd) {
+    // Any MapLibre `map`-subplot trace (choroplethmap/densitymap/scattermap) throws on a
+    // relayout/react in our pinned plotly fork, so these must take the Plotly.newPlot path below.
+    return (gd.data || []).some(function (t) {
+      return t.type === "choroplethmap" || t.type === "densitymap" || t.type === "scattermap";
+    });
   }
   // Apply a flat dotted-key update (buildUpdate's shape) onto a nested layout, in place — so the
   // same update can feed Plotly.newPlot (which wants nested layout) instead of relayout.
@@ -5693,12 +5722,12 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
     document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
       var u = buildUpdate(gd, p);
       try {
-        if (hasChoropleth(gd)) {
-          // A choroplethmap (MapLibre) throws "setData of undefined" on a relayout/react in our
-          // pinned plotly fork, so fold the theme update (incl. the basemap `.style`) into a full
-          // Plotly.newPlot — the only primitive that safely restyles a choroplethmap without
-          // blanking its polygons. Preserve the injected fullscreen modebar button via the div's
-          // existing config.
+        if (hasMapLibre(gd)) {
+          // A MapLibre map trace (choroplethmap/densitymap/scattermap) throws "setData of
+          // undefined" on a relayout/react in our pinned plotly fork, so fold the theme update
+          // (incl. the basemap `.style`) into a full Plotly.newPlot — the only primitive that
+          // safely restyles it without blanking the layer. Preserve the injected fullscreen
+          // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
@@ -10735,14 +10764,14 @@ fn geojson_overlay_label_marker() -> Marker {
         .line(Line::new().color("#ffffff").width(1.0))
 }
 
-/// Boundary + label traces for a `--geojson` overlay on a mapbox tile map (`ScatterMapbox`). The
-/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (raster
-/// mapbox culls colliding on-map text, so the region name is shown on hover of a small dot
+/// Boundary + label traces for a `--geojson` overlay on a MapLibre tile map (`ScatterMap`). The
+/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (the raster
+/// basemap culls colliding on-map text, so the region name is shown on hover of a small dot
 /// instead).
 fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
     let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
     let boundary: Box<dyn Trace> =
-        ScatterMapbox::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+        ScatterMap::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
             .name("regions")
             .mode(Mode::Lines)
             .line(geojson_overlay_line())
@@ -10751,7 +10780,7 @@ fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>
     out.push(boundary);
     if !overlay.labels.is_empty() {
         let label_trace: Box<dyn Trace> =
-            ScatterMapbox::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+            ScatterMap::new(overlay.label_lats.clone(), overlay.label_lons.clone())
                 .name("region labels")
                 .mode(Mode::Markers)
                 .marker(geojson_overlay_label_marker())
@@ -10909,7 +10938,7 @@ fn build_map_panel(
     // dataset doesn't bloat the HTML or freeze the browser on pan/zoom. A `--heatmap-density` of 0
     // disables the heatmap entirely (always render individual markers, whatever the point count).
     // The user-facing heatmap note is emitted by the caller, but only once it's certain a
-    // DensityMapbox will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
+    // DensityMap will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
     // becomes a `ScatterGeo` world-overview and static image export coerces `Map` -> `Geo`, so
     // neither draws a heatmap despite `density` being true here. Capture the FULL mappable count
     // now — `lats` is shadowed by the downsampled, outlier-excluded core below, so the note must
@@ -11343,10 +11372,10 @@ fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
     (Center::new(lat, lon), zoom)
 }
 
-/// Build the "Core extent" / "Full extent" zoom buttons for a `viz smart` mapbox map. Each button
-/// relayouts the mapbox center+zoom to frame the respective extent. Only used when the panel has
-/// geographic outliers (so the two views actually differ). The map opens at the core view, so
-/// "Core extent" is the active button.
+/// Build the "Core extent" / "Full extent" zoom buttons for a `viz smart` MapLibre map. Each
+/// button relayouts the `map` subplot center+zoom to frame the respective extent. Only used when
+/// the panel has geographic outliers (so the two views actually differ). The map opens at the core
+/// view, so "Core extent" is the active button.
 #[cfg(feature = "geocode")]
 fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
     let button = |label: &str, e: &MapExtent| {
@@ -11355,8 +11384,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
             .label(label)
             .method(ButtonMethod::Relayout)
             .args(serde_json::json!([{
-                "mapbox.center": { "lat": lat, "lon": lon },
-                "mapbox.zoom": zoom,
+                "map.center": { "lat": lat, "lon": lon },
+                "map.zoom": zoom,
             }]))
     };
     UpdateMenu::new()
@@ -11770,17 +11799,17 @@ const GEO_EXTENT_FIT_PAD_FRAC: f64 = 0.04;
 const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 
 /// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
-/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`. When the panel has
+/// points (drawn as hover-labeled diamond glyphs) to a MapLibre map `Plot`. When the panel has
 /// geographic outliers, a second no-fill dotted magenta box marking the full extent (core +
 /// outliers) is drawn underneath.
 #[cfg(feature = "geocode")]
 fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
-    // the full-extent box (core + outliers) is drawn first, underneath, with no fill. Mapbox
-    // ignores line.dash, so the dashed look is drawn as a gapped polyline.
+    // the full-extent box (core + outliers) is drawn first, underneath, with no fill. The raster
+    // basemap ignores line.dash, so the dashed look is drawn as a gapped polyline.
     if let Some(full) = &meta.full_extent {
         let (flat, flon) = dashed_box_latlon(full);
         plot.add_trace(
-            ScatterMapbox::new(flat, flon)
+            ScatterMap::new(flat, flon)
                 .name("full extent (incl. outliers)")
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
@@ -11790,11 +11819,11 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     }
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
-        ScatterMapbox::new(blat, blon)
+        ScatterMap::new(blat, blon)
             .name("spatial extent")
             .mode(Mode::Lines)
             .line(extent_box_line())
-            .fill(plotly::traces::scatter_mapbox::Fill::ToSelf)
+            .fill(plotly::traces::scatter_map::Fill::ToSelf)
             .fill_color(GEO_EXTENT_FILL_COLOR)
             .hover_info(HoverInfo::Skip)
             .show_legend(false),
@@ -11803,7 +11832,7 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     let mlon: Vec<f64> = meta.points.iter().map(|p| p.lon).collect();
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
-        ScatterMapbox::new(mlat, mlon)
+        ScatterMap::new(mlat, mlon)
             .name("extent points")
             .mode(Mode::Markers)
             .marker(extent_marker_mapbox())
@@ -12141,7 +12170,7 @@ fn build_smart(
     // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
     //
     // The map panel is built for BOTH HTML and static image output. The mapbox tile basemap
-    // (ScatterMapbox/DensityMapbox) needs a live browser + network tiles, so it can't be statically
+    // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
     // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
     // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
     // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
@@ -12193,7 +12222,7 @@ fn build_smart(
                     };
                     (Some((p, cols)), None)
                 } else {
-                    // HTML output: a local-extent density panel actually renders as a DensityMapbox
+                    // HTML output: a local-extent density panel actually renders as a DensityMap
                     // here (global extents are `Geo` markers, image export was coerced above), so
                     // this is the point at which the heatmap note is truthful. Report
                     // `mappable_count` (the full source count that drove the density decision), not
@@ -12201,10 +12230,9 @@ fn build_smart(
                     if matches!(p.kind, PanelKind::Map { density: true, .. }) {
                         viz_note(&format!(
                             "viz smart: map has {mappable_count} mappable points (>= \
-                             --heatmap-density {}); drawing the core as a density heatmap. \
-                             Per-point hover isn't available in heatmap mode — raise \
-                             --heatmap-density (or set it to 0) to render individual markers with \
-                             full per-point hover.",
+                             --heatmap-density {}); drawing the core as a density heatmap with \
+                             per-point hover. Raise --heatmap-density (or set it to 0) to render \
+                             individual markers instead.",
                             args.flag_heatmap_density
                         ));
                     }
@@ -14144,17 +14172,25 @@ fn smart_inline_panel_plot(
         }
         let mut plot = Plot::new();
         if *density {
-            // many points overplot into a solid mass as markers, so aggregate into a heatmap
-            plot.add_trace(
-                DensityMapbox::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
-                    .radius(MAP_SMART_DENSITY_RADIUS_PX),
-            );
+            // many points overplot into a solid mass as markers, so aggregate into a heatmap.
+            // The density weight is a uniform 1.0, so surface the same per-point labels the marker
+            // branch uses — via hovertemplate, since density traces ignore hovertext.
+            let mut dens = DensityMap::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
+                .radius(MAP_SMART_DENSITY_RADIUS_PX);
+            if !hover_text.is_empty() {
+                let templates: Vec<String> = hover_text
+                    .iter()
+                    .map(|t| density_hover_template(t))
+                    .collect();
+                dens = dens.hover_template_array(templates);
+            }
+            plot.add_trace(dens);
         } else {
             let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
             if let Some(sizes) = sizes {
                 core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
             }
-            let mut core_trace = ScatterMapbox::new(lats.clone(), lons.clone())
+            let mut core_trace = ScatterMap::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
                 .marker(core_marker);
             if !hover_text.is_empty() {
@@ -14167,7 +14203,7 @@ fn smart_inline_panel_plot(
         // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
         // Outliers are always markers (even in density mode), so they carry hover labels too.
         if !outlier_lats.is_empty() {
-            let mut out_trace = ScatterMapbox::new(outlier_lats.clone(), outlier_lons.clone())
+            let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
                 .name("geographic outliers")
                 .mode(Mode::Markers)
                 .marker(outlier_marker_mapbox())
@@ -14193,18 +14229,18 @@ fn smart_inline_panel_plot(
             .height(row_height)
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .mapbox(
-                Mapbox::new()
+            .map(
+                LayoutMap::new()
                     // Carto tiles work from local files (no Referer header required).
                     // OSM enforces a Referer policy and returns 403 when the HTML is
                     // opened directly from disk.
                     .style(if is_dark_theme(theme) {
-                        MapboxStyle::CartoDarkMatter
+                        MapStyle::CartoDarkMatter
                     } else {
-                        MapboxStyle::CartoPositron
+                        MapStyle::CartoPositron
                     })
                     .center(center)
-                    .zoom(zoom),
+                    .zoom(f64::from(zoom)),
             );
         #[cfg(feature = "geocode")]
         if let Some(menu) = extent_menu {

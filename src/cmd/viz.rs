@@ -16348,14 +16348,12 @@ mod tests {
         assert_eq!(btns.len(), 2);
         assert_eq!(btns[0]["label"], "Core extent");
         assert_eq!(btns[1]["label"], "Full extent");
-        // each button is a relayout of the mapbox center + zoom
+        // each button is a relayout of the MapLibre `map` subplot center + zoom
         let core_args = &btns[0]["args"][0];
-        assert!(core_args["mapbox.center"]["lat"].is_number());
-        assert!(core_args["mapbox.center"]["lon"].is_number());
-        let cz = core_args["mapbox.zoom"].as_f64().expect("core zoom");
-        let fz = btns[1]["args"][0]["mapbox.zoom"]
-            .as_f64()
-            .expect("full zoom");
+        assert!(core_args["map.center"]["lat"].is_number());
+        assert!(core_args["map.center"]["lon"].is_number());
+        let cz = core_args["map.zoom"].as_f64().expect("core zoom");
+        let fz = btns[1]["args"][0]["map.zoom"].as_f64().expect("full zoom");
         // the full extent is larger, so its fit zoom is further out (<=) than the core's
         assert!(
             fz <= cz,
@@ -18327,38 +18325,44 @@ mod tests {
     }
 
     #[test]
-    fn parse_map_style_token_free_and_aliases() {
-        // token-free styles resolve without requiring a token
-        for name in [
-            "open-street-map",
-            "osm",
-            "carto-positron",
-            "carto-darkmatter",
-            "stamen-terrain",
-            "stamen-toner",
-            "stamen-watercolor",
-            "white-bg",
+    fn parse_map_style_resolves_supported_styles() {
+        // every supported MapLibre style resolves (all token-free); MapStyle has no PartialEq,
+        // so compare its kebab-case serde value.
+        for (name, expected) in [
+            ("open-street-map", "open-street-map"),
+            ("osm", "open-street-map"),
+            ("carto-positron", "carto-positron"),
+            ("carto-darkmatter", "carto-darkmatter"),
+            ("carto-dark-matter", "carto-darkmatter"),
+            ("carto-voyager", "carto-voyager"),
+            ("white-bg", "white-bg"),
+            ("basic", "basic"),
+            ("streets", "streets"),
+            ("outdoors", "outdoors"),
+            ("light", "light"),
+            ("dark", "dark"),
+            ("satellite", "satellite"),
+            ("satellite-streets", "satellite-streets"),
         ] {
-            let (_, needs_token) = parse_map_style(name).unwrap();
-            assert!(!needs_token, "{name} should be token-free");
+            let style = parse_map_style(name).unwrap();
+            assert_eq!(
+                serde_json::to_value(style).unwrap(),
+                serde_json::json!(expected),
+                "{name} should resolve to {expected}"
+            );
         }
         // matching is case-insensitive
         assert!(parse_map_style("Carto-Positron").is_ok());
     }
 
     #[test]
-    fn parse_map_style_mapbox_hosted_needs_token() {
-        for name in [
-            "basic",
-            "streets",
-            "outdoors",
-            "light",
-            "dark",
-            "satellite",
-            "satellite-streets",
-        ] {
-            let (_, needs_token) = parse_map_style(name).unwrap();
-            assert!(needs_token, "{name} should require a token");
+    fn parse_map_style_dropped_stamen_errors() {
+        // the Stamen basemaps have no MapLibre equivalent and were dropped
+        for name in ["stamen-terrain", "stamen-toner", "stamen-watercolor"] {
+            assert!(
+                parse_map_style(name).is_err(),
+                "{name} should be unsupported"
+            );
         }
     }
 

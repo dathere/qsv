@@ -446,8 +446,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # use patched fork of calamine to bump dependencies until our PR is merged
 calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-deps-202607" }
 
-# use our patched fork of csvlens to bump dependencies until our PR is merged
-csvlens = { git = "https://github.com/jqnatividad/csvlens", branch = "bump_tui-input_crossterm_n_lock_file" }
+# use latest upstream now that our PR has been merged
+csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6acf060" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats-redux", optional = true }

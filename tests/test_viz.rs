@@ -6024,6 +6024,41 @@ fn viz_choropleth_geojson_bad_feature_id_key_errors() {
     assert!(stderr.contains("resolves on no feature"));
 }
 
+// a --feature-id-key that resolves ONLY on a non-polygon feature (here a Point) fails up front
+// with the "no usable Polygon/MultiPolygon features" guidance, before any expensive processing —
+// the first check (key resolves somewhere) passes, so this exercises the second, geometry-aware
+// check specifically.
+#[test]
+fn viz_choropleth_geojson_id_only_on_non_polygon_errors() {
+    let wrk = Workdir::new("viz_choropleth_geojson_id_only_on_non_polygon_errors");
+    wrk.create_from_string("rg.csv", "region,val\nA,10\nB,20\n");
+    // the id key `properties.id` resolves on the Point feature but on neither Polygon feature
+    // (they carry a different property), so no usable Polygon/MultiPolygon feature has the id.
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Point","coordinates":[0,0]}},{"type":"Feature","properties":{"other":"B"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,1],[1,1],[1,0],[0,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "rg.csv",
+        "--locations",
+        "region",
+        "--value",
+        "val",
+        "--map",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("no usable Polygon/MultiPolygon features"));
+}
+
 // the geojson-extent framing must read coordinates ONLY from geometry, never from numeric arrays in
 // feature `properties` — otherwise a stray property array would drag the map center off the data.
 #[test]

@@ -372,27 +372,28 @@ smart options:
                            distribution panels. Overview panels (map/geo, correlation,
                            time-series) always span the full width. [default: 2]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
-                           points, draw the core cluster as a density heatmap
-                           (DensityMap) instead of markers. The heatmap keeps
-                           per-point hover (coordinates, plus the point's label).
-                           Defaults to 0 (disabled): dense point maps are instead
-                           drawn as native MapLibre clustered markers, which stay
-                           interactive (zoom to expand a cluster into its points)
+                           points, draw the core as a density heatmap (DensityMap)
+                           instead of markers. The heatmap keeps per-point hover
+                           (coordinates, plus the point's label). Defaults to 0
+                           (disabled): dense point maps instead open as individual
+                           points with an in-map "Clusters" toggle (collapse the
+                           dense areas into interactive count bubbles on demand)
                            rather than aggregating into a static heat surface.
                            Set a positive <n> to opt back into the heatmap above
                            that point count. [default: 0]
-    --cluster <mode>       For the `viz smart` map panel: whether to draw dense
-                           point markers as native MapLibre clusters (count
-                           bubbles that expand into individual, hoverable points
-                           on zoom-in). One of: auto, on, off. "auto" (the
-                           default) clusters only a plain-marker core (no density
-                           heatmap and no bubble-size measure) once it reaches
-                           1,000 rendered points. "on" clusters whenever the core
+    --cluster <mode>       For the `viz smart` map panel: whether to offer an
+                           in-map "Clusters" toggle that collapses dense points
+                           into native MapLibre count bubbles (which expand back
+                           into individual, hoverable points on zoom-in). The map
+                           always OPENS as individual points; the toggle switches
+                           clustering on. One of: auto, on, off. "auto" (the
+                           default) offers the toggle for a plain-marker core (no
+                           density heatmap, no bubble-size measure) once it
+                           reaches 1,000 points. "on" offers it whenever the core
                            draws as markers, regardless of point count or a
-                           bubble-size measure (a density heatmap is a different
-                           trace type and is never clustered). "off" never
-                           clusters, so every dense point is drawn plainly.
-                           Only affects `smart`. [default: auto]
+                           bubble-size measure. "off" omits the toggle, so points
+                           are always drawn plainly. Only affects `smart`.
+                           [default: auto]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -821,11 +822,13 @@ const MAP_POINT_OPACITY: f64 = 0.4;
 /// without changing the embedded payload — the point cap (`MAX_SMART_POINTS`) still bounds size.
 const SMART_CLUSTER_MIN_POINTS: usize = 1_000;
 
-/// Zoom level at/above which point clusters fully disengage into individual markers. Kept below the
-/// raster basemap tile source's max zoom (~18 for Carto/OSM): plotly.js otherwise defaults
-/// `cluster.maxzoom` to 24, and MapLibre warns when `clusterMaxZoom` exceeds the source's maxzoom.
-/// 16 (~city-block scale) also gives a natural point at which the individual points take over.
-const SMART_CLUSTER_MAX_ZOOM: f64 = 16.0;
+/// Zoom level at/above which point clusters fully disengage into individual markers. Set as high as
+/// the basemap allows so clusters keep subdividing into finer bubbles as you zoom in, rather than
+/// dumping a dense region's raw (overplotting) points all at once. Kept STRICTLY below the raster
+/// basemap tile source's max zoom (18 for Carto/OSM) — MapLibre warns when `clusterMaxZoom` reaches
+/// the source maxzoom (and plotly.js otherwise defaults `cluster.maxzoom` to 24). 17 is that
+/// ceiling: one level deeper than the previous 16, so a dense metro keeps resolving finer.
+const SMART_CLUSTER_MAX_ZOOM: f64 = 17.0;
 
 /// Fraction trimmed from each end of the latitude/longitude distributions when framing a map, so a
 /// few outlier coordinates (bad geocodes, sentinel values) can't blow up the center/zoom and push
@@ -7845,11 +7848,13 @@ enum PanelKind {
         lats:               Vec<f64>,
         lons:               Vec<f64>,
         density:            bool,
-        /// Enable native MapLibre point clustering on the CORE marker trace, resolved from the
-        /// `--cluster` mode (see `ClusterMode`): under `auto`, set only for a dense plain-marker
-        /// core (no `density` heatmap, no bubble-size `sizes`, >= `SMART_CLUSTER_MIN_POINTS`
-        /// points); `on` forces it for any marker core; `off` clears it. Never applied to the
-        /// outlier call-out trace, and always mutually exclusive with `density` (a heatmap has no
+        /// Whether the CORE marker trace is cluster-ELIGIBLE, resolved from the `--cluster` mode
+        /// (see `ClusterMode`): under `auto`, set for a dense plain-marker core (no `density`
+        /// heatmap, no bubble-size `sizes`, >= `SMART_CLUSTER_MIN_POINTS` points); `on` sets it
+        /// for any marker core; `off` clears it. When set, the core bakes `cluster.enabled
+        /// = false` (the map OPENS on individual points) and a single "Clusters" toggle
+        /// button is added to switch clustering on/off. Never applied to the outlier
+        /// call-out trace, and always mutually exclusive with `density` (a heatmap has no
         /// markers to cluster).
         cluster:            bool,
         outlier_lats:       Vec<f64>,
@@ -11606,6 +11611,37 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
+/// A single "Clusters" toggle button for the `viz smart` map's cluster-eligible core trace. The map
+/// OPENS as individual points (the core trace bakes `cluster.enabled = false`); this button, a
+/// native plotly toggle, restyles `cluster.enabled` on trace 0 — `args` (first click, from the
+/// inactive state) turns clustering on, `args2` (next click, from the active state) turns it back
+/// off. Only trace 0 is targeted, so the geographic-outlier call-out trace (also a `scattermap`,
+/// but never clustered) is left untouched. Starts inactive (`active(-1)`) to match the points-first
+/// default. Added only when the core is cluster-eligible.
+fn cluster_toggle_menu() -> UpdateMenu {
+    let toggle = Button::new()
+        .label("Clusters")
+        .method(ButtonMethod::Restyle)
+        .args(serde_json::json!([{ "cluster.enabled": true }, [0]]))
+        .args2(serde_json::json!([{ "cluster.enabled": false }, [0]]));
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // stacked just below the Core/Full extent menu (top-left), clear of the top-right modebar.
+        .x(0.02)
+        .x_anchor(Anchor::Left)
+        .y(0.86)
+        .y_anchor(Anchor::Top)
+        .show_active(true)
+        // start inactive: the map opens on individual points, click to collapse into clusters.
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        // pin the label to ink so a dark theme/toggle can't flip it invisible on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
 /// possible, for the offline `ScatterGeo` (local Mercator) path — the analogue of
 /// `extent_center_zoom` for projection maps. Unlike the tile map, these are exact ranges, so the
@@ -12441,11 +12477,12 @@ fn build_smart(
                         ));
                     } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
                         viz_note(&format!(
-                            "viz smart: map has {mappable_count} mappable points; drawing the \
-                             core as native MapLibre clustered markers (zoom in to expand a \
-                             cluster into its individual points). Set --cluster off to draw plain \
-                             markers, or --heatmap-density <n> to draw a density heatmap at or \
-                             above <n> points instead."
+                            "viz smart: map has {mappable_count} mappable points; the core opens \
+                             as individual points with a \"Clusters\" toggle (click it to \
+                             collapse dense areas into native MapLibre count bubbles that expand \
+                             again on zoom-in). Set --cluster off to omit the toggle, or \
+                             --heatmap-density <n> to draw a density heatmap at or above <n> \
+                             points instead."
                         ));
                     }
                     (Some((p, cols)), choro)
@@ -14423,12 +14460,13 @@ fn smart_inline_panel_plot(
                     .hover_info(HoverInfo::Text);
             }
             if *cluster {
-                // native MapLibre client-side clustering: dense markers collapse into count
-                // bubbles that expand into individual (hoverable) points on zoom-in. No point is
-                // dropped — this only changes rendering, not the embedded data.
+                // native MapLibre client-side clustering, configured but DISABLED at load so the
+                // map opens on individual points; the "Clusters" toggle (see `cluster_toggle_menu`)
+                // flips `cluster.enabled` on. `max_zoom` is baked now so toggling on honors it. No
+                // point is ever dropped — clustering only changes rendering, not the embedded data.
                 core_trace = core_trace.cluster(
                     Cluster::new()
-                        .enabled(true)
+                        .enabled(false)
                         .max_zoom(SMART_CLUSTER_MAX_ZOOM),
                 );
             }
@@ -14478,9 +14516,16 @@ fn smart_inline_panel_plot(
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .map(layout_map);
+        let mut menus: Vec<UpdateMenu> = Vec::new();
         #[cfg(feature = "geocode")]
         if let Some(menu) = extent_menu {
-            layout = layout.update_menus(vec![menu]);
+            menus.push(menu);
+        }
+        if *cluster {
+            menus.push(cluster_toggle_menu());
+        }
+        if !menus.is_empty() {
+            layout = layout.update_menus(menus);
         }
         if !themed {
             layout = layout

@@ -3025,9 +3025,10 @@ fn dense_local_geo(wrk: &Workdir, name: &str, n: usize) {
     wrk.create_from_string(name, &rows);
 }
 
-// A dense LOCAL smart map (>= SMART_CLUSTER_MIN_POINTS) draws its core as native MapLibre clustered
-// markers by default (no --heatmap-density): a `scattermap` trace carrying `cluster.enabled=true`,
-// NOT a density heatmap. An explanatory note is emitted to stderr.
+// A dense LOCAL smart map (>= SMART_CLUSTER_MIN_POINTS) is cluster-eligible by default (no
+// --heatmap-density): the `scattermap` core bakes `cluster.enabled=false` (opens on individual
+// points, with a basemap-safe maxzoom for when clustering is toggled on), and it is NOT a density
+// heatmap. An explanatory note about the "Clusters" toggle is emitted to stderr.
 #[test]
 fn viz_smart_map_clusters_dense_markers() {
     let wrk = Workdir::new("viz_smart_map_clusters_dense_markers");
@@ -3040,12 +3041,12 @@ fn viz_smart_map_clusters_dense_markers() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(
-        html.contains(r#""cluster":{"enabled":true,"maxzoom":16.0}"#),
-        "dense marker map should enable native clustering (with a basemap-safe maxzoom): {html}"
+        html.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#),
+        "dense map should bake clustering disabled-at-load (basemap-safe maxzoom): {html}"
     );
     assert!(!html.contains(r#""type":"densitymap""#));
     let stderr = String::from_utf8_lossy(&out.stderr);
-    assert!(stderr.contains("clustered markers"));
+    assert!(stderr.contains("Clusters") && stderr.contains("toggle"));
 }
 
 // Opting back into the density heatmap (`--heatmap-density` at/below the point count) suppresses
@@ -3145,8 +3146,49 @@ fn viz_smart_map_cluster_on_forces_below_threshold() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(
-        html.contains(r#""cluster":{"enabled":true,"maxzoom":16.0}"#),
-        "--cluster on must cluster even a sparse map: {html}"
+        html.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#),
+        "--cluster on must make even a sparse map cluster-eligible (toggle available): {html}"
+    );
+    // the toggle button is present so the user can switch clustering on
+    assert!(html.contains(r#"{"cluster.enabled":true},[0]]"#));
+}
+
+// A cluster-eligible smart map carries an in-map single "Clusters" toggle button: an updatemenu
+// with one restyle button whose `args` (first click) enables and `args2` (next click) disables
+// `cluster.enabled` on the core trace (index 0), so a viewer can collapse points into clusters and
+// back without re-rendering. Absent when clustering is off (nothing to toggle).
+#[test]
+fn viz_smart_map_cluster_toggle_menu_present() {
+    let wrk = Workdir::new("viz_smart_map_cluster_toggle_menu_present");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    // cluster-eligible (default): a single toggle button targeting trace 0 via args/args2 restyle.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // match the restyle button's full args fragments (targeting trace [0]) rather than the bare
+    // "cluster.enabled" — that attribute name also appears inside the embedded plotly.js bundle.
+    // `args` enables, `args2` disables: a native single-button plotly toggle.
+    assert!(
+        html.contains(r#""args":[{"cluster.enabled":true},[0]]"#)
+            && html.contains(r#""args2":[{"cluster.enabled":false},[0]]"#),
+        "clustered map should carry the single-button cluster toggle (args/args2 on trace 0): \
+         {html}"
+    );
+    // exactly one "Clusters" button, and no separate "Points" button (single toggle, not a pair)
+    assert!(html.contains(r#""label":"Clusters""#) && !html.contains(r#""label":"Points""#));
+
+    // --cluster off: no clustering, so no toggle menu.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "off"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#"{"cluster.enabled":true},[0]]"#),
+        "un-clustered map must not carry the cluster-toggle updatemenu: {html}"
     );
 }
 

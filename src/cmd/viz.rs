@@ -2865,6 +2865,23 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
              'id' or 'properties.<name>'."
         );
     }
+    // The key resolves somewhere, but every --geojson consumer (point-in-polygon binning in
+    // build_pip_features and the native plotly choropleth map) needs at least one
+    // Polygon/MultiPolygon feature that ALSO carries the id — reusing geojson_value_to_polygons
+    // here keeps this fail-fast check in exact parity with build_pip_features' late check, so a
+    // geojson whose id only lands on non-polygon features is rejected up front rather than after
+    // all the expensive stats/dictionary work.
+    if !fc.features.iter().any(|f| {
+        feature_id_by_path(f, key).is_some()
+            && f.geometry
+                .as_ref()
+                .is_some_and(|g| !geojson_value_to_polygons(&g.value).is_empty())
+    }) {
+        return fail_incorrectusage_clierror!(
+            "--geojson '{resolved}' has no usable Polygon/MultiPolygon features with a '{key}' \
+             id. Check --feature-id-key (e.g. 'id' or 'properties.<name>')."
+        );
+    }
 
     args.flag_geojson = Some(resolved);
     Ok(())

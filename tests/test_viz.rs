@@ -3177,8 +3177,12 @@ fn viz_smart_map_cluster_toggle_menu_present() {
         "clustered map should carry the single-button cluster toggle (args/args2 on trace 0): \
          {html}"
     );
-    // exactly one "Clusters" button, and no separate "Points" button (single toggle, not a pair)
-    assert!(html.contains(r#""label":"Clusters""#) && !html.contains(r#""label":"Points""#));
+    // one "Clusters/Points" toggle button, not a separate pair of "Clusters"/"Points" buttons
+    assert!(
+        html.contains(r#""label":"Clusters/Points""#)
+            && !html.contains(r#""label":"Points""#)
+            && !html.contains(r#""label":"Clusters""#)
+    );
 
     // --cluster off: no clustering, so no toggle menu.
     let mut cmd = wrk.command("viz");

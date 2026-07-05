@@ -376,13 +376,13 @@ smart options:
                            instead of markers. The heatmap keeps per-point hover
                            (coordinates, plus the point's label). Defaults to 0
                            (disabled): dense point maps instead open as individual
-                           points with an in-map "Clusters" toggle (collapse the
+                           points with an in-map "Clusters/Points" toggle (collapse the
                            dense areas into interactive count bubbles on demand)
                            rather than aggregating into a static heat surface.
                            Set a positive <n> to opt back into the heatmap above
                            that point count. [default: 0]
     --cluster <mode>       For the `viz smart` map panel: whether to offer an
-                           in-map "Clusters" toggle that collapses dense points
+                           in-map "Clusters/Points" toggle that collapses dense points
                            into native MapLibre count bubbles (which expand back
                            into individual, hoverable points on zoom-in). The map
                            always OPENS as individual points; the toggle switches
@@ -7852,7 +7852,7 @@ enum PanelKind {
         /// (see `ClusterMode`): under `auto`, set for a dense plain-marker core (no `density`
         /// heatmap, no bubble-size `sizes`, >= `SMART_CLUSTER_MIN_POINTS` points); `on` sets it
         /// for any marker core; `off` clears it. When set, the core bakes `cluster.enabled
-        /// = false` (the map OPENS on individual points) and a single "Clusters" toggle
+        /// = false` (the map OPENS on individual points) and a single "Clusters/Points" toggle
         /// button is added to switch clustering on/off. Never applied to the outlier
         /// call-out trace, and always mutually exclusive with `density` (a heatmap has no
         /// markers to cluster).
@@ -11611,16 +11611,16 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
-/// A single "Clusters" toggle button for the `viz smart` map's cluster-eligible core trace. The map
-/// OPENS as individual points (the core trace bakes `cluster.enabled = false`); this button, a
-/// native plotly toggle, restyles `cluster.enabled` on trace 0 — `args` (first click, from the
-/// inactive state) turns clustering on, `args2` (next click, from the active state) turns it back
-/// off. Only trace 0 is targeted, so the geographic-outlier call-out trace (also a `scattermap`,
-/// but never clustered) is left untouched. Starts inactive (`active(-1)`) to match the points-first
-/// default. Added only when the core is cluster-eligible.
+/// A single "Clusters/Points" toggle button for the `viz smart` map's cluster-eligible core trace.
+/// The map OPENS as individual points (the core trace bakes `cluster.enabled = false`); this
+/// button, a native plotly toggle, restyles `cluster.enabled` on trace 0 — `args` (first click,
+/// from the inactive state) turns clustering on, `args2` (next click, from the active state) turns
+/// it back off. Only trace 0 is targeted, so the geographic-outlier call-out trace (also a
+/// `scattermap`, but never clustered) is left untouched. Starts inactive (`active(-1)`) to match
+/// the points-first default. Added only when the core is cluster-eligible.
 fn cluster_toggle_menu() -> UpdateMenu {
     let toggle = Button::new()
-        .label("Clusters")
+        .label("Clusters/Points")
         .method(ButtonMethod::Restyle)
         .args(serde_json::json!([{ "cluster.enabled": true }, [0]]))
         .args2(serde_json::json!([{ "cluster.enabled": false }, [0]]));
@@ -12478,7 +12478,7 @@ fn build_smart(
                     } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
                         viz_note(&format!(
                             "viz smart: map has {mappable_count} mappable points; the core opens \
-                             as individual points with a \"Clusters\" toggle (click it to \
+                             as individual points with a \"Clusters/Points\" toggle (click it to \
                              collapse dense areas into native MapLibre count bubbles that expand \
                              again on zoom-in). Set --cluster off to omit the toggle, or \
                              --heatmap-density <n> to draw a density heatmap at or above <n> \
@@ -14461,9 +14461,10 @@ fn smart_inline_panel_plot(
             }
             if *cluster {
                 // native MapLibre client-side clustering, configured but DISABLED at load so the
-                // map opens on individual points; the "Clusters" toggle (see `cluster_toggle_menu`)
-                // flips `cluster.enabled` on. `max_zoom` is baked now so toggling on honors it. No
-                // point is ever dropped — clustering only changes rendering, not the embedded data.
+                // map opens on individual points; the "Clusters/Points" toggle (see
+                // `cluster_toggle_menu`) flips `cluster.enabled` on. `max_zoom` is
+                // baked now so toggling on honors it. No point is ever dropped —
+                // clustering only changes rendering, not the embedded data.
                 core_trace = core_trace.cluster(
                     Cluster::new()
                         .enabled(false)

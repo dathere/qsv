@@ -737,6 +737,13 @@ const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
 /// global extents that wrap the antimeridian (where the corner metadata is suppressed).
 const SMART_CHOROPLETH_MIN_SPAN_DEG: f64 = 8.0;
 
+/// Fill opacity for a tile-basemap `ChoroplethMap` (the `viz smart` metro choropleth panel and
+/// `viz choropleth --map`). Paired with `below("")`, which lifts the fill above the basemap's road
+/// layers so they don't render on top and muddy the read; a near-opaque fill then keeps the region
+/// colors legible while the small gaps between polygons (rivers, harbor) still reveal enough
+/// basemap to orient the map.
+const CHOROPLETH_MAP_FILL_OPACITY: f64 = 0.9;
+
 /// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose
 /// `bimodality_coefficient` reaches this AND is platykurtic (see `classify_measure`) is treated as
 /// bimodal/multimodal, so `viz smart` draws a histogram (which shows the separate peaks) instead of
@@ -3936,7 +3943,14 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .marker(
+                ChoroplethMarker::new()
+                    .line(Line::new().width(0.5))
+                    .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+            )
+            // lift the fill above the basemap's road layers (plotly's default drops it just above
+            // water, so roads render on top and muddy the read); near-opaque fill then reads clean.
+            .below("")
             .hover_text_array(hover_text)
             .hover_info(HoverInfo::Text);
         plot.add_trace(trace);
@@ -14658,7 +14672,16 @@ fn smart_inline_panel_plot(
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
                 .color_bar(ColorBar::new().title("count"))
-                .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+                .marker(
+                    ChoroplethMarker::new()
+                        .line(Line::new().width(0.5))
+                        .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+                )
+                // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
+                // the water layers, so the basemap's roads render on TOP of the regions and muddy
+                // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
+                // the inter-polygon gaps still revealing enough basemap to orient).
+                .below("")
                 .hover_text_array(hover_text.clone())
                 .hover_info(HoverInfo::Text),
         );

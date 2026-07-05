@@ -6034,6 +6034,16 @@ fn viz_choropleth_map() {
     // whole-world view where local regions would be invisible
     assert!(html.contains(r#""center":{"#));
     assert!(html.contains(r#""zoom":"#));
+    // the fill is inserted above the basemap road layers (below="") with a near-opaque fill, so
+    // roads don't bleed through and muddy the regions
+    assert!(
+        html.contains(r#""below":"""#),
+        "choropleth --map fill must sit above the basemap roads (below=\"\"): {html}"
+    );
+    assert!(
+        html.contains(r#""opacity":0.9"#),
+        "near-opaque fill expected: {html}"
+    );
 }
 
 // --feature-id-key is optional for --map: when omitted it defaults to "id" (the top-level
@@ -6686,6 +6696,49 @@ fn viz_smart_pip_choropleth_panel() {
     assert!(html.contains(r#""type":"choropleth""#));
     assert!(html.contains(r#""locationmode":"geojson-id""#));
     assert!(html.contains(r#""featureidkey":"properties.id""#));
+}
+
+// A metro-scale `viz smart` choropleth renders on a MapLibre tile basemap (ChoroplethMap). Its fill
+// is inserted ABOVE the basemap layers (below="") so the basemap's roads don't bleed through and
+// muddy the region colors, and the fill is near-opaque for a clean read.
+#[test]
+fn viz_smart_choropleth_map_fill_above_basemap_roads() {
+    let wrk = Workdir::new("viz_smart_choropleth_map_fill_above_basemap_roads");
+    // a tight metro extent (< SMART_CHOROPLETH_MIN_SPAN_DEG in both dims) -> tile ChoroplethMap
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n40.44,-74.00\n40.45,-74.00\n40.44,-73.90\n40.45,-73.90\n",
+    );
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[-74.05,40.40],[-74.05,40.50],[-73.95,40.50],[-73.95,40.40],[-74.05,40.40]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[-73.95,40.40],[-73.95,40.50],[-73.85,40.50],[-73.85,40.40],[-73.95,40.40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choroplethmap""#),
+        "expected a tile ChoroplethMap at metro scale: {html}"
+    );
+    // below="" lifts the fill over the basemap's road layers (the fix for road bleed-through)
+    assert!(
+        html.contains(r#""below":"""#),
+        "choropleth fill must be inserted above the basemap roads (below=\"\"): {html}"
+    );
+    assert!(
+        html.contains(r#""opacity":0.9"#),
+        "choropleth fill should be near-opaque: {html}"
+    );
 }
 
 // PIP choropleth hover shows the human-readable region name (auto-detected from properties.name),

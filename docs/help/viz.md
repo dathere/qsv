@@ -347,7 +347,7 @@ qsv viz --help
 | &nbsp;`‑‑lon`&nbsp; | string | Longitude column for a map (decimal degrees, -180 to 180). |  |
 | &nbsp;`‑‑text`&nbsp; | string | Column whose value labels each point on hover. |  |
 | &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMap) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
-| &nbsp;`‑‑style`&nbsp; | string | MapLibre basemap style (all render without an access token): open-street-map (the default), carto-positron, carto-darkmatter, carto-voyager, white-bg, basic, streets, outdoors, light, dark, satellite, satellite-streets. | `open-street-map` |
+| &nbsp;`‑‑style`&nbsp; | string | MapLibre basemap style (all render without an access token): open-street-map (the default), carto-positron, carto-darkmatter, carto-voyager, white-bg, basic, streets, outdoors, light, dark, satellite, satellite-streets. The three carto styles also have label-free "-nolabels" variants (e.g. carto-positron-nolabels) that keep basemap place names from competing with a dense data overlay. | `open-street-map` |
 
 <a name="geo-options"></a>
 

@@ -517,9 +517,10 @@ fn viz_smart_grouped_violin_panel() {
     let wrk = Workdir::new("viz_smart_grouped_violin_panel");
     // one low-cardinality categorical dimension + one numeric measure: `viz smart` adds a
     // grouped-violin overview panel showing the measure's distribution split by category (one
-    // violin per category), distinct from any single-column violin.
+    // violin per category), distinct from any single-column violin. 180 rows => 60 per category,
+    // clearing the VIOLIN_MIN_POINTS (50) per-category gate so every category earns a violin.
     let mut rows = String::from("category,amount\n");
-    for i in 0..90_u32 {
+    for i in 0..180_u32 {
         let category = match i % 3 {
             0 => "alpha",
             1 => "beta",
@@ -576,6 +577,56 @@ fn viz_smart_grouped_violin_alternating_categories_above_sample_cap() {
     // sampled only one of them)
     assert!(html.contains(r#""east""#));
     assert!(html.contains(r#""west""#));
+}
+
+#[test]
+fn viz_smart_grouped_violin_gated_below_min_points() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_gated_below_min_points");
+    // two categories, each with only 30 rows (< VIOLIN_MIN_POINTS = 50). Under default
+    // `--violin auto` a KDE over so few observations is bandwidth artifact, so the per-category
+    // sample-size gate drops both, leaving <2 eligible categories and no grouped-violin panel.
+    let mut rows = String::from("grp,val\n");
+    for i in 0..60_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{grp},{}\n", i % 25));
+    }
+    wrk.create_from_string("sparse.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sparse.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // no grouped-violin overview panel (its title is "<measure> distribution by <dimension>")
+    assert!(
+        !html.contains("distribution by"),
+        "sparse per-category counts should suppress the grouped violin; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_grouped_violin_off_suppressed() {
+    let wrk = Workdir::new("viz_smart_grouped_violin_off_suppressed");
+    // well-populated categories (90 rows each, clearing the sample-size gate) that WOULD earn a
+    // grouped violin under auto; `--violin off` must suppress it (there is no grouped-box panel,
+    // so the distribution-by-category overview simply doesn't appear).
+    let mut rows = String::from("grp,val\n");
+    for i in 0..180_u32 {
+        let grp = if i % 2 == 0 { "east" } else { "west" };
+        rows.push_str(&format!("{grp},{}\n", i % 50));
+    }
+    wrk.create_from_string("dense.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--violin", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        !html.contains("distribution by"),
+        "--violin off should suppress the grouped-violin panel; html: {html}"
+    );
+    assert!(!html.contains(r#""type":"violin""#));
 }
 
 #[test]

@@ -479,9 +479,14 @@ smart options:
                            violin for every continuous column EXCEPT those on
                            a log value axis (the KDE is estimated in linear
                            space, which a log axis would geometrically distort)
-                           and those with fewer than 20 distinct values (too
-                           few for a meaningful KDE) — both keep an honest box;
-                           "on" also violins those; "off" never draws violins.
+                           and those with fewer than 20 distinct values or
+                           fewer than 50 non-null observations (too few for a
+                           meaningful KDE — the curve would be smoothing
+                           artifact) — all keep an honest box; "on" also
+                           violins those; "off" never draws violins. Violin
+                           KDEs are clamped to each column's observed range
+                           (Plotly spanmode "hard") so a bounded or discrete
+                           measure can't show density past a natural limit.
                            A column with at most 10,000 non-null values gets an
                            exact violin (with outlier points, like a raw box);
                            a larger column draws its silhouette and inner box
@@ -553,7 +558,7 @@ use plotly::{
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
-    violin::{MeanLine, ViolinBox, ViolinPoints},
+    violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
 use serde::Deserialize;
 
@@ -731,6 +736,14 @@ const BIMODALITY_COEFFICIENT_THRESHOLD: f64 = 0.60;
 /// A violin's KDE over fewer distinct values than this reads as a lumpy comb, not a shape —
 /// such columns keep their box panel under `--violin auto`.
 const VIOLIN_MIN_CARDINALITY: u64 = 20;
+
+/// A KDE needs enough *observations* — not just distinct values — before its silhouette reflects
+/// the data rather than the smoothing bandwidth. `VIOLIN_MIN_CARDINALITY` guards distinct-value
+/// count, but a near-unique column can clear it with only a few dozen rows, where the resulting
+/// curve is bandwidth artifact rather than shape. Under `--violin auto` a column with fewer than
+/// this many non-null values keeps its honest box (five numbers that degrade gracefully); `on`
+/// still violins it at the user's explicit request.
+const VIOLIN_MIN_POINTS: u64 = 50;
 
 /// Target sample size for a violin (single-column or grouped) drawn from a column with more than
 /// `SMART_BOX_OUTLIERS_MAX` non-null values: the values are deterministically strided down to at
@@ -6557,11 +6570,18 @@ fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
 /// shape). `on` is the user's explicit choice and overrides both guards; `off` always boxes.
 /// Confirmed-bimodal columns never reach this — `classify_measure` routes them to a histogram
 /// first.
-fn wants_violin(mode: ViolinMode, s: &crate::cmd::stats::StatsData, value_log: bool) -> bool {
+fn wants_violin(
+    mode: ViolinMode,
+    s: &crate::cmd::stats::StatsData,
+    value_log: bool,
+    n_points: u64,
+) -> bool {
     match mode {
         ViolinMode::Off => false,
         ViolinMode::On => true,
-        ViolinMode::Auto => !value_log && s.cardinality >= VIOLIN_MIN_CARDINALITY,
+        ViolinMode::Auto => {
+            !value_log && s.cardinality >= VIOLIN_MIN_CARDINALITY && n_points >= VIOLIN_MIN_POINTS
+        },
     }
 }
 
@@ -6841,20 +6861,6 @@ fn measure_by_dim_panel(
     )))
 }
 
-/// Build the "grouped violin" overview panel: the DISTRIBUTION of the primary numeric measure
-/// (`measure_indices[0]`) split into one violin per category of the coarsest (lowest-cardinality)
-/// categorical dimension — the distribution companion to `measure_by_dim_panel`'s aggregate bar,
-/// and to the categorical hierarchy it sits beneath. Does one extra data pass to gather the raw
-/// per-category values (the measure-by-dim/hierarchy passes only accumulate aggregates/counts).
-///
-/// Collection is bounded: the pass keeps only every stride-th non-null measure value (the stride
-/// derived from `measure_nonnull` so the retained set is ~`VIOLIN_SAMPLE_MAX` regardless of input
-/// size — the same per-violin budget the single-column violin uses). Full per-category counts are
-/// tracked
-/// separately (O(cardinality)) to rank the `top_n` most-populous categories — capping the number
-/// of violins limits readability, but only striding limits the buffered value count, since a
-/// single dominant category can hold most rows. Returns `Ok(None)` when fewer than 2 categories
-/// carry sampled values (a single violin conveys no grouping).
 fn grouped_violin_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -6862,9 +6868,16 @@ fn grouped_violin_panel(
     measure_indices: &[usize],
     dim_indices: &[usize],
     top_n: usize,
+    violin_mode: ViolinMode,
     measure_nonnull: u64,
     explicit_points: Option<&BoxPoints>,
 ) -> CliResult<Option<Panel>> {
+    // `--violin off` suppresses violins everywhere, including this supplementary
+    // distribution-by-category overview (there is no grouped-box fallback panel), so bail before
+    // the data pass rather than drawing a violin the flag forbids.
+    if matches!(violin_mode, ViolinMode::Off) {
+        return Ok(None);
+    }
     let Some(&m_idx) = measure_indices.first() else {
         return Ok(None);
     };
@@ -6934,7 +6947,14 @@ fn grouped_violin_panel(
     let mut groups: Vec<String> = Vec::new();
     let mut values: Vec<f64> = Vec::new();
     let mut kept_cats = 0_usize;
-    for (cat, _) in &ranked {
+    for (cat, full_count) in &ranked {
+        // under `--violin auto`, drop a category with too few observations for an honest KDE — its
+        // silhouette would be bandwidth artifact, the very thing VIOLIN_MIN_POINTS guards against
+        // for single-column violins. `--violin on` forces every category (guards bypassed). The
+        // gate is on the FULL per-category count, not the strided-down sample.
+        if matches!(violin_mode, ViolinMode::Auto) && *full_count < VIOLIN_MIN_POINTS {
+            continue;
+        }
         // a top category striped to zero samples (only possible for a tiny category under a large
         // stride) would draw an empty violin — skip it rather than render a blank slot.
         match sampled.get(cat) {
@@ -6948,6 +6968,8 @@ fn grouped_violin_panel(
             _ => {},
         }
     }
+    // fewer than 2 eligible categories (a single violin conveys no grouping); under `auto` this
+    // also fires when the sample-size gate leaves 0 or 1 well-populated category.
     if kept_cats < 2 {
         return Ok(None);
     }
@@ -12434,7 +12456,7 @@ fn build_smart(
                     if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n_points) {
                         // the raw values will be collected in full — exact violin (the default
                         // representation; see `wants_violin`) or raw box.
-                        kind = if wants_violin(violin_mode, s, would_log) {
+                        kind = if wants_violin(violin_mode, s, would_log, n_points) {
                             // the KDE silhouette already shows what a full point cloud would,
                             // so the size-based `all` upgrade (valuable on a box, whose five
                             // numbers hide the distribution) is redundant clutter on a violin:
@@ -12453,7 +12475,7 @@ fn build_smart(
                         } else {
                             PanelKind::BoxRaw { idx, points }
                         };
-                    } else if wants_violin(violin_mode, s, would_log) {
+                    } else if wants_violin(violin_mode, s, would_log, n_points) {
                         // `smart_box_points` returned None for one of two reasons, and a violin
                         // still renders in both: an explicit `--box-points none` only means "no
                         // point overlay" (a violin's KDE doesn't need points; the cache-only
@@ -12787,6 +12809,7 @@ fn build_smart(
             &measure_indices,
             &dim_indices,
             top_n,
+            violin_mode,
             measure_nonnull,
             explicit_box_points.as_ref(),
         ) {
@@ -13310,6 +13333,11 @@ fn panel_trace(
                 .points(violin_points(points))
                 .marker(Marker::new().color(color))
                 .line(Line::new().color(color))
+                // clamp the KDE to the observed data range so the silhouette can't bleed past a
+                // natural bound (density below 0 for a count, above 100 for a percentage); the
+                // default "soft" span extends a bandwidth beyond the extremes, which misleads on
+                // bounded/discrete columns.
+                .span_mode(SpanMode::Hard)
                 // show only the y stats in the hover, not plotly's default "(<trace name>,
                 // ...)" which repeats the (long) column name — it's already the panel title.
                 .hover_info(HoverInfo::Y);
@@ -13332,7 +13360,10 @@ fn panel_trace(
                 .mean_line(MeanLine::new().visible(true))
                 .points(violin_points(points))
                 .marker(Marker::new().color(color))
-                .line(Line::new().color(color));
+                .line(Line::new().color(color))
+                // clamp each category's KDE to its observed range (see the single-column violin
+                // above) so a bounded/discrete measure can't render density past a natural limit.
+                .span_mode(SpanMode::Hard);
             if let Some((x, y)) = &axes {
                 v = v.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -17509,31 +17540,41 @@ mod tests {
     #[test]
     fn wants_violin_auto_defaults_to_violin_with_guards() {
         // a violin is the DEFAULT representation for a continuous column: any shape, no
-        // bimodality/kurtosis signal required
+        // bimodality/kurtosis signal required (given enough distinct values AND observations)
         let s = stat("Float", 100, Some(0.9));
-        assert!(wants_violin(ViolinMode::Auto, &s, false));
+        assert!(wants_violin(ViolinMode::Auto, &s, false, 1_000));
 
         // too few distinct values for a meaningful KDE (a lumpy comb) -> box
         let mut few = stat("Float", 100, Some(0.9));
         few.cardinality = VIOLIN_MIN_CARDINALITY - 1;
-        assert!(!wants_violin(ViolinMode::Auto, &few, false));
+        assert!(!wants_violin(ViolinMode::Auto, &few, false, 1_000));
+
+        // too few observations for an honest KDE (the curve would be bandwidth artifact) -> box,
+        // even when the distinct-value count clears its guard
+        assert!(!wants_violin(
+            ViolinMode::Auto,
+            &s,
+            false,
+            VIOLIN_MIN_POINTS - 1
+        ));
 
         // a would-log panel keeps its box under auto (the KDE is estimated in linear
         // space, so a log axis distorts the silhouette); `on` is the user's explicit
         // choice and still wins
-        assert!(!wants_violin(ViolinMode::Auto, &s, true));
-        assert!(wants_violin(ViolinMode::On, &s, true));
+        assert!(!wants_violin(ViolinMode::Auto, &s, true, 1_000));
+        assert!(wants_violin(ViolinMode::On, &s, true, 1_000));
     }
 
     #[test]
     fn wants_violin_on_off_override_guards() {
         // `on`/`off` ignore the guards entirely
-        let bland = stat("Float", 5, Some(0.9)); // fails the cardinality guard
-        assert!(wants_violin(ViolinMode::On, &bland, false));
+        let bland = stat("Float", 5, Some(0.9)); // fails the cardinality AND min-points guards
+        assert!(wants_violin(ViolinMode::On, &bland, false, 5));
         assert!(!wants_violin(
             ViolinMode::Off,
             &stat("Float", 100, Some(0.9)),
-            false
+            false,
+            1_000
         ));
     }
 

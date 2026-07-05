@@ -6741,6 +6741,55 @@ fn viz_smart_choropleth_map_fill_above_basemap_roads() {
     );
 }
 
+// A metro-scale `viz smart` choropleth opens on the LABELED carto basemap (place names aid
+// orientation in the inter-polygon gaps) and carries a "Basemap labels" toggle that relayouts the
+// `map` subplot's style between the labeled and label-free carto variants. Default light theme, so
+// the baked args reference the carto-positron pair.
+#[test]
+fn viz_smart_choropleth_map_basemap_labels_toggle() {
+    let wrk = Workdir::new("viz_smart_choropleth_map_basemap_labels_toggle");
+    // a tight metro extent (< SMART_CHOROPLETH_MIN_SPAN_DEG in both dims) -> tile ChoroplethMap
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n40.44,-74.00\n40.45,-74.00\n40.44,-73.90\n40.45,-73.90\n",
+    );
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[-74.05,40.40],[-74.05,40.50],[-73.95,40.50],[-73.95,40.40],[-74.05,40.40]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[-73.95,40.40],[-73.95,40.50],[-73.85,40.50],[-73.85,40.40],[-73.95,40.40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the choropleth defaults to the LABELED basemap (carto-positron, not -nolabels)
+    assert!(
+        html.contains(r#""style":"carto-positron""#),
+        "choropleth basemap should default to labeled carto-positron: {html}"
+    );
+    // the "Basemap labels" toggle: args restore labels (labeled style), args2 hide them (-nolabels)
+    assert!(
+        html.contains(r#""label":"Basemap labels""#),
+        "expected a Basemap labels toggle on the choropleth panel: {html}"
+    );
+    assert!(
+        html.contains(r#""args":[{"map.style":"carto-positron"}]"#),
+        "Basemap labels args must relayout map.style to the labeled variant: {html}"
+    );
+    assert!(
+        html.contains(r#""args2":[{"map.style":"carto-positron-nolabels"}]"#),
+        "Basemap labels args2 must relayout map.style to the label-free variant: {html}"
+    );
+}
+
 // PIP choropleth hover shows the human-readable region name (auto-detected from properties.name),
 // the labeled count, the share of total, and the rank.
 #[test]

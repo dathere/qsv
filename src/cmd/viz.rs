@@ -5872,6 +5872,20 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
           // safely restyles it without blanking the layer. Preserve the injected fullscreen
           // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
+          // Re-theme any "Basemap labels" toggle: its baked `map.style` args point at the
+          // render-time theme's basemap, so rewrite each to the target theme's variant, preserving
+          // the arg's own `-nolabels` suffix (labeled arg -> mapStyle, no-labels arg ->
+          // mapStyleNoLabels). Guarded on the `map.style` key so non-map menus are untouched.
+          (gd.layout.updatemenus || []).forEach(function (menu) {
+            (menu.buttons || []).forEach(function (b) {
+              ["args", "args2"].forEach(function (ak) {
+                var a = b[ak];
+                if (a && a[0] && typeof a[0]["map.style"] === "string") {
+                  a[0]["map.style"] = /-nolabels$/.test(a[0]["map.style"]) ? p.mapStyleNoLabels : p.mapStyle;
+                }
+              });
+            });
+          });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
@@ -11656,6 +11670,41 @@ fn cluster_toggle_menu() -> UpdateMenu {
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
+/// A single "Basemap labels" toggle for a `viz smart` MapLibre choropleth panel. The metro-scale
+/// choropleth opens on the LABELED carto basemap (place names in the inter-polygon gaps aid
+/// orientation); this native plotly toggle relayouts the `map` subplot's `style` between the
+/// labeled and label-free carto variants of the SAME theme. `args` (first click from the active
+/// state's inverse) restores labels, `args2` hides them — the button starts ACTIVE (`active(0)`)
+/// so the highlighted state reads as "labels shown", matching the labeled-basemap default.
+///
+/// The two style strings are baked for the RENDER-time theme, so after a runtime light/dark flip
+/// they would point at the wrong theme's basemap. The theme-toggle JS keeps them honest: on every
+/// `apply()` it rewrites any `map.style` updatemenu arg to the target theme's variant, preserving
+/// the `-nolabels` suffix (see `SCRIPT_TEMPLATE`).
+fn basemap_labels_toggle_menu(labeled_style: MapStyle, nolabels_style: MapStyle) -> UpdateMenu {
+    let toggle = Button::new()
+        .label("Basemap labels")
+        .method(ButtonMethod::Relayout)
+        .args(serde_json::json!([{ "map.style": labeled_style }]))
+        .args2(serde_json::json!([{ "map.style": nolabels_style }]));
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // top-left of the panel (this panel has no Core/Full extent menu, so the top slot is free).
+        .x(0.02)
+        .x_anchor(Anchor::Left)
+        .y(0.98)
+        .y_anchor(Anchor::Top)
+        .show_active(true)
+        // start active: the map opens WITH basemap labels, click to hide them.
+        .active(0)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        // pin the label to ink so a dark theme/toggle can't flip it invisible on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
 /// possible, for the offline `ScatterGeo` (local Mercator) path — the analogue of
 /// `extent_center_zoom` for projection maps. Unlike the tile map, these are exact ranges, so the
@@ -14685,17 +14734,30 @@ fn smart_inline_panel_plot(
                 .hover_text_array(hover_text.clone())
                 .hover_info(HoverInfo::Text),
         );
-        // a choropleth fills whole regions, so its basemap is pure context — use the label-free
-        // Carto variant so place names don't bleed through and fight the filled data.
+        // keep the LABELED basemap: since the fill is inserted above every basemap layer
+        // (`below("")` on the trace), place names can no longer bleed over the regions — they sit
+        // under the fill and show only in the gaps between polygons (water, harbor, parks, and the
+        // uncovered land around the metro), where they aid orientation. Passing `false` (not a
+        // label-suppressing overlay); the theme-toggle JS keys off the `-nolabels` suffix, so a
+        // labeled style here stays labeled across a light/dark switch.
         let layout_map = LayoutMap::new()
-            .style(smart_map_basemap(is_dark_theme(theme), true))
+            .style(smart_map_basemap(is_dark_theme(theme), false))
             .center(Center::new(*center_lat, *center_lon))
             .zoom(*zoom);
+        // opt-in "Basemap labels" toggle: hides/shows the carto basemap's place names (default on).
+        // The two style strings are baked for the render-time theme; the theme-toggle JS rewrites
+        // them to the active theme on each flip (preserving the `-nolabels` suffix).
+        let labeled_style = smart_map_basemap(is_dark_theme(theme), false);
+        let nolabels_style = smart_map_basemap(is_dark_theme(theme), true);
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .update_menus(vec![basemap_labels_toggle_menu(
+                labeled_style,
+                nolabels_style,
+            )])
             .map(layout_map);
         if !themed {
             layout = layout
@@ -18706,7 +18768,8 @@ mod tests {
 
     #[test]
     fn smart_map_basemap_picks_nolabels_for_overlays() {
-        // data-overlay panels (density/choropleth) drop basemap labels; point maps keep them
+        // `data_overlay` picks the label-free carto variant (used by the density map and the
+        // choropleth's label-OFF toggle state); the labeled variant is the default everywhere else
         let cases = [
             (false, false, "carto-positron"),
             (false, true, "carto-positron-nolabels"),

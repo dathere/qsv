@@ -345,6 +345,20 @@
           // safely restyles it without blanking the layer. Preserve the injected fullscreen
           // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
+          // Re-theme any "Basemap labels" toggle: its baked `map.style` args point at the
+          // render-time theme's basemap, so rewrite each to the target theme's variant, preserving
+          // the arg's own `-nolabels` suffix (labeled arg -> mapStyle, no-labels arg ->
+          // mapStyleNoLabels). Guarded on the `map.style` key so non-map menus are untouched.
+          (gd.layout.updatemenus || []).forEach(function (menu) {
+            (menu.buttons || []).forEach(function (b) {
+              ["args", "args2"].forEach(function (ak) {
+                var a = b[ak];
+                if (a && a[0] && typeof a[0]["map.style"] === "string") {
+                  a[0]["map.style"] = /-nolabels$/.test(a[0]["map.style"]) ? p.mapStyleNoLabels : p.mapStyle;
+                }
+              });
+            });
+          });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;

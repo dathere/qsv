@@ -205,10 +205,10 @@ RESIZE_LISTENER_JS = (
 # document-level `fullscreenchange` listener then resizes the plot so it actually fills the
 # fullscreen viewport on enter (and restores on exit) — mirroring the CLI handler's resize.
 #
-# Maps mirror the CLI's fit (see FULLSCREEN_SCRIPT in src/cmd/viz.rs): mapbox/MapLibre bake an
+# Maps mirror the CLI's fit (see FULLSCREEN_SCRIPT in src/cmd/viz.rs): MapLibre bakes an
 # absolute zoom for a fixed assumed px size — standalone `viz map` HTML frames against 1000x600
 # (the only map figures reconstructed on this page are standalone; the map-bearing smart dashboards
-# are iframes that carry their own CLI prelude). Since mapbox zoom is logarithmic, the optimal zoom
+# are iframes that carry their own CLI prelude). Since MapLibre zoom is logarithmic, the optimal zoom
 # for any real container size is bakedZoom + log2(min(curW/1000, curH/600)) keeping the baked center
 # (qsvFitTarget); curW/curH are domain-scaled (subplot px). The fit is applied by aiming the GL map
 # camera directly (qsvApplyCamera -> _subplot.map.jumpTo), NEVER Plotly.relayout/react — those throw
@@ -223,7 +223,7 @@ FS_BUTTON_JS = (
     'click:function(gd){try{var p=document.fullscreenElement?document.exitFullscreen()'
     ':gd.requestFullscreen();if(p&&p.catch)p.catch(function(){});}catch(e){}}};'
     'function qsvMapKeys(gd){var lay=(gd&&gd.layout)||{};return Object.keys(lay).filter('
-    'function(k){return /^(mapbox|map)\\d*$/.test(k)&&lay[k]&&typeof lay[k].zoom==="number";});}'
+    'function(k){return /^map\\d*$/.test(k)&&lay[k]&&typeof lay[k].zoom==="number";});}'
     'function qsvCaptureBaked(gd){if(gd.__qsvBaked)return;gd.__qsvBaked={};var lay=gd.layout||{};'
     'qsvMapKeys(gd).forEach(function(k){gd.__qsvBaked[k]={z:lay[k].zoom,c:lay[k].center};});}'
     'function qsvPlotPx(gd){var fl=gd._fullLayout||{};'
@@ -401,7 +401,7 @@ FIGURES = [
      False, ["sunburst", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
-    ("map (density)", "DensityMapbox heatmap of the same points on a light Carto basemap.",
+    ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--density", "--style", "carto-positron"]),
     ("geo", "Same earthquakes on an offline natural-earth projection (no tiles, no token); marker "
      "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",

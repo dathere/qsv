@@ -71,7 +71,7 @@ auto-picks panels, so no --x/--y is needed:
     - time-series line, when an auto-detected date/datetime column and a
       continuous numeric column both exist.
     - geographic map, when a latitude/longitude pair is detected:
-        - HTML uses a Mapbox tile map for a local extent, or an offline
+        - HTML uses a MapLibre tile map for a local extent, or an offline
           ScatterGeo projection world-overview for continental/global data.
         - static image export uses an offline ScatterGeo fit to the data extent
           (US-spanning data uses albers-usa); tile maps and 3D panels stay
@@ -276,19 +276,14 @@ map options:
     --lat <col>            Latitude column for a map (decimal degrees, -90 to 90).
     --lon <col>            Longitude column for a map (decimal degrees, -180 to 180).
     --text <col>           Column whose value labels each point on hover.
-    --density              Render a density heatmap (DensityMapbox) instead of points.
+    --density              Render a density heatmap (DensityMap) instead of points.
                            Weighted by the --color or --size column when given, else by
                            a uniform weight. Cannot be combined with --series.
-    --style <name>         Map basemap style. Token-free styles: open-street-map (the
-                           default), carto-positron, carto-darkmatter, stamen-terrain,
-                           stamen-toner, stamen-watercolor, white-bg. Mapbox-hosted
-                           styles (basic, streets, outdoors, light, dark, satellite,
-                           satellite-streets) require --mapbox-token.
+    --style <name>         MapLibre basemap style (all render without an access token):
+                           open-street-map (the default), carto-positron,
+                           carto-darkmatter, carto-voyager, white-bg, basic, streets,
+                           outdoors, light, dark, satellite, satellite-streets.
                            [default: open-street-map]
-    --mapbox-token <tok>   Mapbox access token, required only for the mapbox-hosted
-                           basemap styles listed above.
-                           Can also be set with the QSV_MAPBOX_TOKEN environment
-                           variable (the --mapbox-token flag takes precedence).
 
 geo options:
     --projection <name>    Map projection for `viz geo`. One of: natural-earth (the
@@ -375,10 +370,10 @@ smart options:
                            time-series) always span the full width. [default: 2]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core cluster as a density heatmap
-                           (DensityMapbox) instead of individual markers, which
-                           overplot into a solid, unreadable mass at scale. A heatmap
-                           has no per-point hover — only a generic density readout —
-                           whereas individual markers keep their full per-point hover.
+                           (DensityMap) instead of individual markers, which
+                           overplot into a solid, unreadable mass at scale. The heatmap
+                           keeps per-point hover (coordinates, plus the point's label),
+                           just like individual markers.
                            Set to 0 to always render individual markers (never a
                            heatmap), regardless of point count. [default: 20000]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
@@ -537,8 +532,8 @@ use plotly::layout::update_menu::{
     Button, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
 };
 use plotly::{
-    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMapbox,
-    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMapbox,
+    Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
+    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap,
     ScatterPolar, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
@@ -549,8 +544,8 @@ use plotly::{
     },
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Mapbox, MapboxStyle, Margin, Projection,
-        ProjectionType, themes::BuiltinTheme,
+        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Margin, Projection, ProjectionType,
+        themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -701,7 +696,7 @@ const SMART_ALL_POINTS_MAX_PANELS: usize = MAX_SUBPLOTS;
 const SMART_BOX_OUTLIERS_CAP: usize = 5_000;
 
 /// `viz smart` renders its geographic panel as a `ScatterGeo` projection world-overview (offline,
-/// no tiles) instead of a zoomed mapbox tile map when the coordinates span at least this many
+/// no tiles) instead of a zoomed MapLibre tile map when the coordinates span at least this many
 /// degrees of longitude OR latitude — i.e. continental/global data, where a whole-world projection
 /// gives better context than tiles framed to a wide bounding box. Local extents keep the tile map.
 const SMART_GEO_MIN_LON_SPAN_DEG: f64 = 90.0;
@@ -821,20 +816,20 @@ const SMART_COL_WIDTH_PX: usize = 500;
 const DEFAULT_IMG_WIDTH: usize = 1000;
 const DEFAULT_IMG_HEIGHT: usize = 600;
 
-/// Web-Mercator tile size (px): mapbox zoom z fits 360° of longitude across `512 * 2^z` px.
+/// Web-Mercator tile size (px): MapLibre zoom z fits 360° of longitude across `512 * 2^z` px.
 /// The unit the slippy-tile zoom math in `fitbounds_zoom` is defined against.
-const MAPBOX_TILE_SIZE_PX: f64 = 512.0;
+const MAP_TILE_SIZE_PX: f64 = 512.0;
 
 /// Anti-clip margin for the `fitbounds_zoom` framing (a 1.15× span pad ≈ a 0.20 zoom reduction).
 const MAP_FIT_PAD: f64 = 1.15;
 
-/// Usable mapbox draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
+/// Usable map draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
 /// (420) minus the map layout's top (48) + bottom (20) margins = 352. This is the *reliable*
 /// dimension at HTML-generation time (width is `responsive`/unknown) and, for the wide-short map
 /// panel, the binding constraint — so the latitude fit is computed against it.
 const MAP_PANEL_USABLE_HEIGHT_PX: f64 = OVERVIEW_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
 
-/// Assumed mapbox draw width (px) for the smart MAP panel longitude fit. The panel spans the full
+/// Assumed map draw width (px) for the smart MAP panel longitude fit. The panel spans the full
 /// grid (`grid-column: 1 / -1`) and its real width is responsive/unknown when the HTML is
 /// generated. The reliable `MAP_PANEL_USABLE_HEIGHT_PX` term binds the common case (a ~square or
 /// tall extent is latitude-bound, so this width is irrelevant to it); the width term only matters
@@ -1055,7 +1050,6 @@ struct Args {
     flag_text:               Option<SelectColumns>,
     flag_density:            bool,
     flag_style:              Option<String>,
-    flag_mapbox_token:       Option<String>,
     flag_projection:         Option<String>,
     // choropleth columns/options
     flag_locations:          Option<SelectColumns>,
@@ -1165,14 +1159,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--snap-max-dist must be a non-negative number of kilometers."
             );
         }
-    }
-
-    // --mapbox-token falls back to the QSV_MAPBOX_TOKEN env var when not passed explicitly.
-    if args.flag_mapbox_token.is_none()
-        && let Ok(token) = std::env::var("QSV_MAPBOX_TOKEN")
-        && !token.is_empty()
-    {
-        args.flag_mapbox_token = Some(token);
     }
 
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it
@@ -1381,7 +1367,7 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
         }
     }
 
-    // maps use a `mapbox` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
+    // maps use a `map` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
     // so they own their whole `Plot` and bypass the cartesian `build_layout` below.
     if matches!(chart_kind(args), Chart::Map) {
         return build_map_plot(args, out_format);
@@ -1916,31 +1902,28 @@ const MAP_DENSITY_RADIUS_PX: u8 = 20;
 /// into one flat blob, hiding the internal hotspots a smaller radius reveals.
 const MAP_SMART_DENSITY_RADIUS_PX: u8 = 8;
 
-/// Resolve a `--style` name to its plotly `MapboxStyle` plus whether it is a Mapbox-hosted style
-/// (which needs an access token). The token-free styles render from public OSM/Carto/Stamen tile
-/// servers; the rest are served by Mapbox and require `--mapbox-token`.
-fn parse_map_style(name: &str) -> CliResult<(MapboxStyle, bool)> {
+/// Resolve a `--style` name to its plotly MapLibre `MapStyle`. Every MapLibre bundled style
+/// renders without an access token (unlike the old Mapbox basemaps, no token is ever needed).
+/// (The Stamen basemaps have no MapLibre equivalent and were dropped.)
+fn parse_map_style(name: &str) -> CliResult<MapStyle> {
     let resolved = match name.to_ascii_lowercase().as_str() {
-        "open-street-map" | "osm" => (MapboxStyle::OpenStreetMap, false),
-        "carto-positron" => (MapboxStyle::CartoPositron, false),
-        "carto-darkmatter" => (MapboxStyle::CartoDarkMatter, false),
-        "stamen-terrain" => (MapboxStyle::StamenTerrain, false),
-        "stamen-toner" => (MapboxStyle::StamenToner, false),
-        "stamen-watercolor" => (MapboxStyle::StamenWatercolor, false),
-        "white-bg" => (MapboxStyle::WhiteBg, false),
-        "basic" => (MapboxStyle::Basic, true),
-        "streets" => (MapboxStyle::Streets, true),
-        "outdoors" => (MapboxStyle::Outdoors, true),
-        "light" => (MapboxStyle::Light, true),
-        "dark" => (MapboxStyle::Dark, true),
-        "satellite" => (MapboxStyle::Satellite, true),
-        "satellite-streets" => (MapboxStyle::SatelliteStreets, true),
+        "open-street-map" | "osm" => MapStyle::OpenStreetMap,
+        "carto-positron" => MapStyle::CartoPositron,
+        "carto-darkmatter" | "carto-dark-matter" => MapStyle::CartoDarkMatter,
+        "carto-voyager" => MapStyle::CartoVoyager,
+        "white-bg" => MapStyle::WhiteBg,
+        "basic" => MapStyle::Basic,
+        "streets" => MapStyle::Streets,
+        "outdoors" => MapStyle::Outdoors,
+        "light" => MapStyle::Light,
+        "dark" => MapStyle::Dark,
+        "satellite" => MapStyle::Satellite,
+        "satellite-streets" => MapStyle::SatelliteStreets,
         other => {
             return fail_incorrectusage_clierror!(
-                "Unknown --style '{other}'. Token-free styles: open-street-map, carto-positron, \
-                 carto-darkmatter, stamen-terrain, stamen-toner, stamen-watercolor, white-bg. \
-                 Mapbox-hosted (need --mapbox-token): basic, streets, outdoors, light, dark, \
-                 satellite, satellite-streets."
+                "Unknown --style '{other}'. Supported MapLibre styles (all token-free): \
+                 open-street-map, carto-positron, carto-darkmatter, carto-voyager, white-bg, \
+                 basic, streets, outdoors, light, dark, satellite, satellite-streets."
             );
         },
     };
@@ -2030,8 +2013,8 @@ fn lttb_indices(xs: &[f64], ys: &[f64], cap: usize) -> Vec<usize> {
 
 /// Web-Mercator normalized Y for a latitude (0 at +85.05°N, 1 at 85.05°S) — the vertical analogue
 /// of `lon / 360`. Latitude is clamped to the Web-Mercator limit (±85.05°) so `tan`/`ln` can't blow
-/// up. Used by `fitbounds_zoom` to size a latitude span in the same projected units mapbox zoom is
-/// defined in.
+/// up. Used by `fitbounds_zoom` to size a latitude span in the same projected units MapLibre zoom
+/// is defined in.
 fn mercator_y(lat: f64) -> f64 {
     const MERCATOR_MAX_LAT: f64 = 85.05;
     let lat_rad = lat.clamp(-MERCATOR_MAX_LAT, MERCATOR_MAX_LAT).to_radians();
@@ -2059,12 +2042,12 @@ fn fitbounds_zoom(min_lat: f64, max_lat: f64, lon_span: f64, width_px: f64, heig
         return 10;
     }
     let zoom_lon = if lon_frac > 0.0 {
-        ((width_px / MAPBOX_TILE_SIZE_PX) / lon_frac).log2()
+        ((width_px / MAP_TILE_SIZE_PX) / lon_frac).log2()
     } else {
         f64::INFINITY
     };
     let zoom_lat = if lat_frac > 0.0 {
-        ((height_px / MAPBOX_TILE_SIZE_PX) / lat_frac).log2()
+        ((height_px / MAP_TILE_SIZE_PX) / lat_frac).log2()
     } else {
         f64::INFINITY
     };
@@ -2160,15 +2143,15 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
     }
 }
 
-/// Build a markers-mode `ScatterMapbox` point trace with the given marker (and optional per-point
+/// Build a markers-mode `ScatterMap` point trace with the given marker (and optional per-point
 /// hover text), mirroring `scatter_with_marker` for the cartesian scatter path.
-fn scatter_mapbox_with_marker(
+fn scatter_map_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
     marker: Marker,
     text: Option<Vec<String>>,
 ) -> Box<dyn Trace> {
-    let mut t = ScatterMapbox::new(lats, lons)
+    let mut t = ScatterMap::new(lats, lons)
         .mode(Mode::Markers)
         .marker(marker);
     if let Some(text) = text {
@@ -2177,7 +2160,7 @@ fn scatter_mapbox_with_marker(
     t
 }
 
-/// Split row-aligned coordinates into one `ScatterMapbox` trace per `--series` category,
+/// Split row-aligned coordinates into one `ScatterMap` trace per `--series` category,
 /// preserving first-seen category order. `texts` is applied as per-point hover text when present.
 fn map_series_traces(
     lats: Vec<f64>,
@@ -2204,7 +2187,7 @@ fn map_series_traces(
         .into_iter()
         .map(|name| {
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
-            let mut t = ScatterMapbox::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterMap::new(la, lo).mode(Mode::Markers).name(name);
             if !tx.is_empty() {
                 t = t.text_array(tx);
             }
@@ -2234,18 +2217,12 @@ fn fit_dims(
     }
 }
 
-/// Build the complete `Plot` for `viz map`: a `ScatterMapbox` point map (optionally with
+/// Build the complete `Plot` for `viz map`: a `ScatterMap` point map (optionally with
 /// `--color`/`--size` marker encodings or `--series` per-category traces) or a `--density`
-/// `DensityMapbox` heatmap, on a tile basemap framed to the data's bounding box.
+/// `DensityMap` heatmap, on a MapLibre tile basemap framed to the data's bounding box.
 fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     let style_name = args.flag_style.as_deref().unwrap_or("open-street-map");
-    let (style, needs_token) = parse_map_style(style_name)?;
-    if needs_token && args.flag_mapbox_token.is_none() {
-        return fail_incorrectusage_clierror!(
-            "--style '{style_name}' is a Mapbox-hosted style that requires --mapbox-token. Use a \
-             token-free style (e.g. open-street-map, carto-positron) or pass --mapbox-token."
-        );
-    }
+    let style = parse_map_style(style_name)?;
 
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
@@ -2335,6 +2312,15 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
 
     let mut plot = Plot::new();
     if args.flag_density {
+        // the weight column's label for the hover readout — None when z is the uniform 1.0
+        // fallback (a bare "1" per point is noise, so it's omitted)
+        let weight_label = if !colors.is_empty() {
+            Some(col_label(&headers, color_idx.unwrap(), nh))
+        } else if !sizes.is_empty() {
+            Some(col_label(&headers, size_idx.unwrap(), nh))
+        } else {
+            None
+        };
         // density weight: the --color or --size column when given, else a uniform 1.0
         let z = if !colors.is_empty() {
             colors
@@ -2343,7 +2329,26 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         } else {
             vec![1.0_f64; lats.len()]
         };
-        plot.add_trace(DensityMapbox::new(lats, lons, z).radius(MAP_DENSITY_RADIUS_PX));
+        // per-point hover: coordinates, the --text label (if any), and the labeled weight when
+        // --color/--size supplies one. Density traces honor only hovertemplate (not hovertext).
+        let hover: Vec<String> = (0..lats.len())
+            .map(|i| {
+                let mut parts: Vec<String> = Vec::new();
+                if let Some(t) = texts.get(i) {
+                    parts.push(t.clone());
+                }
+                parts.push(format!("{:.5}, {:.5}", lats[i], lons[i]));
+                if let Some(label) = &weight_label {
+                    parts.push(format!("{}: {}", escape_hover(label), fmt_measure(z[i])));
+                }
+                density_hover_template(&parts.join("<br>"))
+            })
+            .collect();
+        plot.add_trace(
+            DensityMap::new(lats, lons, z)
+                .radius(MAP_DENSITY_RADIUS_PX)
+                .hover_template_array(hover),
+        );
     } else if series_idx.is_some() {
         for trace in map_series_traces(lats, lons, series, texts) {
             plot.add_trace(trace);
@@ -2362,17 +2367,16 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
                 .color_bar(ColorBar::new().title(color_label));
         }
         let text = (!texts.is_empty()).then_some(texts);
-        plot.add_trace(scatter_mapbox_with_marker(lats, lons, marker, text));
+        plot.add_trace(scatter_map_with_marker(lats, lons, marker, text));
     }
 
-    let mut mapbox = Mapbox::new().style(style).center(center).zoom(zoom);
-    // only embed the token when the resolved style actually needs it — otherwise it would leak
-    // into stdout / saved HTML for token-free styles (e.g. the default open-street-map)
-    if needs_token && let Some(token) = args.flag_mapbox_token.clone() {
-        mapbox = mapbox.access_token(token);
-    }
+    // MapLibre `map` subplot: all bundled styles render token-free, so no access token is embedded.
+    let layout_map = LayoutMap::new()
+        .style(style)
+        .center(center)
+        .zoom(f64::from(zoom));
     let mut layout = Layout::new()
-        .mapbox(mapbox)
+        .map(layout_map)
         .show_legend(series_idx.is_some());
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -2408,7 +2412,7 @@ fn parse_projection(name: &str) -> CliResult<ProjectionType> {
 }
 
 /// Build a markers-mode `ScatterGeo` point trace with the given marker (and optional per-point
-/// hover text), mirroring `scatter_mapbox_with_marker` for the projection-basemap path.
+/// hover text), mirroring `scatter_map_with_marker` for the projection-basemap path.
 fn scatter_geo_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
@@ -2998,6 +3002,15 @@ fn escape_hover(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
+}
+
+/// Wrap a pre-rendered hover string as a density-trace `hovertemplate` entry. Density traces
+/// (`DensityMap`) honors ONLY `hovertemplate`, not `hovertext` — so per-point hover
+/// on a heatmap must go through this. A literal `%` would be misparsed as a `%{...}` template
+/// token, so it's doubled; `<extra></extra>` suppresses the trace-name box. Feed already
+/// `escape_hover`-ed text (this only adds the `%`-escaping and the extra tag).
+fn density_hover_template(text: &str) -> String {
+    format!("{}<extra></extra>", text.replace('%', "%%"))
 }
 
 /// Format a measure value for a hover label: a whole number prints without a decimal point
@@ -5530,7 +5543,7 @@ fn dark_chart_palette(
 /// (so `--theme plotly_dark` always opens dark); only an unthemed dashboard (`theme == None`)
 /// defers to the viewer's saved choice then OS preference. Known limitation: geo/scene/polar/pie
 /// panels flip their background, font, and
-/// container color, but basemap fills, mapbox tiles, and trace marker colors do NOT re-theme
+/// container color, but basemap fills, map tiles, and trace marker colors do NOT re-theme
 /// (that would need a trace-type-aware `Plotly.restyle`, which is out of scope here).
 struct ToggleChrome {
     /// CSS for the `:root`/`body.qsv-dark` variables and the toggle button; goes in `<style>`.
@@ -5631,8 +5644,8 @@ const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page
 const SCRIPT_TEMPLATE: &str = r#"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapbox: "carto-darkmatter" };
-  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapbox: "carto-positron" };
+  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapStyle: "carto-darkmatter" };
+  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapStyle: "carto-positron" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard
     // saved preference (the localStorage key is shared across all qsv viz pages,
@@ -5665,8 +5678,8 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
-      } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
-        u[k + ".style"] = p.mapbox;
+      } else if (/^map\d*$/.test(k)) {
+        u[k + ".style"] = p.mapStyle;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -5674,8 +5687,12 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
   }
-  function hasChoropleth(gd) {
-    return (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+  function hasMapLibre(gd) {
+    // Any MapLibre `map`-subplot trace (choroplethmap/densitymap/scattermap) throws on a
+    // relayout/react in our pinned plotly fork, so these must take the Plotly.newPlot path below.
+    return (gd.data || []).some(function (t) {
+      return t.type === "choroplethmap" || t.type === "densitymap" || t.type === "scattermap";
+    });
   }
   // Apply a flat dotted-key update (buildUpdate's shape) onto a nested layout, in place — so the
   // same update can feed Plotly.newPlot (which wants nested layout) instead of relayout.
@@ -5693,12 +5710,12 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
     document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
       var u = buildUpdate(gd, p);
       try {
-        if (hasChoropleth(gd)) {
-          // A choroplethmap (MapLibre) throws "setData of undefined" on a relayout/react in our
-          // pinned plotly fork, so fold the theme update (incl. the basemap `.style`) into a full
-          // Plotly.newPlot — the only primitive that safely restyles a choroplethmap without
-          // blanking its polygons. Preserve the injected fullscreen modebar button via the div's
-          // existing config.
+        if (hasMapLibre(gd)) {
+          // A MapLibre map trace (choroplethmap/densitymap/scattermap) throws "setData of
+          // undefined" on a relayout/react in our pinned plotly fork, so fold the theme update
+          // (incl. the basemap `.style`) into a full Plotly.newPlot — the only primitive that
+          // safely restyles it without blanking the layer. Preserve the injected fullscreen
+          // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
@@ -5744,9 +5761,9 @@ const FULLSCREEN_STYLE: &str =
 /// graph div once with the button added. The button toggles the native Fullscreen API on the
 /// graph div.
 ///
-/// Maps (mapbox / MapLibre) bake an ABSOLUTE `zoom` computed in Rust for a fixed assumed pixel
+/// Maps (MapLibre) bake an ABSOLUTE `zoom` computed in Rust for a fixed assumed pixel
 /// size (`window.__qsvMapAssumedW`/`__qsvMapAssumedH`, published by a per-page prelude). Since
-/// mapbox zoom is logarithmic, the optimal zoom for any real container size is
+/// MapLibre zoom is logarithmic, the optimal zoom for any real container size is
 /// `bakedZoom + log2(min(curW/assumedW, curH/assumedH))` with the baked center unchanged
 /// (`fitTarget`, using each subplot's DOMAIN-scaled px, so it is correct whether the map is
 /// full-bleed or one subplot in a grid). The baked zoom/center are captured ONCE before any
@@ -5758,9 +5775,9 @@ const FULLSCREEN_STYLE: &str =
 ///   - INITIAL display: `applyFitLayout` mutates `gd.layout` BEFORE the button-injection
 ///     `Plotly.newPlot`, so the first paint already fills the real container (newPlot is the only
 ///     primitive that safely sets a map camera at render time — no extra paint, no relayout).
-///   - FULLSCREEN enter/exit: `applyFitCamera` moves the GL map camera directly via the
-///     maplibre/mapbox-gl instance (`gd._fullLayout[k]._subplot.map.jumpTo`), which sits below
-///     plotly's relayout/setData path — no tile reload, works even before the style loads.
+///   - FULLSCREEN enter/exit: `applyFitCamera` moves the GL map camera directly via the MapLibre GL
+///     instance (`gd._fullLayout[k]._subplot.map.jumpTo`), which sits below plotly's
+///     relayout/setData path — no tile reload, works even before the style loads.
 ///
 /// Non-map charts just get `Plotly.Plots.resize`.
 ///
@@ -5787,7 +5804,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       } catch (e) {}
     }
   };
-  // The assumed pixel size the baked mapbox/MapLibre zoom was computed against (published by a
+  // The assumed pixel size the baked MapLibre zoom was computed against (published by a
   // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
   function assumedDims() {
     var w = (typeof window.__qsvMapAssumedW === "number" && window.__qsvMapAssumedW > 0) ? window.__qsvMapAssumedW : 1000;
@@ -5797,7 +5814,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   function mapKeys(gd) {
     var lay = (gd && gd.layout) || {};
     return Object.keys(lay).filter(function (k) {
-      return /^(mapbox|map)\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+      return /^map\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
     });
   }
   // Snapshot the baked (assumed-px) zoom + center ONCE, before any mutation, as the fixed
@@ -5813,7 +5830,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
   }
   // Compute the optimal {zoom, center} for map subplot `k` at the current plot pixel size.
-  // mapbox/MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
+  // MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
   // differs from the assumed px the baked zoom was computed for:
   //   zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)); center = baked center.
   // curW/curH are DOMAIN-scaled (the subplot's own px), so this is correct for a full-bleed map AND
@@ -5844,7 +5861,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       if (t.center) lay[k].center = t.center;
     });
   }
-  // Post-render fit: move the GL map camera directly via the maplibre/mapbox-gl instance
+  // Post-render fit: move the GL map camera directly via the MapLibre GL instance
   // (gd._fullLayout[k]._subplot.map). This sits BELOW plotly's relayout/react/setData path, so it
   // re-aims a choroplethmap's camera without the "setData of undefined" throw, needs no tile
   // reload, and works even before the GL style finishes loading. Used for fullscreen enter/exit.
@@ -5932,7 +5949,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
 })();
 </script>"#;
 
-/// A tiny prelude `<script>` publishing the assumed map pixel size the baked mapbox/MapLibre
+/// A tiny prelude `<script>` publishing the assumed map pixel size the baked MapLibre
 /// `zoom` was computed against, so `FULLSCREEN_SCRIPT`'s `qsvRefitMaps` can rescale the zoom to the
 /// real rendered size (initial display + fullscreen). Sourced from the Rust constants so it can't
 /// drift: standalone `viz map` HTML frames against `fit_dims` (`DEFAULT_IMG_WIDTH`×
@@ -5982,7 +5999,7 @@ fn smart_html_page(
         script,
     } = toggle_chrome(theme);
     let logo = logo_markup();
-    // Publish the assumed map pixel size the smart-panel mapbox/MapLibre zoom was baked against, so
+    // Publish the assumed map pixel size the smart-panel MapLibre zoom was baked against, so
     // the client can re-fit map zoom to the real rendered size (see `assumed_map_dims_prelude`).
     let fs_prelude =
         assumed_map_dims_prelude(MAP_PANEL_ASSUMED_WIDTH_PX, MAP_PANEL_USABLE_HEIGHT_PX);
@@ -7647,9 +7664,9 @@ enum PanelKind {
     Histogram { idx: usize },
     /// Geographic point map over an auto-detected latitude/longitude column pair. Carries the
     /// precomputed, row-aligned coordinates (already downsampled to `MAX_SMART_POINTS`). `density`
-    /// requests a heatmap render instead of discrete markers when the source had many rows. Mapbox
-    /// subplots don't compose with the typed x/y subplot grid, so a dashboard containing this panel
-    /// always renders via the inline path.
+    /// requests a heatmap render instead of discrete markers when the source had many rows.
+    /// MapLibre `map` subplots don't compose with the typed x/y subplot grid, so a dashboard
+    /// containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (far from the cluster centroid),
     /// drawn as a distinct marker trace on top of the core points.
     Map {
@@ -7674,9 +7691,9 @@ enum PanelKind {
         sizes:              Option<Vec<f64>>,
     },
     /// Geographic point map drawn on a `ScatterGeo` projection basemap (coastlines/land/countries,
-    /// no network tiles) instead of mapbox — used for `viz smart` when the coordinates span a
-    /// continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the typed x/y
-    /// grid, so a dashboard containing this panel always renders via the inline path.
+    /// no network tiles) instead of a MapLibre tile map — used for `viz smart` when the coordinates
+    /// span a continental/global extent. Like `Map`, the `geo` subplot doesn't compose with the
+    /// typed x/y grid, so a dashboard containing this panel always renders via the inline path.
     /// `outlier_lats`/`outlier_lons` carry the geographic outliers (see `Map`).
     Geo {
         lats:               Vec<f64>,
@@ -10509,7 +10526,7 @@ const GEOJSON_OVERLAY_LINE_WIDTH: f64 = 1.5;
 
 /// Region boundaries (as one gap-separated polyline) plus per-feature labels for overlaying a
 /// user `--geojson` on a `viz smart` map panel. Built once in `build_map_panel`, rendered by
-/// [`geojson_overlay_mapbox_traces`] / [`geojson_overlay_geo_traces`] on both the mapbox and the
+/// [`geojson_overlay_map_traces`] / [`geojson_overlay_geo_traces`] on both the map and the
 /// offline `ScatterGeo` (global / static-export) paths.
 struct GeoJsonOverlay {
     /// All feature ring vertices; a `NaN` gap separates consecutive rings so plotly breaks the
@@ -10723,8 +10740,8 @@ fn geojson_overlay_label_font() -> Font {
         .color(GEOJSON_OVERLAY_LINE_COLOR)
 }
 
-/// Small centroid marker carrying each region's name as hover text on the mapbox tile map. Raster
-/// mapbox basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
+/// Small centroid marker carrying each region's name as hover text on the MapLibre tile map. Raster
+/// basemaps cull colliding on-map text glyphs (the same reason the extent corner points use
 /// haloed circles, not text), so the region label is delivered on hover of this dot instead — a
 /// white-haloed teal circle that reads on both light and dark basemaps.
 fn geojson_overlay_label_marker() -> Marker {
@@ -10735,14 +10752,14 @@ fn geojson_overlay_label_marker() -> Marker {
         .line(Line::new().color("#ffffff").width(1.0))
 }
 
-/// Boundary + label traces for a `--geojson` overlay on a mapbox tile map (`ScatterMapbox`). The
-/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (raster
-/// mapbox culls colliding on-map text, so the region name is shown on hover of a small dot
+/// Boundary + label traces for a `--geojson` overlay on a MapLibre tile map (`ScatterMap`). The
+/// boundaries are one gap-separated line trace; the labels are centroid hover-markers (the raster
+/// basemap culls colliding on-map text, so the region name is shown on hover of a small dot
 /// instead).
-fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
+fn geojson_overlay_map_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>> {
     let mut out: Vec<Box<dyn Trace>> = Vec::with_capacity(2);
     let boundary: Box<dyn Trace> =
-        ScatterMapbox::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
+        ScatterMap::new(overlay.boundary_lats.clone(), overlay.boundary_lons.clone())
             .name("regions")
             .mode(Mode::Lines)
             .line(geojson_overlay_line())
@@ -10751,7 +10768,7 @@ fn geojson_overlay_mapbox_traces(overlay: &GeoJsonOverlay) -> Vec<Box<dyn Trace>
     out.push(boundary);
     if !overlay.labels.is_empty() {
         let label_trace: Box<dyn Trace> =
-            ScatterMapbox::new(overlay.label_lats.clone(), overlay.label_lons.clone())
+            ScatterMap::new(overlay.label_lats.clone(), overlay.label_lons.clone())
                 .name("region labels")
                 .mode(Mode::Markers)
                 .marker(geojson_overlay_label_marker())
@@ -10909,7 +10926,7 @@ fn build_map_panel(
     // dataset doesn't bloat the HTML or freeze the browser on pan/zoom. A `--heatmap-density` of 0
     // disables the heatmap entirely (always render individual markers, whatever the point count).
     // The user-facing heatmap note is emitted by the caller, but only once it's certain a
-    // DensityMapbox will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
+    // DensityMap will actually render (i.e. a local-extent HTML `Map` panel) — a global extent
     // becomes a `ScatterGeo` world-overview and static image export coerces `Map` -> `Geo`, so
     // neither draws a heatmap despite `density` being true here. Capture the FULL mappable count
     // now — `lats` is shadowed by the downsampled, outlier-excluded core below, so the note must
@@ -10918,7 +10935,7 @@ fn build_map_panel(
     let density = args.flag_heatmap_density > 0 && mappable_count >= args.flag_heatmap_density;
 
     // continental/global extents render as an offline `ScatterGeo` projection world-overview
-    // (no network tiles, better whole-world context) rather than a zoomed mapbox tile map.
+    // (no network tiles, better whole-world context) rather than a zoomed MapLibre tile map.
     // Use the same robust framing semantics as the map view (computed on the full in-range set,
     // before downsampling): an antimeridian-aware, trimmed longitude span and a trimmed latitude
     // span, so a cluster straddling +/-180 or a single far in-range outlier doesn't misclassify a
@@ -11230,9 +11247,9 @@ fn extent_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
 
 /// Build a *dashed* bounding-box outline as a single gapped polyline: each edge is split into short
 /// dash segments separated by `NaN` breaks (which serialize to JSON `null`, rendering as gaps).
-/// `scattermapbox` ignores `line.dash` (Mapbox GL can't render dashed lines), so the dashes have to
-/// be drawn as geometry; this gives the full-extent box a dashed look on the tile map. Dash spacing
-/// is proportional to the box size so it reads as dashes at any zoom.
+/// `scattermap` ignores `line.dash` (MapLibre can't render dashed lines on raster tiles), so the
+/// dashes have to be drawn as geometry; this gives the full-extent box a dashed look on the tile
+/// map. Dash spacing is proportional to the box size so it reads as dashes at any zoom.
 #[cfg(feature = "geocode")]
 fn dashed_box_latlon(e: &MapExtent) -> (Vec<f64>, Vec<f64>) {
     let span = (e.max_lat - e.min_lat).max(e.max_lon - e.min_lon);
@@ -11292,11 +11309,12 @@ fn full_extent_box_line() -> Line {
         .dash(plotly::common::DashType::Dot)
 }
 
-/// Marker for the extent corner/center points on a mapbox tile map: a large, fully opaque purple
-/// circle with a white halo. Mapbox raster basemaps can't render custom marker symbols (no sprite)
-/// or reliably show text glyphs (label collision culls them), so a haloed circle is used here.
+/// Marker for the extent corner/center points on a MapLibre tile map: a large, fully opaque purple
+/// circle with a white halo. MapLibre raster basemaps can't render custom marker symbols (no
+/// sprite) or reliably show text glyphs (label collision culls them), so a haloed circle is used
+/// here.
 #[cfg(feature = "geocode")]
-fn extent_marker_mapbox() -> Marker {
+fn extent_marker_map() -> Marker {
     Marker::new()
         .color(GEO_EXTENT_LINE_COLOR)
         .size(GEO_EXTENT_MARKER_SIZE)
@@ -11304,14 +11322,14 @@ fn extent_marker_mapbox() -> Marker {
         .line(Line::new().color(GEO_EXTENT_MARKER_BORDER).width(2.5))
 }
 
-/// Like `extent_marker_mapbox`, but a diamond — `ScatterGeo` (offline projection / static export)
+/// Like `extent_marker_map`, but a diamond — `ScatterGeo` (offline projection / static export)
 /// renders the standard plotly marker symbols, so the points get a distinctive shape there.
 #[cfg(feature = "geocode")]
 fn extent_marker_geo() -> Marker {
-    extent_marker_mapbox().symbol(plotly::common::MarkerSymbol::Diamond)
+    extent_marker_map().symbol(plotly::common::MarkerSymbol::Diamond)
 }
 
-/// Mapbox (center lat, center lon, zoom) that frames an extent bounding box as tightly as possible
+/// Map (center lat, center lon, zoom) that frames an extent bounding box as tightly as possible
 /// while keeping the whole box inside the panel, via the aspect-aware `fitbounds_zoom`. A `viz
 /// smart` MAP panel is full grid width but a FIXED short height (`MAP_PANEL_USABLE_HEIGHT_PX`),
 /// i.e. wide and short, so the latitude (height) fit and longitude (width) fit are computed
@@ -11333,7 +11351,7 @@ fn extent_center_zoom_raw(e: &MapExtent) -> (f64, f64, u8) {
     (lat_center, lon_center, zoom)
 }
 
-/// Mapbox center + zoom framing the (core) extent — so the default view fills with the core cluster
+/// Map center + zoom framing the (core) extent — so the default view fills with the core cluster
 /// rather than zooming out to include far-flung outliers (those are drawn as distinct markers,
 /// named in the label, and reachable via the "Full extent" zoom button). Thin wrapper over
 /// `extent_center_zoom_raw`.
@@ -11343,10 +11361,10 @@ fn extent_center_zoom(e: &MapExtent) -> (Center, u8) {
     (Center::new(lat, lon), zoom)
 }
 
-/// Build the "Core extent" / "Full extent" zoom buttons for a `viz smart` mapbox map. Each button
-/// relayouts the mapbox center+zoom to frame the respective extent. Only used when the panel has
-/// geographic outliers (so the two views actually differ). The map opens at the core view, so
-/// "Core extent" is the active button.
+/// Build the "Core extent" / "Full extent" zoom buttons for a `viz smart` MapLibre map. Each
+/// button relayouts the `map` subplot center+zoom to frame the respective extent. Only used when
+/// the panel has geographic outliers (so the two views actually differ). The map opens at the core
+/// view, so "Core extent" is the active button.
 #[cfg(feature = "geocode")]
 fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
     let button = |label: &str, e: &MapExtent| {
@@ -11355,8 +11373,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
             .label(label)
             .method(ButtonMethod::Relayout)
             .args(serde_json::json!([{
-                "mapbox.center": { "lat": lat, "lon": lon },
-                "mapbox.zoom": zoom,
+                "map.center": { "lat": lat, "lon": lon },
+                "map.zoom": zoom,
             }]))
     };
     UpdateMenu::new()
@@ -11383,8 +11401,8 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
 
 /// Padded longitude + latitude `geo` axis ranges that frame the (core) extent box as tightly as
 /// possible, for the offline `ScatterGeo` (local Mercator) path — the analogue of
-/// `extent_center_zoom` for projection maps. Unlike mapbox, these are exact ranges, so the small
-/// `GEO_EXTENT_FIT_PAD_*` padding is the only slack.
+/// `extent_center_zoom` for projection maps. Unlike the tile map, these are exact ranges, so the
+/// small `GEO_EXTENT_FIT_PAD_*` padding is the only slack.
 #[cfg(feature = "geocode")]
 fn extent_geo_axes(e: &MapExtent) -> (Axis, Axis) {
     let lat_pad =
@@ -11770,17 +11788,17 @@ const GEO_EXTENT_FIT_PAD_FRAC: f64 = 0.04;
 const GEO_EXTENT_FIT_PAD_MIN_DEG: f64 = 0.1;
 
 /// Add the spatial-extent bounding box (dotted filled outline) plus reverse-geocoded corner/center
-/// points (drawn as hover-labeled diamond glyphs) to a mapbox map `Plot`. When the panel has
+/// points (drawn as hover-labeled diamond glyphs) to a MapLibre map `Plot`. When the panel has
 /// geographic outliers, a second no-fill dotted magenta box marking the full extent (core +
 /// outliers) is drawn underneath.
 #[cfg(feature = "geocode")]
-fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
-    // the full-extent box (core + outliers) is drawn first, underneath, with no fill. Mapbox
-    // ignores line.dash, so the dashed look is drawn as a gapped polyline.
+fn add_extent_overlay_map(plot: &mut Plot, meta: &GeoMeta) {
+    // the full-extent box (core + outliers) is drawn first, underneath, with no fill. The raster
+    // basemap ignores line.dash, so the dashed look is drawn as a gapped polyline.
     if let Some(full) = &meta.full_extent {
         let (flat, flon) = dashed_box_latlon(full);
         plot.add_trace(
-            ScatterMapbox::new(flat, flon)
+            ScatterMap::new(flat, flon)
                 .name("full extent (incl. outliers)")
                 .mode(Mode::Lines)
                 .line(full_extent_box_line())
@@ -11790,11 +11808,11 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     }
     let (blat, blon) = extent_box_latlon(&meta.extent);
     plot.add_trace(
-        ScatterMapbox::new(blat, blon)
+        ScatterMap::new(blat, blon)
             .name("spatial extent")
             .mode(Mode::Lines)
             .line(extent_box_line())
-            .fill(plotly::traces::scatter_mapbox::Fill::ToSelf)
+            .fill(plotly::traces::scatter_map::Fill::ToSelf)
             .fill_color(GEO_EXTENT_FILL_COLOR)
             .hover_info(HoverInfo::Skip)
             .show_legend(false),
@@ -11803,17 +11821,17 @@ fn add_extent_overlay_mapbox(plot: &mut Plot, meta: &GeoMeta) {
     let mlon: Vec<f64> = meta.points.iter().map(|p| p.lon).collect();
     let htext: Vec<String> = meta.points.iter().map(point_hover_text).collect();
     plot.add_trace(
-        ScatterMapbox::new(mlat, mlon)
+        ScatterMap::new(mlat, mlon)
             .name("extent points")
             .mode(Mode::Markers)
-            .marker(extent_marker_mapbox())
+            .marker(extent_marker_map())
             .hover_text_array(htext)
             .hover_info(HoverInfo::Text)
             .show_legend(false),
     );
 }
 
-/// Like `add_extent_overlay_mapbox` (including the optional full-extent box), but for an offline
+/// Like `add_extent_overlay_map` (including the optional full-extent box), but for an offline
 /// `ScatterGeo` projection `Plot` (used for continental/global extents and static image export).
 /// Hover labels are inert in static images, so the static export simply shows the box + diamond
 /// glyphs, as intended.
@@ -11866,9 +11884,9 @@ const GEO_OUTLIER_MARKER_SIZE: usize = 11;
 /// White halo around outlier markers, for contrast against both tile and projection basemaps.
 const GEO_OUTLIER_MARKER_BORDER: &str = "#ffffff";
 
-/// Outlier marker for mapbox tile maps: a haloed amber circle. Mapbox can't render custom symbols,
-/// so the distinction comes from size + color versus the data points.
-fn outlier_marker_mapbox() -> Marker {
+/// Outlier marker for MapLibre tile maps: a haloed amber circle. MapLibre can't render custom
+/// symbols, so the distinction comes from size + color versus the data points.
+fn outlier_marker_map() -> Marker {
     Marker::new()
         .color(GEO_OUTLIER_COLOR)
         .size(GEO_OUTLIER_MARKER_SIZE)
@@ -11876,10 +11894,10 @@ fn outlier_marker_mapbox() -> Marker {
         .line(Line::new().color(GEO_OUTLIER_MARKER_BORDER).width(1.5))
 }
 
-/// Like `outlier_marker_mapbox`, but an X glyph — `ScatterGeo` renders plotly symbols, giving the
+/// Like `outlier_marker_map`, but an X glyph — `ScatterGeo` renders plotly symbols, giving the
 /// outliers a distinct SHAPE in addition to color (and a readable glyph in inert static images).
 fn outlier_marker_geo() -> Marker {
-    outlier_marker_mapbox().symbol(plotly::common::MarkerSymbol::X)
+    outlier_marker_map().symbol(plotly::common::MarkerSymbol::X)
 }
 
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
@@ -12140,8 +12158,8 @@ fn build_smart(
     // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
     // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
     //
-    // The map panel is built for BOTH HTML and static image output. The mapbox tile basemap
-    // (ScatterMapbox/DensityMapbox) needs a live browser + network tiles, so it can't be statically
+    // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
+    // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
     // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
     // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
     // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
@@ -12193,7 +12211,7 @@ fn build_smart(
                     };
                     (Some((p, cols)), None)
                 } else {
-                    // HTML output: a local-extent density panel actually renders as a DensityMapbox
+                    // HTML output: a local-extent density panel actually renders as a DensityMap
                     // here (global extents are `Geo` markers, image export was coerced above), so
                     // this is the point at which the heatmap note is truthful. Report
                     // `mappable_count` (the full source count that drove the density decision), not
@@ -12201,10 +12219,9 @@ fn build_smart(
                     if matches!(p.kind, PanelKind::Map { density: true, .. }) {
                         viz_note(&format!(
                             "viz smart: map has {mappable_count} mappable points (>= \
-                             --heatmap-density {}); drawing the core as a density heatmap. \
-                             Per-point hover isn't available in heatmap mode — raise \
-                             --heatmap-density (or set it to 0) to render individual markers with \
-                             full per-point hover.",
+                             --heatmap-density {}); drawing the core as a density heatmap with \
+                             per-point hover. Raise --heatmap-density (or set it to 0) to render \
+                             individual markers instead.",
                             args.flag_heatmap_density
                         ));
                     }
@@ -12808,7 +12825,7 @@ fn build_smart(
     // export. An explicit `--max-charts N` caps the panel count to N instead.
     let is_html = matches!(out_format, OutFormat::Html);
 
-    // non-cartesian panels (mapbox map, geo projection, or 3D scatter) can't share the typed x/y
+    // non-cartesian panels (map subplot, geo projection, or 3D scatter) can't share the typed x/y
     // subplot grid, so any of them forces the inline render path. All are HTML-only (never built
     // for image export above).
     let has_noncartesian = panels.iter().any(|p| {
@@ -13482,7 +13499,7 @@ fn panel_trace(
             }
             bar
         },
-        // map / geo / 3D / hierarchy panels use a non-cartesian layout (mapbox, geo projection,
+        // map / geo / 3D / hierarchy panels use a non-cartesian layout (map, geo projection,
         // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
         // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
         // assembler.
@@ -14105,8 +14122,9 @@ fn smart_inline_panel_plot(
     // overview panels (map/geo, correlation, time-series, …) render a little taller than the
     // per-column box/bar/histogram panels.
     let row_height = panel_render_height(&panel.kind);
-    // map panels use a mapbox layout (tile basemap, framed to the points) instead of cartesian
-    // x/y axes, so they're assembled here rather than through the shared `panel_trace`/axis path.
+    // map panels use a MapLibre `map` layout (tile basemap, framed to the points) instead of
+    // cartesian x/y axes, so they're assembled here rather than through the shared
+    // `panel_trace`/axis path.
     if let PanelKind::Map {
         lats,
         lons,
@@ -14144,17 +14162,25 @@ fn smart_inline_panel_plot(
         }
         let mut plot = Plot::new();
         if *density {
-            // many points overplot into a solid mass as markers, so aggregate into a heatmap
-            plot.add_trace(
-                DensityMapbox::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
-                    .radius(MAP_SMART_DENSITY_RADIUS_PX),
-            );
+            // many points overplot into a solid mass as markers, so aggregate into a heatmap.
+            // The density weight is a uniform 1.0, so surface the same per-point labels the marker
+            // branch uses — via hovertemplate, since density traces ignore hovertext.
+            let mut dens = DensityMap::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
+                .radius(MAP_SMART_DENSITY_RADIUS_PX);
+            if !hover_text.is_empty() {
+                let templates: Vec<String> = hover_text
+                    .iter()
+                    .map(|t| density_hover_template(t))
+                    .collect();
+                dens = dens.hover_template_array(templates);
+            }
+            plot.add_trace(dens);
         } else {
             let mut core_marker = Marker::new().color(color).opacity(MAP_POINT_OPACITY);
             if let Some(sizes) = sizes {
                 core_marker = core_marker.size_array(scale_bubble_sizes(sizes));
             }
-            let mut core_trace = ScatterMapbox::new(lats.clone(), lons.clone())
+            let mut core_trace = ScatterMap::new(lats.clone(), lons.clone())
                 .mode(Mode::Markers)
                 .marker(core_marker);
             if !hover_text.is_empty() {
@@ -14167,10 +14193,10 @@ fn smart_inline_panel_plot(
         // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
         // Outliers are always markers (even in density mode), so they carry hover labels too.
         if !outlier_lats.is_empty() {
-            let mut out_trace = ScatterMapbox::new(outlier_lats.clone(), outlier_lons.clone())
+            let mut out_trace = ScatterMap::new(outlier_lats.clone(), outlier_lons.clone())
                 .name("geographic outliers")
                 .mode(Mode::Markers)
-                .marker(outlier_marker_mapbox())
+                .marker(outlier_marker_map())
                 .show_legend(false);
             if !outlier_hover_text.is_empty() {
                 out_trace = out_trace
@@ -14181,10 +14207,10 @@ fn smart_inline_panel_plot(
         }
         #[cfg(feature = "geocode")]
         if let Some(meta) = &panel.geo_meta {
-            add_extent_overlay_mapbox(&mut plot, meta);
+            add_extent_overlay_map(&mut plot, meta);
         }
         if let Some(overlay) = &panel.geojson_overlay {
-            for trace in geojson_overlay_mapbox_traces(overlay) {
+            for trace in geojson_overlay_map_traces(overlay) {
                 plot.add_trace(trace);
             }
         }
@@ -14193,18 +14219,18 @@ fn smart_inline_panel_plot(
             .height(row_height)
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .mapbox(
-                Mapbox::new()
+            .map(
+                LayoutMap::new()
                     // Carto tiles work from local files (no Referer header required).
                     // OSM enforces a Referer policy and returns 403 when the HTML is
                     // opened directly from disk.
                     .style(if is_dark_theme(theme) {
-                        MapboxStyle::CartoDarkMatter
+                        MapStyle::CartoDarkMatter
                     } else {
-                        MapboxStyle::CartoPositron
+                        MapStyle::CartoPositron
                     })
                     .center(center)
-                    .zoom(zoom),
+                    .zoom(f64::from(zoom)),
             );
         #[cfg(feature = "geocode")]
         if let Some(menu) = extent_menu {
@@ -14221,7 +14247,7 @@ fn smart_inline_panel_plot(
     }
 
     // geo panels use a `geo` projection layout (no tiles, fully offline) instead of cartesian
-    // x/y axes, so they're assembled here like the mapbox map panel above.
+    // x/y axes, so they're assembled here like the MapLibre map panel above.
     if let PanelKind::Geo {
         lats,
         lons,
@@ -16312,14 +16338,12 @@ mod tests {
         assert_eq!(btns.len(), 2);
         assert_eq!(btns[0]["label"], "Core extent");
         assert_eq!(btns[1]["label"], "Full extent");
-        // each button is a relayout of the mapbox center + zoom
+        // each button is a relayout of the MapLibre `map` subplot center + zoom
         let core_args = &btns[0]["args"][0];
-        assert!(core_args["mapbox.center"]["lat"].is_number());
-        assert!(core_args["mapbox.center"]["lon"].is_number());
-        let cz = core_args["mapbox.zoom"].as_f64().expect("core zoom");
-        let fz = btns[1]["args"][0]["mapbox.zoom"]
-            .as_f64()
-            .expect("full zoom");
+        assert!(core_args["map.center"]["lat"].is_number());
+        assert!(core_args["map.center"]["lon"].is_number());
+        let cz = core_args["map.zoom"].as_f64().expect("core zoom");
+        let fz = btns[1]["args"][0]["map.zoom"].as_f64().expect("full zoom");
         // the full extent is larger, so its fit zoom is further out (<=) than the core's
         assert!(
             fz <= cz,
@@ -18291,38 +18315,44 @@ mod tests {
     }
 
     #[test]
-    fn parse_map_style_token_free_and_aliases() {
-        // token-free styles resolve without requiring a token
-        for name in [
-            "open-street-map",
-            "osm",
-            "carto-positron",
-            "carto-darkmatter",
-            "stamen-terrain",
-            "stamen-toner",
-            "stamen-watercolor",
-            "white-bg",
+    fn parse_map_style_resolves_supported_styles() {
+        // every supported MapLibre style resolves (all token-free); MapStyle has no PartialEq,
+        // so compare its kebab-case serde value.
+        for (name, expected) in [
+            ("open-street-map", "open-street-map"),
+            ("osm", "open-street-map"),
+            ("carto-positron", "carto-positron"),
+            ("carto-darkmatter", "carto-darkmatter"),
+            ("carto-dark-matter", "carto-darkmatter"),
+            ("carto-voyager", "carto-voyager"),
+            ("white-bg", "white-bg"),
+            ("basic", "basic"),
+            ("streets", "streets"),
+            ("outdoors", "outdoors"),
+            ("light", "light"),
+            ("dark", "dark"),
+            ("satellite", "satellite"),
+            ("satellite-streets", "satellite-streets"),
         ] {
-            let (_, needs_token) = parse_map_style(name).unwrap();
-            assert!(!needs_token, "{name} should be token-free");
+            let style = parse_map_style(name).unwrap();
+            assert_eq!(
+                serde_json::to_value(style).unwrap(),
+                serde_json::json!(expected),
+                "{name} should resolve to {expected}"
+            );
         }
         // matching is case-insensitive
         assert!(parse_map_style("Carto-Positron").is_ok());
     }
 
     #[test]
-    fn parse_map_style_mapbox_hosted_needs_token() {
-        for name in [
-            "basic",
-            "streets",
-            "outdoors",
-            "light",
-            "dark",
-            "satellite",
-            "satellite-streets",
-        ] {
-            let (_, needs_token) = parse_map_style(name).unwrap();
-            assert!(needs_token, "{name} should require a token");
+    fn parse_map_style_dropped_stamen_errors() {
+        // the Stamen basemaps have no MapLibre equivalent and were dropped
+        for name in ["stamen-terrain", "stamen-toner", "stamen-watercolor"] {
+            assert!(
+                parse_map_style(name).is_err(),
+                "{name} should be unsupported"
+            );
         }
     }
 

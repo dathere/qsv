@@ -279,13 +279,6 @@ QSV_TIMEOUT = 30
 # the filename of the GeoIP2 database to use for the `geocode` command.
 # QSV_GEOIP2_FILENAME = GeoLite2-City.mmdb
 
-# the Mapbox access token used by the `viz map` command for Mapbox-hosted basemap
-# styles (basic, streets, outdoors, light, dark, satellite, satellite-streets).
-# Can also be set with the `--mapbox-token` option, which takes precedence.
-# Token-free styles (e.g. open-street-map, carto-positron) do not require it.
-# Requires the `viz` feature.
-# QSV_MAPBOX_TOKEN = pk.your_mapbox_access_token
-
 # convenience shortcuts for commonly used GeoJSON files, resolved by the `--geojson` option of
 # the `viz choropleth` (including `--map`) and `viz smart` commands. Each entry maps a shortcut
 # name to a "path" (local file or http(s) URL) and an "id" (the --feature-id-key to use).

@@ -127,7 +127,7 @@
       } catch (e) {}
     }
   };
-  // The assumed pixel size the baked mapbox/MapLibre zoom was computed against (published by a
+  // The assumed pixel size the baked MapLibre zoom was computed against (published by a
   // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
   function assumedDims() {
     var w = (typeof window.__qsvMapAssumedW === "number" && window.__qsvMapAssumedW > 0) ? window.__qsvMapAssumedW : 1000;
@@ -137,7 +137,7 @@
   function mapKeys(gd) {
     var lay = (gd && gd.layout) || {};
     return Object.keys(lay).filter(function (k) {
-      return /^(mapbox|map)\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
+      return /^map\d*$/.test(k) && lay[k] && typeof lay[k].zoom === "number";
     });
   }
   // Snapshot the baked (assumed-px) zoom + center ONCE, before any mutation, as the fixed
@@ -153,7 +153,7 @@
     return { w: fl.width || gd.clientWidth || 0, h: fl.height || gd.clientHeight || 0 };
   }
   // Compute the optimal {zoom, center} for map subplot `k` at the current plot pixel size.
-  // mapbox/MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
+  // MapLibre zoom is logarithmic, so to keep the SAME bounds framed when the container
   // differs from the assumed px the baked zoom was computed for:
   //   zoom = bakedZoom + log2(min(curW/assumedW, curH/assumedH)); center = baked center.
   // curW/curH are DOMAIN-scaled (the subplot's own px), so this is correct for a full-bleed map AND
@@ -184,7 +184,7 @@
       if (t.center) lay[k].center = t.center;
     });
   }
-  // Post-render fit: move the GL map camera directly via the maplibre/mapbox-gl instance
+  // Post-render fit: move the GL map camera directly via the MapLibre GL instance
   // (gd._fullLayout[k]._subplot.map). This sits BELOW plotly's relayout/react/setData path, so it
   // re-aims a choroplethmap's camera without the "setData of undefined" throw, needs no tile
   // reload, and works even before the GL style finishes loading. Used for fullscreen enter/exit.
@@ -275,8 +275,8 @@
 <script>
 (function () {
   var themeDefaultMode = "system";
-  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "#2a3138", water: "#16202b", mapbox: "carto-darkmatter" };
-  var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF", land: "#d3d3d3", water: "#add8e6", mapbox: "carto-positron" };
+  var DARK = { paper: "#111111", plot: "#111111", font: "#f2f5fa", grid: "#283442", line: "#506784", zero: "#283442", bg: "#111111", land: "#2a3138", water: "#16202b", mapStyle: "carto-darkmatter" };
+  var LIGHT = { paper: "#FFFFFF", plot: "#FFFFFF", font: "#2A3F5F", grid: "#ECECEC", line: "#BCC4CE", zero: "#ECECEC", bg: "#FFFFFF", land: "#d3d3d3", water: "#add8e6", mapStyle: "carto-positron" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard
     // saved preference (the localStorage key is shared across all qsv viz pages,
@@ -309,8 +309,8 @@
         u[k + ".landcolor"] = p.land;
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
-      } else if (/^mapbox\d*$/.test(k) || /^map\d*$/.test(k)) {
-        u[k + ".style"] = p.mapbox;
+      } else if (/^map\d*$/.test(k)) {
+        u[k + ".style"] = p.mapStyle;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -318,8 +318,12 @@
     if (hasAxis) u["plot_bgcolor"] = p.plot;
     return u;
   }
-  function hasChoropleth(gd) {
-    return (gd.data || []).some(function (t) { return t.type === "choroplethmap"; });
+  function hasMapLibre(gd) {
+    // Any MapLibre `map`-subplot trace (choroplethmap/densitymap/scattermap) throws on a
+    // relayout/react in our pinned plotly fork, so these must take the Plotly.newPlot path below.
+    return (gd.data || []).some(function (t) {
+      return t.type === "choroplethmap" || t.type === "densitymap" || t.type === "scattermap";
+    });
   }
   // Apply a flat dotted-key update (buildUpdate's shape) onto a nested layout, in place — so the
   // same update can feed Plotly.newPlot (which wants nested layout) instead of relayout.
@@ -337,12 +341,12 @@
     document.querySelectorAll(".js-plotly-plot").forEach(function (gd) {
       var u = buildUpdate(gd, p);
       try {
-        if (hasChoropleth(gd)) {
-          // A choroplethmap (MapLibre) throws "setData of undefined" on a relayout/react in our
-          // pinned plotly fork, so fold the theme update (incl. the basemap `.style`) into a full
-          // Plotly.newPlot — the only primitive that safely restyles a choroplethmap without
-          // blanking its polygons. Preserve the injected fullscreen modebar button via the div's
-          // existing config.
+        if (hasMapLibre(gd)) {
+          // A MapLibre map trace (choroplethmap/densitymap/scattermap) throws "setData of
+          // undefined" on a relayout/react in our pinned plotly fork, so fold the theme update
+          // (incl. the basemap `.style`) into a full Plotly.newPlot — the only primitive that
+          // safely restyles it without blanking the layer. Preserve the injected fullscreen
+          // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;

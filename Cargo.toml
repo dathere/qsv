@@ -467,7 +467,7 @@ whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-
 # traces qsv's `viz` maps now use: ChoroplethMap, DensityMap, and ScatterMap (replacing the
 # deprecated *mapbox traces). Tracks upstream PRs #410 (Choropleth), #415/#416 (DensityMapbox
 # hover+color / DensityMap) and the ScatterMap follow-up.
-plotly = { git = "https://github.com/dathere/plotly", rev = "b2f4b69" }
+plotly = { git = "https://github.com/dathere/plotly", rev = "8d56b22" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #

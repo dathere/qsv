@@ -373,12 +373,26 @@ smart options:
                            time-series) always span the full width. [default: 2]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
                            points, draw the core cluster as a density heatmap
-                           (DensityMap) instead of individual markers, which
-                           overplot into a solid, unreadable mass at scale. The heatmap
-                           keeps per-point hover (coordinates, plus the point's label),
-                           just like individual markers.
-                           Set to 0 to always render individual markers (never a
-                           heatmap), regardless of point count. [default: 20000]
+                           (DensityMap) instead of markers. The heatmap keeps
+                           per-point hover (coordinates, plus the point's label).
+                           Defaults to 0 (disabled): dense point maps are instead
+                           drawn as native MapLibre clustered markers, which stay
+                           interactive (zoom to expand a cluster into its points)
+                           rather than aggregating into a static heat surface.
+                           Set a positive <n> to opt back into the heatmap above
+                           that point count. [default: 0]
+    --cluster <mode>       For the `viz smart` map panel: whether to draw dense
+                           point markers as native MapLibre clusters (count
+                           bubbles that expand into individual, hoverable points
+                           on zoom-in). One of: auto, on, off. "auto" (the
+                           default) clusters only a plain-marker core (no density
+                           heatmap and no bubble-size measure) once it reaches
+                           1,000 rendered points. "on" clusters whenever the core
+                           draws as markers, regardless of point count or a
+                           bubble-size measure (a density heatmap is a different
+                           trace type and is never clustered). "off" never
+                           clusters, so every dense point is drawn plainly.
+                           Only affects `smart`. [default: auto]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -557,6 +571,7 @@ use plotly::{
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
+    traces::scatter_map::Cluster,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
@@ -798,6 +813,19 @@ const SMART_GEO_OUTLIER_CAP: usize = 5_000;
 /// than the `--heatmap-density` threshold rows). Mild transparency reveals overlapping points
 /// instead of a flat blob.
 const MAP_POINT_OPACITY: f64 = 0.4;
+
+/// At or above this many rendered core points, the `viz smart` map panel enables native MapLibre
+/// point clustering on the core marker trace (unless a density heatmap or bubble-size encoding is
+/// active). Below it, a handful of markers reads fine as-is and clustering would needlessly merge
+/// well-separated points into a count bubble. Clustering is client-side, so it declutters overplot
+/// without changing the embedded payload — the point cap (`MAX_SMART_POINTS`) still bounds size.
+const SMART_CLUSTER_MIN_POINTS: usize = 1_000;
+
+/// Zoom level at/above which point clusters fully disengage into individual markers. Kept below the
+/// raster basemap tile source's max zoom (~18 for Carto/OSM): plotly.js otherwise defaults
+/// `cluster.maxzoom` to 24, and MapLibre warns when `clusterMaxZoom` exceeds the source's maxzoom.
+/// 16 (~city-block scale) also gives a natural point at which the individual points take over.
+const SMART_CLUSTER_MAX_ZOOM: f64 = 16.0;
 
 /// Fraction trimmed from each end of the latitude/longitude distributions when framing a map, so a
 /// few outlier coordinates (bad geocodes, sentinel values) can't blow up the center/zoom and push
@@ -1099,6 +1127,7 @@ struct Args {
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
     flag_heatmap_density:    usize,
+    flag_cluster:            String,
     flag_limit:              usize,
     flag_no_nulls:           bool,
     flag_no_other:           bool,
@@ -6513,6 +6542,31 @@ fn parse_violin_mode(mode: &str) -> CliResult<ViolinMode> {
     }
 }
 
+/// Resolved `--cluster` mode for `viz smart` map marker panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClusterMode {
+    /// Cluster only when the core renders as plain markers (no density heatmap, no bubble-size
+    /// measure) AND the rendered core reaches `SMART_CLUSTER_MIN_POINTS`.
+    Auto,
+    /// Cluster whenever the core renders as markers, regardless of point count or a bubble-size
+    /// measure. A density heatmap is a different trace type and still can't be clustered.
+    On,
+    /// Never cluster; dense marker maps draw every point plainly.
+    Off,
+}
+
+/// Parse the `--cluster` flag (defaults to `auto`).
+fn parse_cluster_mode(mode: &str) -> CliResult<ClusterMode> {
+    match mode.to_ascii_lowercase().as_str() {
+        "auto" => Ok(ClusterMode::Auto),
+        "on" | "true" => Ok(ClusterMode::On),
+        "off" | "false" => Ok(ClusterMode::Off),
+        other => {
+            fail_incorrectusage_clierror!("Unknown --cluster '{other}'. Use auto, on, or off.")
+        },
+    }
+}
+
 /// Decide whether a frequency bar panel should use a logarithmic y-axis, given its resolved
 /// `--log-scale` mode and the panel's bar counts. `On` always logs (when there are 2+ positive
 /// bars to compare), `Off` never does, and `Auto` logs only when the tallest positive bar is at
@@ -7791,6 +7845,13 @@ enum PanelKind {
         lats:               Vec<f64>,
         lons:               Vec<f64>,
         density:            bool,
+        /// Enable native MapLibre point clustering on the CORE marker trace, resolved from the
+        /// `--cluster` mode (see `ClusterMode`): under `auto`, set only for a dense plain-marker
+        /// core (no `density` heatmap, no bubble-size `sizes`, >= `SMART_CLUSTER_MIN_POINTS`
+        /// points); `on` forces it for any marker core; `off` clears it. Never applied to the
+        /// outlier call-out trace, and always mutually exclusive with `density` (a heatmap has no
+        /// markers to cluster).
+        cluster:            bool,
         outlier_lats:       Vec<f64>,
         outlier_lons:       Vec<f64>,
         /// Pre-rendered per-point hover label (row-aligned to `lats`/`lons`): the row's identifier
@@ -10963,6 +11024,7 @@ fn build_map_panel(
     col_sems: &[ColSemantics],
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
+    cluster_mode: ClusterMode,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
@@ -11280,6 +11342,18 @@ fn build_map_panel(
         (core_lats.as_slice(), core_lons.as_slice()),
         (out_lats.as_slice(), out_lons.as_slice()),
     ]);
+    // Enable native point clustering on the core markers when they'd otherwise overplot. Never
+    // possible in density mode — the core is a `DensityMap` heatmap, a different trace type. Under
+    // `--cluster auto` (the default) also require a plain-marker core (no bubble-size measure,
+    // whose per-point size a cluster bubble would override) that is dense enough to benefit
+    // (>= SMART_CLUSTER_MIN_POINTS). `--cluster on` overrides those two soft guards; `--cluster
+    // off` never clusters, so dense points draw plainly. `lats` here is the downsampled core.
+    let cluster = !density
+        && match cluster_mode {
+            ClusterMode::Off => false,
+            ClusterMode::On => true,
+            ClusterMode::Auto => core_sizes.is_none() && lats.len() >= SMART_CLUSTER_MIN_POINTS,
+        };
     let kind = if global {
         PanelKind::Geo {
             lats,
@@ -11295,6 +11369,7 @@ fn build_map_panel(
             lats,
             lons,
             density,
+            cluster,
             outlier_lats,
             outlier_lons,
             hover_text,
@@ -12304,8 +12379,16 @@ fn build_smart(
         // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+        let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
         progress.set_message("Building map panel…");
-        match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
+        match build_map_panel(
+            args,
+            &stats,
+            &col_sems,
+            dict_data.as_ref(),
+            coord_hint,
+            cluster_mode,
+        )? {
             None => (None, None),
             Some((p, choro, cols, mappable_count)) => {
                 if out_format.is_image() {
@@ -12345,16 +12428,24 @@ fn build_smart(
                 } else {
                     // HTML output: a local-extent density panel actually renders as a DensityMap
                     // here (global extents are `Geo` markers, image export was coerced above), so
-                    // this is the point at which the heatmap note is truthful. Report
+                    // this is the point at which the heatmap/cluster note is truthful. Report
                     // `mappable_count` (the full source count that drove the density decision), not
                     // the panel's downsampled/outlier-excluded `lats`.
                     if matches!(p.kind, PanelKind::Map { density: true, .. }) {
                         viz_note(&format!(
                             "viz smart: map has {mappable_count} mappable points (>= \
                              --heatmap-density {}); drawing the core as a density heatmap with \
-                             per-point hover. Raise --heatmap-density (or set it to 0) to render \
-                             individual markers instead.",
+                             per-point hover. Set --heatmap-density 0 (the default) to draw \
+                             interactive clustered markers instead.",
                             args.flag_heatmap_density
+                        ));
+                    } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
+                        viz_note(&format!(
+                            "viz smart: map has {mappable_count} mappable points; drawing the \
+                             core as native MapLibre clustered markers (zoom in to expand a \
+                             cluster into its individual points). Set --cluster off to draw plain \
+                             markers, or --heatmap-density <n> to draw a density heatmap at or \
+                             above <n> points instead."
                         ));
                     }
                     (Some((p, cols)), choro)
@@ -14270,6 +14361,7 @@ fn smart_inline_panel_plot(
         lats,
         lons,
         density,
+        cluster,
         outlier_lats,
         outlier_lons,
         hover_text,
@@ -14329,6 +14421,16 @@ fn smart_inline_panel_plot(
                 core_trace = core_trace
                     .hover_text_array(hover_text.clone())
                     .hover_info(HoverInfo::Text);
+            }
+            if *cluster {
+                // native MapLibre client-side clustering: dense markers collapse into count
+                // bubbles that expand into individual (hoverable) points on zoom-in. No point is
+                // dropped — this only changes rendering, not the embedded data.
+                core_trace = core_trace.cluster(
+                    Cluster::new()
+                        .enabled(true)
+                        .max_zoom(SMART_CLUSTER_MAX_ZOOM),
+                );
             }
             plot.add_trace(core_trace);
         }

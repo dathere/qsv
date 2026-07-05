@@ -2997,6 +2997,8 @@ fn viz_smart_heatmap_density_threshold() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(!html.contains(r#""type":"densitymap""#));
+    // only 4 points (< SMART_CLUSTER_MIN_POINTS) => sparse map, no clustering
+    assert!(!html.contains(r#""cluster":{"enabled":true"#));
 
     // a low threshold (<= point count) => draw the core cluster as a density heatmap, and emit the
     // explanatory note (per-point hover unavailable in heatmap mode) to stderr.
@@ -3008,6 +3010,161 @@ fn viz_smart_heatmap_density_threshold() {
     assert!(html.contains(r#""type":"densitymap""#));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--heatmap-density 2"));
+}
+
+/// Write a locally-clustered lat/lon CSV of `n` points (all within a ~0.04x0.03 deg box near
+/// downtown Pittsburgh, so they stay CORE points on a single MapLibre tile map, never spatial
+/// outliers or a global ScatterGeo overview). Columns: `id,lat,lon,val`.
+fn dense_local_geo(wrk: &Workdir, name: &str, n: usize) {
+    let mut rows = String::from("id,lat,lon,val\n");
+    for r in 0..n {
+        let lat = 40.440 + (r % 40) as f64 * 0.001;
+        let lon = -79.990 + (r / 40) as f64 * 0.001;
+        rows.push_str(&format!("{},{lat:.4},{lon:.4},{}\n", r + 1, r % 7));
+    }
+    wrk.create_from_string(name, &rows);
+}
+
+// A dense LOCAL smart map (>= SMART_CLUSTER_MIN_POINTS) draws its core as native MapLibre clustered
+// markers by default (no --heatmap-density): a `scattermap` trace carrying `cluster.enabled=true`,
+// NOT a density heatmap. An explanatory note is emitted to stderr.
+#[test]
+fn viz_smart_map_clusters_dense_markers() {
+    let wrk = Workdir::new("viz_smart_map_clusters_dense_markers");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""cluster":{"enabled":true,"maxzoom":16.0}"#),
+        "dense marker map should enable native clustering (with a basemap-safe maxzoom): {html}"
+    );
+    assert!(!html.contains(r#""type":"densitymap""#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("clustered markers"));
+}
+
+// Opting back into the density heatmap (`--heatmap-density` at/below the point count) suppresses
+// clustering — a heatmap has no markers to cluster, so the two are mutually exclusive.
+#[test]
+fn viz_smart_map_heatmap_opt_in_suppresses_cluster() {
+    let wrk = Workdir::new("viz_smart_map_heatmap_opt_in_suppresses_cluster");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--heatmap-density", "500"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"densitymap""#));
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "density heatmap mode must not also cluster: {html}"
+    );
+}
+
+// A bubble-size encoding (dictionary-tagged map measure under --smarter) suppresses clustering even
+// on a dense map: a cluster bubble's size encodes point COUNT, which would conflict with the
+// measure-driven marker size.
+#[test]
+fn viz_smart_map_bubble_sizes_suppress_cluster() {
+    let wrk = Workdir::new("viz_smart_map_bubble_sizes_suppress_cluster");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" } },
+            "lat": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.latitude" } },
+            "lon": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.longitude" } },
+            "val": { "type": "number", "title": "Value",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "dense.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // local extent -> MapLibre tile map with per-point bubble sizes ...
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""size":["#),
+        "map points should be bubble-sized by the dictionary measure: {html}"
+    );
+    // ... but no clustering, since the bubble size already encodes the measure
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "bubble-sized map must not cluster: {html}"
+    );
+}
+
+// `--cluster off` is the escape hatch back to plain dense markers: a dense LOCAL map that would
+// cluster by default draws every point as an un-clustered `scattermap` marker instead (and no
+// density heatmap either).
+#[test]
+fn viz_smart_map_cluster_off_draws_plain_markers() {
+    let wrk = Workdir::new("viz_smart_map_cluster_off_draws_plain_markers");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "off"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "--cluster off must draw plain markers, not clusters: {html}"
+    );
+    assert!(!html.contains(r#""type":"densitymap""#));
+}
+
+// `--cluster on` forces clustering even below SMART_CLUSTER_MIN_POINTS: a SPARSE local map (which
+// `auto` would leave un-clustered) clusters when the user explicitly opts in.
+#[test]
+fn viz_smart_map_cluster_on_forces_below_threshold() {
+    let wrk = Workdir::new("viz_smart_map_cluster_on_forces_below_threshold");
+    // well under SMART_CLUSTER_MIN_POINTS (1,000), so `auto` would NOT cluster
+    dense_local_geo(&wrk, "sparse.csv", 60);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sparse.csv", "--cluster", "on"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""cluster":{"enabled":true,"maxzoom":16.0}"#),
+        "--cluster on must cluster even a sparse map: {html}"
+    );
+}
+
+// An unrecognized `--cluster` value fails fast with an actionable usage error.
+#[test]
+fn viz_smart_map_cluster_invalid_mode_errors() {
+    let wrk = Workdir::new("viz_smart_map_cluster_invalid_mode_errors");
+    dense_local_geo(&wrk, "dense.csv", 60);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "sometimes"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Unknown --cluster 'sometimes'"),
+        "expected an actionable --cluster error: {stderr}"
+    );
 }
 
 // A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the

@@ -282,7 +282,10 @@ map options:
     --style <name>         MapLibre basemap style (all render without an access token):
                            open-street-map (the default), carto-positron,
                            carto-darkmatter, carto-voyager, white-bg, basic, streets,
-                           outdoors, light, dark, satellite, satellite-streets.
+                           outdoors, light, dark, satellite, satellite-streets. The three
+                           carto styles also have label-free "-nolabels" variants (e.g.
+                           carto-positron-nolabels) that keep basemap place names from
+                           competing with a dense data overlay.
                            [default: open-street-map]
 
 geo options:
@@ -544,7 +547,7 @@ use plotly::{
     },
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapStyle, Margin, Projection, ProjectionType,
+        LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, Projection, ProjectionType,
         themes::BuiltinTheme,
     },
     sankey::{Link, Node},
@@ -789,6 +792,21 @@ const MAP_POINT_OPACITY: f64 = 0.4;
 /// point is still plotted, so a slightly tight default frame just means panning out to see the
 /// long tail.
 const MAP_FRAME_TRIM_FRAC: f64 = 0.025;
+
+/// Padding added to each side of a map's data extent when deriving the MapLibre pan constraint
+/// (`layout.map.bounds`), as a fraction of the extent's span. 1.0 lets the viewer zoom out to
+/// roughly 3x the data's footprint for surrounding context, while still stopping a pan that would
+/// slide the data off-screen into empty ocean and lose it entirely.
+const MAP_BOUNDS_PAD_FRAC: f64 = 1.0;
+
+/// Floor (in degrees) on the pan-constraint padding, so a tight city/metro extent still gets some
+/// breathing room instead of a box clamped hard against the outermost points.
+const MAP_BOUNDS_MIN_PAD_DEG: f64 = 0.5;
+
+/// A pan constraint is skipped when the data spans more than this many degrees of longitude:
+/// near-global or antimeridian-crossing extents can't be expressed as a simple west < east box,
+/// and constraining a world-scale map adds nothing.
+const MAP_BOUNDS_MAX_LON_SPAN_DEG: f64 = 180.0;
 
 /// Marker diameter (pixels) the smallest and largest `--size` values map to in a bubble
 /// scatter. Raw size values are linearly rescaled into this range so the plot stays
@@ -1909,8 +1927,13 @@ fn parse_map_style(name: &str) -> CliResult<MapStyle> {
     let resolved = match name.to_ascii_lowercase().as_str() {
         "open-street-map" | "osm" => MapStyle::OpenStreetMap,
         "carto-positron" => MapStyle::CartoPositron,
+        "carto-positron-nolabels" => MapStyle::CartoPositronNoLabels,
         "carto-darkmatter" | "carto-dark-matter" => MapStyle::CartoDarkMatter,
+        "carto-darkmatter-nolabels" | "carto-dark-matter-nolabels" => {
+            MapStyle::CartoDarkMatterNoLabels
+        },
         "carto-voyager" => MapStyle::CartoVoyager,
+        "carto-voyager-nolabels" => MapStyle::CartoVoyagerNoLabels,
         "white-bg" => MapStyle::WhiteBg,
         "basic" => MapStyle::Basic,
         "streets" => MapStyle::Streets,
@@ -1922,8 +1945,9 @@ fn parse_map_style(name: &str) -> CliResult<MapStyle> {
         other => {
             return fail_incorrectusage_clierror!(
                 "Unknown --style '{other}'. Supported MapLibre styles (all token-free): \
-                 open-street-map, carto-positron, carto-darkmatter, carto-voyager, white-bg, \
-                 basic, streets, outdoors, light, dark, satellite, satellite-streets."
+                 open-street-map, carto-positron, carto-darkmatter, carto-voyager (each also as a \
+                 label-free '-nolabels' variant, e.g. carto-positron-nolabels), white-bg, basic, \
+                 streets, outdoors, light, dark, satellite, satellite-streets."
             );
         },
     };
@@ -2088,6 +2112,62 @@ fn map_center_zoom(
 
     let zoom = fitbounds_zoom(min_lat, max_lat, lon_span, width_px, height_px);
     (center, zoom)
+}
+
+/// The theme-appropriate Carto basemap for a smart-dashboard map panel. Data-overlay panels
+/// (density heatmaps, choropleth fills) use the label-free Carto variant so basemap place names
+/// don't compete with the data; ordinary point maps keep labels for street/city context. The
+/// theme-toggle JS preserves this labeled-vs-nolabels distinction per subplot (see
+/// `THEME_TOGGLE_JS`), so a panel's choice survives a live light/dark switch.
+const fn smart_map_basemap(is_dark: bool, data_overlay: bool) -> MapStyle {
+    match (is_dark, data_overlay) {
+        (true, true) => MapStyle::CartoDarkMatterNoLabels,
+        (true, false) => MapStyle::CartoDarkMatter,
+        (false, true) => MapStyle::CartoPositronNoLabels,
+        (false, false) => MapStyle::CartoPositron,
+    }
+}
+
+/// Build a MapLibre pan constraint (`layout.map.bounds`) from one or more coordinate clouds: the
+/// combined bounding box padded by `MAP_BOUNDS_PAD_FRAC` of its span (at least
+/// `MAP_BOUNDS_MIN_PAD_DEG`) and clamped to valid lat/lon. Pass every cloud that any map view can
+/// reach (core points AND geographic outliers) so a "Full extent" zoom stays inside the box.
+/// Returns `None` for an empty/degenerate cloud or one spanning more than
+/// `MAP_BOUNDS_MAX_LON_SPAN_DEG` of longitude (near-global / antimeridian-crossing), where a
+/// west < east box is meaningless and a constraint isn't wanted.
+fn map_pan_bounds(coord_groups: &[(&[f64], &[f64])]) -> Option<MapBounds> {
+    let (mut min_lat, mut max_lat) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut min_lon, mut max_lon) = (f64::INFINITY, f64::NEG_INFINITY);
+    for (lats, lons) in coord_groups {
+        for &v in *lats {
+            if v.is_finite() {
+                min_lat = min_lat.min(v);
+                max_lat = max_lat.max(v);
+            }
+        }
+        for &v in *lons {
+            if v.is_finite() {
+                min_lon = min_lon.min(v);
+                max_lon = max_lon.max(v);
+            }
+        }
+    }
+    if !(min_lat.is_finite() && max_lat.is_finite() && min_lon.is_finite() && max_lon.is_finite()) {
+        return None;
+    }
+    let lon_span = max_lon - min_lon;
+    if lon_span > MAP_BOUNDS_MAX_LON_SPAN_DEG {
+        return None;
+    }
+    let lat_pad = ((max_lat - min_lat) * MAP_BOUNDS_PAD_FRAC).max(MAP_BOUNDS_MIN_PAD_DEG);
+    let lon_pad = (lon_span * MAP_BOUNDS_PAD_FRAC).max(MAP_BOUNDS_MIN_PAD_DEG);
+    Some(
+        MapBounds::new()
+            .west((min_lon - lon_pad).max(-180.0))
+            .east((max_lon + lon_pad).min(180.0))
+            .south((min_lat - lat_pad).max(-90.0))
+            .north((max_lat + lat_pad).min(90.0)),
+    )
 }
 
 /// Antimeridian-aware longitude center + span. The data occupies all of the 360° circle except
@@ -2309,6 +2389,8 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     // standalone `viz map`: frame the full extent — its edge coordinates are intentional.
     let (fit_w, fit_h) = fit_dims(args.flag_width, args.flag_height, out_format);
     let (center, zoom) = map_center_zoom(&lats, &lons, 0.0, fit_w as f64, fit_h as f64);
+    // derive the pan constraint now, before the coordinate vecs are moved into the trace(s) below
+    let pan_bounds = map_pan_bounds(&[(lats.as_slice(), lons.as_slice())]);
 
     let mut plot = Plot::new();
     if args.flag_density {
@@ -2371,10 +2453,14 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
     }
 
     // MapLibre `map` subplot: all bundled styles render token-free, so no access token is embedded.
-    let layout_map = LayoutMap::new()
+    let mut layout_map = LayoutMap::new()
         .style(style)
         .center(center)
         .zoom(f64::from(zoom));
+    // constrain panning to the data's footprint so the map can't be dragged off into empty ocean.
+    if let Some(bounds) = pan_bounds {
+        layout_map = layout_map.bounds(bounds);
+    }
     let mut layout = Layout::new()
         .map(layout_map)
         .show_legend(series_idx.is_some());
@@ -2636,8 +2722,13 @@ fn parse_color_scale(name: &str) -> CliResult<ColorScalePalette> {
 fn parse_choropleth_map_style(name: &str) -> CliResult<MapStyle> {
     match name.to_ascii_lowercase().as_str() {
         "carto-positron" => Ok(MapStyle::CartoPositron),
+        "carto-positron-nolabels" => Ok(MapStyle::CartoPositronNoLabels),
         "carto-darkmatter" | "carto-dark-matter" => Ok(MapStyle::CartoDarkMatter),
+        "carto-darkmatter-nolabels" | "carto-dark-matter-nolabels" => {
+            Ok(MapStyle::CartoDarkMatterNoLabels)
+        },
         "carto-voyager" => Ok(MapStyle::CartoVoyager),
+        "carto-voyager-nolabels" => Ok(MapStyle::CartoVoyagerNoLabels),
         "open-street-map" | "osm" => Ok(MapStyle::OpenStreetMap),
         "dark" => Ok(MapStyle::Dark),
         "light" => Ok(MapStyle::Light),
@@ -2646,8 +2737,9 @@ fn parse_choropleth_map_style(name: &str) -> CliResult<MapStyle> {
         "basic" => Ok(MapStyle::Basic),
         other => fail_incorrectusage_clierror!(
             "Unknown --style '{other}' for `viz choropleth --map`. Use carto-positron, \
-             carto-darkmatter, carto-voyager, open-street-map, dark, light, white-bg, satellite, \
-             or basic."
+             carto-darkmatter, carto-voyager (each also as a label-free '-nolabels' variant, e.g. \
+             carto-positron-nolabels), open-street-map, dark, light, white-bg, satellite, or \
+             basic."
         ),
     }
 }
@@ -5644,8 +5736,8 @@ const STYLE_TEMPLATE: &str = r"  :root { --qsv-page-bg: __LIGHT_BG__; --qsv-page
 const SCRIPT_TEMPLATE: &str = r#"<script>
 (function () {
   var themeDefaultMode = "__DEFAULT_MODE__";
-  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapStyle: "carto-darkmatter" };
-  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapStyle: "carto-positron" };
+  var DARK = { paper: "__DARK_PAPER__", plot: "__DARK_PAPER__", font: "__DARK_FONT__", grid: "__DARK_GRID__", line: "__DARK_LINE__", zero: "__DARK_ZERO__", bg: "__DARK_PAPER__", land: "__GEO_LAND_DARK__", water: "__GEO_WATER_DARK__", mapStyle: "carto-darkmatter", mapStyleNoLabels: "carto-darkmatter-nolabels" };
+  var LIGHT = { paper: "__LIGHT_PAPER__", plot: "__LIGHT_PAPER__", font: "__LIGHT_FONT__", grid: "__LIGHT_GRID__", line: "__LIGHT_LINE__", zero: "__LIGHT_ZERO__", bg: "__LIGHT_PAPER__", land: "__GEO_LAND_LIGHT__", water: "__GEO_WATER_LIGHT__", mapStyle: "carto-positron", mapStyleNoLabels: "carto-positron-nolabels" };
   function isDark() {
     // An explicit --theme is authoritative: it wins over a stale cross-dashboard
     // saved preference (the localStorage key is shared across all qsv viz pages,
@@ -5679,7 +5771,11 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
         u[k + ".oceancolor"] = p.water;
         u[k + ".lakecolor"] = p.water;
       } else if (/^map\d*$/.test(k)) {
-        u[k + ".style"] = p.mapStyle;
+        // preserve a panel's labeled-vs-nolabels choice: density/choropleth overlays use the
+        // label-free basemap, point maps keep labels. Swap only the theme, not the labeling.
+        var curStyle = lay[k] && lay[k].style;
+        var noLabels = typeof curStyle === "string" && /-nolabels$/.test(curStyle);
+        u[k + ".style"] = noLabels ? p.mapStyleNoLabels : p.mapStyle;
       } else if (/^polar\d*$/.test(k) || /^scene\d*$/.test(k)) {
         u[k + ".bgcolor"] = p.bg;
       }
@@ -14214,24 +14310,27 @@ fn smart_inline_panel_plot(
                 plot.add_trace(trace);
             }
         }
+        // Carto tiles work from local files (no Referer header required). OSM enforces a Referer
+        // policy and returns 403 when the HTML is opened directly from disk. A density heatmap is a
+        // data overlay, so it gets the label-free basemap; a point map keeps labels for context.
+        let mut layout_map = LayoutMap::new()
+            .style(smart_map_basemap(is_dark_theme(theme), *density))
+            .center(center)
+            .zoom(f64::from(zoom));
+        // constrain panning to the data's footprint (core points + geographic outliers, so the
+        // "Full extent" zoom stays reachable) so the map can't be dragged off into empty ocean.
+        if let Some(bounds) = map_pan_bounds(&[
+            (lats.as_slice(), lons.as_slice()),
+            (outlier_lats.as_slice(), outlier_lons.as_slice()),
+        ]) {
+            layout_map = layout_map.bounds(bounds);
+        }
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
-            .map(
-                LayoutMap::new()
-                    // Carto tiles work from local files (no Referer header required).
-                    // OSM enforces a Referer policy and returns 403 when the HTML is
-                    // opened directly from disk.
-                    .style(if is_dark_theme(theme) {
-                        MapStyle::CartoDarkMatter
-                    } else {
-                        MapStyle::CartoPositron
-                    })
-                    .center(center)
-                    .zoom(f64::from(zoom)),
-            );
+            .map(layout_map);
         #[cfg(feature = "geocode")]
         if let Some(menu) = extent_menu {
             layout = layout.update_menus(vec![menu]);
@@ -14370,13 +14469,10 @@ fn smart_inline_panel_plot(
                 .hover_text_array(hover_text.clone())
                 .hover_info(HoverInfo::Text),
         );
-        let style = if is_dark_theme(theme) {
-            MapStyle::CartoDarkMatter
-        } else {
-            MapStyle::CartoPositron
-        };
+        // a choropleth fills whole regions, so its basemap is pure context — use the label-free
+        // Carto variant so place names don't bleed through and fight the filled data.
         let layout_map = LayoutMap::new()
-            .style(style)
+            .style(smart_map_basemap(is_dark_theme(theme), true))
             .center(Center::new(*center_lat, *center_lon))
             .zoom(*zoom);
         let mut layout = Layout::new()
@@ -18322,9 +18418,13 @@ mod tests {
             ("open-street-map", "open-street-map"),
             ("osm", "open-street-map"),
             ("carto-positron", "carto-positron"),
+            ("carto-positron-nolabels", "carto-positron-nolabels"),
             ("carto-darkmatter", "carto-darkmatter"),
             ("carto-dark-matter", "carto-darkmatter"),
+            ("carto-darkmatter-nolabels", "carto-darkmatter-nolabels"),
+            ("carto-dark-matter-nolabels", "carto-darkmatter-nolabels"),
             ("carto-voyager", "carto-voyager"),
+            ("carto-voyager-nolabels", "carto-voyager-nolabels"),
             ("white-bg", "white-bg"),
             ("basic", "basic"),
             ("streets", "streets"),
@@ -18359,6 +18459,76 @@ mod tests {
     #[test]
     fn parse_map_style_unknown_errors() {
         assert!(parse_map_style("not-a-style").is_err());
+    }
+
+    #[test]
+    fn parse_choropleth_map_style_resolves_nolabels() {
+        // the choropleth --map style parser also accepts the label-free carto variants
+        for (name, expected) in [
+            ("carto-positron-nolabels", "carto-positron-nolabels"),
+            ("carto-darkmatter-nolabels", "carto-darkmatter-nolabels"),
+            ("carto-voyager-nolabels", "carto-voyager-nolabels"),
+        ] {
+            let style = parse_choropleth_map_style(name).unwrap();
+            assert_eq!(
+                serde_json::to_value(style).unwrap(),
+                serde_json::json!(expected),
+                "{name} should resolve to {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn smart_map_basemap_picks_nolabels_for_overlays() {
+        // data-overlay panels (density/choropleth) drop basemap labels; point maps keep them
+        let cases = [
+            (false, false, "carto-positron"),
+            (false, true, "carto-positron-nolabels"),
+            (true, false, "carto-darkmatter"),
+            (true, true, "carto-darkmatter-nolabels"),
+        ];
+        for (is_dark, overlay, expected) in cases {
+            assert_eq!(
+                serde_json::to_value(smart_map_basemap(is_dark, overlay)).unwrap(),
+                serde_json::json!(expected),
+                "is_dark={is_dark} overlay={overlay}"
+            );
+        }
+    }
+
+    #[test]
+    fn map_pan_bounds_pads_and_clamps() {
+        // a tight NYC-ish cluster yields a padded box (>= the data extent, still within valid
+        // lat/lon) that includes an outlier passed in a second coordinate group
+        let bounds = map_pan_bounds(&[
+            (
+                [40.70_f64, 40.80].as_slice(),
+                [-74.02_f64, -73.95].as_slice(),
+            ),
+            ([41.50_f64].as_slice(), [-73.50_f64].as_slice()),
+        ])
+        .expect("a well-formed local extent yields bounds");
+        let v = serde_json::to_value(&bounds).unwrap();
+        // south below the min lat, north above the max lat (outlier included)
+        assert!(v["south"].as_f64().unwrap() < 40.70);
+        assert!(v["north"].as_f64().unwrap() > 41.50);
+        assert!(v["west"].as_f64().unwrap() < -74.02);
+        assert!(v["east"].as_f64().unwrap() > -73.50);
+        // clamped to valid ranges
+        assert!(v["south"].as_f64().unwrap() >= -90.0);
+        assert!(v["north"].as_f64().unwrap() <= 90.0);
+    }
+
+    #[test]
+    fn map_pan_bounds_skips_global_and_empty() {
+        // near-global longitude span (or antimeridian-crossing) -> no constraint
+        assert!(
+            map_pan_bounds(&[([10.0_f64, -10.0].as_slice(), [-170.0_f64, 170.0].as_slice())])
+                .is_none()
+        );
+        // empty / all-nonfinite clouds -> no constraint
+        assert!(map_pan_bounds(&[([].as_slice(), [].as_slice())]).is_none());
+        assert!(map_pan_bounds(&[([f64::NAN].as_slice(), [f64::NAN].as_slice())]).is_none());
     }
 
     #[test]

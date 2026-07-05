@@ -6765,20 +6765,6 @@ fn measure_by_dim_panel(
     )))
 }
 
-/// Build the "grouped violin" overview panel: the DISTRIBUTION of the primary numeric measure
-/// (`measure_indices[0]`) split into one violin per category of the coarsest (lowest-cardinality)
-/// categorical dimension — the distribution companion to `measure_by_dim_panel`'s aggregate bar,
-/// and to the categorical hierarchy it sits beneath. Does one extra data pass to gather the raw
-/// per-category values (the measure-by-dim/hierarchy passes only accumulate aggregates/counts).
-///
-/// Collection is bounded: the pass keeps only every stride-th non-null measure value (the stride
-/// derived from `measure_nonnull` so the retained set is ~`VIOLIN_SAMPLE_MAX` regardless of input
-/// size — the same per-violin budget the single-column violin uses). Full per-category counts are
-/// tracked
-/// separately (O(cardinality)) to rank the `top_n` most-populous categories — capping the number
-/// of violins limits readability, but only striding limits the buffered value count, since a
-/// single dominant category can hold most rows. Returns `Ok(None)` when fewer than 2 categories
-/// carry sampled values (a single violin conveys no grouping).
 fn grouped_violin_panel(
     args: &Args,
     stats: &[crate::cmd::stats::StatsData],
@@ -6786,9 +6772,16 @@ fn grouped_violin_panel(
     measure_indices: &[usize],
     dim_indices: &[usize],
     top_n: usize,
+    violin_mode: ViolinMode,
     measure_nonnull: u64,
     explicit_points: Option<&BoxPoints>,
 ) -> CliResult<Option<Panel>> {
+    // `--violin off` suppresses violins everywhere, including this supplementary
+    // distribution-by-category overview (there is no grouped-box fallback panel), so bail before
+    // the data pass rather than drawing a violin the flag forbids.
+    if matches!(violin_mode, ViolinMode::Off) {
+        return Ok(None);
+    }
     let Some(&m_idx) = measure_indices.first() else {
         return Ok(None);
     };
@@ -6858,7 +6851,14 @@ fn grouped_violin_panel(
     let mut groups: Vec<String> = Vec::new();
     let mut values: Vec<f64> = Vec::new();
     let mut kept_cats = 0_usize;
-    for (cat, _) in &ranked {
+    for (cat, full_count) in &ranked {
+        // under `--violin auto`, drop a category with too few observations for an honest KDE — its
+        // silhouette would be bandwidth artifact, the very thing VIOLIN_MIN_POINTS guards against
+        // for single-column violins. `--violin on` forces every category (guards bypassed). The
+        // gate is on the FULL per-category count, not the strided-down sample.
+        if matches!(violin_mode, ViolinMode::Auto) && *full_count < VIOLIN_MIN_POINTS {
+            continue;
+        }
         // a top category striped to zero samples (only possible for a tiny category under a large
         // stride) would draw an empty violin — skip it rather than render a blank slot.
         match sampled.get(cat) {
@@ -6872,6 +6872,8 @@ fn grouped_violin_panel(
             _ => {},
         }
     }
+    // fewer than 2 eligible categories (a single violin conveys no grouping); under `auto` this
+    // also fires when the sample-size gate leaves 0 or 1 well-populated category.
     if kept_cats < 2 {
         return Ok(None);
     }
@@ -12697,6 +12699,7 @@ fn build_smart(
             &measure_indices,
             &dim_indices,
             top_n,
+            violin_mode,
             measure_nonnull,
             explicit_box_points.as_ref(),
         ) {

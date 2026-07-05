@@ -293,7 +293,7 @@ QSV_TIMEOUT = 30
 # value literally — its inner double quotes stay intact.
 QSV_GEOJSON_SHORTCUTS = '{
   "us-counties": { "path": "https://raw.githubusercontent.com/plotly/datasets/master/geojson-counties-fips.json", "id": "properties.NAME" },
-  "nyc-neighborhoods": { "path": "https://services5.arcgis.com/GfwWNkhOj9bNBqoJ/arcgis/rest/services/Neighborhood_Names/FeatureServer/0/query?where=1=1&outFields=*&outSR=4326&f=pgeojson", "id": "properties.Name" },
+  "nyc-neighborhoods": { "path": "https://data.cityofnewyork.us/api/v3/views/9nt8-h7nd/query.geojson", "id": "properties.ntaname" },
   "pittsburgh-neighborhoods": { "path": "https://data.wprdc.org/dataset/e672f13d-71c4-4a66-8f38-710e75ed80a4/resource/4af8e160-57e9-4ebf-a501-76ca1b42fc99/download/neighborhoods.geojson", "id": "properties.hood" }
   }'
 

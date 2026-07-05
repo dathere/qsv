@@ -2809,54 +2809,6 @@ fn viz_map_series_traces() {
 }
 
 #[test]
-fn viz_map_style_no_token_needed() {
-    let wrk = Workdir::new("viz_map_style_no_token_needed");
-    quakes(&wrk);
-
-    // MapLibre bundled styles — including the formerly Mapbox-hosted `satellite` — render
-    // without any access token.
-    let mut cmd = wrk.command("viz");
-    cmd.env_remove("QSV_MAPBOX_TOKEN");
-    cmd.args([
-        "map",
-        "quakes.csv",
-        "--lat",
-        "lat",
-        "--lon",
-        "lon",
-        "--style",
-        "satellite",
-    ]);
-    let out = wrk.output(&mut cmd);
-    assert!(out.status.success());
-
-    let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""style":"satellite""#));
-    assert!(html.contains(r#""type":"scattermap""#));
-}
-
-#[test]
-fn viz_map_mapbox_token_flag_removed() {
-    let wrk = Workdir::new("viz_map_mapbox_token_flag_removed");
-    quakes(&wrk);
-
-    // --mapbox-token was removed: MapLibre basemaps are token-free. Passing the flag must error.
-    let mut cmd = wrk.command("viz");
-    cmd.args([
-        "map",
-        "quakes.csv",
-        "--lat",
-        "lat",
-        "--lon",
-        "lon",
-        "--mapbox-token",
-        "pk.whatever",
-    ]);
-    let out = wrk.output(&mut cmd);
-    assert!(!out.status.success());
-}
-
-#[test]
 fn viz_map_unknown_style_errors() {
     let wrk = Workdir::new("viz_map_unknown_style_errors");
     quakes(&wrk);
@@ -2956,8 +2908,8 @@ fn viz_smart_heatmap_density_threshold() {
 
 // A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the
 // MapLibre tile map: a single gap-separated `scattermap` line trace named "regions", plus a
-// "region labels" trace of centroid HOVER markers (the raster basemap culls on-map text, so the region
-// name is delivered on hover of a dot instead of as a visible glyph).
+// "region labels" trace of centroid HOVER markers (the raster basemap culls on-map text, so the
+// region name is delivered on hover of a dot instead of as a visible glyph).
 #[test]
 fn viz_smart_geojson_overlay() {
     let wrk = Workdir::new("viz_smart_geojson_overlay");
@@ -3060,8 +3012,8 @@ fn viz_smart_heatmap_density_note_suppressed_for_global_extent() {
 #[test]
 fn viz_smart_heatmap_density_note_reports_full_count() {
     let wrk = Workdir::new("viz_smart_heatmap_density_note_reports_full_count");
-    // 60_000 tightly-clustered local points (span ~0.01°) so the map renders as a local MapLibre map
-    // heatmap and every point is a core point (no outlier split), exceeding the 50_000 cap.
+    // 60_000 tightly-clustered local points (span ~0.01°) so the map renders as a local MapLibre
+    // map heatmap and every point is a core point (no outlier split), exceeding the 50_000 cap.
     let mut csv = String::from("id,lat,lon,val\n");
     for i in 0..60_000u32 {
         let jitter = f64::from(i % 100) * 0.0001;

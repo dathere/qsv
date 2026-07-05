@@ -86,7 +86,7 @@ a 3D scatter of the strongest triple is added too.
 - time-series line, when an auto-detected date/datetime column and a
 continuous numeric column both exist.
 - geographic map, when a latitude/longitude pair is detected:
-    - HTML uses a Mapbox tile map for a local extent, or an offline
+    - HTML uses a MapLibre tile map for a local extent, or an offline
       ScatterGeo projection world-overview for continental/global data.
     - static image export uses an offline ScatterGeo fit to the data extent
       (US-spanning data uses albers-usa); tile maps and 3D panels stay
@@ -348,7 +348,6 @@ qsv viz --help
 | &nbsp;`‑‑text`&nbsp; | string | Column whose value labels each point on hover. |  |
 | &nbsp;`‑‑density`&nbsp; | flag | Render a density heatmap (DensityMap) instead of points. Weighted by the --color or --size column when given, else by a uniform weight. Cannot be combined with --series. |  |
 | &nbsp;`‑‑style`&nbsp; | string | MapLibre basemap style (all render without an access token): open-street-map (the default), carto-positron, carto-darkmatter, carto-voyager, white-bg, basic, streets, outdoors, light, dark, satellite, satellite-streets. | `open-street-map` |
-| &nbsp;`‑‑mapbox‑token`&nbsp; | string | Deprecated and ignored: qsv's maps now use token-free MapLibre basemaps. Accepted for backward compatibility only. Can also be set with the QSV_MAPBOX_TOKEN environment variable. |  |
 
 <a name="geo-options"></a>
 

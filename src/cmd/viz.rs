@@ -71,7 +71,7 @@ auto-picks panels, so no --x/--y is needed:
     - time-series line, when an auto-detected date/datetime column and a
       continuous numeric column both exist.
     - geographic map, when a latitude/longitude pair is detected:
-        - HTML uses a Mapbox tile map for a local extent, or an offline
+        - HTML uses a MapLibre tile map for a local extent, or an offline
           ScatterGeo projection world-overview for continental/global data.
         - static image export uses an offline ScatterGeo fit to the data extent
           (US-spanning data uses albers-usa); tile maps and 3D panels stay
@@ -284,9 +284,6 @@ map options:
                            carto-darkmatter, carto-voyager, white-bg, basic, streets,
                            outdoors, light, dark, satellite, satellite-streets.
                            [default: open-street-map]
-    --mapbox-token <tok>   Deprecated and ignored: qsv's maps now use token-free MapLibre
-                           basemaps. Accepted for backward compatibility only.
-                           Can also be set with the QSV_MAPBOX_TOKEN environment variable.
 
 geo options:
     --projection <name>    Map projection for `viz geo`. One of: natural-earth (the
@@ -1053,7 +1050,6 @@ struct Args {
     flag_text:               Option<SelectColumns>,
     flag_density:            bool,
     flag_style:              Option<String>,
-    flag_mapbox_token:       Option<String>,
     flag_projection:         Option<String>,
     // choropleth columns/options
     flag_locations:          Option<SelectColumns>,
@@ -1163,14 +1159,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 "--snap-max-dist must be a non-negative number of kilometers."
             );
         }
-    }
-
-    // --mapbox-token falls back to the QSV_MAPBOX_TOKEN env var when not passed explicitly.
-    if args.flag_mapbox_token.is_none()
-        && let Ok(token) = std::env::var("QSV_MAPBOX_TOKEN")
-        && !token.is_empty()
-    {
-        args.flag_mapbox_token = Some(token);
     }
 
     // Resolve --geojson (a direct path/URL, or a QSV_GEOJSON_SHORTCUTS alias) and validate it

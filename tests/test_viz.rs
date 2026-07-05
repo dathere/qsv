@@ -2836,14 +2836,12 @@ fn viz_map_style_no_token_needed() {
 }
 
 #[test]
-fn viz_map_mapbox_token_ignored() {
-    let wrk = Workdir::new("viz_map_mapbox_token_ignored");
+fn viz_map_mapbox_token_flag_removed() {
+    let wrk = Workdir::new("viz_map_mapbox_token_flag_removed");
     quakes(&wrk);
 
-    // --mapbox-token / QSV_MAPBOX_TOKEN is accepted for backward compatibility but ignored:
-    // MapLibre basemaps need no token, so it must NOT be embedded in the output.
+    // --mapbox-token was removed: MapLibre basemaps are token-free. Passing the flag must error.
     let mut cmd = wrk.command("viz");
-    cmd.env("QSV_MAPBOX_TOKEN", "pk.test_env_token_value");
     cmd.args([
         "map",
         "quakes.csv",
@@ -2851,14 +2849,11 @@ fn viz_map_mapbox_token_ignored() {
         "lat",
         "--lon",
         "lon",
-        "--style",
-        "satellite",
+        "--mapbox-token",
+        "pk.whatever",
     ]);
     let out = wrk.output(&mut cmd);
-    assert!(out.status.success());
-
-    let html = String::from_utf8_lossy(&out.stdout);
-    assert!(!html.contains("pk.test_env_token_value"));
+    assert!(!out.status.success());
 }
 
 #[test]

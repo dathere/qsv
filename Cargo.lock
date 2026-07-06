@@ -1296,7 +1296,7 @@ checksum = "26cf465651fa6ad902a2d327ba60c3a6bc61c6a2f4ad70d091cf20dfda0074ef"
 [[package]]
 name = "calamine"
 version = "0.35.0"
-source = "git+https://github.com/jqnatividad/calamine?branch=bump-deps-202607#c9706819907562364ebacd8f88164b6132a00bad"
+source = "git+https://github.com/tafia/calamine?rev=058cb50#058cb507c8d74541f96d6439b6abd80e52f0c058"
 dependencies = [
  "atoi_simd",
  "byteorder",
@@ -4237,11 +4237,11 @@ dependencies = [
 
 [[package]]
 name = "jobserver"
-version = "0.1.34"
+version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9afb3de4395d6b3e67a780b6de64b51c978ecf11cb9a462c66be7d4ca9039d33"
+checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
 dependencies = [
- "getrandom 0.3.4",
+ "getrandom 0.4.3",
  "libc",
 ]
 

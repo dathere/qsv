@@ -443,8 +443,8 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
 
-# use patched fork of calamine to bump dependencies until our PR is merged
-calamine = { git = "https://github.com/jqnatividad/calamine", branch = "bump-deps-202607" }
+# use latest upstream now that our PR has been merged
+calamine = { git = "https://github.com/tafia/calamine", rev = "058cb50" }
 
 # use latest upstream now that our PR has been merged
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6acf060" }

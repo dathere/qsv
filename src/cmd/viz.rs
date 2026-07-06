@@ -5901,10 +5901,15 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
               });
             });
           });
-          var cfg = { responsive: true };
+          // preserve the page-scroll-friendly scrollZoom state across a theme flip (a MapLibre
+          // theme change re-runs newPlot, which would otherwise reset scrollZoom to its map default).
+          var cfg = { responsive: true, scrollZoom: document.fullscreenElement === gd };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
           Plotly.newPlot(gd, gd.data, gd.layout, cfg);
+          // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
+          // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
+          if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
         } else {
           Plotly.relayout(gd, u);
         }
@@ -6077,6 +6082,35 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     var px = plotPx(gd);
     applyFitCamera(gd, px.w, px.h);
   }
+  // plotly turns scrollZoom ON by default for geo/map/gl3d subplots, and for a MapLibre `map`
+  // subplot it does NOT honor a `scrollZoom:false` render config at the GL-handler level (the layer
+  // stays wheel-zoomable), so we disable the GL handler DIRECTLY after each render. Off inline → a
+  // wheel/two-finger scroll over the map scrolls the PAGE; on in fullscreen → wheel zooms the map
+  // (no page to scroll). Drag-pan is left untouched. Also set _context so geo/3D subplots (which
+  // expose no post-render wheel handle) follow via plotly's own live read; toggling here needs no
+  // re-render, so the map camera is preserved across a fullscreen flip.
+  function setScrollZoom(gd, on) {
+    try { if (gd._context) gd._context.scrollZoom = on; } catch (e) {}
+    var fl = gd._fullLayout || {};
+    mapKeys(gd).forEach(function (k) {
+      var sp = fl[k] && fl[k]._subplot, m = sp && sp.map;
+      if (m && m.scrollZoom && typeof m.scrollZoom.enable === "function") {
+        try { if (on) m.scrollZoom.enable(); else m.scrollZoom.disable(); } catch (e) {}
+      }
+    });
+  }
+  // The MapLibre GL map attaches a frame or two after a render, so wait (bounded) until every map
+  // subplot has its `_subplot.map`, then apply the scrollZoom state for the current fullscreen mode.
+  // Published as a global so the theme-toggle script (a separate IIFE that re-runs newPlot on a
+  // MapLibre panel, which re-enables the GL handler) can re-assert the state after its own render.
+  function applyScrollZoom(gd, tries) {
+    if (tries === undefined) tries = 20;
+    var fl = gd._fullLayout || {};
+    var ready = mapKeys(gd).every(function (k) { var sp = fl[k] && fl[k]._subplot; return sp && sp.map; });
+    if (!ready && tries > 0) { setTimeout(function () { applyScrollZoom(gd, tries - 1); }, 100); return; }
+    setScrollZoom(gd, document.fullscreenElement === gd);
+  }
+  window.__qsvRefitScrollZoom = applyScrollZoom;
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
@@ -6085,7 +6119,16 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // renders, so the first paint already fills the real container (no relayout, no reflow).
       var px = plotPx(gd);
       applyFitLayout(gd, px.w, px.h);
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      // scrollZoom:false so a wheel/two-finger scroll over a geo/3D panel scrolls the PAGE instead
+      // of zooming the subplot (plotly turns scrollZoom ON by default for geo/map/gl3d). This
+      // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
+      // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
+      // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button] });
+      // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
+      // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
+      // swallow the page scroll.
+      applyScrollZoom(gd);
       // Core/Full extent buttons (viz smart outlier maps) relayout the map to a zoom baked for the
       // ASSUMED px — so they ignore the real/fullscreen/resized container. Adopt the clicked
       // extent's baked zoom/center as the new fit reference, then re-aim the camera for the CURRENT
@@ -6109,10 +6152,14 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       gd.addEventListener("fullscreenchange", function () {
         // Plotly.Plots.resize is async; aim the camera only AFTER it resolves so we read the
         // post-resize _fullLayout dims (else enter/exit would refit from stale dims and stick).
+        // Same timing for scrollZoom: enable wheel-zoom entering fullscreen (no page to scroll),
+        // disable on exit — applied post-resize so the map subplot's GL handle is attached.
+        var fs = document.fullscreenElement === gd;
+        var done = function () { fitCameraNow(gd); setScrollZoom(gd, fs); };
         var rp;
         try { rp = Plotly.Plots.resize(gd); } catch (e) {}
-        if (rp && rp.then) rp.then(function () { fitCameraNow(gd); }).catch(function () { fitCameraNow(gd); });
-        else fitCameraNow(gd);
+        if (rp && rp.then) rp.then(done).catch(done);
+        else done();
       });
     } catch (e) {}
   }
@@ -15134,6 +15181,10 @@ fn smart_inline_panel_plot(
     // precomputed from the matched-region bbox, so render frames the metro area without re-scanning
     // geometry. Token-free carto tiles (load from local files; no Referer header) chosen by theme,
     // matching the point `Map` panel.
+    //
+    // NOTE: plotly's `fitbounds` is a `layout.geo`-only property (the projection Choropleth below
+    // uses it) — the MapLibre `map` subplot has no fitbounds/auto-fit equivalent, so we frame it
+    // manually via the precomputed center/zoom (and re-aim the GL camera on resize/fullscreen).
     if let PanelKind::ChoroplethMap {
         locations,
         z,

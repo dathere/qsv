@@ -7402,12 +7402,20 @@ fn viz_smart_bivariate_respects_explicit_dictionary() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
+    // the explicit --dictionary's custom label must still be USED somewhere (proving it wasn't
+    // silently replaced by --dictionary infer) — it drives per-column panel titles/subtitles.
     assert!(
         html.contains("Qsv Test Custom Region Label ABC123"),
-        "explicit --dictionary's custom label should drive the panel title, not be replaced by \
-         --dictionary infer; html: {html}"
+        "explicit --dictionary's custom label should be used, not be replaced by --dictionary \
+         infer; html: {html}"
     );
     assert!(html.contains(r#""name":"association""#));
+    // ...but the NMI Association heatmap axes use the RAW field names (code/status), NOT the
+    // dictionary label — matching the Correlation heatmap's convention.
+    assert!(
+        html.contains(r#""x":["code","status"]"#) && html.contains(r#""y":["code","status"]"#),
+        "Association (NMI) axes should use raw field names, not the dictionary label; html: {html}"
+    );
 }
 
 #[test]

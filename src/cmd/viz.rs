@@ -7406,12 +7406,11 @@ fn bivariate_panels(
     }
     idxs.sort_unstable();
 
-    // resolve the human label for a column: dictionary label, else header, else positional
+    // label a column by its raw field name (else positional), matching CorrHeatmap's axis
+    // convention. The dictionary label, when present, still shows as the muted per-column panel
+    // subtitle elsewhere — it just doesn't drive the NMI axis/pair labels.
     let label_of = |idx: usize| -> String {
-        let sem = &col_sems[idx];
-        if !sem.label.is_empty() {
-            sem.label.clone()
-        } else if stats[idx].field.is_empty() {
+        if stats[idx].field.is_empty() {
             format!("col {}", idx + 1)
         } else {
             stats[idx].field.clone()

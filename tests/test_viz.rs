@@ -2566,6 +2566,152 @@ fn viz_smart_measure_by_dimension_keeps_near_unique_dictionary_measure() {
 }
 
 #[test]
+fn viz_smart_metadata_table_always_renders() {
+    let wrk = Workdir::new("viz_smart_metadata_table_always_renders");
+    wrk.create_from_string(
+        "data.csv",
+        "region,revenue,quarter\neast,1000,Q1\neast,1200,Q2\nwest,5000,Q1\nwest,5200,Q2\nnorth,\
+         3000,Q1\n",
+    );
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // Rows/Columns/Compiled always render in HTML output.
+    assert!(html.contains(r#"<table class="qsv-viz-meta">"#));
+    assert!(html.contains(r#"<td class="qsv-viz-meta-k">Rows:</td><td>5</td>"#));
+    assert!(html.contains(r#"<td class="qsv-viz-meta-k">Columns:</td><td>3</td>"#));
+    // assert on the label, never the timestamp value (it makes output non-deterministic).
+    assert!(html.contains(r#"<td class="qsv-viz-meta-k">Compiled:</td>"#));
+    // no --dataset-pid, no --dict-info: neither optional row appears. (Class-qualified so
+    // plotly.js's own "axisRefDescription" and any stray "PID" text can't false-match.)
+    assert!(!html.contains(r#"qsv-viz-meta-k">PID:"#));
+    assert!(!html.contains(r#"qsv-viz-meta-k">Description:"#));
+}
+
+#[test]
+fn viz_smart_metadata_pid_link() {
+    let wrk = Workdir::new("viz_smart_metadata_pid_link");
+    wrk.create_from_string(
+        "data.csv",
+        "region,revenue,quarter\neast,1000,Q1\neast,1200,Q2\nwest,5000,Q1\nwest,5200,Q2\nnorth,\
+         3000,Q1\n",
+    );
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out_html,
+        "--dataset-pid",
+        "https://doi.org/10.1234/abc",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // the PID value is used verbatim as the href.
+    assert!(html.contains(
+        r#"<td class="qsv-viz-meta-k">PID:</td><td><a href="https://doi.org/10.1234/abc">https://doi.org/10.1234/abc</a></td>"#
+    ));
+}
+
+#[test]
+fn viz_smart_metadata_description_only_with_dict_info() {
+    let wrk = Workdir::new("viz_smart_metadata_description_only_with_dict_info");
+    wrk.create_from_string(
+        "data.csv",
+        "region,revenue\neast,1000\neast,1200\nwest,5000\nwest,5200\n",
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "description": "First paragraph of the summary.\n\nSecond paragraph is dropped.",
+          "properties": {
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    // without --dict-info: no Description row even though a dictionary description exists.
+    let out_nodi = wrk.path("nodi.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "data.csv", "-o", &out_nodi, "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("nodi.html").unwrap();
+    // class-qualified so plotly.js's own "axisRefDescription" can't false-match.
+    assert!(!html.contains(r#"qsv-viz-meta-k">Description:"#));
+
+    // with --dict-info: the Description row shows the FIRST paragraph only.
+    let out_di = wrk.path("di.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out_di,
+        "--dict-info",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("di.html").unwrap();
+    // the meta cell holds ONLY the first paragraph (it closes right after it); the embedded
+    // dict page still renders the full description, so only assert on the meta cell here.
+    assert!(html.contains(
+        r#"<td class="qsv-viz-meta-k">Description:</td><td>First paragraph of the summary.</td>"#
+    ));
+}
+
+#[test]
+fn viz_smart_metadata_description_absent_when_dictionary_has_none() {
+    let wrk = Workdir::new("viz_smart_metadata_description_absent_when_dictionary_has_none");
+    wrk.create_from_string(
+        "data.csv",
+        "region,revenue\neast,1000\neast,1200\nwest,5000\nwest,5200\n",
+    );
+    // a valid dictionary WITHOUT a top-level "description".
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "region": { "type": "string", "title": "Region",
+              "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out_html,
+        "--dict-info",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // --dict-info is set, but with no dataset description there is no Description row.
+    assert!(!html.contains(r#"qsv-viz-meta-k">Description:"#));
+}
+
+#[test]
 fn viz_smart_bubble_scatter_size_encodes_third() {
     let wrk = Workdir::new("viz_smart_bubble_scatter_size_encodes_third");
     // three correlated numeric columns (small dataset -> scatter, not contour). The strongest pair

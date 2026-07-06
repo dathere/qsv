@@ -46,4 +46,5 @@ extend-exclude = [
     "test_clean.rs",
     "smart_world_choropleth.html",
     "smart_nyc311.html",
+    "pitt311data.html",
 ]

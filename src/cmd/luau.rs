@@ -1,6 +1,6 @@
 static USAGE: &str = r#"
 Create multiple new computed columns, filter rows or compute aggregations by
-executing a Luau 0.727 script for every row (SEQUENTIAL MODE) or for
+executing a Luau 0.728 script for every row (SEQUENTIAL MODE) or for
 specified rows (RANDOM ACCESS MODE) of a CSV file.
 
 Luau is not just another qsv command. It is qsv's Domain-Specific Language (DSL)
@@ -547,17 +547,17 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // see: https://docs.rs/mlua/latest/mlua/struct.Lua.html#method.sandbox
     luau.sandbox(true)?;
 
-    // see Compiler settings here: https://docs.rs/mlua/latest/mlua/struct.Compiler.html#
+    // see Compiler settings here: https://docs.rs/mlua/latest/mlua/chunk/struct.Compiler.html#
     let luau_compiler = if debug_enabled {
         // debugging is on, set more debugging friendly compiler settings
         // so we can see more error details in the logfile
-        mlua::Compiler::new()
+        mlua::chunk::Compiler::new()
             .set_optimization_level(0)
             .set_debug_level(2)
             .set_coverage_level(2)
     } else {
         // use more performant compiler settings
-        mlua::Compiler::new()
+        mlua::chunk::Compiler::new()
             .set_optimization_level(2)
             .set_debug_level(1)
             .set_coverage_level(0)
@@ -637,7 +637,7 @@ fn sequential_mode(
     rconfig: &Config,
     args: &Args,
     luau: &Lua,
-    luau_compiler: &mlua::Compiler,
+    luau_compiler: &mlua::chunk::Compiler,
     globals: &mlua::Table,
     begin_script: &str,
     main_script: &str,
@@ -970,7 +970,7 @@ fn random_access_mode(
     rconfig: &Config,
     args: &Args,
     luau: &Lua,
-    luau_compiler: &mlua::Compiler,
+    luau_compiler: &mlua::chunk::Compiler,
     globals: &mlua::Table,
     begin_script: &str,
     main_script: &str,
@@ -2121,7 +2121,7 @@ fn setup_helpers(
     //      returns: a table with stdout and stderr output of the qsv command.
     //               A Luau runtime error if the command cannot be executed.
     //
-    let qsv_cmd = luau.create_function(|luau, args: mlua::String| {
+    let qsv_cmd = luau.create_function(|luau, args: mlua::LuaString| {
         let qsv_binary = util::current_exe().unwrap();
 
         let mut cmd = std::process::Command::new(qsv_binary);

@@ -8165,13 +8165,13 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "self_update"
-version = "1.0.0-rc.1"
-source = "git+https://github.com/jqnatividad/self_update?branch=deps-bump-202607#4a9d7d9d1dbde7cebe81e92ce9ce9b1861326555"
+version = "1.0.0-rc.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c35458eb14f05fb9f6081d4a49b39866eab650ebf618dae7dbb25ecbe5029858"
 dependencies = [
  "http 1.4.2",
  "indicatif",
  "log",
- "quick-xml 0.41.0",
  "regex",
  "reqwest 0.13.4",
  "self-replace",

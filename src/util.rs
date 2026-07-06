@@ -1569,10 +1569,10 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
             return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
         },
     };
-    let Some(first_release) = releases.first() else {
+    let Some(first_release) = releases.latest() else {
         return fail!("No releases found on GitHub.");
     };
-    let latest_release = &first_release.version;
+    let latest_release = first_release.version();
 
     log::info!("Current version: {curr_version} Latest Release: {latest_release}");
 
@@ -1596,7 +1596,7 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
                 .show_output(false)
                 .no_confirm(no_confirm)
                 .current_version(curr_version)
-                .verify_keys([*include_bytes!("qsv-zipsign-public.key")])
+                .verifying_keys([*include_bytes!("qsv-zipsign-public.key")])
                 .build()
             {
                 Ok(update_job) => match update_job.update() {

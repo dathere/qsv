@@ -79,6 +79,15 @@ PREGENERATED = {
 DASH_CSS = ("figure.full iframe.dash{width:100%;border:0;height:600px;display:block;"
             "border-radius:6px;overflow:hidden}")
 
+# The final gallery entry is a clickable SCREENSHOT (not a plotly figure): a scaled preview image
+# that opens the full, standalone `pitt311data.html` dashboard in a new popup window (that page is
+# ~19MB — too large to embed as an iframe like the smart_*.html dashboards). Portrait image, so cap
+# its rendered height and center it; the border + hover lift mirror the surrounding figure chrome.
+SHOT_CSS = ("figure a.shot{display:block;text-align:center;text-decoration:none;cursor:pointer}"
+            "figure a.shot img{max-width:100%;max-height:900px;height:auto;border:1px solid #e6e9f0;"
+            "border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.06)}"
+            "figure a.shot:hover img{border-color:#c3ccdb;box-shadow:0 2px 8px rgba(0,0,0,.12)}")
+
 # GitHub-style copy icons (Octicons, 16x16, fill=currentColor). The button shows the "copy" icon
 # (two overlapping squares) and swaps to a green "check" on success — both are present in the
 # button and toggled by the `.ok` class (no innerHTML churn, no SVG strings in JS).
@@ -518,6 +527,39 @@ FIGURES = [
             "--geojson", "nyc_neighborhoods.geojson"]),
 ]
 
+# A final, non-plotly gallery entry: a clickable screenshot that links out to the full, standalone
+# "Pittsburgh 311 smart visual data dictionary" page. That page (pitt311data.html) is a ~19MB
+# self-contained `qsv viz smart` dashboard — too large to embed inline as an iframe like the
+# smart_*.html figures — so the gallery shows a scaled screenshot that opens it in a new popup
+# window. Kept OUT of FIGURES so it never runs through `qsv viz` as a chart command; its `cmd` is
+# the verbatim command that produced the dashboard (rendered as a copy-pasteable block, unwrapped).
+SCREENSHOT = {
+    "title": "Pittsburgh 311 smart visual data dictionary",
+    "desc": (
+        "A full <code>qsv viz smart</code> <b>visual data dictionary</b> over real "
+        "<b>Pittsburgh 311</b> service requests from the "
+        '<a href="https://data.wprdc.org/dataset/pittsburgh-311-data">Western Pennsylvania '
+        "Regional Data Center (WPRDC)</a>. The dashboard bins each request's lat/lon by "
+        "point-in-polygon into Pittsburgh's neighborhood polygons "
+        "(<code>--geojson pittsburgh-neighborhoods</code>, no geocoding); a curated "
+        "<code>--dictionary</code> (<code>pitt311data.schema.json</code>) tags identifier/code "
+        "columns and supplies friendly field labels, and <code>--dict-info</code> renders that "
+        "dictionary as its own in-page <b>Data Dictionary</b> tab (with a hover/click info icon "
+        "on every panel title). <code>--smarter</code> enriches the stats cache "
+        "(<code>moarstats --advanced</code>) and <code>--bivariate</code> adds the NMI "
+        "association heatmap plus the ranked top-relationships panel, while "
+        "<code>--dataset-pid</code> adds a clickable citation link back to the source dataset. "
+        "The standalone page is a ~19&nbsp;MB self-contained dashboard &mdash; too large to embed "
+        "inline &mdash; so this is a screenshot: <b>click it to open the fully interactive "
+        "dashboard in a new window</b>."),
+    "image": "pitt311data-visual-datadic.png",
+    "href":  "pitt311data.html",
+    "cmd":   ("qsv viz smart pitt311data.csv --smarter --dictionary pitt311data.schema.json "
+              "--dict-info --bivariate -o pitt311data-smart-visual-datadic.html "
+              "--geojson pittsburgh-neighborhoods "
+              "--dataset-pid https://data.wprdc.org/dataset/pittsburgh-311-data"),
+}
+
 
 def find_qsv():
     if os.environ.get("QSV_BIN"):
@@ -593,19 +635,25 @@ def wrap_command_lines(tokens, width=60):
 WRAP_SEP = " \\\n  "
 
 
+def command_block_html(tokens):
+    """The copy-pasteable command block (wrapped display form + icon-only Copy button) for a token
+    list. Shared by the per-figure figcaptions and the final screenshot entry — the latter shows a
+    verbatim command rather than one synthesized from viz args."""
+    display = html_escape(WRAP_SEP.join(wrap_command_lines(tokens)))
+    oneline = html_escape(" ".join(tokens), quote=True)
+    return (f'<div class="cmdbox"><button class="copy" type="button" title="Copy" '
+            f'aria-label="Copy command to clipboard" data-cmd="{oneline}">'
+            f'{COPY_ICON_SVG}{CHECK_ICON_SVG}</button>'
+            f'<pre class="cmd"><code>{display}</code></pre></div>')
+
+
 def figcaption_html(title, desc, args):
     """A figure's `<figcaption>`: title, description, then the runnable command block with a
     Copy button. The displayed command is wrapped for readability; the button copies the
     single-line form."""
-    tokens = viz_command_tokens(title, args)
-    display = html_escape(WRAP_SEP.join(wrap_command_lines(tokens)))
-    oneline = html_escape(" ".join(tokens), quote=True)
     return (f'<figcaption><span class="t">{title}</span>'
             f'<span class="d">{desc}</span>'
-            f'<div class="cmdbox"><button class="copy" type="button" title="Copy" '
-            f'aria-label="Copy command to clipboard" data-cmd="{oneline}">'
-            f'{COPY_ICON_SVG}{CHECK_ICON_SVG}</button>'
-            f'<pre class="cmd"><code>{display}</code></pre></div></figcaption>')
+            f'{command_block_html(viz_command_tokens(title, args))}</figcaption>')
 
 
 def scan_object(html, brace_start):
@@ -740,6 +788,10 @@ def main():
     # per-figure command block styling (idempotent: drop all prior cmd rules before re-adding)
     head = re.sub(r"\s*figure (?:pre\.cmd|\.cmdbox|button\.copy)[^{]*\{[^}]*\}", "", head)
     head = head.replace("</style>", " " + CMD_CSS + "\n</style>", 1)
+    # clickable-screenshot styling for the final "visual data dictionary" entry
+    # (idempotent: drop any prior `figure a.shot` rules before re-adding)
+    head = re.sub(r"\s*figure a\.shot[^{]*\{[^}]*\}", "", head)
+    head = head.replace("</style>", " " + SHOT_CSS + "\n</style>", 1)
     # opaque backdrop when a reconstructed figure is sent fullscreen via its modebar button
     # (idempotent: drop any prior rule before re-adding)
     head = re.sub(r"\s*\.js-plotly-plot:fullscreen\{[^}]*\}", "", head)
@@ -752,8 +804,11 @@ def main():
     head = re.sub(r'<details class="toc">.*?</details>\n', "", head, flags=re.S)
     toc_links = "".join(
         f'<a href="#{anchor_id(t)}">{html_escape(toc_label(t))}</a>' for (t, _d, _f, _a) in FIGURES)
+    # final entry: the clickable screenshot / visual data dictionary (a link-out, not a chart)
+    toc_links += (f'<a href="#{anchor_id(SCREENSHOT["title"])}">'
+                  f'{html_escape(SCREENSHOT["title"])}</a>')
     toc_html = (f'<details class="toc"><summary>Jump to a chart'
-                f'<span class="toc-count">{len(FIGURES)} charts</span></summary>'
+                f'<span class="toc-count">{len(FIGURES)} charts + data dictionary</span></summary>'
                 f'<div class="toc-links">{toc_links}</div></details>\n')
     head = head.replace('<div class="grid">', toc_html + '<div class="grid">', 1)
 
@@ -819,6 +874,25 @@ def main():
                 f'Object.assign({{responsive:true,modeBarButtonsToAdd:[qsvFsBtn]}}, '
                 f'FIGS[{idx}].config || {{}}));'
             )
+
+    # Final, clickable-screenshot entry (a full-width cell, no plotly figure): opens the standalone
+    # pitt311data.html dashboard in a new popup window on click; target=_blank is the no-JS fallback
+    # and the onclick's window.open gives the popup its own sized window. NOT added to `figs`/`plots`
+    # — it carries no Plotly data or newPlot call, so the FIGS array stays aligned with the charts.
+    shot = SCREENSHOT
+    shot_anchor = anchor_id(shot["title"])
+    fig_divs.append(
+        f'<figure class="cell full" id="{shot_anchor}">'
+        f'<figcaption><span class="t">{shot["title"]}</span>'
+        f'<span class="d">{shot["desc"]}</span>'
+        f'{command_block_html(shlex.split(shot["cmd"]))}</figcaption>'
+        f'<a class="shot" href="{shot["href"]}" target="_blank" rel="noopener" '
+        f'''onclick="window.open(this.href,'pitt311data','popup,width=1280,height=900');'''
+        f'''return false;" '''
+        f'title="Open the full interactive dashboard in a new window">'
+        f'<img src="{shot["image"]}" loading="lazy" '
+        f'alt="{html_escape(shot["title"])} screenshot"/></a></figure>'
+    )
 
     figs_json = "const FIGS = [" + ",".join(
         json.dumps(f, ensure_ascii=False, separators=(",", ":")) for f in figs) + "];"

@@ -456,6 +456,11 @@ smart options:
                            user-initiated pop-ups (the tab is opened on click). HTML output
                            only; ignored with a note when no dictionary is available or when
                            exporting an image. Only affects `smart`.
+    --dataset-pid <value>  A persistent identifier (PID) for the dataset - typically a full
+                           URL such as a DOI (https://doi.org/10.1234/abc) or other citable
+                           link. When set, a clickable "PID" row is added to the metadata
+                           table at the top of the dashboard, using the value verbatim as the
+                           link target. HTML output only. Only affects `smart`.
     --bivariate            Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (works for numeric AND categorical
@@ -1147,6 +1152,7 @@ struct Args {
     flag_dictionary:         Option<String>,
     flag_dictionary_context: Option<String>,
     flag_dict_info:          bool,
+    flag_dataset_pid:        Option<String>,
     flag_log_scale:          String,
     flag_violin:             String,
     flag_title:              Option<String>,
@@ -1317,12 +1323,19 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 title,
                 theme,
                 dict_page,
+                metadata,
             } => {
                 // HTML smart-grid is wrapped in qsv's own page so it gets the light/dark toggle;
                 // plotly's `to_html()` (used by the generic single-`Plot` path) has no injection
                 // point. Static image export keeps the typed `Plot` path below.
                 if matches!(out_format, OutFormat::Html) {
-                    let html = render_smart_grid_page(*plot, theme, &title, dict_page.as_deref());
+                    let html = render_smart_grid_page(
+                        *plot,
+                        theme,
+                        &title,
+                        dict_page.as_deref(),
+                        metadata.as_deref(),
+                    );
                     progress.finish_and_clear();
                     return output_inline_html(&html, &args);
                 }
@@ -1369,6 +1382,8 @@ enum SmartRender {
         theme:     Option<BuiltinTheme>,
         /// The embedded `--dict-info` Data Dictionary document (HTML output only).
         dict_page: Option<String>,
+        /// The top-of-dashboard metadata table (HTML output only).
+        metadata:  Option<String>,
     },
     /// A fully-assembled Plotly JSON value (data + layout). Used only for static image export of
     /// more than `MAX_SUBPLOTS` panels: the layout carries `xaxis9+`/`yaxis9+`, which the typed
@@ -6159,8 +6174,10 @@ fn smart_html_page(
     body: &str,
     show_heading: bool,
     dict_page: Option<&str>,
+    meta_table: Option<&str>,
 ) -> String {
     let js = plotly_js_only();
+    let meta_table = meta_table.unwrap_or("");
     let title = html_escape(title_text);
     let ToggleChrome {
         style: toggle_style,
@@ -6224,6 +6241,9 @@ fn smart_html_page(
   .qsv-viz-geo-meta {{ font-size: 13px; color: var(--qsv-geo-meta); text-align: center; padding: 8px 4px 4px; }}
   .qsv-viz-dict-link {{ font-size: 13px; text-align: center; margin: -12px 0 16px; }}
   .qsv-viz-dict-link a {{ color: var(--qsv-geo-meta); }}
+  table.qsv-viz-meta {{ margin: 0 auto 20px; border-collapse: collapse; font-size: 13px; }}
+  table.qsv-viz-meta td {{ padding: 2px 10px; vertical-align: top; }}
+  table.qsv-viz-meta td.qsv-viz-meta-k {{ color: var(--qsv-geo-meta); text-align: right; white-space: nowrap; }}
   .qsv-viz-dict-ico {{ position: absolute; top: 6px; left: 8px; z-index: 10; font-size: 15px; line-height: 1; text-decoration: none; color: var(--qsv-geo-meta); opacity: 0.75; }}
   .qsv-viz-dict-ico:hover {{ opacity: 1; }}
   #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.95; line-height: 0; }}
@@ -6247,6 +6267,7 @@ fn smart_html_page(
 {logo}
 {heading}
 {dict_link}
+{meta_table}
 {body}
 {fs_prelude}
 {FULLSCREEN_SCRIPT}
@@ -13728,6 +13749,57 @@ fn build_smart(
         None
     };
 
+    // top-of-dashboard metadata table (HTML output only, mirroring --dict-info's HTML-only scope).
+    // Rows/Columns/Compiled always render, so the table always has >=3 rows; Description and PID
+    // are conditional. Image-export paths carry no table (would require Plotly-layout annotations).
+    let metadata_html: Option<String> = if matches!(out_format, OutFormat::Html) {
+        let mut rows = String::new();
+        // Description: first paragraph of the dictionary's dataset-level description, only when
+        // --dict-info is set and a non-empty description exists.
+        if args.flag_dict_info
+            && let Some(desc) = dict_data
+                .as_ref()
+                .and_then(|d| d.dataset_description.as_deref())
+        {
+            let first_para = desc.trim().split("\n\n").next().unwrap_or("").trim();
+            if !first_para.is_empty() {
+                rows.push_str(&format!(
+                    "<tr><td class=\"qsv-viz-meta-k\">Description:</td><td>{}</td></tr>\n",
+                    html_escape(first_para)
+                ));
+            }
+        }
+        // Rows: reuse the lazily-computed dataset row count.
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        rows.push_str(&format!(
+            "<tr><td class=\"qsv-viz-meta-k\">Rows:</td><td>{}</td></tr>\n",
+            HumanCount(n)
+        ));
+        // Columns
+        rows.push_str(&format!(
+            "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
+            HumanCount(stats.len() as u64)
+        ));
+        // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
+        // design).
+        rows.push_str(&format!(
+            "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
+            chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
+        ));
+        // PID: a clickable link, only when --dataset-pid is set. The value is used verbatim as the
+        // href (a full URL such as a DOI is expected); both href and text are escaped.
+        if let Some(pid) = args.flag_dataset_pid.as_deref() {
+            let pid_esc = html_escape(pid);
+            rows.push_str(&format!(
+                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td><a \
+                 href=\"{pid_esc}\">{pid_esc}</a></td></tr>\n"
+            ));
+        }
+        Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
+    } else {
+        None
+    };
+
     // a Geo panel in image mode must use the raw-JSON grid: it injects a domain-positioned `geo`
     // subplot, which the typed `Layout` (a single `.geo()`, no per-cell domain) can't express.
     let has_geo_image = out_format.is_image()
@@ -13745,6 +13817,7 @@ fn build_smart(
             &title_text,
             log_scale,
             dict_page.as_deref(),
+            metadata_html.as_deref(),
         )))
     } else if panels.len() > MAX_SUBPLOTS || has_geo_image {
         // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
@@ -13769,6 +13842,7 @@ fn build_smart(
             &title_text,
             log_scale,
             dict_page,
+            metadata_html,
         )
     }
 }
@@ -14635,6 +14709,7 @@ fn render_smart_grid(
     title_text: &str,
     log_scale: LogScale,
     dict_page: Option<String>,
+    metadata: Option<String>,
 ) -> CliResult<SmartRender> {
     let SmartGridParts {
         traces,
@@ -14664,6 +14739,7 @@ fn render_smart_grid(
         title: title_text.to_string(),
         theme,
         dict_page,
+        metadata,
     })
 }
 
@@ -14672,6 +14748,7 @@ fn render_smart_grid_page(
     theme: Option<BuiltinTheme>,
     title_text: &str,
     dict_page: Option<&str>,
+    meta_table: Option<&str>,
 ) -> String {
     // match the responsiveness the single-`Plot` HTML path applies in `run`.
     plot.set_configuration(Configuration::new().responsive(true));
@@ -14688,7 +14765,15 @@ fn render_smart_grid_page(
 </div>"#
     );
     // the typed plot already carries the dashboard title in its layout, so suppress the page <h1>.
-    smart_html_page(title_text, theme, extra_style, &body, false, dict_page)
+    smart_html_page(
+        title_text,
+        theme,
+        extra_style,
+        &body,
+        false,
+        dict_page,
+        meta_table,
+    )
 }
 
 /// Render the dashboard as a raw Plotly JSON value with domain-positioned axes, for static image
@@ -15376,6 +15461,7 @@ fn render_smart_inline(
     title_text: &str,
     log_scale: LogScale,
     dict_page: Option<&str>,
+    meta_table: Option<&str>,
 ) -> String {
     let cols = args.flag_grid_cols.clamp(1, panels.len().max(1));
     let theme = args.theme();
@@ -15439,7 +15525,15 @@ fn render_smart_inline(
 {cells}</div>"#
     );
     // panels carry no overall title, so the dashboard title is shown as the page <h1>.
-    smart_html_page(title_text, theme, &extra_style, &body, true, dict_page)
+    smart_html_page(
+        title_text,
+        theme,
+        &extra_style,
+        &body,
+        true,
+        dict_page,
+        meta_table,
+    )
 }
 
 /// Minimal HTML-escaping for text interpolated into the inline dashboard page.

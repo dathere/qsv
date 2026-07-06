@@ -372,13 +372,28 @@ smart options:
                            distribution panels. Overview panels (map/geo, correlation,
                            time-series) always span the full width. [default: 2]
     --heatmap-density <n>  For the `viz smart` map panel: at or above <n> mappable
-                           points, draw the core cluster as a density heatmap
-                           (DensityMap) instead of individual markers, which
-                           overplot into a solid, unreadable mass at scale. The heatmap
-                           keeps per-point hover (coordinates, plus the point's label),
-                           just like individual markers.
-                           Set to 0 to always render individual markers (never a
-                           heatmap), regardless of point count. [default: 20000]
+                           points, draw the core as a density heatmap (DensityMap)
+                           instead of markers. The heatmap keeps per-point hover
+                           (coordinates, plus the point's label). Defaults to 0
+                           (disabled): dense point maps instead open as individual
+                           points with an in-map "Clusters/Points" toggle (collapse the
+                           dense areas into interactive count bubbles on demand)
+                           rather than aggregating into a static heat surface.
+                           Set a positive <n> to opt back into the heatmap above
+                           that point count. [default: 0]
+    --cluster <mode>       For the `viz smart` map panel: whether to offer an
+                           in-map "Clusters/Points" toggle that collapses dense points
+                           into native MapLibre count bubbles (which expand back
+                           into individual, hoverable points on zoom-in). The map
+                           always OPENS as individual points; the toggle switches
+                           clustering on. One of: auto, on, off. "auto" (the
+                           default) offers the toggle for a plain-marker core (no
+                           density heatmap, no bubble-size measure) once it
+                           reaches 1,000 points. "on" offers it whenever the core
+                           draws as markers, regardless of point count or a
+                           bubble-size measure. "off" omits the toggle, so points
+                           are always drawn plainly. Only affects `smart`.
+                           [default: auto]
     --limit <n>            Top-N categories per frequency bar chart. [default: 10]
     --no-nulls             Omit the "(NULL)" bar (empty cells) from frequency bar charts.
                            By default `viz smart` shows a "(NULL)" bar, like `qsv frequency`.
@@ -557,6 +572,7 @@ use plotly::{
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
+    traces::scatter_map::Cluster,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
@@ -721,6 +737,13 @@ const SMART_GEO_MIN_LAT_SPAN_DEG: f64 = 45.0;
 /// global extents that wrap the antimeridian (where the corner metadata is suppressed).
 const SMART_CHOROPLETH_MIN_SPAN_DEG: f64 = 8.0;
 
+/// Fill opacity for a tile-basemap `ChoroplethMap` (the `viz smart` metro choropleth panel and
+/// `viz choropleth --map`). Paired with `below("")`, which lifts the fill above the basemap's road
+/// layers so they don't render on top and muddy the read; a near-opaque fill then keeps the region
+/// colors legible while the small gaps between polygons (rivers, harbor) still reveal enough
+/// basemap to orient the map.
+const CHOROPLETH_MAP_FILL_OPACITY: f64 = 0.9;
+
 /// Bimodality-coefficient threshold (Sarle's BC). A continuous numeric column whose
 /// `bimodality_coefficient` reaches this AND is platykurtic (see `classify_measure`) is treated as
 /// bimodal/multimodal, so `viz smart` draws a histogram (which shows the separate peaks) instead of
@@ -798,6 +821,21 @@ const SMART_GEO_OUTLIER_CAP: usize = 5_000;
 /// than the `--heatmap-density` threshold rows). Mild transparency reveals overlapping points
 /// instead of a flat blob.
 const MAP_POINT_OPACITY: f64 = 0.4;
+
+/// At or above this many rendered core points, the `viz smart` map panel enables native MapLibre
+/// point clustering on the core marker trace (unless a density heatmap or bubble-size encoding is
+/// active). Below it, a handful of markers reads fine as-is and clustering would needlessly merge
+/// well-separated points into a count bubble. Clustering is client-side, so it declutters overplot
+/// without changing the embedded payload — the point cap (`MAX_SMART_POINTS`) still bounds size.
+const SMART_CLUSTER_MIN_POINTS: usize = 1_000;
+
+/// Zoom level at/above which point clusters fully disengage into individual markers. Set as high as
+/// the basemap allows so clusters keep subdividing into finer bubbles as you zoom in, rather than
+/// dumping a dense region's raw (overplotting) points all at once. Kept STRICTLY below the raster
+/// basemap tile source's max zoom (18 for Carto/OSM) — MapLibre warns when `clusterMaxZoom` reaches
+/// the source maxzoom (and plotly.js otherwise defaults `cluster.maxzoom` to 24). 17 is that
+/// ceiling: one level deeper than the previous 16, so a dense metro keeps resolving finer.
+const SMART_CLUSTER_MAX_ZOOM: f64 = 17.0;
 
 /// Fraction trimmed from each end of the latitude/longitude distributions when framing a map, so a
 /// few outlier coordinates (bad geocodes, sentinel values) can't blow up the center/zoom and push
@@ -1099,6 +1137,7 @@ struct Args {
     flag_max_charts:         usize,
     flag_grid_cols:          usize,
     flag_heatmap_density:    usize,
+    flag_cluster:            String,
     flag_limit:              usize,
     flag_no_nulls:           bool,
     flag_no_other:           bool,
@@ -3904,7 +3943,14 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             .color_scale(ColorScale::Palette(palette))
             .show_scale(true)
             .color_bar(ColorBar::new().title(measure_label))
-            .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+            .marker(
+                ChoroplethMarker::new()
+                    .line(Line::new().width(0.5))
+                    .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+            )
+            // lift the fill above the basemap's road layers (plotly's default drops it just above
+            // water, so roads render on top and muddy the read); near-opaque fill then reads clean.
+            .below("")
             .hover_text_array(hover_text)
             .hover_info(HoverInfo::Text);
         plot.add_trace(trace);
@@ -5826,6 +5872,20 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
           // safely restyles it without blanking the layer. Preserve the injected fullscreen
           // modebar button via the div's existing config.
           Object.keys(u).forEach(function (k) { setPath(gd.layout, k, u[k]); });
+          // Re-theme any "Basemap labels" toggle: its baked `map.style` args point at the
+          // render-time theme's basemap, so rewrite each to the target theme's variant, preserving
+          // the arg's own `-nolabels` suffix (labeled arg -> mapStyle, no-labels arg ->
+          // mapStyleNoLabels). Guarded on the `map.style` key so non-map menus are untouched.
+          (gd.layout.updatemenus || []).forEach(function (menu) {
+            (menu.buttons || []).forEach(function (b) {
+              ["args", "args2"].forEach(function (ak) {
+                var a = b[ak];
+                if (a && a[0] && typeof a[0]["map.style"] === "string") {
+                  a[0]["map.style"] = /-nolabels$/.test(a[0]["map.style"]) ? p.mapStyleNoLabels : p.mapStyle;
+                }
+              });
+            });
+          });
           var cfg = { responsive: true };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
@@ -6509,6 +6569,31 @@ fn parse_violin_mode(mode: &str) -> CliResult<ViolinMode> {
         "off" | "false" => Ok(ViolinMode::Off),
         other => {
             fail_incorrectusage_clierror!("Unknown --violin '{other}'. Use auto, on, or off.")
+        },
+    }
+}
+
+/// Resolved `--cluster` mode for `viz smart` map marker panels.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClusterMode {
+    /// Cluster only when the core renders as plain markers (no density heatmap, no bubble-size
+    /// measure) AND the rendered core reaches `SMART_CLUSTER_MIN_POINTS`.
+    Auto,
+    /// Cluster whenever the core renders as markers, regardless of point count or a bubble-size
+    /// measure. A density heatmap is a different trace type and still can't be clustered.
+    On,
+    /// Never cluster; dense marker maps draw every point plainly.
+    Off,
+}
+
+/// Parse the `--cluster` flag (defaults to `auto`).
+fn parse_cluster_mode(mode: &str) -> CliResult<ClusterMode> {
+    match mode.to_ascii_lowercase().as_str() {
+        "auto" => Ok(ClusterMode::Auto),
+        "on" | "true" => Ok(ClusterMode::On),
+        "off" | "false" => Ok(ClusterMode::Off),
+        other => {
+            fail_incorrectusage_clierror!("Unknown --cluster '{other}'. Use auto, on, or off.")
         },
     }
 }
@@ -7321,12 +7406,11 @@ fn bivariate_panels(
     }
     idxs.sort_unstable();
 
-    // resolve the human label for a column: dictionary label, else header, else positional
+    // label a column by its raw field name (else positional), matching CorrHeatmap's axis
+    // convention. The dictionary label, when present, still shows as the muted per-column panel
+    // subtitle elsewhere — it just doesn't drive the NMI axis/pair labels.
     let label_of = |idx: usize| -> String {
-        let sem = &col_sems[idx];
-        if !sem.label.is_empty() {
-            sem.label.clone()
-        } else if stats[idx].field.is_empty() {
+        if stats[idx].field.is_empty() {
             format!("col {}", idx + 1)
         } else {
             stats[idx].field.clone()
@@ -7791,6 +7875,15 @@ enum PanelKind {
         lats:               Vec<f64>,
         lons:               Vec<f64>,
         density:            bool,
+        /// Whether the CORE marker trace is cluster-ELIGIBLE, resolved from the `--cluster` mode
+        /// (see `ClusterMode`): under `auto`, set for a dense plain-marker core (no `density`
+        /// heatmap, no bubble-size `sizes`, >= `SMART_CLUSTER_MIN_POINTS` points); `on` sets it
+        /// for any marker core; `off` clears it. When set, the core bakes `cluster.enabled
+        /// = false` (the map OPENS on individual points) and a single "Clusters/Points" toggle
+        /// button is added to switch clustering on/off. Never applied to the outlier
+        /// call-out trace, and always mutually exclusive with `density` (a heatmap has no
+        /// markers to cluster).
+        cluster:            bool,
         outlier_lats:       Vec<f64>,
         outlier_lons:       Vec<f64>,
         /// Pre-rendered per-point hover label (row-aligned to `lats`/`lons`): the row's identifier
@@ -10963,6 +11056,7 @@ fn build_map_panel(
     col_sems: &[ColSemantics],
     dict: Option<&DictData>,
     coord_hint: Option<(usize, usize)>,
+    cluster_mode: ClusterMode,
 ) -> CliResult<Option<(Panel, Option<Panel>, (usize, usize), usize)>> {
     let Some((lat_idx, lon_idx)) = coord_hint.or_else(|| latlon_indices(stats)) else {
         return Ok(None);
@@ -11280,6 +11374,18 @@ fn build_map_panel(
         (core_lats.as_slice(), core_lons.as_slice()),
         (out_lats.as_slice(), out_lons.as_slice()),
     ]);
+    // Enable native point clustering on the core markers when they'd otherwise overplot. Never
+    // possible in density mode — the core is a `DensityMap` heatmap, a different trace type. Under
+    // `--cluster auto` (the default) also require a plain-marker core (no bubble-size measure,
+    // whose per-point size a cluster bubble would override) that is dense enough to benefit
+    // (>= SMART_CLUSTER_MIN_POINTS). `--cluster on` overrides those two soft guards; `--cluster
+    // off` never clusters, so dense points draw plainly. `lats` here is the downsampled core.
+    let cluster = !density
+        && match cluster_mode {
+            ClusterMode::Off => false,
+            ClusterMode::On => true,
+            ClusterMode::Auto => core_sizes.is_none() && lats.len() >= SMART_CLUSTER_MIN_POINTS,
+        };
     let kind = if global {
         PanelKind::Geo {
             lats,
@@ -11295,6 +11401,7 @@ fn build_map_panel(
             lats,
             lons,
             density,
+            cluster,
             outlier_lats,
             outlier_lons,
             hover_text,
@@ -11528,6 +11635,72 @@ fn extent_zoom_menu(core: &MapExtent, full: &MapExtent) -> UpdateMenu {
         // the button pill is always white (over the light map tiles), so pin the label color to
         // ink rather than inheriting `layout.font.color` — otherwise the dark-mode toggle (or a
         // dark `--theme`) flips the label to a light color and it vanishes on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
+/// A single "Clusters/Points" toggle button for the `viz smart` map's cluster-eligible core trace.
+/// The map OPENS as individual points (the core trace bakes `cluster.enabled = false`); this
+/// button, a native plotly toggle, restyles `cluster.enabled` on trace 0 — `args` (first click,
+/// from the inactive state) turns clustering on, `args2` (next click, from the active state) turns
+/// it back off. Only trace 0 is targeted, so the geographic-outlier call-out trace (also a
+/// `scattermap`, but never clustered) is left untouched. Starts inactive (`active(-1)`) to match
+/// the points-first default. Added only when the core is cluster-eligible.
+fn cluster_toggle_menu() -> UpdateMenu {
+    let toggle = Button::new()
+        .label("Clusters/Points")
+        .method(ButtonMethod::Restyle)
+        .args(serde_json::json!([{ "cluster.enabled": true }, [0]]))
+        .args2(serde_json::json!([{ "cluster.enabled": false }, [0]]));
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // stacked just below the Core/Full extent menu (top-left), clear of the top-right modebar.
+        .x(0.02)
+        .x_anchor(Anchor::Left)
+        .y(0.86)
+        .y_anchor(Anchor::Top)
+        .show_active(true)
+        // start inactive: the map opens on individual points, click to collapse into clusters.
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        // pin the label to ink so a dark theme/toggle can't flip it invisible on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
+/// A single "Basemap labels" toggle for a `viz smart` MapLibre choropleth panel. The metro-scale
+/// choropleth opens on the LABELED carto basemap (place names in the inter-polygon gaps aid
+/// orientation); this native plotly toggle relayouts the `map` subplot's `style` between the
+/// labeled and label-free carto variants of the SAME theme. `args` (first click from the active
+/// state's inverse) restores labels, `args2` hides them — the button starts ACTIVE (`active(0)`)
+/// so the highlighted state reads as "labels shown", matching the labeled-basemap default.
+///
+/// The two style strings are baked for the RENDER-time theme, so after a runtime light/dark flip
+/// they would point at the wrong theme's basemap. The theme-toggle JS keeps them honest: on every
+/// `apply()` it rewrites any `map.style` updatemenu arg to the target theme's variant, preserving
+/// the `-nolabels` suffix (see `SCRIPT_TEMPLATE`).
+fn basemap_labels_toggle_menu(labeled_style: MapStyle, nolabels_style: MapStyle) -> UpdateMenu {
+    let toggle = Button::new()
+        .label("Basemap labels")
+        .method(ButtonMethod::Relayout)
+        .args(serde_json::json!([{ "map.style": labeled_style }]))
+        .args2(serde_json::json!([{ "map.style": nolabels_style }]));
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // top-left of the panel (this panel has no Core/Full extent menu, so the top slot is free).
+        .x(0.02)
+        .x_anchor(Anchor::Left)
+        .y(0.98)
+        .y_anchor(Anchor::Top)
+        .show_active(true)
+        // start active: the map opens WITH basemap labels, click to hide them.
+        .active(0)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        // pin the label to ink so a dark theme/toggle can't flip it invisible on the white pill.
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
@@ -12304,8 +12477,16 @@ fn build_smart(
         // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
         // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
         let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+        let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
         progress.set_message("Building map panel…");
-        match build_map_panel(args, &stats, &col_sems, dict_data.as_ref(), coord_hint)? {
+        match build_map_panel(
+            args,
+            &stats,
+            &col_sems,
+            dict_data.as_ref(),
+            coord_hint,
+            cluster_mode,
+        )? {
             None => (None, None),
             Some((p, choro, cols, mappable_count)) => {
                 if out_format.is_image() {
@@ -12345,16 +12526,25 @@ fn build_smart(
                 } else {
                     // HTML output: a local-extent density panel actually renders as a DensityMap
                     // here (global extents are `Geo` markers, image export was coerced above), so
-                    // this is the point at which the heatmap note is truthful. Report
+                    // this is the point at which the heatmap/cluster note is truthful. Report
                     // `mappable_count` (the full source count that drove the density decision), not
                     // the panel's downsampled/outlier-excluded `lats`.
                     if matches!(p.kind, PanelKind::Map { density: true, .. }) {
                         viz_note(&format!(
                             "viz smart: map has {mappable_count} mappable points (>= \
                              --heatmap-density {}); drawing the core as a density heatmap with \
-                             per-point hover. Raise --heatmap-density (or set it to 0) to render \
-                             individual markers instead.",
+                             per-point hover. Set --heatmap-density 0 (the default) to draw \
+                             interactive clustered markers instead.",
                             args.flag_heatmap_density
+                        ));
+                    } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
+                        viz_note(&format!(
+                            "viz smart: map has {mappable_count} mappable points; the core opens \
+                             as individual points with a \"Clusters/Points\" toggle (click it to \
+                             collapse dense areas into native MapLibre count bubbles that expand \
+                             again on zoom-in). Set --cluster off to omit the toggle, or \
+                             --heatmap-density <n> to draw a density heatmap at or above <n> \
+                             points instead."
                         ));
                     }
                     (Some((p, cols)), choro)
@@ -14270,6 +14460,7 @@ fn smart_inline_panel_plot(
         lats,
         lons,
         density,
+        cluster,
         outlier_lats,
         outlier_lons,
         hover_text,
@@ -14330,6 +14521,18 @@ fn smart_inline_panel_plot(
                     .hover_text_array(hover_text.clone())
                     .hover_info(HoverInfo::Text);
             }
+            if *cluster {
+                // native MapLibre client-side clustering, configured but DISABLED at load so the
+                // map opens on individual points; the "Clusters/Points" toggle (see
+                // `cluster_toggle_menu`) flips `cluster.enabled` on. `max_zoom` is
+                // baked now so toggling on honors it. No point is ever dropped —
+                // clustering only changes rendering, not the embedded data.
+                core_trace = core_trace.cluster(
+                    Cluster::new()
+                        .enabled(false)
+                        .max_zoom(SMART_CLUSTER_MAX_ZOOM),
+                );
+            }
             plot.add_trace(core_trace);
         }
         // geographic outliers as a distinct amber marker trace on top of the core points/heatmap.
@@ -14376,9 +14579,16 @@ fn smart_inline_panel_plot(
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .map(layout_map);
+        let mut menus: Vec<UpdateMenu> = Vec::new();
         #[cfg(feature = "geocode")]
         if let Some(menu) = extent_menu {
-            layout = layout.update_menus(vec![menu]);
+            menus.push(menu);
+        }
+        if *cluster {
+            menus.push(cluster_toggle_menu());
+        }
+        if !menus.is_empty() {
+            layout = layout.update_menus(menus);
         }
         if !themed {
             layout = layout
@@ -14510,21 +14720,43 @@ fn smart_inline_panel_plot(
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
                 .color_bar(ColorBar::new().title("count"))
-                .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
+                .marker(
+                    ChoroplethMarker::new()
+                        .line(Line::new().width(0.5))
+                        .opacity(CHOROPLETH_MAP_FILL_OPACITY),
+                )
+                // insert the fill ABOVE every basemap layer. Plotly's default drops it just above
+                // the water layers, so the basemap's roads render on TOP of the regions and muddy
+                // the read; "" lifts it over the roads (a near-opaque fill then reads cleanly, with
+                // the inter-polygon gaps still revealing enough basemap to orient).
+                .below("")
                 .hover_text_array(hover_text.clone())
                 .hover_info(HoverInfo::Text),
         );
-        // a choropleth fills whole regions, so its basemap is pure context — use the label-free
-        // Carto variant so place names don't bleed through and fight the filled data.
+        // keep the LABELED basemap: since the fill is inserted above every basemap layer
+        // (`below("")` on the trace), place names can no longer bleed over the regions — they sit
+        // under the fill and show only in the gaps between polygons (water, harbor, parks, and the
+        // uncovered land around the metro), where they aid orientation. Passing `false` (not a
+        // label-suppressing overlay); the theme-toggle JS keys off the `-nolabels` suffix, so a
+        // labeled style here stays labeled across a light/dark switch.
         let layout_map = LayoutMap::new()
-            .style(smart_map_basemap(is_dark_theme(theme), true))
+            .style(smart_map_basemap(is_dark_theme(theme), false))
             .center(Center::new(*center_lat, *center_lon))
             .zoom(*zoom);
+        // opt-in "Basemap labels" toggle: hides/shows the carto basemap's place names (default on).
+        // The two style strings are baked for the render-time theme; the theme-toggle JS rewrites
+        // them to the active theme on each flip (preserving the `-nolabels` suffix).
+        let labeled_style = smart_map_basemap(is_dark_theme(theme), false);
+        let nolabels_style = smart_map_basemap(is_dark_theme(theme), true);
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
             .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .update_menus(vec![basemap_labels_toggle_menu(
+                labeled_style,
+                nolabels_style,
+            )])
             .map(layout_map);
         if !themed {
             layout = layout
@@ -18535,7 +18767,8 @@ mod tests {
 
     #[test]
     fn smart_map_basemap_picks_nolabels_for_overlays() {
-        // data-overlay panels (density/choropleth) drop basemap labels; point maps keep them
+        // `data_overlay` picks the label-free carto variant (used by the density map and the
+        // choropleth's label-OFF toggle state); the labeled variant is the default everywhere else
         let cases = [
             (false, false, "carto-positron"),
             (false, true, "carto-positron-nolabels"),

@@ -2997,6 +2997,8 @@ fn viz_smart_heatmap_density_threshold() {
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(html.contains(r#""type":"scattermap""#));
     assert!(!html.contains(r#""type":"densitymap""#));
+    // only 4 points (< SMART_CLUSTER_MIN_POINTS) => sparse map, no clustering
+    assert!(!html.contains(r#""cluster":{"enabled":true"#));
 
     // a low threshold (<= point count) => draw the core cluster as a density heatmap, and emit the
     // explanatory note (per-point hover unavailable in heatmap mode) to stderr.
@@ -3008,6 +3010,207 @@ fn viz_smart_heatmap_density_threshold() {
     assert!(html.contains(r#""type":"densitymap""#));
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(stderr.contains("--heatmap-density 2"));
+}
+
+/// Write a locally-clustered lat/lon CSV of `n` points (all within a ~0.04x0.03 deg box near
+/// downtown Pittsburgh, so they stay CORE points on a single MapLibre tile map, never spatial
+/// outliers or a global ScatterGeo overview). Columns: `id,lat,lon,val`.
+fn dense_local_geo(wrk: &Workdir, name: &str, n: usize) {
+    let mut rows = String::from("id,lat,lon,val\n");
+    for r in 0..n {
+        let lat = 40.440 + (r % 40) as f64 * 0.001;
+        let lon = -79.990 + (r / 40) as f64 * 0.001;
+        rows.push_str(&format!("{},{lat:.4},{lon:.4},{}\n", r + 1, r % 7));
+    }
+    wrk.create_from_string(name, &rows);
+}
+
+// A dense LOCAL smart map (>= SMART_CLUSTER_MIN_POINTS) is cluster-eligible by default (no
+// --heatmap-density): the `scattermap` core bakes `cluster.enabled=false` (opens on individual
+// points, with a basemap-safe maxzoom for when clustering is toggled on), and it is NOT a density
+// heatmap. An explanatory note about the "Clusters" toggle is emitted to stderr.
+#[test]
+fn viz_smart_map_clusters_dense_markers() {
+    let wrk = Workdir::new("viz_smart_map_clusters_dense_markers");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#),
+        "dense map should bake clustering disabled-at-load (basemap-safe maxzoom): {html}"
+    );
+    assert!(!html.contains(r#""type":"densitymap""#));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("Clusters") && stderr.contains("toggle"));
+}
+
+// Opting back into the density heatmap (`--heatmap-density` at/below the point count) suppresses
+// clustering — a heatmap has no markers to cluster, so the two are mutually exclusive.
+#[test]
+fn viz_smart_map_heatmap_opt_in_suppresses_cluster() {
+    let wrk = Workdir::new("viz_smart_map_heatmap_opt_in_suppresses_cluster");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--heatmap-density", "500"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"densitymap""#));
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "density heatmap mode must not also cluster: {html}"
+    );
+}
+
+// A bubble-size encoding (dictionary-tagged map measure under --smarter) suppresses clustering even
+// on a dense map: a cluster bubble's size encodes point COUNT, which would conflict with the
+// measure-driven marker size.
+#[test]
+fn viz_smart_map_bubble_sizes_suppress_cluster() {
+    let wrk = Workdir::new("viz_smart_map_bubble_sizes_suppress_cluster");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "id": { "type": "string",
+              "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.natural_key" } },
+            "lat": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.latitude" } },
+            "lon": { "type": "number", "x-qsv": { "qsv_type": "Float", "concept": "geo.longitude" } },
+            "val": { "type": "number", "title": "Value",
+              "x-qsv": { "qsv_type": "Float", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "--smarter", "dense.csv", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // local extent -> MapLibre tile map with per-point bubble sizes ...
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""size":["#),
+        "map points should be bubble-sized by the dictionary measure: {html}"
+    );
+    // ... but no clustering, since the bubble size already encodes the measure
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "bubble-sized map must not cluster: {html}"
+    );
+}
+
+// `--cluster off` is the escape hatch back to plain dense markers: a dense LOCAL map that would
+// cluster by default draws every point as an un-clustered `scattermap` marker instead (and no
+// density heatmap either).
+#[test]
+fn viz_smart_map_cluster_off_draws_plain_markers() {
+    let wrk = Workdir::new("viz_smart_map_cluster_off_draws_plain_markers");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "off"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        !html.contains(r#""cluster":{"enabled":true"#),
+        "--cluster off must draw plain markers, not clusters: {html}"
+    );
+    assert!(!html.contains(r#""type":"densitymap""#));
+}
+
+// `--cluster on` forces clustering even below SMART_CLUSTER_MIN_POINTS: a SPARSE local map (which
+// `auto` would leave un-clustered) clusters when the user explicitly opts in.
+#[test]
+fn viz_smart_map_cluster_on_forces_below_threshold() {
+    let wrk = Workdir::new("viz_smart_map_cluster_on_forces_below_threshold");
+    // well under SMART_CLUSTER_MIN_POINTS (1,000), so `auto` would NOT cluster
+    dense_local_geo(&wrk, "sparse.csv", 60);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sparse.csv", "--cluster", "on"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(html.contains(r#""type":"scattermap""#));
+    assert!(
+        html.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#),
+        "--cluster on must make even a sparse map cluster-eligible (toggle available): {html}"
+    );
+    // the toggle button is present so the user can switch clustering on
+    assert!(html.contains(r#"{"cluster.enabled":true},[0]]"#));
+}
+
+// A cluster-eligible smart map carries an in-map single "Clusters" toggle button: an updatemenu
+// with one restyle button whose `args` (first click) enables and `args2` (next click) disables
+// `cluster.enabled` on the core trace (index 0), so a viewer can collapse points into clusters and
+// back without re-rendering. Absent when clustering is off (nothing to toggle).
+#[test]
+fn viz_smart_map_cluster_toggle_menu_present() {
+    let wrk = Workdir::new("viz_smart_map_cluster_toggle_menu_present");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    // cluster-eligible (default): a single toggle button targeting trace 0 via args/args2 restyle.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // match the restyle button's full args fragments (targeting trace [0]) rather than the bare
+    // "cluster.enabled" — that attribute name also appears inside the embedded plotly.js bundle.
+    // `args` enables, `args2` disables: a native single-button plotly toggle.
+    assert!(
+        html.contains(r#""args":[{"cluster.enabled":true},[0]]"#)
+            && html.contains(r#""args2":[{"cluster.enabled":false},[0]]"#),
+        "clustered map should carry the single-button cluster toggle (args/args2 on trace 0): \
+         {html}"
+    );
+    // one "Clusters/Points" toggle button, not a separate pair of "Clusters"/"Points" buttons
+    assert!(
+        html.contains(r#""label":"Clusters/Points""#)
+            && !html.contains(r#""label":"Points""#)
+            && !html.contains(r#""label":"Clusters""#)
+    );
+
+    // --cluster off: no clustering, so no toggle menu.
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "off"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains(r#"{"cluster.enabled":true},[0]]"#),
+        "un-clustered map must not carry the cluster-toggle updatemenu: {html}"
+    );
+}
+
+// An unrecognized `--cluster` value fails fast with an actionable usage error.
+#[test]
+fn viz_smart_map_cluster_invalid_mode_errors() {
+    let wrk = Workdir::new("viz_smart_map_cluster_invalid_mode_errors");
+    dense_local_geo(&wrk, "dense.csv", 60);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv", "--cluster", "sometimes"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("Unknown --cluster 'sometimes'"),
+        "expected an actionable --cluster error: {stderr}"
+    );
 }
 
 // A user `--geojson` on a LOCAL `viz smart` map overlays the region boundaries + labels on the
@@ -5831,6 +6034,16 @@ fn viz_choropleth_map() {
     // whole-world view where local regions would be invisible
     assert!(html.contains(r#""center":{"#));
     assert!(html.contains(r#""zoom":"#));
+    // the fill is inserted above the basemap road layers (below="") with a near-opaque fill, so
+    // roads don't bleed through and muddy the regions
+    assert!(
+        html.contains(r#""below":"""#),
+        "choropleth --map fill must sit above the basemap roads (below=\"\"): {html}"
+    );
+    assert!(
+        html.contains(r#""opacity":0.9"#),
+        "near-opaque fill expected: {html}"
+    );
 }
 
 // --feature-id-key is optional for --map: when omitted it defaults to "id" (the top-level
@@ -6485,6 +6698,98 @@ fn viz_smart_pip_choropleth_panel() {
     assert!(html.contains(r#""featureidkey":"properties.id""#));
 }
 
+// A metro-scale `viz smart` choropleth renders on a MapLibre tile basemap (ChoroplethMap). Its fill
+// is inserted ABOVE the basemap layers (below="") so the basemap's roads don't bleed through and
+// muddy the region colors, and the fill is near-opaque for a clean read.
+#[test]
+fn viz_smart_choropleth_map_fill_above_basemap_roads() {
+    let wrk = Workdir::new("viz_smart_choropleth_map_fill_above_basemap_roads");
+    // a tight metro extent (< SMART_CHOROPLETH_MIN_SPAN_DEG in both dims) -> tile ChoroplethMap
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n40.44,-74.00\n40.45,-74.00\n40.44,-73.90\n40.45,-73.90\n",
+    );
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[-74.05,40.40],[-74.05,40.50],[-73.95,40.50],[-73.95,40.40],[-74.05,40.40]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[-73.95,40.40],[-73.95,40.50],[-73.85,40.50],[-73.85,40.40],[-73.95,40.40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choroplethmap""#),
+        "expected a tile ChoroplethMap at metro scale: {html}"
+    );
+    // below="" lifts the fill over the basemap's road layers (the fix for road bleed-through)
+    assert!(
+        html.contains(r#""below":"""#),
+        "choropleth fill must be inserted above the basemap roads (below=\"\"): {html}"
+    );
+    assert!(
+        html.contains(r#""opacity":0.9"#),
+        "choropleth fill should be near-opaque: {html}"
+    );
+}
+
+// A metro-scale `viz smart` choropleth opens on the LABELED carto basemap (place names aid
+// orientation in the inter-polygon gaps) and carries a "Basemap labels" toggle that relayouts the
+// `map` subplot's style between the labeled and label-free carto variants. Default light theme, so
+// the baked args reference the carto-positron pair.
+#[test]
+fn viz_smart_choropleth_map_basemap_labels_toggle() {
+    let wrk = Workdir::new("viz_smart_choropleth_map_basemap_labels_toggle");
+    // a tight metro extent (< SMART_CHOROPLETH_MIN_SPAN_DEG in both dims) -> tile ChoroplethMap
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n40.44,-74.00\n40.45,-74.00\n40.44,-73.90\n40.45,-73.90\n",
+    );
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[-74.05,40.40],[-74.05,40.50],[-73.95,40.50],[-73.95,40.40],[-74.05,40.40]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[-73.95,40.40],[-73.95,40.50],[-73.85,40.50],[-73.85,40.40],[-73.95,40.40]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the choropleth defaults to the LABELED basemap (carto-positron, not -nolabels)
+    assert!(
+        html.contains(r#""style":"carto-positron""#),
+        "choropleth basemap should default to labeled carto-positron: {html}"
+    );
+    // the "Basemap labels" toggle: args restore labels (labeled style), args2 hide them (-nolabels)
+    assert!(
+        html.contains(r#""label":"Basemap labels""#),
+        "expected a Basemap labels toggle on the choropleth panel: {html}"
+    );
+    assert!(
+        html.contains(r#""args":[{"map.style":"carto-positron"}]"#),
+        "Basemap labels args must relayout map.style to the labeled variant: {html}"
+    );
+    assert!(
+        html.contains(r#""args2":[{"map.style":"carto-positron-nolabels"}]"#),
+        "Basemap labels args2 must relayout map.style to the label-free variant: {html}"
+    );
+}
+
 // PIP choropleth hover shows the human-readable region name (auto-detected from properties.name),
 // the labeled count, the share of total, and the rank.
 #[test]
@@ -7097,12 +7402,20 @@ fn viz_smart_bivariate_respects_explicit_dictionary() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
+    // the explicit --dictionary's custom label must still be USED somewhere (proving it wasn't
+    // silently replaced by --dictionary infer) — it drives per-column panel titles/subtitles.
     assert!(
         html.contains("Qsv Test Custom Region Label ABC123"),
-        "explicit --dictionary's custom label should drive the panel title, not be replaced by \
-         --dictionary infer; html: {html}"
+        "explicit --dictionary's custom label should be used, not be replaced by --dictionary \
+         infer; html: {html}"
     );
     assert!(html.contains(r#""name":"association""#));
+    // ...but the NMI Association heatmap axes use the RAW field names (code/status), NOT the
+    // dictionary label — matching the Correlation heatmap's convention.
+    assert!(
+        html.contains(r#""x":["code","status"]"#) && html.contains(r#""y":["code","status"]"#),
+        "Association (NMI) axes should use raw field names, not the dictionary label; html: {html}"
+    );
 }
 
 #[test]

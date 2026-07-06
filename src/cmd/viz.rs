@@ -6111,6 +6111,26 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
     setScrollZoom(gd, document.fullscreenElement === gd);
   }
   window.__qsvRefitScrollZoom = applyScrollZoom;
+  // gl3d (3D scene) panels need a DIFFERENT fix than geo/map. plotly's WebGL canvas swallows the
+  // wheel (preventDefault) on EVERY wheel event — even when the scene is created with
+  // scrollZoom:false, which suppresses the zoom but NOT the preventDefault. So a scroll over a 3D
+  // panel neither zooms NOR scrolls the page (the wheel is eaten). Unlike geo (honors scrollZoom
+  // live) and MapLibre (setScrollZoom toggles the GL handler), the robust fix is a capture-phase
+  // wheel interceptor: inline we stopPropagation so the canvas handler never runs (never
+  // preventDefaults) and the wheel scrolls the PAGE; in fullscreen we let it through. The listener
+  // sits on gd (which persists across theme-toggle re-renders) so it survives a panel re-render.
+  // Drag-rotate uses pointer events, so it is untouched.
+  function sceneKeys(gd) {
+    var fl = gd._fullLayout || {};
+    return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
+  }
+  function installGl3dScrollFix(gd) {
+    if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
+    gd.__qsvGl3dFix = true;
+    gd.addEventListener("wheel", function (e) {
+      if (document.fullscreenElement !== gd) e.stopPropagation();
+    }, { capture: true, passive: true });
+  }
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
@@ -6129,6 +6149,9 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.
       applyScrollZoom(gd);
+      // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
+      // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
+      installGl3dScrollFix(gd);
       // Core/Full extent buttons (viz smart outlier maps) relayout the map to a zoom baked for the
       // ASSUMED px — so they ignore the real/fullscreen/resized container. Adopt the clicked
       // extent's baked zoom/center as the new fit reference, then re-aim the camera for the CURRENT

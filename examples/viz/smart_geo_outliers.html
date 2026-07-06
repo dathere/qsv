@@ -49,7 +49,7 @@
 <table class="qsv-viz-meta">
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>200</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>10</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-06 06:57 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-06 23:50 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -257,6 +257,55 @@
     var px = plotPx(gd);
     applyFitCamera(gd, px.w, px.h);
   }
+  // plotly turns scrollZoom ON by default for geo/map/gl3d subplots, and for a MapLibre `map`
+  // subplot it does NOT honor a `scrollZoom:false` render config at the GL-handler level (the layer
+  // stays wheel-zoomable), so we disable the GL handler DIRECTLY after each render. Off inline → a
+  // wheel/two-finger scroll over the map scrolls the PAGE; on in fullscreen → wheel zooms the map
+  // (no page to scroll). Drag-pan is left untouched. Also set _context so geo/3D subplots (which
+  // expose no post-render wheel handle) follow via plotly's own live read; toggling here needs no
+  // re-render, so the map camera is preserved across a fullscreen flip.
+  function setScrollZoom(gd, on) {
+    try { if (gd._context) gd._context.scrollZoom = on; } catch (e) {}
+    var fl = gd._fullLayout || {};
+    mapKeys(gd).forEach(function (k) {
+      var sp = fl[k] && fl[k]._subplot, m = sp && sp.map;
+      if (m && m.scrollZoom && typeof m.scrollZoom.enable === "function") {
+        try { if (on) m.scrollZoom.enable(); else m.scrollZoom.disable(); } catch (e) {}
+      }
+    });
+  }
+  // The MapLibre GL map attaches a frame or two after a render, so wait (bounded) until every map
+  // subplot has its `_subplot.map`, then apply the scrollZoom state for the current fullscreen mode.
+  // Published as a global so the theme-toggle script (a separate IIFE that re-runs newPlot on a
+  // MapLibre panel, which re-enables the GL handler) can re-assert the state after its own render.
+  function applyScrollZoom(gd, tries) {
+    if (tries === undefined) tries = 20;
+    var fl = gd._fullLayout || {};
+    var ready = mapKeys(gd).every(function (k) { var sp = fl[k] && fl[k]._subplot; return sp && sp.map; });
+    if (!ready && tries > 0) { setTimeout(function () { applyScrollZoom(gd, tries - 1); }, 100); return; }
+    setScrollZoom(gd, document.fullscreenElement === gd);
+  }
+  window.__qsvRefitScrollZoom = applyScrollZoom;
+  // gl3d (3D scene) panels need a DIFFERENT fix than geo/map. plotly's WebGL canvas swallows the
+  // wheel (preventDefault) on EVERY wheel event — even when the scene is created with
+  // scrollZoom:false, which suppresses the zoom but NOT the preventDefault. So a scroll over a 3D
+  // panel neither zooms NOR scrolls the page (the wheel is eaten). Unlike geo (honors scrollZoom
+  // live) and MapLibre (setScrollZoom toggles the GL handler), the robust fix is a capture-phase
+  // wheel interceptor: inline we stopPropagation so the canvas handler never runs (never
+  // preventDefaults) and the wheel scrolls the PAGE; in fullscreen we let it through. The listener
+  // sits on gd (which persists across theme-toggle re-renders) so it survives a panel re-render.
+  // Drag-rotate uses pointer events, so it is untouched.
+  function sceneKeys(gd) {
+    var fl = gd._fullLayout || {};
+    return Object.keys(fl).filter(function (k) { return /^scene\d*$/.test(k); });
+  }
+  function installGl3dScrollFix(gd) {
+    if (gd.__qsvGl3dFix || !sceneKeys(gd).length) return;
+    gd.__qsvGl3dFix = true;
+    gd.addEventListener("wheel", function (e) {
+      if (document.fullscreenElement !== gd) e.stopPropagation();
+    }, { capture: true, passive: true });
+  }
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
@@ -265,7 +314,19 @@
       // renders, so the first paint already fills the real container (no relayout, no reflow).
       var px = plotPx(gd);
       applyFitLayout(gd, px.w, px.h);
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, modeBarButtonsToAdd: [button] });
+      // scrollZoom:false so a wheel/two-finger scroll over a geo/3D panel scrolls the PAGE instead
+      // of zooming the subplot (plotly turns scrollZoom ON by default for geo/map/gl3d). This
+      // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
+      // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
+      // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button] });
+      // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
+      // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
+      // swallow the page scroll.
+      applyScrollZoom(gd);
+      // gl3d panels: stop the WebGL canvas from eating the wheel inline so the page can scroll
+      // (scrollZoom:false suppresses the zoom but not the canvas preventDefault; see above).
+      installGl3dScrollFix(gd);
       // Core/Full extent buttons (viz smart outlier maps) relayout the map to a zoom baked for the
       // ASSUMED px — so they ignore the real/fullscreen/resized container. Adopt the clicked
       // extent's baked zoom/center as the new fit reference, then re-aim the camera for the CURRENT
@@ -289,10 +350,14 @@
       gd.addEventListener("fullscreenchange", function () {
         // Plotly.Plots.resize is async; aim the camera only AFTER it resolves so we read the
         // post-resize _fullLayout dims (else enter/exit would refit from stale dims and stick).
+        // Same timing for scrollZoom: enable wheel-zoom entering fullscreen (no page to scroll),
+        // disable on exit — applied post-resize so the map subplot's GL handle is attached.
+        var fs = document.fullscreenElement === gd;
+        var done = function () { fitCameraNow(gd); setScrollZoom(gd, fs); };
         var rp;
         try { rp = Plotly.Plots.resize(gd); } catch (e) {}
-        if (rp && rp.then) rp.then(function () { fitCameraNow(gd); }).catch(function () { fitCameraNow(gd); });
-        else fitCameraNow(gd);
+        if (rp && rp.then) rp.then(done).catch(done);
+        else done();
       });
     } catch (e) {}
   }
@@ -407,10 +472,15 @@
               });
             });
           });
-          var cfg = { responsive: true };
+          // preserve the page-scroll-friendly scrollZoom state across a theme flip (a MapLibre
+          // theme change re-runs newPlot, which would otherwise reset scrollZoom to its map default).
+          var cfg = { responsive: true, scrollZoom: document.fullscreenElement === gd };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
           Plotly.newPlot(gd, gd.data, gd.layout, cfg);
+          // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
+          // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
+          if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
         } else {
           Plotly.relayout(gd, u);
         }

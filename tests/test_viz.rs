@@ -8238,6 +8238,70 @@ fn viz_smart_dict_info_grid_path() {
     );
 }
 
+// --dict-info descriptions render Markdown (bold/bullets/links) as HTML in the embedded
+// Data Dictionary page, while raw HTML and unsafe URL schemes in the untrusted LLM text
+// stay escaped/neutralized so they can't break out of the `<script type="text/html">`
+// embedding template or inject script.
+#[test]
+fn viz_smart_dict_info_markdown_rendering() {
+    let wrk = Workdir::new("viz_smart_dict_info_markdown_rendering");
+    dict_info_codes_csv(&wrk);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "description": "A **bold** dataset. See [home](https://example.com).",
+          "properties": {
+            "census_tract": { "type": ["integer","null"], "title": "Census Tract",
+              "description": "The **census** tract.\n\n- point one\n- point two" },
+            "status": { "type": "string", "title": "Case Status",
+              "description": "Danger: <img src=x onerror=alert(1)> </script> and [x](javascript:alert(1))." }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "codes.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // Markdown rendered to HTML: bold, bullet list, safe link.
+    assert!(
+        html.contains("<strong>bold</strong>"),
+        "dataset bold not rendered"
+    );
+    assert!(
+        html.contains("<strong>census</strong>"),
+        "column bold not rendered"
+    );
+    assert!(
+        html.contains("<li>point one</li>"),
+        "bullet list not rendered"
+    );
+    assert!(
+        html.contains(
+            r#"<a href="https://example.com" target="_blank" rel="noopener noreferrer">home</a>"#
+        ),
+        "safe link not rendered"
+    );
+    // Untrusted content stays safe: raw HTML escaped, no </script> breakout, js: link dropped.
+    assert!(!html.contains("<img src=x"), "raw <img> leaked");
+    assert!(html.contains("&lt;img src=x"), "raw <img> not escaped");
+    assert!(
+        !html.contains("</script> and"),
+        "literal </script> from description leaked into embedded page"
+    );
+    // The js: link in the description must never become an anchor href (it stays inert
+    // plain text in the out-of-scope info-icon tooltip, which is not an XSS vector).
+    assert!(
+        !html.contains(r#"href="javascript:"#),
+        "javascript: URL rendered as an anchor href"
+    );
+}
+
 // >8 chartable columns -> the inline-div path: icons are plain HTML overlays with the
 // description in the native title tooltip; the same dict template + chrome is embedded.
 #[test]

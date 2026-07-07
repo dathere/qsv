@@ -447,15 +447,18 @@ smart options:
                            is used (it does not apply when reading an existing dictionary file).
                            Only affects `smart`.
     --dict-info            When a usable Data Dictionary is available (per --dictionary), add
-                           a "Data Dictionary" link beneath the dashboard title that opens a
-                           human-friendly rendering of the dictionary in its own browser tab
-                           (embedded in the dashboard file - no extra file is written), and an
-                           info icon beside each column panel title: hovering shows that
-                           column's dictionary description, clicking jumps to its entry in the
-                           Data Dictionary tab. The link and icons need a browser that allows
-                           user-initiated pop-ups (the tab is opened on click). HTML output
-                           only; ignored with a note when no dictionary is available or when
-                           exporting an image. Only affects `smart`.
+                           a "Data Dictionary" link beneath the dashboard title and an info
+                           icon on each panel title: hovering shows that column's dictionary
+                           description; clicking opens a human-friendly rendering of the
+                           dictionary in a side drawer NEXT TO the plots (embedded in the
+                           dashboard file - no extra file is written), scrolled to and
+                           highlighting that column's entry. The dictionary page carries a
+                           role-tinted table of contents and per-column "View chart" links
+                           back to the panels. The drawer's popout button opens the same
+                           document in its own browser tab instead (needs a browser that
+                           allows user-initiated pop-ups). HTML output only; ignored with a
+                           note when no dictionary is available or when exporting an image.
+                           Only affects `smart`.
     --dataset-pid <value>  A persistent identifier (PID) for the dataset - typically a full
                            URL such as a DOI (https://doi.org/10.1234/abc) or other citable
                            link. When set, a clickable "PID" row is added to the metadata
@@ -6314,8 +6317,6 @@ fn smart_html_page(
   table.qsv-viz-meta {{ margin: 0 auto 20px; border-collapse: collapse; font-size: 13px; }}
   table.qsv-viz-meta td {{ padding: 2px 10px; vertical-align: top; }}
   table.qsv-viz-meta td.qsv-viz-meta-k {{ color: var(--qsv-geo-meta); text-align: right; white-space: nowrap; }}
-  .qsv-viz-dict-ico {{ position: absolute; top: 6px; left: 8px; z-index: 10; font-size: 15px; line-height: 1; text-decoration: none; color: var(--qsv-geo-meta); opacity: 0.75; }}
-  .qsv-viz-dict-ico:hover {{ opacity: 1; }}
   #qsv-logo {{ position: fixed; bottom: 12px; right: 12px; z-index: 999; opacity: 0.95; line-height: 0; }}
   #qsv-logo:hover {{ opacity: 1; }}
   /* Theme-aware halo so the logo stays legible on any paper color: a faint dark
@@ -7661,7 +7662,7 @@ struct Panel {
     /// The column's Data Dictionary (anchor id, description), populated only under
     /// `--dict-info` on HTML output (so image exports never grow icons). Drives the
     /// panel-title info icon: its hover box shows the description, and clicking jumps to the
-    /// anchor's entry in the embedded Data Dictionary tab. The anchor is computed from the
+    /// anchor's entry in the embedded Data Dictionary drawer. The anchor is computed from the
     /// RAW field name at classification time — the panel `name` can be decorated later
     /// (e.g. "foo (sampled)") and would no longer match the page's section ids.
     dict_info:       Option<(String, String)>,
@@ -7718,9 +7719,9 @@ impl Panel {
     }
 
     /// `display_title`, optionally with a trailing muted ⓘ on the TITLE line (before any
-    /// subtitle line) when a `--dict-info` description is attached. Used by the typed-grid
-    /// title annotations, whose hover box / click event carry the dictionary lookup; the
-    /// inline-div path overlays an HTML icon instead and keeps the plain title.
+    /// subtitle line) when a `--dict-info` description is attached. Used by the panel-title
+    /// annotations of BOTH render paths (`panel_title_annotation`), whose hover box / click
+    /// event carry the dictionary lookup.
     fn display_title_with_icon(&self, icon: bool) -> String {
         let icon_sfx = if icon && self.dict_info.is_some() {
             format!(" <span style=\"font-size:12px;color:{MUTED_COLOR}\">\u{24D8}</span>")
@@ -8866,19 +8867,39 @@ fn dict_anchor_id(col: &str) -> String {
     format!("qsvdict-{slug}-{}", dict_short_hash(col))
 }
 
-/// The `--dict-info` chrome `<script>`: `qsvOpenDict(anchor)` opens the embedded Data Dictionary
-/// document (the `<script type="text/html" id="qsv-dict-src">` template) in a NAMED browser tab —
-/// so the title link and every info icon reuse ONE tab — syncs the opener's light/dark mode onto
-/// it, and scrolls to the requested per-column anchor. The trailing IIFE hooks
-/// `plotly_clickannotation` on the typed-grid plot (when present) so clicking a title's info icon
-/// annotation jumps to its dictionary entry; the `qsvdict-` name-prefix filter keeps other
-/// captured annotations from opening the tab. Polling mirrors `FULLSCREEN_SCRIPT`: plotly renders
-/// in a deferred module script, so `gd.on` appears only after render (capped so a render error
-/// can't loop forever). `__QSVDICTKEY__` is substituted at page-build time so two open dashboards
-/// don't clobber each other's dictionary tab. Raw string (like `SCRIPT_TEMPLATE`) so the
-/// brace-heavy JS needs no escaping.
-const DICT_SCRIPT_TEMPLATE: &str = r#"<script>
-function qsvOpenDict(anchor) {
+/// The `--dict-info` chrome `<script>`. `qsvOpenDict(anchor)` opens the embedded Data Dictionary
+/// document (the `<script type="text/html" id="qsv-dict-src">` template) in an in-page slide-over
+/// The `--dict-info` payload (anchor id, description) for `field`, or None when the dictionary
+/// has no usable description for it. Skips empty descriptions and a "<name> column" placeholder
+/// that just echoes the field name. Callers gate `dict` on `--dict-info` + HTML output (see
+/// `dict_icons` in `build_smart`), so image exports never grow icons.
+fn dict_info_for_field(dict: Option<&DictData>, field: &str) -> Option<(String, String)> {
+    dict.and_then(|d| d.rows.get(field))
+        .map(|r| r.description.trim())
+        .filter(|desc| !desc.is_empty() && !desc.eq_ignore_ascii_case(&format!("{field} column")))
+        .map(|desc| (dict_anchor_id(field), desc.to_string()))
+}
+
+/// DRAWER so the plots stay visible beside it; `qsvOpenDictTab(anchor)` (the drawer's ⧉ button,
+/// and the fallback when the drawer can't be built) opens the same document in a NAMED browser
+/// tab instead — the title link and every info icon reuse ONE drawer / ONE tab. Both scroll to
+/// (and flash-highlight, via `qsvDictReveal`) the requested per-column anchor; the tab path also
+/// syncs the opener's light/dark mode. The drawer adopts the template's `.qsv-dict-wrap` +
+/// `<style>` via DOMParser (which never executes scripts), strips the standalone page's inline
+/// `onclick` handlers (they target `window.opener`, meaningless in-page), hides "View chart"
+/// links with no matching `data-qsv-dict` panel element (the typed grid is one plot with no
+/// per-panel elements), and handles ToC / "View chart" clicks by delegation. Opening adds
+/// `body.qsv-dict-open` (a margin-right the drawer slides into) and fires a window `resize` so
+/// plotly's responsive plots re-fit the narrowed column. The trailing IIFE hooks
+/// `plotly_clickannotation` on the typed-grid plot AND every inline panel div, so clicking a
+/// title's info icon annotation jumps to its dictionary entry; the `qsvdict-` name-prefix filter
+/// keeps other captured annotations from opening the drawer. Polling mirrors
+/// `FULLSCREEN_SCRIPT`: plotly renders in a deferred module script, so `gd.on` appears only
+/// after render (capped so a render error can't loop forever). `__QSVDICTKEY__` is substituted
+/// at page-build time so two open dashboards don't clobber each other's dictionary tab. Raw
+/// string (like `SCRIPT_TEMPLATE`) so the brace-heavy JS needs no escaping.
+const DICT_SCRIPT_TEMPLATE: &str = r##"<script>
+function qsvOpenDictTab(anchor) {
   var src = document.getElementById("qsv-dict-src");
   if (!src) return false;
   var w = window.open("", "qsv_dict___QSVDICTKEY__");
@@ -8896,33 +8917,127 @@ function qsvOpenDict(anchor) {
   }
   try {
     w.document.body.classList.toggle("qsv-dark", document.body.classList.contains("qsv-dark"));
-    if (anchor) { var el = w.document.getElementById(anchor); if (el) el.scrollIntoView(); }
+    if (anchor) qsvDictReveal(w.document.getElementById(anchor));
   } catch (e) {}
   w.focus();
   return false;
 }
+// scroll a dictionary section into view and (re)run its flash highlight
+function qsvDictReveal(el) {
+  if (!el) return;
+  el.scrollIntoView();
+  el.classList.remove("qsv-dict-hl");
+  void el.offsetWidth; // restart the animation when re-jumping to the same section
+  el.classList.add("qsv-dict-hl");
+}
+// build the in-page drawer from the embedded template on first use
+function qsvDictDrawer() {
+  var drawer = document.getElementById("qsv-dict-drawer");
+  if (drawer) return drawer;
+  var src = document.getElementById("qsv-dict-src");
+  if (!src || !window.DOMParser) return null;
+  var doc = new DOMParser().parseFromString(src.textContent, "text/html");
+  var wrap = doc.querySelector(".qsv-dict-wrap");
+  if (!wrap) return null;
+  var style = doc.querySelector("style");
+  if (style && !document.getElementById("qsv-dict-style")) {
+    var st = document.createElement("style");
+    st.id = "qsv-dict-style";
+    st.textContent = style.textContent;
+    document.head.appendChild(st);
+  }
+  drawer = document.createElement("aside");
+  drawer.id = "qsv-dict-drawer";
+  drawer.setAttribute("aria-label", "Data Dictionary");
+  var bar = document.createElement("div");
+  bar.className = "qsv-dict-drawer-bar";
+  bar.innerHTML = '<span>Data Dictionary</span><span class="qsv-dict-drawer-btns">' +
+    '<a href="#" class="qsv-dict-pop" title="Open in its own tab">&#x29c9;</a>' +
+    '<a href="#" class="qsv-dict-hide" title="Close (Esc)">&#x2715;</a></span>';
+  var content = document.createElement("div");
+  content.className = "qsv-dict-drawer-content qsv-dict-doc qsv-dict-embedded";
+  content.appendChild(document.adoptNode(wrap));
+  // the standalone page's inline handlers target window.opener; meaningless in-page
+  content.querySelectorAll("[onclick]").forEach(function (el) { el.removeAttribute("onclick"); });
+  // "View chart" only where a matching panel element exists (the typed grid is ONE plot
+  // with no per-panel elements, so its dictionary hides the links entirely)
+  content.querySelectorAll(".qsv-dict-viewchart").forEach(function (a) {
+    var sel = '[data-qsv-dict="' + a.getAttribute("data-anchor") + '"]';
+    if (!document.querySelector(sel)) a.style.display = "none";
+  });
+  drawer.appendChild(bar);
+  drawer.appendChild(content);
+  document.body.appendChild(drawer);
+  bar.querySelector(".qsv-dict-hide").addEventListener("click", function (e) {
+    e.preventDefault();
+    qsvCloseDict();
+  });
+  bar.querySelector(".qsv-dict-pop").addEventListener("click", function (e) {
+    e.preventDefault();
+    qsvCloseDict();
+    qsvOpenDictTab("");
+  });
+  content.addEventListener("click", function (e) {
+    var a = e.target && e.target.closest ? e.target.closest("a") : null;
+    if (!a) return;
+    if (a.classList.contains("qsv-dict-viewchart")) {
+      e.preventDefault();
+      var p = document.querySelector('[data-qsv-dict="' + a.getAttribute("data-anchor") + '"]');
+      if (p) p.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    var href = a.getAttribute("href") || "";
+    if (href.charAt(0) === "#" && href.length > 1) {
+      e.preventDefault();
+      qsvDictReveal(document.getElementById(href.slice(1)));
+    }
+  });
+  return drawer;
+}
+function qsvOpenDict(anchor) {
+  var drawer = qsvDictDrawer();
+  if (!drawer) return qsvOpenDictTab(anchor);
+  document.body.classList.add("qsv-dict-open");
+  drawer.classList.add("open");
+  // plotly's responsive plots re-fit the narrowed content column on window resize
+  window.dispatchEvent(new Event("resize"));
+  if (anchor) qsvDictReveal(document.getElementById(anchor));
+  return false;
+}
+function qsvCloseDict() {
+  var drawer = document.getElementById("qsv-dict-drawer");
+  if (drawer) drawer.classList.remove("open");
+  document.body.classList.remove("qsv-dict-open");
+  window.dispatchEvent(new Event("resize"));
+}
+document.addEventListener("keydown", function (e) {
+  if (e.key === "Escape") qsvCloseDict();
+});
 (function () {
   var tries = 0;
   function hook() {
-    var gd = document.getElementById("qsv-viz-smart-grid");
-    if (!gd) return;
-    // Wait for BOTH the plotly render (gd.on) AND the fullscreen enhancer's one-time
-    // Plotly.newPlot re-render (marked gd.__qsvFs): attaching before that re-render would
-    // silently lose the listener when the plot is re-created. If the enhancement never
-    // completes (render error), fall back and attach anyway after ~10s so dictionary
-    // clicks aren't disabled with it.
-    if (!gd.on || (!gd.__qsvFs && tries < 100)) {
-      if (++tries < 200) setTimeout(hook, 100);
-      return;
-    }
-    gd.on("plotly_clickannotation", function (ev) {
-      var a = ev.annotation;
-      if (a && a.name && a.name.indexOf("qsvdict-") === 0) qsvOpenDict(a.name);
+    // the typed-grid plot plus every inline panel div; a page only ever has one kind
+    var gds = document.querySelectorAll('#qsv-viz-smart-grid, [id^="qsv-viz-panel-"]');
+    var pending = false;
+    gds.forEach(function (gd) {
+      if (gd.__qsvDictHooked) return;
+      // Wait for BOTH the plotly render (gd.on) AND the fullscreen enhancer's one-time
+      // Plotly.newPlot re-render (marked gd.__qsvFs): attaching before that re-render would
+      // silently lose the listener when the plot is re-created. If the enhancement never
+      // completes (render error), fall back and attach anyway after ~10s so dictionary
+      // clicks aren't disabled with it.
+      if (!gd.on || (!gd.__qsvFs && tries < 100)) { pending = true; return; }
+      gd.__qsvDictHooked = true;
+      gd.on("plotly_clickannotation", function (ev) {
+        var a = ev.annotation;
+        if (a && a.name && a.name.indexOf("qsvdict-") === 0) qsvOpenDict(a.name);
+      });
     });
+    if (pending && ++tries < 200) setTimeout(hook, 100);
   }
   hook();
 })();
-</script>"#;
+</script>"##;
 
 /// Strip a describegpt attribution/provenance footer from a dictionary's dataset description.
 /// The same provenance is carried separately in `x-qsv.generated_by` (rendered as the page
@@ -9259,9 +9374,30 @@ fn sanitize_url(url: &str) -> Option<String> {
     }
 }
 
+/// CSS class suffix for a dictionary role's ToC chip tint. Matches loosely (the role string is
+/// free LLM text): the four routing roles get distinct accents, anything else stays neutral.
+fn dict_role_slug(role: Option<&str>) -> &'static str {
+    let Some(role) = role else {
+        return "other";
+    };
+    let r = role.to_ascii_lowercase();
+    if r.contains("identifier") {
+        "identifier"
+    } else if r.contains("measure") {
+        "measure"
+    } else if r.contains("timestamp") || r.contains("time") || r.contains("date") {
+        "timestamp"
+    } else if r.contains("dimension") {
+        "dimension"
+    } else {
+        "other"
+    }
+}
+
 /// Render the human-friendly Data Dictionary document for `--dict-info`: a standalone,
-/// script-free HTML page embedded in the dashboard (inside a `<script type="text/html">`
-/// template) and opened in its own browser tab by `qsvOpenDict`.
+/// script-tag-free HTML page embedded in the dashboard (inside a `<script type="text/html">`
+/// template), shown in the in-page drawer by `qsvOpenDict` and opened in its own browser tab
+/// by `qsvOpenDictTab`.
 ///
 /// Renders straight from the raw dictionary JSON so it can show fields (ranges, cardinality,
 /// examples) that the lean routing structs deliberately don't carry; `dict` supplies the
@@ -9328,6 +9464,7 @@ fn render_dict_page_html(
     order.extend(extras);
 
     let mut sections = String::new();
+    let mut toc = String::new();
     for col in &order {
         let Some(entry) = entry_for(col) else {
             continue;
@@ -9353,8 +9490,9 @@ fn render_dict_page_html(
         if let Some(v) = get_xq("content_type").or_else(|| get(&["content_type"])) {
             meta.push(("Content type", disp(v)));
         }
-        if let Some(v) = get_xq("role").or_else(|| get(&["role"])) {
-            meta.push(("Role", disp(v)));
+        let role = get_xq("role").or_else(|| get(&["role"])).map(disp);
+        if let Some(role) = &role {
+            meta.push(("Role", role.clone()));
         }
         if let Some(v) = get_xq("concept").or_else(|| get(&["concept"])) {
             meta.push(("Concept", disp(v)));
@@ -9385,9 +9523,26 @@ fn render_dict_page_html(
             meta.push(("Examples", disp(v)));
         }
 
+        let anchor = dict_anchor_id(col);
+        // ToC chip: jump target + a role-tinted left border, so the dataset's semantic shape
+        // (identifiers / dimensions / measures / timestamps) is scannable at a glance.
+        toc.push_str(&format!(
+            "<a class=\"qsv-dict-chip qsv-dict-role-{}\" href=\"#{anchor}\" title=\"{}\">{}</a>\n",
+            dict_role_slug(role.as_deref()),
+            html_escape(role.as_deref().unwrap_or("role unknown")),
+            html_escape(col)
+        ));
+        // "View chart ↗" — reverse navigation to the panel built from this column. In the
+        // drawer, click delegation scrolls the matching `data-qsv-dict` cell into view (and
+        // hides the link when there is none); in the standalone tab the inline handler walks
+        // `window.opener` (and at minimum refocuses the dashboard). The selector value needs
+        // no quotes: `dict_anchor_id` emits a valid CSS identifier.
         sections.push_str(&format!(
-            "<section class=\"qsv-dict-col\" id=\"{}\">\n<h2>{}</h2>\n",
-            dict_anchor_id(col),
+            "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n<a class=\"qsv-dict-viewchart\" \
+             data-anchor=\"{anchor}\" href=\"#\" onclick=\"var o=window.opener;if(o){{try{{var \
+             p=o.document.querySelector('[data-qsv-dict={anchor}]');if(p)p.scrollIntoView({{block:\
+             'center'}});}}catch(e){{}}o.focus();}}return false\">View chart \
+             &#8599;</a>\n<h2>{}</h2>\n",
             html_escape(col)
         ));
         if !label.is_empty() && !label.eq_ignore_ascii_case(col) {
@@ -9440,24 +9595,55 @@ fn render_dict_page_html(
         })
         .unwrap_or_default();
 
-    // Fixed neutral light/dark palettes keyed on `body.qsv-dark` (the class `qsvOpenDict` copies
-    // from the opener), mirroring the dashboard's theme-toggle convention.
+    let toc_nav = if toc.is_empty() {
+        String::new()
+    } else {
+        format!("<nav class=\"qsv-dict-toc\">\n{toc}</nav>\n")
+    };
+
+    // Fixed neutral light/dark palettes keyed on `qsv-dark` (set on the standalone page's body
+    // by `qsvOpenDictTab`, inherited from the dashboard body in the drawer), mirroring the
+    // dashboard's theme-toggle convention. Every rule is scoped under `.qsv-dict-doc` /
+    // `.qsv-dict-body` / `#qsv-dict-drawer`, because the drawer adopts this whole `<style>` into
+    // the DASHBOARD's head — an unscoped `body` rule would restyle the dashboard itself. The
+    // drawer rules ride along here (inert in the standalone page) so the drawer and the page
+    // stay one document with one stylesheet. NOTE: this page must never contain a literal
+    // `</script>` (it is embedded in a `<script type="text/html">` template), so it is
+    // script-tag-free by design — standalone-tab interactivity is inline `onclick` handlers
+    // only, which the drawer strips.
     format!(
-        r#"<!doctype html>
+        r##"<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Data Dictionary — {title}</title>
 <style>
-  body {{ font-family: {FONT_FAMILY}; margin: 0; padding: 24px; background: #ffffff; color: #222222; }}
-  body.qsv-dark {{ background: #14171c; color: #d7dce2; }}
+  body.qsv-dict-body {{ font-family: {FONT_FAMILY}; margin: 0; padding: 24px; background: #ffffff; color: #222222; }}
+  body.qsv-dict-body.qsv-dark {{ background: #14171c; color: #d7dce2; }}
+  .qsv-dict-doc {{ font-family: {FONT_FAMILY}; }}
   .qsv-dict-wrap {{ max-width: 860px; margin: 0 auto; }}
-  h1 {{ font-size: 20px; font-weight: 600; margin: 8px 0 12px; }}
+  .qsv-dict-doc h1 {{ font-size: 20px; font-weight: 600; margin: 8px 0 12px; }}
+  .qsv-dict-back {{ display: inline-block; font-size: 13px; color: #2563eb; text-decoration: none; margin-bottom: 4px; }}
+  .qsv-dark .qsv-dict-back {{ color: #6ea8ff; }}
   .qsv-dict-dataset-desc {{ font-size: 14px; line-height: 1.5; }}
   .qsv-dict-grain {{ font-size: 13px; }}
+  .qsv-dict-toc {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; }}
+  .qsv-dict-chip {{ font-size: 12px; padding: 2px 10px; border: 1px solid rgba(128, 128, 128, 0.4); border-left: 4px solid #9ca3af; border-radius: 999px; color: inherit; text-decoration: none; }}
+  .qsv-dict-chip:hover {{ background: rgba(128, 128, 128, 0.15); }}
+  .qsv-dict-role-identifier {{ border-left-color: #8b5cf6; }}
+  .qsv-dict-role-dimension {{ border-left-color: #2563eb; }}
+  .qsv-dict-role-measure {{ border-left-color: #059669; }}
+  .qsv-dict-role-timestamp {{ border-left-color: #d97706; }}
   section.qsv-dict-col {{ border-top: 1px solid rgba(128, 128, 128, 0.35); padding: 12px 0 8px; scroll-margin-top: 8px; }}
   section.qsv-dict-col h2 {{ font-size: 15px; font-weight: 600; margin: 4px 0; }}
+  /* flash the section a reader just jumped to: `:target` covers native anchor navigation
+     (the ToC chips in the standalone tab), `.qsv-dict-hl` the scripted jumps (info icons,
+     drawer chips) via qsvDictReveal */
+  section.qsv-dict-col:target, section.qsv-dict-col.qsv-dict-hl {{ animation: qsv-dict-flash 1.6s ease-out 1; }}
+  @keyframes qsv-dict-flash {{ 0% {{ background: rgba(37, 99, 235, 0.22); }} 100% {{ background: transparent; }} }}
+  .qsv-dict-viewchart {{ float: right; font-size: 12px; margin: 6px 0 0 12px; color: #2563eb; text-decoration: none; }}
+  .qsv-dark .qsv-dict-viewchart {{ color: #6ea8ff; }}
   .qsv-dict-label {{ font-size: 13px; color: #888888; margin: 2px 0 6px; }}
   .qsv-dict-desc {{ font-size: 13px; line-height: 1.5; margin: 4px 0 8px; }}
   .qsv-dict-desc h4.qsv-dict-mdh, .qsv-dict-dataset-desc h4.qsv-dict-mdh {{ font-size: 13.5px; font-weight: 600; margin: 10px 0 4px; }}
@@ -9467,24 +9653,44 @@ fn render_dict_page_html(
   .qsv-dict-desc li, .qsv-dict-dataset-desc li {{ margin: 1px 0; }}
   .qsv-dict-desc code, .qsv-dict-dataset-desc code {{ font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; padding: 1px 4px; border-radius: 3px; background: rgba(128, 128, 128, 0.16); }}
   .qsv-dict-desc a, .qsv-dict-dataset-desc a {{ color: #2563eb; text-decoration: underline; }}
-  body.qsv-dark .qsv-dict-desc a, body.qsv-dark .qsv-dict-dataset-desc a {{ color: #6ea8ff; }}
+  .qsv-dark .qsv-dict-desc a, .qsv-dark .qsv-dict-dataset-desc a {{ color: #6ea8ff; }}
   dl.qsv-dict-meta {{ display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; font-size: 12px; margin: 4px 0 8px; }}
   dl.qsv-dict-meta dt {{ color: #888888; }}
   dl.qsv-dict-meta dd {{ margin: 0; overflow-wrap: anywhere; }}
   footer.qsv-dict-prov {{ margin-top: 20px; font-size: 11px; color: #888888; }}
   footer.qsv-dict-prov pre {{ white-space: pre-wrap; font-family: inherit; }}
+  /* ---- in-page drawer chrome (adopted into the dashboard head on first open; inert here) ---- */
+  #qsv-dict-drawer {{ position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 42vw); transform: translateX(103%); transition: transform 0.22s ease; z-index: 1100; display: flex; flex-direction: column; background: #ffffff; color: #222222; border-left: 1px solid rgba(128, 128, 128, 0.4); box-shadow: -6px 0 18px rgba(0, 0, 0, 0.18); font-family: {FONT_FAMILY}; }}
+  .qsv-dark #qsv-dict-drawer {{ background: #14171c; color: #d7dce2; }}
+  #qsv-dict-drawer.open {{ transform: none; }}
+  .qsv-dict-drawer-bar {{ flex: none; display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; border-bottom: 1px solid rgba(128, 128, 128, 0.35); font-size: 14px; font-weight: 600; }}
+  .qsv-dict-drawer-btns a {{ color: inherit; text-decoration: none; font-size: 15px; margin-left: 14px; opacity: 0.7; }}
+  .qsv-dict-drawer-btns a:hover {{ opacity: 1; }}
+  .qsv-dict-drawer-content {{ flex: 1; overflow-y: auto; padding: 0 16px 16px; }}
+  .qsv-dict-drawer-content .qsv-dict-wrap {{ max-width: none; }}
+  /* the drawer bar already titles the panel; the page header (h1 + back link) is tab-only */
+  .qsv-dict-embedded .qsv-dict-head {{ display: none; }}
+  body.qsv-dict-open {{ margin-right: min(480px, 42vw); }}
+  /* keep the fixed bottom-right chrome (theme toggle + logo) usable beside the open drawer
+     instead of buried under it */
+  body.qsv-dict-open #qsv-theme-toggle, body.qsv-dict-open #qsv-logo {{ right: calc(min(480px, 42vw) + 12px); }}
+  @media (max-width: 900px) {{ body.qsv-dict-open {{ margin-right: 0; }} body.qsv-dict-open #qsv-theme-toggle, body.qsv-dict-open #qsv-logo {{ right: 12px; }} #qsv-dict-drawer {{ width: min(480px, 94vw); }} }}
 </style>
 </head>
-<body id="qsv-dict-root">
-<div class="qsv-dict-wrap">
+<body id="qsv-dict-root" class="qsv-dict-body">
+<div class="qsv-dict-wrap qsv-dict-doc">
+<header class="qsv-dict-head">
+<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(!o||o.closed){{window.close();}}else{{o.focus();}}return false">&#8592; Back to dashboard</a>
 <h1>Data Dictionary — {title}</h1>
-{intro}{sections}{provenance}</div>
+</header>
+{intro}{toc_nav}{sections}{provenance}</div>
 </body>
-</html>"#
+</html>"##
     )
 }
 
-/// The typed-grid panel-title annotation (both cartesian and geo cells). When the panel carries
+/// The panel-title annotation for typed-grid cells (cartesian and geo) AND `--dict-info` inline
+/// panels (via `inline_panel_title`). When the panel carries
 /// a `--dict-info` description, the title line grows a muted ⓘ, the annotation hover box shows
 /// the description, and `capture_events` + a `qsvdict-` prefixed `name` route its click through
 /// the `plotly_clickannotation` hook to the Data Dictionary tab. No OTHER annotation may set
@@ -10347,6 +10553,7 @@ fn build_timeseries_panel(
     map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
     grain: Option<&str>,
+    dict_icons: Option<&DictData>,
 ) -> CliResult<Option<Panel>> {
     use std::collections::BTreeMap;
 
@@ -10374,6 +10581,9 @@ fn build_timeseries_panel(
     else {
         return Ok(None);
     };
+    // --dict-info: the overview trend anchors its info icon on the date column's entry (the
+    // panel is derived from it, and timestamp entries typically explain timezone/pairing).
+    let dict_info = dict_info_for_field(dict_icons, &stats[date_idx].field);
 
     // y-axis candidate: the first continuous numeric column (preferring Float), excluding map
     // coordinates and any dictionary-tagged non-measure. Near-unique columns are deliberately
@@ -10473,10 +10683,13 @@ fn build_timeseries_panel(
                 points.iter().map(|p| p.2).collect(),
             )
         };
-        return Ok(Some(Panel::new(
-            format!("{y_label} over {date_label}"),
-            PanelKind::TimeSeries { y_label, xs, ys },
-        )));
+        return Ok(Some(
+            Panel::new(
+                format!("{y_label} over {date_label}"),
+                PanelKind::TimeSeries { y_label, xs, ys },
+            )
+            .with_dict_info(dict_info),
+        ));
     }
 
     // Bucketed paths (AggValue / Count): group rows by calendar period. The granularity widens
@@ -10548,27 +10761,33 @@ fn build_timeseries_panel(
                 // counts/amounts are additive -> sum per period
                 ("sum", buckets.values().map(|&(s, _)| s).collect())
             };
-            Ok(Some(Panel::new(
-                format!("{y_label} ({agg_word}) over {date_label}"),
-                PanelKind::TimeSeries {
-                    y_label: format!("{y_label} ({agg_word}/{word})"),
-                    xs,
-                    ys,
-                },
-            )))
+            Ok(Some(
+                Panel::new(
+                    format!("{y_label} ({agg_word}) over {date_label}"),
+                    PanelKind::TimeSeries {
+                        y_label: format!("{y_label} ({agg_word}/{word})"),
+                        xs,
+                        ys,
+                    },
+                )
+                .with_dict_info(dict_info),
+            ))
         },
         // Count: one point per period = number of records (rows with a parseable date).
         _ => {
             let unit = count_unit_from_grain(grain);
             let ys: Vec<f64> = buckets.values().map(|&(_, n)| n as f64).collect();
-            Ok(Some(Panel::new(
-                format!("{unit} over {date_label}"),
-                PanelKind::TimeSeries {
-                    y_label: format!("{unit} per {word}"),
-                    xs,
-                    ys,
-                },
-            )))
+            Ok(Some(
+                Panel::new(
+                    format!("{unit} over {date_label}"),
+                    PanelKind::TimeSeries {
+                        y_label: format!("{unit} per {word}"),
+                        xs,
+                        ys,
+                    },
+                )
+                .with_dict_info(dict_info),
+            ))
         },
     }
 }
@@ -10643,6 +10862,7 @@ fn build_cyclic_panel(
     prefer_dmy: bool,
     map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
+    dict_icons: Option<&DictData>,
 ) -> CliResult<Option<Panel>> {
     use qsv_dateparser::parse_with_preference;
 
@@ -10718,10 +10938,14 @@ fn build_cyclic_panel(
         .filter(|l| !l.is_empty())
         .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
 
-    Ok(Some(Panel::new(
-        format!("Records by {} ({date_label})", axis.word()),
-        PanelKind::CyclicProfile { theta, r },
-    )))
+    Ok(Some(
+        Panel::new(
+            format!("Records by {} ({date_label})", axis.word()),
+            PanelKind::CyclicProfile { theta, r },
+        )
+        // --dict-info: like the trend panel, anchor on the driving date column's entry
+        .with_dict_info(dict_info_for_field(dict_icons, &stats[date_idx].field)),
+    ))
 }
 
 /// Detect the latitude/longitude column index pair by header name + numeric stats type. Shared by
@@ -13013,6 +13237,13 @@ fn build_smart(
     let log_scale = parse_log_scale(&args.flag_log_scale)?;
     let violin_mode = parse_violin_mode(&args.flag_violin)?;
 
+    // `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
+    // per-field lookups below and in the overview-panel builders share `dict_info_for_field`.
+    let dict_icons: Option<&DictData> = (args.flag_dict_info
+        && matches!(out_format, OutFormat::Html))
+    .then_some(dict_data.as_ref())
+    .flatten();
+
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
@@ -13031,21 +13262,8 @@ fn build_smart(
         };
         let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
             .then(|| sem.label.clone());
-        // --dict-info: the column's dictionary description + pre-computed anchor. HTML-gated at
-        // build time so the image-export paths never grow icons. Skips empty descriptions and
-        // a "<name> column" placeholder that just echoes the field name.
-        let dict_info = if args.flag_dict_info && matches!(out_format, OutFormat::Html) {
-            dict_data
-                .as_ref()
-                .and_then(|d| d.rows.get(&s.field))
-                .map(|r| r.description.trim())
-                .filter(|desc| {
-                    !desc.is_empty() && !desc.eq_ignore_ascii_case(&format!("{} column", s.field))
-                })
-                .map(|desc| (dict_anchor_id(&s.field), desc.to_string()))
-        } else {
-            None
-        };
+        // --dict-info: the column's dictionary description + pre-computed anchor.
+        let dict_info = dict_info_for_field(dict_icons, &s.field);
         // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
         if twin_suppress.contains(&idx) {
             skipped.push(name);
@@ -13551,9 +13769,9 @@ fn build_smart(
     // are ordered correctly rather than misparsed/dropped.
     let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     let grain = dict_data.as_ref().and_then(|d| d.grain.as_deref());
-    if let Some(panel) =
-        build_timeseries_panel(args, &stats, prefer_dmy, map_cols, &col_sems, grain)?
-    {
+    if let Some(panel) = build_timeseries_panel(
+        args, &stats, prefer_dmy, map_cols, &col_sems, grain, dict_icons,
+    )? {
         panels.insert(0, panel);
     }
 
@@ -13561,7 +13779,8 @@ fn build_smart(
     // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
     // so it can't be statically exported — build it for HTML only.
     if !out_format.is_image()
-        && let Some(panel) = build_cyclic_panel(args, &stats, prefer_dmy, map_cols, &col_sems)?
+        && let Some(panel) =
+            build_cyclic_panel(args, &stats, prefer_dmy, map_cols, &col_sems, dict_icons)?
     {
         panels.insert(0, panel);
     }
@@ -13570,10 +13789,21 @@ fn build_smart(
     // survive the panel cap. Insert the per-country choropleth first, then the point map at index
     // 0, yielding [map, choropleth, ...] — the point map for spatial detail, the choropleth
     // beside it for the per-jurisdiction aggregate.
-    if let Some(panel) = choropleth_panel {
+    // Under --dict-info, the geographic overview panels anchor their info icon on the driving
+    // coordinate column's dictionary entry (lat first) — the natural place a map reader looks
+    // for the coordinates' provenance and caveats.
+    let geo_dict_info = || {
+        map_cols.and_then(|(la, lo)| {
+            dict_info_for_field(dict_icons, &stats[la].field)
+                .or_else(|| dict_info_for_field(dict_icons, &stats[lo].field))
+        })
+    };
+    if let Some(mut panel) = choropleth_panel {
+        panel.dict_info = geo_dict_info();
         panels.insert(0, panel);
     }
-    if let Some((panel, _)) = map_panel {
+    if let Some((mut panel, _)) = map_panel {
+        panel.dict_info = geo_dict_info();
         panels.insert(0, panel);
     }
 
@@ -14941,6 +15171,41 @@ fn corr_incell_annotations(matrix: &[Vec<f64>], xref: &str, yref: &str) -> Vec<A
     out
 }
 
+/// Apply the panel title to an inline-path layout. Without `--dict-info` this is a plain layout
+/// title. With a dictionary description attached, the title instead becomes a
+/// `panel_title_annotation` (exactly like the typed grid): the title line grows the muted ⓘ,
+/// hovering shows the description in a styled plotly hover box, and the `qsvdict-`-named
+/// `capture_events` click routes to the Data Dictionary drawer via the `plotly_clickannotation`
+/// hook. `extra` carries any annotations the panel already needs (corr in-cell labels), since
+/// `Layout::annotations` replaces rather than appends.
+fn inline_panel_title(
+    layout: Layout,
+    panel: &Panel,
+    themed: bool,
+    extra: Vec<Annotation>,
+) -> Layout {
+    let mut anns = extra;
+    let layout = if panel.dict_info.is_some() {
+        // family-only font (no explicit color) so the annotation inherits the layout font color
+        // and the dark/light toggle's `font.color` relayout keeps flipping it (see `ann_font`).
+        let font = {
+            let f = Font::new().size(16);
+            if themed { f } else { f.family(FONT_FAMILY) }
+        };
+        // y=1 + a small upward shift parks the title in the 48px top-margin band where the
+        // layout title would render; anchored bottom, so a subtitle line grows upward.
+        anns.push(panel_title_annotation(panel, 0.5, 1.0, font).y_shift(8.0));
+        layout
+    } else {
+        layout.title(Title::with_text(panel.display_title()))
+    };
+    if anns.is_empty() {
+        layout
+    } else {
+        layout.annotations(anns)
+    }
+}
+
 /// Build a standalone themed `Plot` for one panel, used as a cell in the inline-div dashboard.
 fn smart_inline_panel_plot(
     panel: &Panel,
@@ -15079,7 +15344,6 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .map(layout_map);
         let mut menus: Vec<UpdateMenu> = Vec::new();
@@ -15098,6 +15362,7 @@ fn smart_inline_panel_plot(
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15186,7 +15451,6 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
         if !themed {
@@ -15194,6 +15458,7 @@ fn smart_inline_panel_plot(
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15258,7 +15523,6 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .update_menus(vec![basemap_labels_toggle_menu(
                 labeled_style,
@@ -15270,6 +15534,7 @@ fn smart_inline_panel_plot(
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15333,7 +15598,6 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .geo(geo);
         if !themed {
@@ -15341,6 +15605,7 @@ fn smart_inline_panel_plot(
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15374,7 +15639,6 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
             .scene(scene);
         if !themed {
@@ -15382,6 +15646,7 @@ fn smart_inline_panel_plot(
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15404,13 +15669,13 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15431,13 +15696,13 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .title(Title::with_text(panel.display_title()))
             .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
         }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
         plot.set_configuration(Configuration::new().responsive(true));
         return plot;
@@ -15496,7 +15761,6 @@ fn smart_inline_panel_plot(
     let mut layout = Layout::new()
         .show_legend(false)
         .height(row_height)
-        .title(Title::with_text(panel.display_title()))
         .margin(
             Margin::new()
                 .top(48)
@@ -15514,13 +15778,17 @@ fn smart_inline_panel_plot(
             .plot_background_color(PAPER_BG);
     }
 
-    if let PanelKind::CorrHeatmap { matrix, .. } | PanelKind::AssocHeatmap { matrix, .. } =
-        &panel.kind
+    // in-cell `r` labels ride along as `extra` — `Layout::annotations` replaces rather than
+    // appends, and `inline_panel_title` may add the clickable title annotation to the same set.
+    let extra = if let PanelKind::CorrHeatmap { matrix, .. }
+    | PanelKind::AssocHeatmap { matrix, .. } = &panel.kind
         && matrix.len() <= CORR_INCELL_MAX_N
     {
-        layout = layout.annotations(corr_incell_annotations(matrix, "x", "y"));
-    }
-
+        corr_incell_annotations(matrix, "x", "y")
+    } else {
+        Vec::new()
+    };
+    let layout = inline_panel_title(layout, panel, themed, extra);
     plot.set_layout(apply_theme(layout, theme));
     plot.set_configuration(Configuration::new().responsive(true));
     plot
@@ -15547,22 +15815,20 @@ fn render_smart_inline(
         let color = PALETTE[n % PALETTE.len()];
         let plot = smart_inline_panel_plot(panel, color, freq, hist, outliers, theme, log_scale);
         let div_id = format!("qsv-viz-panel-{n}");
-        // leading overview panels span the full page width (their own grid row).
-        if is_overview_panel(&panel.kind) {
-            cells.push_str("    <div class=\"qsv-viz-cell full-width\">\n");
+        // leading overview panels span the full page width (their own grid row). Under
+        // `--dict-info` the cell carries its dictionary anchor as `data-qsv-dict` — the jump
+        // target for the dictionary page's "View chart" reverse links (the info icon itself
+        // rides on the panel's plotly title annotation, see `inline_panel_title`).
+        let fw = if is_overview_panel(&panel.kind) {
+            " full-width"
         } else {
-            cells.push_str("    <div class=\"qsv-viz-cell\">\n");
-        }
-        // `--dict-info` icon: a plain HTML overlay pinned to the cell's top-LEFT corner (the
-        // top-right belongs to plotly's hover-revealed modebar), so this path needs no plotly
-        // API at all. The native `title` tooltip is the hover box; clicking jumps to the
-        // column's entry in the Data Dictionary tab.
-        if let Some((anchor, desc)) = &panel.dict_info {
-            cells.push_str(&format!(
-                "      <a class=\"qsv-viz-dict-ico\" href=\"#\" title=\"{}\" onclick=\"return \
-                 qsvOpenDict('{anchor}')\">&#9432;</a>\n",
-                html_escape(desc)
-            ));
+            ""
+        };
+        match &panel.dict_info {
+            Some((anchor, _)) => cells.push_str(&format!(
+                "    <div class=\"qsv-viz-cell{fw}\" data-qsv-dict=\"{anchor}\">\n"
+            )),
+            None => cells.push_str(&format!("    <div class=\"qsv-viz-cell{fw}\">\n")),
         }
         // wrap the plot in a fixed-height box so plotly's responsive `height:100%` div resolves to
         // a concrete height instead of expanding to fill the whole cell (which would otherwise

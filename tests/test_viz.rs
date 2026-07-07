@@ -633,7 +633,7 @@ fn viz_smart_grouped_violin_off_suppressed() {
 fn viz_smart_grouped_violin_max_points_env_override() {
     let wrk = Workdir::new("viz_smart_grouped_violin_max_points_env_override");
     // 60k rows across two categories (30k each). At the default budget the violin sample target is
-    // 10k (MAX_SMART_POINTS/5), so each category is strided down (~5k kept); raising
+    // 30k (MAX_SMART_POINTS/5 = 150k/5), so each category is strided down (~15k kept); raising
     // QSV_VIZ_MAX_POINTS lifts the target above the row count, so all values are kept. The count of
     // a category label in the violin's x-array reflects how many of its points were embedded.
     let mut rows = String::from("grp,val\n");
@@ -660,11 +660,11 @@ fn viz_smart_grouped_violin_max_points_env_override() {
             .count()
     };
 
-    // default: strided to ~5k per category; raised budget keeps all 30k
+    // default: strided to ~15k per category; raised budget keeps all 30k
     let default_east = count_east(None);
     let raised_east = count_east(Some("1000000"));
     assert!(
-        default_east < 10_000,
+        default_east < 20_000,
         "default budget should stride-sample (got {default_east} east points)"
     );
     assert!(
@@ -750,11 +750,13 @@ fn viz_smart_dense_grid_demotes_all_points_to_outliers() {
 #[test]
 fn viz_smart_violin_sampled_above_exact_threshold() {
     let wrk = Workdir::new("viz_smart_violin_sampled_above_exact_threshold");
-    // 12,000 non-null values: past the 10k exact-data threshold, the violin is drawn from
-    // a deterministic stride sample — no point overlay (a sample misses the true extremes)
-    // and a "(sampled)" title cue. Triangular sum keeps it unimodal (violin, not histogram);
-    // the +1000 offset keeps the max/min ratio low so `--log-scale auto` stays linear
-    // (a would-log panel correctly declines the violin).
+    // 12,000 non-null values against a pinned 10k violin budget (QSV_VIZ_MAX_POINTS=50000/5):
+    // past the exact-data threshold, the violin is drawn from a deterministic stride sample —
+    // no point overlay (a sample misses the true extremes) and a "(sampled)" title cue. The
+    // budget is pinned so the fixture stays small under the larger default (150k/5 = 30k).
+    // Triangular sum keeps it unimodal (violin, not histogram); the +1000 offset keeps the
+    // max/min ratio low so `--log-scale auto` stays linear (a would-log panel correctly
+    // declines the violin).
     let mut rows = String::from("id,measure\n");
     for i in 1..=12_000_u32 {
         rows.push_str(&format!("{i},{}\n", 1000 + (i % 200) + ((i * 3) % 231)));
@@ -764,6 +766,7 @@ fn viz_smart_violin_sampled_above_exact_threshold() {
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "big.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_MAX_POINTS", "50000");
     wrk.assert_success(&mut cmd);
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(html.contains(r#""type":"violin""#));
@@ -3225,6 +3228,8 @@ fn viz_smart_map_clusters_dense_markers() {
 
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "dense.csv"]);
+    // keep the map figure as scrapable plain JSON (the default gzip-embeds it)
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -3247,6 +3252,8 @@ fn viz_smart_map_heatmap_opt_in_suppresses_cluster() {
 
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "dense.csv", "--heatmap-density", "500"]);
+    // keep the map figure as scrapable plain JSON (the default gzip-embeds it)
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -3283,6 +3290,8 @@ fn viz_smart_map_bubble_sizes_suppress_cluster() {
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "--smarter", "dense.csv", "--dictionary"])
         .arg(wrk.path("dict.schema.json"));
+    // keep the map figure as scrapable plain JSON (the default gzip-embeds it)
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -3309,6 +3318,8 @@ fn viz_smart_map_cluster_off_draws_plain_markers() {
 
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "dense.csv", "--cluster", "off"]);
+    // keep the map figure as scrapable plain JSON (the default gzip-embeds it)
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -3354,6 +3365,8 @@ fn viz_smart_map_cluster_toggle_menu_present() {
     // cluster-eligible (default): a single toggle button targeting trace 0 via args/args2 restyle.
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "dense.csv"]);
+    // keep the map figure as scrapable plain JSON (the default gzip-embeds it)
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
@@ -3547,10 +3560,9 @@ fn viz_smart_geo_hover_has_identifier() {
 
     let html = String::from_utf8_lossy(&out.stdout);
     assert!(
-        html.contains(r#""hovertext""#),
-        "map points should carry pre-rendered hover text"
+        html.contains(r#""hovertemplate":"%{text}%{lat:.4f}, %{lon:.4f}"#),
+        "map points should carry per-point text + the trace-level coordinate hovertemplate"
     );
-    assert!(html.contains(r#""hoverinfo":"text""#));
     // the identifier value is the `place` column (near-unique String)
     assert!(html.contains("Tokyo"), "hover should name the point");
 }
@@ -3586,7 +3598,7 @@ Accra,5.56,-0.20,20,Africa
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""hovertext""#));
+    assert!(html.contains(r#""hovertemplate":"%{text}%{lat:.4f}, %{lon:.4f}"#));
     // the statistically-chosen measure and category appear as labeled hover lines
     assert!(
         html.contains("depth_km: "),
@@ -3622,7 +3634,7 @@ fn viz_smart_smarter_no_identifier_keeps_measure_as_extra() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""hovertext""#));
+    assert!(html.contains(r#""hovertemplate":"%{text}%{lat:.4f}, %{lon:.4f}"#));
     // the measure appears as a labeled extra line; before the fix it was the bold "<b>22</b>" id,
     // so this label line would be absent.
     assert!(
@@ -3663,7 +3675,7 @@ fn viz_smart_smarter_dictionary_combination() {
     assert!(out.status.success());
 
     let html = String::from_utf8_lossy(&out.stdout);
-    assert!(html.contains(r#""hovertext""#));
+    assert!(html.contains(r#""hovertemplate":"%{text}%{lat:.4f}, %{lon:.4f}"#));
     // the dictionary friendly label titles the measure's hover line
     assert!(
         html.contains("Magnitude: "),
@@ -3698,8 +3710,8 @@ fn viz_smart_geo_hover_geocoded_identifier() {
     // a global lat/lon spread renders the ScatterGeo world overview in every build
     assert!(html.contains(r#""type":"scattergeo""#));
     // with no identifier column, hover text only appears when reverse-geocoding resolved a place
-    if html.contains(r#""hovertext""#) {
-        assert!(html.contains(r#""hoverinfo":"text""#));
+    if html.contains(r#""hovertemplate":"%{text}%{lat:.4f}, %{lon:.4f}"#) {
+        assert!(html.contains(r#""text":["#));
     }
 }
 
@@ -5507,6 +5519,8 @@ fn viz_smart_embeds_plotly_once_without_mathjax() {
     // smart dashboards embed plotly.js exactly once, and DROP the ~2MB tex-svg MathJax bundle
     // that plotly's offline_js_sources() also embeds (dashboards render plain-text labels, never
     // LaTeX). Checked on both HTML paths: the ≤8-panel typed grid and the >8-panel inline grid.
+    // Run uncompressed — the version-banner/CommonHTML probes need the plaintext bundle; the
+    // default gzip-embedded form is covered by viz_smart_compressed_plotly_bundle.
 
     // --- ≤8-panel typed grid ---
     let wrk = Workdir::new("viz_smart_embeds_plotly_once_without_mathjax");
@@ -5514,6 +5528,7 @@ fn viz_smart_embeds_plotly_once_without_mathjax() {
     let grid_html = wrk.path("grid.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "small.csv", "-o", &grid_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     wrk.assert_success(&mut cmd);
     let grid = wrk.read_to_string("grid.html").unwrap();
     // plotly.js embedded exactly once (its version banner) ...
@@ -5535,12 +5550,81 @@ fn viz_smart_embeds_plotly_once_without_mathjax() {
     let inline_html = wrk.path("wide.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "wide.csv", "-o", &inline_html]);
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
     wrk.assert_success(&mut cmd);
     let inline = wrk.read_to_string("wide.html").unwrap();
     // many panels, but still ONE embedded plotly.js bundle (panels reuse the shared global)
     assert!(inline.matches("Plotly.newPlot").count() > 8);
     assert_eq!(inline.matches("plotly.js v").count(), 1);
     assert!(!inline.contains("CommonHTML"));
+}
+
+/// Inflate a `<script id=".." type="application/gzip-b64">` payload embedded in viz HTML back to
+/// its plaintext (plotly.js source or figure JSON) — the test-side mirror of the in-browser
+/// DecompressionStream bootstrap.
+fn inflate_gz_payload(html: &str, id: &str) -> String {
+    use std::io::Read;
+
+    let marker = format!("id=\"{id}\" type=\"application/gzip-b64\">");
+    let start = html.find(&marker).expect("gzip payload tag present") + marker.len();
+    let end = start + html[start..].find("</script>").expect("payload close tag");
+    let bytes = base64_simd::STANDARD
+        .decode_to_vec(html[start..end].trim())
+        .expect("valid base64 payload");
+    let mut out = String::new();
+    flate2::read::GzDecoder::new(&bytes[..])
+        .read_to_string(&mut out)
+        .expect("valid gzip payload");
+    out
+}
+
+// By default the plotly.js bundle embeds as ONE gzip+base64 payload plus the queue-stub and
+// DecompressionStream bootstrap — ~2.9 MB smaller than the plaintext bundle — and inflates back
+// to the exact bundle (version banner present, MathJax still stripped).
+#[test]
+fn viz_smart_compressed_plotly_bundle() {
+    let wrk = Workdir::new("viz_smart_compressed_plotly_bundle");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "small.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // exactly one compressed bundle payload; no plaintext bundle alongside it
+    assert_eq!(html.matches("id=\"qsv-plotly-gz\"").count(), 1);
+    assert_eq!(html.matches("plotly.js v").count(), 0);
+    // the stub queues panel newPlot calls until the bootstrap installs the real global
+    assert!(html.contains("window.__qsvPlotQ"));
+    assert!(html.contains("DecompressionStream"));
+    // unsupported-browser guidance names the escape hatch
+    assert!(html.contains("QSV_VIZ_NO_COMPRESS"));
+    // the payload inflates back to the plotly.js bundle: banner present, MathJax still stripped
+    let bundle = inflate_gz_payload(&html, "qsv-plotly-gz");
+    assert_eq!(bundle.matches("plotly.js v").count(), 1);
+    assert!(!bundle.contains("CommonHTML"));
+}
+
+// A large map panel's figure JSON embeds as a gzip+base64 payload rendered via qsvNewPlotGz; the
+// inflated figure carries the scattermap trace with base64 float32 typed-array coordinates
+// (bdata) and the baked cluster config.
+#[test]
+fn viz_smart_compressed_map_figure_payload() {
+    let wrk = Workdir::new("viz_smart_compressed_map_figure_payload");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the map panel is the leading full-width panel (qsv-viz-panel-0): payload + deferred render
+    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
+    assert!(figure.contains(r#""type":"scattermap""#));
+    assert!(figure.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#));
+    // coordinates ride as little-endian float32 typed arrays, not decimal-text JSON
+    assert!(figure.contains(r#""lat":{"dtype":"float32","bdata":""#));
 }
 
 #[test]
@@ -7505,9 +7589,9 @@ fn viz_smart_map_has_zoom_autofit() {
     assert!(html.contains("Math.log2"));
     // Core/Full extent buttons re-fit to the current container size via the buttonclicked handler.
     assert!(html.contains("plotly_buttonclicked"));
-    // theme toggle restyles a choroplethmap via newPlot, not relayout (the fork's relayout blanks
-    // it).
-    assert!(html.contains("hasChoropleth"));
+    // theme toggle restyles MapLibre map traces via newPlot, not relayout (the fork's relayout
+    // blanks them).
+    assert!(html.contains("hasMapLibre"));
     // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x352).
     assert!(html.contains("window.__qsvMapAssumedW=960"));
     assert!(html.contains("window.__qsvMapAssumedH=352"));

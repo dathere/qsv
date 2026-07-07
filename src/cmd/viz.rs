@@ -15015,11 +15015,11 @@ fn build_smart(
                 .as_ref()
                 .and_then(|d| d.dataset_description.as_deref())
         {
-            let first_para = desc.trim().split("\n\n").next().unwrap_or("").trim();
+            let first_para = first_description_paragraph(desc);
             if !first_para.is_empty() {
                 rows.push_str(&format!(
                     "<tr><td class=\"qsv-viz-meta-k\">Description:</td><td>{}</td></tr>\n",
-                    html_escape(first_para)
+                    html_escape(&first_para)
                 ));
             }
         }
@@ -16963,6 +16963,59 @@ fn html_escape(s: &str) -> String {
         .replace('"', "&quot;")
 }
 
+/// Extract the first meaningful paragraph from a Markdown dataset description for
+/// the top-of-dashboard metadata cell.
+///
+/// LLM-generated data dictionaries often prepend a Markdown heading (e.g. an
+/// ATX `# Description` or a bold-only `**Description**` line) before the actual
+/// summary. A naive `split("\n\n").next()` would surface that heading verbatim,
+/// so we skip leading blank/heading-only lines and return the first block of
+/// consecutive content lines, joined with spaces (equivalent to the whitespace
+/// collapse an HTML table cell applies anyway). Returns an empty string when the
+/// description has no content lines.
+fn first_description_paragraph(desc: &str) -> String {
+    let mut para: Vec<&str> = Vec::new();
+    for line in desc.lines() {
+        let trimmed = line.trim();
+        if para.is_empty() {
+            // still skipping leading blank/heading-only lines
+            if trimmed.is_empty() || is_markdown_heading_line(trimmed) {
+                continue;
+            }
+            para.push(trimmed);
+        } else if trimmed.is_empty() {
+            // blank line ends the first paragraph
+            break;
+        } else {
+            para.push(trimmed);
+        }
+    }
+    para.join(" ")
+}
+
+/// Whether a single (already-trimmed) line is a Markdown heading that should be
+/// skipped when picking the first description paragraph: an ATX heading (`#`,
+/// `##`, …) or a line whose entire content is bold/emphasized (`**Heading**`,
+/// `__Heading__`, `*Heading*`, `_Heading_`). Setext underlines and horizontal
+/// rules are intentionally not treated as headings to avoid false positives.
+fn is_markdown_heading_line(line: &str) -> bool {
+    if line.starts_with('#') {
+        return true;
+    }
+    // emphasis-only line: wholly wrapped in a single emphasis marker with no
+    // further occurrence of that marker inside. Check the two-char markers first
+    // so `**Heading**` matches on `**` rather than the `*` fallback.
+    for marker in ["**", "__", "*", "_"] {
+        if line.len() > 2 * marker.len() && line.starts_with(marker) && line.ends_with(marker) {
+            let inner = &line[marker.len()..line.len() - marker.len()];
+            if !inner.is_empty() && !inner.contains(marker) {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// Try to satisfy the bar-panel frequency counts from a pre-existing `frequency`
 /// JSONL cache (`qsv frequency --frequency-jsonl`), avoiding the extra full-data
 /// pass `count_values` does. Returns `None` — so the caller falls back to
@@ -18163,6 +18216,42 @@ mod tests {
             "wide-short panel should frame a wide extent tighter than a tall-narrow one \
              (zoom_wide={zoom_wide}, zoom_tall={zoom_tall})"
         );
+    }
+
+    #[test]
+    fn first_description_paragraph_skips_markdown_heading() {
+        // bold-only heading line (the LLM-generated dictionary case, roborev #3502)
+        assert_eq!(
+            first_description_paragraph("**Description**\n\nThe real summary sentence."),
+            "The real summary sentence."
+        );
+        // ATX heading
+        assert_eq!(
+            first_description_paragraph("# Description\n\nThe real summary sentence."),
+            "The real summary sentence."
+        );
+        // no heading: first paragraph returned unchanged (backward compatible)
+        assert_eq!(
+            first_description_paragraph(
+                "First paragraph of the summary.\n\nSecond paragraph is dropped."
+            ),
+            "First paragraph of the summary."
+        );
+        // multi-line first paragraph is joined with spaces; only the first paragraph is kept
+        assert_eq!(
+            first_description_paragraph(
+                "**Description**\n\nLine one.\nLine two.\n\n**Notable**\n\n- item"
+            ),
+            "Line one. Line two."
+        );
+        // leading blank lines and a heading combined
+        assert_eq!(
+            first_description_paragraph("\n\n**Description**\n\n\nActual text."),
+            "Actual text."
+        );
+        // empty / heading-only descriptions yield an empty string
+        assert_eq!(first_description_paragraph("**Description**"), "");
+        assert_eq!(first_description_paragraph("   "), "");
     }
 
     #[cfg(feature = "geocode")]

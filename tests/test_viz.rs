@@ -2633,7 +2633,7 @@ fn viz_smart_metadata_description_only_with_dict_info() {
         r#"{
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
-          "description": "First paragraph of the summary.\n\nSecond paragraph is dropped.",
+          "description": "**Description**\n\nFirst paragraph of the summary.\n\nSecond paragraph is dropped.",
           "properties": {
             "region": { "type": "string", "title": "Region",
               "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "category.status" } },

@@ -8494,13 +8494,12 @@ checksum = "703d5c7ef118737c72f1af64ad2f6f8c5e1921f818cdcb97b8fe6fc69bf66214"
 
 [[package]]
 name = "simd-json"
-version = "0.17.0"
+version = "0.17.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4255126f310d2ba20048db6321c81ab376f6a6735608bf11f0785c41f01f64e3"
+checksum = "a06b0b2b365490dff3432ef23606d99e8162d35d0af53a64c41e6af35ad72223"
 dependencies = [
  "ahash 0.8.12",
  "halfbrown",
- "once_cell",
  "ref-cast",
  "serde",
  "serde_json",

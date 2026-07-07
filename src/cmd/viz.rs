@@ -458,7 +458,9 @@ smart options:
                            description; clicking opens a human-friendly rendering of the
                            dictionary in a side drawer NEXT TO the plots (embedded in the
                            dashboard file - no extra file is written), scrolled to and
-                           highlighting that column's entry. The dictionary page carries a
+                           highlighting that column's entry. The drawer is open by default
+                           on load and can be dismissed with its close button or Esc. The
+                           dictionary page carries a
                            role-tinted table of contents and per-column "View chart" links
                            back to the panels. The drawer's popout button opens the same
                            document in its own browser tab instead (needs a browser that
@@ -9520,6 +9522,16 @@ document.addEventListener("keydown", function (e) {
   // silently drops gd.on listeners; the toggle clears gd.__qsvDictHooked first).
   window.__qsvDictRehook = hook;
   hook();
+})();
+// Open the drawer by default so the Data Dictionary is visible beside the plots on load.
+// Build it directly (rather than via qsvOpenDict) so a drawer that can't be built never
+// auto-pops a browser tab; the plots read the already-narrowed body width on first render.
+(function () {
+  var drawer = qsvDictDrawer();
+  if (!drawer) return;
+  document.body.classList.add("qsv-dict-open");
+  drawer.classList.add("open");
+  window.dispatchEvent(new Event("resize"));
 })();
 </script>"##;
 

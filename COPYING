@@ -1,5 +1,5 @@
-This project is dual-licensed under the Unlicense and MIT licenses.
+This project is licensed under the MIT license.
 
-You may use this code under the terms of either license.
+qsv was previously dual-licensed under the Unlicense and MIT licenses. But to promote good open source citizenship; to limit the "[Free Rider problem](https://en.wikipedia.org/wiki/Free-rider_problem)" and to simplify licensing in enterprise deployments; Unlicense has been removed as of version 22.0.0, and the project is now solely under the MIT License.
 
-For environments requiring a single specified license, qsv may be used under the MIT License alone.
+Versions of qsv prior to 22.0.0 are still available under the [Unlicense](https://unlicense.org/).

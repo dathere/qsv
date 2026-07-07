@@ -424,6 +424,9 @@ actix-web = { version = "4.13", default-features = false, features = [
     "compress-gzip",
 ] }
 assert-json-diff = "2.0"
+# for inflating the gzip+base64 payloads viz HTML embeds (see tests/test_viz.rs inflate helpers)
+base64-simd = "0.8"
+flate2 = "1"
 newline-converter = "0.3"
 
 # disable these dev dependencies for testing the `to` command

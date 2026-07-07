@@ -47,7 +47,7 @@
 <table class="qsv-viz-meta">
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 09:32 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 12:32 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -444,6 +444,14 @@
       var nowDark = !document.body.classList.contains("qsv-dark");
       try { localStorage.setItem("qsv-viz-theme", nowDark ? "dark" : "light"); } catch (e) {}
       apply(nowDark);
+    });
+    // on a compressed page, panels render only after the async plotly.js/figure inflation —
+    // AFTER the apply(dark) above ran (it only reaches already-rendered .js-plotly-plot divs).
+    // Re-apply on the bootstrap's ready event, debounced since every completed panel fires it.
+    var reT;
+    document.addEventListener("qsv:plotly-ready", function () {
+      clearTimeout(reT);
+      reT = setTimeout(function () { apply(document.body.classList.contains("qsv-dark")); }, 60);
     });
   }
   if (document.readyState === "loading")

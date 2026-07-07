@@ -741,12 +741,16 @@ def extract_inline_panels(html):
 
 
 def run_html(qsv, args):
-    """Run `qsv viz <args>` and return the self-contained HTML output as a string."""
+    """Run `qsv viz <args>` and return the self-contained HTML output as a string.
+    QSV_VIZ_NO_COMPRESS keeps the output in the fully readable plain form: this script scrapes
+    figure JSON out of the HTML, and `cdnify` swaps the plaintext plotly bundle for the CDN tag
+    (the gallery never ships the gzip+DecompressionStream payloads viz emits by default)."""
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
         subprocess.run([qsv, "viz", *args, "-o", out], cwd=VIZ_DIR,
-                       check=True, capture_output=True, text=True)
+                       check=True, capture_output=True, text=True,
+                       env={**os.environ, "QSV_VIZ_NO_COMPRESS": "1"})
         with open(out, encoding="utf-8") as fh:
             return fh.read()
     finally:

@@ -2482,26 +2482,34 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
         } else {
             vec![1.0_f64; lats.len()]
         };
-        // per-point hover: coordinates, the --text label (if any), and the labeled weight when
-        // --color/--size supplies one. Density traces honor only hovertemplate (not hovertext).
-        let hover: Vec<String> = (0..lats.len())
-            .map(|i| {
-                let mut parts: Vec<String> = Vec::new();
-                if let Some(t) = texts.get(i) {
-                    parts.push(t.clone());
-                }
-                parts.push(format!("{:.5}, {:.5}", lats[i], lons[i]));
-                if let Some(label) = &weight_label {
-                    parts.push(format!("{}: {}", escape_hover(label), fmt_measure(z[i])));
-                }
-                density_hover_template(&parts.join("<br>"))
-            })
-            .collect();
-        plot.add_trace(
-            DensityMap::new(lats, lons, z)
-                .radius(MAP_DENSITY_RADIUS_PX)
-                .hover_template_array(hover),
-        );
+        // per-point hover via ONE trace-level template: the optional --text label rides in the
+        // `text` array, the coordinates are formatted by plotly from the lat/lon data arrays, and
+        // the labeled weight value rides in `customdata` (pre-rendered — `fmt_measure`'s grouped/
+        // trimmed output has no d3-format equivalent). Density traces honor only hovertemplate
+        // (not hovertext), and a single template embeds the markup once instead of per point.
+        let mut template = String::new();
+        if !texts.is_empty() {
+            template.push_str("%{text}<br>");
+        }
+        template.push_str("%{lat:.5f}, %{lon:.5f}");
+        let weight_values: Option<Vec<String>> = weight_label.as_ref().map(|label| {
+            template.push_str(&format!(
+                "<br>{}: %{{customdata}}",
+                escape_template_pct(&escape_hover(label))
+            ));
+            z.iter().map(|&v| fmt_measure(v)).collect()
+        });
+        template.push_str("<extra></extra>");
+        let mut dens = DensityMap::new(lats, lons, z)
+            .radius(MAP_DENSITY_RADIUS_PX)
+            .hover_template(template);
+        if !texts.is_empty() {
+            dens = dens.text_array(texts);
+        }
+        if let Some(weight_values) = weight_values {
+            dens = dens.custom_data(weight_values);
+        }
+        plot.add_trace(dens);
     } else if series_idx.is_some() {
         for trace in map_series_traces(lats, lons, series, texts) {
             plot.add_trace(trace);
@@ -3167,13 +3175,36 @@ fn escape_hover(s: &str) -> String {
         .replace('>', "&gt;")
 }
 
-/// Wrap a pre-rendered hover string as a density-trace `hovertemplate` entry. Density traces
-/// (`DensityMap`) honors ONLY `hovertemplate`, not `hovertext` — so per-point hover
-/// on a heatmap must go through this. A literal `%` would be misparsed as a `%{...}` template
-/// token, so it's doubled; `<extra></extra>` suppresses the trace-name box. Feed already
-/// `escape_hover`-ed text (this only adds the `%`-escaping and the extra tag).
-fn density_hover_template(text: &str) -> String {
-    format!("{}<extra></extra>", text.replace('%', "%%"))
+/// Escape a literal `%` for embedding inside a plotly `hovertemplate` (a bare `%` would be
+/// misparsed as the start of a `%{...}` template token, so it's doubled). Feed already
+/// `escape_hover`-ed text; per-point values referenced via `%{text}`/`%{customdata}` are data,
+/// not template, and need no such escaping.
+fn escape_template_pct(text: &str) -> String {
+    text.replace('%', "%%")
+}
+
+/// Trace-level hovertemplate for smart map/geo point traces: the per-point `text` payload (see
+/// `map_hover_text_values`) followed by the point's coordinates, which plotly formats from the
+/// lat/lon data arrays themselves. Factoring the markup and coordinate line into ONE trace-level
+/// template — instead of baking them into every embedded point's hover string — trims ~25 bytes
+/// per point from the emitted HTML. `<extra></extra>` suppresses the trace-name box.
+const MAP_HOVER_TEMPLATE: &str = "%{text}%{lat:.4f}, %{lon:.4f}<extra></extra>";
+
+/// Per-point `text` values for `MAP_HOVER_TEMPLATE`: each non-empty hover string gets a trailing
+/// `<br>` so the template's coordinate line lands on its own row, while a point with no
+/// contributed content collapses to a bare coordinate hover with no leading blank line —
+/// hovertemplate has no conditionals, so the separator must live in the data.
+fn map_hover_text_values(hover: &[String]) -> Vec<String> {
+    hover
+        .iter()
+        .map(|t| {
+            if t.is_empty() {
+                String::new()
+            } else {
+                format!("{t}<br>")
+            }
+        })
+        .collect()
 }
 
 /// Format a measure value for a hover label: a whole number prints without a decimal point
@@ -3267,8 +3298,8 @@ fn choropleth_hover_text(
 
 /// Build the dataset portion of a map point's hover (no coordinates, no geocoded place): a bold
 /// identifier line (when `id_value` is non-empty), then one `label: value` line per non-empty
-/// `extra` field. Every value/label is HTML-escaped. The trailing `lat, lon` line and any
-/// reverse-geocoded place are added by `assemble_map_hover`.
+/// `extra` field. Every value/label is HTML-escaped. Any reverse-geocoded place is added by
+/// `assemble_map_hover`; the coordinate line comes from `MAP_HOVER_TEMPLATE` at render time.
 fn format_map_dataset_line(id_value: Option<&str>, extra: &[(String, String)]) -> String {
     let mut lines: Vec<String> = Vec::with_capacity(extra.len() + 1);
     if let Some(id) = id_value.filter(|s| !s.is_empty()) {
@@ -3282,20 +3313,15 @@ fn format_map_dataset_line(id_value: Option<&str>, extra: &[(String, String)]) -
     lines.join("<br>")
 }
 
-/// Assemble a map point's full hover string from its dataset line (see `format_map_dataset_line`),
-/// the reverse-geocoded place (`geo_place`, already gap-filtered + escaped; empty when none), and
-/// its coordinates. When the dataset has no identifier column (`has_id` is false) the geocoded
-/// place serves as the bold identifier; otherwise it's an additional location-context line. The
-/// trailing line is always `lat, lon` (4 dp). Attached via `.hover_text_array(..)` +
-/// `HoverInfo::Text`.
-fn assemble_map_hover(
-    dataset_line: &str,
-    has_id: bool,
-    geo_place: &str,
-    lat: f64,
-    lon: f64,
-) -> String {
-    let mut lines: Vec<String> = Vec::with_capacity(3);
+/// Assemble a map point's hover string from its dataset line (see `format_map_dataset_line`) and
+/// the reverse-geocoded place (`geo_place`, already gap-filtered + escaped; empty when none).
+/// When the dataset has no identifier column (`has_id` is false) the geocoded place serves as the
+/// bold identifier; otherwise it's an additional location-context line. No coordinate line —
+/// `MAP_HOVER_TEMPLATE` appends the coordinates at render time from the lat/lon data arrays, so
+/// they aren't duplicated into every embedded hover string. Attached via `.text_array(..)` +
+/// `.hover_template(MAP_HOVER_TEMPLATE)` (through `map_hover_text_values`).
+fn assemble_map_hover(dataset_line: &str, has_id: bool, geo_place: &str) -> String {
+    let mut lines: Vec<String> = Vec::with_capacity(2);
     if !has_id && !geo_place.is_empty() {
         // no identifier column: the reverse-geocoded place becomes the (bold) identifier
         lines.push(format!("<b>{geo_place}</b>"));
@@ -3310,7 +3336,6 @@ fn assemble_map_hover(
             lines.push(geo_place.to_string());
         }
     }
-    lines.push(format!("{lat:.4}, {lon:.4}"));
     lines.join("<br>")
 }
 
@@ -5929,6 +5954,14 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
       try { localStorage.setItem("qsv-viz-theme", nowDark ? "dark" : "light"); } catch (e) {}
       apply(nowDark);
     });
+    // on a compressed page, panels render only after the async plotly.js/figure inflation —
+    // AFTER the apply(dark) above ran (it only reaches already-rendered .js-plotly-plot divs).
+    // Re-apply on the bootstrap's ready event, debounced since every completed panel fires it.
+    var reT;
+    document.addEventListener("qsv:plotly-ready", function () {
+      clearTimeout(reT);
+      reT = setTimeout(function () { apply(document.body.classList.contains("qsv-dark")); }, 60);
+    });
   }
   if (document.readyState === "loading")
     document.addEventListener("DOMContentLoaded", function () { setTimeout(init, 0); });
@@ -6250,7 +6283,7 @@ fn smart_html_page(
     dict_page: Option<&str>,
     meta_table: Option<&str>,
 ) -> String {
-    let js = plotly_js_only();
+    let js = plotly_js_block();
     let meta_table = meta_table.unwrap_or("");
     let title = html_escape(title_text);
     let ToggleChrome {
@@ -6377,6 +6410,143 @@ fn plotly_js_only() -> String {
     full
 }
 
+/// Whether generated HTML embeds compressed payloads: the plotly.js bundle and large map-panel
+/// figure JSON as gzip+base64 (inflated in-browser via the native `DecompressionStream` API),
+/// and map/geo per-point arrays as base64 float32 typed arrays. On by default — it cuts the
+/// fixed plotly.js cost from ~4.8 MB to ~1.9 MB per file and shrinks map payloads 3-4x.
+/// `QSV_VIZ_NO_COMPRESS=1` restores fully readable plain-text HTML: needed for pre-2023 browsers
+/// (no DecompressionStream) and for strict-CSP embeds (the bootstrap installs plotly.js via
+/// `eval`, which requires `unsafe-eval`), and handy when grepping/debugging the emitted HTML.
+fn viz_compress() -> bool {
+    !util::get_envvar_flag("QSV_VIZ_NO_COMPRESS")
+}
+
+/// gzip (at `level`) + standard-base64 encode, for `<script type="application/gzip-b64">`
+/// payloads. Base64's alphabet has no `<`, so the payload can never contain `</script>` and
+/// embeds into HTML with no further escaping. Returns an empty string on failure (callers fall
+/// back to the uncompressed form).
+fn gzip_b64(data: &[u8], level: flate2::Compression) -> String {
+    use std::io::Write;
+
+    let mut enc = flate2::write::GzEncoder::new(Vec::with_capacity(data.len() / 3), level);
+    if enc.write_all(data).is_err() {
+        return String::new();
+    }
+    match enc.finish() {
+        Ok(bytes) => base64_simd::STANDARD.encode_to_string(&bytes),
+        Err(_) => String::new(),
+    }
+}
+
+/// The inner source of a single `<script ...>...</script>` tag (`None` if the shape is off).
+fn script_tag_inner(tag: &str) -> Option<&str> {
+    let start = tag.find('>')? + 1;
+    let end = tag.rfind("</script>")?;
+    (start <= end).then(|| &tag[start..end])
+}
+
+/// The plotly.js bundle gzipped at max compression + base64 (~4.84 MB -> ~1.95 MB), computed
+/// once per process (gzip -9 of the bundle costs a few hundred ms; every emitted page reuses
+/// it). Empty if the bundle tag had an unexpected shape — callers then emit the plain bundle.
+static PLOTLY_GZ_B64: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    let tag = plotly_js_only();
+    match script_tag_inner(&tag) {
+        Some(src) => gzip_b64(src.as_bytes(), flate2::Compression::best()),
+        None => String::new(),
+    }
+});
+
+/// Queue-stub for `window.Plotly`, emitted (in `<head>`) BEFORE the panels' inline
+/// `Plotly.newPlot(..)` script tags when the bundle is embedded compressed: the real bundle only
+/// exists after an async DecompressionStream pass, so until then `newPlot` calls queue verbatim
+/// and `PLOTLY_GZ_BOOTSTRAP` replays them in order — the panel scripts themselves need no
+/// changes, and once the real global is installed later calls go straight through. The
+/// fullscreen-modebar chrome already polls for rendered divs, and the theme toggle re-applies on
+/// the `qsv:plotly-ready` event the bootstrap dispatches.
+const PLOTLY_STUB_SCRIPT: &str = r#"<script>window.__qsvPlotQ=[];window.Plotly={newPlot:function(){window.__qsvPlotQ.push(arguments)}};</script>"#;
+
+/// Shared inflate helpers for the gzip-embedded payloads. `__qsvGunzip` pumps a payload tag
+/// through `DecompressionStream` with an explicit reader loop (`new Response(stream).text()` is
+/// unreliable on older Safari). `qsvNewPlotGz` renders one gzip-embedded figure — via the stub's
+/// queue when the bundle itself is still inflating. Each completed render dispatches
+/// `qsv:plotly-ready` so the theme toggle can re-theme late-rendered panels.
+const GZ_PRELUDE_SCRIPT: &str = r#"<script>
+(function () {
+  window.__qsvGunzip = function (el) {
+    var bin = atob(el.textContent.trim()), n = bin.length, bytes = new Uint8Array(n);
+    for (var i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
+    var reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip")).getReader();
+    var dec = new TextDecoder(), out = "";
+    return reader.read().then(function pump(r) {
+      if (r.done) return out + dec.decode();
+      out += dec.decode(r.value, { stream: true });
+      return reader.read().then(pump);
+    });
+  };
+  window.__qsvReady = function () { document.dispatchEvent(new Event("qsv:plotly-ready")); };
+  window.qsvNewPlotGz = function (id) {
+    var el = document.getElementById(id + "-fig");
+    // a missing DecompressionStream already produced the bundle bootstrap's banner; stay quiet
+    if (!el || !window.DecompressionStream) return;
+    window.__qsvGunzip(el).then(function (s) {
+      el.textContent = "";
+      var p = Plotly.newPlot(id, JSON.parse(s));
+      if (p && p.then) p.then(window.__qsvReady); else window.__qsvReady();
+    });
+  };
+})();
+</script>"#;
+
+/// Bootstrap that inflates the gzip+base64 plotly.js payload, installs the real `Plotly` global
+/// via indirect eval (global scope), replays the stub's queued `newPlot` calls sequentially
+/// (deterministic panel order), and announces readiness. Emitted right after the payload tag in
+/// `<head>`, so inflation overlaps the browser's parse of the multi-MB body. A browser without
+/// `DecompressionStream` (pre-2023) gets an explanatory banner instead of a blank page.
+const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
+(function () {
+  function fail(msg) {
+    var show = function () {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div style="margin:16px;padding:12px 16px;border:1px solid #c62828;border-radius:6px;background:#fff3f3;color:#b71c1c;font-family:sans-serif">' + msg + "</div>");
+    };
+    if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
+  }
+  if (!window.DecompressionStream) {
+    fail("This page's plotly.js payload is gzip-compressed and needs a browser with DecompressionStream support (Chrome/Edge 80+, Firefox 113+, Safari 16.4+). Alternatively, regenerate the file with the QSV_VIZ_NO_COMPRESS=1 environment variable set for a larger, uncompressed version.");
+    return;
+  }
+  window.__qsvGunzip(document.getElementById("qsv-plotly-gz")).then(function (src) {
+    var q = window.__qsvPlotQ || [];
+    window.__qsvPlotQ = null;
+    delete window.Plotly;
+    (0, eval)(src);
+    var chain = Promise.resolve();
+    q.forEach(function (args) {
+      chain = chain.then(function () { return Plotly.newPlot.apply(Plotly, args); });
+    });
+    chain.then(window.__qsvReady);
+  }).catch(function (e) { fail("Failed to inflate the embedded plotly.js bundle: " + e); });
+})();
+</script>"##;
+
+/// The plotly.js embed block for generated HTML pages: under `QSV_VIZ_NO_COMPRESS` (or if
+/// compression failed) the plain inline bundle from `plotly_js_only`; otherwise the queue stub +
+/// inflate helpers + gzip payload + bootstrap, ~2.9 MB smaller per page.
+fn plotly_js_block() -> String {
+    let plain = plotly_js_only();
+    if !viz_compress() {
+        return plain;
+    }
+    let b64 = PLOTLY_GZ_B64.as_str();
+    if b64.is_empty() {
+        return plain;
+    }
+    format!(
+        "{PLOTLY_STUB_SCRIPT}\n{GZ_PRELUDE_SCRIPT}\n<script id=\"qsv-plotly-gz\" \
+         type=\"application/gzip-b64\">{b64}</script>\n{PLOTLY_GZ_BOOTSTRAP}"
+    )
+}
+
 fn build_layout(
     args: &Args,
     default_x: Option<String>,
@@ -6416,7 +6586,19 @@ fn output_html(plot: &Plot, args: &Args) -> CliResult<()> {
     // open plotly's own temp file), so render to a string, splice in the fullscreen modebar
     // button, and reuse `output_inline_html` for the `--output` / stdout / `--open`-temp-file
     // handling — the same path the `viz smart` dashboards already use.
-    let html = inject_fullscreen_chrome(&plot.to_html());
+    let mut html = plot.to_html();
+    // swap the inline plotly.js bundle for the gzip+bootstrap block (`Plot::to_html` embeds the
+    // exact tag `plotly_js_only` isolates, so a single substring replace suffices). The MathJax
+    // tag that follows it stays plain — it loads before the deferred plotly eval, preserving the
+    // `typeof MathJax` probe order.
+    if viz_compress() {
+        let plain = plotly_js_only();
+        let block = plotly_js_block();
+        if block != plain && html.contains(&plain) {
+            html = html.replacen(&plain, &block, 1);
+        }
+    }
+    let html = inject_fullscreen_chrome(&html);
     output_inline_html(&html, args)
 }
 
@@ -7980,9 +8162,11 @@ enum PanelKind {
         outlier_lats:       Vec<f64>,
         outlier_lons:       Vec<f64>,
         /// Pre-rendered per-point hover label (row-aligned to `lats`/`lons`): the row's identifier
-        /// (and, under `--smarter`, a dictionary/stats-chosen field combination) plus a coordinate
-        /// line. Empty when no identifier could be chosen, in which case render falls back to
-        /// plotly's default lat/lon hover. Attached via `hover_text_array` + `HoverInfo::Text`.
+        /// (and, under `--smarter`, a dictionary/stats-chosen field combination). No coordinate
+        /// line — render appends it via the trace-level `MAP_HOVER_TEMPLATE`, keeping coordinates
+        /// out of every embedded string. Empty when no identifier could be chosen, in which case
+        /// render falls back to plotly's default lat/lon hover. Attached via `text_array` +
+        /// `hover_template` (see `map_hover_text_values`).
         hover_text:         Vec<String>,
         /// Per-point hover labels for the outlier markers (aligned to
         /// `outlier_lats`/`outlier_lons`).
@@ -11975,17 +12159,16 @@ fn build_map_panel(
     // lat/lon hover.
     let geo_contributed = core_places.iter().chain(&out_places).any(|p| !p.is_empty());
     let (hover_text, outlier_hover_text) = if dataset_has_fields || geo_contributed {
-        let assemble = |lats: &[f64], lons: &[f64], lines: &[String], places: &[String]| {
-            lats.iter()
-                .zip(lons)
-                .zip(lines)
+        let assemble = |lines: &[String], places: &[String]| {
+            lines
+                .iter()
                 .zip(places)
-                .map(|(((&la, &lo), line), place)| assemble_map_hover(line, has_id, place, la, lo))
+                .map(|(line, place)| assemble_map_hover(line, has_id, place))
                 .collect::<Vec<String>>()
         };
         (
-            assemble(&lats, &lons, &core_lines, &core_places),
-            assemble(&outlier_lats, &outlier_lons, &out_lines, &out_places),
+            assemble(&core_lines, &core_places),
+            assemble(&out_lines, &out_places),
         )
     } else {
         (Vec::new(), Vec::new())
@@ -14894,8 +15077,8 @@ fn smart_grid_parts(
                 .subplot(geo_ref(pos));
             if !hover_text.is_empty() {
                 core_trace = core_trace
-                    .hover_text_array(hover_text.clone())
-                    .hover_info(HoverInfo::Text);
+                    .text_array(map_hover_text_values(hover_text))
+                    .hover_template(MAP_HOVER_TEMPLATE);
             }
             traces.push(core_trace);
             // geographic outliers as a distinct amber/X marker trace on top of the core points
@@ -14908,8 +15091,8 @@ fn smart_grid_parts(
                     .subplot(geo_ref(pos));
                 if !outlier_hover_text.is_empty() {
                     out_trace = out_trace
-                        .hover_text_array(outlier_hover_text.clone())
-                        .hover_info(HoverInfo::Text);
+                        .text_array(map_hover_text_values(outlier_hover_text))
+                        .hover_template(MAP_HOVER_TEMPLATE);
                 }
                 traces.push(out_trace);
             }
@@ -15350,11 +15533,9 @@ fn smart_inline_panel_plot(
             let mut dens = DensityMap::new(lats.clone(), lons.clone(), vec![1.0_f64; lats.len()])
                 .radius(MAP_SMART_DENSITY_RADIUS_PX);
             if !hover_text.is_empty() {
-                let templates: Vec<String> = hover_text
-                    .iter()
-                    .map(|t| density_hover_template(t))
-                    .collect();
-                dens = dens.hover_template_array(templates);
+                dens = dens
+                    .text_array(map_hover_text_values(hover_text))
+                    .hover_template(MAP_HOVER_TEMPLATE);
             }
             plot.add_trace(dens);
         } else {
@@ -15367,8 +15548,8 @@ fn smart_inline_panel_plot(
                 .marker(core_marker);
             if !hover_text.is_empty() {
                 core_trace = core_trace
-                    .hover_text_array(hover_text.clone())
-                    .hover_info(HoverInfo::Text);
+                    .text_array(map_hover_text_values(hover_text))
+                    .hover_template(MAP_HOVER_TEMPLATE);
             }
             if *cluster {
                 // native MapLibre client-side clustering, configured but DISABLED at load so the
@@ -15394,8 +15575,8 @@ fn smart_inline_panel_plot(
                 .show_legend(false);
             if !outlier_hover_text.is_empty() {
                 out_trace = out_trace
-                    .hover_text_array(outlier_hover_text.clone())
-                    .hover_info(HoverInfo::Text);
+                    .text_array(map_hover_text_values(outlier_hover_text))
+                    .hover_template(MAP_HOVER_TEMPLATE);
             }
             plot.add_trace(out_trace);
         }
@@ -15478,8 +15659,8 @@ fn smart_inline_panel_plot(
             .marker(core_marker);
         if !hover_text.is_empty() {
             core_trace = core_trace
-                .hover_text_array(hover_text.clone())
-                .hover_info(HoverInfo::Text);
+                .text_array(map_hover_text_values(hover_text))
+                .hover_template(MAP_HOVER_TEMPLATE);
         }
         plot.add_trace(core_trace);
         // geographic outliers as a distinct amber/X marker trace on top of the core points
@@ -15491,8 +15672,8 @@ fn smart_inline_panel_plot(
                 .show_legend(false);
             if !outlier_hover_text.is_empty() {
                 out_trace = out_trace
-                    .hover_text_array(outlier_hover_text.clone())
-                    .hover_info(HoverInfo::Text);
+                    .text_array(map_hover_text_values(outlier_hover_text))
+                    .hover_template(MAP_HOVER_TEMPLATE);
             }
             plot.add_trace(out_trace);
         }
@@ -15875,6 +16056,116 @@ fn smart_inline_panel_plot(
     plot
 }
 
+/// Minimum array length worth converting to a base64 typed array: tiny arrays (extent-overlay
+/// boxes, corner markers, small maps) stay plain JSON for readability, and below this size the
+/// `{"dtype":..,"bdata":..}` wrapper outweighs the savings.
+const BDATA_MIN_LEN: usize = 64;
+
+/// Minimum serialized figure size (bytes) before a map/geo panel's figure JSON is embedded as a
+/// gzip+base64 payload instead of plain JSON. See `map_panel_inline_html`.
+const MAP_FIG_GZ_MIN_BYTES: usize = 64 * 1024;
+
+/// Re-encode one numeric JSON array as a plotly base64 typed array
+/// (`{"dtype":"float32","bdata":"<base64 little-endian bytes>"}`), decoded natively by the
+/// bundled plotly.js (3.x, since 3.0). float32 keeps ~7 significant digits — for lat/lon a
+/// worst-case error of ~1 m, invisible at any map zoom (the hover template shows 4-dp ≈ 11 m
+/// coordinates anyway) — at ~5.33 bytes/value versus ~17 for full-precision decimal text.
+/// Leaves the value untouched when it isn't a numeric array or is too short to profit.
+fn bdata_encode_f32(value: &mut serde_json::Value) {
+    use base64_simd::STANDARD as BASE64;
+    let Some(arr) = value.as_array() else {
+        return;
+    };
+    if arr.len() < BDATA_MIN_LEN {
+        return;
+    }
+    let mut bytes = Vec::with_capacity(arr.len() * 4);
+    for v in arr {
+        // a non-numeric entry can't ride in a typed array — keep the plain JSON form
+        let Some(f) = v.as_f64() else {
+            return;
+        };
+        bytes.extend_from_slice(&(f as f32).to_le_bytes());
+    }
+    *value = serde_json::json!({
+        "dtype": "float32",
+        "bdata": BASE64.encode_to_string(&bytes),
+    });
+}
+
+/// Walk a serialized figure and convert the bulky per-point numeric arrays of its map/geo
+/// traces (`lat`/`lon`, densitymap `z` weights, per-point bubble `marker.size`) to float32
+/// base64 typed arrays. Only these trace families carry `MAX_SMART_POINTS`-scale arrays;
+/// everything else in the figure stays human-readable.
+fn bdata_encode_geo_traces(figure: &mut serde_json::Value) {
+    let Some(traces) = figure
+        .get_mut("data")
+        .and_then(serde_json::Value::as_array_mut)
+    else {
+        return;
+    };
+    for trace in traces {
+        let keys: &[&str] = match trace.get("type").and_then(serde_json::Value::as_str) {
+            Some("scattermap" | "scattergeo") => &["lat", "lon"],
+            Some("densitymap") => &["lat", "lon", "z"],
+            _ => continue,
+        };
+        for key in keys {
+            if let Some(v) = trace.get_mut(*key) {
+                bdata_encode_f32(v);
+            }
+        }
+        if let Some(size) = trace.get_mut("marker").and_then(|m| m.get_mut("size")) {
+            bdata_encode_f32(size);
+        }
+    }
+}
+
+/// Inline-HTML emitter for a map/geo panel, equivalent to the plotly crate's `to_inline_html`
+/// but with the figure run through `bdata_encode_geo_traces` first (the typed builder API can't
+/// express base64 typed arrays, so the figure is mutated as serialized JSON). Matches the
+/// crate's askama `tojson` output by escaping `<`/`>`/`&` to `\u003c`-style sequences — which
+/// is what keeps a pathological `</script>` inside embedded data from terminating the script
+/// block (a `\u`-escaped `<` can never appear in base64 or structural JSON). Falls back
+/// to the crate's own renderer if the figure doesn't serialize.
+fn map_panel_inline_html(plot: &Plot, div_id: &str) -> String {
+    let Ok(mut figure) = serde_json::to_value(plot) else {
+        return plot.to_inline_html(Some(div_id));
+    };
+    let compress = viz_compress();
+    // QSV_VIZ_NO_COMPRESS means "fully readable output": skip the typed-array re-encoding too,
+    // so every coordinate/size stays a greppable decimal in the emitted JSON.
+    if compress {
+        bdata_encode_geo_traces(&mut figure);
+    }
+    let json_plain = figure.to_string();
+    // compressed pages carry a LARGE figure as a gzip+base64 payload that `qsvNewPlotGz` (from
+    // `GZ_PRELUDE_SCRIPT`, emitted with the bundle block) inflates and renders — hover strings
+    // and place names compress 3-4x. Small figures stay plain JSON: below the floor the savings
+    // are noise next to the bundle, and a readable figure keeps small dashboards greppable.
+    // Default gzip level: this runs per panel.
+    if compress && json_plain.len() >= MAP_FIG_GZ_MIN_BYTES {
+        let b64 = gzip_b64(json_plain.as_bytes(), flate2::Compression::default());
+        if !b64.is_empty() {
+            return format!(
+                "<div id=\"{div_id}\" class=\"plotly-graph-div\" style=\"height:100%; \
+                 width:100%;\"></div>\n<script id=\"{div_id}-fig\" \
+                 type=\"application/gzip-b64\">{b64}</script>\n<script \
+                 type=\"text/javascript\">qsvNewPlotGz(\"{div_id}\");</script>"
+            );
+        }
+    }
+    let json = json_plain
+        .replace('&', "\\u0026")
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e");
+    format!(
+        "<div id=\"{div_id}\" class=\"plotly-graph-div\" style=\"height:100%; \
+         width:100%;\"></div>\n<script type=\"text/javascript\">\n    \
+         Plotly.newPlot(\"{div_id}\", {json});\n</script>"
+    )
+}
+
 fn render_smart_inline(
     args: &Args,
     panels: &[Panel],
@@ -15919,7 +16210,14 @@ fn render_smart_inline(
             r#"      <div class="qsv-viz-plot" style="height:{plot_height}px">
 "#
         ));
-        cells.push_str(&plot.to_inline_html(Some(&div_id)));
+        // map/geo panels route through the JSON pipeline so their per-point coordinate arrays
+        // embed as float32 base64 typed arrays (~3x smaller); other panels keep the crate's
+        // renderer. Static-export paths serialize the typed `Plot` and are untouched by this.
+        if matches!(panel.kind, PanelKind::Map { .. } | PanelKind::Geo { .. }) {
+            cells.push_str(&map_panel_inline_html(&plot, &div_id));
+        } else {
+            cells.push_str(&plot.to_inline_html(Some(&div_id)));
+        }
         cells.push_str("\n      </div>\n");
         // reverse-geocoded spatial-extent summary caption, shown below a map panel.
         #[cfg(feature = "geocode")]
@@ -18035,21 +18333,88 @@ mod tests {
             "<b>&lt;b&gt;x</b>"
         );
 
-        // with an identifier, the geocoded place is a context line; coords always last
+        // with an identifier, the geocoded place is a context line (no coord line — that's
+        // appended at render by MAP_HOVER_TEMPLATE from the lat/lon data arrays)
         assert_eq!(
-            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan", 35.68, 139.69),
-            "<b>Tokyo</b><br>Tokyo, Japan<br>35.6800, 139.6900"
+            assemble_map_hover("<b>Tokyo</b>", true, "Tokyo, Japan"),
+            "<b>Tokyo</b><br>Tokyo, Japan"
         );
         // no identifier column: the geocoded place becomes the bold identifier
         assert_eq!(
-            assemble_map_hover("", false, "Tokyo, Japan", 35.68, 139.69),
-            "<b>Tokyo, Japan</b><br>35.6800, 139.6900"
+            assemble_map_hover("", false, "Tokyo, Japan"),
+            "<b>Tokyo, Japan</b>"
         );
-        // nothing but coordinates when neither dataset nor geocode contributed
+        // empty when neither dataset nor geocode contributed — the template's coordinate
+        // hover stands alone
+        assert_eq!(assemble_map_hover("", false, ""), "");
+
+        // map_hover_text_values: non-empty entries get the trailing <br> separator the
+        // template relies on; empty entries stay empty (no leading blank line)
         assert_eq!(
-            assemble_map_hover("", false, "", 1.0, 2.0),
-            "1.0000, 2.0000"
+            map_hover_text_values(&["<b>Tokyo</b>".to_string(), String::new()]),
+            vec!["<b>Tokyo</b><br>".to_string(), String::new()]
         );
+    }
+
+    #[test]
+    fn bdata_typed_array_roundtrip() {
+        // below the size floor: left as a plain JSON array
+        let mut small = serde_json::json!([1.0, 2.0]);
+        bdata_encode_f32(&mut small);
+        assert!(small.is_array(), "short arrays must stay plain JSON");
+
+        // at the floor: becomes {"dtype":"float32","bdata":..} whose little-endian bytes
+        // round-trip each value within f32 precision (~1e-4 deg at lat/lon magnitudes)
+        let vals: Vec<f64> = (0..BDATA_MIN_LEN)
+            .map(|i| 40.0 + i as f64 * 0.000_123_4)
+            .collect();
+        let mut v = serde_json::to_value(&vals).unwrap();
+        bdata_encode_f32(&mut v);
+        assert_eq!(v["dtype"], "float32");
+        let bytes = base64_simd::STANDARD
+            .decode_to_vec(v["bdata"].as_str().unwrap())
+            .unwrap();
+        assert_eq!(bytes.len(), vals.len() * 4);
+        for (i, chunk) in bytes.chunks_exact(4).enumerate() {
+            let f = f32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+            assert!(
+                (f64::from(f) - vals[i]).abs() < 1e-4,
+                "coordinate {i} drifted beyond f32 tolerance"
+            );
+        }
+
+        // a non-numeric entry keeps the plain array (typed arrays can't carry gaps)
+        let mut mixed = serde_json::to_value(vec![1.0_f64; BDATA_MIN_LEN]).unwrap();
+        mixed.as_array_mut().unwrap()[10] = serde_json::Value::Null;
+        bdata_encode_f32(&mut mixed);
+        assert!(mixed.is_array(), "arrays with nulls must stay plain JSON");
+    }
+
+    #[test]
+    fn map_panel_inline_html_encodes_and_escapes() {
+        // a figure big enough to cross BDATA_MIN_LEN, with hover text containing a script
+        // terminator — the emitted inline HTML must carry typed arrays and must never contain
+        // a literal `</script>` inside the embedded JSON (askama-equivalent `\u003c` escaping).
+        let n = BDATA_MIN_LEN;
+        let lats: Vec<f64> = (0..n).map(|i| 40.0 + i as f64 * 0.001).collect();
+        let lons: Vec<f64> = (0..n).map(|i| -80.0 + i as f64 * 0.001).collect();
+        let texts: Vec<String> = (0..n).map(|_| "</script>x".to_string()).collect();
+        let mut plot = Plot::new();
+        plot.add_trace(
+            ScatterMap::new(lats, lons)
+                .mode(Mode::Markers)
+                .text_array(texts)
+                .hover_template(MAP_HOVER_TEMPLATE),
+        );
+        let html = map_panel_inline_html(&plot, "qsv-viz-panel-test");
+        assert!(
+            html.contains(r#""dtype":"float32""#) && html.contains(r#""bdata":""#),
+            "lat/lon must embed as base64 typed arrays; html: {html}"
+        );
+        // exactly the two structural tags — none leaked from the embedded data
+        assert_eq!(html.matches("</script>").count(), 1);
+        assert_eq!(html.matches("<script").count(), 1);
+        assert!(html.contains(r#"Plotly.newPlot("qsv-viz-panel-test""#));
     }
 
     #[cfg(feature = "geocode")]

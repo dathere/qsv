@@ -17,7 +17,7 @@ qsv and running [`gen_gallery.py`](gen_gallery.py) from the repo root —
 `python3 examples/viz/gen_gallery.py`. Individual `qsv viz` outputs are instead
 fully self-contained (plotly embedded), so they work offline.
 
-The ten **smart dashboards** are embedded as `<iframe>`s of their genuine
+The eleven **smart dashboards** are embedded as `<iframe>`s of their genuine
 `qsv viz smart` HTML output (`smart_*.html`) rather than reconstructed inline, so
 the full-width overview panels (map, choropleth, correlation heatmap, time-series,
 treemap/sunburst hierarchy), themes and map zoom buttons render exactly as the CLI produces
@@ -59,6 +59,7 @@ as `text/plain`, so a browser won't render it):
 | `seismic_events.csv` + `japan_prefectures.geojson` | 417 synthetic Japanese earthquakes (`timestamp`, `lat`/`lon`, a bimodal `depth_km`, a right-skewed `magnitude` correlated with `felt_reports`, a `tsunami` boolean, `region`, an ID), plus a GeoJSON of the 47 prefectures keyed by `properties.id` (ISO&nbsp;3166-2), with a top-level `id` too so no `--feature-id-key` is needed | `smart --smarter --geojson japan_prefectures.geojson` (the full geospatial dashboard: map + **prefecture choropleth via point-in-polygon binning** + time-series + correlation + scatter + histogram + boxes + bars) |
 | `delivery_stops.csv` | 90 delivery stops clustered in metro Denver + 4 bad-geocode strays in neighboring states, with `zone`/`vehicle` categoricals, `packages`, and correlated `weight_kg`/`distance_km`/`delivery_minutes` numerics over a `delivered_date` | `smart` (geographic outlier markers + core/full extent boxes, Core/Full zoom buttons & spatial-extent call-out with `geocode`; plus boxes, bars, correlation heatmap, strongest-pair scatter & a time-series — no `--smarter` needed) |
 | `nyc_311.csv` + `nyc_neighborhoods.geojson` | **10,000-row** sample of NYC 311 service requests (2010–2020): 41 columns incl. `Latitude`/`Longitude`, `Borough`, `Agency`, `Complaint Type`, `Status`, several date columns, and `X`/`Y Coordinate (State Plane)`, plus a custom GeoJSON of **188 NYC neighborhoods** keyed by top-level `id` | `smart --smarter --dictionary infer --geojson nyc_neighborhoods.geojson` (full municipal dashboard: dense point map + **neighborhood choropleth on a MapLibre tile basemap via point-in-polygon binning** + correlation + time-series + boxes + bars, with LLM-inferred field labels) |
+| `allegheny_dog_licenses.csv` + `allegheny_zip_boundaries.geojson` + `allegheny_dogs_dict.schema.json` | All **50,013** Allegheny County lifetime dog licenses (`LicenseType`, `Breed`, `Color`, `DogName`, `OwnerZip`, `ExpYear`, `ValidDate`) — **no lat/lon**, only the `OwnerZip` region code — plus a GeoJSON of **125 county zip boundaries** keyed by `properties.ZIP` and a curated dictionary tagging `OwnerZip` as `geo.zip_code` | `smart --smarter --bivariate --dict-info --dictionary allegheny_dogs_dict.schema.json --geojson allegheny_zip_boundaries.geojson --feature-id-key properties.ZIP` (**summary choropleth keyed off a region-code COLUMN**, not coordinates: licenses-per-zip filling the boundary polygons on a MapLibre tile basemap, + Breed/Color/LicenseType bars + NMI association heatmap) |
 
 ## The smart dashboard
 
@@ -187,6 +188,19 @@ qsv viz smart seismic_events.csv --smarter --theme plotly_dark --grid-cols 3 \
 # for slower local models).
 qsv viz smart nyc_311.csv --smarter --dictionary infer \
     --geojson nyc_neighborhoods.geojson -o nyc311_dashboard.html
+
+# A summary choropleth can also be keyed off a region-code COLUMN (a zip/county/state/country
+# dimension), with NO lat/lon at all. Here the dog-license log has only an OwnerZip column: viz
+# smart aggregates licenses-per-zip and fills the matching --geojson boundary polygons. The key
+# column is auto-chosen by matching each geo-dimension column's values against the boundary ids;
+# the curated --dictionary tags OwnerZip as geo.zip_code (the signal that makes a numeric zip a
+# choropleth key instead of a frequency bar). Only the per-zip COUNT map is drawn here because the
+# data carries no numeric measure; a dataset that also tags a measure column gets a per-region
+# MEDIAN-of-measure choropleth beside it.
+qsv viz smart allegheny_dog_licenses.csv --smarter --bivariate --dict-info \
+    --dictionary allegheny_dogs_dict.schema.json \
+    --geojson allegheny_zip_boundaries.geojson --feature-id-key properties.ZIP \
+    -o allegheny_dogs_dashboard.html
 ```
 
 ### dictionary-guided hierarchy panels (treemap / sunburst)

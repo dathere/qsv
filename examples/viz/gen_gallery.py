@@ -54,6 +54,7 @@ SMART_IFRAME = {
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
     "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
     "smart dashboard (--smarter, curated --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
+    "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -561,6 +562,35 @@ FIGURES = [
      True, ["smart", "nyc_311.csv", "--smarter", "--bivariate",
             "--dictionary", "nyc311_dict.schema.json",
             "--geojson", "nyc_neighborhoods.geojson"]),
+    ("smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)",
+     "All <b>50,013</b> Allegheny County lifetime dog licenses, profiled into auto-chosen panels. "
+     "The headline panel is a <b>summary choropleth keyed off a region-code COLUMN</b>, not "
+     "coordinates: this dataset has <i>no</i> lat/lon, only an <code>OwnerZip</code> column, so "
+     "<code>viz smart</code> aggregates <b>licenses per zip</b> and fills the matching "
+     "<a href=\"https://data.wprdc.org\">Allegheny County zip-boundary</a> polygons from "
+     "<code>--geojson</code> (<code>--feature-id-key properties.ZIP</code>). The key column is "
+     "auto-chosen by matching each geo-dimension column's values against the boundary ids — here "
+     "<b>118 zips</b> match, from 1 license (rural fringe) to <b>2,866</b> in zip 15237 (suburban "
+     "North Hills). Because the matched regions span a metro-scale extent, the fill lands on an "
+     "interactive <b>MapLibre tile basemap</b> (token-free carto tiles) rather than the coarse "
+     "projection basemap used for country/continental choropleths. A curated "
+     "<code>--dictionary</code> (<code>allegheny_dogs_dict.schema.json</code>) tags "
+     "<code>OwnerZip</code> as <code>geo.zip_code</code> — the signal that turns a numeric zip "
+     "code into a choropleth key instead of a frequency bar — and marks <code>_id</code>/"
+     "<code>DogName</code> as identifiers so they're skipped. This dataset carries no numeric "
+     "<b>measure</b>, so only the per-zip <b>count</b> map is drawn; a dataset that also tags a "
+     "measure column (e.g. a sale price) additionally gets a per-zip <b>median-of-measure</b> "
+     "choropleth beside it. Alongside the map the profiler fills the dashboard with "
+     "<code>LicenseType</code>/<code>Breed</code>/<code>Color</code> frequency bars and, via "
+     "<code>--bivariate</code>, an <b>NMI association heatmap</b> (Breed ↔ Color) plus a ranked "
+     "Top&nbsp;Relationships panel. <code>--dict-info</code> adds a per-panel info icon and a "
+     "slide-over <b>Data Dictionary</b> drawer sourced from the same curated schema. Fully "
+     "deterministic — no LLM needed (the curated dictionary is reviewed and committed, exactly "
+     "like an <code>--dictionary infer</code> pass would produce).",
+     True, ["smart", "allegheny_dog_licenses.csv", "--smarter", "--bivariate", "--dict-info",
+            "--dictionary", "allegheny_dogs_dict.schema.json",
+            "--geojson", "allegheny_zip_boundaries.geojson",
+            "--feature-id-key", "properties.ZIP"]),
 ]
 
 # A final, non-plotly gallery entry: a clickable screenshot that links out to the full, standalone

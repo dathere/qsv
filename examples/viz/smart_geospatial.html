@@ -518,6 +518,6 @@
   else setTimeout(init, 0);
 })();
 </script>
-<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{passive:true});});})();</script>
+<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
 </body>
 </html>

@@ -48,7 +48,7 @@
 <tr><td class="qsv-viz-meta-k">Description:</td><td>This dog‑license dataset contains 50 013 distinct records, each identified by a unique integer key. The majority of licenses are lifetime and spayed or neutered, with the most common type being *Dog Lifetime Spayed Female* (≈33 % of records). The breed field is highly heterogeneous, but “Other” accounts for more than half the entries, indicating many unclassified or mixed breeds. Coat color is similarly diverse; “Other” colors comprise a third of the records, while common single‑tone or simple pattern colors such as black, brown, and white dominate the remainder. Dog names are largely unique – over 90 % of names fall into an “Other” bucket that aggregates all uncommon names, with a handful of popular choices like *Bella*, *Lucy*, and *Daisy*. All licenses expire in the year 2099, while their effective dates span from early 2003 to mid‑2026, revealing a long‑term dataset with an uneven temporal distribution. Owner ZIP codes cluster in the 150 00–479 09 range, but a majority of records are labeled “Other”, reflecting many unique or unrecorded ZIP codes.</td></tr>
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>50,013</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>8</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 22:25 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 22:32 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width" data-qsv-dict="qsvdict-OwnerZip-847cba6b">
@@ -871,6 +871,6 @@ document.addEventListener("keydown", function (e) {
   else setTimeout(init, 0);
 })();
 </script>
-<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{passive:true});});})();</script>
+<script>(function(){function r(){parent.postMessage({qsvVizHeight:document.documentElement.scrollHeight},"*");}addEventListener("load",r);addEventListener("resize",r);if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);setTimeout(r,200);setTimeout(r,800);var us=function(){parent.postMessage({qsvUserScroll:1},"*");};["wheel","touchstart","keydown"].forEach(function(t){addEventListener(t,us,{capture:true,passive:true});});})();</script>
 </body>
 </html>

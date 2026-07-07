@@ -234,9 +234,13 @@ RESIZE_REPORTER_JS = (
     # a deep-linked dashboard fills the viewport, so the reader's scroll input lands INSIDE this
     # iframe, not the parent gallery window. Forward it so the parent's jump stabilizer can tell the
     # reader has taken over and stop re-aligning / cancel its pending on-load re-arm (see JUMP_JS).
+    # capture phase: the gl3d scroll-fix installs a capture-phase wheel handler on the plot div that
+    # stopPropagation()s (so a 3D panel scrolls the page instead of being eaten); a bubble-phase
+    # listener here would never see that wheel. Capturing at the window fires before the plot div, so
+    # the reader's scroll over a 3D panel still cancels the parent's jump stabilizer.
     "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
     "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
-    "addEventListener(t,us,{passive:true});});})();</script>")
+    "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is

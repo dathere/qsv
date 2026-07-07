@@ -571,12 +571,13 @@ use plotly::{
     color::NamedColor,
     common::{
         Anchor, ColorBar, ColorScale, ColorScalePalette, ErrorData, ErrorType, Fill, Font,
-        HoverInfo, Line, Marker, Mode, Pattern, PatternShape, TextPosition, TickMode, Title,
+        HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
+        Title,
     },
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, Projection, ProjectionType,
-        themes::BuiltinTheme,
+        LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
+        ProjectionType, themes::BuiltinTheme,
     },
     sankey::{Link, Node},
     sunburst::InsideTextOrientation,
@@ -14703,6 +14704,9 @@ fn smart_grid_parts(
     let mut base_layout = Layout::new()
         .show_legend(false)
         .height(rows * ROW_HEIGHT_PX)
+        // vertical modebar, clear of the dashboard title and the top-right cell's panel title
+        // (matching the inline panels — see `inline_panel_title`)
+        .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
         .margin(
             Margin::new()
                 .top(TOP_MARGIN_PX)
@@ -15206,6 +15210,11 @@ fn inline_panel_title(
     themed: bool,
     extra: Vec<Annotation>,
 ) -> Layout {
+    // The hover-revealed modebar defaults to a wide horizontal strip across the very band the
+    // centered title (and its `--dict-info` ⓘ) occupies, so hovering a panel buried them; a
+    // vertical strip down the right edge stays clear of the title band. Applied to every
+    // inline panel (not just dict-info ones) so the hover chrome is uniform.
+    let layout = layout.mode_bar(ModeBar::new().orientation(Orientation::Vertical));
     let mut anns = extra;
     let layout = if panel.dict_info.is_some() {
         // family-only font (no explicit color) so the annotation inherits the layout font color

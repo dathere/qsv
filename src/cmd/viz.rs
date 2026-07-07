@@ -13231,7 +13231,13 @@ fn build_smart(
                     };
                     let p = Panel {
                         name: p.name,
-                        subtitle: p.subtitle,
+                        // the coerced Geo renders MARKERS, never a density heatmap, so the
+                        // sampling subtitle's "aggregating" verb (chosen by `sample_note` for
+                        // the HTML DensityMap render) must follow the actual render mode.
+                        subtitle: p.subtitle.map(|s| match s.strip_prefix("aggregating ") {
+                            Some(rest) => format!("showing {rest}"),
+                            None => s,
+                        }),
                         kind,
                         value_log: p.value_log,
                         interest: p.interest,

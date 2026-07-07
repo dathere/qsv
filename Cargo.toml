@@ -159,7 +159,7 @@ cached = { version = "2.0.2", features = [
     "disk_store",
     "redis_ahash",
 ] }
-calamine = { version = "0.35", features = ["chrono"] }
+calamine = { version = "0.36", features = ["chrono"] }
 censor = { version = "0.3", optional = true }
 chrono = { version = "0.4", default-features = false }
 chrono-tz = "0.10"
@@ -444,9 +444,6 @@ csv-index = { git = "https://github.com/dathere/rust-csv", branch = "qsv-tuned" 
 # csv = { path = "../rust-csv" }
 # csv-core = { path = "../rust-csv/csv-core" }
 # csv-index = { path = "../rust-csv/csv-index" }
-
-# use latest upstream now that our PR has been merged
-calamine = { git = "https://github.com/tafia/calamine", rev = "058cb50" }
 
 # use latest upstream now that our PR has been merged
 csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6acf060" }

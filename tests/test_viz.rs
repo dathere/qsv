@@ -3124,6 +3124,49 @@ fn viz_smart_map_pan_bounds_from_full_extent_not_downsampled() {
     );
 }
 
+// A downsampled smart map announces the sampling on the panel itself (subtitle honesty cue,
+// mirroring the violin "(sampled)" suffix): the HTML reader otherwise has no way to know the
+// dots are a stride sample while the Regions choropleth beside it tallies every row.
+#[test]
+fn viz_smart_map_downsample_subtitle() {
+    let wrk = Workdir::new("viz_smart_map_downsample_subtitle");
+    // 300 tightly-clustered points (no geographic outliers) around one metro
+    let mut rows = String::from("id,lat,lon\n");
+    for i in 0..300 {
+        rows.push_str(&format!(
+            "{i},{:.5},{:.5}\n",
+            40.44 + 0.01 * f64::from(i % 30) / 30.0,
+            -79.99 - 0.01 * f64::from(i / 30) / 10.0
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    // cap the embedded points below the row count -> the subtitle names the sample
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_MAX_POINTS", "100");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("of 300 points (sampled)"),
+        "downsampled map should carry a sampling subtitle"
+    );
+
+    // without downsampling, no sampling subtitle
+    let out_full = wrk.path("dash_full.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "-o", &out_full]);
+    // don't inherit a QSV_VIZ_MAX_POINTS a developer/CI may already have set
+    cmd.env_remove("QSV_VIZ_MAX_POINTS");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash_full.html").unwrap();
+    assert!(
+        !html.contains("points (sampled)"),
+        "fully-embedded map must not claim sampling"
+    );
+}
+
 #[test]
 fn viz_smart_heatmap_density_threshold() {
     let wrk = Workdir::new("viz_smart_heatmap_density_threshold");

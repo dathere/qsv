@@ -12060,6 +12060,50 @@ fn build_map_panel(
             ClusterMode::On => true,
             ClusterMode::Auto => core_sizes.is_none() && lats.len() >= SMART_CLUSTER_MIN_POINTS,
         };
+    // Downsampling honesty cue, shown as the panel subtitle: when the embedded points are a
+    // stride sample of the mappable set, say so ON the panel — the HTML reader (unlike the CLI
+    // user, who sees the stderr notes) otherwise has no way to know the map is thinned while
+    // the Regions choropleth beside it tallies every row. The outlier clause tells a careful
+    // reader the tails are exhaustive (or how thinned) even though the body is sampled. None —
+    // no subtitle — when every mappable point is embedded.
+    let sample_note: Option<String> = {
+        let rendered = lats.len() + outlier_lats.len();
+        (rendered < mappable_count).then(|| {
+            let n = |v: usize| group_thousands(&v.to_string());
+            // density aggregates the sampled points into a heatmap (unless the global extent
+            // rendered them as ScatterGeo markers anyway)
+            let verb = if density && !global {
+                "aggregating"
+            } else {
+                "showing"
+            };
+            let mut note = format!(
+                "{verb} {} of {} points (sampled)",
+                n(rendered),
+                n(mappable_count)
+            );
+            if !out_lats.is_empty() {
+                if outlier_lats.len() == out_lats.len() {
+                    let noun = if out_lats.len() == 1 {
+                        "outlier"
+                    } else {
+                        "outliers"
+                    };
+                    note.push_str(&format!(
+                        "; all {} geographic {noun} kept",
+                        n(out_lats.len())
+                    ));
+                } else {
+                    note.push_str(&format!(
+                        "; {} of {} geographic outliers",
+                        n(outlier_lats.len()),
+                        n(out_lats.len())
+                    ));
+                }
+            }
+            note
+        })
+    };
     let kind = if global {
         PanelKind::Geo {
             lats,
@@ -12087,7 +12131,7 @@ fn build_map_panel(
     Ok(Some((
         Panel {
             name: "Map".to_string(),
-            subtitle: None,
+            subtitle: sample_note,
             kind,
             value_log: false,
             interest: f64::INFINITY,

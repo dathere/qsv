@@ -6778,10 +6778,16 @@ const GZ_PRELUDE_SCRIPT: &str = r#"<script>
 </script>"#;
 
 /// Bootstrap that inflates the gzip+base64 plotly.js payload, installs the real `Plotly` global
-/// via indirect eval (global scope), replays the stub's queued `newPlot` calls sequentially
-/// (deterministic panel order), and announces readiness. Emitted right after the payload tag in
-/// `<head>`, so inflation overlaps the browser's parse of the multi-MB body. A browser without
-/// `DecompressionStream` (pre-2023) gets an explanatory banner instead of a blank page.
+/// via indirect eval (global scope), replays the stub's queued `newPlot` calls in queue order,
+/// and announces readiness. Emitted right after the payload tag in `<head>`, so inflation
+/// overlaps the browser's parse of the multi-MB body. A browser without `DecompressionStream`
+/// (pre-2023) gets an explanatory banner instead of a blank page.
+///
+/// The replay deliberately does NOT chain each panel behind the previous panel's render promise:
+/// a MapLibre panel's `newPlot` promise can stay pending forever (map style/tile load never
+/// resolves it), and a sequential `then` chain would stall every later panel behind it (#4155).
+/// Firing the calls independently mirrors the uncompressed page, where each panel's inline
+/// script invokes `newPlot` as it is parsed.
 const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
 (function () {
   function fail(msg) {
@@ -6800,14 +6806,21 @@ const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
     window.__qsvPlotQ = null;
     delete window.Plotly;
     (0, eval)(src);
-    var chain = Promise.resolve();
     q.forEach(function (args) {
-      // per-panel catch: one failed render must not skip the remaining queued panels
-      chain = chain.then(function () { return Plotly.newPlot.apply(Plotly, args); })
-        .catch(function (e) { console.error("qsv viz: queued panel render failed:", e); });
+      // per-panel isolation: one failed (or forever-pending) render must not block the rest
+      try {
+        var p = Plotly.newPlot.apply(Plotly, args);
+        // per-panel settle -> ready, so a stuck panel can't hold the theme re-apply hostage
+        if (p && p.then) p.then(window.__qsvReady, function (e) {
+          console.error("qsv viz: queued panel render failed:", e);
+          window.__qsvReady();
+        });
+      } catch (e) {
+        console.error("qsv viz: queued panel render failed:", e);
+      }
     });
-    // every branch above settles, so readiness always fires even if some panels failed
-    chain.then(window.__qsvReady);
+    // readiness floor: fires even if every queued panel's promise stays pending
+    window.__qsvReady();
   }).catch(function (e) { fail("Failed to inflate the embedded plotly.js bundle: " + e); });
 })();
 </script>"##;

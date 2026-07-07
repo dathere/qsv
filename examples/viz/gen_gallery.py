@@ -173,7 +173,7 @@ TOC_JS = (
 # and on a coarse timer, so drift from iframes growing above it is corrected. Any manual scroll input
 # ends the window immediately so this never fights the reader.
 JUMP_JS = (
-    "<script>(function(){var target=null,until=0,iv=null;"
+    "<script>(function(){var target=null,until=0,iv=null,moved=false;"
     "function stop(){if(iv){clearInterval(iv);iv=null;}}"
     # instant (not smooth): the page sets scroll-behavior:smooth, but a correcting re-align must be
     # instant. A smooth scrollIntoView restarted every tick as iframes above grow would perpetually
@@ -188,14 +188,20 @@ JUMP_JS = (
     "arm(document.getElementById(href.slice(1)));});"
     "addEventListener(\"hashchange\",function(){"
     "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
-    "addEventListener(\"message\",function(e){"
-    "if(e.data&&typeof e.data.qsvVizHeight===\"number\")snap();});"
+    # dashboard iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
+    # scroll input (qsvUserScroll -> the reader took over, cancel and stop re-aligning).
+    "addEventListener(\"message\",function(e){var d=e.data;if(!d)return;"
+    "if(typeof d.qsvVizHeight===\"number\")snap();"
+    "else if(d.qsvUserScroll){until=0;moved=true;stop();}});"
+    # scrolls over the non-iframe margins land on the parent window directly.
     "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
-    "addEventListener(t,function(){until=0;},{passive:true});});"
+    "addEventListener(t,function(){until=0;moved=true;},{passive:true});});"
     # also arm on initial load with an existing fragment (a shared/bookmarked deep link like
     # gallery.html#fig-...), so lazy iframes settling after the browser's initial hash scroll don't
-    # push the target out of view. Re-arm on load once resources have settled.
-    "function armFromHash(){if(location.hash.length>1)"
+    # push the target out of view. Re-arm on load once the many heavy iframes have settled — but not
+    # if the reader already scrolled away (moved), so a late load never yanks them back. Explicit TOC
+    # clicks / hashchange still arm unconditionally.
+    "function armFromHash(){if(!moved&&location.hash.length>1)"
     "arm(document.getElementById(location.hash.slice(1)));}"
     "armFromHash();addEventListener(\"load\",armFromHash);})();</script>")
 
@@ -224,7 +230,13 @@ RESIZE_REPORTER_JS = (
     "{qsvVizHeight:document.documentElement.scrollHeight},\"*\");}"
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
-    "setTimeout(r,200);setTimeout(r,800);})();</script>")
+    "setTimeout(r,200);setTimeout(r,800);"
+    # a deep-linked dashboard fills the viewport, so the reader's scroll input lands INSIDE this
+    # iframe, not the parent gallery window. Forward it so the parent's jump stabilizer can tell the
+    # reader has taken over and stop re-aligning / cancel its pending on-load re-arm (see JUMP_JS).
+    "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
+    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "addEventListener(t,us,{passive:true});});})();</script>")
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
@@ -846,12 +858,17 @@ def cdnify(html):
 
 
 def inject_resize_reporter(html):
-    """Add the postMessage height reporter just before the page's real </body> so the iframe can be
-    auto-sized to the dashboard with no inner scrollbar and no trailing whitespace. Anchor on the
-    LAST </body>, not the first: `--dict-info` dashboards embed a complete standalone HTML document
-    (with its own </body></html>) as a string inside the qsvOpenDictTab script, so a first-match
-    replace would inject the reporter inside that script string, where it never runs — leaving the
-    iframe stuck at its initial height (the Allegheny dog-licenses dashboard clipping)."""
+    """Add the postMessage height/user-scroll reporter just before the page's real </body> so the
+    iframe can be auto-sized to the dashboard with no inner scrollbar and no trailing whitespace.
+    Anchor on the LAST </body>, not the first: `--dict-info` dashboards embed a complete standalone
+    HTML document (with its own </body></html>) as a string inside the qsvOpenDictTab script, so a
+    first-match replace would inject the reporter inside that script string, where it never runs —
+    leaving the iframe stuck at its initial height (the Allegheny dog-licenses dashboard clipping).
+
+    Idempotent: strip any previously-injected reporter (a <script> containing qsvVizHeight; it has no
+    literal `<` in its body) before re-adding the current one, so re-running against an already-built
+    dashboard (e.g. the reused pre-generated ones) refreshes the reporter instead of duplicating it."""
+    html = re.sub(r"<script>[^<]*qsvVizHeight[^<]*</script>\n?", "", html)
     idx = html.rfind("</body>")
     if idx == -1:
         return html + RESIZE_REPORTER_JS
@@ -937,7 +954,16 @@ def main():
             if iframe_name in pregenerated:
                 # LLM-dependent (`--dictionary infer`): reuse the committed, already-cdnified HTML so
                 # regen stays offline & deterministic (refresh it manually — see README commands).
+                # Still refresh the injected reporter in place (idempotent) so the height/user-scroll
+                # postMessage stays current across all dashboards, not just the regenerated ones.
                 sys.stderr.write(f"[{idx}] {title}: reusing pre-generated {iframe_name}\n")
+                pre_path = os.path.join(VIZ_DIR, iframe_name)
+                with open(pre_path, encoding="utf-8") as fh:
+                    existing = fh.read()
+                refreshed = inject_resize_reporter(existing)
+                if refreshed != existing:
+                    with open(pre_path, "w", encoding="utf-8") as fh:
+                        fh.write(refreshed)
             else:
                 sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
                 html = inject_resize_reporter(cdnify(run_html(qsv, args)))

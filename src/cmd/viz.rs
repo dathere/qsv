@@ -11929,12 +11929,18 @@ fn build_smart_pip_choropleth_panel(
 /// no boundary. Trims first, then prefers an exact match ("15129" -> "15129", "BAKERSTOWN" stays
 /// as-is). Failing that, a numeric code that reads shorter than its zero-padded feature id (e.g. a
 /// state FIPS `1` vs id `01`, a county FIPS `3` vs `003`, or a zip `7936` vs `07936`) is
-/// left-padded to each distinct digit-width present among the feature ids — shortest viable width
-/// first — and the first padded form found is returned. This keeps the matcher correct for the
-/// broader geo concepts the summary choropleth accepts (zip/postal, county, state, census_tract,
-/// fips), not just 5-digit zips. Used by [`build_smart_summary_choropleth_panels`] to match a
-/// dimension column against the feature ids.
-fn match_region_code(raw: &str, feature_ids: &std::collections::HashSet<&str>) -> Option<String> {
+/// left-padded to each numeric feature-id width in `numeric_id_widths` wider than the code —
+/// shortest viable width first — and the first padded form found is returned. This keeps the
+/// matcher correct for the broader geo concepts the summary choropleth accepts (zip/postal, county,
+/// state, census_tract, fips), not just 5-digit zips. `numeric_id_widths` must be the ascending,
+/// deduped digit-widths of the all-numeric feature ids, precomputed once by the caller so this
+/// stays O(widths) per cell rather than rescanning every feature id. Used by
+/// [`build_smart_summary_choropleth_panels`].
+fn match_region_code(
+    raw: &str,
+    feature_ids: &std::collections::HashSet<&str>,
+    numeric_id_widths: &[usize],
+) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
@@ -11947,14 +11953,10 @@ fn match_region_code(raw: &str, feature_ids: &std::collections::HashSet<&str>) -
     // columns drop leading zeros), try padding to each numeric feature-id width wider than the
     // code.
     if raw.bytes().all(|b| b.is_ascii_digit()) {
-        let mut widths: Vec<usize> = feature_ids
-            .iter()
-            .filter(|id| id.len() > raw.len() && id.bytes().all(|b| b.is_ascii_digit()))
-            .map(|id| id.len())
-            .collect();
-        widths.sort_unstable();
-        widths.dedup();
-        for width in widths {
+        for &width in numeric_id_widths {
+            if width <= raw.len() {
+                continue;
+            }
             let padded = format!("{raw:0>width$}");
             if feature_ids.contains(padded.as_str()) {
                 return Some(padded);
@@ -12032,6 +12034,19 @@ fn build_smart_summary_choropleth_panels(
     )?;
     let feature_ids: std::collections::HashSet<&str> =
         features.iter().map(|f| f.id.as_str()).collect();
+    // distinct widths of the all-digit feature ids, ascending — precomputed once so the per-row
+    // `match_region_code` does not rescan every feature id for each unmatched numeric cell (which
+    // would make matching `rows * candidates * features`).
+    let numeric_id_widths: Vec<usize> = {
+        let mut w: Vec<usize> = feature_ids
+            .iter()
+            .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+            .map(|id| id.len())
+            .collect();
+        w.sort_unstable();
+        w.dedup();
+        w
+    };
 
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
@@ -12074,7 +12089,7 @@ fn build_smart_summary_choropleth_panels(
             total_rows[ci] += 1;
             // key aggregates under the matched geojson feature id; an unmatched value still counts
             // toward total_rows so a poorly-overlapping column scores low.
-            let Some(k) = match_region_code(raw, &feature_ids) else {
+            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths) else {
                 continue;
             };
             matched_rows[ci] += 1;
@@ -21941,38 +21956,67 @@ mod tests {
 
     #[test]
     fn match_region_code_pads_and_matches() {
+        // ascending, deduped digit-widths of the all-numeric ids, as the caller precomputes.
+        fn numeric_widths(ids: &std::collections::HashSet<&str>) -> Vec<usize> {
+            let mut w: Vec<usize> = ids
+                .iter()
+                .filter(|id| !id.is_empty() && id.bytes().all(|b| b.is_ascii_digit()))
+                .map(|id| id.len())
+                .collect();
+            w.sort_unstable();
+            w.dedup();
+            w
+        }
+
         let ids: std::collections::HashSet<&str> = ["07936", "15129", "15007", "BAKERSTOWN"]
             .into_iter()
             .collect();
+        let widths = numeric_widths(&ids);
 
         // exact 5-digit match, with surrounding whitespace trimmed
-        assert_eq!(match_region_code(" 15129 ", &ids).as_deref(), Some("15129"));
+        assert_eq!(
+            match_region_code(" 15129 ", &ids, &widths).as_deref(),
+            Some("15129")
+        );
         // short all-digit code left-padded to 5 to match a zero-padded id
-        assert_eq!(match_region_code("7936", &ids).as_deref(), Some("07936"));
+        assert_eq!(
+            match_region_code("7936", &ids, &widths).as_deref(),
+            Some("07936")
+        );
         // non-numeric code matched verbatim
         assert_eq!(
-            match_region_code("BAKERSTOWN", &ids).as_deref(),
+            match_region_code("BAKERSTOWN", &ids, &widths).as_deref(),
             Some("BAKERSTOWN")
         );
         // empty / whitespace-only -> no match
-        assert_eq!(match_region_code("   ", &ids), None);
+        assert_eq!(match_region_code("   ", &ids, &widths), None);
         // a value absent from the boundary set -> no match (counts against overlap ratio)
-        assert_eq!(match_region_code("99999", &ids), None);
+        assert_eq!(match_region_code("99999", &ids, &widths), None);
         // a short code whose padded form is absent -> no match (not blindly padded-and-kept)
-        assert_eq!(match_region_code("123", &ids), None);
+        assert_eq!(match_region_code("123", &ids, &widths), None);
 
         // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
         // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
         let fips: std::collections::HashSet<&str> =
             ["01", "06", "003", "037", "42003"].into_iter().collect();
+        let fips_widths = numeric_widths(&fips);
         // state FIPS 1 -> 01 (2-wide id)
-        assert_eq!(match_region_code("1", &fips).as_deref(), Some("01"));
+        assert_eq!(
+            match_region_code("1", &fips, &fips_widths).as_deref(),
+            Some("01")
+        );
         // county FIPS 3 -> 003 (3-wide id), preferring the shortest viable width first
-        assert_eq!(match_region_code("3", &fips).as_deref(), Some("003"));
+        assert_eq!(
+            match_region_code("3", &fips, &fips_widths).as_deref(),
+            Some("003")
+        );
         // already-wide numeric id matches exactly
-        assert_eq!(match_region_code("42003", &fips).as_deref(), Some("42003"));
+        assert_eq!(
+            match_region_code("42003", &fips, &fips_widths).as_deref(),
+            Some("42003")
+        );
         // a width with no matching padded form -> no match
-        assert_eq!(match_region_code("9", &fips), None);
+        assert_eq!(match_region_code("9", &fips, &fips_widths), None);
     }
 
     #[test]

@@ -47,7 +47,7 @@
 <table class="qsv-viz-meta">
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 12:32 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-07 15:35 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -426,10 +426,17 @@
           var cfg = { responsive: true, scrollZoom: document.fullscreenElement === gd };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
-          Plotly.newPlot(gd, gd.data, gd.layout, cfg);
+          var np = Plotly.newPlot(gd, gd.data, gd.layout, cfg);
           // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
           // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
           if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
+          // this newPlot re-render silently drops gd.on listeners — rebind the Data Dictionary
+          // annotation hook (when that feature is on the page) once the re-render settles,
+          // fulfilled OR rejected: the listeners are already gone either way.
+          if (gd.__qsvDictHooked && window.__qsvDictRehook && np && np.then) {
+            var rehook = function () { gd.__qsvDictHooked = false; window.__qsvDictRehook(); };
+            np.then(rehook, rehook);
+          }
         } else {
           Plotly.relayout(gd, u);
         }

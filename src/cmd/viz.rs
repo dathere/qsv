@@ -348,15 +348,21 @@ choropleth options:
                            the `viz choropleth` command and the `viz smart` GeoJSON
                            choropleth panel. A stderr note reports coverage either way;
                            each snapping region's hover tallies the points it absorbed
-                           from outside, and dropped points are reported beneath the map
-                           (or in the smart panel's title).
+                           from outside, and snapped or dropped points are reported in a
+                           note beneath the map (or in the smart panel's title).
     --snap-max-dist <km>   For point-in-polygon binning: the farthest (in km) an outside
                            point may snap to a region's boundary; points with no region
                            within this distance are dropped. Distance is an equirectangular
-                           km approximation. Defaults to 10 km, for both the `viz choropleth`
-                           command and the `viz smart` GeoJSON choropleth panel. Pass a
-                           large value for effectively unbounded snapping. Cannot be
-                           combined with --no-snap.
+                           km approximation. When omitted, the cap is auto-derived from
+                           the GeoJSON's median region size (10% of the median bbox
+                           diagonal) and the lat/lon coordinate precision (coarse,
+                           few-decimal coordinates raise the cap to cover their
+                           quantization error), clamped to 0.1-100 km; a fixed 10 km is
+                           used only when neither signal is available. Applies to both the
+                           `viz choropleth` command and the `viz smart` GeoJSON choropleth
+                           panel; the coverage notes state the cap applied and how it was
+                           derived. Pass a large value for effectively unbounded snapping;
+                           cannot be combined with --no-snap.
 
 smart options:
     --max-charts <n>       Maximum number of panels in the dashboard. 0 (the default)
@@ -3729,6 +3735,206 @@ const KM_PER_DEG: f64 = 111.32;
 /// ocean GPS error or out-of-extent point can't be attributed to an arbitrary distant region.
 const DEFAULT_SNAP_MAX_KM: f64 = 10.0;
 
+/// Fraction of the median region size (bbox diagonal, km) used as the auto snap cap's context
+/// term: an outside point may snap across at most this fraction of a typical region. 0.10
+/// reproduces the old fixed 10 km cap at US-county scale (median bbox diagonal ~100 km) while
+/// scaling down to sub-km caps for city-ward GeoJSONs and up (clamped) for country-scale polygons
+/// whose coarse coastlines strand legitimate points offshore.
+const SNAP_REGION_FRACTION: f64 = 0.10;
+
+/// Multiplier applied to the coordinate-quantization radius when deriving the auto snap cap's
+/// precision floor. 2.0 covers truncated (not just rounded) coordinates plus the equirectangular
+/// approximation error, so a point whose printed coordinates land quantized on the wrong side of a
+/// boundary still snaps back to its region.
+const SNAP_PRECISION_SAFETY: f64 = 2.0;
+
+/// Absolute floor for the auto-derived snap cap (km): never snap tighter than consumer GPS noise,
+/// regardless of how small the GeoJSON regions are.
+const SNAP_CAP_MIN_KM: f64 = 0.1;
+
+/// Absolute ceiling for the auto-derived snap cap (km): even for continent-sized regions or
+/// integer-degree coordinates, don't attribute a point to a region more than ~a metropolitan
+/// diameter away.
+const SNAP_CAP_MAX_KM: f64 = 100.0;
+
+/// How the effective snap-distance cap was determined, for coverage-note provenance.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum SnapCapBasis {
+    /// User passed `--snap-max-dist`; used verbatim.
+    Explicit,
+    /// Derived from the GeoJSON's median region size and/or the lat/lon coordinate precision
+    /// (each term `None` when its signal was unavailable/degenerate).
+    Auto {
+        region_km:    Option<f64>,
+        precision_km: Option<f64>,
+    },
+    /// Neither signal available; fixed [`DEFAULT_SNAP_MAX_KM`].
+    Fallback,
+}
+
+/// The effective snap-distance cap (km) plus its provenance.
+#[derive(Debug, Clone, Copy)]
+struct SnapCap {
+    km:    f64,
+    basis: SnapCapBasis,
+}
+
+impl SnapCap {
+    /// Short provenance phrase for coverage notes ("cap 3.2 km, {phrase}").
+    const fn basis_phrase(&self) -> &'static str {
+        match self.basis {
+            SnapCapBasis::Explicit => "--snap-max-dist",
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: Some(_),
+            } => "auto-derived from region size and coordinate precision",
+            SnapCapBasis::Auto {
+                region_km: Some(_),
+                precision_km: None,
+            } => "auto-derived from region size",
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: Some(_),
+            } => "auto-derived from coordinate precision",
+            // Auto with both terms None never leaves resolve_snap_cap (it returns Fallback);
+            // the arm only keeps the match total.
+            SnapCapBasis::Auto {
+                region_km: None,
+                precision_km: None,
+            }
+            | SnapCapBasis::Fallback => "default",
+        }
+    }
+}
+
+/// Median bbox diagonal of the features in equirectangular km (longitude degrees scaled by
+/// `cos(mid-lat)`), the "typical region size" driving the auto snap cap's context term. Zero-size
+/// bboxes (point/degenerate features — the same shapes the snap-target search would treat as
+/// phantom targets) are skipped; `None` when no feature has a usable bbox. Antimeridian-crossing
+/// features store continuity-unwrapped bboxes, so `bbox[2] - bbox[0]` is already the true angular
+/// width, and the median absorbs pole-cut outliers (e.g. an Antarctica ring spanning ~360°).
+fn median_bbox_diag_km(features: &[PipFeature]) -> Option<f64> {
+    let mut diags: Vec<f64> = features
+        .iter()
+        .filter_map(|f| {
+            let dlon = f.bbox[2] - f.bbox[0];
+            let dlat = f.bbox[3] - f.bbox[1];
+            if dlon <= 0.0 && dlat <= 0.0 {
+                return None;
+            }
+            let mid_lat = f64::midpoint(f.bbox[1], f.bbox[3]);
+            let dx = dlon * mid_lat.to_radians().cos() * KM_PER_DEG;
+            let dy = dlat * KM_PER_DEG;
+            Some(dx.hypot(dy))
+        })
+        .collect();
+    if diags.is_empty() {
+        return None;
+    }
+    diags.sort_unstable_by(f64::total_cmp);
+    let n = diags.len();
+    Some(if n % 2 == 1 {
+        diags[n / 2]
+    } else {
+        f64::midpoint(diags[n / 2 - 1], diags[n / 2])
+    })
+}
+
+/// The auto snap cap's stats-aware precision floor (km) for coordinates carrying `decimals`
+/// decimal places: the worst-case quantization offset (half a cell diagonal,
+/// `10^-d * KM_PER_DEG / sqrt(2)`) times [`SNAP_PRECISION_SAFETY`]. E.g. 1 decimal ≈ 15.7 km,
+/// 2 decimals ≈ 1.6 km, 4+ decimals ≈ negligible.
+fn precision_floor_km(decimals: u32) -> f64 {
+    SNAP_PRECISION_SAFETY
+        * KM_PER_DEG
+        * std::f64::consts::FRAC_1_SQRT_2
+        * 10_f64.powi(-i32::try_from(decimals).unwrap_or(i32::MAX))
+}
+
+/// Round to 2 significant digits so the cap we *display* in coverage notes (via `fmt_measure`,
+/// ≤3 decimals) is exactly the cap we *apply*.
+fn round_2_sig(v: f64) -> f64 {
+    if v <= 0.0 || !v.is_finite() {
+        return v;
+    }
+    let scale = 10_f64.powf(1.0 - v.abs().log10().floor());
+    (v * scale).round() / scale
+}
+
+/// Resolve the effective snap-distance cap. An explicit `--snap-max-dist` wins verbatim.
+/// Otherwise the cap adapts to context and stats: the larger of
+/// [`SNAP_REGION_FRACTION`] × median region size and the coordinate-precision floor, clamped to
+/// [`SNAP_CAP_MIN_KM`]..[`SNAP_CAP_MAX_KM`] and rounded to 2 significant digits. With neither
+/// signal available, falls back to the fixed [`DEFAULT_SNAP_MAX_KM`].
+fn resolve_snap_cap(
+    explicit: Option<f64>,
+    features: &[PipFeature],
+    coord_decimals: Option<u32>,
+) -> SnapCap {
+    if let Some(km) = explicit {
+        return SnapCap {
+            km,
+            basis: SnapCapBasis::Explicit,
+        };
+    }
+    let region_km = median_bbox_diag_km(features).map(|d| d * SNAP_REGION_FRACTION);
+    let precision_km = coord_decimals.map(precision_floor_km);
+    let raw = match (region_km, precision_km) {
+        (Some(r), Some(p)) => r.max(p),
+        (Some(v), None) | (None, Some(v)) => v,
+        (None, None) => {
+            return SnapCap {
+                km:    DEFAULT_SNAP_MAX_KM,
+                basis: SnapCapBasis::Fallback,
+            };
+        },
+    };
+    SnapCap {
+        km:    round_2_sig(raw.clamp(SNAP_CAP_MIN_KM, SNAP_CAP_MAX_KM)),
+        basis: SnapCapBasis::Auto {
+            region_km,
+            precision_km,
+        },
+    }
+}
+
+/// Decimal places a raw CSV field carries, exponent-aware ("1.5e-3" → 4, "1.5e2" → 0) and with
+/// trailing fractional zeros trimmed ("40.7100" → 2, matching the stats cache's `max_precision`
+/// shortest-format semantics). Feeds the auto snap cap's precision floor on the command path,
+/// where no stats cache is loaded.
+fn byte_decimal_places(field: &[u8]) -> u32 {
+    let s = std::str::from_utf8(field).unwrap_or("").trim();
+    let (mantissa, exp) = match s.find(['e', 'E']) {
+        Some(i) => (&s[..i], s[i + 1..].parse::<i32>().unwrap_or(0)),
+        None => (s, 0_i32),
+    };
+    let frac_digits = match mantissa.find('.') {
+        Some(i) => mantissa[i + 1..].trim_end_matches('0').len() as i32,
+        None => 0,
+    };
+    u32::try_from(frac_digits.saturating_sub(exp)).unwrap_or(0)
+}
+
+/// Coordinate precision (decimal places) of the lat/lon columns from the stats cache: each
+/// column's `max_precision` (Float; Integer counts as 0 decimals), combined with `min` — the
+/// coarser axis drives the quantization error. `None` when either column's precision is unknown
+/// (non-numeric type, or a stale cache without the field), which disables the precision floor.
+fn stats_coord_decimals(
+    stats: &[crate::cmd::stats::StatsData],
+    lat_idx: usize,
+    lon_idx: usize,
+) -> Option<u32> {
+    let decimals = |i: usize| -> Option<u32> {
+        let s = stats.get(i)?;
+        match s.r#type.as_str() {
+            "Float" => s.max_precision,
+            "Integer" => Some(0),
+            _ => None,
+        }
+    };
+    Some(decimals(lat_idx)?.min(decimals(lon_idx)?))
+}
+
 /// Squared Euclidean (degree-space) distance from a point to a line segment.
 fn point_seg_dist2(px: f64, py: f64, ax: f64, ay: f64, bx: f64, by: f64) -> f64 {
     let (dx, dy) = (bx - ax, by - ay);
@@ -3953,8 +4159,9 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
     }
     // --snap-max-dist caps the nearest-region snap distance (km). Its universal constraints
     // (non-negative finite, not combined with --no-snap) are validated up front in run(); here we
-    // only reject it on a non-point-in-polygon path. When omitted, the cap defaults to
-    // DEFAULT_SNAP_MAX_KM so far strays drop instead of snapping to an arbitrary distant region;
+    // only reject it on a non-point-in-polygon path. When omitted, the cap is auto-derived from
+    // the GeoJSON's median region size and the coordinates' decimal precision (see
+    // resolve_snap_cap) so far strays drop instead of snapping to an arbitrary distant region;
     // pass a large value to restore unbounded snapping.
     if args.flag_snap_max_dist.is_some() && !pip {
         return fail_incorrectusage_clierror!(
@@ -3962,14 +4169,14 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
              without --geocode)."
         );
     }
-    let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
 
     // only the point-in-polygon path can drop points (no-snap, or no region within the cap), so
     // only it yields a below-map coverage note; the literal/geocoded paths return the plain
     // 4-tuple.
     let mut below_note: Option<String> = None;
     let (locations, z, measure_label, hover_text) = if pip {
-        let (locs, z, label, hover, note) = choropleth_pip_locations(args, agg, snap, snap_max_km)?;
+        let (locs, z, label, hover, note) =
+            choropleth_pip_locations(args, agg, snap, args.flag_snap_max_dist)?;
         below_note = note;
         (locs, z, label, hover)
     } else if args.flag_geocode {
@@ -4176,17 +4383,18 @@ fn choropleth_literal_locations(
 
 /// Resolve choropleth `(locations, z, measure_label, hover_text, below_note)` by point-in-polygon
 /// binning: each row's `--lat`/`--lon` point is assigned to the GeoJSON region whose polygon
-/// contains it (or, when `snap`, to the nearest region within `snap_max_km` — `f64::INFINITY` =
-/// unlimited), and the `--value` measure (or row counts) is aggregated per region id. The
-/// per-region hover gains an `includes N snapped from outside` line for regions that absorbed
-/// snapped points (the region's count already includes them). Emits stderr coverage notes, and —
-/// whenever points are dropped (no snapping, or no region within the cap) — returns a `below_note`
-/// rendered beneath the map.
+/// contains it (or, when `snap`, to the nearest region within the snap-distance cap — an explicit
+/// `--snap-max-dist` verbatim, else auto-derived from the GeoJSON's median region size and the
+/// coordinates' as-written decimal precision; see [`resolve_snap_cap`]), and the `--value` measure
+/// (or row counts) is aggregated per region id. The per-region hover gains an `includes N snapped
+/// from outside` line for regions that absorbed snapped points (the region's count already
+/// includes them). Emits stderr coverage notes, and — whenever points snapped or were dropped —
+/// returns a `below_note` rendered beneath the map with the snap metadata.
 fn choropleth_pip_locations(
     args: &Args,
     agg: Agg,
     snap: bool,
-    snap_max_km: f64,
+    snap_max_km: Option<f64>,
 ) -> CliResult<(Vec<String>, Vec<f64>, String, Vec<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
@@ -4208,14 +4416,13 @@ fn choropleth_pip_locations(
         args.flag_feature_name_key.as_deref(),
     )?;
 
-    let mut raw_locs: Vec<String> = Vec::new();
-    let mut values: Vec<f64> = Vec::new();
-    // per-region tally of points that landed outside every polygon but were snapped into this
-    // region (keyed by feature id), surfaced in the region's hover.
-    let mut snapped_by_id: HashMap<String, usize> = HashMap::new();
-    let mut total = 0_usize;
-    let mut snapped = 0_usize;
-    let mut dropped = 0_usize;
+    // pass 1: collect the points, tracking each coordinate column's as-written decimal precision
+    // (a signal for the auto snap cap). Collect-then-assign rather than assigning per row: the
+    // cap derivation needs the whole column's precision, which an interleaved loop couldn't know
+    // before the first `pip_assign` call.
+    let mut points: Vec<(f64, f64, f64)> = Vec::new();
+    let mut lat_dec = 0_u32;
+    let mut lon_dec = 0_u32;
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -4234,8 +4441,26 @@ fn choropleth_pip_locations(
             },
             None => 1.0,
         };
-        total += 1;
-        match pip_assign(&features, lat, lon, snap, snap_max_km) {
+        lat_dec = lat_dec.max(byte_decimal_places(record.get(lat_idx).unwrap_or_default()));
+        lon_dec = lon_dec.max(byte_decimal_places(record.get(lon_idx).unwrap_or_default()));
+        points.push((lat, lon, value));
+    }
+    // per column: max decimals across rows; across columns: min — the coarser axis drives the
+    // quantization error.
+    let coord_decimals = (!points.is_empty()).then(|| lat_dec.min(lon_dec));
+    let cap = resolve_snap_cap(snap_max_km, &features, coord_decimals);
+
+    // pass 2: assign each point to a region.
+    let mut raw_locs: Vec<String> = Vec::new();
+    let mut values: Vec<f64> = Vec::new();
+    // per-region tally of points that landed outside every polygon but were snapped into this
+    // region (keyed by feature id), surfaced in the region's hover.
+    let mut snapped_by_id: HashMap<String, usize> = HashMap::new();
+    let total = points.len();
+    let mut snapped = 0_usize;
+    let mut dropped = 0_usize;
+    for (lat, lon, value) in points {
+        match pip_assign(&features, lat, lon, snap, cap.km) {
             PipOutcome::Inside(fi) => {
                 raw_locs.push(features[fi].id.clone());
                 values.push(value);
@@ -4253,13 +4478,16 @@ fn choropleth_pip_locations(
     // describe where dropped points went: --no-snap drops everything outside; otherwise only points
     // with no region within the cap are dropped (finite cap; an unlimited cap never drops).
     let drop_reason = if snap {
-        format!("no region within {} km", fmt_measure(snap_max_km))
+        format!("no region within {} km", fmt_measure(cap.km))
     } else {
         "--no-snap".to_string()
     };
     if snapped > 0 {
         viz_note(&format!(
-            "viz choropleth: {snapped} of {total} points were snapped to the nearest region."
+            "viz choropleth: {snapped} of {total} points were snapped to the nearest region (cap \
+             {} km, {}).",
+            fmt_measure(cap.km),
+            cap.basis_phrase()
         ));
     }
     if dropped > 0 {
@@ -4284,21 +4512,31 @@ fn choropleth_pip_locations(
         }
     }
 
-    // surface dropped points beneath the map — a saved HTML has no stderr to fall back on.
-    let below_note = (dropped > 0).then(|| {
-        if snap {
+    // surface snap/drop coverage beneath the map — a saved HTML has no stderr to fall back on.
+    // Whenever anything snapped, the note states the snap metadata (count, cap, cap provenance).
+    let mut note_parts: Vec<String> = Vec::new();
+    if snapped > 0 {
+        note_parts.push(format!(
+            "{snapped} of {total} points snapped to the nearest region (≤{} km, {}).",
+            fmt_measure(cap.km),
+            cap.basis_phrase()
+        ));
+    }
+    if dropped > 0 {
+        note_parts.push(if snap {
             format!(
                 "{dropped} of {total} points were farther than {} km from any region and were \
                  dropped.",
-                fmt_measure(snap_max_km)
+                fmt_measure(cap.km)
             )
         } else {
             format!(
                 "--no-snap: {dropped} of {total} points fell outside every GeoJSON region and \
                  were dropped."
             )
-        }
-    });
+        });
+    }
+    let below_note = (!note_parts.is_empty()).then(|| note_parts.join(" "));
 
     Ok((locs, z, measure_label, hover_text, below_note))
 }
@@ -11454,13 +11692,15 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
 
 /// Build a `viz smart` choropleth panel by point-in-polygon binning the core lat/lon points into a
 /// user-supplied GeoJSON (`--geojson`). Each point is assigned to the region whose polygon contains
-/// it, or — when `snap` — to the nearest region within `snap_max_km` (`f64::INFINITY` = unlimited),
-/// else dropped; the panel is colored by per-region counts. Mirrors the `viz choropleth` command's
-/// cap: far strays are dropped (surfaced in the panel title + per-region hover) rather than snapped
-/// to an arbitrary distant region. Unlike [`build_smart_choropleth_panel`] this needs no geocode
-/// engine. Errors when the explicit `--geojson` can't be loaded/parsed or the `--feature-id-key`
-/// matches nothing; returns `Ok(None)` only when valid input yields fewer than 2 regions with
-/// points.
+/// it, or — when `snap` — to the nearest region within the snap-distance cap (an explicit
+/// `--snap-max-dist` verbatim, else auto-derived from the GeoJSON's median region size and the
+/// stats cache's lat/lon coordinate precision; see [`resolve_snap_cap`]), else dropped; the panel
+/// is colored by per-region counts. Mirrors the `viz choropleth` command's cap: far strays are
+/// dropped (surfaced in the panel title + per-region hover) rather than snapped to an arbitrary
+/// distant region, and any snapping is surfaced in the panel title with the cap applied. Unlike
+/// [`build_smart_choropleth_panel`] this needs no geocode engine. Errors when the explicit
+/// `--geojson` can't be loaded/parsed or the `--feature-id-key` matches nothing; returns
+/// `Ok(None)` only when valid input yields fewer than 2 regions with points.
 fn build_smart_pip_choropleth_panel(
     geojson_spec: &str,
     feature_id_key: &str,
@@ -11468,13 +11708,15 @@ fn build_smart_pip_choropleth_panel(
     lats: &[f64],
     lons: &[f64],
     snap: bool,
-    snap_max_km: f64,
+    snap_max_km: Option<f64>,
+    coord_decimals: Option<u32>,
 ) -> CliResult<Option<Panel>> {
     // an explicit --geojson is explicit intent: a missing file, bad GeoJSON, or wrong
     // --feature-id-key is a hard error, not a silently-dropped panel. `Ok(None)` is reserved for
     // valid inputs that simply don't yield enough regions (the <2 check below).
     let geojson = load_geojson(geojson_spec)?;
     let features = build_pip_features(&geojson, feature_id_key, feature_name_key)?;
+    let cap = resolve_snap_cap(snap_max_km, &features, coord_decimals);
     let mut order: Vec<String> = Vec::new();
     let mut counts: std::collections::HashMap<String, f64> = std::collections::HashMap::new();
     // per-region tally of snapped-in points (keyed by feature id), surfaced in the region's hover.
@@ -11488,10 +11730,9 @@ fn build_smart_pip_choropleth_panel(
             continue;
         }
         total += 1;
-        // smart dashboards apply the same default snap-distance cap as the `viz choropleth`
-        // command: an outside point snaps only to a region within `snap_max_km`, else it is
-        // dropped.
-        let fi = match pip_assign(&features, lat, lon, snap, snap_max_km) {
+        // smart dashboards resolve the snap-distance cap exactly like the `viz choropleth`
+        // command: an outside point snaps only to a region within the cap, else it is dropped.
+        let fi = match pip_assign(&features, lat, lon, snap, cap.km) {
             PipOutcome::Inside(fi) => fi,
             PipOutcome::Snapped(fi) => {
                 *snapped_by_id.entry(features[fi].id.clone()).or_insert(0) += 1;
@@ -11518,12 +11759,15 @@ fn build_smart_pip_choropleth_panel(
     // dashboard drops.
     if snapped > 0 {
         viz_note(&format!(
-            "viz smart: {snapped} of {total} points were snapped to the nearest region."
+            "viz smart: {snapped} of {total} points were snapped to the nearest region (cap {} \
+             km, {}).",
+            fmt_measure(cap.km),
+            cap.basis_phrase()
         ));
     }
     if dropped > 0 {
         let why = if snap {
-            format!("no region within {} km", fmt_measure(snap_max_km))
+            format!("no region within {} km", fmt_measure(cap.km))
         } else {
             "--no-snap".to_string()
         };
@@ -11543,20 +11787,32 @@ fn build_smart_pip_choropleth_panel(
             h.push_str(&format!("<br>includes {c} snapped from outside"));
         }
     }
-    // a sub-panel can't carry a below-map annotation, so surface dropped points in the panel title.
-    let panel_name = if dropped > 0 {
+    // a sub-panel can't carry a below-map annotation, so surface the snap metadata (count + the
+    // cap applied) and dropped points in the panel title — beside the map, never over it.
+    let mut title_parts: Vec<String> = Vec::new();
+    if snapped > 0 {
+        title_parts.push(format!(
+            "{} snapped ≤{} km",
+            HumanCount(snapped as u64),
+            fmt_measure(cap.km)
+        ));
+    }
+    if dropped > 0 {
         let why = if snap {
-            format!(">{} km", fmt_measure(snap_max_km))
+            format!(">{} km", fmt_measure(cap.km))
         } else {
             "--no-snap".to_string()
         };
-        format!(
-            "Regions ({} of {} dropped, {why})",
+        title_parts.push(format!(
+            "{} of {} dropped, {why}",
             HumanCount(dropped as u64),
             HumanCount(total as u64)
-        )
-    } else {
+        ));
+    }
+    let panel_name = if title_parts.is_empty() {
         "Regions".to_string()
+    } else {
+        format!("Regions ({})", title_parts.join("; "))
     };
     // Frame the basemap to the matched regions' bbox union (PipFeature::bbox is
     // [min_lon, min_lat, max_lon, max_lat]). A metro-scale extent — under
@@ -12221,11 +12477,12 @@ fn build_map_panel(
     // before).
     let (choropleth_panel, geojson_overlay) = if let Some(spec) = args.flag_geojson.as_deref() {
         let snap = !args.flag_no_snap;
-        // smart shares the command's default cap; the value is validated up front in run()
-        // (non-negative finite, not with --no-snap), so no clamping is needed here. Do NOT revert
-        // this to f64::INFINITY — the cap is deliberate here; the `smart_pip_panel_caps_snap` unit
-        // test guards the threading.
-        let snap_max_km = args.flag_snap_max_dist.unwrap_or(DEFAULT_SNAP_MAX_KM);
+        // smart resolves the cap exactly like the command path: an explicit --snap-max-dist
+        // (validated up front in run(): non-negative finite, not with --no-snap) wins verbatim,
+        // else resolve_snap_cap derives it from the GeoJSON's region scale plus the stats cache's
+        // lat/lon precision. Do NOT short-circuit this to f64::INFINITY — a real cap is deliberate
+        // here; the `smart_pip_panel_caps_snap` unit test guards the threading.
+        let coord_decimals = stats_coord_decimals(stats, lat_idx, lon_idx);
         let key = args.flag_feature_id_key.as_deref().unwrap_or("id");
         let name_key = args.flag_feature_name_key.as_deref();
         let panel = build_smart_pip_choropleth_panel(
@@ -12235,7 +12492,8 @@ fn build_map_panel(
             &core_lats,
             &core_lons,
             snap,
-            snap_max_km,
+            args.flag_snap_max_dist,
+            coord_decimals,
         )?;
         // overlay the region boundaries + labels directly on the point map (best-effort; the panel
         // builder above already hard-errored on a bad --geojson). Independent of the choropleth's
@@ -20803,14 +21061,24 @@ mod tests {
         let lats = vec![5.0, 4.0, 5.0, 4.0, 5.0];
         let lons = vec![2.0, 3.0, 18.0, 17.0, 10.0];
 
-        // default cap drops the gap point; the panel still renders (2 regions) and flags the drop.
-        let panel =
-            build_smart_pip_choropleth_panel(spec, "properties.id", None, &lats, &lons, true, 10.0)
-                .unwrap()
-                .expect("2 regions keep points, so a panel renders");
+        // an explicit 10 km cap drops the gap point; the panel still renders (2 regions) and
+        // flags the drop.
+        let panel = build_smart_pip_choropleth_panel(
+            spec,
+            "properties.id",
+            None,
+            &lats,
+            &lons,
+            true,
+            Some(10.0),
+            None,
+        )
+        .unwrap()
+        .expect("2 regions keep points, so a panel renders");
         assert_eq!(panel.name, "Regions (1 of 5 dropped, >10 km)");
 
-        // an unbounded cap snaps the gap point instead -> nothing dropped, plain title.
+        // an unbounded cap snaps the gap point instead -> nothing dropped; the title surfaces the
+        // snap metadata (count + cap) rather than staying bare.
         let snapped = build_smart_pip_choropleth_panel(
             spec,
             "properties.id",
@@ -20818,11 +21086,16 @@ mod tests {
             &lats,
             &lons,
             true,
-            f64::INFINITY,
+            Some(f64::INFINITY),
+            None,
         )
         .unwrap()
         .expect("panel renders");
-        assert_eq!(snapped.name, "Regions");
+        assert!(
+            snapped.name.starts_with("Regions (1 snapped"),
+            "snapped points must surface in the title, got {:?}",
+            snapped.name
+        );
 
         // --no-snap drops the gap point regardless of distance; the title reports the reason.
         let no_snap = build_smart_pip_choropleth_panel(
@@ -20832,7 +21105,8 @@ mod tests {
             &lats,
             &lons,
             false,
-            10.0,
+            Some(10.0),
+            None,
         )
         .unwrap()
         .expect("panel renders");
@@ -20867,10 +21141,18 @@ mod tests {
         let lats = vec![40.72, 40.73, 40.72, 40.73];
         let lons = vec![-74.02, -74.03, -73.97, -73.98];
 
-        let panel =
-            build_smart_pip_choropleth_panel(spec, "properties.id", None, &lats, &lons, true, 10.0)
-                .unwrap()
-                .expect("2 regions keep points, so a panel renders");
+        let panel = build_smart_pip_choropleth_panel(
+            spec,
+            "properties.id",
+            None,
+            &lats,
+            &lons,
+            true,
+            Some(10.0),
+            None,
+        )
+        .unwrap()
+        .expect("2 regions keep points, so a panel renders");
         match panel.kind {
             PanelKind::ChoroplethMap {
                 center_lon,
@@ -20900,6 +21182,148 @@ mod tests {
         }
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    // as-written decimal counting for the command path's precision signal: exponent-aware,
+    // trailing fractional zeros trimmed (matching the stats cache's shortest-format semantics).
+    #[test]
+    fn byte_decimal_places_counts() {
+        assert_eq!(byte_decimal_places(b"12"), 0);
+        assert_eq!(byte_decimal_places(b"-40.71"), 2);
+        assert_eq!(byte_decimal_places(b"40.7100"), 2, "trailing zeros trimmed");
+        assert_eq!(byte_decimal_places(b" 40.5 "), 1, "whitespace trimmed");
+        assert_eq!(byte_decimal_places(b"1.5e-3"), 4, "0.0015 -> 4 decimals");
+        assert_eq!(byte_decimal_places(b"7e-2"), 2, "0.07 -> 2 decimals");
+        assert_eq!(byte_decimal_places(b"1.5E2"), 0, "150 -> 0 decimals");
+        assert_eq!(byte_decimal_places(b""), 0);
+        assert_eq!(byte_decimal_places(b"n/a"), 0);
+    }
+
+    /// Build PipFeatures from equator-anchored square boxes `side_deg` degrees on a side (one per
+    /// `count`), for exercising the region-size term of the auto snap cap.
+    fn square_features(side_deg: f64, count: usize) -> Vec<PipFeature> {
+        let features: Vec<serde_json::Value> = (0..count)
+            .map(|i| {
+                // space the boxes apart so they don't merge visually; geometry only matters for
+                // the bbox diagonal.
+                let x0 = (i as f64) * (side_deg * 2.0);
+                let (x1, y1) = (x0 + side_deg, side_deg);
+                serde_json::json!({
+                    "type": "Feature",
+                    "properties": {"id": format!("R{i}")},
+                    "geometry": {"type": "Polygon", "coordinates":
+                        [[[x0, 0.0], [x0, y1], [x1, y1], [x1, 0.0], [x0, 0.0]]]}
+                })
+            })
+            .collect();
+        let gj = serde_json::json!({"type": "FeatureCollection", "features": features});
+        build_pip_features(&gj, "properties.id", None).unwrap()
+    }
+
+    // ward-scale regions (~3 km bbox diagonal) with precise coordinates derive a sub-km cap from
+    // the region-size term — the old fixed 10 km default would snap across several wards.
+    #[test]
+    fn snap_cap_ward_scale_region_fraction() {
+        // 0.02 deg squares at the equator: diag = hypot(2.2264, 2.2264) ~ 3.149 km;
+        // region term = 0.315 km; p=5 precision floor ~ 0.0016 km is negligible.
+        let feats = square_features(0.02, 3);
+        let cap = resolve_snap_cap(None, &feats, Some(5));
+        assert!(
+            (cap.km - 0.31).abs() < 1e-9,
+            "ward-scale cap should be ~0.31 km, got {}",
+            cap.km
+        );
+        assert!(matches!(
+            cap.basis,
+            SnapCapBasis::Auto {
+                region_km:    Some(_),
+                precision_km: Some(_),
+            }
+        ));
+    }
+
+    // country-scale regions clamp to the absolute ceiling instead of growing without bound.
+    #[test]
+    fn snap_cap_country_scale_clamps_max() {
+        // 10 deg squares: diag ~ 1574 km -> region term ~ 157 km -> clamped to 100 km.
+        let feats = square_features(10.0, 3);
+        let cap = resolve_snap_cap(None, &feats, Some(4));
+        assert!(
+            (cap.km - SNAP_CAP_MAX_KM).abs() < f64::EPSILON,
+            "continent-scale cap should clamp to {SNAP_CAP_MAX_KM}, got {}",
+            cap.km
+        );
+    }
+
+    // coarse coordinates dominate small regions: 1-decimal lat/lon quantizes by kilometers, so
+    // the stats-aware precision floor (not the region term) sets the cap.
+    #[test]
+    fn snap_cap_precision_floor_dominates() {
+        // region term ~ 0.315 km; p=1 floor = 2 * 111.32 * (1/sqrt(2)) * 0.1 ~ 15.74 -> 16 km.
+        let feats = square_features(0.02, 3);
+        let cap = resolve_snap_cap(None, &feats, Some(1));
+        assert!(
+            (cap.km - 16.0).abs() < 1e-9,
+            "1-decimal coords should floor the cap at ~16 km, got {}",
+            cap.km
+        );
+    }
+
+    // with neither signal available the cap falls back to the fixed default.
+    #[test]
+    fn snap_cap_fallback_default() {
+        let cap = resolve_snap_cap(None, &[], None);
+        assert!((cap.km - DEFAULT_SNAP_MAX_KM).abs() < f64::EPSILON);
+        assert_eq!(cap.basis, SnapCapBasis::Fallback);
+    }
+
+    // an explicit --snap-max-dist is used verbatim: no clamping, no 2-sig-fig rounding.
+    #[test]
+    fn snap_cap_explicit_wins() {
+        let feats = square_features(0.02, 3);
+        let cap = resolve_snap_cap(Some(3.456), &feats, Some(1));
+        assert!((cap.km - 3.456).abs() < f64::EPSILON);
+        assert_eq!(cap.basis, SnapCapBasis::Explicit);
+    }
+
+    // stats-cache coordinate precision: Float uses max_precision, Integer counts as 0 decimals,
+    // and the coarser (min) column drives; anything else disables the floor.
+    #[test]
+    fn stats_coord_decimals_prefers_coarser_column() {
+        use crate::cmd::stats::StatsData;
+        let float_col = |p: Option<u32>| StatsData {
+            r#type: "Float".to_string(),
+            max_precision: p,
+            ..Default::default()
+        };
+        let int_col = || StatsData {
+            r#type: "Integer".to_string(),
+            ..Default::default()
+        };
+        let string_col = || StatsData {
+            r#type: "String".to_string(),
+            ..Default::default()
+        };
+
+        let stats = vec![float_col(Some(5)), float_col(Some(2))];
+        assert_eq!(stats_coord_decimals(&stats, 0, 1), Some(2));
+
+        let stats = vec![float_col(Some(5)), int_col()];
+        assert_eq!(
+            stats_coord_decimals(&stats, 0, 1),
+            Some(0),
+            "an Integer coordinate column is 0-decimal"
+        );
+
+        let stats = vec![float_col(None), float_col(Some(2))];
+        assert_eq!(
+            stats_coord_decimals(&stats, 0, 1),
+            None,
+            "a stale cache without max_precision disables the floor"
+        );
+
+        let stats = vec![string_col(), float_col(Some(2))];
+        assert_eq!(stats_coord_decimals(&stats, 0, 1), None);
     }
 
     #[test]

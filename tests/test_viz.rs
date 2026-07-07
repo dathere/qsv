@@ -6644,12 +6644,14 @@ fn viz_choropleth_map_frames_ignore_properties() {
 
 // point-in-polygon binning: lat/lon points + a custom --geojson (no --geocode) bins each point into
 // the region whose polygon contains it; the location IS the feature id (exact, no name/code match).
-// Exercises the default 10 km snap cap: a near-boundary stray snaps, a far stray drops.
+// Exercises the auto-derived snap cap: this fixture's 10-deg regions (~157 km region term) and
+// integer-degree lons (~157 km precision floor) both clamp to the 100 km ceiling, so a
+// near-boundary stray snaps and a far stray drops.
 #[test]
 fn viz_choropleth_pip_bins_points() {
     let wrk = Workdir::new("viz_choropleth_pip_bins_points");
     // A = lon 0..10, B = lon 10..20 (both lat 0..10). Points: one in A, two in B, a near stray
-    // ~5.6 km north of A's edge (snaps to A under the default 10 km cap), and one far outside
+    // ~5.6 km north of A's edge (snaps to A under the auto 100 km cap), and one far outside
     // (drops)
     wrk.create_from_string("pts.csv", "lat,lon\n5,5\n5,15\n5,15\n10.05,5\n50,50\n");
     wrk.create_from_string(
@@ -6678,7 +6680,8 @@ fn viz_choropleth_pip_bins_points() {
     assert!(html.contains(r#""locationmode":"geojson-id""#));
     assert!(html.contains(r#""featureidkey":"properties.id""#));
     assert!(html.contains(r#""geojson":{"type":"FeatureCollection""#));
-    // A = 1 contained + 1 snapped; B = 2 contained; the far (50,50) stray drops under the 10 km cap
+    // A = 1 contained + 1 snapped; B = 2 contained; the far (50,50) stray drops under the auto
+    // 100 km cap
     assert!(html.contains(r#""locations":["A","B"]"#));
     assert!(html.contains(r#""z":[2.0,2.0]"#));
     // A absorbed the one snapped stray — its hover flags it as a subset of A's count
@@ -6686,23 +6689,94 @@ fn viz_choropleth_pip_bins_points() {
         html.contains("includes 1 snapped from outside"),
         "missing snapped-into-region hover note; html was: {html}"
     );
-    // the far stray was dropped by the default cap — noted beneath the map (no stderr in a saved
-    // file)
+    // any snapping surfaces the snap metadata (count, cap, provenance) beneath the map (no stderr
+    // in a saved file)
     assert!(
-        html.contains("1 of 5 points were farther than 10 km from any region and were dropped."),
+        html.contains(
+            "1 of 5 points snapped to the nearest region (≤100 km, auto-derived from region size \
+             and coordinate precision)."
+        ),
+        "missing snapped below-map note; html was: {html}"
+    );
+    // the far stray was dropped by the auto cap — also noted beneath the map
+    assert!(
+        html.contains("1 of 5 points were farther than 100 km from any region and were dropped."),
         "missing dropped-beyond-cap note; html was: {html}"
     );
-    // stderr reports both the snap and the cap-drop so the user knows where points went
+    // stderr reports both the snap (with the derived cap + its provenance) and the cap-drop so
+    // the user knows where points went
     let stderr = String::from_utf8_lossy(&out.stderr);
     assert!(
-        stderr.contains("1 of 5 points were snapped to the nearest region."),
+        stderr.contains(
+            "1 of 5 points were snapped to the nearest region (cap 100 km, auto-derived from \
+             region size and coordinate precision)."
+        ),
         "missing snap coverage note; stderr was: {stderr}"
     );
     assert!(
         stderr.contains(
-            "1 of 5 points fell outside every region and were dropped (no region within 10 km)."
+            "1 of 5 points fell outside every region and were dropped (no region within 100 km)."
         ),
         "missing cap-drop coverage note; stderr was: {stderr}"
+    );
+}
+
+// the auto snap cap is context-sensitive: ward-scale regions (~3 km bbox diagonal) with precise
+// coordinates derive a sub-km cap (10% of the median region diagonal), so a stray ~2 km out —
+// which the old fixed 10 km default would have snapped — is dropped, while a ~0.1 km stray still
+// snaps.
+#[test]
+fn viz_choropleth_pip_auto_snap_cap_ward_scale() {
+    let wrk = Workdir::new("viz_choropleth_pip_auto_snap_cap_ward_scale");
+    // A = lon 0..0.02, B = lon 0.02..0.04 (both lat 0..0.02): 0.02-deg squares, bbox diagonal
+    // ~3.15 km -> region term 0.315 km; 5-decimal coordinates make the precision floor
+    // negligible -> auto cap 0.31 km. Points: one in A, one in B, a stray 0.001 deg (~0.11 km)
+    // north of A (snaps), and a stray 0.018 deg (~2 km) north of A (drops; would snap under the
+    // old fixed 10 km cap).
+    wrk.create_from_string(
+        "pts.csv",
+        "lat,lon\n0.01234,0.01234\n0.01234,0.03123\n0.02100,0.01000\n0.03800,0.01000\n",
+    );
+    wrk.create_from_string(
+        "wards.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,0.02],[0.02,0.02],[0.02,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[0.02,0],[0.02,0.02],[0.04,0.02],[0.04,0],[0.02,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "choropleth",
+        "pts.csv",
+        "--lat",
+        "lat",
+        "--lon",
+        "lon",
+        "--geojson",
+        "wards.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // A = 1 contained + 1 snapped, B = 1 contained; the ~2 km stray dropped
+    assert!(html.contains(r#""locations":["A","B"]"#));
+    assert!(html.contains(r#""z":[2.0,1.0]"#));
+    assert!(html.contains("includes 1 snapped from outside"));
+    assert!(
+        html.contains(
+            "1 of 4 points snapped to the nearest region (≤0.31 km, auto-derived from region size \
+             and coordinate precision)."
+        ),
+        "missing sub-km snapped note; html was: {html}"
+    );
+    assert!(
+        html.contains("1 of 4 points were farther than 0.31 km from any region and were dropped."),
+        "missing sub-km cap drop note; html was: {html}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("(no region within 0.31 km)"),
+        "stderr should name the derived sub-km cap; stderr was: {stderr}"
     );
 }
 
@@ -6969,6 +7043,47 @@ fn viz_smart_pip_choropleth_panel() {
     assert!(html.contains(r#""type":"choropleth""#));
     assert!(html.contains(r#""locationmode":"geojson-id""#));
     assert!(html.contains(r#""featureidkey":"properties.id""#));
+}
+
+// when the `viz smart` PIP choropleth snaps any points, the panel title surfaces the snap
+// metadata (count + the cap applied) — a sub-panel has no below-map annotation surface, and the
+// note must not sit on the map itself.
+#[test]
+fn viz_smart_pip_choropleth_snapped_title() {
+    let wrk = Workdir::new("viz_smart_pip_choropleth_snapped_title");
+    // A = lon 0..10, B = lon 10..20 (both lat 0..10); the (10.05, 5) stray is ~5.6 km north of A.
+    // Auto cap: integer lons -> 0-decimal precision floor (~157 km) and 10-deg regions
+    // (~157 km region term) both clamp to 100 km, so the stray snaps into A.
+    wrk.create_from_string("pts.csv", "lat,lon\n5,5\n6,6\n5,15\n6,16\n10.05,5\n");
+    wrk.create_from_string(
+        "regions.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","properties":{"id":"A"},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","properties":{"id":"B"},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "pts.csv",
+        "--geojson",
+        "regions.geojson",
+        "--feature-id-key",
+        "properties.id",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("Regions (1 snapped ≤100 km)"),
+        "smart panel title should carry the snap metadata; html was: {html}"
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains(
+            "viz smart: 1 of 5 points were snapped to the nearest region (cap 100 km, \
+             auto-derived from region size and coordinate precision)."
+        ),
+        "stderr should state the derived cap + provenance; stderr was: {stderr}"
+    );
 }
 
 // A metro-scale `viz smart` choropleth renders on a MapLibre tile basemap (ChoroplethMap). Its fill

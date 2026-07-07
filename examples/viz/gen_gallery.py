@@ -261,10 +261,42 @@ FS_BUTTON_JS = (
     'var sp=fl[k]&&fl[k]._subplot;return sp&&sp.map;});'
     'if(!ready&&tries>0){setTimeout(function(){qsvFitNow(gd,tries-1);},100);return;}'
     'var px=qsvPlotPx(gd);qsvApplyCamera(gd,px.w,px.h);}'
+    # scrollZoom control (mirrors setScrollZoom/applyScrollZoom in src/cmd/viz.rs, fix #4150): plotly
+    # turns wheel-zoom ON by default for geo/map/gl3d subplots, so a wheel/two-finger scroll over a
+    # map, choropleth or 3D figure zooms the subplot and swallows the PAGE scroll. Disable it inline
+    # (so scrolling scrolls the page); re-enable in fullscreen (no page to scroll). geo/gl3d follow
+    # plotly's live read of gd._context.scrollZoom; a MapLibre `map` subplot ignores the render
+    # config at the GL-handler level, so toggle its wheel-zoom handler DIRECTLY once the map
+    # attaches. Drag-pan (and 3D drag-rotate) is left untouched.
+    'function qsvSetScrollZoom(gd,on){try{if(gd._context)gd._context.scrollZoom=on;}catch(e){}'
+    'var fl=gd._fullLayout||{};qsvMapKeys(gd).forEach(function(k){'
+    'var sp=fl[k]&&fl[k]._subplot,m=sp&&sp.map;'
+    'if(m&&m.scrollZoom&&typeof m.scrollZoom.enable==="function"){'
+    'try{if(on)m.scrollZoom.enable();else m.scrollZoom.disable();}catch(e){}}});}'
+    # wait (bounded) for each MapLibre subplot's _subplot.map to attach (geo/gl3d/non-map figures are
+    # ready immediately since qsvMapKeys is empty), then assert the scrollZoom state for the current
+    # fullscreen mode. Published as a global so any re-render path can re-assert it.
+    'function qsvApplyScrollZoom(gd,tries){if(tries===undefined)tries=20;var fl=gd._fullLayout||{};'
+    'var ready=qsvMapKeys(gd).every(function(k){var sp=fl[k]&&fl[k]._subplot;return sp&&sp.map;});'
+    'if(!ready&&tries>0){setTimeout(function(){qsvApplyScrollZoom(gd,tries-1);},100);return;}'
+    'qsvSetScrollZoom(gd,document.fullscreenElement===gd);}'
+    'window.__qsvRefitScrollZoom=qsvApplyScrollZoom;'
+    # gl3d (3D scene) panels need a DIFFERENT fix than geo/map: plotly's WebGL canvas swallows the
+    # wheel (preventDefault) on EVERY wheel event — even created with scrollZoom:false, which
+    # suppresses the zoom but NOT the preventDefault — so a scroll over a 3D chart neither zooms NOR
+    # scrolls the page. The robust fix is a capture-phase wheel interceptor: inline we stopPropagation
+    # so the canvas handler never runs (never preventDefaults) and the wheel scrolls the PAGE; in
+    # fullscreen we let it through. The listener sits on gd so it survives any re-render. Drag-rotate
+    # uses pointer events, so it is untouched.
+    'function qsvSceneKeys(gd){var fl=gd._fullLayout||{};'
+    'return Object.keys(fl).filter(function(k){return /^scene\\d*$/.test(k);});}'
+    'function qsvInstallGl3dFix(gd){if(gd.__qsvGl3dFix||!qsvSceneKeys(gd).length)return;'
+    'gd.__qsvGl3dFix=true;gd.addEventListener("wheel",function(e){'
+    'if(document.fullscreenElement!==gd)e.stopPropagation();},{capture:true,passive:true});}'
     'var qsvTries=0;function qsvInitFit(){if(typeof Plotly==="undefined"){'
     'if(qsvTries++<100)setTimeout(qsvInitFit,50);return;}var pending=false;'
     'document.querySelectorAll(".js-plotly-plot").forEach(function(gd){if(gd.__qsvInitFit)return;'
-    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);'
+    'if(gd.data){gd.__qsvInitFit=true;qsvFitNow(gd);qsvApplyScrollZoom(gd);qsvInstallGl3dFix(gd);'
     # Core/Full extent buttons bake an assumed-px zoom; adopt the clicked extent as the new fit
     # reference and re-aim the camera for the current size (mirrors the CLI handler in viz.rs).
     'if(gd.on)gd.on("plotly_buttonclicked",function(ed){try{'
@@ -278,8 +310,12 @@ FS_BUTTON_JS = (
     # Plotly.Plots.resize is async; fit only AFTER it resolves (mirrors viz.rs) so qsvFitNow reads
     # the post-resize dims rather than stale pre-change ones.
     'function qsvResizeThenFit(gd){var rp;try{rp=Plotly.Plots.resize(gd);}catch(e){}'
-    'if(rp&&rp.then)rp.then(function(){qsvFitNow(gd);}).catch(function(){qsvFitNow(gd);});'
-    'else qsvFitNow(gd);}'
+    # re-assert scrollZoom for the current fullscreen mode after the async resize resolves (mirrors
+    # the fullscreenchange handler in src/cmd/viz.rs #4150): enable wheel-zoom entering fullscreen,
+    # disable on exit — read post-resize so a MapLibre subplot's GL handle is attached.
+    'var qsvDone=function(){qsvFitNow(gd);qsvApplyScrollZoom(gd);};'
+    'if(rp&&rp.then)rp.then(qsvDone).catch(qsvDone);'
+    'else qsvDone();}'
     'document.addEventListener("fullscreenchange",function(){try{'
     'var el=document.fullscreenElement;'
     'if(el&&el.classList&&el.classList.contains("js-plotly-plot")){qsvResizeThenFit(el);}'
@@ -859,7 +895,7 @@ def main():
                 plots.append(
                     f'Plotly.newPlot("{gid}-p{k}", FIGS[{idx}][{k}].data, '
                     f'FIGS[{idx}][{k}].layout || {{}}, '
-                    f'Object.assign({{responsive:true,modeBarButtonsToAdd:[qsvFsBtn]}}, '
+                    f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn]}}, '
                     f'FIGS[{idx}][{k}].config || {{}}));'
                 )
         else:
@@ -871,7 +907,7 @@ def main():
             )
             plots.append(
                 f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
-                f'Object.assign({{responsive:true,modeBarButtonsToAdd:[qsvFsBtn]}}, '
+                f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn]}}, '
                 f'FIGS[{idx}].config || {{}}));'
             )
 

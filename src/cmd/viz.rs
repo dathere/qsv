@@ -5940,9 +5940,11 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
           // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
           if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
           // this newPlot re-render silently drops gd.on listeners — rebind the Data Dictionary
-          // annotation hook (when that feature is on the page) once the re-render settles.
+          // annotation hook (when that feature is on the page) once the re-render settles,
+          // fulfilled OR rejected: the listeners are already gone either way.
           if (gd.__qsvDictHooked && window.__qsvDictRehook && np && np.then) {
-            np.then(function () { gd.__qsvDictHooked = false; window.__qsvDictRehook(); });
+            var rehook = function () { gd.__qsvDictHooked = false; window.__qsvDictRehook(); };
+            np.then(rehook, rehook);
           }
         } else {
           Plotly.relayout(gd, u);

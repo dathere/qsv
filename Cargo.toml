@@ -282,7 +282,7 @@ phf = { version = "0.13", features = ["macros"] }
 # HTML self-contained, and `static_export_default` (via `viz_static`) adds PNG/SVG/PDF
 # export through a webdriver-managed headless browser. NO polars dependency. See #302.
 plotly = { version = "0.14.1", default-features = false, optional = true }
-pragmastat = "12.1"
+pragmastat = "13.0"
 polars = { version = "0.54.4", features = [
     "asof_join",
     "avro",

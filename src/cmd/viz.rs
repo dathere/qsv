@@ -3898,10 +3898,13 @@ fn resolve_snap_cap(
     }
 }
 
-/// Decimal places a raw CSV field carries, exponent-aware ("1.5e-3" → 4, "1.5e2" → 0) and with
-/// trailing fractional zeros trimmed ("40.7100" → 2, matching the stats cache's `max_precision`
-/// shortest-format semantics). Feeds the auto snap cap's precision floor on the command path,
-/// where no stats cache is loaded.
+/// Decimal places a raw CSV field carries in its shortest decimal form, matching the stats
+/// cache's `max_precision` semantics: exponent-aware ("1.5e-3" → 4, "1.5e2" → 0) with trailing
+/// zeros trimmed AFTER the exponent is applied — so "40.7100" → 2 and "4070e-2" (= 40.70) → 1,
+/// not 2. Counting the mantissa's digit-sequence trailing zeros (rather than only trailing
+/// fractional zeros) handles both forms uniformly: each trailing zero cancels one fractional
+/// position of the exponent-shifted value. Feeds the auto snap cap's precision floor on the
+/// command path, where no stats cache is loaded.
 fn byte_decimal_places(field: &[u8]) -> u32 {
     let s = std::str::from_utf8(field).unwrap_or("").trim();
     let (mantissa, exp) = match s.find(['e', 'E']) {
@@ -3909,10 +3912,21 @@ fn byte_decimal_places(field: &[u8]) -> u32 {
         None => (s, 0_i32),
     };
     let frac_digits = match mantissa.find('.') {
-        Some(i) => mantissa[i + 1..].trim_end_matches('0').len() as i32,
+        Some(i) => (mantissa.len() - i - 1) as i32,
         None => 0,
     };
-    u32::try_from(frac_digits.saturating_sub(exp)).unwrap_or(0)
+    let trailing_zeros = mantissa
+        .bytes()
+        .rev()
+        .filter(u8::is_ascii_digit)
+        .take_while(|&b| b == b'0')
+        .count() as i32;
+    u32::try_from(
+        frac_digits
+            .saturating_sub(exp)
+            .saturating_sub(trailing_zeros),
+    )
+    .unwrap_or(0)
 }
 
 /// Coordinate precision (decimal places) of the lat/lon columns from the stats cache: each
@@ -21195,6 +21209,13 @@ mod tests {
         assert_eq!(byte_decimal_places(b"1.5e-3"), 4, "0.0015 -> 4 decimals");
         assert_eq!(byte_decimal_places(b"7e-2"), 2, "0.07 -> 2 decimals");
         assert_eq!(byte_decimal_places(b"1.5E2"), 0, "150 -> 0 decimals");
+        // trailing zeros must be trimmed AFTER the exponent is applied: a trailing-zero mantissa
+        // cancels fractional positions of the shifted value (roborev #3488).
+        assert_eq!(byte_decimal_places(b"150e-2"), 1, "1.5 -> 1 decimal");
+        assert_eq!(byte_decimal_places(b"4070e-2"), 1, "40.7 -> 1 decimal");
+        assert_eq!(byte_decimal_places(b"1000e-3"), 0, "1 -> 0 decimals");
+        assert_eq!(byte_decimal_places(b"50.0e-1"), 0, "5 -> 0 decimals");
+        assert_eq!(byte_decimal_places(b"0.150"), 2, "0.15 -> 2 decimals");
         assert_eq!(byte_decimal_places(b""), 0);
         assert_eq!(byte_decimal_places(b"n/a"), 0);
     }

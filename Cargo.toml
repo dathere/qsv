@@ -19,7 +19,6 @@ autobins      = false
 include = [
     "src/**/*",
     "LICENSE-MIT",
-    "UNLICENSE",
     "README.md",
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",

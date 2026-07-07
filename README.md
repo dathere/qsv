@@ -563,7 +563,7 @@ cargo t --no-default-features -F all_features,mimalloc
 
 ## License
 
-Dual-licensed under MIT or the [UNLICENSE](https://unlicense.org).
+[MIT](LICENSE-MIT)
 
 
 [![FOSSA Status](https://app.fossa.com/api/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv.svg?type=large)](https://app.fossa.com/projects/git%2Bgithub.com%2Fjqnatividad%2Fqsv?ref=badge_large)

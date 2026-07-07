@@ -803,11 +803,15 @@ const HIGH_CARD_ENTROPY_NOISE_THRESHOLD: f64 = 0.95;
 const LABEL_MAX_BARS: usize = 40;
 
 /// `viz smart` caps how many data points it embeds in a single panel (map, time-series, and
-/// correlated-pair scatter). Beyond this, the points are uniformly downsampled. The motivating
-/// case: a 1M-row dataset's map embedded 745K opaque markers — an unreadable blob, a ~25 MB
-/// payload, and a browser that froze on the first pan/zoom. Uniform stride sampling preserves the
-/// overall shape/distribution of the data.
-const DEFAULT_MAX_SMART_POINTS: usize = 50_000;
+/// correlated-pair scatter). Beyond this, the points are uniformly downsampled — stride sampling
+/// preserves the overall shape/distribution of the data. The motivating case: a 1M-row dataset's
+/// map once embedded 745K opaque markers — an unreadable blob, a ~25 MB payload, and a browser
+/// that froze on the first pan/zoom. Originally 50K back when every embedded point cost ~200
+/// plaintext bytes; raised to 150K after the compressed-payload work (trace-level hovertemplates
+/// + float32 typed arrays + gzip'd figure payloads) cut the marginal cost to ~16 bytes/point
+/// (a 150K-point map dashboard is ~4.4 MB all-in) and MapLibre GL measured a steady 61 fps
+/// pan/zoom at 150K-250K markers.
+const DEFAULT_MAX_SMART_POINTS: usize = 150_000;
 
 /// The resolved per-panel point budget, overridable with the `QSV_VIZ_MAX_POINTS` env var (an
 /// advanced knob for denser/leaner output — larger values embed more points at the cost of a

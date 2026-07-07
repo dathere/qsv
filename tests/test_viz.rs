@@ -633,7 +633,7 @@ fn viz_smart_grouped_violin_off_suppressed() {
 fn viz_smart_grouped_violin_max_points_env_override() {
     let wrk = Workdir::new("viz_smart_grouped_violin_max_points_env_override");
     // 60k rows across two categories (30k each). At the default budget the violin sample target is
-    // 10k (MAX_SMART_POINTS/5), so each category is strided down (~5k kept); raising
+    // 30k (MAX_SMART_POINTS/5 = 150k/5), so each category is strided down (~15k kept); raising
     // QSV_VIZ_MAX_POINTS lifts the target above the row count, so all values are kept. The count of
     // a category label in the violin's x-array reflects how many of its points were embedded.
     let mut rows = String::from("grp,val\n");
@@ -660,11 +660,11 @@ fn viz_smart_grouped_violin_max_points_env_override() {
             .count()
     };
 
-    // default: strided to ~5k per category; raised budget keeps all 30k
+    // default: strided to ~15k per category; raised budget keeps all 30k
     let default_east = count_east(None);
     let raised_east = count_east(Some("1000000"));
     assert!(
-        default_east < 10_000,
+        default_east < 20_000,
         "default budget should stride-sample (got {default_east} east points)"
     );
     assert!(
@@ -750,11 +750,13 @@ fn viz_smart_dense_grid_demotes_all_points_to_outliers() {
 #[test]
 fn viz_smart_violin_sampled_above_exact_threshold() {
     let wrk = Workdir::new("viz_smart_violin_sampled_above_exact_threshold");
-    // 12,000 non-null values: past the 10k exact-data threshold, the violin is drawn from
-    // a deterministic stride sample — no point overlay (a sample misses the true extremes)
-    // and a "(sampled)" title cue. Triangular sum keeps it unimodal (violin, not histogram);
-    // the +1000 offset keeps the max/min ratio low so `--log-scale auto` stays linear
-    // (a would-log panel correctly declines the violin).
+    // 12,000 non-null values against a pinned 10k violin budget (QSV_VIZ_MAX_POINTS=50000/5):
+    // past the exact-data threshold, the violin is drawn from a deterministic stride sample —
+    // no point overlay (a sample misses the true extremes) and a "(sampled)" title cue. The
+    // budget is pinned so the fixture stays small under the larger default (150k/5 = 30k).
+    // Triangular sum keeps it unimodal (violin, not histogram); the +1000 offset keeps the
+    // max/min ratio low so `--log-scale auto` stays linear (a would-log panel correctly
+    // declines the violin).
     let mut rows = String::from("id,measure\n");
     for i in 1..=12_000_u32 {
         rows.push_str(&format!("{i},{}\n", 1000 + (i % 200) + ((i * 3) % 231)));
@@ -764,6 +766,7 @@ fn viz_smart_violin_sampled_above_exact_threshold() {
     let out_html = wrk.path("dash.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
     cmd.args(["smart", "big.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_MAX_POINTS", "50000");
     wrk.assert_success(&mut cmd);
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(html.contains(r#""type":"violin""#));

@@ -11926,22 +11926,42 @@ fn build_smart_pip_choropleth_panel(
 }
 
 /// Resolve a region-code cell value to the matching GeoJSON feature id, or `None` when it matches
-/// no boundary. Trims first; then, for a short all-digit code (a numeric zip/fips that reads
-/// shorter than a zero-padded id), left-pads to 5 and prefers that ("7936" -> "07936"), else falls
-/// back to the raw trimmed value ("15129" stays "15129", "BAKERSTOWN" stays as-is). Used by
-/// [`build_smart_summary_choropleth_panels`] to match a dimension column against the feature ids.
+/// no boundary. Trims first, then prefers an exact match ("15129" -> "15129", "BAKERSTOWN" stays
+/// as-is). Failing that, a numeric code that reads shorter than its zero-padded feature id (e.g. a
+/// state FIPS `1` vs id `01`, a county FIPS `3` vs `003`, or a zip `7936` vs `07936`) is
+/// left-padded to each distinct digit-width present among the feature ids — shortest viable width
+/// first — and the first padded form found is returned. This keeps the matcher correct for the
+/// broader geo concepts the summary choropleth accepts (zip/postal, county, state, census_tract,
+/// fips), not just 5-digit zips. Used by [`build_smart_summary_choropleth_panels`] to match a
+/// dimension column against the feature ids.
 fn match_region_code(raw: &str, feature_ids: &std::collections::HashSet<&str>) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
     }
-    if raw.len() < 5 && raw.bytes().all(|b| b.is_ascii_digit()) {
-        let padded = format!("{raw:0>5}");
-        if feature_ids.contains(padded.as_str()) {
-            return Some(padded);
+    // Exact match wins (already-padded zips, alphanumeric ids, etc.).
+    if feature_ids.contains(raw) {
+        return Some(raw.to_string());
+    }
+    // For an all-digit code that reads shorter than the zero-padded feature ids (numeric zip/FIPS
+    // columns drop leading zeros), try padding to each numeric feature-id width wider than the
+    // code.
+    if raw.bytes().all(|b| b.is_ascii_digit()) {
+        let mut widths: Vec<usize> = feature_ids
+            .iter()
+            .filter(|id| id.len() > raw.len() && id.bytes().all(|b| b.is_ascii_digit()))
+            .map(|id| id.len())
+            .collect();
+        widths.sort_unstable();
+        widths.dedup();
+        for width in widths {
+            let padded = format!("{raw:0>width$}");
+            if feature_ids.contains(padded.as_str()) {
+                return Some(padded);
+            }
         }
     }
-    feature_ids.contains(raw).then(|| raw.to_string())
+    None
 }
 
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
@@ -21940,6 +21960,19 @@ mod tests {
         assert_eq!(match_region_code("99999", &ids), None);
         // a short code whose padded form is absent -> no match (not blindly padded-and-kept)
         assert_eq!(match_region_code("123", &ids), None);
+
+        // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
+        // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
+        let fips: std::collections::HashSet<&str> =
+            ["01", "06", "003", "037", "42003"].into_iter().collect();
+        // state FIPS 1 -> 01 (2-wide id)
+        assert_eq!(match_region_code("1", &fips).as_deref(), Some("01"));
+        // county FIPS 3 -> 003 (3-wide id), preferring the shortest viable width first
+        assert_eq!(match_region_code("3", &fips).as_deref(), Some("003"));
+        // already-wide numeric id matches exactly
+        assert_eq!(match_region_code("42003", &fips).as_deref(), Some("42003"));
+        // a width with no matching padded form -> no match
+        assert_eq!(match_region_code("9", &fips), None);
     }
 
     #[test]

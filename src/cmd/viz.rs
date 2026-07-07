@@ -9412,6 +9412,7 @@ fn render_dict_page_html(
     dict: &DictData,
     dataset_title: &str,
     column_order: &[String],
+    view_chart_anchors: &std::collections::HashSet<String>,
 ) -> String {
     use serde_json::Value;
 
@@ -9532,17 +9533,26 @@ fn render_dict_page_html(
             html_escape(role.as_deref().unwrap_or("role unknown")),
             html_escape(col)
         ));
-        // "View chart ↗" — reverse navigation to the panel built from this column. In the
-        // drawer, click delegation scrolls the matching `data-qsv-dict` cell into view (and
-        // hides the link when there is none); in the standalone tab the inline handler walks
-        // `window.opener` (and at minimum refocuses the dashboard). The selector value needs
-        // no quotes: `dict_anchor_id` emits a valid CSS identifier.
+        // "View chart ↗" — reverse navigation to the panel built from this column, rendered
+        // only when a matching `data-qsv-dict` cell will exist (the inline render path; the
+        // typed grid is ONE plot with no per-panel elements, and dictionary-only or
+        // capped-out columns have no cell either) — see `view_chart_anchors` at the call
+        // site. In the drawer, click delegation scrolls the cell into view; in the standalone
+        // tab the inline handler walks `window.opener`. The selector value needs no quotes:
+        // `dict_anchor_id` emits a valid CSS identifier.
+        let viewchart = if view_chart_anchors.contains(&anchor) {
+            format!(
+                "<a class=\"qsv-dict-viewchart\" data-anchor=\"{anchor}\" href=\"#\" \
+                 onclick=\"var o=window.opener;if(o){{try{{var \
+                 p=o.document.querySelector('[data-qsv-dict={anchor}]');if(p)p.\
+                 scrollIntoView({{block:'center'}});}}catch(e){{}}o.focus();}}return false\">View \
+                 chart &#8599;</a>\n"
+            )
+        } else {
+            String::new()
+        };
         sections.push_str(&format!(
-            "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n<a class=\"qsv-dict-viewchart\" \
-             data-anchor=\"{anchor}\" href=\"#\" onclick=\"var o=window.opener;if(o){{try{{var \
-             p=o.document.querySelector('[data-qsv-dict={anchor}]');if(p)p.scrollIntoView({{block:\
-             'center'}});}}catch(e){{}}o.focus();}}return false\">View chart \
-             &#8599;</a>\n<h2>{}</h2>\n",
+            "<section class=\"qsv-dict-col\" id=\"{anchor}\">\n{viewchart}<h2>{}</h2>\n",
             html_escape(col)
         ));
         if !label.is_empty() && !label.eq_ignore_ascii_case(col) {
@@ -14031,11 +14041,23 @@ fn build_smart(
             Ok(dict_json) => {
                 // section order = the dataset's header order (dictionary-only columns follow)
                 let column_order: Vec<String> = stats.iter().map(|s| s.field.clone()).collect();
+                // "View chart" targets: only the inline path emits per-panel `data-qsv-dict`
+                // cells, and only for panels that survived the cap — the typed grid is one
+                // plot with nothing to scroll to, so its dictionary renders no such links.
+                let view_chart_anchors: std::collections::HashSet<String> = if inline {
+                    panels
+                        .iter()
+                        .filter_map(|p| p.dict_info.as_ref().map(|(a, _)| a.clone()))
+                        .collect()
+                } else {
+                    std::collections::HashSet::new()
+                };
                 Some(render_dict_page_html(
                     &dict_json,
                     dict,
                     &title_text,
                     &column_order,
+                    &view_chart_anchors,
                 ))
             },
             // unreachable in practice: dict_data only parses from valid JSON

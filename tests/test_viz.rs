@@ -8395,9 +8395,11 @@ fn viz_smart_dict_info_grid_path() {
         html.contains("qsv-dict-role-dimension"),
         "role-tinted chip missing"
     );
+    // the typed grid is ONE plot with no per-panel `data-qsv-dict` cells, so its dictionary
+    // renders no "View chart" links (they'd silently do nothing in the standalone tab)
     assert!(
-        html.contains("qsv-dict-viewchart"),
-        "View chart reverse links missing"
+        !html.contains("qsv-dict-viewchart\" data-anchor"),
+        "grid-path dictionary must not render View chart links"
     );
 }
 
@@ -8524,6 +8526,12 @@ fn viz_smart_dict_info_inline_path() {
     // the panel cells carry their dictionary anchor for "View chart" reverse navigation;
     // columns without a description get none: exactly 2 cells for c0/c1
     assert_eq!(html.matches(r#" data-qsv-dict="qsvdict-"#).count(), 2);
+    // and the dictionary page renders View chart links for exactly those panels
+    assert_eq!(
+        html.matches("qsv-dict-viewchart\" data-anchor").count(),
+        2,
+        "inline-path dictionary should render View chart links for the paneled columns only"
+    );
 }
 
 // Overview panels get info icons too: the time-series trend panel anchors on the driving

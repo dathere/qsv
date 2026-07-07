@@ -512,10 +512,14 @@ smart options:
                            measure can't show density past a natural limit.
                            A column with at most 10,000 non-null values gets an
                            exact violin (with outlier points, like a raw box);
+                           up to 30,000 values (one-fifth of the smart point
+                           budget, so it scales with QSV_VIZ_MAX_POINTS) still
+                           draws an exact violin but drops the point overlay;
                            a larger column draws its silhouette and inner box
-                           from a deterministic sample of at most 10,000 evenly
-                           strided values, carries no point overlay (a sample
-                           misses the true extremes), and is titled "(sampled)".
+                           from a deterministic sample of at most that many
+                           evenly strided values, carries no point overlay (a
+                           sample misses the true extremes), and is titled
+                           "(sampled)".
                            An explicit all, outliers or suspected mode given
                            via the box-points option instead collects every
                            value for every panel, violins included; that
@@ -779,16 +783,18 @@ const VIOLIN_MIN_POINTS: u64 = 50;
 
 /// Target sample size for a violin (single-column or grouped) drawn from a column with more than
 /// `SMART_BOX_OUTLIERS_MAX` non-null values: the values are deterministically strided down to at
-/// most this many during collection. A KDE silhouette (and sample quartiles for the inner box)
-/// from ~10k evenly spaced values is visually indistinguishable from one drawn from millions, at a
-/// bounded (~70KB/panel) embed cost — so violins have NO dataset-size ceiling. Sampled violins
-/// drop their point overlay: a strided sample misses the extremes, so sampled "outliers" would
-/// mislead (boxes keep exact outliers via the separate fence-filtered `BoxOutliers` pass).
+/// most this many during collection (columns between the two thresholds keep all their values —
+/// stride 1 — but already drop the point overlay). A KDE silhouette (and sample quartiles for
+/// the inner box) from tens of thousands of evenly spaced values is visually indistinguishable
+/// from one drawn from millions, at a bounded embed cost — so violins have NO dataset-size
+/// ceiling. Sampled violins drop their point overlay: a strided sample misses the extremes, so
+/// sampled "outliers" would mislead (boxes keep exact outliers via the separate fence-filtered
+/// `BoxOutliers` pass).
 ///
-/// Derived as one-fifth of the `MAX_SMART_POINTS` budget (10k at the 50k default), so
+/// Derived as one-fifth of the `MAX_SMART_POINTS` budget (30k at the 150k default), so
 /// `QSV_VIZ_MAX_POINTS` scales the violin sample proportionally with the scatter/map budget. The
-/// box-vs-sample classification threshold (`SMART_BOX_OUTLIERS_MAX`) stays fixed, so the env var
-/// changes point density, not chart-type decisions.
+/// point-overlay cutoff (`SMART_BOX_OUTLIERS_MAX`) stays fixed, so the env var changes sample
+/// density and the "(sampled)" boundary, not chart-type or overlay decisions.
 static VIOLIN_SAMPLE_MAX: std::sync::LazyLock<u64> =
     std::sync::LazyLock::new(|| ((*MAX_SMART_POINTS as u64) / 5).max(1));
 

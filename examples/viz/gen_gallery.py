@@ -191,7 +191,13 @@ JUMP_JS = (
     "addEventListener(\"message\",function(e){"
     "if(e.data&&typeof e.data.qsvVizHeight===\"number\")snap();});"
     "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
-    "addEventListener(t,function(){until=0;},{passive:true});});})();</script>")
+    "addEventListener(t,function(){until=0;},{passive:true});});"
+    # also arm on initial load with an existing fragment (a shared/bookmarked deep link like
+    # gallery.html#fig-...), so lazy iframes settling after the browser's initial hash scroll don't
+    # push the target out of view. Re-arm on load once resources have settled.
+    "function armFromHash(){if(location.hash.length>1)"
+    "arm(document.getElementById(location.hash.slice(1)));}"
+    "armFromHash();addEventListener(\"load\",armFromHash);})();</script>")
 
 # Injected once into the gallery: copies a command block's single-line form (data-cmd) to the
 # clipboard. Uses the async Clipboard API when available (https / localhost) and falls back to a

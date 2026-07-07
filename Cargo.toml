@@ -9,7 +9,7 @@ repository    = "https://github.com/dathere/qsv"
 readme        = "README.md"
 keywords      = ["csv", "geocode", "data-engineering", "etl", "opendata"]
 categories    = ["command-line-utilities", "parser-implementations"]
-license       = "MIT OR Unlicense"
+license       = "MIT"
 autotests     = false
 edition       = "2024"
 rust-version  = "1.96"
@@ -19,7 +19,6 @@ autobins      = false
 include = [
     "src/**/*",
     "LICENSE-MIT",
-    "UNLICENSE",
     "README.md",
     "CHANGELOG.md",
     "resources/luau/vendor/luadate/date.lua",

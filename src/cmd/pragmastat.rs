@@ -340,6 +340,21 @@ fn prepare_columns(args: &Args) -> Result<(Vec<String>, Vec<Vec<f64>>, Vec<ColTy
     if let Some(max_n) = args.flag_subsample {
         subsample_columns(&mut col_values, max_n, args.flag_seed.unwrap_or(42));
     }
+
+    // pragmastat v13 estimators are permutation-invariant; sorting each column
+    // once here lets every downstream raw::* call pass assume_sorted=true and skip
+    // its redundant internal sort (columns are reused across many estimators and,
+    // in two-sample mode, across many column pairs).
+    // Nested rayon parallelism: par_iter_mut spreads across columns, par_sort_unstable_by
+    // parallelizes each column's sort. rayon's work-stealing pool composes these without
+    // oversubscription — the inner sort soaks up idle cores when there are few columns
+    // but huge N (e.g. two-sample --select a,b on millions of rows), and runs effectively
+    // sequentially when the outer loop already saturates cores. Values are pre-filtered to
+    // finite, so total_cmp gives an unambiguous total order.
+    col_values
+        .par_iter_mut()
+        .for_each(|values| values.par_sort_unstable_by(f64::total_cmp));
+
     Ok((col_names, col_values, col_types))
 }
 
@@ -1151,14 +1166,16 @@ fn compute_one_sample<'a>(
         };
     }
 
-    let center = pragmastat::estimators::raw::center(values).ok();
-    let spread = pragmastat::estimators::raw::spread(values).ok();
+    // `values` is pre-sorted ascending in prepare_columns, so pass assume_sorted=true
+    // to skip pragmastat's redundant internal sort on each of these calls.
+    let center = pragmastat::estimators::raw::center(values, true).ok();
+    let spread = pragmastat::estimators::raw::spread(values, true).ok();
     let (center_bounds, spread_bounds) = if no_bounds {
         (None, None)
     } else {
         (
-            pragmastat::estimators::raw::center_bounds(values, misrate).ok(),
-            pragmastat::estimators::raw::spread_bounds(values, misrate).ok(),
+            pragmastat::estimators::raw::center_bounds(values, misrate, true).ok(),
+            pragmastat::estimators::raw::spread_bounds(values, misrate, true).ok(),
         )
     };
 
@@ -1205,29 +1222,32 @@ fn compute_two_sample<'a>(
         };
     }
 
-    let shift = pragmastat::estimators::raw::shift(x, y).ok();
+    // `x` and `y` are pre-sorted ascending in prepare_columns, so pass assume_sorted=true.
+    let shift = pragmastat::estimators::raw::shift(x, y, true).ok();
     let shift_bounds = if no_bounds {
         None
     } else {
-        pragmastat::estimators::raw::shift_bounds(x, y, misrate).ok()
+        pragmastat::estimators::raw::shift_bounds(x, y, misrate, true).ok()
     };
-    let disparity = pragmastat::estimators::raw::disparity(x, y).ok();
+    let disparity = pragmastat::estimators::raw::disparity(x, y, true).ok();
     let disparity_bounds = if no_bounds {
         None
     } else {
-        pragmastat::estimators::raw::disparity_bounds(x, y, misrate).ok()
+        pragmastat::estimators::raw::disparity_bounds(x, y, misrate, true).ok()
     };
 
     // Use pre-computed log-transformed slices for ratio computation.
     // Both must be Some (all values > 0) for ratio to be valid.
+    // ln is monotonically increasing on the positive domain, so the logs of the
+    // ascending-sorted columns are themselves ascending → assume_sorted=true holds here too.
     let (ratio, ratio_lower, ratio_upper) = if let (Some(lx), Some(ly)) = (log_x, log_y) {
-        let ratio = pragmastat::estimators::raw::shift(lx, ly)
+        let ratio = pragmastat::estimators::raw::shift(lx, ly, true)
             .ok()
             .map(f64::exp);
         let ratio_bounds = if no_bounds {
             None
         } else {
-            pragmastat::estimators::raw::shift_bounds(lx, ly, misrate)
+            pragmastat::estimators::raw::shift_bounds(lx, ly, misrate, true)
                 .ok()
                 .map(|b| (b.lower.exp(), b.upper.exp()))
         };

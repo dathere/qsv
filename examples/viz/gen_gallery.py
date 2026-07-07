@@ -165,6 +165,34 @@ TOC_JS = (
     "var a=e.target.closest&&e.target.closest(\"details.toc .toc-links a\");if(!a)return;"
     "var d=a.closest(\"details.toc\");if(d)d.open=false;});</script>")
 
+# Injected once into the gallery: keeps a jumped-to figure in view while the page height is still
+# settling. The dashboard iframes are lazy-loaded and grow from 600px to their real height on load,
+# so iframes ABOVE a jump target load mid-scroll and push the target out of view — the reason
+# "Jump to a chart" felt unreliable. On a TOC click / hashchange we arm the target for a short window
+# and re-align it (instantly, respecting figure{scroll-margin-top}) on every dashboard resize report
+# and on a coarse timer, so drift from iframes growing above it is corrected. Any manual scroll input
+# ends the window immediately so this never fights the reader.
+JUMP_JS = (
+    "<script>(function(){var target=null,until=0,iv=null;"
+    "function stop(){if(iv){clearInterval(iv);iv=null;}}"
+    # instant (not smooth): the page sets scroll-behavior:smooth, but a correcting re-align must be
+    # instant. A smooth scrollIntoView restarted every tick as iframes above grow would perpetually
+    # re-ease and never actually reach the target.
+    "function snap(){if(target&&Date.now()<until){target.scrollIntoView("
+    "{block:\"start\",behavior:\"instant\"});}else{stop();}}"
+    "function arm(el){if(!el)return;target=el;until=Date.now()+2500;snap();"
+    "if(!iv)iv=setInterval(snap,120);}"
+    "document.addEventListener(\"click\",function(e){"
+    "var a=e.target.closest&&e.target.closest(\"details.toc .toc-links a\");if(!a)return;"
+    "var href=a.getAttribute(\"href\");if(!href||href.charAt(0)!==\"#\")return;"
+    "arm(document.getElementById(href.slice(1)));});"
+    "addEventListener(\"hashchange\",function(){"
+    "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
+    "addEventListener(\"message\",function(e){"
+    "if(e.data&&typeof e.data.qsvVizHeight===\"number\")snap();});"
+    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "addEventListener(t,function(){until=0;},{passive:true});});})();</script>")
+
 # Injected once into the gallery: copies a command block's single-line form (data-cmd) to the
 # clipboard. Uses the async Clipboard API when available (https / localhost) and falls back to a
 # hidden-textarea + execCommand("copy") for file:// where the API is absent. Flips the button label
@@ -567,7 +595,9 @@ FIGURES = [
      "The headline panel is a <b>summary choropleth keyed off a region-code COLUMN</b>, not "
      "coordinates: this dataset has <i>no</i> lat/lon, only an <code>OwnerZip</code> column, so "
      "<code>viz smart</code> aggregates <b>licenses per zip</b> and fills the matching "
-     "<a href=\"https://data.wprdc.org\">Allegheny County zip-boundary</a> polygons from "
+     "<a href=\"https://data.wprdc.org/dataset/allegheny-county-zip-code-boundaries2/"
+     "resource/14e5de97-0a5f-4521-84f6-ba74413db598\">Allegheny County zip-boundary</a> "
+     "polygons from "
      "<code>--geojson</code> (<code>--feature-id-key properties.ZIP</code>). The key column is "
      "auto-chosen by matching each geo-dimension column's values against the boundary ids — here "
      "<b>118 zips</b> match, from 1 license (rural fringe) to <b>2,866</b> in zip 15237 (suburban "
@@ -810,9 +840,16 @@ def cdnify(html):
 
 
 def inject_resize_reporter(html):
-    """Add the postMessage height reporter just before </body> so the iframe can be auto-sized to
-    the dashboard with no inner scrollbar and no trailing whitespace."""
-    return html.replace("</body>", RESIZE_REPORTER_JS + "\n</body>", 1)
+    """Add the postMessage height reporter just before the page's real </body> so the iframe can be
+    auto-sized to the dashboard with no inner scrollbar and no trailing whitespace. Anchor on the
+    LAST </body>, not the first: `--dict-info` dashboards embed a complete standalone HTML document
+    (with its own </body></html>) as a string inside the qsvOpenDictTab script, so a first-match
+    replace would inject the reporter inside that script string, where it never runs — leaving the
+    iframe stuck at its initial height (the Allegheny dog-licenses dashboard clipping)."""
+    idx = html.rfind("</body>")
+    if idx == -1:
+        return html + RESIZE_REPORTER_JS
+    return html[:idx] + RESIZE_REPORTER_JS + "\n" + html[idx:]
 
 
 def grid_cols(args):
@@ -977,6 +1014,7 @@ def main():
         + RESIZE_LISTENER_JS + "\n"
         + COPY_JS + "\n"
         + TOC_JS + "\n"
+        + JUMP_JS + "\n"
         + "</body></html>\n"
     )
     with open(GALLERY, "w", encoding="utf-8") as fh:

@@ -3911,6 +3911,11 @@ fn byte_decimal_places(field: &[u8]) -> u32 {
         Some(i) => (&s[..i], s[i + 1..].parse::<i32>().unwrap_or(0)),
         None => (s, 0_i32),
     };
+    // zero has no decimal places in shortest form, whatever the notation ("0e-3", "0.0e-3");
+    // without this guard the exponent shift below would count phantom fractional positions.
+    if !mantissa.bytes().any(|b| b.is_ascii_digit() && b != b'0') {
+        return 0;
+    }
     let frac_digits = match mantissa.find('.') {
         Some(i) => (mantissa.len() - i - 1) as i32,
         None => 0,
@@ -21216,6 +21221,10 @@ mod tests {
         assert_eq!(byte_decimal_places(b"1000e-3"), 0, "1 -> 0 decimals");
         assert_eq!(byte_decimal_places(b"50.0e-1"), 0, "5 -> 0 decimals");
         assert_eq!(byte_decimal_places(b"0.150"), 2, "0.15 -> 2 decimals");
+        // an all-zero mantissa is zero: 0 decimal places regardless of notation (roborev #3489).
+        assert_eq!(byte_decimal_places(b"0e-3"), 0, "0 -> 0 decimals");
+        assert_eq!(byte_decimal_places(b"0.0e-3"), 0, "0 -> 0 decimals");
+        assert_eq!(byte_decimal_places(b"0.000"), 0, "0 -> 0 decimals");
         assert_eq!(byte_decimal_places(b""), 0);
         assert_eq!(byte_decimal_places(b"n/a"), 0);
     }

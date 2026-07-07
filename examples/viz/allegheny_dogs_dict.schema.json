@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Allegheny County Lifetime Dog Licenses — curated Data Dictionary",
+  "description": "Curated dictionary for the viz smart gallery example. Tags OwnerZip as a geographic zip-code dimension (concept geo.zip_code) so viz smart draws a per-zip summary choropleth against the Allegheny County zip-boundary GeoJSON instead of a frequency bar. _id and DogName are tagged as identifiers (skipped); the low-cardinality categorical columns are omitted so they fall back to the statistical classifier (frequency bars).",
+  "type": "object",
+  "properties": {
+    "_id": {
+      "type": "integer", "title": "Record ID",
+      "x-qsv": { "qsv_type": "Integer", "role": "identifier", "concept": "id.surrogate_key" }
+    },
+    "OwnerZip": {
+      "type": "integer", "title": "Owner ZIP Code",
+      "x-qsv": { "qsv_type": "Integer", "role": "dimension", "concept": "geo.zip_code", "content_type": "zip_code" }
+    },
+    "DogName": {
+      "type": "string", "title": "Dog Name",
+      "x-qsv": { "qsv_type": "String", "role": "identifier", "concept": "id.name" }
+    },
+    "ValidDate": {
+      "type": "string", "title": "License Valid Date",
+      "x-qsv": { "qsv_type": "DateTime", "role": "timestamp", "concept": "time.datetime" }
+    }
+  }
+}

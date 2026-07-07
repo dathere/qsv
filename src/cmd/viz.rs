@@ -8517,6 +8517,9 @@ enum PanelKind {
         /// Pre-rendered per-region hover label (aligned to `locations`): name+id, labeled count,
         /// share of total, rank. Attached via `hover_text_array` + `HoverInfo::Text` at render.
         hover_text:     Vec<String>,
+        /// Colorbar title / measure name (e.g. "count", "median PRICE"). Parameterized so a
+        /// region-code summary choropleth can label its aggregate instead of a hardcoded "count".
+        measure_label:  String,
     },
     /// Filled-region choropleth drawn on a MapLibre tile basemap (`map` subplot) instead of the
     /// projection `geo` subplot — used for a `viz smart` `--geojson` point-in-polygon panel whose
@@ -8536,6 +8539,8 @@ enum PanelKind {
         center_lon:     f64,
         center_lat:     f64,
         zoom:           f64,
+        /// Colorbar title / measure name (e.g. "count", "median PRICE"). See `Choropleth`.
+        measure_label:  String,
     },
     /// Categorical part-to-whole hierarchy (`Treemap` or `Sunburst`, per `style`) over 2–3
     /// nested low-cardinality dimensions. Carries the fully precomputed flat plotly arrays
@@ -11730,6 +11735,7 @@ fn build_smart_choropleth_panel(lats: &[f64], lons: &[f64]) -> Option<Panel> {
             geojson: None,
             feature_id_key: None,
             hover_text,
+            measure_label: "count".to_string(),
         },
     ))
 }
@@ -11903,6 +11909,7 @@ fn build_smart_pip_choropleth_panel(
                 MAP_PANEL_ASSUMED_WIDTH_PX,
                 MAP_PANEL_USABLE_HEIGHT_PX,
             )),
+            measure_label: "count".to_string(),
         }
     } else {
         PanelKind::Choropleth {
@@ -11912,9 +11919,308 @@ fn build_smart_pip_choropleth_panel(
             geojson: Some(geojson),
             feature_id_key: Some(feature_id_key.to_string()),
             hover_text,
+            measure_label: "count".to_string(),
         }
     };
     Ok(Some(Panel::new(panel_name, kind)))
+}
+
+/// Resolve a region-code cell value to the matching GeoJSON feature id, or `None` when it matches
+/// no boundary. Trims first; then, for a short all-digit code (a numeric zip/fips that reads
+/// shorter than a zero-padded id), left-pads to 5 and prefers that ("7936" -> "07936"), else falls
+/// back to the raw trimmed value ("15129" stays "15129", "BAKERSTOWN" stays as-is). Used by
+/// [`build_smart_summary_choropleth_panels`] to match a dimension column against the feature ids.
+fn match_region_code(raw: &str, feature_ids: &std::collections::HashSet<&str>) -> Option<String> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    if raw.len() < 5 && raw.bytes().all(|b| b.is_ascii_digit()) {
+        let padded = format!("{raw:0>5}");
+        if feature_ids.contains(padded.as_str()) {
+            return Some(padded);
+        }
+    }
+    feature_ids.contains(raw).then(|| raw.to_string())
+}
+
+/// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
+/// `zip_code` column) matched against a user `--geojson` boundary file via `--feature-id-key`,
+/// independent of any lat/lon columns. Emits up to two panels: one colored by the per-region row
+/// count (always), and — when the dictionary tags a measure column (a `MAP_MEASURE_CONCEPTS`
+/// concept, else any `role=measure` column) — one colored by the per-region MEDIAN of that measure
+/// (median, not mean, since real-world measures like sale price are heavily right-skewed).
+///
+/// The key column is auto-chosen: in one pass, every geo region-code candidate column's trimmed
+/// cell values are matched against the GeoJSON feature-id set; the column whose matched-row
+/// fraction is highest (and clears `BIVARIATE_MIN_SUPPORT_RATIO`) wins, tie-breaking on the lowest
+/// column index. Numeric zip/fips codes read as "15129" match string feature ids "15129"; short
+/// all-digit codes are left-padded to 5 so "7936" matches a zero-padded "07936".
+///
+/// Returns `Ok(None)` when there is no `--geojson`, no geo region-code candidate, no candidate
+/// clears the overlap threshold, or the winner yields fewer than 2 matched regions. An unloadable
+/// `--geojson` or a `--feature-id-key` matching nothing stays a hard error (explicit intent).
+/// The returned `usize` is the winning region column's index, so the caller can suppress its
+/// redundant frequency bar (via `is_map_col`).
+fn build_smart_summary_choropleth_panels(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+) -> CliResult<Option<(Vec<Panel>, usize)>> {
+    // explicit intent: only build when the user supplied a --geojson boundary file.
+    let Some(spec) = args.flag_geojson.as_deref() else {
+        return Ok(None);
+    };
+
+    // region-code candidate columns: geo dimensions that NAME a boundary region (zip, county,
+    // state, ...), excluding point coordinates and address/city fields that don't key polygons.
+    // Canonical describegpt geo leaves plus lenient aliases for hand-curated dictionaries
+    // ("zip"/"postal_code" for the canonical "zip_code", "fips" for a county/tract code).
+    const REGION_CODE_LEAVES: &[&str] = &[
+        "zip_code",
+        "zip",
+        "postal_code",
+        "census_tract",
+        "county",
+        "state",
+        "country",
+        "fips",
+    ];
+    let candidates: Vec<usize> = col_sems
+        .iter()
+        .enumerate()
+        .filter(|(i, s)| {
+            stats.get(*i).is_some_and(|st| st.cardinality >= 2)
+                && s.concept
+                    .strip_prefix("geo.")
+                    .is_some_and(|leaf| REGION_CODE_LEAVES.contains(&leaf))
+        })
+        .map(|(i, _)| i)
+        .collect();
+    if candidates.is_empty() {
+        return Ok(None);
+    }
+
+    // load + validate the boundary file once (already resolved/validated in `run`); build the
+    // feature-id set the candidate columns are matched against.
+    let geojson = load_geojson(spec)?;
+    let feature_id_key = args.flag_feature_id_key.as_deref().unwrap_or("id");
+    let features = build_pip_features(
+        &geojson,
+        feature_id_key,
+        args.flag_feature_name_key.as_deref(),
+    )?;
+    let feature_ids: std::collections::HashSet<&str> =
+        features.iter().map(|f| f.id.as_str()).collect();
+
+    // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
+    // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
+    // dictionary role is still "measure"). Never a candidate region column.
+    let measure_idx: Option<usize> = first_col_by_concepts(
+        col_sems,
+        MAP_MEASURE_CONCEPTS,
+        usize::MAX,
+        usize::MAX,
+        &candidates,
+    )
+    .or_else(|| {
+        col_sems
+            .iter()
+            .enumerate()
+            .find(|(i, s)| s.route == Route::Measure && !candidates.contains(i))
+            .map(|(i, _)| i)
+    });
+
+    // one pass over the rows: for every candidate column tally matched-row count and (per matched
+    // region id) the row count and the measure values, plus the matched/total ratio used to pick
+    // the key column.
+    let n_c = candidates.len();
+    let mut order: Vec<Vec<String>> = vec![Vec::new(); n_c];
+    let mut counts: Vec<HashMap<String, f64>> = vec![HashMap::new(); n_c];
+    let mut values: Vec<HashMap<String, Vec<f64>>> = vec![HashMap::new(); n_c];
+    let mut matched_rows: Vec<u64> = vec![0; n_c];
+    let mut total_rows: Vec<u64> = vec![0; n_c];
+
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let measure = measure_idx.and_then(|mi| parse_f64(record.get(mi)));
+        for (ci, &di) in candidates.iter().enumerate() {
+            let cell = cell_to_string(record.get(di));
+            let raw = cell.trim();
+            if raw.is_empty() {
+                continue;
+            }
+            total_rows[ci] += 1;
+            // key aggregates under the matched geojson feature id; an unmatched value still counts
+            // toward total_rows so a poorly-overlapping column scores low.
+            let Some(k) = match_region_code(raw, &feature_ids) else {
+                continue;
+            };
+            matched_rows[ci] += 1;
+            match counts[ci].get_mut(&k) {
+                Some(c) => *c += 1.0,
+                None => {
+                    counts[ci].insert(k.clone(), 1.0);
+                    order[ci].push(k.clone());
+                },
+            }
+            if let Some(v) = measure {
+                values[ci].entry(k).or_default().push(v);
+            }
+        }
+    }
+
+    // pick the candidate with the highest matched-row fraction (tie-break lowest column index,
+    // preserved by only replacing on a strictly greater ratio while scanning ascending).
+    let mut best: Option<(f64, usize)> = None; // (ratio, candidate slot)
+    for ci in 0..n_c {
+        if total_rows[ci] == 0 {
+            continue;
+        }
+        let ratio = matched_rows[ci] as f64 / total_rows[ci] as f64;
+        if best.is_none_or(|(b, _)| ratio > b) {
+            best = Some((ratio, ci));
+        }
+    }
+    let Some((ratio, ci)) = best else {
+        return Ok(None);
+    };
+    if ratio < BIVARIATE_MIN_SUPPORT_RATIO {
+        viz_note(&format!(
+            "viz smart: --geojson supplied but no region-code column overlapped the boundary ids \
+             (best {:.0}%); skipping the summary choropleth.",
+            ratio * 100.0
+        ));
+        return Ok(None);
+    }
+    let region_idx = candidates[ci];
+
+    // resolve a human label for a column: dictionary label, else header, else positional.
+    let label_of = |idx: usize| {
+        let s = &col_sems[idx];
+        if !s.label.is_empty() {
+            s.label.clone()
+        } else if stats[idx].field.is_empty() {
+            format!("col {}", idx + 1)
+        } else {
+            stats[idx].field.clone()
+        }
+    };
+    let region_label = label_of(region_idx);
+
+    // shared assembly: frame to the matched-region bbox union, choose a MapLibre tile basemap for a
+    // metro-scale extent (fine street/coastline detail) or the projection `geo` basemap otherwise —
+    // mirroring `build_smart_pip_choropleth_panel`'s tail.
+    let make_panel = |locs: Vec<String>,
+                      z: Vec<f64>,
+                      measure_label: String,
+                      include_pct: bool,
+                      title: String| {
+        let names = aligned_region_names(&features, &locs);
+        let hover_text =
+            choropleth_hover_text(&locs, &z, names.as_deref(), &measure_label, include_pct);
+        let matched: std::collections::HashSet<&str> = locs.iter().map(String::as_str).collect();
+        let mut min_lon = f64::INFINITY;
+        let mut min_lat = f64::INFINITY;
+        let mut max_lon = f64::NEG_INFINITY;
+        let mut max_lat = f64::NEG_INFINITY;
+        let mut any_wrap = false;
+        for f in &features {
+            if matched.contains(f.id.as_str()) {
+                min_lon = min_lon.min(f.bbox[0]);
+                min_lat = min_lat.min(f.bbox[1]);
+                max_lon = max_lon.max(f.bbox[2]);
+                max_lat = max_lat.max(f.bbox[3]);
+                any_wrap |= f.wraps_antimeridian;
+            }
+        }
+        let lon_span = max_lon - min_lon;
+        let lat_span = max_lat - min_lat;
+        let use_tiles = !any_wrap
+            && lon_span < SMART_CHOROPLETH_MIN_SPAN_DEG
+            && lat_span < SMART_CHOROPLETH_MIN_SPAN_DEG;
+        let kind = if use_tiles {
+            PanelKind::ChoroplethMap {
+                locations: locs,
+                z,
+                geojson: geojson.clone(),
+                feature_id_key: feature_id_key.to_string(),
+                hover_text,
+                center_lon: (min_lon + max_lon) / 2.0,
+                center_lat: (min_lat + max_lat) / 2.0,
+                zoom: f64::from(fitbounds_zoom(
+                    min_lat,
+                    max_lat,
+                    lon_span,
+                    MAP_PANEL_ASSUMED_WIDTH_PX,
+                    MAP_PANEL_USABLE_HEIGHT_PX,
+                )),
+                measure_label,
+            }
+        } else {
+            PanelKind::Choropleth {
+                locations: locs,
+                z,
+                location_mode: LocationMode::GeoJsonId,
+                geojson: Some(geojson.clone()),
+                feature_id_key: Some(feature_id_key.to_string()),
+                hover_text,
+                measure_label,
+            }
+        };
+        Panel::new(title, kind)
+    };
+
+    // count panel (always): per-region row count over the matched regions, first-seen order.
+    let count_locs = order[ci].clone();
+    if count_locs.len() < 2 {
+        return Ok(None);
+    }
+    let count_z: Vec<f64> = count_locs.iter().map(|k| counts[ci][k]).collect();
+    let mut out = vec![make_panel(
+        count_locs,
+        count_z,
+        "count".to_string(),
+        true,
+        format!("count by {region_label}"),
+    )];
+
+    // median-measure panel (when a measure column exists): per-region median of the buffered
+    // values, skipping regions with no parsed measure.
+    if let Some(mi) = measure_idx {
+        let measure_name = label_of(mi);
+        let mut med_locs: Vec<String> = Vec::new();
+        let mut med_z: Vec<f64> = Vec::new();
+        for k in &order[ci] {
+            let Some(vs) = values[ci].get_mut(k) else {
+                continue;
+            };
+            if vs.is_empty() {
+                continue;
+            }
+            vs.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+            let m = vs.len() / 2;
+            let median = if vs.len() % 2 == 1 {
+                vs[m]
+            } else {
+                (vs[m - 1] + vs[m]) / 2.0
+            };
+            med_locs.push(k.clone());
+            med_z.push(median);
+        }
+        if med_locs.len() >= 2 {
+            out.push(make_panel(
+                med_locs,
+                med_z,
+                format!("median {measure_name}"),
+                false,
+                format!("median {measure_name} by {region_label}"),
+            ));
+        }
+    }
+
+    Ok(Some((out, region_idx)))
 }
 
 /// Max `--geojson` features to label on a map overlay. Above this, the region boundaries are still
@@ -13791,7 +14097,23 @@ fn build_smart(
         }
     };
     let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
-    let is_map_col = |idx: usize| map_cols.is_some_and(|(la, lo)| idx == la || idx == lo);
+
+    // region-code summary choropleth(s): drive per-region aggregates (count + median measure)
+    // directly from a geo dimension column (e.g. a zip column), independent of lat/lon. Only when
+    // build_map_panel emitted no choropleth companion (avoid two competing region fills), and never
+    // for image output (choropleths are HTML-only, like the PIP companion above).
+    let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
+        build_smart_summary_choropleth_panels(args, &stats, &col_sems)?
+    } else {
+        None
+    };
+    let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
+
+    // a column consumed by the point map (lat/lon) OR by the summary choropleth (region key) is
+    // suppressed from the per-column distribution panels and the correlation/bivariate pools.
+    let is_map_col = |idx: usize| {
+        map_cols.is_some_and(|(la, lo)| idx == la || idx == lo) || summary_choro_col == Some(idx)
+    };
 
     // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
     // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw box
@@ -14376,6 +14698,16 @@ fn build_smart(
     if let Some(mut panel) = choropleth_panel {
         panel.dict_info = geo_dict_info();
         panels.insert(0, panel);
+    } else if let Some((sc_panels, region_idx)) = summary_choros {
+        // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth companion.
+        // No coordinate column drives them, so anchor --dict-info on the region key column instead
+        // of geo_dict_info() (which is None here). Insert in reverse so the leading dashboard order
+        // is [count, median, …].
+        let info = dict_info_for_field(dict_icons, &stats[region_idx].field);
+        for mut panel in sc_panels.into_iter().rev() {
+            panel.dict_info = info.clone();
+            panels.insert(0, panel);
+        }
     }
     if let Some((mut panel, _)) = map_panel {
         panel.dict_info = geo_dict_info();
@@ -16075,6 +16407,7 @@ fn smart_inline_panel_plot(
         center_lon,
         center_lat,
         zoom,
+        measure_label,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -16084,7 +16417,7 @@ fn smart_inline_panel_plot(
                 .feature_id_key(feature_id_key.clone())
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title("count"))
+                .color_bar(ColorBar::new().title(measure_label.clone()))
                 .marker(
                     ChoroplethMarker::new()
                         .line(Line::new().width(0.5))
@@ -16142,6 +16475,7 @@ fn smart_inline_panel_plot(
         geojson,
         feature_id_key,
         hover_text,
+        measure_label,
     } = &panel.kind
     {
         let mut plot = Plot::new();
@@ -16149,7 +16483,7 @@ fn smart_inline_panel_plot(
             .location_mode(location_mode.clone())
             .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
             .show_scale(true)
-            .color_bar(ColorBar::new().title("count"))
+            .color_bar(ColorBar::new().title(measure_label.clone()))
             .marker(ChoroplethMarker::new().line(Line::new().width(0.5)))
             .hover_text_array(hover_text.clone())
             .hover_info(HoverInfo::Text);
@@ -21583,6 +21917,29 @@ mod tests {
         assert_eq!(h[0], "<b>A</b><br>magnitude: 3.5<br>rank 1 of 2");
         assert_eq!(h[1], "<b>B</b><br>magnitude: 1.5<br>rank 2 of 2");
         assert!(!h[0].contains("% of total"));
+    }
+
+    #[test]
+    fn match_region_code_pads_and_matches() {
+        let ids: std::collections::HashSet<&str> = ["07936", "15129", "15007", "BAKERSTOWN"]
+            .into_iter()
+            .collect();
+
+        // exact 5-digit match, with surrounding whitespace trimmed
+        assert_eq!(match_region_code(" 15129 ", &ids).as_deref(), Some("15129"));
+        // short all-digit code left-padded to 5 to match a zero-padded id
+        assert_eq!(match_region_code("7936", &ids).as_deref(), Some("07936"));
+        // non-numeric code matched verbatim
+        assert_eq!(
+            match_region_code("BAKERSTOWN", &ids).as_deref(),
+            Some("BAKERSTOWN")
+        );
+        // empty / whitespace-only -> no match
+        assert_eq!(match_region_code("   ", &ids), None);
+        // a value absent from the boundary set -> no match (counts against overlap ratio)
+        assert_eq!(match_region_code("99999", &ids), None);
+        // a short code whose padded form is absent -> no match (not blindly padded-and-kept)
+        assert_eq!(match_region_code("123", &ids), None);
     }
 
     #[test]

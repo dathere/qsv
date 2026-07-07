@@ -5935,10 +5935,15 @@ const SCRIPT_TEMPLATE: &str = r#"<script>
           var cfg = { responsive: true, scrollZoom: document.fullscreenElement === gd };
           var add = gd._context && gd._context.modeBarButtonsToAdd;
           if (add && add.length) cfg.modeBarButtonsToAdd = add;
-          Plotly.newPlot(gd, gd.data, gd.layout, cfg);
+          var np = Plotly.newPlot(gd, gd.data, gd.layout, cfg);
           // plotly re-enables the MapLibre GL wheel-zoom handler on this newPlot, so re-assert the
           // inline/fullscreen scrollZoom state via the fullscreen script's published helper.
           if (window.__qsvRefitScrollZoom) window.__qsvRefitScrollZoom(gd);
+          // this newPlot re-render silently drops gd.on listeners — rebind the Data Dictionary
+          // annotation hook (when that feature is on the page) once the re-render settles.
+          if (gd.__qsvDictHooked && window.__qsvDictRehook && np && np.then) {
+            np.then(function () { gd.__qsvDictHooked = false; window.__qsvDictRehook(); });
+          }
         } else {
           Plotly.relayout(gd, u);
         }
@@ -6491,7 +6496,13 @@ const GZ_PRELUDE_SCRIPT: &str = r#"<script>
     window.__qsvGunzip(el).then(function (s) {
       el.textContent = "";
       var p = Plotly.newPlot(id, JSON.parse(s));
-      if (p && p.then) p.then(window.__qsvReady); else window.__qsvReady();
+      // return the render promise so a rejected newPlot lands in the catch below
+      if (p && p.then) return p.then(window.__qsvReady);
+      window.__qsvReady();
+    }).catch(function (e) {
+      // still announce readiness so the other panels' theme re-apply isn't held hostage
+      console.error("qsv viz: figure payload render failed:", e);
+      window.__qsvReady();
     });
   };
 })();
@@ -6522,8 +6533,11 @@ const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
     (0, eval)(src);
     var chain = Promise.resolve();
     q.forEach(function (args) {
-      chain = chain.then(function () { return Plotly.newPlot.apply(Plotly, args); });
+      // per-panel catch: one failed render must not skip the remaining queued panels
+      chain = chain.then(function () { return Plotly.newPlot.apply(Plotly, args); })
+        .catch(function (e) { console.error("qsv viz: queued panel render failed:", e); });
     });
+    // every branch above settles, so readiness always fires even if some panels failed
     chain.then(window.__qsvReady);
   }).catch(function (e) { fail("Failed to inflate the embedded plotly.js bundle: " + e); });
 })();
@@ -9220,6 +9234,9 @@ document.addEventListener("keydown", function (e) {
     });
     if (pending && ++tries < 200) setTimeout(hook, 100);
   }
+  // published so the theme toggle can rebind after a MapLibre Plotly.newPlot re-render (which
+  // silently drops gd.on listeners; the toggle clears gd.__qsvDictHooked first).
+  window.__qsvDictRehook = hook;
   hook();
 })();
 </script>"##;

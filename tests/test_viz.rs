@@ -3124,6 +3124,49 @@ fn viz_smart_map_pan_bounds_from_full_extent_not_downsampled() {
     );
 }
 
+// A downsampled smart map announces the sampling on the panel itself (subtitle honesty cue,
+// mirroring the violin "(sampled)" suffix): the HTML reader otherwise has no way to know the
+// dots are a stride sample while the Regions choropleth beside it tallies every row.
+#[test]
+fn viz_smart_map_downsample_subtitle() {
+    let wrk = Workdir::new("viz_smart_map_downsample_subtitle");
+    // 300 tightly-clustered points (no geographic outliers) around one metro
+    let mut rows = String::from("id,lat,lon\n");
+    for i in 0..300 {
+        rows.push_str(&format!(
+            "{i},{:.5},{:.5}\n",
+            40.44 + 0.01 * f64::from(i % 30) / 30.0,
+            -79.99 - 0.01 * f64::from(i / 30) / 10.0
+        ));
+    }
+    wrk.create_from_string("pts.csv", &rows);
+
+    // cap the embedded points below the row count -> the subtitle names the sample
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_MAX_POINTS", "100");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains("of 300 points (sampled)"),
+        "downsampled map should carry a sampling subtitle"
+    );
+
+    // without downsampling, no sampling subtitle
+    let out_full = wrk.path("dash_full.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pts.csv", "-o", &out_full]);
+    // don't inherit a QSV_VIZ_MAX_POINTS a developer/CI may already have set
+    cmd.env_remove("QSV_VIZ_MAX_POINTS");
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash_full.html").unwrap();
+    assert!(
+        !html.contains("points (sampled)"),
+        "fully-embedded map must not claim sampling"
+    );
+}
+
 #[test]
 fn viz_smart_heatmap_density_threshold() {
     let wrk = Workdir::new("viz_smart_heatmap_density_threshold");
@@ -8382,6 +8425,25 @@ fn viz_smart_dict_info_grid_path() {
         html.contains(r#""name":"qsvdict-"#),
         "qsvdict- annotation name missing"
     );
+    // drawer + tab chrome: the in-page drawer builder, its named-tab escape hatch, and the
+    // dictionary page's back link / role-tinted ToC chips / "View chart" reverse links
+    assert!(html.contains("qsvDictDrawer"), "drawer builder missing");
+    assert!(
+        html.contains("qsvOpenDictTab"),
+        "named-tab escape hatch missing"
+    );
+    assert!(html.contains("qsv-dict-back"), "back link missing");
+    assert!(html.contains("qsv-dict-chip"), "ToC chips missing");
+    assert!(
+        html.contains("qsv-dict-role-dimension"),
+        "role-tinted chip missing"
+    );
+    // the typed grid is ONE plot with no per-panel `data-qsv-dict` cells, so its dictionary
+    // renders no "View chart" links (they'd silently do nothing in the standalone tab)
+    assert!(
+        !html.contains("qsv-dict-viewchart\" data-anchor"),
+        "grid-path dictionary must not render View chart links"
+    );
 }
 
 // --dict-info descriptions render Markdown (bold/bullets/links) as HTML in the embedded
@@ -8448,8 +8510,10 @@ fn viz_smart_dict_info_markdown_rendering() {
     );
 }
 
-// >8 chartable columns -> the inline-div path: icons are plain HTML overlays with the
-// description in the native title tooltip; the same dict template + chrome is embedded.
+// >8 chartable columns -> the inline-div path: icons ride on the panel-title annotations
+// (same mechanism as the typed grid), the cells carry `data-qsv-dict` anchors for the
+// dictionary page's "View chart" reverse links, and the same dict template + chrome is
+// embedded.
 #[test]
 fn viz_smart_dict_info_inline_path() {
     let wrk = Workdir::new("viz_smart_dict_info_inline_path");
@@ -8487,19 +8551,83 @@ fn viz_smart_dict_info_inline_path() {
         html.contains(r#"<h1 class="qsv-viz-title">"#),
         "expected the inline-div path"
     );
-    // HTML overlay icons with the description as the hover tooltip + anchor click-through
+    // info icons ride on the panel-title annotations: hovertext carries the description,
+    // captureevents + the qsvdict- name route the click to the drawer
     assert!(
-        html.contains("qsv-viz-dict-ico"),
-        "inline info icon missing"
+        html.contains(r#""captureevents":true"#),
+        "captureevents missing from inline panel JSON"
     );
-    assert!(html.contains(r#"title="First synthetic category column.""#));
-    assert!(html.contains("qsvdict-c0-"), "c0 anchor missing");
+    assert!(html.contains("First synthetic category column."));
+    assert!(
+        html.contains(r#""name":"qsvdict-c0-"#),
+        "c0 title annotation anchor missing"
+    );
     // embedded dict template + chrome
     assert!(html.contains(r#"id="qsv-dict-src""#));
     assert!(html.contains("qsvOpenDict"));
     assert!(html.contains("Wide synthetic categories."));
-    // columns without a description get no icon: exactly 2 icons for c0/c1
-    assert_eq!(html.matches("qsv-viz-dict-ico\" href").count(), 2);
+    // the panel cells carry their dictionary anchor for "View chart" reverse navigation;
+    // columns without a description get none: exactly 2 cells for c0/c1
+    assert_eq!(html.matches(r#" data-qsv-dict="qsvdict-"#).count(), 2);
+    // and the dictionary page renders View chart links for exactly those panels
+    assert_eq!(
+        html.matches("qsv-dict-viewchart\" data-anchor").count(),
+        2,
+        "inline-path dictionary should render View chart links for the paneled columns only"
+    );
+}
+
+// Overview panels get info icons too: the time-series trend panel anchors on the driving
+// date column's dictionary entry.
+#[test]
+fn viz_smart_dict_info_overview_timeseries_anchor() {
+    let wrk = Workdir::new("viz_smart_dict_info_overview_timeseries_anchor");
+    let mut rows = String::from("created_date,status\n");
+    for i in 0..120 {
+        let status = match i % 3 {
+            0 => "Open",
+            1 => "Closed",
+            _ => "Pending",
+        };
+        rows.push_str(&format!(
+            "2024-{:02}-{:02},{status}\n",
+            (i % 12) + 1,
+            (i % 28) + 1
+        ));
+    }
+    wrk.create_from_string("events.csv", &rows);
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "description": "Synthetic events.",
+          "properties": {
+            "created_date": { "type": "string", "title": "Created",
+              "description": "When the event was created.",
+              "x-qsv": { "role": "timestamp", "concept": "time.event_timestamp" } },
+            "status": { "type": "string", "title": "Status",
+              "description": "Lifecycle state of the event." }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "events.csv", "--dict-info", "--dictionary"])
+        .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the trend panel's clickable title annotation carries the date column's anchor
+    assert!(
+        html.contains(r#""name":"qsvdict-created_date-"#),
+        "time-series title annotation should anchor on the date column's dictionary entry"
+    );
+    // and the timestamp role tints its ToC chip
+    assert!(
+        html.contains("qsv-dict-role-timestamp"),
+        "timestamp role chip missing"
+    );
 }
 
 // --dict-info without a usable dictionary: soft no-op with a note, no dict chrome.

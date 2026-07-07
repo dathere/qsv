@@ -165,6 +165,46 @@ TOC_JS = (
     "var a=e.target.closest&&e.target.closest(\"details.toc .toc-links a\");if(!a)return;"
     "var d=a.closest(\"details.toc\");if(d)d.open=false;});</script>")
 
+# Injected once into the gallery: keeps a jumped-to figure in view while the page height is still
+# settling. The dashboard iframes are lazy-loaded and grow from 600px to their real height on load,
+# so iframes ABOVE a jump target load mid-scroll and push the target out of view — the reason
+# "Jump to a chart" felt unreliable. On a TOC click / hashchange we arm the target for a short window
+# and re-align it (instantly, respecting figure{scroll-margin-top}) on every dashboard resize report
+# and on a coarse timer, so drift from iframes growing above it is corrected. Any manual scroll input
+# ends the window immediately so this never fights the reader.
+JUMP_JS = (
+    "<script>(function(){var target=null,until=0,iv=null,moved=false;"
+    "function stop(){if(iv){clearInterval(iv);iv=null;}}"
+    # instant (not smooth): the page sets scroll-behavior:smooth, but a correcting re-align must be
+    # instant. A smooth scrollIntoView restarted every tick as iframes above grow would perpetually
+    # re-ease and never actually reach the target.
+    "function snap(){if(target&&Date.now()<until){target.scrollIntoView("
+    "{block:\"start\",behavior:\"instant\"});}else{stop();}}"
+    "function arm(el){if(!el)return;target=el;until=Date.now()+2500;snap();"
+    "if(!iv)iv=setInterval(snap,120);}"
+    "document.addEventListener(\"click\",function(e){"
+    "var a=e.target.closest&&e.target.closest(\"details.toc .toc-links a\");if(!a)return;"
+    "var href=a.getAttribute(\"href\");if(!href||href.charAt(0)!==\"#\")return;"
+    "arm(document.getElementById(href.slice(1)));});"
+    "addEventListener(\"hashchange\",function(){"
+    "if(location.hash.length>1)arm(document.getElementById(location.hash.slice(1)));});"
+    # dashboard iframes report their height (qsvVizHeight -> re-snap) and forward the reader's own
+    # scroll input (qsvUserScroll -> the reader took over, cancel and stop re-aligning).
+    "addEventListener(\"message\",function(e){var d=e.data;if(!d)return;"
+    "if(typeof d.qsvVizHeight===\"number\")snap();"
+    "else if(d.qsvUserScroll){until=0;moved=true;stop();}});"
+    # scrolls over the non-iframe margins land on the parent window directly.
+    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "addEventListener(t,function(){until=0;moved=true;},{passive:true});});"
+    # also arm on initial load with an existing fragment (a shared/bookmarked deep link like
+    # gallery.html#fig-...), so lazy iframes settling after the browser's initial hash scroll don't
+    # push the target out of view. Re-arm on load once the many heavy iframes have settled — but not
+    # if the reader already scrolled away (moved), so a late load never yanks them back. Explicit TOC
+    # clicks / hashchange still arm unconditionally.
+    "function armFromHash(){if(!moved&&location.hash.length>1)"
+    "arm(document.getElementById(location.hash.slice(1)));}"
+    "armFromHash();addEventListener(\"load\",armFromHash);})();</script>")
+
 # Injected once into the gallery: copies a command block's single-line form (data-cmd) to the
 # clipboard. Uses the async Clipboard API when available (https / localhost) and falls back to a
 # hidden-textarea + execCommand("copy") for file:// where the API is absent. Flips the button label
@@ -190,7 +230,17 @@ RESIZE_REPORTER_JS = (
     "{qsvVizHeight:document.documentElement.scrollHeight},\"*\");}"
     "addEventListener(\"load\",r);addEventListener(\"resize\",r);"
     "if(window.ResizeObserver)new ResizeObserver(r).observe(document.body);"
-    "setTimeout(r,200);setTimeout(r,800);})();</script>")
+    "setTimeout(r,200);setTimeout(r,800);"
+    # a deep-linked dashboard fills the viewport, so the reader's scroll input lands INSIDE this
+    # iframe, not the parent gallery window. Forward it so the parent's jump stabilizer can tell the
+    # reader has taken over and stop re-aligning / cancel its pending on-load re-arm (see JUMP_JS).
+    # capture phase: the gl3d scroll-fix installs a capture-phase wheel handler on the plot div that
+    # stopPropagation()s (so a 3D panel scrolls the page instead of being eaten); a bubble-phase
+    # listener here would never see that wheel. Capturing at the window fires before the plot div, so
+    # the reader's scroll over a 3D panel still cancels the parent's jump stabilizer.
+    "var us=function(){parent.postMessage({qsvUserScroll:1},\"*\");};"
+    "[\"wheel\",\"touchstart\",\"keydown\"].forEach(function(t){"
+    "addEventListener(t,us,{capture:true,passive:true});});})();</script>")
 
 # Added to the gallery once: sizes each iframe to the height its dashboard reports (matched by
 # comparing window references, which is allowed cross-origin). The reported height is
@@ -567,7 +617,9 @@ FIGURES = [
      "The headline panel is a <b>summary choropleth keyed off a region-code COLUMN</b>, not "
      "coordinates: this dataset has <i>no</i> lat/lon, only an <code>OwnerZip</code> column, so "
      "<code>viz smart</code> aggregates <b>licenses per zip</b> and fills the matching "
-     "<a href=\"https://data.wprdc.org\">Allegheny County zip-boundary</a> polygons from "
+     "<a href=\"https://data.wprdc.org/dataset/allegheny-county-zip-code-boundaries2/"
+     "resource/14e5de97-0a5f-4521-84f6-ba74413db598\">Allegheny County zip-boundary</a> "
+     "polygons from "
      "<code>--geojson</code> (<code>--feature-id-key properties.ZIP</code>). The key column is "
      "auto-chosen by matching each geo-dimension column's values against the boundary ids — here "
      "<b>118 zips</b> match, from 1 license (rural fringe) to <b>2,866</b> in zip 15237 (suburban "
@@ -810,9 +862,21 @@ def cdnify(html):
 
 
 def inject_resize_reporter(html):
-    """Add the postMessage height reporter just before </body> so the iframe can be auto-sized to
-    the dashboard with no inner scrollbar and no trailing whitespace."""
-    return html.replace("</body>", RESIZE_REPORTER_JS + "\n</body>", 1)
+    """Add the postMessage height/user-scroll reporter just before the page's real </body> so the
+    iframe can be auto-sized to the dashboard with no inner scrollbar and no trailing whitespace.
+    Anchor on the LAST </body>, not the first: `--dict-info` dashboards embed a complete standalone
+    HTML document (with its own </body></html>) as a string inside the qsvOpenDictTab script, so a
+    first-match replace would inject the reporter inside that script string, where it never runs —
+    leaving the iframe stuck at its initial height (the Allegheny dog-licenses dashboard clipping).
+
+    Idempotent: strip any previously-injected reporter (a <script> containing qsvVizHeight; it has no
+    literal `<` in its body) before re-adding the current one, so re-running against an already-built
+    dashboard (e.g. the reused pre-generated ones) refreshes the reporter instead of duplicating it."""
+    html = re.sub(r"<script>[^<]*qsvVizHeight[^<]*</script>\n?", "", html)
+    idx = html.rfind("</body>")
+    if idx == -1:
+        return html + RESIZE_REPORTER_JS
+    return html[:idx] + RESIZE_REPORTER_JS + "\n" + html[idx:]
 
 
 def grid_cols(args):
@@ -894,7 +958,16 @@ def main():
             if iframe_name in pregenerated:
                 # LLM-dependent (`--dictionary infer`): reuse the committed, already-cdnified HTML so
                 # regen stays offline & deterministic (refresh it manually — see README commands).
+                # Still refresh the injected reporter in place (idempotent) so the height/user-scroll
+                # postMessage stays current across all dashboards, not just the regenerated ones.
                 sys.stderr.write(f"[{idx}] {title}: reusing pre-generated {iframe_name}\n")
+                pre_path = os.path.join(VIZ_DIR, iframe_name)
+                with open(pre_path, encoding="utf-8") as fh:
+                    existing = fh.read()
+                refreshed = inject_resize_reporter(existing)
+                if refreshed != existing:
+                    with open(pre_path, "w", encoding="utf-8") as fh:
+                        fh.write(refreshed)
             else:
                 sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
                 html = inject_resize_reporter(cdnify(run_html(qsv, args)))
@@ -977,6 +1050,7 @@ def main():
         + RESIZE_LISTENER_JS + "\n"
         + COPY_JS + "\n"
         + TOC_JS + "\n"
+        + JUMP_JS + "\n"
         + "</body></html>\n"
     )
     with open(GALLERY, "w", encoding="utf-8") as fh:

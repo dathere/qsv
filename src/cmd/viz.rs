@@ -16994,10 +16994,17 @@ fn first_description_paragraph(desc: &str) -> String {
 }
 
 /// Whether a single (already-trimmed) line is a Markdown heading that should be
-/// skipped when picking the first description paragraph: an ATX heading (`#`,
-/// `##`, …) or a line whose entire content is bold/emphasized (`**Heading**`,
-/// `__Heading__`, `*Heading*`, `_Heading_`). Setext underlines and horizontal
-/// rules are intentionally not treated as headings to avoid false positives.
+/// skipped when picking the first description paragraph.
+///
+/// Recognizes an ATX heading (`#`, `##`, …) or a *heading-like* emphasized line
+/// (`**Description**`, `__Summary__`, `*Notable Characteristics*`, …). LLM data
+/// dictionaries label sections with bold text rather than ATX `#`, so emphasis
+/// must count — but only when the emphasized text reads like a heading label,
+/// not a sentence. A heading label is terse and has no sentence-terminating
+/// punctuation, so a fully-bold *summary sentence* (e.g.
+/// `**This dataset contains 50,013 records.**`) is preserved rather than dropped.
+/// Setext underlines and horizontal rules are intentionally not treated as
+/// headings to avoid false positives.
 fn is_markdown_heading_line(line: &str) -> bool {
     if line.starts_with('#') {
         return true;
@@ -17007,13 +17014,24 @@ fn is_markdown_heading_line(line: &str) -> bool {
     // so `**Heading**` matches on `**` rather than the `*` fallback.
     for marker in ["**", "__", "*", "_"] {
         if line.len() > 2 * marker.len() && line.starts_with(marker) && line.ends_with(marker) {
-            let inner = &line[marker.len()..line.len() - marker.len()];
+            let inner = line[marker.len()..line.len() - marker.len()].trim();
             if !inner.is_empty() && !inner.contains(marker) {
-                return true;
+                return is_heading_like_label(inner);
             }
         }
     }
     false
+}
+
+/// Whether `label` (the inner text of an emphasized line) reads like a section
+/// heading rather than a prose sentence: no sentence-terminating punctuation and
+/// only a handful of words. Keeps `Description`/`Notable Characteristics` as
+/// headings while rejecting a fully-emphasized summary sentence.
+fn is_heading_like_label(label: &str) -> bool {
+    if matches!(label.chars().last(), Some('.' | '!' | '?')) {
+        return false;
+    }
+    label.split_whitespace().count() <= 5
 }
 
 /// Try to satisfy the bar-panel frequency counts from a pre-existing `frequency`
@@ -18248,6 +18266,21 @@ mod tests {
         assert_eq!(
             first_description_paragraph("\n\n**Description**\n\n\nActual text."),
             "Actual text."
+        );
+        // a fully-emphasized FIRST paragraph that is a real summary sentence is kept,
+        // not mistaken for a heading (roborev #3504): it ends with sentence punctuation.
+        assert_eq!(
+            first_description_paragraph(
+                "**This dataset contains 50,013 records.**\n\nMore detail."
+            ),
+            "**This dataset contains 50,013 records.**"
+        );
+        // a long emphasized first line with no terminal punctuation is still kept (not terse).
+        assert_eq!(
+            first_description_paragraph(
+                "*The dataset enumerates every licensed dog across the county each year*\n\nMore."
+            ),
+            "*The dataset enumerates every licensed dog across the county each year*"
         );
         // empty / heading-only descriptions yield an empty string
         assert_eq!(first_description_paragraph("**Description**"), "");

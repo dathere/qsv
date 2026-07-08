@@ -4059,6 +4059,83 @@ fn moarstats_bivariate_normalized_mutual_information() {
 }
 
 #[test]
+fn moarstats_bivariate_uncertainty_coefficient() {
+    let wrk = Workdir::new("moarstats_bivariate_u");
+
+    // `source` functionally determines `target` (A->X, B->X, C->Y), but not the reverse
+    // (X <- {A, B}). So Theil's U(target|source) = 1.0 (knowing source pins target), while
+    // U(source|target) < 1.0 (target X leaves source ambiguous).
+    wrk.create(
+        "test.csv",
+        vec![
+            svec!["source", "target"],
+            svec!["A", "X"],
+            svec!["A", "X"],
+            svec!["B", "X"],
+            svec!["B", "X"],
+            svec!["C", "Y"],
+            svec!["C", "Y"],
+        ],
+    );
+
+    let mut stats_cmd = wrk.command("stats");
+    stats_cmd.arg("--everything").arg("test.csv");
+    wrk.assert_success(&mut stats_cmd);
+
+    let mut cmd = wrk.command("moarstats");
+    cmd.arg("--bivariate")
+        .arg("test.csv")
+        .args(["--bivariate-stats", "u"]);
+    wrk.assert_success(&mut cmd);
+
+    let bivariate_content = wrk.read_to_string("test.stats.bivariate.csv").unwrap();
+    let mut rdr = ReaderBuilder::new()
+        .has_headers(true)
+        .from_reader(bivariate_content.as_bytes());
+
+    let headers = rdr.headers().unwrap().clone();
+    let f1i = get_column_index(&headers, "field1").unwrap();
+    let f2i = get_column_index(&headers, "field2").unwrap();
+    let u21i = get_column_index(&headers, "u_field2_given_field1")
+        .expect("u_field2_given_field1 column should exist");
+    let u12i = get_column_index(&headers, "u_field1_given_field2")
+        .expect("u_field1_given_field2 column should exist");
+
+    let mut found = false;
+    for result in rdr.records() {
+        let record = result.unwrap();
+        let field1 = get_field_value(&record, f1i).unwrap();
+        let field2 = get_field_value(&record, f2i).unwrap();
+        let u21: f64 = get_field_value(&record, u21i).unwrap().parse().unwrap();
+        let u12: f64 = get_field_value(&record, u12i).unwrap().parse().unwrap();
+        // U(x|given) = MI/H(x); orient so `u_given_source` is the "target given source" direction.
+        let (u_target_given_source, u_source_given_target) = if field1 == "source" {
+            (u21, u12) // field2 = target
+        } else {
+            (u12, u21) // field1 = target, field2 = source
+        };
+        assert!(
+            (field1 == "source" && field2 == "target")
+                || (field1 == "target" && field2 == "source")
+        );
+        found = true;
+        // source fully determines target -> U(target|source) == 1.0.
+        assert!(
+            (u_target_given_source - 1.0).abs() < 1e-9,
+            "U(target|source) should be 1.0 for a functional mapping, got {u_target_given_source}"
+        );
+        // target does NOT fully determine source -> U(source|target) strictly in (0, 1).
+        assert!(
+            u_source_given_target > 0.0 && u_source_given_target < 1.0,
+            "U(source|target) should be in (0, 1) for a non-functional reverse, got \
+             {u_source_given_target}"
+        );
+        break;
+    }
+    assert!(found, "Should find source-target field pair with u columns");
+}
+
+#[test]
 fn moarstats_bivariate_multiple_fields() {
     let wrk = Workdir::new("moarstats_bivariate_multiple");
 

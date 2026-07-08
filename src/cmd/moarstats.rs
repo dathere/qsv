@@ -303,7 +303,8 @@ moarstats options:
     -S, --bivariate-stats <stats>
                            Comma-separated list of bivariate statistics to compute.
                            Options: pearson, spearman, kendall, covariance, mi (mutual information),
-                           nmi (normalized mutual information)
+                           nmi (normalized mutual information), u (Theil's directed uncertainty
+                           coefficient; emits u_field2_given_field1 and u_field1_given_field2)
                            Use "all" to compute all statistics or "fast" to compute only
                            pearson & covariance, which is much faster as it doesn't require storing
                            all values and uses streaming algorithms.
@@ -398,6 +399,7 @@ struct BivariateStatsConfig {
     covariance: bool,
     mi:         bool, // mutual information
     nmi:        bool, // normalized mutual information
+    u:          bool, // directed uncertainty coefficient (Theil's U), both directions
 }
 
 impl BivariateStatsConfig {
@@ -421,6 +423,9 @@ impl BivariateStatsConfig {
                 "nmi" | "normalized_mutual_information" | "normalized-mutual-information" => {
                     config.nmi = true;
                 },
+                "u" | "uncertainty" | "uncertainty_coefficient" | "uncertainty-coefficient" => {
+                    config.u = true;
+                },
                 "all" => return Ok(Self::all()),
                 "fast" => {
                     config.pearson = true;
@@ -436,7 +441,8 @@ impl BivariateStatsConfig {
             return fail_clierror!(
                 "Invalid bivariate statistics: {}. Valid options are: pearson, spearman, kendall, \
                  covariance (or cov), mi (or mutual_information or mutual-information), nmi (or \
-                 normalized_mutual_information or normalized-mutual-information), fast, all",
+                 normalized_mutual_information or normalized-mutual-information), u (or \
+                 uncertainty or uncertainty_coefficient), fast, all",
                 invalid_stats.join(", ")
             );
         }
@@ -448,12 +454,13 @@ impl BivariateStatsConfig {
             && !config.covariance
             && !config.mi
             && !config.nmi
+            && !config.u
         {
             return fail_clierror!(
                 "No valid bivariate statistics specified. Valid options are: pearson, spearman, \
                  kendall, covariance (or cov), mi (or mutual_information or mutual-information), \
-                 nmi (or normalized_mutual_information or normalized-mutual-information), fast, \
-                 all"
+                 nmi (or normalized_mutual_information or normalized-mutual-information), u (or \
+                 uncertainty or uncertainty_coefficient), fast, all"
             );
         }
 
@@ -469,6 +476,7 @@ impl BivariateStatsConfig {
             covariance: true,
             mi:         true,
             nmi:        true,
+            u:          true,
         }
     }
 
@@ -482,7 +490,7 @@ impl BivariateStatsConfig {
     /// information)
     #[inline]
     const fn needs_frequency_counts(self) -> bool {
-        self.mi || self.nmi
+        self.mi || self.nmi || self.u
     }
 }
 
@@ -1654,6 +1662,10 @@ struct BivariateStats {
     covariance_population: Option<f64>,
     mutual_information: Option<f64>,
     normalized_mutual_information: Option<f64>,
+    // Theil's U, both directions. `x` = field1, `y` = field2 (see
+    // `finalize_bivariate_pair_stats`).
+    u_field2_given_field1: Option<f64>, // U(field2|field1) = MI / H(field2)
+    u_field1_given_field2: Option<f64>, // U(field1|field2) = MI / H(field1)
     n_pairs: u64,
 }
 
@@ -2079,6 +2091,25 @@ fn compute_normalized_mutual_information(
 
     // NMI = MI / sqrt(H(X) * H(Y))
     Some(mi_val / denominator)
+}
+
+/// Compute Theil's directed uncertainty coefficient U(target|source) = MI / H(target).
+/// This is the fraction of the target's entropy explained by the source: 1.0 when the source
+/// fully determines the target (a functional mapping), 0.0 when they are independent. Unlike the
+/// symmetric NMI, it is directional, which is what a directed source->target flow needs.
+/// Returns None if H(target) is invalid (0, negative, or None), and clamps to [0, 1] to absorb
+/// floating-point overshoot from MI and H being accumulated separately.
+fn compute_uncertainty_coefficient(mi: Option<f64>, h_target: Option<f64>) -> Option<f64> {
+    let (Some(mi_val), Some(h_target_val)) = (mi, h_target) else {
+        return None;
+    };
+
+    // H(target) <= 0 means the target is constant; "explained fraction" is undefined.
+    if h_target_val < f64::EPSILON {
+        return None;
+    }
+
+    Some((mi_val / h_target_val).clamp(0.0, 1.0))
 }
 
 /// Field information needed for Kurtosis, Gini & Atkinson Index computation (with precalculated
@@ -2665,27 +2696,49 @@ fn finalize_bivariate_pair_stats(
         )
     };
 
-    // NMI requires MI and entropies computed from the same frequency counts.
-    let normalized_mutual_information = if !stats_config.nmi || chunk_stats.total_pairs == 0 {
-        None
-    } else if exceeds_cardinality == Some(true) {
-        log_skip("normalized mutual information");
-        None
-    } else {
-        let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
-        let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
-        let mi = if mutual_information.is_some() {
-            mutual_information
+    // NMI and the directed uncertainty coefficients (Theil's U) all require MI and the marginal
+    // entropies computed from the same frequency counts. Compute them once and share.
+    let (normalized_mutual_information, u_field2_given_field1, u_field1_given_field2) =
+        if (!stats_config.nmi && !stats_config.u) || chunk_stats.total_pairs == 0 {
+            (None, None, None)
+        } else if exceeds_cardinality == Some(true) {
+            if stats_config.nmi {
+                log_skip("normalized mutual information");
+            }
+            if stats_config.u {
+                log_skip("uncertainty coefficient");
+            }
+            (None, None, None)
         } else {
-            compute_mutual_information_from_counts(
-                &chunk_stats.xy_counts,
-                &chunk_stats.x_counts,
-                &chunk_stats.y_counts,
-                chunk_stats.total_pairs,
-            )
+            // x = field1, y = field2 (see the `value_bytes_x`/`value_bytes_y` assignment in the
+            // pair accumulation).
+            let h_x = compute_entropy_from_counts(&chunk_stats.x_counts, chunk_stats.total_pairs);
+            let h_y = compute_entropy_from_counts(&chunk_stats.y_counts, chunk_stats.total_pairs);
+            let mi = if mutual_information.is_some() {
+                mutual_information
+            } else {
+                compute_mutual_information_from_counts(
+                    &chunk_stats.xy_counts,
+                    &chunk_stats.x_counts,
+                    &chunk_stats.y_counts,
+                    chunk_stats.total_pairs,
+                )
+            };
+            let nmi = if stats_config.nmi {
+                compute_normalized_mutual_information(mi, h_x, h_y)
+            } else {
+                None
+            };
+            let (u_2_given_1, u_1_given_2) = if stats_config.u {
+                (
+                    compute_uncertainty_coefficient(mi, h_y), // U(field2|field1) = MI / H(field2)
+                    compute_uncertainty_coefficient(mi, h_x), // U(field1|field2) = MI / H(field1)
+                )
+            } else {
+                (None, None)
+            };
+            (nmi, u_2_given_1, u_1_given_2)
         };
-        compute_normalized_mutual_information(mi, h_x, h_y)
-    };
 
     Ok((
         pair_key,
@@ -2697,6 +2750,8 @@ fn finalize_bivariate_pair_stats(
             covariance_population,
             mutual_information,
             normalized_mutual_information,
+            u_field2_given_field1,
+            u_field1_given_field2,
             n_pairs,
         },
     ))
@@ -4986,6 +5041,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 stats_config.covariance.then_some("covariance"),
                 stats_config.mi.then_some("mi"),
                 stats_config.nmi.then_some("nmi"),
+                stats_config.u.then_some("u"),
             ]
             .into_iter()
             .flatten()
@@ -5045,6 +5101,10 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
         if stats_config.nmi {
             headers.push("normalized_mutual_information");
+        }
+        if stats_config.u {
+            headers.push("u_field2_given_field1");
+            headers.push("u_field1_given_field2");
         }
         headers.push("n_pairs");
 
@@ -5117,6 +5177,18 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     record.push(
                         stats
                             .normalized_mutual_information
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                }
+                if stats_config.u {
+                    record.push(
+                        stats
+                            .u_field2_given_field1
+                            .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
+                    );
+                    record.push(
+                        stats
+                            .u_field1_given_field2
                             .map_or(String::new(), |v| util::round_num(v, args.flag_round)),
                     );
                 }

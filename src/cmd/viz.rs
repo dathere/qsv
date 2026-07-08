@@ -9938,7 +9938,17 @@ fn render_dict_page_html(
     // non-numeric (date/text ranges, enum values, examples) falls through to `disp`.
     fn disp_num(v: &Value) -> String {
         match v {
-            Value::Number(n) => group_thousands(&n.to_string()),
+            Value::Number(n) => {
+                let s = n.to_string();
+                // serde_json renders extreme-magnitude floats in scientific notation
+                // (e.g. `1e-7`, `1e+100`); grouping that would mangle it (`1,e-7`), so
+                // leave the exponent form intact and only group plain decimal strings.
+                if s.contains(['e', 'E']) {
+                    s
+                } else {
+                    group_thousands(&s)
+                }
+            },
             _ => disp(v),
         }
     }

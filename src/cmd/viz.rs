@@ -236,6 +236,13 @@ viz options:
                            each row counts as a flow of 1. For treemap/sunburst:
                            a numeric measure summed per sector (when omitted, each
                            row counts as 1).
+    --sankey-snap-order    Render sankey nodes in plotly's crossing-minimizing "snap"
+                           order. By DEFAULT nodes are ordered by total flow (largest
+                           at the top of each column); this opts out of that initial
+                           ordering. Either way the rendered chart carries an on-screen
+                           "node order" button to flip between the two layouts, and link
+                           ribbons are always colored by their source node. Applies to
+                           the `sankey` chart and the `smart` dashboard flow panel.
     --bins <n>             Number of bins. For histogram: bins along the x-axis
                            (default: auto). For contour: the per-axis resolution of
                            the density grid (default: 20).
@@ -591,7 +598,7 @@ use plotly::{
         LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
         ProjectionType, themes::BuiltinTheme,
     },
-    sankey::{Link, Node},
+    sankey::{Arrangement, Link, Node},
     sunburst::InsideTextOrientation,
     traces::scatter_map::Cluster,
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
@@ -658,6 +665,36 @@ const HIER_ROW_HEIGHT_PX: usize = 520;
 /// skipped (a note is printed). 0.10 is Cohen's "small effect" floor for V. An explicit
 /// `--hierarchy-style treemap|sunburst` bypasses the screen (the user asked for it deliberately).
 const HIER_MIN_ASSOCIATION_CRAMERS_V: f64 = 0.10;
+
+/// `viz smart --bivariate` directed-flow (Sankey) summary panel tuning.
+/// A Sankey dimension needs at least this many distinct values to be worth a flow diagram — a
+/// 2-value (boolean-like) column is a trivial split better shown as a bar. Matches
+/// `HIER_MIN_DIM_CARDINALITY`; the upper bound is `CATEGORICAL_MAX_CARDINALITY` (the same
+/// categorical pool the hierarchy panel draws from, so the two panels stay mutually exclusive on
+/// a shared set of dimensions).
+const SANKEY_MIN_DIM_CARDINALITY: u64 = HIER_MIN_DIM_CARDINALITY;
+/// Per side, only the top-N categories (by total flow desc, label asc — the `finalize_freq_bars`
+/// comparator) are kept; the remainder collapse into a single "Other (k)" node so the diagram
+/// stays legible. Matches `HIER_TOP_N_PER_LEVEL`.
+const SANKEY_TOP_N_PER_SIDE: usize = HIER_TOP_N_PER_LEVEL;
+/// The many-to-many band on Theil's directed uncertainty coefficient U = MI / H(target) (from
+/// moarstats' `--bivariate-stats u`). Below `SANKEY_U_MIN` the two dimensions are ~independent (no
+/// flow structure the per-column bars don't already show); at/above `SANKEY_U_MAX` in EITHER
+/// direction the mapping is near-functional (part-to-whole → the treemap/sunburst hierarchy panel
+/// conveys it better). A Sankey earns its place only when the flow genuinely fans out both ways,
+/// i.e. min over both directions ≥ MIN and max over both directions ≤ MAX. These are fixed
+/// absolute cutoffs (like the sibling `|r|`/η²/Cramér's V gates) — U is self-normalizing, so the
+/// same cutoff means the same thing on every dataset; do NOT auto-tune them per file.
+const SANKEY_U_MIN: f64 = 0.10;
+const SANKEY_U_MAX: f64 = 0.85;
+/// If either side's collapsed "Other (k)" node exceeds this fraction of that side's total flow,
+/// the top-N view would misrepresent the distribution, so the panel is skipped (a note is printed).
+const SANKEY_MAX_OTHER_FRACTION: f64 = 0.50;
+
+/// Opacity for a Sankey link ribbon, tinted from its SOURCE node's `PALETTE` color so each
+/// flow is traceable back to where it originates (translucent enough to read overlaps and to
+/// hold contrast against both the light and dark dashboard themes).
+const SANKEY_LINK_ALPHA: f64 = 0.45;
 
 /// Plotly `maxdepth` for sunburst panels: the number of levels rendered at once from the current
 /// root, counting the center as one. 3 = center + 2 data rings. A 3-level sunburst fanned out to
@@ -1140,6 +1177,7 @@ struct Args {
     flag_source:             Option<SelectColumns>,
     flag_target:             Option<SelectColumns>,
     flag_value:              Option<SelectColumns>,
+    flag_sankey_snap_order:  bool,
     // map columns/options
     flag_lat:                Option<SelectColumns>,
     flag_lon:                Option<SelectColumns>,
@@ -1503,6 +1541,10 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
 
     let mut plot = Plot::new();
 
+    // the sankey chart carries an on-screen "node order" toggle (a layout updatemenu), stashed
+    // here from the trace builder and folded into the layout after it's constructed below.
+    let mut sankey_order_menu: Option<UpdateMenu> = None;
+
     // default axis titles, derived from the selected column names
     let (default_x, default_y): (Option<String>, Option<String>) = match chart_kind(args) {
         Chart::Histogram => {
@@ -1526,7 +1568,9 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
             (None, None)
         },
         Chart::Sankey => {
-            plot.add_trace(build_sankey(args)?);
+            let (trace, menu) = build_sankey(args)?;
+            plot.add_trace(trace);
+            sankey_order_menu = menu;
             (None, None)
         },
         Chart::Radar => {
@@ -1566,6 +1610,9 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
     };
 
     let mut layout = build_layout(args, default_x, default_y);
+    if let Some(menu) = sankey_order_menu {
+        layout = layout.update_menus(vec![menu]);
+    }
     // `x unified` (plotly.js) shows one tooltip per x across every trace — ideal for an ordered
     // x-axis (line trends, OHLC sessions) but wrong for unordered clouds, so it's scoped to those
     // chart kinds. The smart dashboard builds its own layout and never calls build_layout, so this
@@ -5672,7 +5719,7 @@ fn build_candlestick(args: &Args, ohlc: bool) -> CliResult<(Box<dyn Trace>, Stri
 
 /// Sankey flow diagram. Builds a unified node index across source & target labels and
 /// aggregates duplicate source->target pairs into a single weighted link.
-fn build_sankey(args: &Args) -> CliResult<Box<dyn Trace>> {
+fn build_sankey(args: &Args) -> CliResult<(Box<dyn Trace>, Option<UpdateMenu>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let s_idx = resolve_one(args.flag_source.as_ref(), &headers, nh, "source")?;
     let t_idx = resolve_one(args.flag_target.as_ref(), &headers, nh, "target")?;
@@ -5723,16 +5770,27 @@ fn build_sankey(args: &Args) -> CliResult<Box<dyn Trace>> {
         );
     }
 
-    let label_refs: Vec<&str> = node_labels.iter().map(String::as_str).collect();
-    let node = Node::new().label(label_refs).pad(15).thickness(20);
     let (mut sources, mut targets, mut values) = (Vec::new(), Vec::new(), Vec::new());
     for &(si, ti) in &link_order {
         sources.push(si);
         targets.push(ti);
         values.push(links[&(si, ti)]);
     }
-    let link = Link::new().source(sources).target(targets).value(values);
-    Ok(Sankey::new().node(node).link(link))
+    // value-order is the DEFAULT; `--sankey-snap-order` opts into plotly's crossing-min layout.
+    let value_order = !args.flag_sankey_snap_order;
+    let positions = sankey_value_positions(node_labels.len(), &sources, &targets, &values);
+    let trace = sankey_trace(
+        &node_labels,
+        &sources,
+        &targets,
+        &values,
+        value_order.then_some(()).and(positions.as_ref()),
+    );
+    // the on-screen order toggle is always offered (whichever order the chart opened in).
+    let menu = positions
+        .as_ref()
+        .map(|(xs, ys)| sankey_order_toggle_menu(xs, ys, value_order));
+    Ok((trace, menu))
 }
 
 /// Radar (polar) chart of numeric --cols. Each axis is min-max normalized to 0..1 across all
@@ -7814,16 +7872,23 @@ fn bivariate_sidecar_is_fresh(
 
 /// One parsed row of moarstats' `--bivariate` sidecar CSV.
 struct BivariateRow {
-    field1:   String,
-    field2:   String,
-    nmi:      f64,
-    pearson:  Option<f64>,
-    spearman: Option<f64>,
+    field1:      String,
+    field2:      String,
+    nmi:         f64,
+    pearson:     Option<f64>,
+    spearman:    Option<f64>,
+    /// Theil's directed uncertainty coefficients (from `--bivariate-stats u`), when present:
+    /// `u_2_given_1` = U(field2|field1) = MI/H(field2), `u_1_given_2` = U(field1|field2) =
+    /// MI/H(field1). `None` when the `u` columns are absent (older moarstats) or the cell is
+    /// empty (a cardinality-skipped or degenerate pair) — the Sankey gate then simply doesn't
+    /// fire.
+    u_2_given_1: Option<f64>,
+    u_1_given_2: Option<f64>,
     /// Co-occurring (both non-empty) row count moarstats used to compute this pair's stats.
     /// Always written by `moarstats --bivariate` regardless of `--bivariate-stats`; a missing or
     /// unparseable value degrades to 0 (fails the support-ratio gate in `bivariate_panels`
     /// rather than letting an un-vetted pair through).
-    n_pairs:  u64,
+    n_pairs:     u64,
 }
 
 /// Parse a moarstats `--bivariate` sidecar CSV, looking up every column BY HEADER NAME (the
@@ -7848,6 +7913,8 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
     };
     let pearson_i = find("pearson_correlation");
     let spearman_i = find("spearman_correlation");
+    let u_2_given_1_i = find("u_field2_given_field1");
+    let u_1_given_2_i = find("u_field1_given_field2");
     let n_pairs_i = find("n_pairs");
 
     let mut rows = Vec::new();
@@ -7865,6 +7932,12 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
         let spearman = spearman_i
             .and_then(|i| record.get(i))
             .and_then(|s| s.parse::<f64>().ok());
+        let u_2_given_1 = u_2_given_1_i
+            .and_then(|i| record.get(i))
+            .and_then(|s| s.parse::<f64>().ok());
+        let u_1_given_2 = u_1_given_2_i
+            .and_then(|i| record.get(i))
+            .and_then(|s| s.parse::<f64>().ok());
         let n_pairs = n_pairs_i
             .and_then(|i| record.get(i))
             .and_then(|s| s.parse::<u64>().ok())
@@ -7875,6 +7948,8 @@ fn parse_bivariate_csv(path: &std::path::Path) -> CliResult<Vec<BivariateRow>> {
             nmi,
             pearson,
             spearman,
+            u_2_given_1,
+            u_1_given_2,
             n_pairs,
         });
     }
@@ -8079,6 +8154,354 @@ fn bivariate_panels(
     };
 
     (assoc_panel, top_relationships_panel)
+}
+
+/// Reduce one side of a Sankey to its top-`SANKEY_TOP_N_PER_SIDE` categories (by total flow
+/// descending, then label ascending — the `finalize_freq_bars` comparator). Returns the kept
+/// labels in that order, the kept-label set, an optional `Other (k)` label for the `k` collapsed
+/// categories, and the fraction of this side's total flow that landed in the collapsed remainder.
+fn sankey_side_topn(
+    tot: &HashMap<String, f64>,
+) -> (
+    Vec<String>,
+    std::collections::HashSet<String>,
+    Option<String>,
+    f64,
+) {
+    let grand: f64 = tot.values().sum();
+    let mut entries: Vec<(&String, f64)> = tot.iter().map(|(k, &v)| (k, v)).collect();
+    entries.sort_by(|a, b| {
+        b.1.partial_cmp(&a.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.0.cmp(b.0))
+    });
+    let kept: Vec<String> = entries
+        .iter()
+        .take(SANKEY_TOP_N_PER_SIDE)
+        .map(|(k, _)| (*k).clone())
+        .collect();
+    let kept_set: std::collections::HashSet<String> = kept.iter().cloned().collect();
+    let other_count = entries.len().saturating_sub(kept.len());
+    let other_flow: f64 = entries
+        .iter()
+        .skip(SANKEY_TOP_N_PER_SIDE)
+        .map(|(_, v)| *v)
+        .sum();
+    let other_label = (other_count > 0).then(|| format!("Other ({other_count})"));
+    let other_frac = if grand > 0.0 { other_flow / grand } else { 0.0 };
+    (kept, kept_set, other_label, other_frac)
+}
+
+/// Aggregate co-occurrence counts between two categorical columns (`s_idx` → `t_idx`) in a single
+/// data pass, reduce each side to its top-N categories (remainder collapsed into an `Other (k)`
+/// node), and emit the bipartite Sankey arrays: `node_labels` lists every source node first, then
+/// every target node, so a value appearing in both columns still yields two distinct nodes (a
+/// proper left→right flow, never a self-loop). `link_source`/`link_target` are 0-based indices into
+/// `node_labels`; `link_value` is the aggregated flow. Also returns each side's `Other` flow
+/// fraction for the caller's readability guard. Rows with either cell empty are skipped; returns
+/// `None` when no flow remains.
+#[allow(clippy::type_complexity)]
+fn build_smart_sankey_arrays(
+    args: &Args,
+    s_idx: usize,
+    t_idx: usize,
+) -> CliResult<Option<(Vec<String>, Vec<usize>, Vec<usize>, Vec<f64>, f64, f64)>> {
+    let (mut rdr, ..) = reader_and_headers(args)?;
+    let mut pair_counts: HashMap<(String, String), f64> = HashMap::new();
+    let mut src_tot: HashMap<String, f64> = HashMap::new();
+    let mut tgt_tot: HashMap<String, f64> = HashMap::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let s = cell_to_string(record.get(s_idx));
+        let t = cell_to_string(record.get(t_idx));
+        if s.is_empty() || t.is_empty() {
+            continue;
+        }
+        *src_tot.entry(s.clone()).or_insert(0.0) += 1.0;
+        *tgt_tot.entry(t.clone()).or_insert(0.0) += 1.0;
+        *pair_counts.entry((s, t)).or_insert(0.0) += 1.0;
+    }
+    if pair_counts.is_empty() {
+        return Ok(None);
+    }
+
+    let (kept_src, kept_src_set, other_src, other_src_frac) = sankey_side_topn(&src_tot);
+    let (kept_tgt, kept_tgt_set, other_tgt, other_tgt_frac) = sankey_side_topn(&tgt_tot);
+
+    // build the bipartite node index: source nodes 0..S, target nodes S..S+T.
+    let mut source_nodes = kept_src.clone();
+    if let Some(o) = &other_src {
+        source_nodes.push(o.clone());
+    }
+    let mut target_nodes = kept_tgt.clone();
+    if let Some(o) = &other_tgt {
+        target_nodes.push(o.clone());
+    }
+    let src_offset = 0usize;
+    let tgt_offset = source_nodes.len();
+    let src_pos: HashMap<&str, usize> = source_nodes
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (l.as_str(), src_offset + i))
+        .collect();
+    let tgt_pos: HashMap<&str, usize> = target_nodes
+        .iter()
+        .enumerate()
+        .map(|(i, l)| (l.as_str(), tgt_offset + i))
+        .collect();
+
+    // remap each observed pair onto kept-or-Other on both sides and re-aggregate.
+    let mut links: HashMap<(usize, usize), f64> = HashMap::new();
+    for ((s, t), w) in &pair_counts {
+        let s_label: &str = if kept_src_set.contains(s) {
+            s.as_str()
+        } else {
+            other_src.as_deref().unwrap_or(s.as_str())
+        };
+        let t_label: &str = if kept_tgt_set.contains(t) {
+            t.as_str()
+        } else {
+            other_tgt.as_deref().unwrap_or(t.as_str())
+        };
+        let (Some(&si), Some(&ti)) = (src_pos.get(s_label), tgt_pos.get(t_label)) else {
+            continue;
+        };
+        *links.entry((si, ti)).or_insert(0.0) += *w;
+    }
+    if links.is_empty() {
+        return Ok(None);
+    }
+
+    let node_labels: Vec<String> = source_nodes.into_iter().chain(target_nodes).collect();
+    // deterministic link order (sorted by source then target index) for reproducible output.
+    let mut link_keys: Vec<(usize, usize)> = links.keys().copied().collect();
+    link_keys.sort_unstable();
+    let (mut link_source, mut link_target, mut link_value) = (Vec::new(), Vec::new(), Vec::new());
+    for key in link_keys {
+        link_source.push(key.0);
+        link_target.push(key.1);
+        link_value.push(links[&key]);
+    }
+    Ok(Some((
+        node_labels,
+        link_source,
+        link_target,
+        link_value,
+        other_src_frac,
+        other_tgt_frac,
+    )))
+}
+
+/// The concept FAMILY of a dictionary concept token — the segment before the first `.`
+/// (`geo.city` → `geo`, `category.status` → `category`, `nyc.complaint_type` → `nyc`). Returns
+/// `None` for an empty or `unknown` concept (an un-tagged column), so the caller treats it as
+/// having no semantic signal and falls back to the statistical ranking.
+fn sankey_concept_family(concept: &str) -> Option<&str> {
+    let base = concept.trim();
+    if base.is_empty() {
+        return None;
+    }
+    let fam = base.split_once('.').map_or(base, |(f, _)| f);
+    (fam != "unknown").then_some(fam)
+}
+
+/// Semantic ranking tier for a candidate Sankey pair given both columns' dictionary concepts
+/// (lower = preferred). Additive over the statistical gate: when either concept is absent this
+/// returns the neutral tier, so a dictionary-less dashboard ranks purely on the statistics.
+/// - Tier 0 (preferred): a CROSS-FAMILY bridge (e.g. `nyc.complaint_type` → `category.status`,
+///   `org.agency` → `category.status`) — the pair spans two different concept families, which is
+///   what makes a flow tell a story.
+/// - Tier 2 (deprioritized): BOTH sides are geo-context (`geo.*`) — a Sankey between two spatial
+///   partitions shows administrative overlap, not a meaningful flow, so it only wins when nothing
+///   better exists.
+/// - Tier 1 (neutral): same-family, or one/both sides un-tagged.
+fn sankey_semantic_tier(concept_a: &str, concept_b: &str) -> u8 {
+    match (
+        sankey_concept_family(concept_a),
+        sankey_concept_family(concept_b),
+    ) {
+        (Some("geo"), Some("geo")) => 2,
+        (Some(a), Some(b)) if a != b => 0,
+        _ => 1,
+    }
+}
+
+/// `viz smart --bivariate` directed-flow (Sankey) panel selection. From moarstats' bivariate
+/// sidecar, pick the best pair of categorical dimensions to draw as a flow diagram: both columns
+/// must be in `eligible` (the same String freq-bar dimension pool the hierarchy panel uses), and
+/// the pair's directed uncertainty coefficients (Theil's U) must sit in the many-to-many band in
+/// BOTH directions — `min(U) ≥ SANKEY_U_MIN` (genuinely associated, not independent) and
+/// `max(U) ≤ SANKEY_U_MAX` (neither side near-functionally determines the other, which would be a
+/// part-to-whole treemap). Thinly-supported pairs are dropped via the same relative
+/// `BIVARIATE_MIN_SUPPORT_RATIO` guard the top-relationships bar uses. The winner (strongest
+/// two-way association) is oriented source = higher-cardinality dimension → target =
+/// lower-cardinality (many types flowing into fewer buckets), then a single aggregation pass builds
+/// the ribbons. Returns the panel plus the chosen `(source_idx, target_idx)` so the caller can keep
+/// the treemap hierarchy mutually exclusive with it. Cache-only until a pair passes; soft-fails to
+/// `None` (with a note where a candidate was found but rejected) matching the other builders.
+fn sankey_panel(
+    args: &Args,
+    input: &str,
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    eligible: &std::collections::HashSet<usize>,
+    is_map_col: impl Fn(usize) -> bool,
+) -> CliResult<Option<(Panel, (usize, usize))>> {
+    let path = bivariate_csv_path(input);
+    let rows = match parse_bivariate_csv(&path) {
+        Ok(rows) => rows,
+        // the association panels already warned on a bad sidecar; stay quiet here.
+        Err(_) => return Ok(None),
+    };
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    let field_idx: HashMap<&str, usize> = stats
+        .iter()
+        .enumerate()
+        .map(|(i, s)| (s.field.as_str(), i))
+        .collect();
+
+    let label_of = |idx: usize| -> String {
+        let sem = &col_sems[idx];
+        if !sem.label.is_empty() {
+            sem.label.clone()
+        } else if stats[idx].field.is_empty() {
+            format!("col {}", idx + 1)
+        } else {
+            stats[idx].field.clone()
+        }
+    };
+
+    struct Cand {
+        i:           usize,
+        j:           usize,
+        // semantic ranking tier from the dictionary concepts (lower = preferred; neutral without a
+        // dictionary). See `sankey_semantic_tier`. Primary sort key so a concept-meaningful flow
+        // outranks a geo-context spatial-overlap pair even if the latter's U is more central.
+        tier:        u8,
+        // distance of the pair's mean directed U from the band center. A Sankey is most compelling
+        // when the mapping is genuinely many-to-many (ribbons cross) — that is the MIDDLE of the
+        // band, not the top: a pair whose U sits near `SANKEY_U_MAX` is near-functional (almost
+        // parallel ribbons, little crossing), which the treemap/hierarchy conveys just as well. So
+        // candidates are ranked by proximity to the band center, not by maximum association.
+        center_dist: f64,
+        n_pairs:     u64,
+    }
+    let u_center = f64::midpoint(SANKEY_U_MIN, SANKEY_U_MAX);
+    let mut cands: Vec<Cand> = Vec::new();
+    for row in &rows {
+        let (Some(&i), Some(&j)) = (
+            field_idx.get(row.field1.as_str()),
+            field_idx.get(row.field2.as_str()),
+        ) else {
+            continue;
+        };
+        if i == j || !eligible.contains(&i) || !eligible.contains(&j) {
+            continue;
+        }
+        if is_map_col(i) || is_map_col(j) {
+            continue;
+        }
+        // need both directed uncertainty coefficients (a cardinality-skipped or degenerate pair
+        // leaves them empty) sitting inside the many-to-many band.
+        let (Some(u_2_1), Some(u_1_2)) = (row.u_2_given_1, row.u_1_given_2) else {
+            continue;
+        };
+        let (u_min, u_max) = (u_2_1.min(u_1_2), u_2_1.max(u_1_2));
+        if u_min < SANKEY_U_MIN || u_max > SANKEY_U_MAX {
+            continue;
+        }
+        cands.push(Cand {
+            i,
+            j,
+            tier: sankey_semantic_tier(&col_sems[i].concept, &col_sems[j].concept),
+            center_dist: (f64::midpoint(u_2_1, u_1_2) - u_center).abs(),
+            n_pairs: row.n_pairs,
+        });
+    }
+    if cands.is_empty() {
+        return Ok(None);
+    }
+
+    // relative co-occurrence support gate (mirrors the top-relationships bar): drop pairs backed by
+    // a thin sliver of rows relative to the best-supported candidate.
+    let max_n = cands.iter().map(|c| c.n_pairs).max().unwrap_or(0);
+    #[allow(
+        clippy::cast_precision_loss,
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss
+    )]
+    let min_support = (max_n as f64 * BIVARIATE_MIN_SUPPORT_RATIO).round() as u64;
+    cands.retain(|c| c.n_pairs >= min_support);
+    if cands.is_empty() {
+        return Ok(None);
+    }
+
+    // Rank: semantic tier first (a concept-meaningful flow beats a geo-context overlap), then the
+    // statistical "most genuinely many-to-many" (mean U closest to the band center), then higher
+    // co-occurrence support, then column order for determinism.
+    cands.sort_by(|a, b| {
+        a.tier
+            .cmp(&b.tier)
+            .then_with(|| {
+                a.center_dist
+                    .partial_cmp(&b.center_dist)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .then_with(|| b.n_pairs.cmp(&a.n_pairs))
+            .then_with(|| (a.i, a.j).cmp(&(b.i, b.j)))
+    });
+    let best = &cands[0];
+
+    // Orient source → target. Concept-aware first: a `category.status` outcome is the natural flow
+    // TARGET (e.g. complaint_type → status), so the reader sees categories flowing INTO their
+    // resolution. Without that signal, fall back to source = higher-cardinality dimension → target
+    // = lower (many types → fewer buckets); equal cardinality falls back to column order.
+    let is_status = |idx: usize| col_sems[idx].concept.trim() == "category.status";
+    let (s_idx, t_idx) = if is_status(best.j) && !is_status(best.i) {
+        (best.i, best.j)
+    } else if is_status(best.i) && !is_status(best.j) {
+        (best.j, best.i)
+    } else {
+        let (ci, cj) = (stats[best.i].cardinality, stats[best.j].cardinality);
+        if ci > cj || (ci == cj && best.i < best.j) {
+            (best.i, best.j)
+        } else {
+            (best.j, best.i)
+        }
+    };
+
+    let Some((node_labels, link_source, link_target, link_value, other_src_frac, other_tgt_frac)) =
+        build_smart_sankey_arrays(args, s_idx, t_idx)?
+    else {
+        return Ok(None);
+    };
+    if other_src_frac > SANKEY_MAX_OTHER_FRACTION || other_tgt_frac > SANKEY_MAX_OTHER_FRACTION {
+        viz_note(&format!(
+            "viz smart: skipping the '{} → {}' Sankey panel — after keeping the top \
+             {SANKEY_TOP_N_PER_SIDE} categories per side, the collapsed 'Other' bucket dominates \
+             a side (>{:.0}% of its flow), which would misrepresent the distribution.",
+            label_of(s_idx),
+            label_of(t_idx),
+            SANKEY_MAX_OTHER_FRACTION * 100.0
+        ));
+        return Ok(None);
+    }
+
+    let title = format!("{} → {}", label_of(s_idx), label_of(t_idx));
+    let panel = Panel::new(
+        title,
+        PanelKind::Sankey {
+            node_labels,
+            link_source,
+            link_target,
+            link_value,
+            value_order: !args.flag_sankey_snap_order,
+        },
+    );
+    Ok(Some((panel, (s_idx, t_idx))))
 }
 
 /// For line charts, order points by their x value so the connecting line is drawn in the
@@ -8553,6 +8976,20 @@ enum PanelKind {
         parents: Vec<String>,
         values:  Vec<f64>,
         ids:     Vec<String>,
+    },
+    /// `viz smart --bivariate` directed-flow overview: a Sankey between two associated categorical
+    /// dimensions (source on the left, target on the right), weighted by co-occurrence count. Node
+    /// labels are precomputed with source nodes first, then target nodes (a bipartite index space),
+    /// and links reference them by position. Non-cartesian (domain-based) like the hierarchy/map
+    /// panels, so it is rendered on the inline path only (HTML output), never through
+    /// `panel_trace`.
+    Sankey {
+        node_labels: Vec<String>,
+        link_source: Vec<usize>,
+        link_target: Vec<usize>,
+        link_value:  Vec<f64>,
+        /// Rank nodes by flow (largest at top) instead of plotly's default snap order.
+        value_order: bool,
     },
 }
 
@@ -13918,14 +14355,15 @@ fn build_smart(
                 vec!["--advanced", "--force", "--stats-options", stats_opts];
             // `--bivariate`: extend the SAME moarstats subprocess (no second invocation) with the
             // bivariate sidecar request. Always asks for nmi (the association heatmap's value,
-            // works for numeric AND categorical pairs) plus pearson/spearman (their divergence
-            // flags a numeric pair as nonlinear).
+            // works for numeric AND categorical pairs), u (Theil's directed uncertainty
+            // coefficient, gates the directed-flow Sankey panel), plus pearson/spearman (their
+            // divergence flags a numeric pair as nonlinear).
             // freshness bookkeeping for the bivariate sidecar, read after the moarstats run below;
             // defaults are never read unless `bivariate_enabled`.
             let mut sidecar_before: Option<std::time::SystemTime> = None;
             let mut sidecar_cleared = false;
             if bivariate_enabled {
-                moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,pearson,spearman"]);
+                moar_argv.extend(["--bivariate", "--bivariate-stats", "nmi,u,pearson,spearman"]);
                 // Remove any stale bivariate sidecar from a prior run BEFORE moarstats runs.
                 // moarstats (re)writes it only when the fresh run yields pairs, so clearing it
                 // first means a pair-less or failed current run leaves NO sidecar for the dashboard
@@ -14378,19 +14816,49 @@ fn build_smart(
     // to run wins the front slot, so final visual order top-to-bottom is
     // Correlation -> Association -> Top Relationships. (Inserting TopRelationships first, then
     // AssocHeatmap, puts AssocHeatmap above TopRelationships within that pair.)
+    // the source→target dimension pair claimed by the directed-flow (Sankey) overview panel, if
+    // one is built below. Used to keep the 2-level treemap hierarchy mutually exclusive with it:
+    // a genuinely many-to-many pair is shown as a flow, not nested part-to-whole.
+    let mut sankey_pair: Option<(usize, usize)> = None;
     if bivariate_sidecar_fresh {
-        let (assoc_panel, top_panel) = bivariate_panels(
-            args,
-            args.arg_input.as_deref().unwrap_or_default(),
-            &stats,
-            &col_sems,
-            is_map_col,
-        );
+        let input = args.arg_input.as_deref().unwrap_or_default();
+        let (assoc_panel, top_panel) = bivariate_panels(args, input, &stats, &col_sems, is_map_col);
         if let Some(panel) = top_panel {
             panels.insert(0, panel);
         }
         if let Some(panel) = assoc_panel {
             panels.insert(0, panel);
+        }
+
+        // directed-flow Sankey overview. Eligible dimensions are the same String freq-bar columns
+        // the hierarchy panel nests (so the two panels stay mutually exclusive on a shared pool).
+        // HTML-only: a Sankey is a domain-based trace that can't compose with the typed x/y grid
+        // used for static image export — so, like the hierarchy/3D/map panels, build it only for
+        // non-image output.
+        if !out_format.is_image() {
+            let sankey_eligible: std::collections::HashSet<usize> = panels
+                .iter()
+                .filter_map(|p| match p.kind {
+                    PanelKind::FreqBar { idx } => {
+                        let s = &stats[idx];
+                        (s.r#type == "String"
+                            && (SANKEY_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY)
+                                .contains(&s.cardinality))
+                        .then_some(idx)
+                    },
+                    _ => None,
+                })
+                .collect();
+            match sankey_panel(args, input, &stats, &col_sems, &sankey_eligible, is_map_col) {
+                Ok(Some((panel, pair))) => {
+                    sankey_pair = Some(pair);
+                    panels.insert(0, panel);
+                },
+                Ok(None) => {},
+                Err(e) => viz_note(&format!(
+                    "viz smart: directed-flow (Sankey) panel skipped ({e})"
+                )),
+            }
         }
     }
 
@@ -14673,18 +15141,13 @@ fn build_smart(
             let depth = dims.len();
             let style = resolve_hierarchy_style(args.flag_hierarchy_style.as_deref(), depth)?;
             let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
-            let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
             let title = dims
                 .iter()
                 .map(|(.., name)| name.as_str())
                 .collect::<Vec<_>>()
                 .join(" › ");
-            // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
-            // independent categoricals just replicates each level's marginal at every branch,
-            // conveying nothing the separate frequency bars don't already show more legibly. An
-            // explicit `--hierarchy-style treemap|sunburst` is a deliberate request, so it bypasses
-            // the screen. The association is read off the joint counts already in hand (no
-            // re-scan).
+            // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
+            // bypasses both the independence screen and the Sankey mutual-exclusion below.
             let explicit_style = matches!(
                 args.flag_hierarchy_style
                     .as_deref()
@@ -14692,30 +15155,51 @@ fn build_smart(
                     .as_deref(),
                 Some("treemap" | "sunburst")
             );
-            let assoc = max_pairwise_cramers_v(&leaves, depth);
-            if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
+            // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of exactly
+            // the pair already drawn as a Sankey is redundant, so skip it (the flow view conveys
+            // that many-to-many relationship better). Deeper 3-level sunbursts are unaffected.
+            // Checked BEFORE the hierarchy's own data pass so the pass is never wasted.
+            let sankey_owns_pair = depth == 2
+                && !explicit_style
+                && sankey_pair.is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
+            if sankey_owns_pair {
                 viz_note(&format!(
-                    "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                     statistically independent (max Cramér's V={assoc:.2} < \
-                     {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars convey \
-                     the same information. Use --hierarchy-style treemap|sunburst to force it."
+                    "viz smart: skipping the '{title}' hierarchy panel — its two dimensions are \
+                     already shown as a directed-flow (Sankey) panel, which conveys their \
+                     many-to-many relationship better."
                 ));
-            } else if let Some((labels, parents, values, ids)) =
-                hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
-            {
-                panels.insert(
-                    0,
-                    Panel::new(
-                        title,
-                        PanelKind::Hierarchy {
-                            style,
-                            labels,
-                            parents,
-                            values,
-                            ids,
-                        },
-                    ),
-                );
+            } else {
+                // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
+                // independent categoricals just replicates each level's marginal at every branch,
+                // conveying nothing the separate frequency bars don't already show more legibly.
+                // The association is read off the joint counts already in hand (no re-scan).
+                let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
+                let assoc = max_pairwise_cramers_v(&leaves, depth);
+                if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
+                    viz_note(&format!(
+                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
+                         statistically independent (max Cramér's V={assoc:.2} < \
+                         {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
+                         convey the same information. Use --hierarchy-style treemap|sunburst to \
+                         force it."
+                    ));
+                } else if let Some((labels, parents, values, ids)) =
+                    hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
+                {
+                    panels.insert(
+                        0,
+                        Panel::new(
+                            title,
+                            PanelKind::Hierarchy {
+                                style,
+                                labels,
+                                parents,
+                                values,
+                                ids,
+                            },
+                        ),
+                    );
+                }
             }
         }
     }
@@ -14800,6 +15284,7 @@ fn build_smart(
                 | PanelKind::Scatter3D { .. }
                 | PanelKind::CyclicProfile { .. }
                 | PanelKind::Hierarchy { .. }
+                | PanelKind::Sankey { .. }
         )
     });
 
@@ -14902,7 +15387,8 @@ fn build_smart(
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
             | PanelKind::ChoroplethMap { .. }
-            | PanelKind::Hierarchy { .. } => None,
+            | PanelKind::Hierarchy { .. }
+            | PanelKind::Sankey { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -15544,10 +16030,11 @@ fn panel_trace(
         | PanelKind::ChoroplethMap { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::CyclicProfile { .. }
-        | PanelKind::Hierarchy { .. } => {
+        | PanelKind::Hierarchy { .. }
+        | PanelKind::Sankey { .. } => {
             unreachable!(
-                "map/geo/choropleth/3D/polar/hierarchy panels are rendered via the inline path, \
-                 not panel_trace"
+                "map/geo/choropleth/3D/polar/hierarchy/sankey panels are rendered via the inline \
+                 path, not panel_trace"
             )
         },
     };
@@ -15618,7 +16105,8 @@ fn smart_grid_parts(
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
             | PanelKind::ChoroplethMap { .. }
-            | PanelKind::Hierarchy { .. } => None,
+            | PanelKind::Hierarchy { .. }
+            | PanelKind::Sankey { .. } => None,
         })
         .flat_map(<[String]>::iter)
         .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
@@ -16698,6 +17186,45 @@ fn smart_inline_panel_plot(
         return plot;
     }
 
+    // Sankey flow panels are domain-based (bipartite nodes + weighted links), like the hierarchy
+    // panel above — no cartesian x/y axes — so they own their whole Plot here.
+    if let PanelKind::Sankey {
+        node_labels,
+        link_source,
+        link_target,
+        link_value,
+        value_order,
+    } = &panel.kind
+    {
+        let mut plot = Plot::new();
+        let positions =
+            sankey_value_positions(node_labels.len(), link_source, link_target, link_value);
+        plot.add_trace(sankey_trace(
+            node_labels,
+            link_source,
+            link_target,
+            link_value,
+            (*value_order).then_some(()).and(positions.as_ref()),
+        ));
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+        // on-screen "node order" toggle (offered whichever order the panel opened in).
+        if let Some((xs, ys)) = &positions {
+            layout = layout.update_menus(vec![sankey_order_toggle_menu(xs, ys, *value_order)]);
+        }
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
     let is_box = matches!(
         panel.kind,
         PanelKind::BoxStats { .. }
@@ -17680,6 +18207,164 @@ fn hierarchy_trace(
     }
 }
 
+/// Convert a `#RRGGBB` `PALETTE` hex string into a `rgba(r,g,b,a)` string plotly accepts, so a
+/// node's solid color can tint its outgoing link ribbons at reduced opacity.
+fn hex_to_rgba(hex: &str, alpha: f64) -> String {
+    let h = hex.trim_start_matches('#');
+    let r = u8::from_str_radix(h.get(0..2).unwrap_or("00"), 16).unwrap_or(0);
+    let g = u8::from_str_radix(h.get(2..4).unwrap_or("00"), 16).unwrap_or(0);
+    let b = u8::from_str_radix(h.get(4..6).unwrap_or("00"), 16).unwrap_or(0);
+    format!("rgba({r},{g},{b},{alpha})")
+}
+
+/// Compute value-ordered node positions for a Sankey: nodes are grouped into columns by role
+/// (source-only on the left, target-only on the right, both-roles in the middle) and, within each
+/// column, ranked by total throughput so the largest node sits at the top (`y = 0`). Returned as
+/// parallel `(x, y)` vectors indexed by node. Used with `Arrangement::Snap`, which keeps this
+/// order while sizing each node by its flow — so even spacing here is fine, snap does the packing.
+/// Returns `None` for an empty graph.
+fn sankey_value_positions(
+    n_nodes: usize,
+    link_source: &[usize],
+    link_target: &[usize],
+    link_value: &[f64],
+) -> Option<(Vec<f64>, Vec<f64>)> {
+    if n_nodes == 0 {
+        return None;
+    }
+    let mut out_sum = vec![0.0_f64; n_nodes];
+    let mut in_sum = vec![0.0_f64; n_nodes];
+    let mut is_source = vec![false; n_nodes];
+    let mut is_target = vec![false; n_nodes];
+    for ((&s, &t), &v) in link_source.iter().zip(link_target).zip(link_value) {
+        out_sum[s] += v;
+        is_source[s] = true;
+        in_sum[t] += v;
+        is_target[t] = true;
+    }
+    // column 0 = source-only (x≈0), 2 = target-only (x≈1), 1 = both roles (middle); a tiny inset
+    // keeps the end columns off the exact plot edge so node rectangles don't clip.
+    let column = |k: usize| -> u8 {
+        match (is_source[k], is_target[k]) {
+            (true, true) => 1,
+            (false, true) => 2,
+            _ => 0,
+        }
+    };
+    let column_x = |c: u8| -> f64 {
+        match c {
+            2 => 0.999,
+            1 => 0.5,
+            _ => 0.001,
+        }
+    };
+    let throughput = |k: usize| out_sum[k].max(in_sum[k]);
+    let mut xs = vec![0.0_f64; n_nodes];
+    let mut ys = vec![0.0_f64; n_nodes];
+    for c in [0_u8, 1, 2] {
+        let mut members: Vec<usize> = (0..n_nodes).filter(|&k| column(k) == c).collect();
+        if members.is_empty() {
+            continue;
+        }
+        // largest throughput first (top of plot); stable tiebreak on node index
+        members.sort_by(|&a, &b| {
+            throughput(b)
+                .partial_cmp(&throughput(a))
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.cmp(&b))
+        });
+        let m = members.len() as f64;
+        for (rank, &k) in members.iter().enumerate() {
+            xs[k] = column_x(c);
+            ys[k] = (rank as f64 + 0.5) / m;
+        }
+    }
+    Some((xs, ys))
+}
+
+/// Construct the plotly Sankey trace shared by the standalone `sankey` chart and the
+/// `viz smart --bivariate` flow panel, from node labels and parallel link arrays (source/target
+/// are 0-based indices into `node_labels`; value is the aggregated flow weight). Nodes are colored
+/// from `PALETTE` and each link ribbon is tinted from its SOURCE node's color (at
+/// `SANKEY_LINK_ALPHA`) so flows are traceable. When `value_order` is set, nodes are arranged in
+/// descending-flow order per column (largest at top) via `sankey_value_positions` + snap; otherwise
+/// plotly's default crossing-minimizing snap decides the vertical order.
+fn sankey_trace(
+    node_labels: &[String],
+    link_source: &[usize],
+    link_target: &[usize],
+    link_value: &[f64],
+    positions: Option<&(Vec<f64>, Vec<f64>)>,
+) -> Box<dyn Trace> {
+    let label_refs: Vec<&str> = node_labels.iter().map(String::as_str).collect();
+    let node_colors: Vec<String> = (0..node_labels.len())
+        .map(|i| PALETTE[i % PALETTE.len()].to_string())
+        .collect();
+    let link_colors: Vec<String> = link_source
+        .iter()
+        .map(|&s| hex_to_rgba(PALETTE[s % PALETTE.len()], SANKEY_LINK_ALPHA))
+        .collect();
+
+    let mut node = Node::new()
+        .label(label_refs)
+        .pad(15)
+        .thickness(20)
+        .color_array(node_colors);
+    // `positions` present = render value-ordered (explicit per-column node x/y); absent = let snap
+    // arrange. Either way `arrangement=snap` is set so the on-screen toggle can flip between the
+    // two at runtime (clearing node.x/y hands the layout back to snap; re-setting them restores
+    // order).
+    if let Some((xs, ys)) = positions {
+        node = node.x(xs.clone()).y(ys.clone());
+    }
+    let link = Link::new()
+        .source(link_source.to_vec())
+        .target(link_target.to_vec())
+        .value(link_value.to_vec())
+        .color_array(link_colors);
+    Sankey::new()
+        .node(node)
+        .link(link)
+        .arrangement(Arrangement::Snap)
+}
+
+/// The on-graph "node order" toggle button baked into every Sankey chart (standalone `viz sankey`
+/// and the `viz smart` flow panel). A native plotly `updatemenus` button that restyles the sole
+/// sankey trace (index 0): value-order sets explicit per-column node positions (`xs`/`ys` from
+/// `sankey_value_positions`), snap clears them so plotly's crossing-minimizer takes over. `args`
+/// fires on the FIRST click so it must be the OPPOSITE of the initial render — click 1 always flips
+/// the layout, click 2 restores it. `value_order_initial` = whether the chart opens value-ordered.
+fn sankey_order_toggle_menu(xs: &[f64], ys: &[f64], value_order_initial: bool) -> UpdateMenu {
+    let value_args = serde_json::json!([{ "node.x": [xs], "node.y": [ys] }, [0]]);
+    let snap_args = serde_json::json!([{ "node.x": [null], "node.y": [null] }, [0]]);
+    let (args, args2) = if value_order_initial {
+        (snap_args, value_args)
+    } else {
+        (value_args, snap_args)
+    };
+    let toggle = Button::new()
+        .label("⇅ node order")
+        .method(ButtonMethod::Restyle)
+        .args(args)
+        .args2(args2);
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // top-left of the plot, clear of the centered title and the top-right modebar.
+        .x(0.0)
+        .x_anchor(Anchor::Left)
+        .y(1.0)
+        .y_anchor(Anchor::Bottom)
+        // a stateless flip: no persistent "pressed" highlight (both orders are valid states).
+        .show_active(false)
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        // pin the label to ink so a dark theme/toggle can't flip it invisible on the white pill.
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
 /// Per-column result for a `BoxOutliers` panel, produced by the single `collect_smart_values`
 /// pass: the out-of-fence outlier values (capped, rendered as native box points), the most
 /// extreme IN-fence values (the honest Tukey whisker endpoints), and the true uncapped outlier
@@ -17861,7 +18546,8 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::Geo { .. }
         | PanelKind::Choropleth { .. }
         | PanelKind::ChoroplethMap { .. }
-        | PanelKind::Hierarchy { .. } => true,
+        | PanelKind::Hierarchy { .. }
+        | PanelKind::Sankey { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -17871,11 +18557,11 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
     }
 }
 
-/// Inline-dashboard render height (px) for a panel: hierarchy panels get the tallest
-/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings need the room), other overview panels get
-/// `OVERVIEW_ROW_HEIGHT_PX`, and everything else the standard `ROW_HEIGHT_PX`.
+/// Inline-dashboard render height (px) for a panel: hierarchy and Sankey panels get the tallest
+/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings, and stacked flow ribbons, need the room), other
+/// overview panels get `OVERVIEW_ROW_HEIGHT_PX`, and everything else the standard `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
-    if matches!(kind, PanelKind::Hierarchy { .. }) {
+    if matches!(kind, PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. }) {
         HIER_ROW_HEIGHT_PX
     } else if is_overview_panel(kind) {
         OVERVIEW_ROW_HEIGHT_PX
@@ -21589,6 +22275,89 @@ mod tests {
             v >= HIER_MIN_ASSOCIATION_CRAMERS_V,
             "max-pair V={v} should catch nested level"
         );
+    }
+
+    #[test]
+    fn sankey_concept_family_splits_on_dot() {
+        assert_eq!(sankey_concept_family("geo.city"), Some("geo"));
+        assert_eq!(sankey_concept_family("category.status"), Some("category"));
+        assert_eq!(sankey_concept_family("nyc.complaint_type"), Some("nyc"));
+        // no dot -> whole token is the family
+        assert_eq!(sankey_concept_family("org"), Some("org"));
+        // un-tagged columns yield no semantic signal
+        assert_eq!(sankey_concept_family(""), None);
+        assert_eq!(sankey_concept_family("  "), None);
+        assert_eq!(sankey_concept_family("unknown"), None);
+    }
+
+    #[test]
+    fn sankey_semantic_tier_ranks_bridges_over_geo_overlap() {
+        // cross-family bridge (a real flow) -> preferred
+        assert_eq!(
+            sankey_semantic_tier("nyc.complaint_type", "category.status"),
+            0
+        );
+        assert_eq!(sankey_semantic_tier("org.agency", "category.status"), 0);
+        // both geo-context (spatial overlap) -> deprioritized
+        assert_eq!(sankey_semantic_tier("geo.city", "geo.zip_code"), 2);
+        // same family, or either side un-tagged -> neutral
+        assert_eq!(sankey_semantic_tier("category.type", "category.status"), 1);
+        assert_eq!(sankey_semantic_tier("", "category.status"), 1);
+        assert_eq!(sankey_semantic_tier("unknown", "unknown"), 1);
+    }
+
+    #[test]
+    fn sankey_side_topn_collapses_tail_into_other() {
+        // more than SANKEY_TOP_N_PER_SIDE categories: the smallest collapse into "Other (k)".
+        let mut tot: HashMap<String, f64> = HashMap::new();
+        let n = SANKEY_TOP_N_PER_SIDE + 3;
+        for i in 0..n {
+            // descending weights so the last 3 are the collapsed tail
+            tot.insert(format!("c{i:02}"), (n - i) as f64);
+        }
+        let (kept, kept_set, other, other_frac) = sankey_side_topn(&tot);
+        assert_eq!(kept.len(), SANKEY_TOP_N_PER_SIDE);
+        assert_eq!(kept_set.len(), SANKEY_TOP_N_PER_SIDE);
+        assert_eq!(other.as_deref(), Some("Other (3)"));
+        assert!(other_frac > 0.0 && other_frac < 1.0);
+        // the heaviest category is kept and ordered first
+        assert_eq!(kept[0], "c00");
+
+        // at or below the cap: everything kept, no "Other".
+        let mut small: HashMap<String, f64> = HashMap::new();
+        small.insert("a".into(), 3.0);
+        small.insert("b".into(), 1.0);
+        let (kept, _set, other, other_frac) = sankey_side_topn(&small);
+        assert_eq!(kept.len(), 2);
+        assert_eq!(other, None);
+        assert_eq!(other_frac, 0.0);
+    }
+
+    #[test]
+    fn hex_to_rgba_parses_palette_hex() {
+        // PALETTE[0] is #4C78A8 -> (76, 120, 168)
+        assert_eq!(hex_to_rgba("#4C78A8", 0.45), "rgba(76,120,168,0.45)");
+        // leading '#' is optional and lowercase hex parses too
+        assert_eq!(hex_to_rgba("ff9da6", 0.5), "rgba(255,157,166,0.5)");
+    }
+
+    #[test]
+    fn sankey_value_positions_ranks_by_flow_per_column() {
+        // Bipartite: sources {0:A, 1:B}, targets {2:X, 3:Y}. A is the heavier source, X the
+        // heavier target, so each should sit at the TOP (smaller y) of its column.
+        //   A->X = 10, A->Y = 1, B->X = 2   (throughput: A=11, B=2, X=12, Y=1)
+        let src = [0_usize, 0, 1];
+        let tgt = [2_usize, 3, 2];
+        let val = [10.0_f64, 1.0, 2.0];
+        let (xs, ys) = sankey_value_positions(4, &src, &tgt, &val).unwrap();
+        // source-only nodes hug the left, target-only nodes hug the right
+        assert!(xs[0] < 0.5 && xs[1] < 0.5, "sources on the left");
+        assert!(xs[2] > 0.5 && xs[3] > 0.5, "targets on the right");
+        // within each column the heavier node is higher (smaller y)
+        assert!(ys[0] < ys[1], "A (heavier source) above B");
+        assert!(ys[2] < ys[3], "X (heavier target) above Y");
+        // empty graph yields no positions
+        assert!(sankey_value_positions(0, &[], &[], &[]).is_none());
     }
 
     #[test]

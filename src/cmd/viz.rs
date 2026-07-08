@@ -9897,6 +9897,14 @@ function qsvDictDrawer() {
     var sel = '[data-qsv-dict="' + a.getAttribute("data-anchor") + '"]';
     if (!document.querySelector(sel)) a.style.display = "none";
   });
+  // move the inline "Export JSONSchema" link (a plain <a download>, no onclick) up into the
+  // fixed button bar so it stays visible while the content scrolls; CSS hides its text label
+  // there, leaving just the download glyph beside the ⧉/✕ icons.
+  var exportLink = content.querySelector(".qsv-dict-export");
+  if (exportLink) {
+    var btns = bar.querySelector(".qsv-dict-drawer-btns");
+    btns.insertBefore(exportLink, btns.firstChild);
+  }
   drawer.appendChild(bar);
   drawer.appendChild(content);
   document.body.appendChild(drawer);
@@ -10354,6 +10362,7 @@ fn dict_role_slug(role: Option<&str>) -> &'static str {
 /// literal `</script>` that would terminate the embedding template.
 fn render_dict_page_html(
     dict_json: &serde_json::Value,
+    dict_json_text: &str,
     dict: &DictData,
     dataset_title: &str,
     column_order: &[String],
@@ -10584,6 +10593,43 @@ fn render_dict_page_html(
         format!("<nav class=\"qsv-dict-toc\">\n{toc}</nav>\n")
     };
 
+    // "Export JSONSchema" — a script-free download of the verbatim dictionary, offered ONLY when
+    // the dictionary is a JSON Schema (top-level `properties`); legacy `fields` dicts aren't JSON
+    // Schema, so they get no button. The bytes ride as a base64 `data:` URI on a plain
+    // `<a download>`: base64 can't contain `</script>`, so it's safe inside the embedding
+    // `<script type="text/html">` template, and needs no JS (which this page can't carry). Authored
+    // inline here so the popped-out standalone tab gets it too; `qsvDictDrawer` relocates this same
+    // anchor into the drawer's fixed button bar (where its text label is hidden, leaving the
+    // glyph).
+    let export_link = if props.is_some() {
+        let b64 = base64_simd::STANDARD.encode_to_string(dict_json_text.as_bytes());
+        // filename slug: lowercase alphanumerics, everything else -> single underscore, trimmed.
+        let mut slug = String::new();
+        let mut prev_us = false;
+        for c in dataset_title.chars() {
+            if c.is_ascii_alphanumeric() {
+                slug.push(c.to_ascii_lowercase());
+                prev_us = false;
+            } else if !prev_us {
+                slug.push('_');
+                prev_us = true;
+            }
+        }
+        let slug = slug.trim_matches('_');
+        let fname = format!(
+            "{}.schema.json",
+            if slug.is_empty() { "data" } else { slug }
+        );
+        format!(
+            "<a class=\"qsv-dict-export\" download=\"{fname}\" \
+             href=\"data:application/json;base64,{b64}\" title=\"Download this Data Dictionary as \
+             JSON Schema\">&#x2913; <span class=\"qsv-dict-export-label\">Export \
+             JSONSchema</span></a>\n"
+        )
+    } else {
+        String::new()
+    };
+
     // Fixed neutral light/dark palettes keyed on `qsv-dark` (set on the standalone page's body
     // by `qsvOpenDictTab`, inherited from the dashboard body in the drawer), mirroring the
     // dashboard's theme-toggle convention. Every rule is scoped under `.qsv-dict-doc` /
@@ -10611,6 +10657,13 @@ fn render_dict_page_html(
   .qsv-dark .qsv-dict-back {{ color: #6ea8ff; }}
   .qsv-dict-dataset-desc {{ font-size: 14px; line-height: 1.5; }}
   .qsv-dict-grain {{ font-size: 13px; }}
+  .qsv-dict-export {{ display: inline-block; font-size: 12px; padding: 3px 11px; margin: 8px 0 4px; border: 1px solid rgba(128, 128, 128, 0.45); border-radius: 6px; color: inherit; text-decoration: none; }}
+  .qsv-dict-export:hover {{ background: rgba(128, 128, 128, 0.15); }}
+  /* in the drawer bar the anchor sits beside the ⧉/✕ icons: drop the button chrome, hide the
+     text label, and let `.qsv-dict-drawer-btns a` size it as a bare glyph */
+  .qsv-dict-drawer-btns .qsv-dict-export {{ padding: 0; margin: 0 0 0 14px; border: 0; border-radius: 0; font-size: 15px; }}
+  .qsv-dict-drawer-btns .qsv-dict-export:hover {{ background: transparent; }}
+  .qsv-dict-drawer-btns .qsv-dict-export-label {{ display: none; }}
   .qsv-dict-toc {{ display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0 10px; }}
   .qsv-dict-chip {{ font-size: 12px; padding: 2px 10px; border: 1px solid rgba(128, 128, 128, 0.4); border-left: 4px solid #9ca3af; border-radius: 999px; color: inherit; text-decoration: none; }}
   .qsv-dict-chip:hover {{ background: rgba(128, 128, 128, 0.15); }}
@@ -10663,10 +10716,10 @@ fn render_dict_page_html(
 <body id="qsv-dict-root" class="qsv-dict-body">
 <div class="qsv-dict-wrap qsv-dict-doc">
 <header class="qsv-dict-head">
-<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(!o||o.closed){{window.close();}}else{{o.focus();}}return false">&#8592; Back to dashboard</a>
+<a class="qsv-dict-back" href="#" onclick="var o=window.opener;if(o&&!o.closed){{try{{o.focus();}}catch(e){{}}}}window.close();return false">&#8592; Back to dashboard</a>
 <h1>Data Dictionary — {title}</h1>
 </header>
-{intro}{toc_nav}{sections}{provenance}</div>
+{export_link}{intro}{toc_nav}{sections}{provenance}</div>
 </body>
 </html>"##
     )
@@ -15507,6 +15560,7 @@ fn build_smart(
                 };
                 Some(render_dict_page_html(
                     &dict_json,
+                    json_text,
                     dict,
                     &title_text,
                     &column_order,
@@ -20263,10 +20317,27 @@ mod tests {
         ];
         let html = render_dict_page_html(
             &dict_json,
+            schema,
             &DictData::default(),
             "Accounts",
             &order,
             &std::collections::HashSet::new(),
+        );
+
+        // a JSON Schema dictionary (top-level `properties`) offers a script-free "Export
+        // JSONSchema" download: a plain <a download> carrying the verbatim schema as a base64
+        // data: URI, with a title-derived filename.
+        assert!(
+            html.contains(r#"class="qsv-dict-export""#),
+            "jsonschema dict offers an export link"
+        );
+        assert!(
+            html.contains(r#"download="accounts.schema.json""#),
+            "export filename derives from the dataset title"
+        );
+        assert!(
+            html.contains("href=\"data:application/json;base64,"),
+            "export rides as a base64 data: URI"
         );
 
         // measure range IS comma-grouped; cardinality and null_count are always grouped
@@ -20307,6 +20378,38 @@ mod tests {
         assert!(
             !html.contains("1e+,100"),
             "no comma-mangled positive exponent"
+        );
+    }
+
+    #[test]
+    fn render_dict_page_html_legacy_fields_dict_has_no_jsonschema_export() {
+        // A legacy `fields` dictionary is NOT JSON Schema, so the "Export JSONSchema" control
+        // must not appear (the label would be a lie); only top-level `properties` dicts get it.
+        let legacy = r#"{
+          "fields": [
+            { "name": "account_id", "role": "identifier", "content_type": "integer" },
+            { "name": "revenue", "role": "measure", "content_type": "float" }
+          ]
+        }"#;
+        let dict_json: serde_json::Value = serde_json::from_str(legacy).unwrap();
+        let order = vec!["account_id".to_string(), "revenue".to_string()];
+        let html = render_dict_page_html(
+            &dict_json,
+            legacy,
+            &DictData::default(),
+            "Accounts",
+            &order,
+            &std::collections::HashSet::new(),
+        );
+        // the stylesheet always carries `.qsv-dict-export` rules; assert on the ANCHOR markup
+        // (and the data: URI) so we're checking the control, not the CSS.
+        assert!(
+            !html.contains(r#"class="qsv-dict-export""#),
+            "legacy fields dict renders no export anchor"
+        );
+        assert!(
+            !html.contains("data:application/json;base64,"),
+            "legacy fields dict embeds no schema download"
         );
     }
 

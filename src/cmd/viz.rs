@@ -19521,6 +19521,58 @@ mod tests {
     }
 
     #[test]
+    fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
+        // extreme-magnitude float min/max serialize in scientific notation via serde_json
+        // (`1e-7`, `1e+100`); grouping must leave those intact rather than mangle them into
+        // `1,e-7` / `1e+,100`, while plain integers/decimals still get thousands separators.
+        let schema = r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "account_id": { "type": "integer", "title": "Account ID",
+              "minimum": 1000001, "maximum": 3000003,
+              "x-qsv": { "role": "identifier", "cardinality": 1234567, "null_count": 4210 } },
+            "tiny": { "type": "number", "title": "Tiny",
+              "minimum": 1e-7, "maximum": 1e100,
+              "x-qsv": { "role": "measure", "concept": "measure.value", "cardinality": 3, "null_count": 0 } }
+          },
+          "x-qsv": { "grain": "one row = one account" }
+        }"#;
+        let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
+        let order = vec!["account_id".to_string(), "tiny".to_string()];
+        let html = render_dict_page_html(
+            &dict_json,
+            &DictData::default(),
+            "Accounts",
+            &order,
+            &std::collections::HashSet::new(),
+        );
+
+        // integer range, cardinality and null_count are comma-grouped
+        assert!(
+            html.contains("1,000,001 \u{2013} 3,000,003"),
+            "integer range grouped"
+        );
+        assert!(html.contains("<dd>1,234,567</dd>"), "cardinality grouped");
+        assert!(html.contains("<dd>4,210</dd>"), "null_count grouped");
+
+        // scientific-notation floats are preserved verbatim (serde_json emits `1e+100`),
+        // and never appear in the comma-mangled forms group_thousands would otherwise yield.
+        assert!(
+            html.contains("1e-7 \u{2013} 1e+100"),
+            "exponent range preserved"
+        );
+        assert!(
+            !html.contains("1,e-7"),
+            "no comma-mangled negative exponent"
+        );
+        assert!(
+            !html.contains("1e+,100"),
+            "no comma-mangled positive exponent"
+        );
+    }
+
+    #[test]
     fn parse_dictionary_semantics_captures_descriptions() {
         // jsonschema shape: per-field `description`, dataset description at the top level
         // (describegpt --description folds it there under --format jsonschema), provenance

@@ -605,11 +605,14 @@ FIGURES = [
      "narrow complaint subset (bridge/taxi-specific fields, say) can't crowd out a more broadly "
      "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
      "<i>Borough</i> ↔ <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000) and "
-     "<i>Resolution Deadline</i> ↔ <i>Resolution Last Updated</i> (NMI=0.9996, n=3,467). Fully "
+     "<i>Resolution Deadline</i> ↔ <i>Resolution Last Updated</i> (NMI=0.9996, n=3,467). "
+     "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
+     "drawer sourced from the same curated schema, with an <b>Export&nbsp;JSONSchema</b> download "
+     "that saves the dictionary verbatim. Fully "
      "deterministic — no LLM "
      "needed (a Data Dictionary an LLM <code>--dictionary infer</code> pass produces can be reviewed "
      "and committed exactly like this one).",
-     True, ["smart", "nyc_311.csv", "--smarter", "--bivariate",
+     True, ["smart", "nyc_311.csv", "--smarter", "--bivariate", "--dict-info",
             "--dictionary", "nyc311_dict.schema.json",
             "--geojson", "nyc_neighborhoods.geojson"]),
     ("smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)",

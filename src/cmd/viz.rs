@@ -10022,12 +10022,21 @@ fn render_dict_page_html(
         let min = get(&["minimum", "min"]).or_else(|| get_xq("min"));
         let max = get(&["maximum", "max"]).or_else(|| get_xq("max"));
         if min.is_some() || max.is_some() {
+            // Range min/max are actual column values, not counts: comma-group them only for
+            // genuine quantitative measures. For identifiers, geo codes (a ZIP 15003 is not
+            // "15,003"), years and other dimensions, thousands separators corrupt the value,
+            // so those render verbatim via `disp`. Cardinality/null_count below are always
+            // counts and stay grouped regardless of role.
+            let group_range = role
+                .as_deref()
+                .is_some_and(|r| r.eq_ignore_ascii_case("measure"));
+            let fmt_range = |v: &Value| if group_range { disp_num(v) } else { disp(v) };
             meta.push((
                 "Range",
                 format!(
                     "{} \u{2013} {}",
-                    min.map(disp_num).unwrap_or_default(),
-                    max.map(disp_num).unwrap_or_default()
+                    min.map(fmt_range).unwrap_or_default(),
+                    max.map(fmt_range).unwrap_or_default()
                 ),
             ));
         }
@@ -19522,9 +19531,13 @@ mod tests {
 
     #[test]
     fn render_dict_page_html_groups_stats_and_guards_sci_notation() {
-        // extreme-magnitude float min/max serialize in scientific notation via serde_json
+        // Range min/max grouping is role-gated: only genuine `measure` columns get thousands
+        // separators on their range. Identifiers, geo codes (ZIP) and years are dimensions, so
+        // their ranges render verbatim (a ZIP 15003 must never read "15,003", a year 2099 never
+        // "2,099"). Cardinality/null_count are always counts and stay grouped regardless of role.
+        // Extreme-magnitude float min/max serialize in scientific notation via serde_json
         // (`1e-7`, `1e+100`); grouping must leave those intact rather than mangle them into
-        // `1,e-7` / `1e+,100`, while plain integers/decimals still get thousands separators.
+        // `1,e-7` / `1e+,100`.
         let schema = r#"{
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "type": "object",
@@ -19532,6 +19545,15 @@ mod tests {
             "account_id": { "type": "integer", "title": "Account ID",
               "minimum": 1000001, "maximum": 3000003,
               "x-qsv": { "role": "identifier", "cardinality": 1234567, "null_count": 4210 } },
+            "owner_zip": { "type": "integer", "title": "Owner ZIP",
+              "minimum": 15003, "maximum": 47909,
+              "x-qsv": { "role": "dimension", "concept": "geo.zip_code" } },
+            "exp_year": { "type": "integer", "title": "Expiration Year",
+              "minimum": 2099, "maximum": 2099,
+              "x-qsv": { "role": "dimension", "concept": "unknown" } },
+            "revenue": { "type": "integer", "title": "Revenue",
+              "minimum": 4000004, "maximum": 9000009,
+              "x-qsv": { "role": "measure", "concept": "measure.value" } },
             "tiny": { "type": "number", "title": "Tiny",
               "minimum": 1e-7, "maximum": 1e100,
               "x-qsv": { "role": "measure", "concept": "measure.value", "cardinality": 3, "null_count": 0 } }
@@ -19539,7 +19561,13 @@ mod tests {
           "x-qsv": { "grain": "one row = one account" }
         }"#;
         let dict_json: serde_json::Value = serde_json::from_str(schema).unwrap();
-        let order = vec!["account_id".to_string(), "tiny".to_string()];
+        let order = vec![
+            "account_id".to_string(),
+            "owner_zip".to_string(),
+            "exp_year".to_string(),
+            "revenue".to_string(),
+            "tiny".to_string(),
+        ];
         let html = render_dict_page_html(
             &dict_json,
             &DictData::default(),
@@ -19548,13 +19576,30 @@ mod tests {
             &std::collections::HashSet::new(),
         );
 
-        // integer range, cardinality and null_count are comma-grouped
+        // measure range IS comma-grouped; cardinality and null_count are always grouped
         assert!(
-            html.contains("1,000,001 \u{2013} 3,000,003"),
-            "integer range grouped"
+            html.contains("4,000,004 \u{2013} 9,000,009"),
+            "measure range grouped"
         );
         assert!(html.contains("<dd>1,234,567</dd>"), "cardinality grouped");
         assert!(html.contains("<dd>4,210</dd>"), "null_count grouped");
+
+        // non-measure ranges render verbatim: identifier, ZIP code and year are never grouped
+        assert!(
+            html.contains("1000001 \u{2013} 3000003"),
+            "identifier range not grouped"
+        );
+        assert!(!html.contains("1,000,001"), "identifier range not mangled");
+        assert!(
+            html.contains("15003 \u{2013} 47909"),
+            "ZIP range not grouped"
+        );
+        assert!(!html.contains("15,003"), "ZIP not comma-mangled");
+        assert!(
+            html.contains("2099 \u{2013} 2099"),
+            "year range not grouped"
+        );
+        assert!(!html.contains("2,099"), "year not comma-mangled");
 
         // scientific-notation floats are preserved verbatim (serde_json emits `1e+100`),
         // and never appear in the comma-mangled forms group_thousands would otherwise yield.

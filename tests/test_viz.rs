@@ -2003,6 +2003,62 @@ fn viz_sankey() {
     assert!(html.contains(r#""type":"sankey""#));
     // East->Widget (5+3=8) and West->Gadget (4): exactly two aggregated links
     assert!(html.contains(r#""value":[8.0,4.0]"#));
+    // links are always tinted from their SOURCE node's PALETTE color (both East links share
+    // East's color); nodes carry the PALETTE too.
+    assert!(
+        html.contains("rgba("),
+        "link ribbons should be source-tinted; html: {html}"
+    );
+    // value-order is the DEFAULT: explicit per-column node positions baked onto the node object
+    // (which serializes `…,"thickness":20,"x":[…],"y":[…]`) + snap arrangement.
+    assert!(html.contains(r#""arrangement":"snap""#), "html: {html}");
+    assert!(
+        html.contains(r#""thickness":20,"x":["#),
+        "default should bake value-ordered node positions on the node; html: {html}"
+    );
+    // an on-screen "node order" toggle (updatemenus button) is baked in either way.
+    assert!(
+        html.contains(r#""updatemenus""#) && html.contains("node order"),
+        "the runtime node-order toggle button should be present; html: {html}"
+    );
+}
+
+#[test]
+fn viz_sankey_snap_order_opts_out_of_value_ordering() {
+    let wrk = Workdir::new("viz_sankey_snap_order");
+    wrk.create_from_string(
+        "flows.csv",
+        "from,to,weight\nEast,Widget,5\nEast,Widget,3\nWest,Gadget,4\n",
+    );
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "sankey",
+        "flows.csv",
+        "--source",
+        "from",
+        "--target",
+        "to",
+        "--value",
+        "weight",
+        "--sankey-snap-order",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // --sankey-snap-order opens in plotly's crossing-min layout: arrangement snap, but NO explicit
+    // node x/y positions baked onto the node object (the node closes right after `"thickness":20`).
+    // (The value-order positions still ride in the toggle button's restyle args, hence the precise
+    // node-scoped discriminator rather than a bare `"x":[` check.)
+    assert!(html.contains(r#""arrangement":"snap""#), "html: {html}");
+    assert!(
+        !html.contains(r#""thickness":20,"x":["#),
+        "snap-order should not bake per-node x positions on the node; html: {html}"
+    );
+    // the toggle is still offered so the reader can switch to value order at runtime.
+    assert!(
+        html.contains(r#""updatemenus""#) && html.contains("node order"),
+        "the runtime node-order toggle button should be present; html: {html}"
+    );
 }
 
 #[test]
@@ -7847,6 +7903,125 @@ fn viz_smart_bivariate_assoc_heatmap_categorical_pair() {
     );
     // no numeric columns exist, so no Pearson correlation heatmap should have been built
     assert!(!html.contains(r#""name":"correlation""#));
+}
+
+// Build the canonical many-to-many categorical fixture: dept→channel with a 70/30 primary/secondary
+// split that cycles (A→P/Q, B→Q/R, C→R/P). Each dept fans out to 2 channels and each channel is fed
+// by 2 depts, so the pair is associated but genuinely many-to-many (Theil's U ~0.44 both ways —
+// inside the Sankey band, well below the near-functional cutoff). Both columns have cardinality 3.
+// `channel_first` controls CSV column order so a test can distinguish concept-based orientation
+// from the equal-cardinality column-order fallback.
+fn many_to_many_dept_channel(channel_first: bool) -> String {
+    let channels = ["P", "Q", "R"];
+    let depts = ["A", "B", "C"];
+    let mut rows = String::from(if channel_first {
+        "channel,dept\n"
+    } else {
+        "dept,channel\n"
+    });
+    for d in 0..3 {
+        let primary = channels[d];
+        let secondary = channels[(d + 1) % 3];
+        for k in 0..50 {
+            let ch = if k < 35 { primary } else { secondary };
+            let dept = depts[d];
+            if channel_first {
+                rows.push_str(&format!("{ch},{dept}\n"));
+            } else {
+                rows.push_str(&format!("{dept},{ch}\n"));
+            }
+        }
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_bivariate_sankey_many_to_many() {
+    let wrk = Workdir::new("viz_smart_bivariate_sankey_many_to_many");
+    wrk.create_from_string("flow.csv", &many_to_many_dept_channel(false));
+    wrk.create_from_string(
+        "trivial.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{}}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "flow.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("trivial.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a genuinely many-to-many categorical pair yields a directed-flow Sankey panel
+    assert!(
+        html.contains(r#""type":"sankey""#),
+        "a many-to-many categorical pair should produce a Sankey panel; html: {html}"
+    );
+    // mutual exclusivity: the 2-level treemap of exactly this pair is suppressed in favor of the
+    // flow view, so no treemap/sunburst hierarchy trace should appear.
+    assert!(
+        !html.contains(r#""type":"treemap""#) && !html.contains(r#""type":"sunburst""#),
+        "the 2-dim hierarchy should be suppressed when the Sankey owns the pair; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bivariate_sankey_concept_orients_to_status() {
+    let wrk = Workdir::new("viz_smart_bivariate_sankey_concept_orients_to_status");
+    // Put `channel` FIRST in the CSV. Both columns have cardinality 3, so the equal-cardinality
+    // column-order fallback would orient the pair `channel -> dept` (source = column 0). The
+    // dictionary tags `channel` as `category.status`, which must override that and force the status
+    // column to the TARGET, flipping the orientation to `dept -> channel`. Asserting on the flipped
+    // title therefore proves the concept-based orientation actually fired (and the dict parsed) --
+    // it is not reachable from the cardinality fallback.
+    wrk.create_from_string("flow.csv", &many_to_many_dept_channel(true));
+    // dictionary tags `channel` as category.status (the outcome) and `dept` as category.type.
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","properties":{
+            "dept":{"type":"string","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.type"}},
+            "channel":{"type":"string","x-qsv":{"qsv_type":"String","role":"dimension","concept":"category.status"}}
+        }}"#,
+    );
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "flow.csv",
+        "--bivariate",
+        "-o",
+        &out_html,
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(
+        html.contains(r#""type":"sankey""#),
+        "Sankey expected; html: {html}"
+    );
+    // the panel title is "<source> → <target>"; the category.status column must be the target.
+    // The dictionary labels default to the field names here, so the title reads "dept → channel".
+    // The cardinality fallback would instead read "channel → dept" (channel is column 0), so this
+    // assertion fails unless the concept-based orientation flipped it.
+    assert!(
+        html.contains("dept \u{2192} channel"),
+        "the category.status column (channel) should be oriented as the flow target; html: {html}"
+    );
+    // guard the discriminator: the fallback orientation must NOT appear.
+    assert!(
+        !html.contains("channel \u{2192} dept"),
+        "concept orientation must override the equal-cardinality column-order fallback; html: \
+         {html}"
+    );
 }
 
 #[test]

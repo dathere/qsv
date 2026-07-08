@@ -576,11 +576,12 @@ use std::{
 };
 
 use indicatif::{HumanCount, HumanDuration, ProgressBar, ProgressDrawTarget, ProgressStyle};
-// the Core/Full extent zoom buttons are part of the geocode-gated spatial-extent overlay
 #[cfg(feature = "geocode")]
-use plotly::layout::update_menu::{
-    Button, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
-};
+use plotly::layout::update_menu::UpdateMenuDirection;
+// the sankey node-order toggle and the map cluster/basemap toggles are viz-general, so these
+// are imported unconditionally; UpdateMenuDirection is referenced only by the geocode-gated
+// extent menu.
+use plotly::layout::update_menu::{Button, ButtonMethod, UpdateMenu, UpdateMenuType};
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
     HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap,
@@ -8239,31 +8240,37 @@ fn build_smart_sankey_arrays(
     }
     let src_offset = 0usize;
     let tgt_offset = source_nodes.len();
-    let src_pos: HashMap<&str, usize> = source_nodes
+    // Position maps are keyed by KEPT labels only (distinct real categories). The collapsed
+    // "Other (k)" bucket is addressed by its fixed slot — the last node on its side — NOT by its
+    // display label, so a real category literally named "Other (k)" can't collide with the
+    // synthetic aggregate and silently merge their flows (leaving the real node dangling).
+    let src_pos: HashMap<&str, usize> = kept_src
         .iter()
         .enumerate()
         .map(|(i, l)| (l.as_str(), src_offset + i))
         .collect();
-    let tgt_pos: HashMap<&str, usize> = target_nodes
+    let tgt_pos: HashMap<&str, usize> = kept_tgt
         .iter()
         .enumerate()
         .map(|(i, l)| (l.as_str(), tgt_offset + i))
         .collect();
+    let other_src_idx = other_src.as_ref().map(|_| src_offset + kept_src.len());
+    let other_tgt_idx = other_tgt.as_ref().map(|_| tgt_offset + kept_tgt.len());
 
-    // remap each observed pair onto kept-or-Other on both sides and re-aggregate.
+    // remap each observed pair onto its kept node or the collapsed Other bucket, and re-aggregate.
     let mut links: HashMap<(usize, usize), f64> = HashMap::new();
     for ((s, t), w) in &pair_counts {
-        let s_label: &str = if kept_src_set.contains(s) {
-            s.as_str()
+        let si = if kept_src_set.contains(s) {
+            src_pos.get(s.as_str()).copied()
         } else {
-            other_src.as_deref().unwrap_or(s.as_str())
+            other_src_idx
         };
-        let t_label: &str = if kept_tgt_set.contains(t) {
-            t.as_str()
+        let ti = if kept_tgt_set.contains(t) {
+            tgt_pos.get(t.as_str()).copied()
         } else {
-            other_tgt.as_deref().unwrap_or(t.as_str())
+            other_tgt_idx
         };
-        let (Some(&si), Some(&ti)) = (src_pos.get(s_label), tgt_pos.get(t_label)) else {
+        let (Some(si), Some(ti)) = (si, ti) else {
             continue;
         };
         *links.entry((si, ti)).or_insert(0.0) += *w;

@@ -9934,6 +9934,15 @@ fn render_dict_page_html(
         }
     }
 
+    // like `disp`, but comma-groups JSON numbers so stats read as 12,345; anything
+    // non-numeric (date/text ranges, enum values, examples) falls through to `disp`.
+    fn disp_num(v: &Value) -> String {
+        match v {
+            Value::Number(n) => group_thousands(&n.to_string()),
+            _ => disp(v),
+        }
+    }
+
     let props = dict_json.get("properties").and_then(Value::as_object);
     let legacy_fields = dict_json
         .get("Dictionary")
@@ -10007,16 +10016,16 @@ fn render_dict_page_html(
                 "Range",
                 format!(
                     "{} \u{2013} {}",
-                    min.map(disp).unwrap_or_default(),
-                    max.map(disp).unwrap_or_default()
+                    min.map(disp_num).unwrap_or_default(),
+                    max.map(disp_num).unwrap_or_default()
                 ),
             ));
         }
         if let Some(v) = get_xq("cardinality").or_else(|| get(&["cardinality"])) {
-            meta.push(("Cardinality", disp(v)));
+            meta.push(("Cardinality", disp_num(v)));
         }
         if let Some(v) = get_xq("null_count").or_else(|| get(&["null_count"])) {
-            meta.push(("Null count", disp(v)));
+            meta.push(("Null count", disp_num(v)));
         }
         if let Some(v) = get(&["enum", "enumeration"]) {
             meta.push(("Values", disp(v)));

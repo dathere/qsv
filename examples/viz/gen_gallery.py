@@ -53,7 +53,7 @@ SMART_IFRAME = {
     "smart dashboard (--dictionary infer, treemap)":  "smart_dict_treemap.html",
     "smart dashboard (--dictionary infer, sunburst)": "smart_dict_sunburst.html",
     "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
-    "smart dashboard (--smarter, curated --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
+    "smart dashboard (--smarter, committed --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
     "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
 }
 
@@ -565,53 +565,56 @@ FIGURES = [
      "is a rough synthetic proxy (latitude + elevation-lapse model), so treat it as illustrative. "
      "Requires a local LLM; the committed HTML is reused on regen.",
      True, ["smart", "world_cities.csv", "--dictionary", "infer"]),
-    ("smart dashboard (--smarter, curated --dictionary, NYC 311 metro choropleth)",
+    ("smart dashboard (--smarter, committed --dictionary, NYC 311 metro choropleth)",
      "A <b>10,000-row</b> sample of NYC 311 service requests (2010–2020) profiled into auto-chosen "
      "panels on a real, wide municipal dataset. The "
-     "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned by "
-     "point-in-polygon into one of <b>188 NYC neighborhood</b> polygons (no geocoding), and because "
-     "the matched regions span a city-scale extent, <code>viz smart</code> now draws the filled "
+     "headline panel is the <b>metro choropleth</b>: each request's lat/lon is binned into NYC's "
+     "<b>188 neighborhood</b> polygons (no geocoding — 110 of them receive requests, and 10 of the "
+     "7,464 located points fall too far from any polygon to snap), and because the matched regions "
+     "span a city-scale extent, <code>viz smart</code> draws the filled "
      "regions on an interactive <b>MapLibre tile basemap</b> (token-free carto tiles, fine "
      "street/coastline detail) instead of the coarse projection basemap it uses for "
      "country/continental choropleths. The leading <b>point map</b> flags bad-geocode "
      "<b>outliers</b> (here, <i>9 in Pennsylvania</i>): a nice illustration of the hover's value — "
-     "for the stray PA point, the tooltip shows the record's own <i>Incident City: NEW YORK</i> "
+     "for a stray PA point, the tooltip shows the record's own <i>Incident City: NEW YORK</i> "
      "right above its reverse-geocoded <i>Pennsylvania, United States</i>, so a real Manhattan "
      "complaint saddled with corrupt coordinates is self-evident at a glance. "
      "<code>--smarter</code> runs <code>moarstats --advanced</code> "
-     "to enrich the stats cache, and a curated <code>--dictionary</code> "
-     "(<code>nyc311_dict.schema.json</code>) tags this log's numeric identifier/code columns "
-     "(<i>Unique Key</i>, <i>BBL</i>, the State-Plane coordinates) as identifiers and supplies "
-     "friendly labels (e.g. <i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
-     "profiler treats a service-request log as volume-and-category data rather than charting IDs as "
-     "quantities. Alongside the maps the auto-profiler fills the dashboard with frequency bars, an "
-     "hour-of-day seasonality profile and a requests-over-time trend. "
-     "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across all 34 charted columns "
-     "(the identifier/coordinate columns above stay excluded, same as everywhere else) plus a ranked "
+     "to enrich the stats cache, and a committed <code>--dictionary</code> "
+     "(<code>nyc311_dict.schema.json</code> — a Data Dictionary generated for this dataset, then "
+     "reviewed and committed alongside it) tags the record's identifier columns (<i>Unique Key</i>, "
+     "<i>BBL</i>) so they're skipped rather than charted as quantities, labels the State-Plane "
+     "coordinates as coordinate dimensions, and supplies friendly names (e.g. "
+     "<i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
+     "profiler treats a service-request log as volume-and-category data. Alongside the maps the "
+     "auto-profiler fills the dashboard with frequency bars, an <b>hour-of-day</b> seasonality "
+     "profile, a time trend, a hierarchical breakdown and a mean-by-borough panel. New here is an "
+     "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Submission Channel</i>): it "
+     "traces how each city agency's complaints arrive by channel, the thickest ribbons being "
+     "<i>HPD → PHONE</i> (1,426) and <i>NYPD → PHONE</i> (1,348). "
+     "<code>--bivariate</code> adds an <b>NMI association heatmap</b> across the <b>36 charted "
+     "columns</b> plus a ranked "
      "<b>Top Relationships</b> panel — a horizontal <b>multivariate lollipop</b> where each dot's "
      "position is the pair's NMI on a value axis <b>zoomed</b> to the shown band (so near-ceiling "
      "associations separate instead of crushing together at 1.0), its <b>size</b> encodes "
-     "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. A genuine categorical "
-     "pairing it surfaces is "
-     "<i>Complaint Type</i> ↔ <i>Descriptor</i> (NMI=0.86), an association a Pearson-only heatmap "
-     "could never show since neither column is numeric. It also flags a real <b>nonlinear</b> "
-     "relationship: <i>Resolution Deadline</i> and <i>Complaint Closed Date</i> are almost perfectly "
-     "associated (NMI=0.999) and perfectly rank-monotonic (spearman ρ=1.00), yet only "
-     "moderately linear (pearson r=0.71) — because how far a complaint's actual close date lands "
-     "from its deadline varies by complaint type, curving the relationship in a way Pearson alone "
-     "would understate. The ranked list itself is <b>support-weighted</b>: a pair only qualifies "
+     "co-occurrence support, and an <b>amber</b> dot flags a nonlinear pair. The top pair is a "
+     "purely categorical one a Pearson-only heatmap could never surface, since neither column is "
+     "numeric: <i>Borough</i> × <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000). It also flags a "
+     "genuine <b>nonlinear</b> pair in amber — <i>Closed Date</i> × <i>Due Date</i> (NMI=0.9994): a "
+     "complaint's actual close date is almost perfectly rank-associated with its deadline, yet how "
+     "far the two land apart varies by complaint type, curving the relationship in a way a linear "
+     "correlation alone would understate. The ranking is <b>support-weighted</b>: a pair only "
+     "qualifies "
      "when its co-occurring row count is at least 10% of the best-supported pair's, so a "
-     "technically-perfect NMI from two sparsely-populated columns that only ever co-occur in a "
-     "narrow complaint subset (bridge/taxi-specific fields, say) can't crowd out a more broadly "
+     "technically-perfect NMI from two sparsely-populated columns can't crowd out a more broadly "
      "meaningful one — the top of the ranking instead surfaces genuinely dataset-wide pairs like "
-     "<i>Borough</i> ↔ <i>Park Borough</i> (NMI=1.0, n=10,000 of 10,000) and "
-     "<i>Resolution Deadline</i> ↔ <i>Resolution Last Updated</i> (NMI=0.9996, n=3,467). "
+     "<i>Borough</i> × <i>Park Borough</i> (n=10,000) and "
+     "<i>Due Date</i> × <i>Resolution Action Updated Date</i> (NMI=0.9996, n=3,467). "
      "<code>--dict-info</code> adds a per-panel info icon and a slide-over <b>Data Dictionary</b> "
-     "drawer sourced from the same curated schema, with an <b>Export&nbsp;JSONSchema</b> download "
-     "that saves the dictionary verbatim. Fully "
-     "deterministic — no LLM "
-     "needed (a Data Dictionary an LLM <code>--dictionary infer</code> pass produces can be reviewed "
-     "and committed exactly like this one).",
+     "drawer sourced from the same committed schema, with an <b>Export&nbsp;JSONSchema</b> download "
+     "that saves the dictionary verbatim. The run stays fully "
+     "<b>deterministic</b> and offline: because the dictionary is committed, <code>--bivariate</code> "
+     "never triggers a live <code>--dictionary infer</code> pass.",
      True, ["smart", "nyc_311.csv", "--smarter", "--bivariate", "--dict-info",
             "--dictionary", "nyc311_dict.schema.json",
             "--geojson", "nyc_neighborhoods.geojson"]),

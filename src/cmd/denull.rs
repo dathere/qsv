@@ -150,20 +150,17 @@ struct ColumnTally {
     /// zeros, so a single sighting disqualifies the column. Mirrors the
     /// leading-zero rule in `stats`' type inference.
     zero_padded:     bool,
-    /// Sticky: this column held at least one recognized sentinel token. Tracked
-    /// separately from `offenders` because that map is CLEARED when `too_many`
-    /// latches, and because it is what decides whether a REJECTED column is worth
-    /// reporting at all. A column of `A..F` codes is not a near miss - it is an
-    /// ordinary categorical, and saying "rejected" about it is noise.
+    /// Sticky: this column held at least one recognized sentinel token. It is what
+    /// decides whether a REJECTED column is worth reporting at all. A column of `A..F`
+    /// codes is not a near miss - it is an ordinary categorical, and saying "rejected"
+    /// about it is noise.
     saw_sentinel:    bool,
-    /// Up to `SEEN_SENTINEL_CAP` distinct sentinel tokens actually observed, kept so a
-    /// REJECTED column can name what it saw ("holds \"-\"") instead of asserting an
-    /// unevidenced "holds a sentinel".
-    seen_sentinels:  Vec<Vec<u8>>,
+    /// The first sentinel seen AFTER `offenders` overflowed, if any. Below the cap
+    /// `offenders` already holds every distinct sentinel, so `seen_list` reads them from
+    /// there; this field exists only so an OVERFLOWED column can still name a token it
+    /// met once the map stopped growing.
+    late_sentinel:   Option<Vec<u8>>,
 }
-
-/// How many distinct observed sentinel tokens to retain for the report.
-const SEEN_SENTINEL_CAP: usize = 4;
 
 /// Longest built-in sentinel, used to skip the vocabulary probe for cells that
 /// cannot possibly match. Keeps the free-text path to a length compare.
@@ -180,7 +177,7 @@ impl ColumnTally {
             all_integer:     true,
             zero_padded:     false,
             saw_sentinel:    false,
-            seen_sentinels:  Vec::new(),
+            late_sentinel:   None,
         }
     }
 
@@ -224,29 +221,32 @@ impl ColumnTally {
             *c += 1;
             return;
         }
-        // a sentinel sighting is recorded even after `too_many` latches (and even though
-        // `offenders` was cleared), so a numeric column buried under free text still
-        // reports that it HAS a "NULL". Gated on length so free text pays a compare.
-        // Before overflow this runs once per NEW distinct offender (bounded by
-        // --max-distinct). After overflow `offenders` is empty, so every non-numeric cell
-        // lands here: keep probing only until the first sighting, then stop. That still
-        // lets a numeric column buried under free text report that it HAS a sentinel,
-        // without paying a probe on every remaining row.
-        if !self.saw_sentinel && is_sentinel(trimmed, vocab) {
+        // A sentinel sighting is recorded even after `too_many` latches, so a numeric
+        // column buried under free text still reports that it HAS a "NULL". Gated on
+        // length so free text pays only a compare. Before overflow this runs once per NEW
+        // distinct offender (bounded by --max-distinct) and the token is also landing in
+        // `offenders` just below, which is where `seen_list` reads it from. After overflow
+        // `offenders` stops growing, so remember the first sentinel here and then stop
+        // probing - that is what makes the free-text path a single bool check per cell.
+        let novel_sentinel = !self.saw_sentinel && is_sentinel(trimmed, vocab);
+        if novel_sentinel {
             self.saw_sentinel = true;
-            if self.seen_sentinels.len() < SEEN_SENTINEL_CAP
-                && !self.seen_sentinels.iter().any(|s| s == trimmed)
-            {
-                self.seen_sentinels.push(trimmed.to_vec());
-            }
         }
         if self.too_many {
+            if novel_sentinel {
+                self.late_sentinel = Some(trimmed.to_vec());
+            }
             return;
         }
         if self.offenders.len() >= max_distinct {
-            // NOT cleared: the map is already capped at `max_distinct`, so retaining it
-            // costs nothing and lets the report name examples of the disqualifying values.
+            // `offenders` is NOT cleared: it is already capped at `max_distinct`, so
+            // retaining it costs nothing and lets the report name examples of the
+            // disqualifying values. This cell is the one that overflows the map, so it is
+            // never inserted - if it is a sentinel, it has to be remembered separately.
             self.too_many = true;
+            if novel_sentinel {
+                self.late_sentinel = Some(trimmed.to_vec());
+            }
         } else {
             self.offenders.insert(trimmed.to_vec(), 1);
         }
@@ -268,15 +268,21 @@ fn offender_examples(tally: &ColumnTally, vocab: &HashSet<String>) -> String {
     ex.join(",")
 }
 
-/// The sentinel tokens actually observed, for the report's `sentinels` column.
-fn seen_list(tally: &ColumnTally) -> String {
+/// The sentinel tokens actually observed, for the report's `sentinels` column. Below the
+/// `--max-distinct` cap `offenders` holds every distinct non-numeric value, so the known
+/// sentinels are exactly its intersection with the vocabulary. Once the map overflows it
+/// stops growing, so union in the one token `add` remembered afterwards.
+fn seen_list(tally: &ColumnTally, vocab: &HashSet<String>) -> String {
     let mut seen: Vec<String> = tally
-        .seen_sentinels
-        .iter()
+        .offenders
+        .keys()
+        .chain(tally.late_sentinel.iter())
         .filter_map(|k| std::str::from_utf8(k).ok())
+        .filter(|t| vocab.contains(&t.to_lowercase()))
         .map(ToString::to_string)
         .collect();
     seen.sort_unstable();
+    seen.dedup();
     seen.join(",")
 }
 
@@ -351,7 +357,7 @@ fn judge(
         }
         return Some((
             "rejected:too-many-distinct".to_string(),
-            seen_list(tally),
+            seen_list(tally, vocab),
             String::new(),
             format!(
                 "exceeded --max-distinct other distinct non-numeric values, e.g. {}",
@@ -385,7 +391,7 @@ fn judge(
         off_vocab.truncate(6);
         return Some((
             "rejected:off-vocab".to_string(),
-            seen_list(tally),
+            seen_list(tally, vocab),
             String::new(),
             format!(
                 "non-sentinel values present: {}{}",
@@ -401,7 +407,7 @@ fn judge(
     if tally.zero_padded {
         return Some((
             "rejected:zero-padded".to_string(),
-            seen_list(tally),
+            seen_list(tally, vocab),
             String::new(),
             "leading zeros mark a code (zip/FIPS), not a quantity".to_string(),
         ));

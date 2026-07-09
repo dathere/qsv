@@ -287,3 +287,71 @@ fn denull_json_output() {
     assert_eq!(v[0]["sentinels"], "NULL");
     assert_eq!(v[0]["promotes_to"], "Integer");
 }
+
+#[test]
+fn denull_rejected_column_names_every_sentinel_it_holds() {
+    // A rejected column may hold MORE than one sentinel token. The `sentinels` column
+    // reports what was observed, so it must name all of them - reporting only the first
+    // one seen understates the evidence and hides a token the user has to handle.
+    let wrk = Workdir::new("denull_rejected_column_names_every_sentinel_it_holds");
+    let mut rows = String::from("status\n");
+    for i in 0..40 {
+        rows.push_str(match i % 5 {
+            0 => "NULL\n",
+            1 => "N/A\n",
+            2 => "OK\n",
+            3 => "1\n",
+            _ => "2\n",
+        });
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "rejected:off-vocab");
+    assert_eq!(got[1][2], "N/A,NULL");
+}
+
+#[test]
+fn denull_overflowed_column_still_names_a_late_sentinel() {
+    // A numeric column buried under more than --max-distinct junk tokens can never be
+    // promoted, but it is still worth reporting IF it holds a known sentinel. The
+    // sentinel here arrives only AFTER the offender map has overflowed and stopped
+    // growing, so it can only be reported if `add` remembers it separately.
+    let wrk = Workdir::new("denull_overflowed_column_still_names_a_late_sentinel");
+    let mut rows = String::from("depth\n1\n2\n");
+    for i in 0..20 {
+        rows.push_str(&format!("junk{i}\n"));
+    }
+    rows.push_str("NULL\n");
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "rejected:too-many-distinct");
+    assert_eq!(got[1][2], "NULL");
+    assert!(got[1][6].is_empty(), "an overflowed column promotes to nothing");
+}
+
+#[test]
+fn denull_names_a_sentinel_that_lands_on_the_overflow_boundary() {
+    // The cell that tips `offenders` over --max-distinct is never inserted into the map.
+    // If that exact cell is the sentinel, it must still be remembered, or the column
+    // reports "rejected" while naming no sentinel at all.
+    let wrk = Workdir::new("denull_names_a_sentinel_that_lands_on_the_overflow_boundary");
+    let mut rows = String::from("depth\n1\n2\n");
+    for i in 0..4 {
+        rows.push_str(&format!("junk{i}\n"));
+    }
+    // --max-distinct 4 => junk0..junk3 fill the map; this NULL is the overflowing cell.
+    rows.push_str("NULL\n");
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.args(["--max-distinct", "4"]).arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "rejected:too-many-distinct");
+    assert_eq!(got[1][2], "NULL");
+}

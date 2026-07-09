@@ -40,7 +40,7 @@ pub mod fetch;
 pub mod fetchpost;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod fill;
-#[cfg(any(feature = "feature_capable", feature = "lite"))]
+#[cfg(feature = "feature_capable")]
 pub mod fixedwidth;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod fixlengths;

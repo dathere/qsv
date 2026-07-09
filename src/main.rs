@@ -108,7 +108,7 @@ fn main() -> QsvExitCode {
 ",
     );
 
-    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    #[cfg(feature = "feature_capable")]
     enabled_commands
         .push_str("    denull      Detect null sentinels (\"NULL\", \"N/A\") in data\n");
 
@@ -448,7 +448,7 @@ enum Command {
     Count,
     Datefmt,
     Dedup,
-    #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+    #[cfg(feature = "feature_capable")]
     Denull,
     Describegpt,
     Diff,
@@ -573,7 +573,7 @@ impl Command {
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),
-            #[cfg(any(feature = "feature_capable", feature = "datapusher_plus"))]
+            #[cfg(feature = "feature_capable")]
             Command::Denull => cmd::denull::run(argv),
             Command::Describegpt => cmd::describegpt::run(argv),
             Command::Diff => cmd::diff::run(argv),

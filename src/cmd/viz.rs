@@ -9654,8 +9654,8 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
 /// `ProjectedCoord` (state-plane easting/northing) follows the same principle from the other side:
 /// it can never BE the map, so it is gated on whether a point map rendered at all (`map_rendered`,
 /// i.e. a lat/lon pair was resolved). With a map, the column's spatial spread is already on screen
-/// in two dimensions and a 1-D box of it is redundant; without one, fall back to `classify` rather
-/// than let the only spatial column in the dataset vanish.
+/// in two dimensions and a 1-D box of it is redundant; without one, fall back to `classify_measure`
+/// rather than let the only spatial column in the dataset vanish.
 fn classify_with_semantics(
     idx: usize,
     s: &crate::cmd::stats::StatsData,
@@ -9668,7 +9668,12 @@ fn classify_with_semantics(
         Route::Dimension => (s.r#type.as_str() != "NULL" && s.cardinality >= 1)
             .then_some(PanelKind::FreqBar { idx }),
         Route::Measure => classify_measure(idx, s),
-        Route::ProjectedCoord => (!map_rendered).then(|| classify(idx, s)).flatten(),
+        // `classify_measure`, NOT `classify`: the latter drops near-unique INTEGER columns as
+        // ID-like, and a state-plane easting/northing is integer feet — near-unique on any finely
+        // spread dataset. Routing through `classify` would silently re-drop exactly the columns
+        // this route exists to rescue. The dictionary already told us this is a coordinate, not a
+        // key, so go straight to the continuous-distribution arm.
+        Route::ProjectedCoord => (!map_rendered).then(|| classify_measure(idx, s)).flatten(),
         Route::Temporal | Route::Skip => None,
     }
 }
@@ -20233,20 +20238,41 @@ mod tests {
         ));
         // ProjectedCoord (state-plane easting/northing) is gated on whether a point map rendered:
         // with a map its spatial spread is already on screen in 2-D, so no redundant 1-D box;
-        // without one it falls back to classify rather than vanish.
-        let mut planar = stat("Integer", 8130, Some(0.81));
-        planar.q1 = Some(993_041.5);
-        planar.q2_median = Some(1_005_000.0);
-        planar.q3 = Some(1_018_194.0);
+        // without one it falls back to classify_measure rather than vanish.
         let sem_planar = ColSemantics {
             route: Route::ProjectedCoord,
             ..Default::default()
         };
+        let mut planar = stat("Integer", 8130, Some(0.81));
+        planar.q1 = Some(993_041.5);
+        planar.q2_median = Some(1_005_000.0);
+        planar.q3 = Some(1_018_194.0);
         assert!(classify_with_semantics(8, &planar, &sem_planar, true).is_none());
         assert!(matches!(
             classify_with_semantics(8, &planar, &sem_planar, false),
             Some(PanelKind::BoxStats { .. })
         ));
+        // ... and it must go through `classify_measure`, NOT `classify`, which would drop a
+        // near-unique INTEGER column as ID-like. State-plane coords are integer feet, so on a
+        // finely-spread dataset uniqueness_ratio clears 0.95 — the regression this route exists to
+        // prevent. (Regression test for roborev 3536.)
+        let mut planar_uniq = stat("Integer", 2000, Some(1.0));
+        planar_uniq.q1 = Some(947_825.0);
+        planar_uniq.q2_median = Some(982_500.0);
+        planar_uniq.q3 = Some(1_017_175.0);
+        assert!(
+            classify(9, &planar_uniq).is_none(),
+            "classify drops it as ID-like"
+        );
+        assert!(
+            matches!(
+                classify_with_semantics(9, &planar_uniq, &sem_planar, false),
+                Some(PanelKind::BoxStats { .. })
+            ),
+            "ProjectedCoord must bypass the near-unique-integer ID guard"
+        );
+        // still suppressed when a map rendered, regardless of uniqueness
+        assert!(classify_with_semantics(9, &planar_uniq, &sem_planar, true).is_none());
     }
 
     #[test]

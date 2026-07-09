@@ -6849,6 +6849,21 @@ const PLOTLY_STUB_SCRIPT: &str = r#"<script>window.__qsvPlotQ=[];window.Plotly={
 /// `qsv:plotly-ready` so the theme toggle can re-theme late-rendered panels.
 const GZ_PRELUDE_SCRIPT: &str = r#"<script>
 (function () {
+  // Shared, once-only failure banner. Both the bundle bootstrap and `qsvNewPlotGz` can discover a
+  // missing DecompressionStream; under QSV_VIZ_CDN there IS no bootstrap, so a gzipped figure must
+  // be able to raise the banner itself rather than leave a silently blank panel.
+  window.__qsvFail = function (msg) {
+    if (window.__qsvFailed) return;
+    window.__qsvFailed = true;
+    var show = function () {
+      document.body.insertAdjacentHTML("afterbegin",
+        '<div style="margin:16px;padding:12px 16px;border:1px solid #c62828;border-radius:6px;background:#fff3f3;color:#b71c1c;font-family:sans-serif">' + msg + "</div>");
+    };
+    if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
+  };
+  window.__qsvNoDecompress = function () {
+    window.__qsvFail("This page has gzip-compressed payloads and needs a browser with DecompressionStream support (Chrome/Edge 80+, Firefox 113+, Safari 16.4+). Alternatively, regenerate the file with the QSV_VIZ_NO_COMPRESS=1 environment variable set for a larger, uncompressed version.");
+  };
   window.__qsvGunzip = function (el) {
     var bin = atob(el.textContent.trim()), n = bin.length, bytes = new Uint8Array(n);
     for (var i = 0; i < n; i++) bytes[i] = bin.charCodeAt(i);
@@ -6863,8 +6878,9 @@ const GZ_PRELUDE_SCRIPT: &str = r#"<script>
   window.__qsvReady = function () { document.dispatchEvent(new Event("qsv:plotly-ready")); };
   window.qsvNewPlotGz = function (id) {
     var el = document.getElementById(id + "-fig");
-    // a missing DecompressionStream already produced the bundle bootstrap's banner; stay quiet
-    if (!el || !window.DecompressionStream) return;
+    if (!el) return;
+    // the banner is once-only, so this is a no-op when the bundle bootstrap already raised it
+    if (!window.DecompressionStream) { window.__qsvNoDecompress(); return; }
     window.__qsvGunzip(el).then(function (s) {
       el.textContent = "";
       var p = Plotly.newPlot(id, JSON.parse(s));
@@ -6893,15 +6909,10 @@ const GZ_PRELUDE_SCRIPT: &str = r#"<script>
 /// script invokes `newPlot` as it is parsed.
 const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
 (function () {
-  function fail(msg) {
-    var show = function () {
-      document.body.insertAdjacentHTML("afterbegin",
-        '<div style="margin:16px;padding:12px 16px;border:1px solid #c62828;border-radius:6px;background:#fff3f3;color:#b71c1c;font-family:sans-serif">' + msg + "</div>");
-    };
-    if (document.body) show(); else document.addEventListener("DOMContentLoaded", show);
-  }
+  // `__qsvFail`/`__qsvNoDecompress` come from GZ_PRELUDE_SCRIPT, always emitted before this tag
+  var fail = window.__qsvFail;
   if (!window.DecompressionStream) {
-    fail("This page's plotly.js payload is gzip-compressed and needs a browser with DecompressionStream support (Chrome/Edge 80+, Firefox 113+, Safari 16.4+). Alternatively, regenerate the file with the QSV_VIZ_NO_COMPRESS=1 environment variable set for a larger, uncompressed version.");
+    window.__qsvNoDecompress();
     return;
   }
   window.__qsvGunzip(document.getElementById("qsv-plotly-gz")).then(function (src) {

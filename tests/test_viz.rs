@@ -5771,6 +5771,12 @@ fn viz_cdn_keeps_gz_prelude_for_compressed_map_figures() {
     assert!(html.contains("__qsvGunzip"));
     let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
     assert!(figure.contains(r#""type":"scattermap""#));
+
+    // Under CDN there is no bundle bootstrap to raise the "needs DecompressionStream" banner, so
+    // the gz figure path must be able to raise it itself — otherwise a pre-2023 browser gets a
+    // silently blank map panel with no explanation.
+    assert!(html.contains("__qsvNoDecompress"));
+    assert!(html.contains("QSV_VIZ_NO_COMPRESS=1"));
 }
 
 // CDN + NO_COMPRESS: a bare tag and nothing else — no bundle, no gzip machinery at all.

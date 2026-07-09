@@ -9188,7 +9188,8 @@ enum Route {
     Temporal,
     /// A latitude/longitude coordinate -> consumed by the map panel; never boxed/barred.
     MapCoord,
-    /// An identifier / PII / free-text field -> not a meaningful distribution to chart; skipped.
+    /// An identifier / PII / free-text field, or a projected (non-degree) coordinate -> not a
+    /// meaningful distribution to chart; skipped.
     Skip,
 }
 
@@ -9237,9 +9238,11 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
         "geo" => match leaf {
             "latitude" | "longitude" | "coordinate_pair" => (Route::MapCoord, None),
             // State-plane coordinates are continuous planar positions, not place keys: they can't
-            // be mapped (not degrees) and a frequency bar of near-unique coordinates is garbage.
-            // Defer to the statistical classifier, matching the no-dictionary behavior.
-            "crs_stateplane_x" | "crs_stateplane_y" => (Route::Defer, None),
+            // be mapped (not degrees), a frequency bar of near-unique coordinates is garbage, and
+            // the spread of a projected easting/northing is not a meaningful distribution. Skip
+            // them outright rather than deferring to `classify`, which would misread them as
+            // continuous measures and box/trend them.
+            "crs_stateplane_x" | "crs_stateplane_y" => (Route::Skip, None),
             // geo *keys* (zip, census_tract, city, state, country, street_address) name a place;
             // they are dimensions to bar, never continuous measures. This is the signal that fixes
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
@@ -19594,14 +19597,15 @@ mod tests {
             route_from_concept("geo.census_tract"),
             Some((Route::Dimension, None))
         );
-        // state-plane planar coordinates: neither mappable nor a place key -> statistical classify
+        // state-plane planar coordinates: neither mappable nor a place key -> skipped entirely
+        // (deferring would let `classify` misread them as continuous measures)
         assert_eq!(
             route_from_concept("geo.crs_stateplane_x"),
-            Some((Route::Defer, None))
+            Some((Route::Skip, None))
         );
         assert_eq!(
             route_from_concept("geo.crs_stateplane_y"),
-            Some((Route::Defer, None))
+            Some((Route::Skip, None))
         );
         assert_eq!(
             route_from_concept("nyc.bbl"),

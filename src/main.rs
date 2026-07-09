@@ -124,6 +124,7 @@ fn main() -> QsvExitCode {
 
     enabled_commands.push_str(
         "    fill        Fill empty values
+    fixedwidth  Convert fixed-width text to CSV
     fixlengths  Makes all records have same length
     flatten     Show one field per line
     fmt         Format CSV output (change field delimiter)\n",
@@ -453,6 +454,7 @@ enum Command {
     #[cfg(all(feature = "fetch", feature = "feature_capable"))]
     FetchPost,
     Fill,
+    FixedWidth,
     FixLengths,
     Flatten,
     Fmt,
@@ -577,6 +579,7 @@ impl Command {
             #[cfg(all(feature = "foreach", not(feature = "lite")))]
             Command::ForEach => cmd::foreach::run(argv),
             Command::Fill => cmd::fill::run(argv),
+            Command::FixedWidth => cmd::fixedwidth::run(argv),
             Command::FixLengths => cmd::fixlengths::run(argv),
             Command::Flatten => cmd::flatten::run(argv),
             Command::Fmt => cmd::fmt::run(argv),

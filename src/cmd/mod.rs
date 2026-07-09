@@ -41,6 +41,8 @@ pub mod fetchpost;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod fill;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
+pub mod fixedwidth;
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod fixlengths;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 pub mod flatten;

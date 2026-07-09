@@ -80,6 +80,8 @@ mod test_fetch;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_fill;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
+mod test_fixedwidth;
+#[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_fixlengths;
 #[cfg(any(feature = "feature_capable", feature = "lite"))]
 mod test_flatten;

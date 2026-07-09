@@ -8015,7 +8015,10 @@ fn bivariate_panels(
         ) else {
             continue;
         };
-        if i == j || col_sems[i].route == Route::Skip || col_sems[j].route == Route::Skip {
+        // identifier/PII/free-text carry no association signal; a near-unique projected coordinate
+        // yields only a high-cardinality NMI artifact (e.g. `Incident Address × Y Coordinate`).
+        let excluded = |r: Route| matches!(r, Route::Skip | Route::ProjectedCoord);
+        if i == j || excluded(col_sems[i].route) || excluded(col_sems[j].route) {
             continue;
         }
         if is_map_col(i) || is_map_col(j) {
@@ -9188,9 +9191,15 @@ enum Route {
     Temporal,
     /// A latitude/longitude coordinate -> consumed by the map panel; never boxed/barred.
     MapCoord,
-    /// An identifier / PII / free-text field, or a projected (non-degree) coordinate -> not a
-    /// meaningful distribution to chart; skipped.
+    /// An identifier / PII / free-text field -> not a meaningful distribution to chart; skipped.
     Skip,
+    /// A projected planar coordinate (state-plane easting/northing) -> not mappable (not degrees)
+    /// and never a dimension to bar. Charted as a distribution ONLY when no point map rendered,
+    /// mirroring `MapCoord`'s "rather than let it vanish" fallback: when lat/lon ARE mapped the
+    /// same spatial spread is already on screen, so a 1-D Tukey fence on an easting adds nothing
+    /// (and its "outliers" are the edges of the extent, not bad data). Always excluded from the
+    /// bivariate/association pools, where a near-unique coordinate yields only NMI artifacts.
+    ProjectedCoord,
 }
 
 /// A column's resolved charting verdict: where it goes (`route`), how to aggregate it over time
@@ -9238,11 +9247,9 @@ fn route_from_concept(concept: &str) -> Option<(Route, Option<Agg>)> {
         "geo" => match leaf {
             "latitude" | "longitude" | "coordinate_pair" => (Route::MapCoord, None),
             // State-plane coordinates are continuous planar positions, not place keys: they can't
-            // be mapped (not degrees), a frequency bar of near-unique coordinates is garbage, and
-            // the spread of a projected easting/northing is not a meaningful distribution. Skip
-            // them outright rather than deferring to `classify`, which would misread them as
-            // continuous measures and box/trend them.
-            "crs_stateplane_x" | "crs_stateplane_y" => (Route::Skip, None),
+            // be mapped (not degrees) and a frequency bar of near-unique coordinates is garbage.
+            // `ProjectedCoord` charts their distribution only when no point map rendered.
+            "crs_stateplane_x" | "crs_stateplane_y" => (Route::ProjectedCoord, None),
             // geo *keys* (zip, census_tract, city, state, country, street_address) name a place;
             // they are dimensions to bar, never continuous measures. This is the signal that fixes
             // census_tract even when describegpt defaulted its numeric `role` to `measure`.
@@ -9643,10 +9650,17 @@ fn enrich_bimodality(args: &Args, stats: &mut [crate::cmd::stats::StatsData]) ->
 /// (e.g. only one of lat/lon present, out-of-range values, or no map rendered). Rather than let it
 /// vanish, fall back to `classify` so it's still charted as a distribution — matching the
 /// no-dictionary behavior for named-but-unmappable coordinates.
+///
+/// `ProjectedCoord` (state-plane easting/northing) follows the same principle from the other side:
+/// it can never BE the map, so it is gated on whether a point map rendered at all (`map_rendered`,
+/// i.e. a lat/lon pair was resolved). With a map, the column's spatial spread is already on screen
+/// in two dimensions and a 1-D box of it is redundant; without one, fall back to `classify` rather
+/// than let the only spatial column in the dataset vanish.
 fn classify_with_semantics(
     idx: usize,
     s: &crate::cmd::stats::StatsData,
     sem: &ColSemantics,
+    map_rendered: bool,
 ) -> Option<PanelKind> {
     match sem.route {
         Route::Defer | Route::MapCoord => classify(idx, s),
@@ -9654,6 +9668,7 @@ fn classify_with_semantics(
         Route::Dimension => (s.r#type.as_str() != "NULL" && s.cardinality >= 1)
             .then_some(PanelKind::FreqBar { idx }),
         Route::Measure => classify_measure(idx, s),
+        Route::ProjectedCoord => (!map_rendered).then(|| classify(idx, s)).flatten(),
         Route::Temporal | Route::Skip => None,
     }
 }
@@ -14730,7 +14745,10 @@ fn build_smart(
             skipped.push(name);
             continue;
         }
-        match classify_with_semantics(idx, s, sem) {
+        // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed off
+        // a region CODE puts no coordinates on screen, so a projected coord is still worth
+        // charting.
+        match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
             Some(mut kind) => {
                 // a cache-only quartile box becomes a raw box (with an overlay mode) when the
                 // explicit flag or the size heuristic calls for points (<= SMART_BOX_OUTLIERS_MAX
@@ -19597,15 +19615,16 @@ mod tests {
             route_from_concept("geo.census_tract"),
             Some((Route::Dimension, None))
         );
-        // state-plane planar coordinates: neither mappable nor a place key -> skipped entirely
-        // (deferring would let `classify` misread them as continuous measures)
+        // state-plane planar coordinates: neither mappable nor a place key -> ProjectedCoord,
+        // which charts a distribution only when no point map rendered (see
+        // `classify_with_semantics_routes`)
         assert_eq!(
             route_from_concept("geo.crs_stateplane_x"),
-            Some((Route::Skip, None))
+            Some((Route::ProjectedCoord, None))
         );
         assert_eq!(
             route_from_concept("geo.crs_stateplane_y"),
-            Some((Route::Skip, None))
+            Some((Route::ProjectedCoord, None))
         );
         assert_eq!(
             route_from_concept("nyc.bbl"),
@@ -20162,7 +20181,7 @@ mod tests {
         // Defer falls back to classify (low-card string -> frequency bar)
         let sem_defer = ColSemantics::default();
         assert!(matches!(
-            classify_with_semantics(0, &stat("String", 5, Some(0.001)), &sem_defer),
+            classify_with_semantics(0, &stat("String", 5, Some(0.001)), &sem_defer, false),
             Some(PanelKind::FreqBar { idx: 0 })
         ));
         // Dimension -> frequency bar even for a many-distinct integer code
@@ -20171,7 +20190,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(2, &stat("Integer", 500, Some(0.4)), &sem_dim),
+            classify_with_semantics(2, &stat("Integer", 500, Some(0.4)), &sem_dim, false),
             Some(PanelKind::FreqBar { idx: 2 })
         ));
         // Measure -> box plot from quartiles (via classify_measure)
@@ -20184,7 +20203,7 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(3, &m, &sem_meas),
+            classify_with_semantics(3, &m, &sem_meas, false),
             Some(PanelKind::BoxStats { .. })
         ));
         // Temporal / Skip draw no per-column panel
@@ -20193,7 +20212,9 @@ mod tests {
                 route,
                 ..Default::default()
             };
-            assert!(classify_with_semantics(0, &stat("DateTime", 9, Some(0.6)), &sem).is_none());
+            assert!(
+                classify_with_semantics(0, &stat("DateTime", 9, Some(0.6)), &sem, false).is_none()
+            );
         }
         // MapCoord falls back to classify: a coordinate the map did NOT consume (the caller already
         // skips consumed ones via is_map_col) must still be charted, not vanish. A near-unique
@@ -20207,7 +20228,23 @@ mod tests {
             ..Default::default()
         };
         assert!(matches!(
-            classify_with_semantics(7, &coord, &sem_coord),
+            classify_with_semantics(7, &coord, &sem_coord, false),
+            Some(PanelKind::BoxStats { .. })
+        ));
+        // ProjectedCoord (state-plane easting/northing) is gated on whether a point map rendered:
+        // with a map its spatial spread is already on screen in 2-D, so no redundant 1-D box;
+        // without one it falls back to classify rather than vanish.
+        let mut planar = stat("Integer", 8130, Some(0.81));
+        planar.q1 = Some(993_041.5);
+        planar.q2_median = Some(1_005_000.0);
+        planar.q3 = Some(1_018_194.0);
+        let sem_planar = ColSemantics {
+            route: Route::ProjectedCoord,
+            ..Default::default()
+        };
+        assert!(classify_with_semantics(8, &planar, &sem_planar, true).is_none());
+        assert!(matches!(
+            classify_with_semantics(8, &planar, &sem_planar, false),
             Some(PanelKind::BoxStats { .. })
         ));
     }

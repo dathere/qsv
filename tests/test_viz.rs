@@ -4054,7 +4054,7 @@ fn viz_smart_dictionary_measure_typed_string_is_explained() {
         "expected the sentinel note, got: {stderr}"
     );
     assert!(
-        stderr.contains("qsv frequency -s depth"),
+        stderr.contains("qsv denull -s depth"),
         "sentinel note should name `depth` and suggest a check, got: {stderr}"
     );
 
@@ -4074,6 +4074,53 @@ fn viz_smart_dictionary_measure_typed_string_is_explained() {
     assert!(
         !stderr.contains("status"),
         "`status` (role=dimension) must not appear in either note, got: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_without_dictionary_hints_at_denull() {
+    // WITHOUT a dictionary there is no `measure` verdict, so `classify` drops a
+    // sentinel-bearing numeric column as high-cardinality text. One parsing endpoint
+    // (min=1, max=NULL) is suggestive but NOT proof -- an address column with a cell `1`
+    // and a cell `Zoo` looks identical. So viz must NOT diagnose per-column here; it may
+    // only point at `qsv denull`, which decides by scanning the values.
+    let wrk = Workdir::new("viz_smart_without_dictionary_hints_at_denull");
+    // `depth`: 64 distinct numbers + "NULL" over 80 rows -> String, cardinality > 30 and
+    // uniqueness 0.81 (not near-unique), so `classify` drops it as high-cardinality text.
+    // `steady`: a low-cardinality numeric that charts, so the dashboard is not empty.
+    let mut rows = String::from("depth,steady\n");
+    for i in 0..80 {
+        if i % 5 == 0 {
+            rows.push_str("NULL,");
+        } else {
+            rows.push_str(&format!("{},", i + 1));
+        }
+        rows.push_str(&format!("{}\n", i % 20));
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let out_html = wrk.path("out.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stderr.contains("qsv denull"),
+        "a skipped String column with one parsing endpoint should point at denull, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("may be numeric data held back"),
+        "the no-dictionary note must hedge, not diagnose, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("data dictionary"),
+        "no dictionary was supplied; the measure-contradiction note must not fire: {stderr}"
+    );
+    assert!(
+        !stderr.contains("steady"),
+        "an ordinary numeric column must not be named: {stderr}"
     );
 }
 

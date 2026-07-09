@@ -14811,6 +14811,13 @@ fn build_smart(
     // Dimension, so they never reach here.)
     let mut sentinel_suspects: Vec<String> = Vec::new();
     let mut nonnumeric_measures: Vec<String> = Vec::new();
+    // Same endpoint signal, but for columns with NO dictionary verdict (`Route::Defer`),
+    // where `classify` dropped them as high-cardinality text. Without a dictionary calling
+    // the column a measure, one parsing endpoint is suggestive but NOT proof - an address
+    // column holding a cell `1` and a cell `Zoo` produces it too. So these are never
+    // diagnosed per-column; they only trigger a pointer to `qsv denull`, which decides
+    // exactly by scanning the values.
+    let mut sentinel_hints: Vec<String> = Vec::new();
     for (idx, s) in stats.iter().enumerate() {
         if is_map_col(idx) {
             continue;
@@ -14975,14 +14982,15 @@ fn build_smart(
                 );
             },
             None => {
-                if sem.route == Route::Measure && s.r#type == "String" {
+                if s.r#type == "String" {
                     // exactly one parsing endpoint => a numeric range interrupted by a token
-                    if parse_stat_f64(s.min.as_deref()).is_some()
-                        != parse_stat_f64(s.max.as_deref()).is_some()
-                    {
-                        sentinel_suspects.push(name.clone());
-                    } else {
-                        nonnumeric_measures.push(name.clone());
+                    let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
+                        != parse_stat_f64(s.max.as_deref()).is_some();
+                    match (sem.route, one_endpoint_parses) {
+                        (Route::Measure, true) => sentinel_suspects.push(name.clone()),
+                        (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
+                        (Route::Defer, true) => sentinel_hints.push(name.clone()),
+                        _ => {},
                     }
                 }
                 skipped.push(name);
@@ -15533,10 +15541,18 @@ fn build_smart(
             "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
              String by stats, so they have no quartiles to chart: {}. Their values span a numeric \
              range interrupted by a non-numeric token, most often a null sentinel (a literal \
-             \"NULL\", \"N/A\", ...). Inspect with `qsv frequency -s {}`.",
+             \"NULL\", \"N/A\", ...). Confirm with `qsv denull -s {}`.",
             sentinel_suspects.len(),
             sentinel_suspects.join(", "),
             sentinel_suspects.join(",")
+        ));
+    }
+    if !sentinel_hints.is_empty() {
+        viz_note(&format!(
+            "viz smart: {} skipped column(s) may be numeric data held back by a non-numeric token \
+             such as a literal \"NULL\": {}. `qsv denull` decides by scanning the values.",
+            sentinel_hints.len(),
+            sentinel_hints.join(", ")
         ));
     }
     if !nonnumeric_measures.is_empty() {

@@ -379,3 +379,22 @@ fn denull_names_sentinels_seen_before_and_after_overflow() {
     assert_eq!(got[1][1], "rejected:too-many-distinct");
     assert_eq!(got[1][2], "N/A,NULL");
 }
+
+#[test]
+fn denull_rejected_column_names_more_than_eight_distinct_sentinels() {
+    // Nine distinct VOCABULARY tokens, not casing variants. A rejected column must still
+    // name all of them: the report cap must not silently drop evidence.
+    let wrk = Workdir::new("denull_rejected_column_names_more_than_eight_distinct_sentinels");
+    let mut rows = String::from("depth\n1\n2\nOK\n");
+    for t in ["NULL", "N/A", "NA", "nil", "none", "-", "--", "?", "??"] {
+        rows.push_str(t);
+        rows.push('\n');
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "rejected:off-vocab");
+    assert_eq!(got[1][2], "-,--,?,??,N/A,NA,NULL,nil,none");
+}

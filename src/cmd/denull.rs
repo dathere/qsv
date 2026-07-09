@@ -150,24 +150,19 @@ struct ColumnTally {
     /// zeros, so a single sighting disqualifies the column. Mirrors the
     /// leading-zero rule in `stats`' type inference.
     zero_padded:     bool,
-    /// Every distinct sentinel token observed, in the casing it was written with.
+    /// Distinct sentinels observed, keyed by their lower-cased (vocabulary) identity and
+    /// valued by the first spelling met, so the report can echo the casing in the data.
     /// Tracked independently of `offenders` because a sentinel can be met both before
     /// that map fills and after it has stopped growing, and both sightings are evidence.
     ///
-    /// Naturally bounded: a token only lands here if it is IN the vocabulary, so the set
-    /// can never outgrow it. `SEEN_SENTINEL_CAP` guards only the pathological case of a
-    /// column spelling one sentinel many ways ("NULL", "null", "Null", ...), since the
-    /// observed casing is preserved.
+    /// Needs no cap: a token only lands here if it is IN the vocabulary, and every casing
+    /// of it collapses to one key, so the map can never outgrow the vocabulary itself.
     ///
     /// Non-empty also means "this column held a sentinel", which is what decides whether
     /// a REJECTED column is worth reporting at all. A column of `A..F` codes is not a
     /// near miss - it is an ordinary categorical, and saying "rejected" about it is noise.
-    seen_sentinels:  HashSet<Vec<u8>>,
+    seen_sentinels:  HashMap<Vec<u8>, Vec<u8>>,
 }
-
-/// Distinct sentinel spellings retained per column. Reachable only when one sentinel is
-/// written in many different cases; the vocabulary itself bounds everything else.
-const SEEN_SENTINEL_CAP: usize = 8;
 
 /// Longest built-in sentinel, used to skip the vocabulary probe for cells that
 /// cannot possibly match. Keeps the free-text path to a length compare.
@@ -183,7 +178,7 @@ impl ColumnTally {
             numeric_sample:  Vec::new(),
             all_integer:     true,
             zero_padded:     false,
-            seen_sentinels:  HashSet::new(),
+            seen_sentinels:  HashMap::new(),
         }
     }
 
@@ -230,14 +225,14 @@ impl ColumnTally {
         // Probe every novel non-numeric cell, before AND after `too_many` latches: a
         // column can meet "NULL" while the offender map is still filling and "N/A" only
         // after it has stopped growing, and the report owes the user both. Repeat values
-        // already returned above, and `is_sentinel` rejects anything longer than the
+        // already returned above, and `normalized_sentinel` rejects anything longer than the
         // longest sentinel on a length compare, so free text pays very little for this -
         // measured at ~2% on a 414 MB, 86-column file.
-        if is_sentinel(trimmed, vocab)
-            && self.seen_sentinels.len() < SEEN_SENTINEL_CAP
-            && !self.seen_sentinels.contains(trimmed)
+        if let Some((key, len)) = normalized_sentinel(trimmed, vocab)
+            && !self.seen_sentinels.contains_key(&key[..len])
         {
-            self.seen_sentinels.insert(trimmed.to_vec());
+            self.seen_sentinels
+                .insert(key[..len].to_vec(), trimmed.to_vec());
         }
         if self.too_many {
             return;
@@ -273,7 +268,7 @@ fn offender_examples(tally: &ColumnTally, vocab: &HashSet<String>) -> String {
 fn seen_list(tally: &ColumnTally) -> String {
     let mut seen: Vec<String> = tally
         .seen_sentinels
-        .iter()
+        .values()
         .filter_map(|k| std::str::from_utf8(k).ok())
         .map(ToString::to_string)
         .collect();
@@ -281,20 +276,25 @@ fn seen_list(tally: &ColumnTally) -> String {
     seen.join(",")
 }
 
-/// Case-insensitive vocabulary probe with no allocation: the sentinel vocabulary is
-/// ASCII, so a stack buffer and `make_ascii_lowercase` suffice. This runs on the
-/// free-text hot path (every short non-numeric cell of a column that has overflowed
-/// `--max-distinct` and not yet found a sentinel), where a per-cell `to_lowercase()`
-/// String would be a needless allocation on every one of millions of rows.
-fn is_sentinel(trimmed: &[u8], vocab: &HashSet<String>) -> bool {
+/// The vocabulary identity of a cell, or `None` if it is not a sentinel. Case-insensitive
+/// and allocation-free: the vocabulary is ASCII, so a stack buffer and
+/// `make_ascii_lowercase` suffice. This runs on the free-text hot path (every novel short
+/// non-numeric cell), where a per-cell `to_lowercase()` String would be a needless
+/// allocation on every one of millions of rows. Callers allocate only when the identity
+/// turns out to be one they have not seen before.
+fn normalized_sentinel(
+    trimmed: &[u8],
+    vocab: &HashSet<String>,
+) -> Option<([u8; MAX_SENTINEL_LEN], usize)> {
     let len = trimmed.len();
     if len > MAX_SENTINEL_LEN {
-        return false;
+        return None;
     }
     let mut buf = [0_u8; MAX_SENTINEL_LEN];
     buf[..len].copy_from_slice(trimmed);
     buf[..len].make_ascii_lowercase();
-    std::str::from_utf8(&buf[..len]).is_ok_and(|t| vocab.contains(t))
+    let token = std::str::from_utf8(&buf[..len]).ok()?;
+    vocab.contains(token).then_some((buf, len))
 }
 
 /// A leading `0` followed by another digit marks a padded code (`007`, `05.10`).

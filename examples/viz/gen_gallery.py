@@ -827,26 +827,38 @@ def extract_inline_panels(html):
     return panels
 
 
-# Markers of a gzip+base64 payload in viz output. Both are literals viz emits (a script-tag
-# content type and a JS call), never anything that could appear in scraped user data.
-GZ_MARKERS = ('type="application/gzip-b64"', "qsvNewPlotGz(")
+# Markers of a non-plaintext payload in viz output. All three are literals viz emits — a
+# script-tag content type, a JS call, and the exact typed-array serialization — none of which
+# scraped user data can produce.
+#
+# The two encodings QSV_VIZ_NO_COMPRESS disables have DIFFERENT thresholds, so checking only the
+# gzip ones is not enough: a figure gzips at >=64KB of JSON (MAP_FIG_GZ_MIN_BYTES) but a coordinate
+# array becomes base64 float32 at just >=64 elements (BDATA_MIN_LEN). A small map panel (e.g.
+# delivery_stops.csv, 201 rows) therefore emits `bdata` and no gzip marker at all.
+COMPRESSED_MARKERS = (
+    'type="application/gzip-b64"',       # gzipped bundle / figure payload
+    "qsvNewPlotGz(",                     # deferred render of a gzipped figure
+    '"dtype":"float32","bdata":"',       # base64 float32 typed array (fields serialized in order)
+)
 
 
-def assert_plaintext(html, args):
-    """Fail loudly if viz emitted compressed payloads.
+def assert_plaintext(html, source):
+    """Fail loudly if viz output is not fully plain text.
 
     `extract_inline_panels` scrapes plaintext `Plotly.newPlot(...)` calls; a gzipped panel is
     emitted as `qsvNewPlotGz(...)` + a base64 blob instead, so it would be skipped *silently* —
-    a map panel would simply vanish from the gallery with no error. The committed iframes would
-    also become undiffable base64. QSV_VIZ_NO_COMPRESS in `run_html` prevents both; this asserts
-    it actually took effect (e.g. it wasn't dropped, or overridden to a falsy value)."""
-    found = [m for m in GZ_MARKERS if m in html]
+    a map panel would simply vanish from the gallery with no error. Typed arrays don't break the
+    scrape (they parse as nested JSON) but do turn committed iframes into undiffable base64.
+    QSV_VIZ_NO_COMPRESS in `run_html` prevents both; this asserts it actually took effect (e.g.
+    it wasn't dropped, or overridden to a falsy value)."""
+    found = [m for m in COMPRESSED_MARKERS if m in html]
     if found:
         raise ValueError(
-            f"`qsv viz {' '.join(args)}` emitted compressed payloads ({', '.join(found)}). "
-            "The gallery needs plain-text output to scrape figure JSON and to commit diffable "
-            "iframes — run_html sets QSV_VIZ_NO_COMPRESS=1 for this; check it is not being "
-            "overridden (a falsy value in the environment or a .env file disables it)."
+            f"{source} is not plain text ({', '.join(found)}). The gallery needs plain-text "
+            "output to scrape figure JSON and to commit diffable iframes — run_html sets "
+            "QSV_VIZ_NO_COMPRESS=1 for this; check it is not being overridden (a falsy value in "
+            "the environment or a .env file disables it). Pre-generated iframes must have been "
+            "produced the same way."
         )
 
 
@@ -870,7 +882,7 @@ def run_html(qsv, args):
             html = fh.read()
     finally:
         os.unlink(out)
-    assert_plaintext(html, args)
+    assert_plaintext(html, f"`qsv viz {' '.join(args)}` output")
     return html
 
 
@@ -985,6 +997,9 @@ def main():
                 pre_path = os.path.join(VIZ_DIR, iframe_name)
                 with open(pre_path, encoding="utf-8") as fh:
                     existing = fh.read()
+                # reused verbatim, so it never passed through run_html's check — validate it here,
+                # else a dashboard refreshed without QSV_VIZ_NO_COMPRESS gets silently re-committed
+                assert_plaintext(existing, f"pre-generated {iframe_name}")
                 refreshed = inject_resize_reporter(existing)
                 if refreshed != existing:
                     with open(pre_path, "w", encoding="utf-8") as fh:

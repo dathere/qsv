@@ -4006,6 +4006,77 @@ fn viz_smart_dictionary_recodes_numeric_to_bar() {
     assert!(html.contains(r#""type":"bar""#));
 }
 
+#[test]
+fn viz_smart_dictionary_measure_typed_string_is_explained() {
+    // A dictionary-declared `measure` that stats typed String has no quartiles, so
+    // `classify_measure` drops it. Without attribution it lands in the generic skip list next to
+    // genuine ID columns. Assert the two causes are named — and told apart:
+    //   `depth` : numeric range + a "NULL" sentinel  -> one parsing endpoint  -> sentinel suspect
+    //   `grade` : genuinely non-numeric content      -> no parsing endpoint   -> mis-roled
+    // `status` is role=dimension and ALSO contains "NULL"; it must appear in neither note.
+    let wrk = Workdir::new("viz_smart_dictionary_measure_typed_string_is_explained");
+    let mut rows = String::from("depth,grade,status\n");
+    for i in 0..60 {
+        let depth = if i % 5 == 0 {
+            "NULL".to_string()
+        } else {
+            (i + 1).to_string()
+        };
+        let grade = match i % 3 {
+            0 => "NULL",
+            1 => "low",
+            _ => "high",
+        };
+        let status = if i % 4 == 0 { "NULL" } else { "Open" };
+        rows.push_str(&format!("{depth},{grade},{status}\n"));
+    }
+    wrk.create_from_string("sentinel.csv", &rows);
+
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "depth":  {"type":["string"],"x-qsv":{"role":"measure"}},
+            "grade":  {"type":["string"],"x-qsv":{"role":"measure"}},
+            "status": {"type":["string"],"x-qsv":{"role":"dimension"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sentinel.csv", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // `depth` is diagnosed as a probable null sentinel, with an actionable next step.
+    assert!(
+        stderr.contains("most often a null sentinel"),
+        "expected the sentinel note, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("qsv frequency -s depth"),
+        "sentinel note should name `depth` and suggest a check, got: {stderr}"
+    );
+
+    // `grade` is NOT reported as a sentinel problem — that would send the user hunting for a
+    // value that isn't there. It is reported as a dictionary role/concept mismatch instead.
+    assert!(
+        stderr.contains("hold non-numeric content") && stderr.contains("grade"),
+        "expected `grade` to be reported as mis-roled, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("qsv frequency -s depth,grade")
+            && !stderr.contains("qsv frequency -s grade"),
+        "`grade` must not be listed as a sentinel suspect, got: {stderr}"
+    );
+
+    // a role=dimension column containing the same "NULL" text is charted, not diagnosed.
+    assert!(
+        !stderr.contains("status"),
+        "`status` (role=dimension) must not appear in either note, got: {stderr}"
+    );
+}
+
 // A bad/missing --dictionary path must not abort: it warns and degrades to the stats-only
 // dashboard.
 #[test]

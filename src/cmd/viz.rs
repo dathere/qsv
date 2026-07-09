@@ -3,9 +3,13 @@ Generate charts/maps from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
 so charts work offline; map basemaps fetch their tiles over the network at view time
-unless the `white-bg` style is used). With a qsv build that includes the `viz_static`
-feature, charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this
-requires a Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
+unless the `white-bg` style is used). Set the QSV_VIZ_CDN environment variable to load
+plotly.js from its CDN instead, shrinking the page by ~1.9MB at the cost of needing
+network access to view it. Set QSV_VIZ_NO_COMPRESS for plain-text, uncompressed HTML.
+Titles and labels are rendered as plain text - LaTeX (e.g. `$\alpha$`) is not typeset.
+With a qsv build that includes the `viz_static` feature, charts can also be exported as
+static PNG/SVG/PDF/JPEG/WebP images (this requires a Chromium/Firefox browser at
+runtime - a webdriver is auto-managed by plotly).
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always
@@ -6745,6 +6749,32 @@ fn plotly_js_only() -> String {
     full
 }
 
+/// Fallback plotly.js CDN tag, used only if `Plot::online_cdn_js` stops emitting a recognizable
+/// `cdn.plot.ly` script tag. Keep the version in sync with the crate's vendored
+/// `resource/plotly.min.js` (the bundle `plotly_js_only` would otherwise inline).
+const PLOTLY_CDN_FALLBACK: &str =
+    r#"<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>"#;
+
+/// The plotly.js CDN `<script src>` tag, sliced out of `Plot::online_cdn_js` so the pinned
+/// version can never drift from the bundle we would otherwise embed.
+///
+/// `online_cdn_js` emits two tags — MathJax (tex-svg, from jsDelivr) first, then plotly.js. We
+/// want only the latter: `viz` never renders LaTeX (see `plotly_js_only`), and plotly guards its
+/// only MathJax use behind a `typeof MathJax != "undefined"` probe.
+fn plotly_cdn_only() -> String {
+    const OPEN: &str = "<script src=\"https://cdn.plot.ly/";
+    const CLOSE: &str = "</script>";
+    let full = Plot::online_cdn_js();
+    if let Some(start) = full.find(OPEN)
+        && let Some(end) = full[start..].find(CLOSE)
+    {
+        return full[start..start + end + CLOSE.len()].to_string();
+    }
+    // shape changed unexpectedly — fall back to our own pinned tag rather than emit the
+    // MathJax tag (or nothing) and leave `Plotly` undefined.
+    PLOTLY_CDN_FALLBACK.to_string()
+}
+
 /// Whether generated HTML embeds compressed payloads: the plotly.js bundle and large map-panel
 /// figure JSON as gzip+base64 (inflated in-browser via the native `DecompressionStream` API),
 /// and map/geo per-point arrays as base64 float32 typed arrays. On by default — it cuts the
@@ -6754,6 +6784,18 @@ fn plotly_js_only() -> String {
 /// `eval`, which requires `unsafe-eval`), and handy when grepping/debugging the emitted HTML.
 fn viz_compress() -> bool {
     !util::get_envvar_flag("QSV_VIZ_NO_COMPRESS")
+}
+
+/// Whether generated HTML loads plotly.js from the CDN (`<script src>`) instead of embedding it.
+/// Off by default: self-contained, offline-capable output is the documented behavior. Setting
+/// `QSV_VIZ_CDN=1` drops the ~1.9 MB embedded bundle to a ~100-byte tag, at the cost of needing
+/// network access when the page is *viewed* — the right trade for pages published to the web.
+///
+/// Governs ONLY the plotly.js bundle. `QSV_VIZ_NO_COMPRESS` independently governs figure-JSON
+/// gzip and the `bdata` float32 typed arrays, and the two compose freely (CDN plotly.js is 3.x,
+/// which decodes `bdata` natively).
+fn viz_cdn() -> bool {
+    util::get_envvar_flag("QSV_VIZ_CDN")
 }
 
 /// gzip (at `level`) + standard-base64 encode, for `<script type="application/gzip-b64">`
@@ -6886,10 +6928,26 @@ const PLOTLY_GZ_BOOTSTRAP: &str = r##"<script>
 })();
 </script>"##;
 
-/// The plotly.js embed block for generated HTML pages: under `QSV_VIZ_NO_COMPRESS` (or if
-/// compression failed) the plain inline bundle from `plotly_js_only`; otherwise the queue stub +
-/// inflate helpers + gzip payload + bootstrap, ~2.9 MB smaller per page.
+/// The plotly.js embed block for generated HTML pages: under `QSV_VIZ_CDN` a bare CDN
+/// `<script src>` tag; under `QSV_VIZ_NO_COMPRESS` (or if compression failed) the plain inline
+/// bundle from `plotly_js_only`; otherwise the queue stub + inflate helpers + gzip payload +
+/// bootstrap, ~2.9 MB smaller per page.
+///
+/// Never emits the MathJax (tex-svg) bundle in any mode — see `plotly_js_only`.
 fn plotly_js_block() -> String {
+    if viz_cdn() {
+        // A classic (non-deferred, non-module) `<script src>` runs to completion before any
+        // panel's `Plotly.newPlot` script, so `Plotly` is already defined: no `PLOTLY_STUB_SCRIPT`
+        // queue and no `PLOTLY_GZ_BOOTSTRAP` are needed. `GZ_PRELUDE_SCRIPT` is still required
+        // whenever figure payloads are gzipped, since `map_panel_inline_html` emits
+        // `qsvNewPlotGz(..)` calls that need `__qsvGunzip`/`__qsvReady`.
+        let cdn = plotly_cdn_only();
+        return if viz_compress() {
+            format!("{cdn}\n{GZ_PRELUDE_SCRIPT}")
+        } else {
+            cdn
+        };
+    }
     let plain = plotly_js_only();
     if !viz_compress() {
         return plain;
@@ -6944,16 +7002,17 @@ fn output_html(plot: &Plot, args: &Args) -> CliResult<()> {
     // button, and reuse `output_inline_html` for the `--output` / stdout / `--open`-temp-file
     // handling — the same path the `viz smart` dashboards already use.
     let mut html = plot.to_html();
-    // swap the inline plotly.js bundle for the gzip+bootstrap block (`Plot::to_html` embeds the
-    // exact tag `plotly_js_only` isolates, so a single substring replace suffices). The MathJax
-    // tag that follows it stays plain — it loads before the deferred plotly eval, preserving the
-    // `typeof MathJax` probe order.
-    if viz_compress() {
-        let plain = plotly_js_only();
-        let block = plotly_js_block();
-        if block != plain && html.contains(&plain) {
-            html = html.replacen(&plain, &block, 1);
-        }
+    // Swap plotly's own `<head>` scripts for our block, so single charts get exactly what the
+    // `viz smart` dashboards get. The needle is the FULL `offline_js_sources` string (both script
+    // tags, verbatim what `Plot::to_html` interpolates), which drops the ~2.1 MB MathJax
+    // (tex-svg) bundle along with the swap: `viz` renders only plain-text titles and labels, and
+    // plotly guards its sole MathJax use behind a `typeof MathJax != "undefined"` probe. A LaTeX
+    // `--title` therefore no longer typesets — which has always been true of smart dashboards.
+    // If the fork ever retemplates and the needle misses, leave the (correct, heavier) page be.
+    let needle = Plot::offline_js_sources();
+    let block = plotly_js_block();
+    if block != needle && html.contains(&needle) {
+        html = html.replacen(&needle, &block, 1);
     }
     let html = inject_fullscreen_chrome(&html);
     output_inline_html(&html, args)

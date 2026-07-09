@@ -7,10 +7,13 @@ chart type from the sample datasets in this directory. It is a checked-in
 
 For each figure it runs the documented `qsv viz` command, extracts the figure
 JSON object that plotly-rs emits (`Plotly.newPlot(graph_div, {...})`) from the
-self-contained output, and reassembles them into one page that loads plotly from
-the CDN (so the committed file stays small). The static scaffold (head / style /
-header) is reused verbatim from the existing gallery, so re-running this only
-changes figure content and order.
+output, and reassembles them into one page that loads plotly from the CDN (so the
+committed file stays small). The static scaffold (head / style / header) is reused
+verbatim from the existing gallery, so re-running this only changes figure content
+and order.
+
+Every `qsv viz` run here sets QSV_VIZ_CDN=1, so viz itself emits the CDN
+`<script src>` tag and the smart-dashboard iframes are committable as-is.
 
 Usage (from the repo root), after changing viz output or the datasets:
 
@@ -35,10 +38,6 @@ VIZ_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(os.path.dirname(VIZ_DIR))
 GALLERY = os.path.join(VIZ_DIR, "gallery.html")
 MARKER = "Plotly.newPlot(graph_div, "
-
-# CDN plotly tag substituted for the ~4.6MB inline bundle in the smart-dashboard iframes.
-# Keep the version in sync with the gallery head's <script src> (plotly.js v3.6.0).
-PLOTLY_CDN = '<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>'
 
 # Smart dashboards are embedded as iframes of the *genuine* `qsv viz smart` HTML output (so the
 # full-width overview panels, themes and map buttons render exactly as the CLI produces them),
@@ -829,16 +828,18 @@ def extract_inline_panels(html):
 
 
 def run_html(qsv, args):
-    """Run `qsv viz <args>` and return the self-contained HTML output as a string.
-    QSV_VIZ_NO_COMPRESS keeps the output in the fully readable plain form: this script scrapes
-    figure JSON out of the HTML, and `cdnify` swaps the plaintext plotly bundle for the CDN tag
-    (the gallery never ships the gzip+DecompressionStream payloads viz emits by default)."""
+    """Run `qsv viz <args>` and return its HTML output as a string.
+
+    QSV_VIZ_CDN makes viz emit a plotly CDN `<script src>` instead of the ~4.6MB inline bundle,
+    so the smart-dashboard iframes are small enough to commit. QSV_VIZ_NO_COMPRESS keeps figure
+    payloads in the fully readable plain form (no gzip+DecompressionStream, no base64 float32
+    typed arrays), which this script needs to scrape figure JSON out of the HTML."""
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
         subprocess.run([qsv, "viz", *args, "-o", out], cwd=VIZ_DIR,
                        check=True, capture_output=True, text=True,
-                       env={**os.environ, "QSV_VIZ_NO_COMPRESS": "1"})
+                       env={**os.environ, "QSV_VIZ_CDN": "1", "QSV_VIZ_NO_COMPRESS": "1"})
         with open(out, encoding="utf-8") as fh:
             return fh.read()
     finally:
@@ -851,20 +852,6 @@ def run_fig(qsv, args):
     if panels is not None:
         return {"panels": panels}          # inline multi-panel dashboard
     return {"fig": extract_fig_json(html)}  # single grid-form figure
-
-
-def cdnify(html):
-    """Shrink a self-contained `qsv viz smart` page (~4.5MB) to a few KB for committing as an
-    iframe source: swap the inline plotly bundle for a CDN <script src>. The genuine layout,
-    theme, light/dark toggle and interactivity are preserved. `qsv viz smart` itself now embeds
-    only the plotly bundle (it drops the MathJax/LaTeX helper that plotly-rs ships alongside it,
-    since the dashboards use no LaTeX), so the plotly bundle is the sole `<script>` to replace —
-    it's at script[0] (head); the per-panel `newPlot` calls and the toggle script follow it."""
-    blocks = list(re.finditer(r"<script\b[^>]*>.*?</script>", html, flags=re.S))
-    if not blocks or "plotly.js v" not in blocks[0].group(0):
-        raise ValueError("unexpected viz smart HTML structure (plotly bundle not at script[0])")
-    bundle = blocks[0]
-    return html[: bundle.start()] + PLOTLY_CDN + html[bundle.end():]
 
 
 def inject_resize_reporter(html):
@@ -976,7 +963,7 @@ def main():
                         fh.write(refreshed)
             else:
                 sys.stderr.write(f"[{idx}] {title}: qsv viz {' '.join(args)} -> {iframe_name}\n")
-                html = inject_resize_reporter(cdnify(run_html(qsv, args)))
+                html = inject_resize_reporter(run_html(qsv, args))
                 with open(os.path.join(VIZ_DIR, iframe_name), "w", encoding="utf-8") as fh:
                     fh.write(html)
             figs.append(None)  # keep FIGS index aligned with idx for the non-iframe figures

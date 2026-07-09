@@ -15,9 +15,13 @@ Generate charts/maps from CSV data using the plotly charting library.
 
 Produces a self-contained, interactive HTML chart (the plotly.js runtime is embedded,
 so charts work offline; map basemaps fetch their tiles over the network at view time
-unless the `white-bg` style is used). With a qsv build that includes the `viz_static`
-feature, charts can also be exported as static PNG/SVG/PDF/JPEG/WebP images (this
-requires a Chromium/Firefox browser at runtime - a webdriver is auto-managed by plotly).
+unless the `white-bg` style is used). Set the QSV_VIZ_CDN environment variable to load
+plotly.js from its CDN instead, shrinking the page by ~1.9MB at the cost of needing
+network access to view it. Set QSV_VIZ_NO_COMPRESS for plain-text, uncompressed HTML.
+Titles and labels are rendered as plain text - LaTeX (e.g. `$\alpha$`) is not typeset.
+With a qsv build that includes the `viz_static` feature, charts can also be exported as
+static PNG/SVG/PDF/JPEG/WebP images (this requires a Chromium/Firefox browser at
+runtime - a webdriver is auto-managed by plotly).
 
 The output format is inferred from the --output file extension (.html is the default).
 Interactive HTML is written to stdout when --output is not given; image formats always

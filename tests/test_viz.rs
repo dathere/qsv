@@ -1352,7 +1352,7 @@ fn viz_smart_inline_many_panels() {
         newplots > 8,
         "expected more than 8 inline plots, found {newplots}"
     );
-    // the plotly.js bundle is embedded once in <head>, before the first panel div
+    // ...all sharing the one plotly.js runtime `smart_html_page` puts in <head>
     assert!(html.contains("<!doctype html>"));
 }
 
@@ -2409,7 +2409,9 @@ fn viz_smart_box_outliers_capped() {
     let html = wrk.read_to_string("dash.html").unwrap();
     assert!(html.contains(r#""type":"box""#));
     // the distinctive outlier value appears ~the cap number of times (5000 of 6000) — well below
-    // the uncapped 6000, confirming the cap. A few extra matches come from the plotly.js bundle.
+    // the uncapped 6000, confirming the cap. The slack absorbs the value's incidental appearances
+    // elsewhere in the dashboard's figure JSON (axis ranges, hover text); the plotly.js bundle is
+    // extremely unlikely to contribute, as it rides gzip+base64-encoded here.
     let n = html.matches("99999").count();
     assert!(
         (5000..=5050).contains(&n),
@@ -5681,6 +5683,122 @@ fn viz_smart_compressed_map_figure_payload() {
     assert!(figure.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#));
     // coordinates ride as little-endian float32 typed arrays, not decimal-text JSON
     assert!(figure.contains(r#""lat":{"dtype":"float32","bdata":""#));
+}
+
+// `viz` renders only plain-text titles/labels, so the ~2.1MB MathJax (tex-svg) bundle that
+// plotly's `offline_js_sources` emits next to plotly.js is dead weight. Smart pages have always
+// dropped it; single charts used to keep it. `CommonHTML` appears in tex-svg and never in
+// plotly.min.js, so it discriminates the two bundles (plain `MathJax` does NOT — plotly.js
+// carries a `typeof MathJax` probe).
+#[test]
+fn viz_single_chart_omits_mathjax_bundle() {
+    let wrk = Workdir::new("viz_single_chart_omits_mathjax_bundle");
+    wrk.create_from_string("small.csv", "a,b\nx,1\ny,2\nz,3\n");
+
+    // both compression modes: the strip must not depend on the bundle swap
+    for no_compress in [false, true] {
+        let mut cmd = wrk.command("viz");
+        cmd.args(["bar", "small.csv", "-x", "a", "-y", "b"]);
+        if no_compress {
+            cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+        }
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        let html = String::from_utf8_lossy(&out.stdout);
+        assert!(
+            !html.contains("CommonHTML"),
+            "MathJax tex-svg bundle leaked into single-chart HTML (no_compress={no_compress})"
+        );
+        assert!(html.contains("Plotly.newPlot"));
+    }
+}
+
+// QSV_VIZ_CDN swaps the embedded bundle for a `<script src>` tag on BOTH the single-chart and the
+// smart-dashboard paths (they share `plotly_js_block`). None of the embed machinery may survive.
+#[test]
+fn viz_cdn_replaces_embedded_bundle() {
+    let wrk = Workdir::new("viz_cdn_replaces_embedded_bundle");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+
+    for args in [
+        vec!["bar", "small.csv", "-x", "b", "-y", "a"],
+        vec!["smart", "small.csv"],
+    ] {
+        let subcmd = args[0];
+        let mut cmd = wrk.command("viz");
+        cmd.args(&args);
+        cmd.env("QSV_VIZ_CDN", "1");
+        let out = wrk.output(&mut cmd);
+        assert!(out.status.success());
+        let html = String::from_utf8_lossy(&out.stdout);
+
+        assert!(
+            html.contains(r#"<script src="https://cdn.plot.ly/"#),
+            "{subcmd}: expected a plotly.js CDN tag"
+        );
+        // no inline bundle, in either its plain or its gzip+base64 form...
+        assert_eq!(html.matches("plotly.js v").count(), 0, "{subcmd}");
+        assert_eq!(html.matches("id=\"qsv-plotly-gz\"").count(), 0, "{subcmd}");
+        // ...so the queue stub and its bootstrap are unnecessary: Plotly is defined by the time
+        // the panel scripts run
+        assert!(!html.contains("window.__qsvPlotQ"), "{subcmd}");
+        // and no MathJax, same as the embedded modes
+        assert!(!html.contains("CommonHTML"), "{subcmd}");
+        assert!(html.contains("Plotly.newPlot"), "{subcmd}");
+    }
+}
+
+// QSV_VIZ_CDN governs only the *bundle*. Figure-payload gzip is still governed by
+// QSV_VIZ_NO_COMPRESS, so a gzipped map figure must keep the `__qsvGunzip` prelude that
+// `qsvNewPlotGz` depends on — dropping it along with the bootstrap would leave the map blank.
+#[test]
+fn viz_cdn_keeps_gz_prelude_for_compressed_map_figures() {
+    let wrk = Workdir::new("viz_cdn_keeps_gz_prelude_for_compressed_map_figures");
+    dense_local_geo(&wrk, "dense.csv", 1200);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "dense.csv"]);
+    cmd.env("QSV_VIZ_CDN", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"<script src="https://cdn.plot.ly/"#));
+    assert!(!html.contains("window.__qsvPlotQ"));
+    // the figure payload (not the bundle) is still gzipped, and its inflate helpers are present
+    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
+    assert!(html.contains("__qsvGunzip"));
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
+    assert!(figure.contains(r#""type":"scattermap""#));
+
+    // Under CDN there is no bundle bootstrap to raise the "needs DecompressionStream" banner, so
+    // the gz figure path must be able to raise it itself — otherwise a pre-2023 browser gets a
+    // silently blank map panel with no explanation.
+    assert!(html.contains("__qsvNoDecompress"));
+    assert!(html.contains("QSV_VIZ_NO_COMPRESS=1"));
+}
+
+// CDN + NO_COMPRESS: a bare tag and nothing else — no bundle, no gzip machinery at all.
+#[test]
+fn viz_cdn_uncompressed_has_no_gz_machinery() {
+    let wrk = Workdir::new("viz_cdn_uncompressed_has_no_gz_machinery");
+    wrk.create_from_string("small.csv", "a,b,c\n1,x,9\n2,y,8\n3,x,7\n4,z,6\n5,y,5\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "small.csv"]);
+    cmd.env("QSV_VIZ_CDN", "1");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#"<script src="https://cdn.plot.ly/"#));
+    assert_eq!(html.matches("plotly.js v").count(), 0);
+    assert!(!html.contains("DecompressionStream"));
+    assert!(!html.contains("__qsvGunzip"));
+    assert!(!html.contains("window.__qsvPlotQ"));
+    assert!(html.contains("Plotly.newPlot"));
 }
 
 #[test]

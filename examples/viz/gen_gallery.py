@@ -827,13 +827,39 @@ def extract_inline_panels(html):
     return panels
 
 
+# Markers of a gzip+base64 payload in viz output. Both are literals viz emits (a script-tag
+# content type and a JS call), never anything that could appear in scraped user data.
+GZ_MARKERS = ('type="application/gzip-b64"', "qsvNewPlotGz(")
+
+
+def assert_plaintext(html, args):
+    """Fail loudly if viz emitted compressed payloads.
+
+    `extract_inline_panels` scrapes plaintext `Plotly.newPlot(...)` calls; a gzipped panel is
+    emitted as `qsvNewPlotGz(...)` + a base64 blob instead, so it would be skipped *silently* —
+    a map panel would simply vanish from the gallery with no error. The committed iframes would
+    also become undiffable base64. QSV_VIZ_NO_COMPRESS in `run_html` prevents both; this asserts
+    it actually took effect (e.g. it wasn't dropped, or overridden to a falsy value)."""
+    found = [m for m in GZ_MARKERS if m in html]
+    if found:
+        raise ValueError(
+            f"`qsv viz {' '.join(args)}` emitted compressed payloads ({', '.join(found)}). "
+            "The gallery needs plain-text output to scrape figure JSON and to commit diffable "
+            "iframes — run_html sets QSV_VIZ_NO_COMPRESS=1 for this; check it is not being "
+            "overridden (a falsy value in the environment or a .env file disables it)."
+        )
+
+
 def run_html(qsv, args):
     """Run `qsv viz <args>` and return its HTML output as a string.
 
     QSV_VIZ_CDN makes viz emit a plotly CDN `<script src>` instead of the ~4.6MB inline bundle,
     so the smart-dashboard iframes are small enough to commit. QSV_VIZ_NO_COMPRESS keeps figure
     payloads in the fully readable plain form (no gzip+DecompressionStream, no base64 float32
-    typed arrays), which this script needs to scrape figure JSON out of the HTML."""
+    typed arrays), which this script needs to scrape figure JSON out of the HTML.
+
+    Note QSV_VIZ_CDN alone is not enough: it only swaps the plotly *bundle* for a CDN tag, while
+    map-panel *figures* keep their gzip+bdata encoding."""
     fd, out = tempfile.mkstemp(suffix=".html")
     os.close(fd)
     try:
@@ -841,9 +867,11 @@ def run_html(qsv, args):
                        check=True, capture_output=True, text=True,
                        env={**os.environ, "QSV_VIZ_CDN": "1", "QSV_VIZ_NO_COMPRESS": "1"})
         with open(out, encoding="utf-8") as fh:
-            return fh.read()
+            html = fh.read()
     finally:
         os.unlink(out)
+    assert_plaintext(html, args)
+    return html
 
 
 def run_fig(qsv, args):

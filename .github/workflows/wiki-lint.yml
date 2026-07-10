@@ -9,6 +9,14 @@
 #   2. Every `/docs/help/<X>.md` link in the wiki resolves to a real file
 #      in this repo's docs/help/ directory.
 #
+# It also verifies that docs/help/ is not STALE. Those files are generated from
+# each command's docopt USAGE string by `qsv --generate-help-md` and must never be
+# hand-edited, but nothing used to fail when a USAGE change landed without the
+# regeneration -- the wiki would then link to help text that no longer matched the
+# binary. This job already builds `qsv -F all_features` and already triggers on
+# exactly the generator's inputs (src/cmd/**, src/main.rs, docs/help/**), so the
+# check rides along for free rather than paying for a second 10-minute build.
+#
 # Triggers:
 #   - Nightly cron
 #   - PRs touching src/cmd/, src/main.rs, or docs/help/
@@ -93,6 +101,23 @@ jobs:
           cargo build --locked --bin qsv -F all_features
           sudo install target/debug/qsv /usr/local/bin/qsv
           qsv --version
+
+      # docs/help/*.md is GENERATED from the docopt USAGE strings. Regenerate and
+      # diff: if anything moves, the PR edited a USAGE (or README table row) without
+      # re-running the generator. `git diff` is scoped to the generated paths so the
+      # wiki checkout and build artifacts cannot trip it.
+      - name: Generated help docs are up to date
+        run: |
+          qsv --generate-help-md
+          if ! git diff --quiet -- docs/help README.md; then
+            echo "::error::docs/help/ is stale. A USAGE string or README table row changed without regenerating."
+            echo "Run 'qsv --generate-help-md' and commit the result. Never hand-edit docs/help/*.md."
+            echo "--- drift ---"
+            git --no-pager diff --stat -- docs/help README.md
+            git --no-pager diff -- docs/help README.md | head -200
+            exit 1
+          fi
+          echo "docs/help/ is in sync with the USAGE strings."
 
       - name: Run wiki lint
         env:

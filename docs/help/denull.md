@@ -58,6 +58,23 @@ Cleaning is per-column, which is what a single `qsv replace` pass cannot do: it
 takes one regex across all selected columns, so it cannot blank "NULL" in one
 column and "-" in another while leaving a literal "-" alone in a third.
 
+Once blanked, `qsv stats` treats those cells as MISSING: it excludes them from mean,
+stddev and the quartiles, and counts them in `nullcount` and `sparsity`. Do not reach
+for the `--nulls` option of `qsv stats` to "restore" them. That option puts the blanks
+back into the denominator while they contribute nothing to the sum, which is the same
+as imputing zero. On a column that is 54% sentinel, that pulls the mean from 271 down
+to 123 and SHRINKS the reported standard error - more confidence in a worse number -
+while leaving the median and quartiles alone, so the summary stops agreeing with
+itself. The `--nulls` option is for data where an empty cell genuinely MEANS zero (no
+events, no charge). A well with no recorded casing depth does not have a casing depth
+of zero.
+
+Statistics over the cleaned column are still complete-case: they describe the rows
+that HAVE a value. If a value is missing for a reason correlated with the value
+itself, the estimate is biased. denull does not create that bias - before it ran, the
+column was a String with no statistics at all - but it does not remove it either. It
+makes the missingness visible so you can reason about it.
+
 Numeric sentinels (-999, -9999, 9999) are deliberately NOT detected. They parse as
 valid numbers, so no scan can distinguish them from real data - a depth-to-water
 reading of -140 ft is an artesian well, not a missing value. Only a human or a

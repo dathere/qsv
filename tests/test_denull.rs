@@ -508,3 +508,45 @@ fn denull_apply_leaves_rejected_columns_untouched() {
     assert_eq!(got.iter().skip(1).filter(|r| r[0] == "NULL").count(), 10);
     assert!(wrk.output_stderr(&mut cmd).contains("rejected:off-vocab"));
 }
+
+#[test]
+fn denull_apply_refuses_dash_stdin() {
+    // `Config` maps the conventional "-" to stdin, so guarding on `arg_input.is_some()`
+    // would wave this through and pass 2 would reopen an exhausted stdin, writing an
+    // empty file over the user's --output.
+    let wrk = Workdir::new("denull_apply_refuses_dash_stdin");
+    wrk.create_from_string("d.csv", "depth\n1\n2\nNULL\n");
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("-");
+    wrk.assert_err(&mut cmd);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("stdin is not supported"),
+        "expected stdin refusal for \"-\""
+    );
+}
+
+#[test]
+fn denull_apply_refuses_a_hard_link_to_its_input() {
+    // Two hard links to one inode have two distinct canonical paths, so a path compare
+    // misses this and `File::create` truncates the very file pass 2 is reading.
+    let wrk = Workdir::new("denull_apply_refuses_a_hard_link_to_its_input");
+    wrk.create_from_string("d.csv", "depth\n1\n2\nNULL\n3\n4\n");
+    let input = wrk.path("d.csv");
+    let link = wrk.path("link.csv");
+    std::fs::hard_link(&input, &link).unwrap();
+    let before = std::fs::read(&input).unwrap();
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply")
+        .arg("d.csv")
+        .args(["-o", link.to_str().unwrap()]);
+    wrk.assert_err(&mut cmd);
+
+    assert_eq!(
+        std::fs::read(&input).unwrap(),
+        before,
+        "the input must survive untouched"
+    );
+}

@@ -6885,6 +6885,7 @@ dependencies = [
  "rfd",
  "rmp-serde",
  "rust_decimal",
+ "same-file",
  "sanitize-filename",
  "self_update",
  "semver",

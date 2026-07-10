@@ -464,32 +464,33 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let vocab = build_vocab(&args);
 
-    // Both guards must fire BEFORE the scan: discovering after a full pass that the
-    // input cannot be reopened, or that we are about to truncate it, is too late.
+    let rconfig = Config::new(args.arg_input.as_ref())
+        .delimiter(args.flag_delimiter)
+        .no_headers(args.flag_no_headers)
+        .select(args.flag_select);
+
+    // Both guards must fire BEFORE the scan: discovering after a full pass that the input
+    // cannot be reopened, or that we are about to truncate it, is too late.
     if args.flag_apply {
-        if args.arg_input.is_none() {
+        // Test the RESOLVED path, not `arg_input`: `Config` maps the conventional "-" to
+        // stdin, so an `arg_input.is_some()` check would wave `denull --apply -` through,
+        // and pass 2 would reopen an exhausted stdin and emit an empty file.
+        let Some(in_path) = rconfig.path.clone() else {
             return fail_clierror!("--apply requires an input file path (stdin is not supported).");
-        }
+        };
         if let Some(out) = &args.flag_output {
             let out_path = std::path::Path::new(out);
-            let in_path = std::path::Path::new(args.arg_input.as_ref().unwrap());
-            // Only an EXISTING output can be the input, and canonicalizing resolves
-            // symlinks and `./` so `-o ./data.csv` cannot slip past a string compare.
-            if out_path.exists()
-                && let (Ok(o), Ok(i)) = (out_path.canonicalize(), in_path.canonicalize())
-                && o == i
-            {
+            // `is_same_file` compares file identity (inode/dev, or file-id on Windows), so
+            // it catches `./data.csv`, a symlink, AND a hard link. Canonicalizing cannot:
+            // two hard links to one inode have two distinct canonical paths, and writing
+            // through either truncates the input pass 2 is still reading.
+            if out_path.exists() && same_file::is_same_file(&in_path, out_path).unwrap_or(false) {
                 return fail_clierror!(
                     "--apply cannot write to its own input ({out}); pass a different --output."
                 );
             }
         }
     }
-
-    let rconfig = Config::new(args.arg_input.as_ref())
-        .delimiter(args.flag_delimiter)
-        .no_headers(args.flag_no_headers)
-        .select(args.flag_select);
 
     let mut rdr = rconfig.reader()?;
     let headers = rdr.byte_headers()?.clone();

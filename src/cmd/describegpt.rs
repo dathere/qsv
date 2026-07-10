@@ -182,6 +182,11 @@ describegpt options:
                              scan; numeric/date placeholders that parse as valid values of the
                              column's own type (-999 is a legal integer), or tokens never seen in
                              the data. Each carries "confirm_required": true.
+                           A proposal that is IMPOSSIBLE is dropped rather than reported: a
+                           non-numeric token in a numeric column (no cell could hold it, or the
+                           column would not have typed as numeric), and an echo of the null
+                           placeholder the Frequency Distribution displays for cells qsv already
+                           counts as empty.
                            A confirmed "null_values" entry means only that the literal is PRESENT
                            in the column; the judgment that it MEANS "missing" remains the LLM's.
                            This complements "qsv denull", which reports a narrower set - only the

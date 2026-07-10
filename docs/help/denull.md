@@ -58,6 +58,37 @@ Cleaning is per-column, which is what a single `qsv replace` pass cannot do: it
 takes one regex across all selected columns, so it cannot blank "NULL" in one
 column and "-" in another while leaving a literal "-" alone in a third.
 
+Once blanked, `qsv stats` treats those cells as MISSING: it excludes them from mean,
+stddev and the quartiles, and counts them in `nullcount` and `sparsity`. Do not reach
+for the `--nulls` option of `qsv stats` to "restore" them. That option puts the blanks
+back into the denominator while they contribute nothing to the sum, which is the same
+as imputing zero. On a column that is 54% sentinel, that pulls the mean from 271 down
+to 123 and SHRINKS the reported standard error - more confidence in a worse number.
+A well with no recorded casing depth does not have a casing depth of zero.
+
+Note also that `--nulls` reaches only the moment-based statistics - mean, stddev,
+variance, cv, sem, geometric_mean, harmonic_mean and n_zero. The order statistics
+(median, quartiles, iqr, mad, skewness) ALWAYS ignore blanks, whether or not the flag
+is set, so a `--nulls` summary does not agree with itself: on that same column the mean
+drops to 123 while the median stays at 200. And because one zero annihilates a product,
+geometric_mean collapses to 0 and harmonic_mean to nothing at all.
+
+So `--nulls` is not a general "treat blanks as zero" switch, even for data where an
+empty cell genuinely MEANS zero (no events, no charge). If that is your data, and you
+want every statistic to see those zeroes, materialize them first and leave the flag
+alone:  
+
+```console
+$ qsv fill --default 0 -s events data.csv | qsv stats --everything
+```
+
+
+Statistics over the cleaned column are still complete-case: they describe the rows
+that HAVE a value. If a value is missing for a reason correlated with the value
+itself, the estimate is biased. denull does not create that bias - before it ran, the
+column was a String with no statistics at all - but it does not remove it either. It
+makes the missingness visible so you can reason about it.
+
 Numeric sentinels (-999, -9999, 9999) are deliberately NOT detected. They parse as
 valid numbers, so no scan can distinguish them from real data - a depth-to-water
 reading of -140 ft is an artesian well, not a missing value. Only a human or a

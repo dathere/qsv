@@ -184,6 +184,10 @@ Rules:
   * Be conservative. A value that genuinely belongs to the field's domain is NOT a sentinel.
     A legitimately deep water level of -140 in a well-depth column is a real measurement.
   * Do NOT list the empty string; qsv already counts empty cells as nulls.
+  * Do NOT list the null placeholder that the Frequency Distribution itself displays for
+    already-empty cells (it appears as "(NULL)", or whatever --null-text is set to). That
+    is qsv's own label for cells it has already counted as missing, not a value present
+    in the data.
   * If a field has no null sentinels, emit an empty array.
 
 qsv independently checks every value you list against the actual data. Values it can confirm are

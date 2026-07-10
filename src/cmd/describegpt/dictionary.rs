@@ -1041,6 +1041,15 @@ fn merge_content_type(current: &str, llm: &str, allow_override: bool) -> String 
 /// actually denotes a missing value is the model's call, and nothing downstream
 /// acts on it automatically.
 ///
+/// `null_text` is `frequency`'s label for the already-empty cells it aggregates into
+/// the null row (default `(NULL)`). That label is DISPLAY, not data - yet it is right
+/// there in the Frequency Distribution the model reads, and models do propose it
+/// (observed on real data, on a file `denull --apply` had just cleaned). A proposal
+/// that merely echoes the label is dropped outright rather than demoted, because it
+/// describes cells qsv ALREADY counts as null. It is dropped only when the token is
+/// not among `observed`: a column that genuinely holds the literal text `(NULL)` as a
+/// value still confirms it normally.
+///
 /// A proposal is trusted only when BOTH hold:
 ///   * `qsv_type` is `String` - the only type whose sentinels are detectable at all. A `-999` in an
 ///     `Integer` column parses as a valid integer; no scan can tell it from a real reading (and a
@@ -1062,6 +1071,7 @@ fn classify_null_values(
     qsv_type: &str,
     observed: &[&str],
     proposed: &[String],
+    null_text: &str,
 ) -> (Vec<String>, Vec<String>) {
     let is_string_col = qsv_type == "String";
 
@@ -1082,6 +1092,21 @@ fn classify_null_values(
         } else {
             Vec::new()
         };
+        // The model echoed frequency's null-row LABEL, and no real value matches it.
+        // Those cells are already null; reporting the label as a sentinel would be
+        // noise on data that has none. Checked after `matches` so a column genuinely
+        // holding the literal text still confirms it.
+        if matches.is_empty() && token.eq_ignore_ascii_case(null_text) {
+            continue;
+        }
+        // A non-numeric token cannot occur in a numeric column: if a single cell held the
+        // text "NULL", `stats` could not have typed the column Integer/Float. Such a
+        // proposal is IMPOSSIBLE, not merely unconfirmable, so drop it instead of asking a
+        // human to confirm a cell that cannot exist. A numeric placeholder (-999) parses
+        // fine and still rides through as a candidate - that is the whole point.
+        if (qsv_type == "Integer" || qsv_type == "Float") && token.parse::<f64>().is_err() {
+            continue;
+        }
         if matches.is_empty() {
             if !candidates.iter().any(|c| c == token) {
                 candidates.push(token.to_string());
@@ -1152,7 +1177,8 @@ pub(super) fn apply_null_value_classification(
         let observed: &[&str] = samples_by_field
             .get(entry.name.as_str())
             .map_or(&[], Vec::as_slice);
-        let (confirmed, candidates) = classify_null_values(&entry.r#type, observed, proposed);
+        let (confirmed, candidates) =
+            classify_null_values(&entry.r#type, observed, proposed, null_text);
         entry.null_values = confirmed;
         entry.null_candidates = candidates;
     }
@@ -1942,8 +1968,12 @@ mod tests {
     fn null_values_confirmed_only_for_observed_string_values() {
         // The happy path: a String column, a token the LLM proposed that qsv can
         // see in the data. This is the only combination that earns the trusted bucket.
-        let (confirmed, candidates) =
-            classify_null_values("String", &["ok", "NULL", "pending"], &["NULL".to_string()]);
+        let (confirmed, candidates) = classify_null_values(
+            "String",
+            &["ok", "NULL", "pending"],
+            &["NULL".to_string()],
+            "(NULL)",
+        );
         assert_eq!(confirmed, vec!["NULL"]);
         assert!(candidates.is_empty());
     }
@@ -1954,8 +1984,12 @@ mod tests {
         // an Integer column, so a naive "did we see it?" check would confirm it. It
         // must NOT be: -999 parses as a valid integer and no scan can tell it from a
         // real reading. If this ever fails, a consumer could auto-blank real data.
-        let (confirmed, candidates) =
-            classify_null_values("Integer", &["-999", "12", "45"], &["-999".to_string()]);
+        let (confirmed, candidates) = classify_null_values(
+            "Integer",
+            &["-999", "12", "45"],
+            &["-999".to_string()],
+            "(NULL)",
+        );
         assert!(
             confirmed.is_empty(),
             "a numeric sentinel is structurally unconfirmable and must never reach null_values"
@@ -1968,7 +2002,7 @@ mod tests {
         // The model proposed a sentinel this column does not contain. qsv cannot
         // confirm it, so it is reported as a guess rather than silently trusted.
         let (confirmed, candidates) =
-            classify_null_values("String", &["ok", "pending"], &["N/A".to_string()]);
+            classify_null_values("String", &["ok", "pending"], &["N/A".to_string()], "(NULL)");
         assert!(confirmed.is_empty());
         assert_eq!(candidates, vec!["N/A"]);
     }
@@ -1982,6 +2016,7 @@ mod tests {
             "String",
             &["NULL", "null", "NuLl", "ok"],
             &["null".to_string()],
+            "(NULL)",
         );
         assert_eq!(confirmed, vec!["NULL", "null", "NuLl"]);
         assert!(candidates.is_empty());
@@ -2045,7 +2080,109 @@ mod tests {
             "neither an aggregation bucket nor the null row may confirm a sentinel, got {:?}",
             entries[0].null_values
         );
-        assert_eq!(entries[0].null_candidates.len(), 2);
+        // "Other" survives as an unconfirmable guess; "(NULL)" is frequency's label for
+        // cells qsv already counts as null, so it is dropped rather than reported.
+        assert_eq!(entries[0].null_candidates, vec!["Other"]);
+    }
+
+    #[test]
+    fn a_proposal_echoing_frequencys_null_label_is_dropped_not_reported() {
+        // Observed on real data: after `denull --apply` cleaned a column, the model saw
+        // frequency's "(NULL)" null-row label in the Frequency Distribution and proposed
+        // it as a sentinel for every cleaned column. Those cells are ALREADY null, so the
+        // proposal is noise - drop it outright rather than emit a confirm_required
+        // candidate against data that has no sentinels left.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            null_count: 5,
+            ..blank_entry("depth")
+        }];
+        let freqs = vec![
+            freq("depth", "12", 90, 1.0),
+            freq("depth", "(NULL)", 5, 2.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert("depth".to_string(), vec!["(NULL)".to_string()]);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert!(entries[0].null_values.is_empty());
+        assert!(
+            entries[0].null_candidates.is_empty(),
+            "frequency's null label must be dropped, not reported as a candidate; got {:?}",
+            entries[0].null_candidates
+        );
+    }
+
+    #[test]
+    fn a_non_numeric_proposal_for_a_numeric_column_is_impossible_and_dropped() {
+        // Observed on real data: after cleaning, the model proposed "NULL" for the now
+        // Integer-typed DataQuality. If any cell held that text, stats could not have typed
+        // the column Integer - so it is impossible, not merely unobserved. Dropping it beats
+        // asking a human to confirm a cell that cannot exist.
+        let (confirmed, candidates) =
+            classify_null_values("Integer", &["1", "2", "3"], &["NULL".to_string()], "(NULL)");
+        assert!(confirmed.is_empty());
+        assert!(
+            candidates.is_empty(),
+            "a non-numeric token cannot occur in a numeric column; got {candidates:?}"
+        );
+    }
+
+    #[test]
+    fn a_numeric_placeholder_for_a_numeric_column_still_rides_through_as_a_candidate() {
+        // The impossibility guard must not swallow the case the whole feature exists for:
+        // -999 parses as an integer, so it CAN occur, and only a human can confirm it.
+        let (confirmed, candidates) = classify_null_values(
+            "Integer",
+            &["-999", "12"],
+            &["-999".to_string(), "9999".to_string()],
+            "(NULL)",
+        );
+        assert!(confirmed.is_empty());
+        assert_eq!(candidates, vec!["-999", "9999"]);
+    }
+
+    #[test]
+    fn a_column_genuinely_holding_the_null_label_as_a_value_still_confirms_it() {
+        // The guard must not blanket-ban the token. A String column whose real, observed
+        // value happens to be the literal text "(NULL)" - with a count that is NOT the
+        // column's null count, so it is not frequency's null row - confirms normally.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            null_count: 0,
+            ..blank_entry("tag")
+        }];
+        let freqs = vec![freq("tag", "ok", 90, 1.0), freq("tag", "(NULL)", 7, 2.0)];
+        let mut proposals = HashMap::new();
+        proposals.insert("tag".to_string(), vec!["(NULL)".to_string()]);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(
+            entries[0].null_values,
+            vec!["(NULL)"],
+            "a real observed value must confirm even when it reads like the null label"
+        );
+    }
+
+    #[test]
+    fn a_custom_null_text_is_also_dropped_when_it_is_only_the_label() {
+        // frequency's --null-text is configurable, so the guard keys off the configured
+        // value, not the literal "(NULL)".
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            null_count: 4,
+            ..blank_entry("depth")
+        }];
+        let freqs = vec![
+            freq("depth", "12", 90, 1.0),
+            freq("depth", "<MISSING>", 4, 2.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert("depth".to_string(), vec!["<MISSING>".to_string()]);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "<MISSING>");
+        assert!(entries[0].null_values.is_empty());
+        assert!(entries[0].null_candidates.is_empty());
     }
 
     #[test]

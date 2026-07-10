@@ -1031,27 +1031,9 @@ fn merge_content_type(current: &str, llm: &str, allow_override: bool) -> String 
 /// every entry has a non-empty `content_type`: any field the LLM classified
 /// with an invalid token, omitted the `content_type` key for, or left out of
 /// its response entirely falls back to `"unknown"`.
-/// The literal values qsv actually OBSERVED in this column, drawn from the
-/// deterministic frequency pass. Aggregation buckets (`Other…` / `(NULL)…`, which
-/// `frequency` stamps with rank `0.0`) and display-truncated values (trailing `…`)
-/// are excluded — neither is a faithful datum, and admitting them would let a
-/// truncated prefix masquerade as a confirmed sentinel.
-///
-/// An empty result means "we cannot confirm anything for this column" (no
-/// frequency data, or an `<ALL_UNIQUE>` column), which conservatively demotes
-/// every proposal to a candidate.
-fn observed_values(entry: &DictionaryEntry) -> Vec<&str> {
-    entry
-        .freq_details
-        .iter()
-        .filter(|fd| fd.rank != 0.0 && !fd.value.ends_with('…'))
-        .map(|fd| fd.value.as_str())
-        .collect()
-}
-
-/// Split the LLM's raw null-sentinel proposals into a VERIFIABLE bucket and an
-/// UNVERIFIABLE one. The model proposes; this function — the only place that can
-/// see the column's type and its observed values — decides. The model cannot
+/// Split one field's raw null-sentinel proposals into a VERIFIABLE bucket and an
+/// UNVERIFIABLE one. The model proposes; this function - which alone sees the
+/// column's type and the values actually present in it - decides. The model cannot
 /// promote its own guess into the trusted bucket, mirroring the deterministic-only
 /// contract that makes `parse_llm_dictionary_response` refuse an LLM `unique_id`.
 ///
@@ -1060,22 +1042,28 @@ fn observed_values(entry: &DictionaryEntry) -> Vec<&str> {
 /// acts on it automatically.
 ///
 /// A proposal is trusted only when BOTH hold:
-///   * the column's qsv type is `String` — the only type whose sentinels are detectable at all. A
-///     `-999` in an `Integer` column parses as a valid integer; no scan can tell it from a real
-///     reading (and `DepthToWaterBGS` legitimately reaches `-140`), so it can never be confirmed.
-///   * the token was actually observed as a value in that column.
+///   * `qsv_type` is `String` - the only type whose sentinels are detectable at all. A `-999` in an
+///     `Integer` column parses as a valid integer; no scan can tell it from a real reading (and a
+///     well-depth column legitimately reaches `-140`), so it can never be confirmed.
+///   * the token appears in `observed`, the column's real values.
+///
+/// `observed` must be the FULL set of raw frequency values for the column (see
+/// `usable_samples_by_field`), never the display `examples`/`freq_details` subset:
+/// those are capped at `--num-examples` and are truncated for display, so a
+/// sentinel at rank 6 - or a long one rendered as `NOT APPLICAB…` - would be
+/// falsely demoted, or worse, a truncated prefix confirmed.
 ///
 /// Matching is ASCII-case-insensitive (models don't reliably echo casing), but the
-/// emitted spellings are the ones found IN THE DATA, never the model's echo — and
+/// emitted spellings are the ones found IN THE DATA, never the model's echo - and
 /// every observed casing is emitted, because a consumer must know every spelling it
 /// would have to blank. Everything else falls through to `null_candidates`, carrying
 /// the model's raw token for a human to confirm.
 fn classify_null_values(
-    entry: &DictionaryEntry,
+    qsv_type: &str,
+    observed: &[&str],
     proposed: &[String],
 ) -> (Vec<String>, Vec<String>) {
-    let observed = observed_values(entry);
-    let is_string_col = entry.r#type == "String";
+    let is_string_col = qsv_type == "String";
 
     let mut confirmed: Vec<String> = Vec::new();
     let mut candidates: Vec<String> = Vec::new();
@@ -1109,6 +1097,67 @@ fn classify_null_values(
     (confirmed, candidates)
 }
 
+/// The raw null-sentinel proposals to classify, per field.
+///
+/// For a `--two-pass` run, `refine` wins only where it actually re-states a field's
+/// sentinels: the refine prompt never asks for them, so an empty refine list means
+/// "not re-stated", NOT "retracted". Taking it unconditionally would wipe the first
+/// pass's sentinels on every two-pass run - the same invariant that guards
+/// Label/Description in `combine_dictionary_entries_with_baseline`.
+pub(super) fn null_value_proposals(
+    baseline: &HashMap<String, LlmDictField>,
+    refine: Option<&HashMap<String, LlmDictField>>,
+) -> HashMap<String, Vec<String>> {
+    let mut proposals: HashMap<String, Vec<String>> = baseline
+        .iter()
+        .filter(|(_, f)| !f.null_values.is_empty())
+        .map(|(name, f)| (name.clone(), f.null_values.clone()))
+        .collect();
+    if let Some(refine) = refine {
+        for (name, f) in refine {
+            if !f.null_values.is_empty() {
+                proposals.insert(name.clone(), f.null_values.clone());
+            }
+        }
+    }
+    proposals
+}
+
+/// Stamp each entry's `null_values` / `null_candidates` from the LLM's raw proposals,
+/// classified against the column's real values.
+///
+/// Deliberately a separate pass rather than part of `combine_dictionary_entries`:
+/// classification needs the frequency records (for the full observed-value set) and
+/// `null_text`, neither of which the combine step has - and building the sample map
+/// once here is cheaper than rebuilding it per entry.
+///
+/// A no-op when the LLM proposed nothing, which is the case whenever the dictionary
+/// prompt did not ask (i.e. without `--infer-null-values`).
+pub(super) fn apply_null_value_classification(
+    entries: &mut [DictionaryEntry],
+    proposals: &HashMap<String, Vec<String>>,
+    frequency_records: &[FrequencyRecord],
+    null_text: &str,
+) {
+    if proposals.is_empty() {
+        return;
+    }
+    // Excludes the rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel and the emitted
+    // null row, and yields RAW (untruncated) values - exactly the confirmation set.
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
+    for entry in entries.iter_mut() {
+        let Some(proposed) = proposals.get(&entry.name) else {
+            continue;
+        };
+        let observed: &[&str] = samples_by_field
+            .get(entry.name.as_str())
+            .map_or(&[], Vec::as_slice);
+        let (confirmed, candidates) = classify_null_values(&entry.r#type, observed, proposed);
+        entry.null_values = confirmed;
+        entry.null_candidates = candidates;
+    }
+}
+
 pub(super) fn combine_dictionary_entries(
     mut code_entries: Vec<DictionaryEntry>,
     llm_fields: &HashMap<String, LlmDictField>,
@@ -1121,9 +1170,6 @@ pub(super) fn combine_dictionary_entries(
             entry.content_type = merge_content_type(&entry.content_type, &llm.content_type, false);
             entry.concept = merge_concept(&entry.concept, &llm.concept, false);
             entry.role = merge_role(&entry.role, &llm.role, false);
-            let (confirmed, candidates) = classify_null_values(entry, &llm.null_values);
-            entry.null_values = confirmed;
-            entry.null_candidates = candidates;
         }
         if infer_content_type {
             if entry.content_type.is_empty() {
@@ -1191,9 +1237,6 @@ pub(super) fn combine_dictionary_entries_with_baseline(
                 merge_content_type(&entry.content_type, &baseline.content_type, false);
             entry.concept = merge_concept(&entry.concept, &baseline.concept, false);
             entry.role = merge_role(&entry.role, &baseline.role, false);
-            let (confirmed, candidates) = classify_null_values(entry, &baseline.null_values);
-            entry.null_values = confirmed;
-            entry.null_candidates = candidates;
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -1208,15 +1251,6 @@ pub(super) fn combine_dictionary_entries_with_baseline(
                 merge_content_type(&entry.content_type, &refine.content_type, true);
             entry.concept = merge_concept(&entry.concept, &refine.concept, true);
             entry.role = merge_role(&entry.role, &refine.role, true);
-            // Same "omission preserves the baseline" invariant as label/description: the
-            // refine prompt never asks for null sentinels, so an empty list here means
-            // "not re-stated", NOT "retracted". Overwriting unconditionally would silently
-            // wipe the first pass's sentinels on every --two-pass run.
-            if !refine.null_values.is_empty() {
-                let (confirmed, candidates) = classify_null_values(entry, &refine.null_values);
-                entry.null_values = confirmed;
-                entry.null_candidates = candidates;
-            }
         }
         // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
         // the two-pass output matches single-pass invariants.
@@ -1884,22 +1918,13 @@ mod tests {
         }
     }
 
-    /// A `DictionaryEntry` of `ty` whose observed frequency values are `values`.
-    fn entry_observing(name: &str, ty: &str, values: &[&str]) -> DictionaryEntry {
-        DictionaryEntry {
-            r#type: ty.to_string(),
-            freq_details: values
-                .iter()
-                .enumerate()
-                .map(|(i, v)| FreqDetail {
-                    value: (*v).to_string(),
-                    count: 10,
-                    percentage: 1.0,
-                    #[allow(clippy::cast_precision_loss)]
-                    rank: (i + 1) as f64,
-                })
-                .collect(),
-            ..blank_entry(name)
+    fn freq(field: &str, value: &str, count: u64, rank: f64) -> FrequencyRecord {
+        FrequencyRecord {
+            field: field.to_string(),
+            value: value.to_string(),
+            count,
+            percentage: 1.0,
+            rank,
         }
     }
 
@@ -1907,8 +1932,8 @@ mod tests {
     fn null_values_confirmed_only_for_observed_string_values() {
         // The happy path: a String column, a token the LLM proposed that qsv can
         // see in the data. This is the only combination that earns the trusted bucket.
-        let entry = entry_observing("status", "String", &["ok", "NULL", "pending"]);
-        let (confirmed, candidates) = classify_null_values(&entry, &["NULL".to_string()]);
+        let (confirmed, candidates) =
+            classify_null_values("String", &["ok", "NULL", "pending"], &["NULL".to_string()]);
         assert_eq!(confirmed, vec!["NULL"]);
         assert!(candidates.is_empty());
     }
@@ -1919,8 +1944,8 @@ mod tests {
         // an Integer column, so a naive "did we see it?" check would confirm it. It
         // must NOT be: -999 parses as a valid integer and no scan can tell it from a
         // real reading. If this ever fails, a consumer could auto-blank real data.
-        let entry = entry_observing("depth", "Integer", &["-999", "12", "45"]);
-        let (confirmed, candidates) = classify_null_values(&entry, &["-999".to_string()]);
+        let (confirmed, candidates) =
+            classify_null_values("Integer", &["-999", "12", "45"], &["-999".to_string()]);
         assert!(
             confirmed.is_empty(),
             "a numeric sentinel is structurally unconfirmable and must never reach null_values"
@@ -1932,8 +1957,8 @@ mod tests {
     fn unobserved_token_is_demoted_to_candidate() {
         // The model proposed a sentinel this column does not contain. qsv cannot
         // confirm it, so it is reported as a guess rather than silently trusted.
-        let entry = entry_observing("status", "String", &["ok", "pending"]);
-        let (confirmed, candidates) = classify_null_values(&entry, &["N/A".to_string()]);
+        let (confirmed, candidates) =
+            classify_null_values("String", &["ok", "pending"], &["N/A".to_string()]);
         assert!(confirmed.is_empty());
         assert_eq!(candidates, vec!["N/A"]);
     }
@@ -1943,38 +1968,74 @@ mod tests {
         // A consumer must know every spelling it would have to blank, so the dictionary
         // names every observed casing - and names the spellings found IN THE DATA, never
         // the model's (here lowercase) echo of them.
-        let entry = entry_observing("status", "String", &["NULL", "null", "NuLl", "ok"]);
-        let (confirmed, candidates) = classify_null_values(&entry, &["null".to_string()]);
+        let (confirmed, candidates) = classify_null_values(
+            "String",
+            &["NULL", "null", "NuLl", "ok"],
+            &["null".to_string()],
+        );
         assert_eq!(confirmed, vec!["NULL", "null", "NuLl"]);
         assert!(candidates.is_empty());
     }
 
     #[test]
-    fn aggregation_buckets_and_truncated_values_cannot_confirm_a_sentinel() {
-        // `frequency` stamps aggregation buckets ("Other…"/"(NULL)…") with rank 0.0,
-        // and long values arrive display-truncated with a trailing "…". Neither is a
-        // faithful datum: admitting them would let a truncated prefix, or the literal
-        // null-row label, masquerade as a confirmed sentinel.
-        let mut entry = entry_observing("status", "String", &["ok"]);
-        entry.freq_details.push(FreqDetail {
-            value:      "(NULL)".to_string(),
-            count:      3,
-            percentage: 1.0,
-            rank:       0.0,
-        });
-        entry.freq_details.push(FreqDetail {
-            value:      "NOT APPLICAB…".to_string(),
-            count:      3,
-            percentage: 1.0,
-            rank:       2.0,
-        });
-        let (confirmed, candidates) =
-            classify_null_values(&entry, &["(NULL)".to_string(), "NOT APPLICAB…".to_string()]);
-        assert!(
-            confirmed.is_empty(),
-            "neither an aggregation bucket nor a truncated value may confirm a sentinel"
+    fn confirmation_sees_sentinels_beyond_the_displayed_examples() {
+        // Regression (roborev 3559): confirmation must run against the FULL frequency
+        // records, not the `--num-examples`-capped, display-truncated `freq_details`.
+        // Here the sentinel sits at rank 7 - well past the default 5 examples - and is
+        // long enough that the display copy would have been truncated with an ellipsis.
+        // Sourcing from `examples` would falsely demote it to a candidate.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("status")
+        }];
+        let mut freqs: Vec<FrequencyRecord> = (1..=6)
+            .map(|i| freq("status", &format!("value{i}"), 100 - i, i as f64))
+            .collect();
+        freqs.push(freq("status", "NOT APPLICABLE AT THIS SITE", 3, 7.0));
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["not applicable at this site".to_string()],
         );
-        assert_eq!(candidates.len(), 2);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(
+            entries[0].null_values,
+            vec!["NOT APPLICABLE AT THIS SITE"],
+            "a sentinel past --num-examples, and longer than --truncate-str, must still confirm"
+        );
+        assert!(entries[0].null_candidates.is_empty());
+    }
+
+    #[test]
+    fn aggregation_buckets_and_the_null_row_can_never_confirm_a_sentinel() {
+        // `frequency` stamps aggregation buckets ("Other") with rank 0.0, and emits a
+        // null row whose value is --null-text and whose count equals the column's null
+        // count. Neither is a faithful datum: admitting either would let the literal
+        // null label, or a rolled-up bucket name, masquerade as a confirmed sentinel.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            null_count: 3,
+            ..blank_entry("status")
+        }];
+        let freqs = vec![
+            freq("status", "ok", 90, 1.0),
+            freq("status", "Other", 5, 0.0), // rank-0 aggregation bucket
+            freq("status", "(NULL)", 3, 2.0), // the emitted null row (count == null_count)
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["Other".to_string(), "(NULL)".to_string()],
+        );
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert!(
+            entries[0].null_values.is_empty(),
+            "neither an aggregation bucket nor the null row may confirm a sentinel, got {:?}",
+            entries[0].null_values
+        );
+        assert_eq!(entries[0].null_candidates.len(), 2);
     }
 
     #[test]
@@ -1994,14 +2055,24 @@ mod tests {
     }
 
     #[test]
-    fn combine_classifies_null_values_onto_the_entry() {
-        let code_entries = vec![entry_observing("status", "String", &["NULL", "ok"])];
-        let mut llm = HashMap::new();
-        llm.insert("status".to_string(), llm_nulls(&["NULL", "-999"]));
-        let combined = combine_dictionary_entries(code_entries, &llm, false);
-        assert_eq!(combined[0].null_values, vec!["NULL"]);
+    fn classification_pass_stamps_confirmed_and_candidate_onto_the_entry() {
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("status")
+        }];
+        let freqs = vec![
+            freq("status", "NULL", 10, 1.0),
+            freq("status", "ok", 90, 2.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["NULL".to_string(), "-999".to_string()],
+        );
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(entries[0].null_values, vec!["NULL"]);
         assert_eq!(
-            combined[0].null_candidates,
+            entries[0].null_candidates,
             vec!["-999"],
             "an unobserved token rides along as a candidate on the same column"
         );
@@ -2010,9 +2081,8 @@ mod tests {
     #[test]
     fn two_pass_refine_omitting_null_values_preserves_the_baseline() {
         // The refine prompt never asks for null sentinels, so its empty list means
-        // "not re-stated", NOT "retracted". Overwriting unconditionally would wipe the
+        // "not re-stated", NOT "retracted". Taking it unconditionally would wipe the
         // first pass's sentinels on every --two-pass run.
-        let code_entries = vec![entry_observing("status", "String", &["NULL", "ok"])];
         let mut baseline = HashMap::new();
         baseline.insert("status".to_string(), llm_nulls(&["NULL"]));
         let mut refine = HashMap::new();
@@ -2023,13 +2093,22 @@ mod tests {
                 ..Default::default()
             },
         );
-        let combined =
-            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, false);
+        let proposals = null_value_proposals(&baseline, Some(&refine));
         assert_eq!(
-            combined[0].null_values,
-            vec!["NULL"],
+            proposals.get("status"),
+            Some(&vec!["NULL".to_string()]),
             "a refine pass that omits null_values must not wipe the baseline's sentinels"
         );
+    }
+
+    #[test]
+    fn two_pass_refine_restating_null_values_overrides_the_baseline() {
+        let mut baseline = HashMap::new();
+        baseline.insert("status".to_string(), llm_nulls(&["NULL"]));
+        let mut refine = HashMap::new();
+        refine.insert("status".to_string(), llm_nulls(&["N/A"]));
+        let proposals = null_value_proposals(&baseline, Some(&refine));
+        assert_eq!(proposals.get("status"), Some(&vec!["N/A".to_string()]));
     }
 
     #[test]

@@ -3274,8 +3274,16 @@ fn build_combined_dictionary_entries(
     .unwrap_or_default();
     let mut entries =
         combine_dictionary_entries(code_entries, &llm_fields, args.flag_infer_content_type);
+    let null_text = configured_null_text(&args.flag_freq_options);
+    // Classify the LLM's null-sentinel proposals against each column's real values.
+    // A no-op unless the dictionary prompt asked for them (--infer-null-values).
+    dictionary::apply_null_value_classification(
+        &mut entries,
+        &dictionary::null_value_proposals(&llm_fields, None),
+        &frequency_records,
+        null_text,
+    );
     if args.flag_infer_content_type {
-        let null_text = configured_null_text(&args.flag_freq_options);
         // strip any LLM-inferred date/datetime strftime suffix that does not
         // actually parse the column's real values
         dictionary::validate_date_formats(&mut entries, &frequency_records, null_text);
@@ -3345,6 +3353,14 @@ fn build_combined_dictionary_entries_two_pass(
         &baseline_fields,
         &refine_fields,
         args.flag_infer_content_type,
+    );
+    // The refine prompt never asks for null sentinels, so an omitted list there means
+    // "not re-stated", not "retracted" - `null_value_proposals` keeps the baseline's.
+    dictionary::apply_null_value_classification(
+        &mut entries,
+        &dictionary::null_value_proposals(&baseline_fields, Some(&refine_fields)),
+        &frequency_records,
+        configured_null_text(&args.flag_freq_options),
     );
     if args.flag_infer_content_type {
         let null_text = configured_null_text(&args.flag_freq_options);

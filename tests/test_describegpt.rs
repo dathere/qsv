@@ -3477,7 +3477,8 @@ fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
     });
 
     let mut cmd_2 = wrk.command("describegpt");
-    cmd_2.arg("--process-response")
+    cmd_2
+        .arg("--process-response")
         .arg("--dictionary")
         .arg("--infer-null-values")
         .arg("--no-cache")

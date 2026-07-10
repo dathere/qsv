@@ -6,6 +6,18 @@ argument-hint: "<input.csv> [geojson]"
 
 # /visual-data-dictionary
 
+> **Scope: repo-local.** This lives beside `build-dashboard`, `release-prep` and
+> `review-respond` at the top of `.claude/skills/`, which `package-plugin.js` and
+> `package-mcpb.js` do **not** archive — they ship only `.claude/skills/skills/`.
+> So this skill is available when working in the qsv repo and is *not* part of the
+> distributed plugin. That is deliberate: the packaged skills drive qsv through the
+> `mcp__qsv__*` MCP tools, while this one drives the **qsv CLI** directly and needs
+> `Bash` plus `python3`. Shipping it would require rewriting it against the MCP
+> tool surface, which has no equivalent for the GeoJSON inspection or the HTML
+> verification below.
+>
+> **Requires:** `qsv` on `PATH`, `python3`, and an LLM endpoint for `describegpt`.
+
 Turn a CSV into a self-contained HTML dashboard whose panels are chosen from an
 LLM-inferred data dictionary, with that dictionary embedded beside the charts.
 
@@ -118,14 +130,30 @@ curl -s -m 2 http://localhost:1234/v1/models >/dev/null 2>&1 && echo "LM Studio 
 curl -s -m 2 http://localhost:11434/api/tags  >/dev/null 2>&1 && echo "ollama on :11434"
 ```
 
-If a local server answers, list its models and use one:
+Both LM Studio and ollama speak the OpenAI-compatible API, so **both** list models
+the same way and both take a `/v1` base URL. Only the port differs:
+
+| server | `--base-url` | list models |
+|---|---|---|
+| LM Studio | `http://localhost:1234/v1` | `curl -s http://localhost:1234/v1/models` |
+| ollama | `http://localhost:11434/v1` | `curl -s http://localhost:11434/v1/models` |
 
 ```bash
-curl -s http://localhost:1234/v1/models | python3 -c 'import sys,json;[print(m["id"]) for m in json.load(sys.stdin)["data"]]'
+BASE_URL=""
+curl -s -m 2 http://localhost:1234/v1/models  >/dev/null 2>&1 && BASE_URL=http://localhost:1234/v1
+[ -z "$BASE_URL" ] && curl -s -m 2 http://localhost:11434/api/tags >/dev/null 2>&1 && BASE_URL=http://localhost:11434/v1
+
+[ -n "$BASE_URL" ] && curl -s "$BASE_URL/models" \
+  | python3 -c 'import sys,json;[print(m["id"]) for m in json.load(sys.stdin)["data"]]'
 ```
 
+`/api/tags` is only a liveness probe for ollama — it returns ollama's native
+shape, not the OpenAI `{"data":[...]}` envelope. List models from `/v1/models`
+either way.
+
 If nothing is found, use **AskUserQuestion** for base URL + model. Never guess a
-model name.
+model name. Offer the models the server actually reports; do not type one from
+memory.
 
 ### Generate
 
@@ -201,14 +229,36 @@ present on every feature, unique across all of them, and *meaningful to a human*
 Uniqueness alone is not enough: `properties.shape_area` is perfectly unique and
 completely useless as a label.
 
+The script accepts the **same three source forms** `--geojson` does — a local path,
+an `http(s)` URL, or a `QSV_GEOJSON_SHORTCUTS` name. If you only handle local
+paths here, a URL or shortcut fails at discovery even though `viz` would have
+accepted it.
+
 ```bash
 python3 - "$GEOJSON" <<'PY'
-import json, sys, re, collections
+import json, sys, re, os, collections, urllib.request
 
-g = json.load(open(sys.argv[1]))
+def load_geojson(src):
+    """Local path, http(s) URL, or a QSV_GEOJSON_SHORTCUTS name."""
+    shortcuts = json.loads(os.environ.get("QSV_GEOJSON_SHORTCUTS", "{}") or "{}")
+    hint = None
+    if src in shortcuts:                      # resolve the shortcut FIRST
+        entry = shortcuts[src]
+        hint = entry.get("id")                # shortcut may carry its own id key
+        src = entry["path"]
+    if src.startswith(("http://", "https://")):
+        with urllib.request.urlopen(src, timeout=30) as r:
+            return json.loads(r.read().decode("utf-8")), src, hint
+    with open(src) as fh:
+        return json.load(fh), src, hint
+
+g, resolved, hint = load_geojson(sys.argv[1])
 feats = g.get("features", [])
 if not feats:
     sys.exit("no features")
+print(f"source: {resolved}")
+if hint:
+    print(f"shortcut supplies --feature-id-key {hint} (override below if you prefer)")
 
 # Geometry-derived / bookkeeping fields: unique, but meaningless as a region label.
 NOISE = re.compile(r"shape|area|leng|length|perim|acres|sqmi|aland|awater|"

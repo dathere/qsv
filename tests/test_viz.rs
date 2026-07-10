@@ -9353,3 +9353,30 @@ fn viz_smart_dict_info_window_key_is_per_dictionary() {
         "identical title + dictionary must keep a stable window name (tab reuse)"
     );
 }
+
+#[test]
+fn viz_smart_hints_at_denull_even_when_every_column_is_skipped() {
+    // The diagnostics used to run AFTER the empty-dashboard early return, so a file whose
+    // every column is a sentinel-suspect got a bare "No chartable columns" and no hint.
+    let wrk = Workdir::new("viz_smart_hints_at_denull_even_when_every_column_is_skipped");
+    let mut rows = String::from("depth\n");
+    for i in 0..60 {
+        rows.push_str(
+            if i % 2 == 0 {
+                "NULL\n".to_string()
+            } else {
+                format!("{}\n", i * 7)
+            }
+            .as_str(),
+        );
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.arg("smart").arg("d.csv").args(["-o", "out.html"]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("qsv denull"),
+        "an all-skipped dashboard must still point at denull, got: {stderr}"
+    );
+}

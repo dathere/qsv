@@ -183,9 +183,25 @@ struct ColumnTally {
     seen_sentinels:  HashMap<Vec<u8>, Vec<u8>>,
 }
 
-/// Longest built-in sentinel, used to skip the vocabulary probe for cells that
-/// cannot possibly match. Keeps the free-text path to a length compare.
-const MAX_SENTINEL_LEN: usize = 16;
+/// Cells this long or shorter are lower-cased on the stack. Longer ones are rare enough
+/// (only a custom `--add-vocab` token can be one) to be worth a heap allocation.
+const SENTINEL_STACK: usize = 32;
+
+/// The sentinel vocabulary plus the length of its longest token. The cutoff is DERIVED,
+/// never hard-coded: a fixed 16-byte limit silently made any longer `--add-vocab` token
+/// unmatchable, which is exactly what `--add-vocab` exists to support.
+struct Vocab {
+    set:     HashSet<String>,
+    max_len: usize,
+}
+
+impl Vocab {
+    /// Case-insensitive membership. Invalid UTF-8 can never be a member: the vocabulary is
+    /// `String`, so a non-UTF-8 cell is by definition not a sentinel.
+    fn contains(&self, trimmed: &[u8]) -> bool {
+        sentinel_identity(trimmed, self).is_some()
+    }
+}
 
 impl ColumnTally {
     fn new() -> Self {
@@ -201,7 +217,7 @@ impl ColumnTally {
         }
     }
 
-    fn add(&mut self, cell: &[u8], max_distinct: usize, vocab: &HashSet<String>) {
+    fn add(&mut self, cell: &[u8], max_distinct: usize, vocab: &Vocab) {
         let trimmed = trim_ascii(cell);
         if trimmed.is_empty() {
             return;
@@ -231,14 +247,13 @@ impl ColumnTally {
         // Probe every novel non-numeric cell, before AND after `too_many` latches: a
         // column can meet "NULL" while the offender map is still filling and "N/A" only
         // after it has stopped growing, and the report owes the user both. Repeat values
-        // already returned above, and `normalized_sentinel` rejects anything longer than the
+        // already returned above, and `sentinel_identity` rejects anything longer than the
         // longest sentinel on a length compare, so free text pays very little for this -
         // measured at ~2% on a 414 MB, 86-column file.
-        if let Some((key, len)) = normalized_sentinel(trimmed, vocab)
-            && !self.seen_sentinels.contains_key(&key[..len])
+        if let Some(identity) = sentinel_identity(trimmed, vocab)
+            && !self.seen_sentinels.contains_key(&identity)
         {
-            self.seen_sentinels
-                .insert(key[..len].to_vec(), trimmed.to_vec());
+            self.seen_sentinels.insert(identity, trimmed.to_vec());
         }
         if self.too_many {
             return;
@@ -257,13 +272,12 @@ impl ColumnTally {
 
 /// A few non-sentinel values that disqualified an overflowed column, so the report can
 /// show WHAT it choked on rather than only that it did.
-fn offender_examples(tally: &ColumnTally, vocab: &HashSet<String>) -> String {
+fn offender_examples(tally: &ColumnTally, vocab: &Vocab) -> String {
     let mut ex: Vec<String> = tally
         .offenders
         .keys()
-        .filter_map(|k| std::str::from_utf8(k).ok())
-        .filter(|t| !vocab.contains(&t.to_lowercase()))
-        .map(ToString::to_string)
+        .filter(|k| !vocab.contains(k))
+        .map(|k| String::from_utf8_lossy(k).into_owned())
         .collect();
     ex.sort_unstable();
     ex.truncate(4);
@@ -288,19 +302,26 @@ fn seen_list(tally: &ColumnTally) -> String {
 /// non-numeric cell), where a per-cell `to_lowercase()` String would be a needless
 /// allocation on every one of millions of rows. Callers allocate only when the identity
 /// turns out to be one they have not seen before.
-fn normalized_sentinel(
-    trimmed: &[u8],
-    vocab: &HashSet<String>,
-) -> Option<([u8; MAX_SENTINEL_LEN], usize)> {
+fn sentinel_identity(trimmed: &[u8], vocab: &Vocab) -> Option<Vec<u8>> {
     let len = trimmed.len();
-    if len > MAX_SENTINEL_LEN {
+    if len > vocab.max_len {
         return None;
     }
-    let mut buf = [0_u8; MAX_SENTINEL_LEN];
-    buf[..len].copy_from_slice(trimmed);
-    buf[..len].make_ascii_lowercase();
-    let token = std::str::from_utf8(&buf[..len]).ok()?;
-    vocab.contains(token).then_some((buf, len))
+    let mut stack = [0_u8; SENTINEL_STACK];
+    let mut heap: Vec<u8>;
+    let lower: &[u8] = if len <= SENTINEL_STACK {
+        stack[..len].copy_from_slice(trimmed);
+        stack[..len].make_ascii_lowercase();
+        &stack[..len]
+    } else {
+        heap = trimmed.to_vec();
+        heap.make_ascii_lowercase();
+        &heap
+    };
+    // A non-UTF-8 cell cannot be in a `String` vocabulary, so it is not a sentinel - it is
+    // an offender, and `judge` must see it as one.
+    let token = std::str::from_utf8(lower).ok()?;
+    vocab.set.contains(token).then(|| lower.to_vec())
 }
 
 /// Surrounding ASCII whitespace is not part of a cell's identity: " NULL " is a sentinel.
@@ -326,7 +347,7 @@ fn is_zero_padded(sample: &[u8]) -> bool {
     matches!(body, [b'0', second, ..] if second.is_ascii_digit())
 }
 
-fn build_vocab(args: &Args) -> HashSet<String> {
+fn build_vocab(args: &Args) -> Vocab {
     let mut vocab: Vec<String> = args.flag_vocab.as_ref().map_or_else(
         || DEFAULT_VOCAB.iter().map(|s| (*s).to_string()).collect(),
         |v| {
@@ -344,7 +365,11 @@ fn build_vocab(args: &Args) -> HashSet<String> {
                 .filter(|t| !t.is_empty()),
         );
     }
-    vocab.into_iter().collect()
+    let max_len = vocab.iter().map(String::len).max().unwrap_or(0);
+    Vocab {
+        set: vocab.into_iter().collect(),
+        max_len,
+    }
 }
 
 /// Turn one column's tally into a verdict. The ONLY confirming path requires every
@@ -352,7 +377,7 @@ fn build_vocab(args: &Args) -> HashSet<String> {
 /// to survive - one number plus a pile of "NULL"s is not a distribution.
 fn judge(
     tally: &ColumnTally,
-    vocab: &HashSet<String>,
+    vocab: &Vocab,
     total_rows: u64,
 ) -> Option<(String, String, String, String)> {
     // "Could this column be numeric at all?" gates everything else. A column with fewer
@@ -396,12 +421,14 @@ fn judge(
         return None;
     }
 
+    // `filter_map(from_utf8)` here would DROP invalid-UTF-8 offenders, emptying `off_vocab`
+    // and confirming a column whose junk is not a sentinel at all. Render lossily instead,
+    // so such a value is still counted as the offender it is.
     let mut off_vocab: Vec<String> = tally
         .offenders
         .keys()
-        .filter_map(|k| std::str::from_utf8(k).ok())
-        .filter(|t| !vocab.contains(&t.to_lowercase()))
-        .map(ToString::to_string)
+        .filter(|k| !vocab.contains(k))
+        .map(|k| String::from_utf8_lossy(k).into_owned())
         .collect();
     if !off_vocab.is_empty() {
         off_vocab.sort_unstable();
@@ -625,21 +652,31 @@ fn emit_report(
 fn apply(
     rconfig: &Config,
     output: Option<&String>,
-    vocab: &HashSet<String>,
+    vocab: &Vocab,
     tallies: &[ColumnTally],
     sel: &crate::select::Selection,
     total_rows: u64,
 ) -> CliResult<()> {
-    // Blank a cell only when its OWN column was confirmed and its identity is one that
-    // column actually held. A global set would let column A's "NULL" blank a stray
-    // "NULL" in an unconfirmed column C.
+    // Blank a cell only when its OWN column was confirmed and the cell is one of the exact
+    // values that column actually held. A global set would let column A's "NULL" blank a
+    // stray "NULL" in an unconfirmed column C.
+    //
+    // The mask set is `offenders`, the SAME set `judge` confirmed from - not
+    // `seen_sentinels`. A confirmed column is never overflowed, so `offenders` holds every
+    // one of its distinct non-numeric values, byte for byte. Masking from `seen_sentinels`
+    // instead let the two disagree: it is keyed by vocabulary identity, so a sentinel
+    // longer than the old fixed cutoff, or one that is not valid UTF-8, was confirmed by
+    // `judge` and then silently skipped by `apply` - promising Integer and delivering
+    // String.
     let mut confirmed: HashMap<usize, HashSet<Vec<u8>>> = HashMap::new();
+    let mut expected_blanks = 0_u64;
     for (k, &idx) in sel.iter().enumerate() {
         let tally = &tallies[k];
         if let Some((verdict, ..)) = judge(tally, vocab, total_rows)
             && verdict == "confirmed"
         {
-            confirmed.insert(idx, tally.seen_sentinels.keys().cloned().collect());
+            expected_blanks += tally.offenders.values().sum::<u64>();
+            confirmed.insert(idx, tally.offenders.keys().cloned().collect());
         }
     }
 
@@ -658,11 +695,9 @@ fn apply(
         cleaned.clear();
         for (idx, cell) in record.iter().enumerate() {
             // Untouched cells are copied byte-for-byte.
-            let blank = confirmed.get(&idx).is_some_and(|sentinels| {
-                let trimmed = trim_ascii(cell);
-                normalized_sentinel(trimmed, vocab)
-                    .is_some_and(|(key, len)| sentinels.contains(&key[..len]))
-            });
+            let blank = confirmed
+                .get(&idx)
+                .is_some_and(|sentinels| sentinels.contains(trim_ascii(cell)));
             if blank {
                 blanked += 1;
                 cleaned.push_field(b"");
@@ -675,10 +710,19 @@ fn apply(
     wtr.flush()?;
     if confirmed.is_empty() {
         eprintln!("denull: no column confirmed; data copied through unchanged.");
-    } else {
-        eprintln!(
-            "denull: blanked {blanked} cell(s) across {} confirmed column(s).",
-            confirmed.len()
+        return Ok(());
+    }
+    eprintln!(
+        "denull: blanked {blanked} cell(s) across {} confirmed column(s).",
+        confirmed.len()
+    );
+    // The report told the user exactly how many cells it would blank. If the rewrite does
+    // not agree, the two halves of this command have drifted apart, and silently shipping
+    // a file that still holds sentinels is the worst outcome available.
+    if blanked != expected_blanks {
+        return fail_clierror!(
+            "denull: internal inconsistency - reported {expected_blanks} sentinel cell(s) but \
+             blanked {blanked}. The output may be incomplete; please file an issue."
         );
     }
     Ok(())

@@ -15522,20 +15522,6 @@ fn build_smart(
         }
         panels = kept;
     }
-    if panels.is_empty() {
-        return fail_clierror!(
-            "No chartable columns found for `viz smart` (all columns were empty or too \
-             high-cardinality to summarize)."
-        );
-    }
-    if !skipped.is_empty() {
-        viz_note(&format!(
-            "viz smart: charting {} column(s); skipped {}: {}",
-            panels.len(),
-            skipped.len(),
-            skipped.join(", ")
-        ));
-    }
     if !sentinel_suspects.is_empty() {
         viz_note(&format!(
             "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
@@ -15562,6 +15548,30 @@ fn build_smart(
              column's actual content.",
             nonnumeric_measures.len(),
             nonnumeric_measures.join(", ")
+        ));
+    }
+    if panels.is_empty() {
+        // The diagnostics above ran FIRST on purpose. When every column is skipped there is
+        // no dashboard, and a bare "no chartable columns" told the user nothing about the
+        // most likely cause - a null sentinel holding every numeric column back.
+        let denull_hint = if sentinel_suspects.is_empty() && sentinel_hints.is_empty() {
+            String::new()
+        } else {
+            " Some skipped columns look like numeric data held back by a non-numeric token; run \
+             `qsv denull` on this file."
+                .to_string()
+        };
+        return fail_clierror!(
+            "No chartable columns found for `viz smart` (all columns were empty or too \
+             high-cardinality to summarize).{denull_hint}"
+        );
+    }
+    if !skipped.is_empty() {
+        viz_note(&format!(
+            "viz smart: charting {} column(s); skipped {}: {}",
+            panels.len(),
+            skipped.len(),
+            skipped.join(", ")
         ));
     }
 

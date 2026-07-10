@@ -550,3 +550,93 @@ fn denull_apply_refuses_a_hard_link_to_its_input() {
         "the input must survive untouched"
     );
 }
+
+#[test]
+fn denull_apply_blanks_a_custom_sentinel_longer_than_the_stack_buffer() {
+    // `--add-vocab` exists for site-specific markers, which are often long. A fixed-length
+    // cutoff let `judge` confirm this column (it compares against the vocabulary directly)
+    // while `apply` skipped every cell, promising Integer and delivering String.
+    let wrk = Workdir::new("denull_apply_blanks_a_custom_sentinel_longer_than_the_stack_buffer");
+    let token = "not applicable at this site";
+    assert!(token.len() > 16, "token must exceed the old fixed cutoff");
+    let mut rows = String::from("depth\n");
+    for i in 0..30 {
+        if i % 3 == 0 {
+            rows.push_str(token);
+            rows.push('\n');
+        } else {
+            rows.push_str(&format!("{i}\n"));
+        }
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").args(["--add-vocab", token]).arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got.iter().skip(1).filter(|r| r[0] == token).count(),
+        0,
+        "every occurrence of the custom sentinel must be blanked"
+    );
+    assert_eq!(got.iter().skip(1).filter(|r| r[0].is_empty()).count(), 10);
+}
+
+#[test]
+fn denull_rejects_a_column_whose_offender_is_invalid_utf8() {
+    // Invalid UTF-8 cannot be in a `String` vocabulary, so it is an offender. Dropping it
+    // from the off-vocab check emptied that list and confirmed the column with an empty
+    // `sentinels` field - then `apply` blanked nothing.
+    use std::io::Write;
+    let wrk = Workdir::new("denull_rejects_a_column_whose_offender_is_invalid_utf8");
+    let path = wrk.path("d.csv");
+    let mut f = std::fs::File::create(&path).unwrap();
+    f.write_all(b"depth\n").unwrap();
+    for i in 0..30 {
+        if i % 10 == 0 {
+            f.write_all(b"\xff\xfe\n").unwrap();
+        } else {
+            f.write_all(format!("{i}\n").as_bytes()).unwrap();
+        }
+    }
+    drop(f);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[1][1], "rejected:off-vocab");
+    assert!(
+        got[1][6].is_empty(),
+        "a rejected column promotes to nothing"
+    );
+}
+
+#[test]
+fn denull_apply_blanks_every_casing_of_a_confirmed_sentinel() {
+    // `seen_sentinels` is keyed by LOWER-CASED vocabulary identity; `offenders` holds the
+    // exact bytes seen. Masking from the former blanks "null" but leaves "NULL" and "NuLl"
+    // in place, on a column it just confirmed. `apply` must mask from the same set `judge`
+    // confirmed from.
+    let wrk = Workdir::new("denull_apply_blanks_every_casing_of_a_confirmed_sentinel");
+    let mut rows = String::from("depth\n");
+    for i in 0..30 {
+        if i % 3 == 0 {
+            rows.push_str(["NULL\n", "null\n", "NuLl\n"][(i / 3) % 3]);
+        } else {
+            rows.push_str(&format!("{i}\n"));
+        }
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(
+        got.iter()
+            .skip(1)
+            .filter(|r| r[0].eq_ignore_ascii_case("null") || r[0].eq_ignore_ascii_case("null"))
+            .count(),
+        0,
+        "every casing must be blanked, not just the lower-cased identity"
+    );
+    assert_eq!(got.iter().skip(1).filter(|r| r[0].is_empty()).count(), 10);
+}

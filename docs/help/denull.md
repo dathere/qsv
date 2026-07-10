@@ -1,6 +1,6 @@
 # denull
 
-> Detect null sentinels — literal text like `NULL` or `N/A` standing in for a missing value, which makes `stats` type a numeric column as String (its `nullcount` stays 0, no quartiles are computed) and silently degrades `viz`, `schema` & `describegpt` downstream. Reports only; scans once with bounded memory. Numeric sentinels (`-999`) are deliberately NOT detected — they parse as valid numbers and no scan can tell them from real data.
+> Detect null sentinels — literal text like `NULL` or `N/A` standing in for a missing value, which makes `stats` type a numeric column as String (its `nullcount` stays 0, no quartiles are computed) and silently degrades `viz`, `schema` & `describegpt` downstream. Reports by default; `--apply` blanks the sentinels in the columns it confirmed, per column. Scans once with bounded memory. Numeric sentinels (`-999`) are deliberately NOT detected — they parse as valid numbers and no scan can tell them from real data.
 
 **[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/denull.rs](https://github.com/dathere/qsv/blob/master/src/cmd/denull.rs)**
 

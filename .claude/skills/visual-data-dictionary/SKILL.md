@@ -21,10 +21,12 @@ argument-hint: "<input.csv> [geojson]"
 Turn a CSV into a self-contained HTML dashboard whose panels are chosen from an
 LLM-inferred data dictionary, with that dictionary embedded beside the charts.
 
-Four stages, in this order and no other:
+Four stages, plus one optional fine-tune, in this order and no other:
 
 1. **denull** — blank null sentinels so numeric columns are actually numeric
 2. **describegpt** — infer a JSON Schema data dictionary from the *cleaned* data
+   - **2.5 fine-tune** (optional) — hand-correct the dictionary in a terminal UI
+     before it drives the dashboard
 3. **geojson** (optional) — pick a feature id key by inspecting the file
 4. **viz smart** — render the dashboard, dictionary-driven, dictionary-embedded
 
@@ -193,6 +195,58 @@ if have == 0:
     print("WARNING: no roles inferred — was --infer-content-type passed?")
 PY
 ```
+
+## Stage 2.5 — Fine-tune the dictionary (optional, TUI)
+
+`describegpt` is a good first draft, not gospel. The four fields that actually
+steer `viz smart` — `x-qsv.role`, `x-qsv.concept`, `title` (label) and
+`description` — are worth a human pass when the model mislabels a column: a code
+that should be an `identifier` charted as a `measure`, a `geo.*` key left
+`unknown`, a bland label. `edit_dictionary.py` (beside this `SKILL.md`) is a
+curses UI that walks every column and, as you edit, **previews how `viz smart`
+will route it** (Skip / Dimension / Measure / Temporal / MapCoord /
+ProjectedCoord), so you see the effect before rendering. It touches only those
+four fields, preserves every other key, and rewrites the file only if you save.
+
+**Offer it with AskUserQuestion:** *"Hand-tune the data dictionary in a TUI
+before rendering?"* If **no**, go straight to Stage 3.
+
+If **yes**, you cannot drive it yourself — a curses TUI needs the user's real
+terminal, and your Bash tool is a captured, non-interactive shell (the script
+detects this and refuses). So run it **out-of-band**:
+
+1. Show the current routing so the user knows the starting point (this works
+   without a TTY):
+
+   ```bash
+   python3 "$SKILL_DIR/edit_dictionary.py" --summary "$SCHEMA"
+   ```
+
+   where `$SKILL_DIR` is this skill's own directory (the folder holding this
+   `SKILL.md`).
+
+2. Tell the user to run this in **their own terminal**, then **end your turn and
+   wait** — do not proceed:
+
+   ```
+   python3 "<skill dir>/edit_dictionary.py" "<SCHEMA path>"
+   ```
+
+   Keys: `↑↓` move · `r` role · `c` concept · `l` label · `d` description ·
+   `s` save · `q` quit. `role`/`concept` open a filterable picker (type to
+   filter; off-vocab values are allowed but flagged with `*`).
+
+3. When the user says they're done, re-read the file: re-run the **Stage 2
+   coverage check** and the `--summary` above, and show a short **before/after**
+   of any rows whose role/concept/route changed. Then continue to Stage 3.
+
+Because the dictionary keeps its `<WORK stem>.schema.json` name, Stage 4 picks up
+the edited file with no extra wiring. If the user edits nothing, the file is
+untouched byte-for-byte — treat that as a normal "looks good" outcome.
+
+Scope note: the TUI deliberately does **not** edit null sentinels
+(`--infer-null-values` output). Those are reported-never-applied and have no
+`viz smart` effect, so editing them here would change nothing downstream.
 
 ## Stage 3 — GeoJSON (optional)
 
@@ -371,7 +425,13 @@ If the user can open a browser, offer to render it. Do not assert the dashboard
   `-` (stdin). It refuses both, but don't rely on that.
 - If `denull` confirms nothing, do **not** create a `.denulled.csv`. An empty
   transform step is noise.
-- Never hand-write the JSON Schema. It comes from `describegpt` or not at all.
+- Never hand-write the JSON Schema. It comes from `describegpt`, and is adjusted
+  only through the Stage 2.5 `edit_dictionary.py` TUI — never by editing the JSON
+  by hand (an off-vocab `role`/`concept` typed into the raw file silently routes a
+  column to the wrong panel; the TUI validates against the vocab and flags drift).
+- The Stage 2.5 TUI is **out-of-band**: it needs the user's real terminal. Never
+  try to launch it through your Bash tool and "drive" it — that shell is not a
+  TTY, and the script will refuse. Print the command, wait, then re-read.
 - `--dictionary infer` runs describegpt **without** `--infer-null-values`. If you
   want null sentinels in the dictionary, you must generate it yourself and pass
   the **path**.

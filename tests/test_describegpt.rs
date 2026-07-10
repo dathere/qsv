@@ -3404,3 +3404,139 @@ fn describegpt_jsonschema_strict_dates_flag() {
         "--strict-dates should emit `format: \"date\"` on Date columns"
     );
 }
+
+/// End-to-end proof, through the public `--prepare-context` / `--process-response`
+/// interface, of the ONE property that makes `--infer-null-values` safe: the LLM
+/// proposes a flat list, and qsv - not the model - decides what may be trusted.
+///
+/// The canned response proposes the same token shape for two columns:
+///   * `status` (String)  - "null", which the data really does contain (as NULL/null/NuLl)
+///   * `depth`  (Integer) - "-999", which the data really does contain too
+///
+/// Only `status` may reach `null_values`. `-999` is a legal integer that no scan can
+/// distinguish from a real reading, so it must be demoted to a `confirm_required`
+/// candidate even though it IS present in the data. This also pins the CHANGELOG's
+/// claim that this complements `denull`: `status` is a purely categorical column that
+/// `denull` deliberately never reports, because blanking it promotes nothing.
+#[test]
+fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
+    use std::{io::Write, process::Stdio};
+
+    let wrk = Workdir::new("describegpt_infer_null_values");
+    // Repeats matter: a column whose cardinality equals the row count is <ALL_UNIQUE>,
+    // which carries no frequency detail and would demote everything by default.
+    let mut rows = vec![svec!["status", "depth"]];
+    for i in 0..30 {
+        let status = match i % 5 {
+            0 => "NULL",
+            1 => "null",
+            2 => "NuLl",
+            3 => "ok",
+            _ => "pending",
+        };
+        let depth = if i % 3 == 0 { "-999" } else { "42" };
+        rows.push(svec![status, depth]);
+    }
+    wrk.create_indexed("data.csv", rows);
+
+    let mut cmd = wrk.command("describegpt");
+    cmd.arg("--prepare-context")
+        .arg("--dictionary")
+        .arg("--infer-null-values")
+        .arg("--no-cache")
+        .arg("data.csv");
+    let prep: serde_json::Value = serde_json::from_str(&wrk.stdout::<String>(&mut cmd)).unwrap();
+
+    // The model echoes lowercase "null", proposes an unseen "N/A", and proposes the
+    // numeric placeholder "-999".
+    let llm_response = serde_json::json!({
+        "status": {"label": "Status", "description": "Record status.",
+                   "null_values": ["null", "N/A"]},
+        "depth":  {"label": "Depth",  "description": "Depth reading.",
+                   "null_values": ["-999"]},
+    })
+    .to_string();
+
+    let phases: Vec<serde_json::Value> = prep["phases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| {
+            serde_json::json!({
+                "kind": p["kind"],
+                "response": llm_response,
+                "reasoning": "",
+                "token_usage": {"prompt": 1, "completion": 1, "total": 2, "elapsed": 1}
+            })
+        })
+        .collect();
+    let process_input = serde_json::json!({
+        "phases": phases,
+        "analysis_results": prep["analysis_results"],
+        "model": prep["model"],
+    });
+
+    let mut cmd2 = wrk.command("describegpt");
+    cmd2.arg("--process-response")
+        .arg("--dictionary")
+        .arg("--infer-null-values")
+        .arg("--no-cache")
+        .arg("--format")
+        .arg("JSONSchema")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = cmd2.spawn().unwrap();
+    child
+        .stdin
+        .as_mut()
+        .unwrap()
+        .write_all(process_input.to_string().as_bytes())
+        .unwrap();
+    let output = child.wait_with_output().unwrap();
+    assert!(
+        output.status.success(),
+        "process-response failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+
+    let schema: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).unwrap();
+    let status_x = &schema["properties"]["status"]["x-qsv"];
+    let depth_x = &schema["properties"]["depth"]["x-qsv"];
+
+    // Every observed casing is confirmed, spelled as it appears in the DATA - not the
+    // model's lowercase echo.
+    let confirmed: Vec<&str> = status_x["null_values"]
+        .as_array()
+        .expect("status must have confirmed null_values")
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert_eq!(confirmed.len(), 3, "got {confirmed:?}");
+    for casing in ["NULL", "null", "NuLl"] {
+        assert!(
+            confirmed.contains(&casing),
+            "missing {casing} in {confirmed:?}"
+        );
+    }
+
+    // The unseen token is demoted, and carries the confirm flag.
+    assert_eq!(
+        status_x["null_candidates"],
+        serde_json::json!([{"value": "N/A", "confirm_required": true}])
+    );
+
+    // THE load-bearing assertion: -999 is present in the data, yet an Integer column can
+    // never confirm a sentinel. It must be a candidate, never a confirmed null_value.
+    assert!(
+        depth_x.get("null_values").is_none(),
+        "a numeric column must never confirm a sentinel, got {:?}",
+        depth_x.get("null_values")
+    );
+    assert_eq!(
+        depth_x["null_candidates"],
+        serde_json::json!([{"value": "-999", "confirm_required": true}]),
+        "-999 must be reported as requiring human confirmation"
+    );
+}

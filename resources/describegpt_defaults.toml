@@ -165,22 +165,52 @@ than one relationship. If you find none, emit an empty array.
 Also provide a top-level "grain" string: a single sentence stating what ONE ROW represents,
 e.g. "one row = one 311 service request" or "one row = one daily reading per station".
 {%- endif %}
+{%- if infer_null_values %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role" and "concept"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
+For "null_values", list the literal values a field uses to stand in for MISSING data instead of
+being real data. Two kinds, and you should look for BOTH:
+
+  1. Text placeholders. These are visible in the Frequency Distribution as repeated,
+     out-of-pattern strings: NULL, N/A, n/a, NA, -, --, ?, ., unknown, missing, TBD, none.
+  2. Out-of-range numeric and date placeholders: -999, -9999, 9999, 0, 9999-12-31, 0000-00-00,
+     1900-01-01. These parse as perfectly ordinary numbers and dates, so they will NOT look
+     unusual in the Frequency Distribution. Judge them from the field's MEANING together with
+     its Min/Max: a "-999" floor on a depth or temperature column is a placeholder; the same
+     value in an "account_balance" column may be real.
+
+Rules:
+  * Emit each value EXACTLY as it appears in the data - do not change case, strip leading
+    zeros, or reformat dates.
+  * Be conservative. A value that genuinely belongs to the field's domain is NOT a sentinel.
+    A legitimately deep water level of -140 in a well-depth column is a real measurement.
+  * Do NOT list the empty string; qsv already counts empty cells as nulls.
+  * If a field has no null sentinels, emit an empty array.
+
+qsv independently checks every value you list against the actual data. Values it can confirm are
+recorded as confirmed sentinels; values it cannot confirm - which includes ALL numeric and date
+placeholders, because they are indistinguishable from real values by any scan - are recorded
+separately as candidates flagged for human confirmation. Nothing is ever applied to the data
+automatically, so propose a numeric placeholder whenever the field's meaning genuinely supports
+one. Do not invent one to be thorough.
+{%- endif %}
+
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role" and "concept"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",
     "description": "Full description of the field"{% endraw %}{% if infer_content_type %},
     "content_type": "datetime:%m/%d/%Y",
     "role": "timestamp",
-    "concept": "time.event_timestamp"{% endif %}{% raw %}
+    "concept": "time.event_timestamp"{% endif %}{% if infer_null_values %},
+    "null_values": ["9999-12-31"]{% endif %}{% raw %}
   },
   "field_name_2": {
     "label": "Another label",
     "description": "Another description"{% endraw %}{% if infer_content_type %},
     "content_type": "city",
     "role": "dimension",
-    "concept": "geo.city"{% endif %}{% raw %}
+    "concept": "geo.city"{% endif %}{% if infer_null_values %},
+    "null_values": ["N/A", "UNKNOWN"]{% endif %}{% raw %}
   }{% endraw %}{% if infer_content_type %},
   "grain": "one row = one record",
   "relationships": [

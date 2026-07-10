@@ -171,6 +171,27 @@ describegpt options:
                            then render Min/Max AND Examples in that inferred format so they match how
                            the dates actually appear in the data, instead of qsv's normalized form.
                            (TSV output keeps Min/Max & Examples in qsv's raw normalized form.)
+    --infer-null-values    Also have the LLM propose each field's null sentinels - literal values
+                           that stand in for "missing" (e.g. NULL, N/A, -999, 9999-12-31).
+                           Emitted into the JSON Schema dictionary's per-property "x-qsv" object,
+                           split into two lists that carry different warranties.
+                           * "null_values" - proposed by the LLM AND independently confirmed by
+                             qsv to occur as a literal value in that String column. Every observed
+                             casing is listed.
+                           * "null_candidates" - proposed by the LLM but NOT confirmable by any
+                             scan; numeric/date placeholders that parse as valid values of the
+                             column's own type (-999 is a legal integer), or tokens never seen in
+                             the data. Each carries "confirm_required": true.
+                           A confirmed "null_values" entry means only that the literal is PRESENT
+                           in the column; the judgment that it MEANS "missing" remains the LLM's.
+                           This complements "qsv denull", which reports a narrower set - only the
+                           columns that would promote to a numeric type once their sentinels are
+                           blanked. A purely categorical column (status = ok/pending/NULL) is
+                           outside denull's remit.
+                           Sentinels are REPORTED, never applied - qsv does not modify your data
+                           on an LLM's say-so. Only "qsv denull --apply" masks values, and only in
+                           the columns it independently confirmed.
+                           Only rendered by "--format JSONSchema"; the other formats ignore them.
     --two-pass             Run a second LLM call that takes the full first-pass Data Dictionary
                            as JSON context and refines each field's Label, Description and
                            (when --infer-content-type is set) Content Type using cross-field
@@ -418,7 +439,8 @@ Common options:
                            document, enriched with LLM-inferred Label, Description and Content Type
                            (the latter only when the infer-content-type flag is set). qsv- and LLM-
                            specific metadata not modeled by the JSON Schema spec (cardinality,
-                           null_count, weighted example counts, content_type, addl stats columns)
+                           null_count, weighted example counts, content_type, null_values,
+                           null_candidates, addl stats columns)
                            is preserved via a single x-qsv annotation object per property; unknown
                            keywords are ignored by validators per the 2020-12 spec.
                            The JSONSchema format requires the dictionary inference phase
@@ -609,6 +631,7 @@ struct Args {
     flag_addl_cols:          bool,
     flag_addl_cols_list:     Option<String>,
     flag_infer_content_type: bool,
+    flag_infer_null_values:  bool,
     flag_two_pass:           bool,
     flag_session:            Option<String>,
     flag_session_len:        usize,
@@ -2565,6 +2588,7 @@ fn get_prompt(
         sample_file => SAMPLE_FILE.get().map_or("", |s| s.as_str()),
         sample_size => args.flag_sample_size.to_string(),
         infer_content_type => args.flag_infer_content_type,
+        infer_null_values => args.flag_infer_null_values,
         content_type_vocab => dictionary::content_type_vocab_list(),
         concept_vocab => dictionary::concept_vocab_list(),
         role_vocab => dictionary::role_vocab_list(),
@@ -2896,9 +2920,9 @@ fn get_cache_key_with_flag(
     format!(
         "{file_hash};{prompt_file:?};{prompt_content:?};{max_tokens};{addl_props:?};\
          {actual_model};{kind};{validity_flag};{language:?};{tag_vocab:?};{tag_vocab_fp};\
-         {num_tags};{enum_threshold};{infer_content_type};{sample_size};{fewshot_examples};\
-         {duckdb_enabled};{duckdb_path};{duckdb_binary_fp};{dictionary_fingerprint:?\
-         }{context_suffix}",
+         {num_tags};{enum_threshold};{infer_content_type};{infer_null_values};{sample_size};\
+         {fewshot_examples};{duckdb_enabled};{duckdb_path};{duckdb_binary_fp};\
+         {dictionary_fingerprint:?}{context_suffix}",
         prompt_file = args.flag_prompt_file,
         max_tokens = args.flag_max_tokens,
         addl_props = args.flag_addl_props,
@@ -2907,6 +2931,7 @@ fn get_cache_key_with_flag(
         num_tags = args.flag_num_tags,
         enum_threshold = args.flag_enum_threshold,
         infer_content_type = args.flag_infer_content_type,
+        infer_null_values = args.flag_infer_null_values,
         sample_size = args.flag_sample_size,
         fewshot_examples = args.flag_fewshot_examples,
     )
@@ -7579,6 +7604,9 @@ p_fewshot_examples = ""
             is_unique_id: false,
             concept:      String::new(),
             role:         String::new(),
+
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -7670,6 +7698,7 @@ p_fewshot_examples = ""
             flag_addl_cols:          false,
             flag_addl_cols_list:     None,
             flag_infer_content_type: false,
+            flag_infer_null_values:  false,
             flag_two_pass:           false,
             flag_session:            None,
             flag_session_len:        0,
@@ -7776,6 +7805,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "category|raw".to_string(),
@@ -7794,6 +7826,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 
@@ -7874,6 +7909,9 @@ p_fewshot_examples = ""
                 is_unique_id: true,
                 concept:      "id.surrogate_key".to_string(),
                 role:         "identifier".to_string(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
@@ -7905,6 +7943,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      "category.status".to_string(),
                 role:         "dimension".to_string(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 
@@ -8001,6 +8042,9 @@ p_fewshot_examples = ""
                 is_unique_id: true,
                 concept:      "id.surrogate_key".to_string(),
                 role:         "identifier".to_string(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
@@ -8019,6 +8063,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      "category.status".to_string(),
                 role:         "dimension".to_string(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 
@@ -8090,6 +8137,9 @@ p_fewshot_examples = ""
             is_unique_id: true,
             concept:      "id.surrogate_key".to_string(),
             role:         "identifier".to_string(),
+
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8175,6 +8225,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -8194,6 +8247,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -8213,6 +8269,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 
@@ -8283,6 +8342,9 @@ p_fewshot_examples = ""
             is_unique_id: true,
             concept:      String::new(),
             role:         String::new(),
+
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8440,6 +8502,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             dictionary::DictionaryEntry {
                 name:         "category".to_string(),
@@ -8458,6 +8523,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 
@@ -8520,6 +8588,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -8539,6 +8610,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -8558,6 +8632,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -8577,6 +8654,9 @@ p_fewshot_examples = ""
                 is_unique_id: false,
                 concept:      String::new(),
                 role:         String::new(),
+
+                null_values:     Vec::new(),
+                null_candidates: Vec::new(),
             },
         ];
 

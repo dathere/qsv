@@ -122,7 +122,8 @@ pub(super) fn format_dictionary_json(
 /// `maximum`, `enum`, `const`, `format`, `examples`) come from the deterministic
 /// stats data plus the LLM-inferred Label/Description. qsv- and LLM-specific data
 /// that doesn't map to standard keywords (`content_type`, `role`, `concept`,
-/// `cardinality`, `null_count`, weighted example counts, additional stats columns)
+/// `cardinality`, `null_count`, `null_values`, `null_candidates`, weighted example
+/// counts, additional stats columns)
 /// is preserved via a single `x-qsv` annotation object per property; the dataset
 /// `grain` rides in the top-level `x-qsv`. Per draft 2020-12, unknown keywords are
 /// ignored by validators, so this flows through validation cleanly.
@@ -430,6 +431,48 @@ fn build_x_qsv(
         if !entry.concept.is_empty() {
             x_qsv.insert("concept".to_string(), Value::String(entry.concept.clone()));
         }
+    }
+    // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
+    // non-empty, and they are only populated when a response actually supplied `null_values`.
+    // Since the prompt only asks for them under --infer-null-values, an ordinary run without
+    // the flag emits neither key and stays byte-identical. (A hand-fed --process-response, or
+    // a custom --prompt-file that elects to supply them, is honored on purpose.)
+    //
+    // Two keys, never one, because they carry different warranties:
+    //
+    //   null_values     - qsv confirmed these literals are PRESENT in this String column
+    //                     (every observed casing). Presence is verified; the claim that they
+    //                     mean "missing" is still the LLM's. Wider than `qsv denull`, which
+    //                     only reports columns that promote to a numeric type once blanked.
+    //   null_candidates - the LLM's guesses (numeric/date placeholders like -999, or tokens
+    //                     never observed). Unfalsifiable by any scan, hence the per-entry
+    //                     `confirm_required: true`. A consumer that auto-applied one would
+    //                     silently destroy real data (-999 is a legal integer).
+    //
+    // These are REPORTED, never applied: nothing downstream masks a value on their say-so.
+    if !entry.null_values.is_empty() {
+        x_qsv.insert(
+            "null_values".to_string(),
+            Value::Array(
+                entry
+                    .null_values
+                    .iter()
+                    .map(|v| Value::String(v.clone()))
+                    .collect(),
+            ),
+        );
+    }
+    if !entry.null_candidates.is_empty() {
+        x_qsv.insert(
+            "null_candidates".to_string(),
+            Value::Array(
+                entry
+                    .null_candidates
+                    .iter()
+                    .map(|v| json!({ "value": v, "confirm_required": true }))
+                    .collect(),
+            ),
+        );
     }
     if !entry.examples.is_empty() {
         // Reformat date values to the inferred format (gated on
@@ -1036,23 +1079,75 @@ mod tests {
 
     fn sample_entry(name: &str, content_type: &str) -> DictionaryEntry {
         DictionaryEntry {
-            name:         name.to_string(),
-            r#type:       "String".to_string(),
-            label:        "Label".to_string(),
-            description:  "Desc".to_string(),
-            content_type: content_type.to_string(),
-            min:          String::new(),
-            max:          String::new(),
-            cardinality:  3,
-            enumeration:  String::new(),
-            null_count:   0,
-            addl_cols:    Default::default(),
-            examples:     "a [1]".to_string(),
-            freq_details: Vec::new(),
-            is_unique_id: false,
-            concept:      String::new(),
-            role:         String::new(),
+            name:            name.to_string(),
+            r#type:          "String".to_string(),
+            label:           "Label".to_string(),
+            description:     "Desc".to_string(),
+            content_type:    content_type.to_string(),
+            min:             String::new(),
+            max:             String::new(),
+            cardinality:     3,
+            enumeration:     String::new(),
+            null_count:      0,
+            addl_cols:       Default::default(),
+            examples:        "a [1]".to_string(),
+            freq_details:    Vec::new(),
+            is_unique_id:    false,
+            concept:         String::new(),
+            role:            String::new(),
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         }
+    }
+
+    #[test]
+    fn jsonschema_x_qsv_flags_null_candidates_but_not_null_values() {
+        // The two lists carry different warranties and must be encoded differently:
+        // a confirmed sentinel is a bare string (qsv saw it), while every candidate
+        // is an object stamped `confirm_required: true` (qsv could not, and never
+        // can, verify it). A consumer must be unable to mistake one for the other.
+        let mut e = sample_entry("depth", "email");
+        e.null_values = vec!["NULL".to_string()];
+        e.null_candidates = vec!["-999".to_string()];
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+        );
+        let x = &schema["properties"]["depth"]["x-qsv"];
+        assert_eq!(x["null_values"], json!(["NULL"]));
+        assert_eq!(
+            x["null_candidates"],
+            json!([{"value": "-999", "confirm_required": true}]),
+            "every candidate must carry confirm_required so nothing can auto-apply a guess"
+        );
+    }
+
+    #[test]
+    fn jsonschema_omits_both_null_keys_when_no_sentinels_were_inferred() {
+        // A dictionary built without --infer-null-values must stay byte-identical to
+        // the legacy output: emission is gated purely on the lists being non-empty.
+        let e = sample_entry("col", "email");
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&e),
+            "in.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+        );
+        let x = &schema["properties"]["col"]["x-qsv"];
+        assert!(x.get("null_values").is_none());
+        assert!(x.get("null_candidates").is_none());
     }
 
     #[test]
@@ -1358,6 +1453,9 @@ mod tests {
             is_unique_id: false,
             concept:      String::new(),
             role:         String::new(),
+
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

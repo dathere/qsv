@@ -3476,8 +3476,8 @@ fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
         "model": prep["model"],
     });
 
-    let mut cmd2 = wrk.command("describegpt");
-    cmd2.arg("--process-response")
+    let mut cmd_2 = wrk.command("describegpt");
+    cmd_2.arg("--process-response")
         .arg("--dictionary")
         .arg("--infer-null-values")
         .arg("--no-cache")
@@ -3486,7 +3486,7 @@ fn describegpt_infer_null_values_confirms_strings_and_demotes_numerics() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    let mut child = cmd2.spawn().unwrap();
+    let mut child = cmd_2.spawn().unwrap();
     child
         .stdin
         .as_mut()

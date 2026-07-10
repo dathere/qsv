@@ -1278,7 +1278,17 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
 }
 
 /// Group usable raw frequency values by field name — every value except the
-/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the emitted null row.
+/// rank-0 rows (the "Other" bucket and the `<ALL_UNIQUE>` / `<HIGH_CARDINALITY>`
+/// sentinels, all of which `frequency` stamps with rank `0.0`) and the emitted
+/// null row.
+///
+/// The all-unique sentinel is excluded STRUCTURALLY, by its rank, never by matching
+/// its literal text: `frequency --all-unique-text` is configurable, so a text match
+/// would both miss a customized sentinel and — the reason this matters — wrongly drop
+/// a real datum that merely contains the default `<ALL_UNIQUE>` string, silently
+/// removing it from the observed-value set that `classify_null_values` confirms
+/// against. (Contrast `generate_code_based_dictionary`, where a text check legitimately
+/// disambiguates *between* two different rank-0 rows.)
 ///
 /// The null row is identified by BOTH signals `frequency` guarantees for it,
 /// never by either one alone:
@@ -1307,7 +1317,7 @@ fn usable_samples_by_field<'a>(
 
     let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
     for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+        if rec.rank == 0.0 {
             continue;
         }
         // the emitted null row: `frequency` writes it with `--null-text` as
@@ -2033,6 +2043,61 @@ mod tests {
         assert!(
             entries[0].null_values.is_empty(),
             "neither an aggregation bucket nor the null row may confirm a sentinel, got {:?}",
+            entries[0].null_values
+        );
+        assert_eq!(entries[0].null_candidates.len(), 2);
+    }
+
+    #[test]
+    fn a_real_value_containing_the_all_unique_text_can_still_confirm() {
+        // Regression (roborev 3560): the observed-value set excluded any raw value
+        // CONTAINING "<ALL_UNIQUE>", not just frequency's structural sentinel row. A
+        // String column that literally holds that text could therefore never confirm it.
+        // The sentinel is stamped rank 0.0 by `frequency`, so rank alone already excludes
+        // it - the text match only ever produced this false positive.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("tag")
+        }];
+        let freqs = vec![
+            freq("tag", "ok", 90, 1.0),
+            freq("tag", "<ALL_UNIQUE>", 4, 2.0), // a real datum, ranked like any other
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert("tag".to_string(), vec!["<ALL_UNIQUE>".to_string()]);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(
+            entries[0].null_values,
+            vec!["<ALL_UNIQUE>"],
+            "a real value that merely reads like the sentinel must still be confirmable"
+        );
+    }
+
+    #[test]
+    fn the_all_unique_sentinel_row_is_still_excluded_by_its_rank() {
+        // The other half of the same coin: frequency emits the all-unique sentinel with
+        // rank 0.0 (both emit sites do), so dropping the text match must NOT let it into
+        // the observed set. This also holds for a custom `--all-unique-text`, which a text
+        // match would have missed entirely.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("id")
+        }];
+        let freqs = vec![
+            freq("id", "<ALL_UNIQUE>", 100, 0.0),
+            freq("id", "CUSTOM_UNIQUE_TEXT", 100, 0.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "id".to_string(),
+            vec!["<ALL_UNIQUE>".to_string(), "CUSTOM_UNIQUE_TEXT".to_string()],
+        );
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert!(
+            entries[0].null_values.is_empty(),
+            "a rank-0 sentinel row must never confirm, whatever its text; got {:?}",
             entries[0].null_values
         );
         assert_eq!(entries[0].null_candidates.len(), 2);
@@ -3123,14 +3188,20 @@ mod tests {
     #[test]
     fn validate_date_formats_keeps_suffix_when_no_sample() {
         // an ALL_UNIQUE column has only the <ALL_UNIQUE> sentinel row — there is
-        // nothing to validate against, so the suffix is left unchanged
+        // nothing to validate against, so the suffix is left unchanged.
+        //
+        // `rank: 0.0` is what `frequency` actually emits for this row (verified: both
+        // emit sites hardcode it, for the default AND a custom --all-unique-text). The
+        // fixture previously said 1.0, which never occurs, and the test passed only
+        // because `usable_samples_by_field` also matched the sentinel's literal text —
+        // a match that wrongly dropped real data (see roborev 3560).
         let mut entries = vec![entry_with_content_type("d", "date:%d/%m/%Y")];
         let freqs = vec![FrequencyRecord {
             field:      "d".to_string(),
             value:      "<ALL_UNIQUE>".to_string(),
             count:      100,
             percentage: 100.0,
-            rank:       1.0,
+            rank:       0.0,
         }];
         validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date:%d/%m/%Y");

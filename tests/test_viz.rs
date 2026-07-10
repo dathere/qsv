@@ -4006,6 +4006,124 @@ fn viz_smart_dictionary_recodes_numeric_to_bar() {
     assert!(html.contains(r#""type":"bar""#));
 }
 
+#[test]
+fn viz_smart_dictionary_measure_typed_string_is_explained() {
+    // A dictionary-declared `measure` that stats typed String has no quartiles, so
+    // `classify_measure` drops it. Without attribution it lands in the generic skip list next to
+    // genuine ID columns. Assert the two causes are named — and told apart:
+    //   `depth` : numeric range + a "NULL" sentinel  -> one parsing endpoint  -> sentinel suspect
+    //   `grade` : genuinely non-numeric content      -> no parsing endpoint   -> mis-roled
+    // `status` is role=dimension and ALSO contains "NULL"; it must appear in neither note.
+    let wrk = Workdir::new("viz_smart_dictionary_measure_typed_string_is_explained");
+    let mut rows = String::from("depth,grade,status\n");
+    for i in 0..60 {
+        let depth = if i % 5 == 0 {
+            "NULL".to_string()
+        } else {
+            (i + 1).to_string()
+        };
+        let grade = match i % 3 {
+            0 => "NULL",
+            1 => "low",
+            _ => "high",
+        };
+        let status = if i % 4 == 0 { "NULL" } else { "Open" };
+        rows.push_str(&format!("{depth},{grade},{status}\n"));
+    }
+    wrk.create_from_string("sentinel.csv", &rows);
+
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"properties":{
+            "depth":  {"type":["string"],"x-qsv":{"role":"measure"}},
+            "grade":  {"type":["string"],"x-qsv":{"role":"measure"}},
+            "status": {"type":["string"],"x-qsv":{"role":"dimension"}}
+        }}"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sentinel.csv", "--dictionary"])
+        .arg(wrk.path("dict.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // `depth` is diagnosed as a probable null sentinel, with an actionable next step.
+    assert!(
+        stderr.contains("most often a null sentinel"),
+        "expected the sentinel note, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("qsv denull -s depth"),
+        "sentinel note should name `depth` and suggest a check, got: {stderr}"
+    );
+
+    // `grade` is NOT reported as a sentinel problem — that would send the user hunting for a
+    // value that isn't there. It is reported as a dictionary role/concept mismatch instead.
+    assert!(
+        stderr.contains("hold non-numeric content") && stderr.contains("grade"),
+        "expected `grade` to be reported as mis-roled, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("qsv frequency -s depth,grade")
+            && !stderr.contains("qsv frequency -s grade"),
+        "`grade` must not be listed as a sentinel suspect, got: {stderr}"
+    );
+
+    // a role=dimension column containing the same "NULL" text is charted, not diagnosed.
+    assert!(
+        !stderr.contains("status"),
+        "`status` (role=dimension) must not appear in either note, got: {stderr}"
+    );
+}
+
+#[test]
+fn viz_smart_without_dictionary_hints_at_denull() {
+    // WITHOUT a dictionary there is no `measure` verdict, so `classify` drops a
+    // sentinel-bearing numeric column as high-cardinality text. One parsing endpoint
+    // (min=1, max=NULL) is suggestive but NOT proof -- an address column with a cell `1`
+    // and a cell `Zoo` looks identical. So viz must NOT diagnose per-column here; it may
+    // only point at `qsv denull`, which decides by scanning the values.
+    let wrk = Workdir::new("viz_smart_without_dictionary_hints_at_denull");
+    // `depth`: 64 distinct numbers + "NULL" over 80 rows -> String, cardinality > 30 and
+    // uniqueness 0.81 (not near-unique), so `classify` drops it as high-cardinality text.
+    // `steady`: a low-cardinality numeric that charts, so the dashboard is not empty.
+    let mut rows = String::from("depth,steady\n");
+    for i in 0..80 {
+        if i % 5 == 0 {
+            rows.push_str("NULL,");
+        } else {
+            rows.push_str(&format!("{},", i + 1));
+        }
+        rows.push_str(&format!("{}\n", i % 20));
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let out_html = wrk.path("out.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "d.csv", "-o", &out_html]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    assert!(
+        stderr.contains("qsv denull"),
+        "a skipped String column with one parsing endpoint should point at denull, got: {stderr}"
+    );
+    assert!(
+        stderr.contains("may be numeric data held back"),
+        "the no-dictionary note must hedge, not diagnose, got: {stderr}"
+    );
+    assert!(
+        !stderr.contains("data dictionary"),
+        "no dictionary was supplied; the measure-contradiction note must not fire: {stderr}"
+    );
+    assert!(
+        !stderr.contains("steady"),
+        "an ordinary numeric column must not be named: {stderr}"
+    );
+}
+
 // A bad/missing --dictionary path must not abort: it warns and degrades to the stats-only
 // dashboard.
 #[test]
@@ -9233,5 +9351,32 @@ fn viz_smart_dict_info_window_key_is_per_dictionary() {
     assert_eq!(
         key_a, key_a_again,
         "identical title + dictionary must keep a stable window name (tab reuse)"
+    );
+}
+
+#[test]
+fn viz_smart_hints_at_denull_even_when_every_column_is_skipped() {
+    // The diagnostics used to run AFTER the empty-dashboard early return, so a file whose
+    // every column is a sentinel-suspect got a bare "No chartable columns" and no hint.
+    let wrk = Workdir::new("viz_smart_hints_at_denull_even_when_every_column_is_skipped");
+    let mut rows = String::from("depth\n");
+    for i in 0..60 {
+        rows.push_str(
+            if i % 2 == 0 {
+                "NULL\n".to_string()
+            } else {
+                format!("{}\n", i * 7)
+            }
+            .as_str(),
+        );
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.arg("smart").arg("d.csv").args(["-o", "out.html"]);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("qsv denull"),
+        "an all-skipped dashboard must still point at denull, got: {stderr}"
     );
 }

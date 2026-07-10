@@ -469,6 +469,11 @@ pub(super) struct LlmDictField {
     /// Analytical role (`dimension`/`measure`/`identifier`/`timestamp`); empty
     /// unless concept inference is on. Validated against `ROLE_VOCAB`.
     pub(super) role:         String,
+    /// RAW null-sentinel tokens proposed by the LLM (e.g. `NULL`, `N/A`, `-999`).
+    /// Deliberately unclassified here: the model proposes, `classify_null_values`
+    /// (which alone can see the column's type and observed values) decides which
+    /// are verifiable. Empty unless the dictionary prompt asked for them.
+    pub(super) null_values:  Vec<String>,
 }
 
 pub(crate) struct StatsRecord {
@@ -509,24 +514,26 @@ pub(super) struct FreqDetail {
 /// deterministically from `StatsRecord` + `FrequencyRecord`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(super) struct DictionaryEntry {
-    pub(super) name:         String,
-    pub(super) r#type:       String,
-    pub(super) label:        String,
-    pub(super) description:  String,
-    pub(super) content_type: String, // Curated semantic token; empty unless --infer-content-type
-    pub(super) min:          String, // Empty string if not available
-    pub(super) max:          String, // Empty string if not available
-    pub(super) cardinality:  u64,
-    pub(super) enumeration:  String, // Empty if not enumerable, otherwise one value per line
-    pub(super) null_count:   u64,
-    pub(super) addl_cols:    IndexMap<String, String>, // Preserves column order
-    pub(super) examples:     String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…" or
-                                                        * "<ALL_UNIQUE>" */
+    pub(super) name:            String,
+    pub(super) r#type:          String,
+    pub(super) label:           String,
+    pub(super) description:     String,
+    pub(super) content_type:    String, /* Curated semantic token; empty unless
+                                         * --infer-content-type */
+    pub(super) min:             String, // Empty string if not available
+    pub(super) max:             String, // Empty string if not available
+    pub(super) cardinality:     u64,
+    pub(super) enumeration:     String, // Empty if not enumerable, otherwise one value per line
+    pub(super) null_count:      u64,
+    pub(super) addl_cols:       IndexMap<String, String>, // Preserves column order
+    pub(super) examples:        String,                   /* Format: "val1 [cnt1]\nval2 [cnt2]…"
+                                                           * or
+                                                           * "<ALL_UNIQUE>" */
     /// Structured counterpart to `examples`, retaining per-value percentage and rank.
     /// `#[serde(default)]` keeps older cached dictionaries (written before this field
     /// existed) deserializable.
     #[serde(default)]
-    pub(super) freq_details: Vec<FreqDetail>,
+    pub(super) freq_details:    Vec<FreqDetail>,
     /// Structural "every row carries a distinct non-null value" flag (`cardinality ==
     /// rowcount`, no nulls), computed deterministically at generation time. Distinct
     /// from the overloaded `examples == "<ALL_UNIQUE>"` sentinel (which is also set for
@@ -534,18 +541,39 @@ pub(super) struct DictionaryEntry {
     /// `SemanticMd` formatter for primary-key inference. `#[serde(default)]` for cache
     /// backward-compatibility.
     #[serde(default)]
-    pub(super) is_unique_id: bool,
+    pub(super) is_unique_id:    bool,
     /// Catalog-wide semantic identity used for cross-dataset join discovery
     /// (e.g. `geo.zip_code`). Deterministically seeded from `content_type` and
     /// refined by the LLM; empty unless content-type/concept inference is on.
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) concept:      String,
+    pub(super) concept:         String,
     /// Analytical role: `dimension`, `measure`, `identifier`, or `timestamp`.
     /// `identifier`/`timestamp` are deterministic; the rest are LLM-filled with a
     /// type-based fallback. `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
-    pub(super) role:         String,
+    pub(super) role:            String,
+    /// Null sentinels the LLM proposed AND that qsv independently confirmed are
+    /// present as literal values in this `String` column. The confirmation is one
+    /// of PRESENCE, not of meaning: qsv verifies the literal occurs here; that it
+    /// stands for "missing" remains the LLM's judgment. Spellings are the ones
+    /// OBSERVED in the data (every casing), not the model's echo of them.
+    ///
+    /// Strictly wider than what `qsv denull` reports: denull confirms only columns
+    /// that would promote to a numeric type once blanked, so a purely categorical
+    /// column (`status` = ok/pending/NULL) is confirmed here and ignored there.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) null_values:     Vec<String>,
+    /// Null sentinels the LLM proposed that qsv CANNOT confirm by scanning —
+    /// numeric/date placeholders (`-999`, `9999`, `9999-12-31`) that parse as
+    /// valid values of the column's type, or tokens never observed in the data.
+    /// These are unfalsifiable by construction: `-999` is a legal integer and no
+    /// scan can distinguish it from a real reading. Emitted with
+    /// `confirm_required: true` so no consumer can auto-apply a guess.
+    /// `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) null_candidates: Vec<String>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -944,6 +972,10 @@ pub(super) fn generate_code_based_dictionary(
             is_unique_id: is_all_unique,
             concept,
             role,
+            // Filled by the LLM pass via `classify_null_values`; there is no
+            // deterministic seed, since proposing a sentinel requires judgment.
+            null_values: Vec::new(),
+            null_candidates: Vec::new(),
         });
     }
 
@@ -999,6 +1031,133 @@ fn merge_content_type(current: &str, llm: &str, allow_override: bool) -> String 
 /// every entry has a non-empty `content_type`: any field the LLM classified
 /// with an invalid token, omitted the `content_type` key for, or left out of
 /// its response entirely falls back to `"unknown"`.
+/// Split one field's raw null-sentinel proposals into a VERIFIABLE bucket and an
+/// UNVERIFIABLE one. The model proposes; this function - which alone sees the
+/// column's type and the values actually present in it - decides. The model cannot
+/// promote its own guess into the trusted bucket, mirroring the deterministic-only
+/// contract that makes `parse_llm_dictionary_response` refuse an LLM `unique_id`.
+///
+/// "Trusted" means only that the literal is PRESENT in the column. Whether it
+/// actually denotes a missing value is the model's call, and nothing downstream
+/// acts on it automatically.
+///
+/// A proposal is trusted only when BOTH hold:
+///   * `qsv_type` is `String` - the only type whose sentinels are detectable at all. A `-999` in an
+///     `Integer` column parses as a valid integer; no scan can tell it from a real reading (and a
+///     well-depth column legitimately reaches `-140`), so it can never be confirmed.
+///   * the token appears in `observed`, the column's real values.
+///
+/// `observed` must be the FULL set of raw frequency values for the column (see
+/// `usable_samples_by_field`), never the display `examples`/`freq_details` subset:
+/// those are capped at `--num-examples` and are truncated for display, so a
+/// sentinel at rank 6 - or a long one rendered as `NOT APPLICAB…` - would be
+/// falsely demoted, or worse, a truncated prefix confirmed.
+///
+/// Matching is ASCII-case-insensitive (models don't reliably echo casing), but the
+/// emitted spellings are the ones found IN THE DATA, never the model's echo - and
+/// every observed casing is emitted, because a consumer must know every spelling it
+/// would have to blank. Everything else falls through to `null_candidates`, carrying
+/// the model's raw token for a human to confirm.
+fn classify_null_values(
+    qsv_type: &str,
+    observed: &[&str],
+    proposed: &[String],
+) -> (Vec<String>, Vec<String>) {
+    let is_string_col = qsv_type == "String";
+
+    let mut confirmed: Vec<String> = Vec::new();
+    let mut candidates: Vec<String> = Vec::new();
+
+    for token in proposed {
+        let token = token.trim();
+        if token.is_empty() {
+            continue;
+        }
+        let matches: Vec<&str> = if is_string_col {
+            observed
+                .iter()
+                .filter(|v| v.eq_ignore_ascii_case(token))
+                .copied()
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if matches.is_empty() {
+            if !candidates.iter().any(|c| c == token) {
+                candidates.push(token.to_string());
+            }
+        } else {
+            for m in matches {
+                if !confirmed.iter().any(|c| c == m) {
+                    confirmed.push(m.to_string());
+                }
+            }
+        }
+    }
+    (confirmed, candidates)
+}
+
+/// The raw null-sentinel proposals to classify, per field.
+///
+/// For a `--two-pass` run, `refine` wins only where it actually re-states a field's
+/// sentinels: the refine prompt never asks for them, so an empty refine list means
+/// "not re-stated", NOT "retracted". Taking it unconditionally would wipe the first
+/// pass's sentinels on every two-pass run - the same invariant that guards
+/// Label/Description in `combine_dictionary_entries_with_baseline`.
+pub(super) fn null_value_proposals(
+    baseline: &HashMap<String, LlmDictField>,
+    refine: Option<&HashMap<String, LlmDictField>>,
+) -> HashMap<String, Vec<String>> {
+    let mut proposals: HashMap<String, Vec<String>> = baseline
+        .iter()
+        .filter(|(_, f)| !f.null_values.is_empty())
+        .map(|(name, f)| (name.clone(), f.null_values.clone()))
+        .collect();
+    if let Some(refine) = refine {
+        for (name, f) in refine {
+            if !f.null_values.is_empty() {
+                proposals.insert(name.clone(), f.null_values.clone());
+            }
+        }
+    }
+    proposals
+}
+
+/// Stamp each entry's `null_values` / `null_candidates` from the LLM's raw proposals,
+/// classified against the column's real values.
+///
+/// Deliberately a separate pass rather than part of `combine_dictionary_entries`:
+/// classification needs the frequency records (for the full observed-value set) and
+/// `null_text`, neither of which the combine step has - and building the sample map
+/// once here is cheaper than rebuilding it per entry.
+///
+/// A no-op when the LLM proposed nothing, which is the case whenever the dictionary
+/// prompt did not ask (i.e. without `--infer-null-values`).
+pub(super) fn apply_null_value_classification(
+    entries: &mut [DictionaryEntry],
+    proposals: &HashMap<String, Vec<String>>,
+    frequency_records: &[FrequencyRecord],
+    null_text: &str,
+) {
+    if proposals.is_empty() {
+        return;
+    }
+    // Excludes the rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel and the emitted
+    // null row, and yields RAW (untruncated) values - exactly the confirmation set.
+    let samples_by_field = usable_samples_by_field(frequency_records, entries, null_text);
+    for entry in entries.iter_mut() {
+        let Some(proposed) = proposals.get(&entry.name) else {
+            continue;
+        };
+        let observed: &[&str] = samples_by_field
+            .get(entry.name.as_str())
+            .map_or(&[], Vec::as_slice);
+        let (confirmed, candidates) = classify_null_values(&entry.r#type, observed, proposed);
+        entry.null_values = confirmed;
+        entry.null_candidates = candidates;
+    }
+}
+
 pub(super) fn combine_dictionary_entries(
     mut code_entries: Vec<DictionaryEntry>,
     llm_fields: &HashMap<String, LlmDictField>,
@@ -1119,7 +1278,17 @@ fn sample_parses_with_format(sample: &str, fmt: &str, is_datetime: bool) -> bool
 }
 
 /// Group usable raw frequency values by field name — every value except the
-/// rank-0 "Other" bucket, the `<ALL_UNIQUE>` sentinel, and the emitted null row.
+/// rank-0 rows (the "Other" bucket and the `<ALL_UNIQUE>` / `<HIGH_CARDINALITY>`
+/// sentinels, all of which `frequency` stamps with rank `0.0`) and the emitted
+/// null row.
+///
+/// The all-unique sentinel is excluded STRUCTURALLY, by its rank, never by matching
+/// its literal text: `frequency --all-unique-text` is configurable, so a text match
+/// would both miss a customized sentinel and — the reason this matters — wrongly drop
+/// a real datum that merely contains the default `<ALL_UNIQUE>` string, silently
+/// removing it from the observed-value set that `classify_null_values` confirms
+/// against. (Contrast `generate_code_based_dictionary`, where a text check legitimately
+/// disambiguates *between* two different rank-0 rows.)
 ///
 /// The null row is identified by BOTH signals `frequency` guarantees for it,
 /// never by either one alone:
@@ -1148,7 +1317,7 @@ fn usable_samples_by_field<'a>(
 
     let mut samples_by_field: HashMap<&str, Vec<&str>> = HashMap::new();
     for rec in frequency_records {
-        if rec.rank == 0.0 || rec.value.contains("<ALL_UNIQUE>") {
+        if rec.rank == 0.0 {
             continue;
         }
         // the emitted null row: `frequency` writes it with `--null-text` as
@@ -1464,6 +1633,28 @@ pub(super) fn parse_llm_dictionary_response(
                     (String::new(), String::new())
                 };
 
+                // Parsed unconditionally rather than behind a flag: when the dictionary
+                // prompt never asks for null sentinels the key is simply absent and this
+                // yields an empty vec, so no gate is needed here. Gating lives at the
+                // prompt (what we ask) and at emit (`build_x_qsv` only writes non-empty
+                // lists), which keeps a no-flag dictionary byte-identical while still
+                // honoring a custom --prompt-file that elects to supply them.
+                //
+                // Only JSON strings are accepted; a stray number/object/null in the array
+                // is skipped rather than stringified, so `-999` must arrive as "-999".
+                let null_values = field_map
+                    .get("null_values")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str())
+                            .map(str::trim)
+                            .filter(|s| !s.is_empty())
+                            .map(ToString::to_string)
+                            .collect()
+                    })
+                    .unwrap_or_default();
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
@@ -1472,6 +1663,7 @@ pub(super) fn parse_llm_dictionary_response(
                         content_type,
                         concept,
                         role,
+                        null_values,
                     },
                 );
             }
@@ -1562,22 +1754,24 @@ mod tests {
 
     fn blank_entry(name: &str) -> DictionaryEntry {
         DictionaryEntry {
-            name:         name.to_string(),
-            r#type:       "String".to_string(),
-            label:        String::new(),
-            description:  String::new(),
-            content_type: String::new(),
-            min:          String::new(),
-            max:          String::new(),
-            cardinality:  0,
-            enumeration:  String::new(),
-            null_count:   0,
-            addl_cols:    IndexMap::new(),
-            examples:     String::new(),
-            freq_details: Vec::new(),
-            is_unique_id: false,
-            concept:      String::new(),
-            role:         String::new(),
+            name:            name.to_string(),
+            r#type:          "String".to_string(),
+            label:           String::new(),
+            description:     String::new(),
+            content_type:    String::new(),
+            min:             String::new(),
+            max:             String::new(),
+            cardinality:     0,
+            enumeration:     String::new(),
+            null_count:      0,
+            addl_cols:       IndexMap::new(),
+            examples:        String::new(),
+            freq_details:    Vec::new(),
+            is_unique_id:    false,
+            concept:         String::new(),
+            role:            String::new(),
+            null_values:     Vec::new(),
+            null_candidates: Vec::new(),
         }
     }
 
@@ -1726,6 +1920,262 @@ mod tests {
         );
     }
 
+    /// An `LlmDictField` carrying only null-sentinel proposals.
+    fn llm_nulls(tokens: &[&str]) -> LlmDictField {
+        LlmDictField {
+            null_values: tokens.iter().map(ToString::to_string).collect(),
+            ..Default::default()
+        }
+    }
+
+    fn freq(field: &str, value: &str, count: u64, rank: f64) -> FrequencyRecord {
+        FrequencyRecord {
+            field: field.to_string(),
+            value: value.to_string(),
+            count,
+            percentage: 1.0,
+            rank,
+        }
+    }
+
+    #[test]
+    fn null_values_confirmed_only_for_observed_string_values() {
+        // The happy path: a String column, a token the LLM proposed that qsv can
+        // see in the data. This is the only combination that earns the trusted bucket.
+        let (confirmed, candidates) =
+            classify_null_values("String", &["ok", "NULL", "pending"], &["NULL".to_string()]);
+        assert_eq!(confirmed, vec!["NULL"]);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn numeric_sentinel_is_never_confirmed_even_when_observed() {
+        // THE load-bearing test. -999 is right there in the frequency distribution of
+        // an Integer column, so a naive "did we see it?" check would confirm it. It
+        // must NOT be: -999 parses as a valid integer and no scan can tell it from a
+        // real reading. If this ever fails, a consumer could auto-blank real data.
+        let (confirmed, candidates) =
+            classify_null_values("Integer", &["-999", "12", "45"], &["-999".to_string()]);
+        assert!(
+            confirmed.is_empty(),
+            "a numeric sentinel is structurally unconfirmable and must never reach null_values"
+        );
+        assert_eq!(candidates, vec!["-999"]);
+    }
+
+    #[test]
+    fn unobserved_token_is_demoted_to_candidate() {
+        // The model proposed a sentinel this column does not contain. qsv cannot
+        // confirm it, so it is reported as a guess rather than silently trusted.
+        let (confirmed, candidates) =
+            classify_null_values("String", &["ok", "pending"], &["N/A".to_string()]);
+        assert!(confirmed.is_empty());
+        assert_eq!(candidates, vec!["N/A"]);
+    }
+
+    #[test]
+    fn confirmation_emits_every_observed_casing_not_the_models_echo() {
+        // A consumer must know every spelling it would have to blank, so the dictionary
+        // names every observed casing - and names the spellings found IN THE DATA, never
+        // the model's (here lowercase) echo of them.
+        let (confirmed, candidates) = classify_null_values(
+            "String",
+            &["NULL", "null", "NuLl", "ok"],
+            &["null".to_string()],
+        );
+        assert_eq!(confirmed, vec!["NULL", "null", "NuLl"]);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn confirmation_sees_sentinels_beyond_the_displayed_examples() {
+        // Regression (roborev 3559): confirmation must run against the FULL frequency
+        // records, not the `--num-examples`-capped, display-truncated `freq_details`.
+        // Here the sentinel sits at rank 7 - well past the default 5 examples - and is
+        // long enough that the display copy would have been truncated with an ellipsis.
+        // Sourcing from `examples` would falsely demote it to a candidate.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("status")
+        }];
+        let mut freqs: Vec<FrequencyRecord> = (1..=6)
+            .map(|i| freq("status", &format!("value{i}"), 100 - i, i as f64))
+            .collect();
+        freqs.push(freq("status", "NOT APPLICABLE AT THIS SITE", 3, 7.0));
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["not applicable at this site".to_string()],
+        );
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(
+            entries[0].null_values,
+            vec!["NOT APPLICABLE AT THIS SITE"],
+            "a sentinel past --num-examples, and longer than --truncate-str, must still confirm"
+        );
+        assert!(entries[0].null_candidates.is_empty());
+    }
+
+    #[test]
+    fn aggregation_buckets_and_the_null_row_can_never_confirm_a_sentinel() {
+        // `frequency` stamps aggregation buckets ("Other") with rank 0.0, and emits a
+        // null row whose value is --null-text and whose count equals the column's null
+        // count. Neither is a faithful datum: admitting either would let the literal
+        // null label, or a rolled-up bucket name, masquerade as a confirmed sentinel.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            null_count: 3,
+            ..blank_entry("status")
+        }];
+        let freqs = vec![
+            freq("status", "ok", 90, 1.0),
+            freq("status", "Other", 5, 0.0), // rank-0 aggregation bucket
+            freq("status", "(NULL)", 3, 2.0), // the emitted null row (count == null_count)
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["Other".to_string(), "(NULL)".to_string()],
+        );
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert!(
+            entries[0].null_values.is_empty(),
+            "neither an aggregation bucket nor the null row may confirm a sentinel, got {:?}",
+            entries[0].null_values
+        );
+        assert_eq!(entries[0].null_candidates.len(), 2);
+    }
+
+    #[test]
+    fn a_real_value_containing_the_all_unique_text_can_still_confirm() {
+        // Regression (roborev 3560): the observed-value set excluded any raw value
+        // CONTAINING "<ALL_UNIQUE>", not just frequency's structural sentinel row. A
+        // String column that literally holds that text could therefore never confirm it.
+        // The sentinel is stamped rank 0.0 by `frequency`, so rank alone already excludes
+        // it - the text match only ever produced this false positive.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("tag")
+        }];
+        let freqs = vec![
+            freq("tag", "ok", 90, 1.0),
+            freq("tag", "<ALL_UNIQUE>", 4, 2.0), // a real datum, ranked like any other
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert("tag".to_string(), vec!["<ALL_UNIQUE>".to_string()]);
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(
+            entries[0].null_values,
+            vec!["<ALL_UNIQUE>"],
+            "a real value that merely reads like the sentinel must still be confirmable"
+        );
+    }
+
+    #[test]
+    fn the_all_unique_sentinel_row_is_still_excluded_by_its_rank() {
+        // The other half of the same coin: frequency emits the all-unique sentinel with
+        // rank 0.0 (both emit sites do), so dropping the text match must NOT let it into
+        // the observed set. This also holds for a custom `--all-unique-text`, which a text
+        // match would have missed entirely.
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("id")
+        }];
+        let freqs = vec![
+            freq("id", "<ALL_UNIQUE>", 100, 0.0),
+            freq("id", "CUSTOM_UNIQUE_TEXT", 100, 0.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "id".to_string(),
+            vec!["<ALL_UNIQUE>".to_string(), "CUSTOM_UNIQUE_TEXT".to_string()],
+        );
+
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert!(
+            entries[0].null_values.is_empty(),
+            "a rank-0 sentinel row must never confirm, whatever its text; got {:?}",
+            entries[0].null_values
+        );
+        assert_eq!(entries[0].null_candidates.len(), 2);
+    }
+
+    #[test]
+    fn parse_llm_response_collects_null_values_and_skips_non_strings() {
+        // Only JSON strings are accepted. A bare number -999 (rather than "-999") is
+        // skipped, not stringified - otherwise the array's type discipline would
+        // silently decide what counts as a sentinel token.
+        let json = r#"{"a": {"label": "A", "description": "d",
+                       "null_values": ["NULL", "  N/A  ", "", -999, null]}}"#;
+        let fields = vec!["a".to_string()];
+        let parsed = parse_llm_dictionary_response(json, &fields, false).unwrap();
+        assert_eq!(
+            parsed.get("a").unwrap().null_values,
+            vec!["NULL".to_string(), "N/A".to_string()],
+            "strings are trimmed and kept; empties, numbers and nulls are dropped"
+        );
+    }
+
+    #[test]
+    fn classification_pass_stamps_confirmed_and_candidate_onto_the_entry() {
+        let mut entries = vec![DictionaryEntry {
+            r#type: "String".to_string(),
+            ..blank_entry("status")
+        }];
+        let freqs = vec![
+            freq("status", "NULL", 10, 1.0),
+            freq("status", "ok", 90, 2.0),
+        ];
+        let mut proposals = HashMap::new();
+        proposals.insert(
+            "status".to_string(),
+            vec!["NULL".to_string(), "-999".to_string()],
+        );
+        apply_null_value_classification(&mut entries, &proposals, &freqs, "(NULL)");
+        assert_eq!(entries[0].null_values, vec!["NULL"]);
+        assert_eq!(
+            entries[0].null_candidates,
+            vec!["-999"],
+            "an unobserved token rides along as a candidate on the same column"
+        );
+    }
+
+    #[test]
+    fn two_pass_refine_omitting_null_values_preserves_the_baseline() {
+        // The refine prompt never asks for null sentinels, so its empty list means
+        // "not re-stated", NOT "retracted". Taking it unconditionally would wipe the
+        // first pass's sentinels on every --two-pass run.
+        let mut baseline = HashMap::new();
+        baseline.insert("status".to_string(), llm_nulls(&["NULL"]));
+        let mut refine = HashMap::new();
+        refine.insert(
+            "status".to_string(),
+            LlmDictField {
+                label: "Status".to_string(),
+                ..Default::default()
+            },
+        );
+        let proposals = null_value_proposals(&baseline, Some(&refine));
+        assert_eq!(
+            proposals.get("status"),
+            Some(&vec!["NULL".to_string()]),
+            "a refine pass that omits null_values must not wipe the baseline's sentinels"
+        );
+    }
+
+    #[test]
+    fn two_pass_refine_restating_null_values_overrides_the_baseline() {
+        let mut baseline = HashMap::new();
+        baseline.insert("status".to_string(), llm_nulls(&["NULL"]));
+        let mut refine = HashMap::new();
+        refine.insert("status".to_string(), llm_nulls(&["N/A"]));
+        let proposals = null_value_proposals(&baseline, Some(&refine));
+        assert_eq!(proposals.get("status"), Some(&vec!["N/A".to_string()]));
+    }
+
     #[test]
     fn combine_refuses_llm_supplied_unique_id_for_non_all_unique_field() {
         // Even if a future caller bypasses parse_llm_dictionary_response and
@@ -1743,6 +2193,7 @@ mod tests {
                 content_type: "unique_id".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -1859,6 +2310,7 @@ mod tests {
                 content_type: "city".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -1889,6 +2341,7 @@ mod tests {
                 content_type: "city".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         llm.insert(
@@ -1899,6 +2352,7 @@ mod tests {
                 content_type: String::new(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -1925,6 +2379,7 @@ mod tests {
                 content_type: "uuid".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         llm.insert(
@@ -1935,6 +2390,7 @@ mod tests {
                 content_type: "city".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -2205,6 +2661,7 @@ mod tests {
                 content_type: "email".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         baseline.insert(
@@ -2215,6 +2672,7 @@ mod tests {
                 content_type: "free_text".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2228,6 +2686,7 @@ mod tests {
                 content_type: "address_street".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2271,6 +2730,7 @@ mod tests {
                 content_type: "uuid".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         refine.insert(
@@ -2282,6 +2742,7 @@ mod tests {
                 content_type: "unique_id".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2315,6 +2776,7 @@ mod tests {
                 content_type: "free_text".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2327,6 +2789,7 @@ mod tests {
                 content_type: "address_street".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2354,6 +2817,7 @@ mod tests {
                 content_type: "city".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
 
@@ -2592,6 +3056,7 @@ mod tests {
                 content_type: "datetime:%m/%d/%Y".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2612,6 +3077,7 @@ mod tests {
                 content_type: "datetime:%Y-%m-%dT%H:%M:%S".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2632,6 +3098,7 @@ mod tests {
                 content_type: "date:%Y-%m-%d".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -2652,6 +3119,7 @@ mod tests {
                 content_type: "datetime:%Y/%m/%d".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let mut refine = HashMap::new();
@@ -2663,6 +3131,7 @@ mod tests {
                 content_type: "datetime:%m/%d/%Y".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -2719,14 +3188,20 @@ mod tests {
     #[test]
     fn validate_date_formats_keeps_suffix_when_no_sample() {
         // an ALL_UNIQUE column has only the <ALL_UNIQUE> sentinel row — there is
-        // nothing to validate against, so the suffix is left unchanged
+        // nothing to validate against, so the suffix is left unchanged.
+        //
+        // `rank: 0.0` is what `frequency` actually emits for this row (verified: both
+        // emit sites hardcode it, for the default AND a custom --all-unique-text). The
+        // fixture previously said 1.0, which never occurs, and the test passed only
+        // because `usable_samples_by_field` also matched the sentinel's literal text —
+        // a match that wrongly dropped real data (see roborev 3560).
         let mut entries = vec![entry_with_content_type("d", "date:%d/%m/%Y")];
         let freqs = vec![FrequencyRecord {
             field:      "d".to_string(),
             value:      "<ALL_UNIQUE>".to_string(),
             count:      100,
             percentage: 100.0,
-            rank:       1.0,
+            rank:       0.0,
         }];
         validate_date_formats(&mut entries, &freqs, "(NULL)");
         assert_eq!(entries[0].content_type, "date:%d/%m/%Y");
@@ -3197,6 +3672,7 @@ mod tests {
                 content_type: "zip_code".to_string(),
                 concept:      String::new(),
                 role:         "dimension".to_string(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -3218,6 +3694,7 @@ mod tests {
                 content_type: "zip_code".to_string(),
                 concept:      "unknown".to_string(),
                 role:         "dimension".to_string(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -3237,6 +3714,7 @@ mod tests {
                 content_type: "free_text".to_string(),
                 concept:      String::new(),
                 role:         String::new(),
+                null_values:  Vec::new(),
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);

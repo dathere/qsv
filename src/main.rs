@@ -105,7 +105,15 @@ fn main() -> QsvExitCode {
         "    count       Count records
     datefmt     Format date/datetime strings
     dedup       Remove redundant rows
-    describegpt Infer extended metadata or chat with your data using a LLM
+",
+    );
+
+    #[cfg(feature = "feature_capable")]
+    enabled_commands
+        .push_str("    denull      Detect null sentinels (\"NULL\", \"N/A\") in data\n");
+
+    enabled_commands.push_str(
+        "    describegpt Infer extended metadata or chat with your data using a LLM
     diff        Find the difference between two CSVs
     edit        Replace a cell's value specified by row and column
     enum        Add a new column enumerating CSV lines
@@ -440,6 +448,8 @@ enum Command {
     Count,
     Datefmt,
     Dedup,
+    #[cfg(feature = "feature_capable")]
+    Denull,
     Describegpt,
     Diff,
     Edit,
@@ -563,6 +573,8 @@ impl Command {
             Command::Count => cmd::count::run(argv),
             Command::Datefmt => cmd::datefmt::run(argv),
             Command::Dedup => cmd::dedup::run(argv),
+            #[cfg(feature = "feature_capable")]
+            Command::Denull => cmd::denull::run(argv),
             Command::Describegpt => cmd::describegpt::run(argv),
             Command::Diff => cmd::diff::run(argv),
             Command::Edit => cmd::edit::run(argv),

@@ -60,6 +60,8 @@ mod test_comments;
 mod test_count;
 mod test_datefmt;
 mod test_dedup;
+#[cfg(feature = "feature_capable")]
+mod test_denull;
 // describegpt is excluded from qsvlite; only test it where the command exists
 #[cfg(all(not(feature = "lite"), not(target_arch = "powerpc64")))]
 mod test_describegpt;

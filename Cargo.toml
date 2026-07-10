@@ -196,6 +196,8 @@ fake = { version = "5", features = [
 ], optional = true }
 fast-float2 = "0.2"
 flate2 = { version = "1", optional = true }
+# same inode/file-id check for `denull --apply`; already in the tree via walkdir
+same-file = { version = "1.0.6", optional = true }
 foldhash = "0.2"
 glob = { version = "0.3", optional = true }
 file-format = { version = "0.29", features = ["reader"] }
@@ -666,7 +668,7 @@ jemallocator = ["tikv-jemallocator", "tikv-jemalloc-ctl"]
 # auto-decompress .gz/.zlib/.zst (alongside the always-available .zip/.sz). #1417.
 # base64-simd backs describegpt's multimodal --context-file (base64-encoding image/PDF
 # attachments for the LLM); it's always available wherever describegpt is (non-lite).
-feature_capable = ["base64-simd", "flate2", "zstd"]
+feature_capable = ["base64-simd", "flate2", "same-file", "zstd"]
 nightly = [
     "crc32fast/nightly",
     "pyo3/nightly",

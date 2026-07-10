@@ -14798,6 +14798,26 @@ fn build_smart(
     // classify each column into a dashboard panel
     let mut panels: Vec<Panel> = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
+    // Columns the dictionary declares a `measure` but stats typed `String`. `classify_measure`
+    // drops them for want of quartiles, which is correct but indistinguishable from an ID-like
+    // skip in the summary note below, so name them separately.
+    //
+    // Split by the stats min/max endpoints, which already discriminate the two causes without a
+    // rescan: a numeric column interrupted by a null sentinel has ONE parsing endpoint (e.g.
+    // min=`1`, max=`NULL` — letters sort after digits), while genuinely non-numeric content has
+    // neither (min=`10:00:00 AM`, max=`NULL`: a time column the LLM mis-roled). Reporting the
+    // second group as a sentinel problem would send the user hunting for a value that isn't there.
+    // (Zero-padded numeric codes parse at BOTH endpoints, but `guardrail` already routes them to
+    // Dimension, so they never reach here.)
+    let mut sentinel_suspects: Vec<String> = Vec::new();
+    let mut nonnumeric_measures: Vec<String> = Vec::new();
+    // Same endpoint signal, but for columns with NO dictionary verdict (`Route::Defer`),
+    // where `classify` dropped them as high-cardinality text. Without a dictionary calling
+    // the column a measure, one parsing endpoint is suggestive but NOT proof - an address
+    // column holding a cell `1` and a cell `Zoo` produces it too. So these are never
+    // diagnosed per-column; they only trigger a pointer to `qsv denull`, which decides
+    // exactly by scanning the values.
+    let mut sentinel_hints: Vec<String> = Vec::new();
     for (idx, s) in stats.iter().enumerate() {
         if is_map_col(idx) {
             continue;
@@ -14961,7 +14981,20 @@ fn build_smart(
                         .with_interest(interest),
                 );
             },
-            None => skipped.push(name),
+            None => {
+                if s.r#type == "String" {
+                    // exactly one parsing endpoint => a numeric range interrupted by a token
+                    let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
+                        != parse_stat_f64(s.max.as_deref()).is_some();
+                    match (sem.route, one_endpoint_parses) {
+                        (Route::Measure, true) => sentinel_suspects.push(name.clone()),
+                        (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
+                        (Route::Defer, true) => sentinel_hints.push(name.clone()),
+                        _ => {},
+                    }
+                }
+                skipped.push(name);
+            },
         }
     }
 
@@ -15489,10 +15522,48 @@ fn build_smart(
         }
         panels = kept;
     }
+    if !sentinel_suspects.is_empty() {
+        viz_note(&format!(
+            "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
+             String by stats, so they have no quartiles to chart: {}. Their values span a numeric \
+             range interrupted by a non-numeric token, most often a null sentinel (a literal \
+             \"NULL\", \"N/A\", ...). Confirm with `qsv denull -s {}`.",
+            sentinel_suspects.len(),
+            sentinel_suspects.join(", "),
+            sentinel_suspects.join(",")
+        ));
+    }
+    if !sentinel_hints.is_empty() {
+        viz_note(&format!(
+            "viz smart: {} skipped column(s) may be numeric data held back by a non-numeric token \
+             such as a literal \"NULL\": {}. `qsv denull` decides by scanning the values.",
+            sentinel_hints.len(),
+            sentinel_hints.join(", ")
+        ));
+    }
+    if !nonnumeric_measures.is_empty() {
+        viz_note(&format!(
+            "viz smart: {} column(s) declared a `measure` in the data dictionary hold non-numeric \
+             content and were skipped: {}. Their dictionary role/concept looks wrong for the \
+             column's actual content.",
+            nonnumeric_measures.len(),
+            nonnumeric_measures.join(", ")
+        ));
+    }
     if panels.is_empty() {
+        // The diagnostics above ran FIRST on purpose. When every column is skipped there is
+        // no dashboard, and a bare "no chartable columns" told the user nothing about the
+        // most likely cause - a null sentinel holding every numeric column back.
+        let denull_hint = if sentinel_suspects.is_empty() && sentinel_hints.is_empty() {
+            String::new()
+        } else {
+            " Some skipped columns look like numeric data held back by a non-numeric token; run \
+             `qsv denull` on this file."
+                .to_string()
+        };
         return fail_clierror!(
             "No chartable columns found for `viz smart` (all columns were empty or too \
-             high-cardinality to summarize)."
+             high-cardinality to summarize).{denull_hint}"
         );
     }
     if !skipped.is_empty() {

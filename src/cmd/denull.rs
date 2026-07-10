@@ -45,11 +45,22 @@ stddev and the quartiles, and counts them in `nullcount` and `sparsity`. Do not 
 for the `--nulls` option of `qsv stats` to "restore" them. That option puts the blanks
 back into the denominator while they contribute nothing to the sum, which is the same
 as imputing zero. On a column that is 54% sentinel, that pulls the mean from 271 down
-to 123 and SHRINKS the reported standard error - more confidence in a worse number -
-while leaving the median and quartiles alone, so the summary stops agreeing with
-itself. The `--nulls` option is for data where an empty cell genuinely MEANS zero (no
-events, no charge). A well with no recorded casing depth does not have a casing depth
-of zero.
+to 123 and SHRINKS the reported standard error - more confidence in a worse number.
+A well with no recorded casing depth does not have a casing depth of zero.
+
+Note also that `--nulls` reaches only the moment-based statistics - mean, stddev,
+variance, cv, sem, geometric_mean, harmonic_mean and n_zero. The order statistics
+(median, quartiles, iqr, mad, skewness) ALWAYS ignore blanks, whether or not the flag
+is set, so a `--nulls` summary does not agree with itself: on that same column the mean
+drops to 123 while the median stays at 200. And because one zero annihilates a product,
+geometric_mean collapses to 0 and harmonic_mean to nothing at all.
+
+So `--nulls` is not a general "treat blanks as zero" switch, even for data where an
+empty cell genuinely MEANS zero (no events, no charge). If that is your data, and you
+want every statistic to see those zeroes, materialize them first and leave the flag
+alone:
+
+  $ qsv fill --default 0 -s events data.csv | qsv stats --everything
 
 Statistics over the cleaned column are still complete-case: they describe the rows
 that HAVE a value. If a value is missing for a reason correlated with the value

@@ -34,6 +34,10 @@ on:
       - 'src/cmd/**'
       - 'src/main.rs'
       - 'docs/help/**'
+      # README.md is a generator INPUT, not just an output: `--generate-help-md`
+      # reads the command table for each command's description blurb, so a
+      # README-only edit rewrites docs/help/*.md and TableOfContents.md.
+      - 'README.md'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - '.github/workflows/wiki-lint.yml'
@@ -109,15 +113,19 @@ jobs:
       - name: Generated help docs are up to date
         run: |
           qsv --generate-help-md
-          if ! git diff --quiet -- docs/help README.md; then
+          # `git status --porcelain`, not `git diff`: diff sees only TRACKED paths, so a
+          # brand-new command's freshly generated docs/help/<cmd>.md would be untracked
+          # and invisible. Porcelain reports modified AND untracked AND deleted.
+          drift="$(git status --porcelain -- docs/help README.md)"
+          if [ -n "$drift" ]; then
             echo "::error::docs/help/ is stale. A USAGE string or README table row changed without regenerating."
             echo "Run 'qsv --generate-help-md' and commit the result. Never hand-edit docs/help/*.md."
             echo "--- drift ---"
-            git --no-pager diff --stat -- docs/help README.md
+            echo "$drift"
             git --no-pager diff -- docs/help README.md | head -200
             exit 1
           fi
-          echo "docs/help/ is in sync with the USAGE strings."
+          echo "docs/help/ is in sync with the USAGE strings and the README command table."
 
       - name: Run wiki lint
         env:

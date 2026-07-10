@@ -41,16 +41,22 @@ as soon as it accumulates --max-distinct different non-numeric values, so memory
 stays flat. A 434 MB, 86-column file peaks at ~40 MB - the same as a type-inference
 pass, and ~19x less than an exhaustive frequency table of every distinct value.
 
-denull only REPORTS. It never rewrites your data. To act on a confirmed column:  
+By default denull only REPORTS; it never rewrites your data. Pass --apply to
+rewrite it, blanking sentinels ONLY in the columns denull CONFIRMED. A column it
+REJECTED is copied through untouched, as is every column it did not scan:  
 
 ```console
-$ qsv replace '^NULL$' '' -s HoleDepth,WellDepth data.csv -o clean.csv
+$ qsv denull --apply data.csv -o clean.csv
 ```
 
 ```console
 $ qsv stats clean.csv --everything
 ```
 
+
+Cleaning is per-column, which is what a single `qsv replace` pass cannot do: it
+takes one regex across all selected columns, so it cannot blank "NULL" in one
+column and "-" in another while leaving a literal "-" alone in a third.
 
 Numeric sentinels (-999, -9999, 9999) are deliberately NOT detected. They parse as
 valid numbers, so no scan can distinguish them from real data - a depth-to-water
@@ -85,6 +91,11 @@ Show every scanned column, including those with nothing to report:
 qsv denull --all-columns data.csv
 ```
 
+Blank the sentinels in every confirmed column; the report goes to stderr:  
+```console
+qsv denull --apply data.csv -o clean.csv
+```
+
 For the tests, see <https://github.com/dathere/qsv/blob/master/tests/test_denull.rs>.
 
 <a name="usage"></a>
@@ -107,6 +118,7 @@ qsv denull --help
 | &nbsp;`‑‑add‑vocab`&nbsp; | string | Comma-separated tokens to ADD to the built-in list. Use this for site-specific markers. |  |
 | &nbsp;`‑‑max‑distinct`&nbsp; | integer | Abandon a column once it holds this many distinct non-numeric values. Guards memory on free-text columns and bounds the report. | `16` |
 | &nbsp;`‑‑all‑columns`&nbsp; | flag | Also report columns with nothing to flag. By default only columns with a verdict are listed. |  |
+| &nbsp;`‑‑apply`&nbsp; | flag | Rewrite the data instead of only reporting it. Blanks the sentinels in every CONFIRMED column and writes the CSV to <output> (or stdout), sending the report to stderr. Rejected and unscanned columns pass through untouched. Needs a file input, and <output> must not be the input file. |  |
 | &nbsp;`‑‑json`&nbsp; | flag | Emit the report as a JSON array instead of CSV. |  |
 
 <a name="common-options"></a>

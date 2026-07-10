@@ -398,3 +398,113 @@ fn denull_rejected_column_names_more_than_eight_distinct_sentinels() {
     assert_eq!(got[1][1], "rejected:off-vocab");
     assert_eq!(got[1][2], "-,--,?,??,N/A,NA,NULL,nil,none");
 }
+
+#[test]
+fn denull_apply_blanks_only_confirmed_columns() {
+    // The invariant that makes --apply worth having over `qsv replace`: masking is
+    // PER-COLUMN. `depth` is confirmed and loses its NULLs; `note` holds the very same
+    // literal "NULL" but is an ordinary text column, so its NULLs must survive.
+    let wrk = Workdir::new("denull_apply_blanks_only_confirmed_columns");
+    let mut rows = String::from("depth,note\n");
+    for i in 0..30 {
+        if i % 3 == 0 {
+            rows.push_str("NULL,NULL\n");
+        } else {
+            rows.push_str(&format!("{i},NULL\n"));
+        }
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+
+    assert_eq!(got[0], vec!["depth", "note"]);
+    // every `depth` NULL blanked, every `note` NULL preserved
+    assert_eq!(got.iter().skip(1).filter(|r| r[0].is_empty()).count(), 10);
+    assert_eq!(got.iter().skip(1).filter(|r| r[1] == "NULL").count(), 30);
+    assert_eq!(got.iter().skip(1).filter(|r| r[0] == "NULL").count(), 0);
+}
+
+#[test]
+fn denull_apply_sends_the_report_to_stderr() {
+    let wrk = Workdir::new("denull_apply_sends_the_report_to_stderr");
+    let mut rows = String::from("depth\n");
+    for i in 0..30 {
+        rows.push_str(
+            if i % 3 == 0 {
+                "NULL\n".to_string()
+            } else {
+                format!("{i}\n")
+            }
+            .as_str(),
+        );
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv");
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("confirmed"), "report missing: {stderr}");
+    assert!(
+        stderr.contains("blanked 10 cell(s)"),
+        "summary missing: {stderr}"
+    );
+
+    // ...and stdout carries the DATA, not the report
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got[0], vec!["depth"]);
+    assert!(!got.iter().any(|r| r[0] == "confirmed"));
+}
+
+#[test]
+fn denull_apply_passes_data_through_when_nothing_is_confirmed() {
+    let wrk = Workdir::new("denull_apply_passes_data_through_when_nothing_is_confirmed");
+    wrk.create_from_string("d.csv", "a,b\nx,y\nz,w\n");
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got, vec![vec!["a", "b"], vec!["x", "y"], vec!["z", "w"]]);
+    assert!(wrk.output_stderr(&mut cmd).contains("no column confirmed"));
+}
+
+#[test]
+fn denull_apply_refuses_to_overwrite_its_own_input() {
+    // Two-pass: pass 2 would truncate the file pass 2 is still reading.
+    let wrk = Workdir::new("denull_apply_refuses_to_overwrite_its_own_input");
+    wrk.create_from_string("d.csv", "depth\n1\n2\nNULL\n");
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv").args(["-o", "d.csv"]);
+    wrk.assert_err(&mut cmd);
+    assert!(
+        wrk.output_stderr(&mut cmd)
+            .contains("cannot write to its own input"),
+        "expected same-path refusal"
+    );
+}
+
+#[test]
+fn denull_apply_leaves_rejected_columns_untouched() {
+    // A column denull REJECTED is never rewritten, even though it holds a sentinel.
+    let wrk = Workdir::new("denull_apply_leaves_rejected_columns_untouched");
+    let mut rows = String::from("code\n");
+    for i in 0..30 {
+        rows.push_str(
+            match i % 3 {
+                0 => "NULL\n".to_string(),
+                1 => "OK\n".to_string(),
+                _ => format!("{i}\n"),
+            }
+            .as_str(),
+        );
+    }
+    wrk.create_from_string("d.csv", &rows);
+
+    let mut cmd = wrk.command("denull");
+    cmd.arg("--apply").arg("d.csv");
+    let got: Vec<Vec<String>> = wrk.read_stdout(&mut cmd);
+    assert_eq!(got.iter().skip(1).filter(|r| r[0] == "NULL").count(), 10);
+    assert!(wrk.output_stderr(&mut cmd).contains("rejected:off-vocab"));
+}

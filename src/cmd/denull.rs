@@ -29,10 +29,16 @@ as soon as it accumulates --max-distinct different non-numeric values, so memory
 stays flat. A 434 MB, 86-column file peaks at ~40 MB - the same as a type-inference
 pass, and ~19x less than an exhaustive frequency table of every distinct value.
 
-denull only REPORTS. It never rewrites your data. To act on a confirmed column:
+By default denull only REPORTS; it never rewrites your data. Pass --apply to
+rewrite it, blanking sentinels ONLY in the columns denull CONFIRMED. A column it
+REJECTED is copied through untouched, as is every column it did not scan:
 
-  $ qsv replace '^NULL$' '' -s HoleDepth,WellDepth data.csv -o clean.csv
+  $ qsv denull --apply data.csv -o clean.csv
   $ qsv stats clean.csv --everything
+
+Cleaning is per-column, which is what a single `qsv replace` pass cannot do: it
+takes one regex across all selected columns, so it cannot blank "NULL" in one
+column and "-" in another while leaving a literal "-" alone in a third.
 
 Numeric sentinels (-999, -9999, 9999) are deliberately NOT detected. They parse as
 valid numbers, so no scan can distinguish them from real data - a depth-to-water
@@ -56,6 +62,9 @@ Examples:
   Show every scanned column, including those with nothing to report:
     $ qsv denull --all-columns data.csv
 
+  Blank the sentinels in every confirmed column; the report goes to stderr:
+    $ qsv denull --apply data.csv -o clean.csv
+
 For the tests, see https://github.com/dathere/qsv/blob/master/tests/test_denull.rs.
 
 Usage:
@@ -76,6 +85,12 @@ denull options:
                            [default: 16]
     --all-columns          Also report columns with nothing to flag. By default
                            only columns with a verdict are listed.
+    --apply                Rewrite the data instead of only reporting it. Blanks
+                           the sentinels in every CONFIRMED column and writes the
+                           CSV to <output> (or stdout), sending the report to
+                           stderr. Rejected and unscanned columns pass through
+                           untouched. Needs a file input, and <output> must not
+                           be the input file.
     --json                 Emit the report as a JSON array instead of CSV.
 
 Common options:
@@ -87,7 +102,10 @@ Common options:
                            Must be a single character. (default: ,)
 "#;
 
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    io,
+};
 
 use serde::{Deserialize, Serialize};
 
@@ -106,6 +124,7 @@ struct Args {
     flag_add_vocab:    Option<String>,
     flag_max_distinct: usize,
     flag_all_columns:  bool,
+    flag_apply:        bool,
     flag_json:         bool,
     flag_output:       Option<String>,
     flag_no_headers:   bool,
@@ -183,20 +202,7 @@ impl ColumnTally {
     }
 
     fn add(&mut self, cell: &[u8], max_distinct: usize, vocab: &HashSet<String>) {
-        let trimmed: &[u8] = {
-            let mut s = cell;
-            while let [first, rest @ ..] = s
-                && first.is_ascii_whitespace()
-            {
-                s = rest;
-            }
-            while let [rest @ .., last] = s
-                && last.is_ascii_whitespace()
-            {
-                s = rest;
-            }
-            s
-        };
+        let trimmed = trim_ascii(cell);
         if trimmed.is_empty() {
             return;
         }
@@ -295,6 +301,22 @@ fn normalized_sentinel(
     buf[..len].make_ascii_lowercase();
     let token = std::str::from_utf8(&buf[..len]).ok()?;
     vocab.contains(token).then_some((buf, len))
+}
+
+/// Surrounding ASCII whitespace is not part of a cell's identity: " NULL " is a sentinel.
+fn trim_ascii(cell: &[u8]) -> &[u8] {
+    let mut s = cell;
+    while let [first, rest @ ..] = s
+        && first.is_ascii_whitespace()
+    {
+        s = rest;
+    }
+    while let [rest @ .., last] = s
+        && last.is_ascii_whitespace()
+    {
+        s = rest;
+    }
+    s
 }
 
 /// A leading `0` followed by another digit marks a padded code (`007`, `05.10`).
@@ -442,6 +464,28 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let args: Args = util::get_args(USAGE, argv)?;
     let vocab = build_vocab(&args);
 
+    // Both guards must fire BEFORE the scan: discovering after a full pass that the
+    // input cannot be reopened, or that we are about to truncate it, is too late.
+    if args.flag_apply {
+        if args.arg_input.is_none() {
+            return fail_clierror!("--apply requires an input file path (stdin is not supported).");
+        }
+        if let Some(out) = &args.flag_output {
+            let out_path = std::path::Path::new(out);
+            let in_path = std::path::Path::new(args.arg_input.as_ref().unwrap());
+            // Only an EXISTING output can be the input, and canonicalizing resolves
+            // symlinks and `./` so `-o ./data.csv` cannot slip past a string compare.
+            if out_path.exists()
+                && let (Ok(o), Ok(i)) = (out_path.canonicalize(), in_path.canonicalize())
+                && o == i
+            {
+                return fail_clierror!(
+                    "--apply cannot write to its own input ({out}); pass a different --output."
+                );
+            }
+        }
+    }
+
     let rconfig = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers(args.flag_no_headers)
@@ -507,17 +551,44 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    if args.flag_json {
-        let json = serde_json::to_string_pretty(&findings)?;
-        if let Some(path) = &args.flag_output {
-            std::fs::write(path, json + "\n")?;
-        } else {
-            println!("{json}");
+    // With --apply the primary sink carries the cleaned CSV, so the report moves to
+    // stderr. Without it, the report IS the output.
+    if args.flag_apply {
+        emit_report(&findings, args.flag_json, None, true)?;
+        return apply(
+            &rconfig,
+            args.flag_output.as_ref(),
+            &vocab,
+            &tallies,
+            &sel,
+            total_rows,
+        );
+    }
+    emit_report(&findings, args.flag_json, args.flag_output.as_ref(), false)
+}
+
+/// Write the findings as CSV or JSON, either to `output`/stdout or to stderr.
+fn emit_report(
+    findings: &[Finding],
+    json: bool,
+    output: Option<&String>,
+    to_stderr: bool,
+) -> CliResult<()> {
+    if json {
+        let rendered = serde_json::to_string_pretty(findings)? + "\n";
+        match (to_stderr, output) {
+            (true, _) => eprint!("{rendered}"),
+            (false, Some(path)) => std::fs::write(path, rendered)?,
+            (false, None) => print!("{rendered}"),
         }
         return Ok(());
     }
 
-    let mut wtr = Config::new(args.flag_output.as_ref()).writer()?;
+    let mut wtr: csv::Writer<Box<dyn io::Write>> = if to_stderr {
+        csv::Writer::from_writer(Box::new(io::stderr()))
+    } else {
+        Config::new(output).writer()?
+    };
     wtr.write_record([
         "field",
         "verdict",
@@ -528,7 +599,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         "promotes_to",
         "evidence",
     ])?;
-    for f in &findings {
+    for f in findings {
         wtr.write_record([
             &f.field,
             &f.verdict,
@@ -541,5 +612,73 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         ])?;
     }
     wtr.flush()?;
+    Ok(())
+}
+
+/// Rewrite the data, blanking sentinels ONLY in columns that `judge` CONFIRMED.
+///
+/// Two passes over the file rather than one pass plus a buffer of every record: the
+/// tallies are already built, so all pass 2 carries is one small identity set per
+/// confirmed column, bounded by the vocabulary. Memory stays flat on a 400 MB file,
+/// which is the property `denull` advertises.
+fn apply(
+    rconfig: &Config,
+    output: Option<&String>,
+    vocab: &HashSet<String>,
+    tallies: &[ColumnTally],
+    sel: &crate::select::Selection,
+    total_rows: u64,
+) -> CliResult<()> {
+    // Blank a cell only when its OWN column was confirmed and its identity is one that
+    // column actually held. A global set would let column A's "NULL" blank a stray
+    // "NULL" in an unconfirmed column C.
+    let mut confirmed: HashMap<usize, HashSet<Vec<u8>>> = HashMap::new();
+    for (k, &idx) in sel.iter().enumerate() {
+        let tally = &tallies[k];
+        if let Some((verdict, ..)) = judge(tally, vocab, total_rows)
+            && verdict == "confirmed"
+        {
+            confirmed.insert(idx, tally.seen_sentinels.keys().cloned().collect());
+        }
+    }
+
+    let mut rdr = rconfig.reader()?;
+    let mut wtr = Config::new(output).writer()?;
+
+    let headers = rdr.byte_headers()?.clone();
+    if !rconfig.no_headers {
+        wtr.write_byte_record(&headers)?;
+    }
+
+    let mut record = csv::ByteRecord::new();
+    let mut cleaned = csv::ByteRecord::new();
+    let mut blanked = 0_u64;
+    while rdr.read_byte_record(&mut record)? {
+        cleaned.clear();
+        for (idx, cell) in record.iter().enumerate() {
+            // Untouched cells are copied byte-for-byte.
+            let blank = confirmed.get(&idx).is_some_and(|sentinels| {
+                let trimmed = trim_ascii(cell);
+                normalized_sentinel(trimmed, vocab)
+                    .is_some_and(|(key, len)| sentinels.contains(&key[..len]))
+            });
+            if blank {
+                blanked += 1;
+                cleaned.push_field(b"");
+            } else {
+                cleaned.push_field(cell);
+            }
+        }
+        wtr.write_byte_record(&cleaned)?;
+    }
+    wtr.flush()?;
+    if confirmed.is_empty() {
+        eprintln!("denull: no column confirmed; data copied through unchanged.");
+    } else {
+        eprintln!(
+            "denull: blanked {blanked} cell(s) across {} confirmed column(s).",
+            confirmed.len()
+        );
+    }
     Ok(())
 }

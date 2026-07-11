@@ -1309,20 +1309,36 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
     // column whose `content_type` (`category`) and `role` (`dimension`) both say
     // categorical. `viz`'s `derive_semantics` prefers concept over role, so the lone
     // dissenting concept silently misroutes (and can drop) the column — charting it
-    // WORSE than with no dictionary at all. Reconcile at two granularities:
-    //   1. When the content_type pins a specific concept (`concept_from_content_type`), compare
-    //      NAMESPACES, not just role buckets: `email` pins `pii.email`, so a supplied `geo.city`
-    //      (same `dimension` role bucket, but `geo` ≠ `pii`) is a contradiction that a bucket-only
-    //      check would miss — and it would falsely mark a PII field as linkable geography. Replace
-    //      it with the deterministic concept.
-    //   2. Otherwise, when the content_type still constrains the role, a concept whose namespace
+    // WORSE than with no dictionary at all. Reconcile at three granularities:
+    //   1. When the content_type pins a COORDINATE concept, require an EXACT match. The coordinate
+    //      concepts (`geo.latitude`/`geo.longitude`/`geo.coordinate_pair`) route to
+    //      `Route::MapCoord`, whereas every other `geo.*` routes to `Dimension`, so a
+    //      same-namespace sibling like `geo.city` on a latitude column would suppress map rendering
+    //      / spatial-reference inference. These have no legitimate refinement.
+    //   2. When the content_type pins any other specific concept, compare NAMESPACES (not role
+    //      buckets): `email` pins `pii.email`, so a supplied `geo.city` (same `dimension` bucket,
+    //      but `geo` ≠ `pii`) is a contradiction that a bucket-only check would miss — and would
+    //      falsely mark a PII field as linkable geography. A same-namespace value is left alone on
+    //      purpose: `concept_from_content_type` is COARSE (`date` → `time.date`, `uuid` →
+    //      `id.uuid`), so the LLM may legitimately refine within the namespace (`time.created_at`,
+    //      `id.foreign_key`, `org.agency`); forcing the coarse value here would clobber those.
+    //   3. Otherwise, when the content_type still constrains the role, a concept whose namespace
     //      implies a different role is the dissenter → drop to "unknown".
     // `content_type: unknown` pins neither, so a specific concept like `geo.census_tract`
     // on an untyped numeric column is deliberately left to win — that override is why
     // `route_from_concept` exists.
     let concept_namespace = |c: &str| c.split('.').next().unwrap_or_default().to_string();
     if let Some(deterministic) = concept_from_content_type(base) {
-        if concept_namespace(&entry.concept) != concept_namespace(deterministic) {
+        let requires_exact_match = matches!(
+            deterministic,
+            "geo.latitude" | "geo.longitude" | "geo.coordinate_pair"
+        );
+        let contradicts = if requires_exact_match {
+            entry.concept != deterministic
+        } else {
+            concept_namespace(&entry.concept) != concept_namespace(deterministic)
+        };
+        if contradicts {
             entry.concept = deterministic.to_string();
         }
     } else if let Some(ct_role) = role_from_content_type(base)
@@ -2065,6 +2081,23 @@ mod tests {
         // to the deterministic value (not merely dropped to "unknown").
         let (_, concept) = coerced_role_concept("city", "dimension", "measure.amount", "String");
         assert_eq!(concept, "geo.city");
+    }
+
+    #[test]
+    fn coerce_concept_coordinate_content_type_requires_exact_match() {
+        // roborev #3584: coordinate concepts route to MapCoord, while other geo.* route to
+        // Dimension, so a same-namespace sibling on a latitude/longitude column suppresses
+        // map rendering. Unlike coarse mappings, these enforce the EXACT concept.
+        let (_, concept) = coerced_role_concept("latitude", "dimension", "geo.city", "String");
+        assert_eq!(concept, "geo.latitude");
+        let (_, concept) = coerced_role_concept("longitude", "dimension", "geo.zip_code", "String");
+        assert_eq!(concept, "geo.longitude");
+        // A swapped coordinate concept is corrected too.
+        let (_, concept) = coerced_role_concept("latitude", "measure", "geo.longitude", "Float");
+        assert_eq!(concept, "geo.latitude");
+        // The correct coordinate concept is preserved.
+        let (_, concept) = coerced_role_concept("longitude", "measure", "geo.longitude", "Float");
+        assert_eq!(concept, "geo.longitude");
     }
 
     #[test]

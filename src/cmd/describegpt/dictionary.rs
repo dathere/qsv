@@ -1394,24 +1394,29 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
 /// Verify (and otherwise drop) a proposed `gauge_range`. A KPI gauge is only
 /// meaningful, and only non-misleading, when:
 ///
-///   1. the column's FINALIZED `role` is `measure` (gauges are for quantities you aggregate — not
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a gauge scale on a String/Date
+///      column is nonsense even if the LLM mis-tagged it `role: measure` and its lexicographic
+///      min/max happen to parse as floats, and
+///   2. the column's FINALIZED `role` is `measure` (gauges are for quantities you aggregate — not
 ///      dimensions, identifiers, or timestamps), and
-///   2. the column's OBSERVED `[min, max]` lies inside the proposed `[lo, hi]`.
+///   3. the column's OBSERVED `[min, max]` lies inside the proposed `[lo, hi]`.
 ///
-/// Requirement 2 is the guardrail against a misleading gauge: `viz` renders the
+/// Requirement 3 is the guardrail against a misleading gauge: `viz` renders the
 /// measure's value against this scale, so a range that does not contain the data
 /// would draw a needle pinned past the end. The shape (two finite numbers, `lo <
 /// hi`) was already validated in `parse_llm_dictionary_response`; this is where the
-/// SEMANTIC check happens, because only here are the merged role and the observed
-/// min/max both known. Anything that fails is reset to `None` — an unverifiable
-/// gauge is simply not emitted (byte-identical to a run that never proposed one).
+/// SEMANTIC check happens, because only here are the merged role, the column type,
+/// and the observed min/max all known. Anything that fails is reset to `None` — an
+/// unverifiable gauge is simply not emitted (byte-identical to a run that never
+/// proposed one).
 ///
 /// Must be called AFTER `coerce_role_concept`, so `role` is final.
 fn verify_gauge_range(entry: &mut DictionaryEntry) {
     let Some([lo, hi]) = entry.gauge_range else {
         return;
     };
-    let keep = if entry.role == "measure"
+    let keep = if matches!(entry.r#type.as_str(), "Integer" | "Float")
+        && entry.role == "measure"
         && let Ok(obs_min) = entry.min.parse::<f64>()
         && let Ok(obs_max) = entry.max.parse::<f64>()
     {
@@ -2916,6 +2921,30 @@ mod tests {
         let out = combine_dictionary_entries(vec![e], &llm, true);
         assert_eq!(out[0].role, "dimension");
         assert_eq!(out[0].gauge_range, None);
+    }
+
+    /// A String column the LLM mis-tags `role: measure` must NOT keep a gauge, even when
+    /// its lexicographic min/max happen to parse as floats (roborev #3606).
+    #[test]
+    fn combine_drops_gauge_range_for_non_numeric_type() {
+        let mut e = blank_entry("code"); // r#type stays "String"
+        e.min = "10".to_string(); // numeric-looking strings that parse as f64
+        e.max = "90".to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "code".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].r#type, "String");
+        assert_eq!(
+            out[0].gauge_range, None,
+            "a non-numeric column must not emit a gauge even if role==measure"
+        );
     }
 
     #[test]

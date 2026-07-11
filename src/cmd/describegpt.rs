@@ -8810,7 +8810,7 @@ p_fewshot_examples = ""
         );
         // The Gauge Range instruction is injected when the flag is on.
         assert!(
-            on.contains("- Gauge Range (OPTIONAL, numeric MEASURE fields only)"),
+            on.contains("- Gauge Range (OPTIONAL, CONTINUOUS numeric MEASURE fields only)"),
             "flag-on prompt must include the Gauge Range instruction:\n{on}"
         );
         // Concept + Role instructions and vocabularies are injected when the flag is on.

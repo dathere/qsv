@@ -165,7 +165,10 @@ pub(crate) const CONCEPT_VOCAB: &[&str] = &[
     // spatial
     "geo.zip_code",
     "geo.city",
+    "geo.county",
+    "geo.county_fips",
     "geo.state",
+    "geo.state_fips",
     "geo.country",
     "geo.latitude",
     "geo.longitude",

@@ -468,16 +468,14 @@ smart options:
                            Generation/read failures soft-fall back to the stats-only dashboard.
                            The dictionary also drives the KPI overview row via two optional
                            per-field hints in a property's "x-qsv" object (edit them in the saved
-                           schema to fine-tune):
-                             - "gauge_range": [min, max] on a continuous numeric measure renders
-                               its KPI tile as a GAUGE on that canonical scale (e.g. [0,1] for a
-                               ratio, [0,100] for a percent). Ignored unless the observed data lies
-                               within the range, so a mis-scaled range can't draw a misleading dial.
-                               `--dictionary infer` emits this for canonical-scale measures.
-                             - "target": <number> on a measure renders a "vs target" DELTA against
-                               that goal (value minus target). This is a GOAL you supply, never a
-                               fabricated prior-period baseline, so `--dictionary infer` never emits
-                               it - hand-author it in the schema.
+                           schema to fine-tune). A "gauge_range" of [min, max] on a continuous
+                           numeric measure renders its KPI tile as a GAUGE on that canonical scale
+                           (e.g. [0,1] for a ratio, [0,100] for a percent); qsv keeps it only when
+                           the observed data lies within the range, so a mis-scaled range can't draw
+                           a misleading dial, and "infer" emits it for canonical-scale measures.
+                           A "target" number on a measure renders a "vs target" DELTA against that
+                           goal (value minus target) - a GOAL you supply, never a fabricated
+                           prior-period baseline, so "infer" never emits it; hand-author it.
                            Only affects `smart`.
     --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to

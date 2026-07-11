@@ -9,11 +9,14 @@ that steer the dashboard:
     label        title           (shown in the dictionary drawer + hovers)
     description  description      (shown in the dictionary drawer)
 
-As you edit, each column shows how `viz smart` will ROUTE it (Skip / Dimension /
-Measure / Temporal / MapCoord / ProjectedCoord), so you can see the effect of a
-change before rendering. Every other key (examples, cardinality, null_count,
-qsv_type, min/max, …) is preserved byte-for-byte, and the file is only rewritten
-if you actually change something and save.
+As you edit, each column shows a ROUTE preview (Skip / Dimension / Measure /
+Temporal / MapCoord / ProjectedCoord) derived from its concept and role only.
+This is the concept→role projection BEFORE `viz smart` applies its content_type
+and stats/label guardrails, so the final route can differ (unresolved columns
+show "Defer→stats"). Treat it as guidance on the effect of a concept/role edit,
+not the definitive `viz smart` disposition. Every other key (examples,
+cardinality, null_count, qsv_type, min/max, …) is preserved byte-for-byte, and
+the file is only rewritten if you actually change something and save.
 
     HOW TO RUN — this needs YOUR real terminal, not an agent's captured shell:
 
@@ -26,7 +29,9 @@ Non-interactive helper (safe to run anywhere, no TTY needed):
 
         python3 edit_dictionary.py --summary path/to/<stem>.schema.json
 
-    prints a COLUMN / ROLE / CONCEPT / ROUTE table — handy for a before/after diff.
+    prints a COLUMN / ROLE / CONCEPT / ROUTE table — handy for a before/after
+    diff. ROUTE is the same concept/role projection described above, not the
+    final `viz smart` route.
 
 The routing preview mirrors `route_from_concept` / `route_from_role` in
 src/cmd/viz.rs (~lines 9313-9355); the vocab lists mirror
@@ -112,7 +117,12 @@ def route_from_role(role):
 
 
 def effective_route(role, concept):
-    """Projected `viz smart` disposition, concept first then role."""
+    """Concept→role route projection (concept first, then role).
+
+    A preview of the concept/role contribution to routing only; it does NOT model
+    `viz smart`'s content_type or stats/label guardrails, so the final route can
+    differ. Anything unresolved by concept/role is shown as "Defer→stats".
+    """
     return route_from_concept(concept) or route_from_role(role) or "Defer→stats"
 
 
@@ -341,7 +351,10 @@ def _draw(stdscr, schema, cur, top, dirty, status):
         line = f" {c['name']:<{nw}} {role:<10} {con:<22} {c['route']:<14} {c['label']}"
         attr = curses.A_REVERSE if i == cur else 0
         _safe_addstr(stdscr, body_top + row, 0, line, attr)
-    msg = status or ("* = value not in the known vocab (allowed, just unusual)")
+    msg = status or (
+        "* = value not in the known vocab (allowed, just unusual) · "
+        "ROUTE = concept/role preview, before viz smart's content_type & stats guardrails"
+    )
     _safe_addstr(stdscr, h - 1, 0, msg[: w - 1], curses.A_DIM)
     stdscr.refresh()
     return top

@@ -18727,9 +18727,11 @@ fn hierarchy_trace(
             .inside_text_orientation(InsideTextOrientation::Radial)
             .max_depth(SUNBURST_MAXDEPTH),
         // an icicle is the rectangular sibling of the sunburst: the same rolled-up subtree totals
-        // laid out as stacked bars per level (top-down by default), which keeps deep paths and many
-        // small leaves more legible than a treemap's nested rectangles while preserving strict
-        // level alignment for cross-branch comparison. Same `label+value+percent parent` tile text.
+        // laid out as stacked bars per level. We leave `tiling.orientation` at plotly's default of
+        // horizontal ("h"), so the root sits on the LEFT and children fan out to the right — which
+        // keeps deep paths and many small leaves more legible than a treemap's nested rectangles
+        // while preserving strict level alignment for cross-branch comparison. Same
+        // `label+value+percent parent` tile text.
         HierStyle::Icicle => Icicle::new(labels.to_vec(), parents.to_vec())
             .ids(ids.to_vec())
             .values(values.to_vec())

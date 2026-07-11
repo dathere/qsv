@@ -61,6 +61,11 @@ SMART_IFRAME = {
 # so a normal `gen_gallery.py` run stays LLM-free and deterministic. To refresh them in-place, run
 # with QSV_VIZ_REGEN_LLM=1 and your local LLM up (LM Studio / Ollama) — main() then treats this set
 # as empty so these `--dictionary infer` figures are regenerated and re-cdnified like the others.
+# NOTE: because they are reused as-is, these figures intentionally LAG new smart-dashboard features
+# until an LLM-backed regen — e.g. they do not yet show the KPI/Completeness overview row that the
+# deterministic dashboards above carry. This is deferred on purpose: they will be regenerated in one
+# pass once describegpt emits the gauge_range/target dictionary hints, so the KPI row lands with its
+# gauges/deltas rather than as bare number tiles now.
 PREGENERATED = {
     "smart_dict_treemap.html",
     "smart_dict_sunburst.html",

@@ -7337,6 +7337,56 @@ fn viz_smart_pip_choropleth_panel() {
     assert!(html.contains(r#""featureidkey":"properties.id""#));
 }
 
+// a region-code column tagged with the canonical `geo.county_fips` concept (added to the
+// describegpt/editor vocab) must be recognized as a summary-choropleth key: `viz smart --geojson`
+// keys per-region aggregates off the FIPS column directly (no lat/lon). Before `county_fips` was
+// added to REGION_CODE_LEAVES the column was silently excluded and no Regions choropleth appeared.
+#[test]
+fn viz_smart_summary_choropleth_county_fips_concept() {
+    let wrk = Workdir::new("viz_smart_summary_choropleth_county_fips_concept");
+    wrk.create_from_string(
+        "counties.csv",
+        "fips,pop\n42003,100\n42003,200\n36061,300\n36061,400\n",
+    );
+    wrk.create_from_string(
+        "counties.geojson",
+        r#"{"type":"FeatureCollection","features":[{"type":"Feature","id":"42003","properties":{},"geometry":{"type":"Polygon","coordinates":[[[0,0],[0,10],[10,10],[10,0],[0,0]]]}},{"type":"Feature","id":"36061","properties":{},"geometry":{"type":"Polygon","coordinates":[[[10,0],[10,10],[20,10],[20,0],[10,0]]]}}]}"#,
+    );
+    wrk.create_from_string(
+        "dict.schema.json",
+        r#"{
+          "$schema": "https://json-schema.org/draft/2020-12/schema",
+          "type": "object",
+          "properties": {
+            "fips": { "type": "string", "x-qsv": { "qsv_type": "String", "role": "dimension", "concept": "geo.county_fips" } },
+            "pop": { "type": "number", "x-qsv": { "qsv_type": "Integer", "role": "measure", "concept": "measure.amount" } }
+          }
+        }"#,
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "counties.csv",
+        "--geojson",
+        "counties.geojson",
+        "--dictionary",
+    ])
+    .arg(wrk.path("dict.schema.json"));
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains(r#""type":"choropleth""#) && html.contains(r#""locationmode":"geojson-id""#),
+        "a geo.county_fips column should drive a summary choropleth keyed off the FIPS values: \
+         {html}"
+    );
+    assert!(
+        html.contains("count by fips"),
+        "expected the summary choropleth 'count by fips' panel: {html}"
+    );
+}
+
 // when the `viz smart` PIP choropleth snaps any points, the panel title surfaces the snap
 // metadata (count + the cap applied) — a sub-panel has no below-map annotation surface, and the
 // note must not sit on the map itself.

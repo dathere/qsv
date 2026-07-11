@@ -12622,7 +12622,9 @@ fn build_smart_summary_choropleth_panels(
         "postal_code",
         "census_tract",
         "county",
+        "county_fips",
         "state",
+        "state_fips",
         "country",
         "fips",
     ];

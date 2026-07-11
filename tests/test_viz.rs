@@ -5793,10 +5793,11 @@ fn viz_smart_compressed_map_figure_payload() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    // the map panel is the leading full-width panel (qsv-viz-panel-0): payload + deferred render
-    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
-    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
-    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
+    // panel-0 is the leading KPI overview row; the map is the next full-width panel
+    // (qsv-viz-panel-1): payload + deferred render
+    assert!(html.contains("id=\"qsv-viz-panel-1-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-1\")"));
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-1-fig");
     assert!(figure.contains(r#""type":"scattermap""#));
     assert!(figure.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#));
     // coordinates ride as little-endian float32 typed arrays, not decimal-text JSON
@@ -5883,11 +5884,12 @@ fn viz_cdn_keeps_gz_prelude_for_compressed_map_figures() {
 
     assert!(html.contains(r#"<script src="https://cdn.plot.ly/"#));
     assert!(!html.contains("window.__qsvPlotQ"));
-    // the figure payload (not the bundle) is still gzipped, and its inflate helpers are present
-    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
-    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
+    // the figure payload (not the bundle) is still gzipped, and its inflate helpers are present.
+    // panel-0 is the leading KPI overview row, so the map figure is panel-1.
+    assert!(html.contains("id=\"qsv-viz-panel-1-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-1\")"));
     assert!(html.contains("__qsvGunzip"));
-    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-1-fig");
     assert!(figure.contains(r#""type":"scattermap""#));
 
     // Under CDN there is no bundle bootstrap to raise the "needs DecompressionStream" banner, so
@@ -6339,6 +6341,132 @@ fn viz_sunburst_standalone() {
     assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
     // plotly.js 3.6 radial in-sector text keeps deep-ring labels legible along each spoke
     assert!(html.contains(r#""insidetextorientation":"radial""#));
+}
+
+#[test]
+fn viz_icicle_standalone() {
+    let wrk = Workdir::new("viz_icicle_standalone");
+    three_dim_hierarchy(&wrk);
+
+    let out_html = wrk.path("ic.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "icicle",
+        "three_dim.csv",
+        "--cols",
+        "region,category,channel",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("ic.html").unwrap();
+    assert!(html.contains(r#""type":"icicle""#));
+    // shares the sunburst/treemap rolled-up-total contract and the richer per-tile textinfo
+    assert!(html.contains(r#""branchvalues":"total""#));
+    assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
+}
+
+// `viz smart` leads with a KPI overview row of `Indicator` tiles: dataset-summary tiles (record
+// count, field count, a completeness gauge) plus the headline numeric measures.
+#[test]
+fn viz_smart_kpi_row() {
+    let wrk = Workdir::new("viz_smart_kpi_row");
+    wrk.create_from_string(
+        "sales.csv",
+        "region,amount,rating\nEast,1200,4.5\nWest,800,3.9\nEast,450,4.1\nNorth,2100,4.8\nSouth,\
+         300,3.2\nEast,1750,4.6\nWest,980,4.0\nNorth,600,4.3\n",
+    );
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "sales.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    assert!(html.contains(r#""type":"indicator""#));
+    // completeness is a built-in 0-1 gauge (needs no dictionary hint)
+    assert!(html.contains(r#""text":"Completeness""#));
+    assert!(html.contains(r#""axis":{"range":[0.0,1.0]}"#));
+    // record/field counts are intentionally NOT KPI tiles (they duplicate the header)
+    assert!(!html.contains(r#""text":"Records""#));
+    assert!(!html.contains(r#""text":"Fields""#));
+}
+
+// A dictionary `gauge_range`/`target` turns a measure tile into a gauge (over its range, averaged
+// so the value lands within it) and a "vs target" delta — the LLM-hint mechanism for compelling
+// KPIs, guarded so the gauge is only drawn when it actually contains the observed value.
+#[test]
+fn viz_smart_kpi_dictionary_gauge_and_delta() {
+    let wrk = Workdir::new("viz_smart_kpi_dictionary_gauge_and_delta");
+    wrk.create_from_string(
+        "sales.csv",
+        "region,amount,rating\nEast,1200,4.5\nWest,800,3.9\nEast,450,4.1\nNorth,2100,4.8\nSouth,\
+         300,3.2\nEast,1750,4.6\nWest,980,4.0\nNorth,600,4.3\n",
+    );
+    wrk.create_from_string(
+        "dict.json",
+        r#"{"type":"object","properties":{"rating":{"title":"Customer Rating","type":"number","x-qsv":{"role":"measure","concept":"measure.rating","gauge_range":[0,5],"target":4.0}}}}"#,
+    );
+    let out_html = wrk.path("k.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "sales.csv",
+        "--dictionary",
+        "dict.json",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("k.html").unwrap();
+    // gauge over the dictionary [0,5] range, averaged (Mean) so the value sits within it
+    assert!(html.contains(r#""axis":{"range":[0.0,5.0]}"#));
+    assert!(html.contains(r#""text":"Mean Customer Rating""#));
+    // and a "vs target" delta against the supplied target
+    assert!(html.contains(r#""delta":{"reference":4.0}"#));
+}
+
+// Regression (roborev #3602): the leading KPI row is domain-positioned and takes no cartesian
+// axis, but it still occupies panel index 0. With exactly MAX_SUBPLOTS (8) cartesian panels behind
+// it on the typed-grid path, the axes must number x1..x8 — before the fix the 8th chart was pushed
+// to x9, which the typed Layout has no slot for (`assign_typed_axis` drops it), orphaning that
+// trace onto the default axis. `--max-charts 8` on a wide numeric dataset forces the boundary.
+#[test]
+fn viz_smart_kpi_row_does_not_orphan_eighth_axis() {
+    let wrk = Workdir::new("viz_smart_kpi_row_does_not_orphan_eighth_axis");
+    let mut csv = (0..10)
+        .map(|j| format!("n{j}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    csv.push('\n');
+    for i in 0..120 {
+        let row = (0..10)
+            .map(|j| ((i * (j * 37 + 13) + j * 7) % (50 + j)).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        csv.push_str(&row);
+        csv.push('\n');
+    }
+    wrk.create_from_string("num_wide.csv", &csv);
+    let out_html = wrk.path("n.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "num_wide.csv",
+        "--max-charts",
+        "8",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("n.html").unwrap();
+    assert!(html.contains(r#""type":"indicator""#)); // KPI overview row is present
+    // the 8 cartesian charts behind it fill x1..x8 (typed Layout), with NO orphaned x9
+    assert!(html.contains(r#""xaxis8":{"#));
+    assert!(html.contains(r#""xaxis":"x8""#));
+    assert!(!html.contains(r#""xaxis":"x9""#));
 }
 
 #[test]

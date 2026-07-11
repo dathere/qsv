@@ -462,12 +462,14 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash"
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# Our Treemap/Sunburst PR has been merged (https://github.com/plotly/plotly.rs/pull/406)
-# Pinned to the MapLibre-migration integration HEAD, which adds the MapLibre `map`-subplot
-# traces qsv's `viz` maps now use: ChoroplethMap, DensityMap, and ScatterMap (replacing the
-# deprecated *mapbox traces). Tracks upstream PRs #410 (Choropleth), #415/#416 (DensityMapbox
-# hover+color / DensityMap) and the ScatterMap follow-up.
-plotly = { git = "https://github.com/dathere/plotly", rev = "8d56b22" }
+# Pinned to our stacked feature branch `feature/trace-type-additions` (PR
+# https://github.com/plotly/plotly.rs/pull/423), a strict superset of the earlier pins:
+#   - MapLibre `map`-subplot traces qsv's `viz` maps use (ChoroplethMap, DensityMap,
+#     ScatterMap; upstream PRs #406/#410/#415/#416) — now merged into plotly:main
+#   - plotly.js 3.7 attribute backfill (legendrank/zorder/fillgradient/... ; PR #421)
+#   - new trace types Indicator, Histogram2d, Icicle + layout-level `uirevision` (PR #423)
+# When #421/#423 merge upstream, repoint this to a plotly.rs release/main rev.
+plotly = { git = "https://github.com/dathere/plotly", branch = "feature/trace-type-additions" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #

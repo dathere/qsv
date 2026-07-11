@@ -46,6 +46,8 @@ Chart types (subcommands):
                 columns (levels), optional --value and --agg.
     sunburst    Part-to-whole hierarchy as concentric rings (same inputs as
                 treemap). Better for deeper hierarchies.
+    icicle      Part-to-whole hierarchy as stacked bars per level (same inputs as
+                treemap). Level-aligned; good for deep, wide hierarchies.
     map         Geographic point map (or --density heatmap) on tile basemaps.
                 Pick the coordinate columns with the lat/lon options below.
     geo         Geographic point map on a projection basemap (coastlines/land/
@@ -205,6 +207,7 @@ Usage:
     qsv viz choropleth  [options] <input>
     qsv viz treemap     [options] <input>
     qsv viz sunburst    [options] <input>
+    qsv viz icicle      [options] <input>
     qsv viz --help
 
 viz options:
@@ -433,10 +436,11 @@ smart options:
                            fall back to the standard dashboard.
     --hierarchy-style <k>  For `smart`, the chart used for the categorical part-to-whole
                            hierarchy panel (built when 2+ low-cardinality dimensions exist).
-                           One of: auto (default), treemap, sunburst. auto follows best
-                           practice — a treemap for a shallow 2-level hierarchy (accurate
+                           One of: auto (default), treemap, sunburst, icicle. auto follows
+                           best practice — a treemap for a shallow 2-level hierarchy (accurate
                            size comparison) and a sunburst for a deep 3-level one (parent
-                           child structure). Only affects `smart`.
+                           child structure); icicle is an opt-in level-aligned alternative.
+                           Only affects `smart`.
     --dictionary <src>     Use a describegpt Data Dictionary to guide panel selection from
                            each field's semantic role/concept (falling back to its content type)
                            instead of relying on column statistics alone: dimensions and numeric
@@ -588,16 +592,17 @@ use plotly::layout::update_menu::UpdateMenuDirection;
 use plotly::layout::update_menu::{Button, ButtonMethod, UpdateMenu, UpdateMenuType};
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    HeatMap, Histogram, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo, ScatterMap,
-    ScatterPolar, Sunburst, Trace, Treemap, Violin,
+    HeatMap, Histogram, Icicle, Indicator, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo,
+    ScatterMap, ScatterPolar, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
     common::{
-        Anchor, ColorBar, ColorScale, ColorScalePalette, ErrorData, ErrorType, Fill, Font,
+        Anchor, ColorBar, ColorScale, ColorScalePalette, Domain, ErrorData, ErrorType, Fill, Font,
         HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
         Title,
     },
+    indicator::{Delta, Gauge, GaugeAxis, IndicatorTitle, Mode as IndicatorMode, Number},
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
         LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
@@ -605,7 +610,7 @@ use plotly::{
     },
     sankey::{Arrangement, Link, Node},
     sunburst::InsideTextOrientation,
-    traces::scatter_map::Cluster,
+    traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
@@ -990,6 +995,12 @@ const PALETTE: [&str; 8] = [
 const FONT_FAMILY: &str = "Helvetica Neue, Helvetica, Arial, sans-serif";
 const INK: &str = "#2A3F5F";
 const PAPER_BG: &str = "#FFFFFF";
+/// Stable `layout.uirevision` token. Plotly preserves user UI state (zoom, pan, box/lasso
+/// selection, legend visibility) across `Plotly.react`/`Plotly.newPlot` calls as long as this
+/// value is unchanged. qsv re-renders every graph div via `newPlot` to inject the fullscreen
+/// modebar button and to recolor on theme toggle; without a constant `uirevision` those
+/// re-renders reset the user's view. Applied centrally in `apply_theme`.
+const VIZ_UIREVISION: &str = "qsv-viz";
 const GRID_COLOR: &str = "#ECECEC";
 const AXIS_LINE: &str = "#BCC4CE";
 
@@ -1160,6 +1171,7 @@ struct Args {
     cmd_geo:                 bool,
     cmd_treemap:             bool,
     cmd_sunburst:            bool,
+    cmd_icicle:              bool,
     cmd_choropleth:          bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
@@ -1540,7 +1552,10 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
 
     // treemap / sunburst are domain-based (no cartesian x/y axes), like pie — they own their whole
     // `Plot` as well.
-    if matches!(chart_kind(args), Chart::Treemap | Chart::Sunburst) {
+    if matches!(
+        chart_kind(args),
+        Chart::Treemap | Chart::Sunburst | Chart::Icicle
+    ) {
         return build_hierarchy_plot(args);
     }
 
@@ -1654,6 +1669,7 @@ enum Chart {
     Choropleth,
     Treemap,
     Sunburst,
+    Icicle,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -1695,6 +1711,8 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Treemap
     } else if args.cmd_sunburst {
         Chart::Sunburst
+    } else if args.cmd_icicle {
+        Chart::Icicle
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -4929,7 +4947,8 @@ fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
         },
         Some(other) => {
             return fail_incorrectusage_clierror!(
-                "treemap/sunburst only supports additive --agg (count or sum); got '{other}'."
+                "treemap/sunburst/icicle only supports additive --agg (count or sum); got \
+                 '{other}'."
             );
         },
     };
@@ -4939,6 +4958,8 @@ fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
     let top_n = args.flag_limit.max(1);
     let style = if args.cmd_sunburst {
         HierStyle::Sunburst
+    } else if args.cmd_icicle {
+        HierStyle::Icicle
     } else {
         HierStyle::Treemap
     };
@@ -5958,6 +5979,9 @@ impl Args {
 /// overrides at the call sites are gated on `theme.is_none()` so the template can
 /// drive backgrounds, fonts and axis chrome.
 fn apply_theme(layout: Layout, theme: Option<BuiltinTheme>) -> Layout {
+    // Preserve user UI state (zoom/pan/selection/legend) across the `Plotly.newPlot`
+    // re-renders qsv triggers for the fullscreen-modebar button and theme toggle.
+    let layout = layout.ui_revision(VIZ_UIREVISION);
     match theme {
         Some(t) => layout.template(t.build()),
         None => layout,
@@ -7222,8 +7246,9 @@ fn resolve_hierarchy_style(flag: Option<&str>, depth: usize) -> CliResult<HierSt
         None | Some("auto") => Ok(auto_hierarchy_style(depth)),
         Some("treemap") => Ok(HierStyle::Treemap),
         Some("sunburst") => Ok(HierStyle::Sunburst),
+        Some("icicle") => Ok(HierStyle::Icicle),
         Some(other) => fail_incorrectusage_clierror!(
-            "Unknown --hierarchy-style '{other}'. Use auto, treemap, or sunburst."
+            "Unknown --hierarchy-style '{other}'. Use auto, treemap, sunburst, or icicle."
         ),
     }
 }
@@ -8772,9 +8797,29 @@ struct GeoMeta {
 enum HierStyle {
     Treemap,
     Sunburst,
+    Icicle,
+}
+
+/// One KPI "big number" tile in a `PanelKind::KpiRow`. `value` is the headline number (a dataset
+/// summary or an aggregated measure); `format` is a plotly d3 value-format string. `gauge` carries
+/// a validated `[min, max]` domain (drawn as an angular gauge) and `target` a delta reference
+/// (drawn as a "vs target" delta); both are optional and gate the indicator `mode`.
+#[derive(Clone, Debug)]
+struct KpiTile {
+    label:  String,
+    value:  f64,
+    format: String,
+    gauge:  Option<[f64; 2]>,
+    target: Option<f64>,
 }
 
 enum PanelKind {
+    /// A leading full-width row of KPI "big number" tiles (plotly `Indicator` traces) summarizing
+    /// the dataset — record count, field count, completeness, and the headline numeric measures.
+    /// A tile shows a gauge when its dictionary supplies a validated `gauge_range`, a "vs target"
+    /// delta when it supplies a `target`, else a plain number. Rendered domain-positioned so N
+    /// tiles split the row width.
+    KpiRow { tiles: Vec<KpiTile> },
     /// Box plot drawn from precomputed quartiles (no raw data).
     BoxStats {
         q1:     f64,
@@ -9293,6 +9338,15 @@ struct DictRow {
     concept:      String,
     label:        String,
     description:  String,
+    /// Optional `[min, max]` domain for a KPI gauge tile (`x-qsv.gauge_range`), set only for
+    /// numeric measures whose concept implies a canonical scale (percent, ratio, rating, score).
+    /// The KPI builder still validates that the observed value falls inside the range before
+    /// drawing a gauge (else it falls back to a plain number tile).
+    gauge_range:  Option<[f64; 2]>,
+    /// Optional KPI delta reference (`x-qsv.target`): a semantically-justified TARGET/goal (e.g.
+    /// 100% completeness, 0 error-rate), never a fabricated prior-period baseline. Rendered as a
+    /// "vs target" delta.
+    target:       Option<f64>,
 }
 
 /// A parsed describegpt Data Dictionary: per-column semantic rows keyed by field name, plus the
@@ -9777,6 +9831,21 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     .unwrap_or_default()
                     .to_string()
             };
+            // KPI hints: `x-qsv.gauge_range` (a 2-element numeric array) and `x-qsv.target` (a
+            // number). Optional; absent on legacy dictionaries and on non-measure fields.
+            let xq_num = |k: &str| {
+                xq.and_then(|x| x.get(k))
+                    .and_then(serde_json::Value::as_f64)
+            };
+            let xq_range = |k: &str| -> Option<[f64; 2]> {
+                let a = xq
+                    .and_then(|x| x.get(k))
+                    .and_then(serde_json::Value::as_array)?;
+                match a.as_slice() {
+                    [lo, hi] => Some([lo.as_f64()?, hi.as_f64()?]),
+                    _ => None,
+                }
+            };
             let label = prop
                 .get("title")
                 .and_then(serde_json::Value::as_str)
@@ -9795,6 +9864,8 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                     concept: from_xq("concept"),
                     label,
                     description,
+                    gauge_range: xq_range("gauge_range"),
+                    target: xq_num("target"),
                 },
             );
         }
@@ -9852,6 +9923,9 @@ fn parse_dictionary_semantics(json_text: &str) -> Option<DictData> {
                 concept:      from_field("concept"),
                 label:        from_field("label"),
                 description:  from_field("description"),
+                // legacy plain-json dictionaries don't carry KPI gauge/target hints
+                gauge_range:  None,
+                target:       None,
             },
         );
     }
@@ -14398,6 +14472,143 @@ fn outlier_marker_geo() -> Marker {
     outlier_marker_map().symbol(plotly::common::MarkerSymbol::X)
 }
 
+/// Maximum number of tiles in the leading `viz smart` KPI overview row (dataset-summary tiles +
+/// headline measures). Keeps the row readable and each gauge/number a legible size.
+const KPI_MAX_TILES: usize = 6;
+
+/// Choose a plotly d3 value-format for a KPI number: SI-suffixed for large magnitudes ("1.05M",
+/// "258k"), a grouped integer for whole numbers, else two decimals.
+fn kpi_number_format(value: f64) -> String {
+    let a = value.abs();
+    if a >= 10_000.0 {
+        ".3~s".to_string()
+    } else if value.fract() == 0.0 {
+        ",.0f".to_string()
+    } else {
+        ",.2f".to_string()
+    }
+}
+
+/// Build one KPI `Indicator` trace for a tile, positioned by paper-domain `[x0,x1] × [y0,y1]`.
+/// A validated `gauge` adds an angular gauge, a `target` adds a "vs target" delta; the `mode`
+/// follows whichever are present (always including the big number).
+fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<dyn Trace> {
+    let mode = match (tile.gauge.is_some(), tile.target.is_some()) {
+        (true, true) => IndicatorMode::NumberAndDeltaAndGauge,
+        (true, false) => IndicatorMode::NumberAndGauge,
+        (false, true) => IndicatorMode::NumberAndDelta,
+        (false, false) => IndicatorMode::Number,
+    };
+    let mut ind = Indicator::new(tile.value)
+        .mode(mode)
+        .domain(Domain::new().x(&x_domain).y(&y_domain))
+        .title(IndicatorTitle::new().text(tile.label.clone()))
+        .number(Number::new().value_format(tile.format.clone()));
+    if let Some([g_lo, g_hi]) = tile.gauge {
+        ind = ind.gauge(Gauge::new().axis(GaugeAxis::new().range([g_lo, g_hi])));
+    }
+    if let Some(target) = tile.target {
+        // a "vs target" delta — the reference is a semantically-justified goal from the dictionary,
+        // never a fabricated prior-period baseline.
+        ind = ind.delta(Delta::new().reference(target));
+    }
+    ind
+}
+
+/// Build the leading KPI-tile row for `viz smart`: dataset-summary tiles (record count, field
+/// count, a completeness gauge) followed by the headline numeric measures (capped at
+/// `KPI_MAX_TILES`). A measure tile becomes a gauge when its dictionary supplies a `gauge_range`
+/// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
+/// gauge), and a "vs target" delta when the dictionary supplies a `target` (a semantically
+/// justified goal, never a fabricated prior-period baseline). Returns `None` for empty stats.
+fn build_kpi_row(
+    n: u64,
+    stats: &[crate::cmd::stats::StatsData],
+    panels: &[Panel],
+    dict: Option<&DictData>,
+) -> Option<Panel> {
+    let ncols = stats.len();
+    if ncols == 0 {
+        return None;
+    }
+    let mut tiles: Vec<KpiTile> = Vec::with_capacity(KPI_MAX_TILES);
+    // Record/field counts are intentionally omitted — they duplicate the "Rows"/"Columns" lines in
+    // the dashboard's metadata header. The KPI row leads with data-quality and measure signals the
+    // header doesn't carry.
+    //
+    // completeness = non-null cells / total cells — an inherently 0–100% scale, so a built-in
+    // gauge that needs no LLM hint.
+    if n > 0 {
+        let total_cells = n as f64 * ncols as f64;
+        let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
+        let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
+        tiles.push(KpiTile {
+            label:  "Completeness".to_string(),
+            value:  completeness,
+            format: ".1%".to_string(),
+            gauge:  Some([0.0, 1.0]),
+            target: None,
+        });
+    }
+
+    // headline measures: the numeric columns the dashboard already treats as continuous measures
+    // (i.e. those that earned a box/violin/histogram distribution panel), summed (extensive) or
+    // averaged (intensive), up to the remaining tile budget. Keying off the built panels keeps the
+    // KPI measures consistent with the charts and works at any data size (no re-classification).
+    for p in panels {
+        if tiles.len() >= KPI_MAX_TILES {
+            break;
+        }
+        if !matches!(
+            p.kind,
+            PanelKind::BoxStats { .. }
+                | PanelKind::BoxRaw { .. }
+                | PanelKind::BoxOutliers { .. }
+                | PanelKind::Violin { .. }
+                | PanelKind::Histogram { .. }
+        ) {
+            continue;
+        }
+        let Some(s) = stats.iter().find(|s| s.field == p.name) else {
+            continue;
+        };
+        if !matches!(s.r#type.as_str(), "Integer" | "Float") {
+            continue;
+        }
+        let row = dict.and_then(|d| d.rows.get(&s.field));
+        let label = match row {
+            Some(r) if !r.label.is_empty() => r.label.clone(),
+            _ => s.field.clone(),
+        };
+        // A `gauge_range` describes a bounded per-record quantity (a 0–5 rating, a 0–1 ratio), so
+        // its headline value is the MEAN — summing it would blow past the gauge scale. Otherwise
+        // fall back to the extensive/intensive keyword heuristic.
+        let has_range = row.and_then(|r| r.gauge_range).is_some();
+        let intensive = has_range || is_intensive_measure(&label, &s.field);
+        let Some(value) = (if intensive { s.mean } else { s.sum }).filter(|v| v.is_finite()) else {
+            continue;
+        };
+        // gauge only when a range is supplied AND actually contains the value (guardrail against a
+        // misleading gauge); delta only when a finite target is supplied.
+        let gauge = row
+            .and_then(|r| r.gauge_range)
+            .filter(|[lo, hi]| lo < hi && value >= *lo && value <= *hi);
+        let target = row.and_then(|r| r.target).filter(|t| t.is_finite());
+        tiles.push(KpiTile {
+            label: format!("{} {label}", if intensive { "Mean" } else { "Total" }),
+            value,
+            format: kpi_number_format(value),
+            gauge,
+            target,
+        });
+    }
+
+    Some(Panel::new(
+        "Overview".to_string(),
+        PanelKind::KpiRow { tiles },
+    ))
+}
+
 /// Build the `viz smart` auto-dashboard from the dataset's statistics + frequency data.
 /// Classifies columns into panels, then renders either a single-`Plot` subplot grid (≤8 panels,
 /// or any image export) or a self-contained inline-div HTML page (>8 panels, HTML output).
@@ -15344,7 +15555,7 @@ fn build_smart(
                     .as_deref()
                     .map(str::to_ascii_lowercase)
                     .as_deref(),
-                Some("treemap" | "sunburst")
+                Some("treemap" | "sunburst" | "icicle")
             );
             // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of exactly
             // the pair already drawn as a Sankey is redundant, so skip it (the flow view conveys
@@ -15371,8 +15582,8 @@ fn build_smart(
                         "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
                          statistically independent (max Cramér's V={assoc:.2} < \
                          {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
-                         convey the same information. Use --hierarchy-style treemap|sunburst to \
-                         force it."
+                         convey the same information. Use --hierarchy-style \
+                         treemap|sunburst|icicle to force it."
                     ));
                 } else if let Some((labels, parents, values, ids)) =
                     hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
@@ -15524,6 +15735,7 @@ fn build_smart(
         }
         panels = kept;
     }
+
     if !sentinel_suspects.is_empty() {
         viz_note(&format!(
             "viz smart: {} column(s) declared a `measure` in the data dictionary were typed \
@@ -15597,7 +15809,8 @@ fn build_smart(
         .iter()
         .filter_map(|p| match p.kind {
             PanelKind::FreqBar { idx } => Some(idx),
-            PanelKind::BoxStats { .. }
+            PanelKind::KpiRow { .. }
+            | PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
             | PanelKind::Violin { .. }
@@ -15804,6 +16017,18 @@ fn build_smart(
         && panels
             .iter()
             .any(|p| matches!(p.kind, PanelKind::Geo { .. }));
+
+    // Leading KPI overview row, prepended LAST (after every panel-count-dependent decision — the
+    // `--max-charts` ranking, the "charting N columns" note, the box-overlay demotion, and the
+    // render-path choice) so it stays invisible to them and simply lands at index 0, on top of the
+    // dashboard. HTML only: Indicator tiles are domain-positioned and never enter a static image.
+    if !out_format.is_image() {
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        if let Some(panel) = build_kpi_row(n, &stats, &panels, dict_data.as_ref()) {
+            panels.insert(0, panel);
+        }
+    }
+
     progress.set_message("Rendering dashboard…");
     if inline {
         Ok(SmartRender::Inline(render_smart_inline(
@@ -15817,7 +16042,13 @@ fn build_smart(
             dict_page.as_deref(),
             metadata_html.as_deref(),
         )))
-    } else if panels.len() > MAX_SUBPLOTS || has_geo_image {
+    } else if panels
+        .iter()
+        .filter(|p| !matches!(p.kind, PanelKind::KpiRow { .. }))
+        .count()
+        > MAX_SUBPLOTS
+        || has_geo_image
+    {
         // static image export of >MAX_SUBPLOTS panels (or any panel count with a geo subplot):
         // plotly's typed Layout only has xaxis1..xaxis8 and a single typed `geo`, so assemble the
         // grid as raw JSON with domain-positioned xaxis9+ and (for geo panels) geo/geo2+ subplots.
@@ -16254,7 +16485,8 @@ fn panel_trace(
         // 3D scene, or domain-based treemap/sunburst) that can't share the typed x/y subplot grid,
         // so they are rendered entirely by `smart_inline_panel_plot` and never reach this
         // assembler.
-        PanelKind::Map { .. }
+        PanelKind::KpiRow { .. }
+        | PanelKind::Map { .. }
         | PanelKind::Geo { .. }
         | PanelKind::Choropleth { .. }
         | PanelKind::ChoroplethMap { .. }
@@ -16317,7 +16549,8 @@ fn smart_grid_parts(
             PanelKind::CorrHeatmap { labels, .. } | PanelKind::AssocHeatmap { labels, .. } => {
                 Some(labels.as_slice())
             },
-            PanelKind::BoxStats { .. }
+            PanelKind::KpiRow { .. }
+            | PanelKind::BoxStats { .. }
             | PanelKind::BoxRaw { .. }
             | PanelKind::BoxOutliers { .. }
             | PanelKind::Violin { .. }
@@ -16418,11 +16651,41 @@ fn smart_grid_parts(
     let mut axes: Vec<(usize, Axis, Axis)> = Vec::with_capacity(panels.len());
     let mut geos: Vec<(usize, serde_json::Value)> = Vec::new();
 
+    // The leading KPI row (index 0, when present) is domain-positioned and takes NO cartesian axis
+    // slot, so cartesian panels must number their axes from 1 as if it weren't there — otherwise 8
+    // real charts behind it would run to x9/y9, which the typed `Layout` (x1..x8) silently drops
+    // (`assign_typed_axis`). The KPI row and geo panels never coexist here (geo forces the inline
+    // path for HTML; image exports carry no KPI row), so a single leading offset is sufficient.
+    let axis_offset = usize::from(matches!(
+        panels.first().map(|p| &p.kind),
+        Some(PanelKind::KpiRow { .. })
+    ));
+
     for (n, panel) in panels.iter().enumerate() {
-        let pos = n + 1;
+        let pos = (n + 1).saturating_sub(axis_offset);
         let xref = axis_ref('x', pos);
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];
+
+        // KPI row: a full-width band of domain-positioned Indicator tiles (no cartesian axes).
+        // Sub-divide this panel's paper x-domain into N tiles, emit each as an Indicator, then skip
+        // the cartesian axis assignment below. No section title — the tiles are self-labeling.
+        if let PanelKind::KpiRow { tiles } = &panel.kind {
+            let geom = &geoms[n];
+            let x0 = geom.x_domain.first().copied().unwrap_or(0.0);
+            let x1 = geom.x_domain.get(1).copied().unwrap_or(1.0);
+            let y0 = geom.y_domain.first().copied().unwrap_or(0.0);
+            let y1 = geom.y_domain.get(1).copied().unwrap_or(1.0);
+            let count = tiles.len().max(1) as f64;
+            let width = (x1 - x0) / count;
+            let gutter = width * 0.06;
+            for (i, tile) in tiles.iter().enumerate() {
+                let lo = x0 + i as f64 * width + gutter / 2.0;
+                let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
+                traces.push(kpi_indicator(tile, [lo, hi], [y0, y1]));
+            }
+            continue;
+        }
 
         // geo panels use a `geo{pos}` projection subplot (no cartesian x/y axes), only reachable on
         // the raw-JSON static-export path. Build the ScatterGeo trace, fit the projection to the
@@ -17391,6 +17654,35 @@ fn smart_inline_panel_plot(
 
     // hierarchy (treemap/sunburst) panels are domain-based — no cartesian x/y axes — so, like the
     // map/geo/3D panels above, they own their whole Plot here.
+    // KPI row: a full-width band of domain-positioned `Indicator` tiles (no cartesian axes), so it
+    // owns its whole Plot here like the hierarchy/sankey panels below.
+    if let PanelKind::KpiRow { tiles } = &panel.kind {
+        let mut plot = Plot::new();
+        let count = tiles.len().max(1) as f64;
+        // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
+        let gutter = 0.02_f64;
+        for (i, tile) in tiles.iter().enumerate() {
+            let lo = (i as f64 / count) + gutter / 2.0;
+            let hi = ((i + 1) as f64 / count) - gutter / 2.0;
+            plot.add_trace(kpi_indicator(tile, [lo, hi], [0.0, 1.0]));
+        }
+        // no panel title — the tiles are self-labeling (each Indicator carries its own title), so
+        // reclaim the top band the title would occupy. Just the vertical hover modebar.
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .margin(Margin::new().top(20).bottom(20).left(20).right(20).pad(4))
+            .mode_bar(ModeBar::new().orientation(Orientation::Vertical));
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
     if let PanelKind::Hierarchy {
         style,
         labels,
@@ -18434,6 +18726,17 @@ fn hierarchy_trace(
             // ring's spoke, so deep-path sectors stay legible instead of clipping tangential text.
             .inside_text_orientation(InsideTextOrientation::Radial)
             .max_depth(SUNBURST_MAXDEPTH),
+        // an icicle is the rectangular sibling of the sunburst: the same rolled-up subtree totals
+        // laid out as stacked bars per level. We leave `tiling.orientation` at plotly's default of
+        // horizontal ("h"), so the root sits on the LEFT and children fan out to the right — which
+        // keeps deep paths and many small leaves more legible than a treemap's nested rectangles
+        // while preserving strict level alignment for cross-branch comparison. Same
+        // `label+value+percent parent` tile text.
+        HierStyle::Icicle => Icicle::new(labels.to_vec(), parents.to_vec())
+            .ids(ids.to_vec())
+            .values(values.to_vec())
+            .branch_values(IcicleBranchValues::Total)
+            .text_info("label+value+percent parent"),
     }
 }
 
@@ -18762,7 +19065,8 @@ struct SubplotGeometry {
 /// multi-column grid below.
 fn is_overview_panel(kind: &PanelKind) -> bool {
     match kind {
-        PanelKind::CorrHeatmap { .. }
+        PanelKind::KpiRow { .. }
+        | PanelKind::CorrHeatmap { .. }
         | PanelKind::AssocHeatmap { .. }
         | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
@@ -22421,6 +22725,15 @@ mod tests {
         assert_eq!(
             resolve_hierarchy_style(Some("sunburst"), 2).unwrap(),
             HierStyle::Sunburst
+        );
+        // icicle is an explicit-only override (auto never picks it)
+        assert_eq!(
+            resolve_hierarchy_style(Some("icicle"), 3).unwrap(),
+            HierStyle::Icicle
+        );
+        assert_eq!(
+            resolve_hierarchy_style(Some("ICICLE"), 2).unwrap(),
+            HierStyle::Icicle
         );
         assert!(resolve_hierarchy_style(Some("pie"), 2).is_err());
     }

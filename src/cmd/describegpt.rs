@@ -171,6 +171,13 @@ describegpt options:
                            then render Min/Max AND Examples in that inferred format so they match how
                            the dates actually appear in the data, instead of qsv's normalized form.
                            (TSV output keeps Min/Max & Examples in qsv's raw normalized form.)
+                           For a CONTINUOUS numeric measure on a canonical scale (a percentage, a
+                           0-1 ratio/probability, a bounded index), the LLM also proposes an
+                           "x-qsv.gauge_range" [min, max]; qsv keeps it only when the field is a
+                           numeric measure AND the observed data lies within it, so that a
+                           "viz smart" dictionary-driven dashboard draws that KPI tile as a GAUGE.
+                           (A KPI "vs target" delta uses "x-qsv.target", which is a GOAL you
+                           hand-author - never inferred.)
     --infer-null-values    Also have the LLM propose each field's null sentinels - literal values
                            that stand in for "missing" (e.g. NULL, N/A, -999, 9999-12-31).
                            Emitted into the JSON Schema dictionary's per-property "x-qsv" object,

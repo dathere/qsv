@@ -1309,19 +1309,27 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
     // column whose `content_type` (`category`) and `role` (`dimension`) both say
     // categorical. `viz`'s `derive_semantics` prefers concept over role, so the lone
     // dissenting concept silently misroutes (and can drop) the column — charting it
-    // WORSE than with no dictionary at all. When content_type gives a reliable signal
-    // that the concept's namespace contradicts, the concept is the dissenter: reset it
-    // (backfilling the deterministic concept for this content_type, else "unknown") so
-    // the emitted dictionary is self-consistent. `content_type: unknown` yields no
-    // signal, so a specific concept like `geo.census_tract` on an untyped numeric
-    // column is deliberately left to win — that override is why `route_from_concept`
-    // exists.
-    if let Some(ct_role) = role_from_content_type(base)
+    // WORSE than with no dictionary at all. Reconcile at two granularities:
+    //   1. When the content_type pins a specific concept (`concept_from_content_type`), compare
+    //      NAMESPACES, not just role buckets: `email` pins `pii.email`, so a supplied `geo.city`
+    //      (same `dimension` role bucket, but `geo` ≠ `pii`) is a contradiction that a bucket-only
+    //      check would miss — and it would falsely mark a PII field as linkable geography. Replace
+    //      it with the deterministic concept.
+    //   2. Otherwise, when the content_type still constrains the role, a concept whose namespace
+    //      implies a different role is the dissenter → drop to "unknown".
+    // `content_type: unknown` pins neither, so a specific concept like `geo.census_tract`
+    // on an untyped numeric column is deliberately left to win — that override is why
+    // `route_from_concept` exists.
+    let concept_namespace = |c: &str| c.split('.').next().unwrap_or_default().to_string();
+    if let Some(deterministic) = concept_from_content_type(base) {
+        if concept_namespace(&entry.concept) != concept_namespace(deterministic) {
+            entry.concept = deterministic.to_string();
+        }
+    } else if let Some(ct_role) = role_from_content_type(base)
         && let Some(concept_role) = role_from_concept_namespace(&entry.concept)
         && ct_role != concept_role
     {
-        entry.concept = concept_from_content_type(base)
-            .map_or_else(|| "unknown".to_string(), ToString::to_string);
+        entry.concept = "unknown".to_string();
     }
 }
 
@@ -2037,6 +2045,26 @@ mod tests {
         // A concept that AGREES with a recognized content_type is untouched.
         let (_, concept) = coerced_role_concept("email", "dimension", "pii.email", "String");
         assert_eq!(concept, "pii.email");
+    }
+
+    #[test]
+    fn coerce_concept_same_role_bucket_cross_namespace_is_reset() {
+        // A content_type that pins a deterministic concept must win against a concept in a
+        // DIFFERENT namespace even when both share a role bucket. `email` -> `pii.email`
+        // and a supplied `geo.city` are both the `dimension` bucket, so a role-only check
+        // would miss it and leave a PII field falsely tagged as linkable geography.
+        let (_, concept) = coerced_role_concept("email", "dimension", "geo.city", "String");
+        assert_eq!(concept, "pii.email");
+
+        // Same namespace but a different leaf is an LLM refinement, left untouched.
+        let (_, concept) =
+            coerced_role_concept("first_name", "dimension", "pii.full_name", "String");
+        assert_eq!(concept, "pii.full_name");
+
+        // A deterministic-concept content_type with a stray measure concept is corrected
+        // to the deterministic value (not merely dropped to "unknown").
+        let (_, concept) = coerced_role_concept("city", "dimension", "measure.amount", "String");
+        assert_eq!(concept, "geo.city");
     }
 
     #[test]

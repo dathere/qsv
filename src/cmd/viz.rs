@@ -69,13 +69,15 @@ auto-picks panels, so no --x/--y is needed:
     - ID-like (near-unique) and all-empty columns are skipped
 
   Overview panels (each leads the dashboard on its own full-width row):
-    - KPI overview row (leads every dashboard): a strip of "big number" tiles - a
-      Completeness gauge (share of non-empty cells across the dataset, a built-in
-      0-100% scale needing no hint) followed by the headline numeric measures
-      (summed for extensive quantities, averaged for intensive ones). A measure
-      tile becomes a GAUGE when the dictionary supplies a validated
-      `x-qsv.gauge_range` that contains the value, and gains a "vs target" DELTA
-      when it supplies an `x-qsv.target` (see --dictionary). Omitted for image exports.
+    - KPI overview row (leads the dashboard when the dataset has headline numeric
+      measures): a strip of "big number" tiles, one per headline measure (summed
+      for extensive quantities, averaged for intensive ones). A measure tile
+      becomes a GAUGE when the dictionary supplies a validated `x-qsv.gauge_range`
+      that contains the value, and gains a "vs target" DELTA when it supplies an
+      `x-qsv.target` (see --dictionary). Omitted for image exports and for datasets
+      with no headline measure. (Overall dataset completeness - the share of
+      non-empty cells - is a quiet "Completeness:" line in the header metadata
+      table, not a KPI tile.)
     - correlation heatmap, when 2+ continuous numeric columns exist (one extra
       data pass for Pearson correlations). If the strongest pair is at least
       moderately correlated, a drill-down is added beside it: a scatter (or a 2D

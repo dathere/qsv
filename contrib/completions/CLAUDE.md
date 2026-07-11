@@ -60,16 +60,6 @@ No manual steps needed in this project! When qsv adds/removes commands or flags 
 bash generate_examples.bash
 ```
 
-## Dependencies
-
-| Crate | Purpose |
-|-------|---------|
-| `clap` 4.5.x (with `string` feature) | Core CLI argument definition |
-| `clap_complete` | Bash, Zsh, Fish, PowerShell, Elvish generation |
-| `clap_complete_fig` | Fig (JavaScript) generation |
-| `clap_complete_nushell` | Nushell generation |
-| `qsv_docopt` 1.9 | USAGE text parsing (same parser used by qsv itself) |
-
 ## Relationship to Parent qsv Project
 
 This project reads the `static USAGE` text from qsv's `src/cmd/*.rs` files at runtime. Completions automatically stay in sync with the qsv CLI -- no manual command definition files to maintain.

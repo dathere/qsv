@@ -76,23 +76,3 @@ Skill JSON files in `qsv/` are auto-generated from qsv USAGE text via `qsv --upd
 ### Spreadsheet format handling
 
 qsv commands operate on CSV/TSV/SSV and Parquet — not directly on spreadsheet formats (`.xls`, `.xlsx`, `.xlsm`, `.xlsb`, `.ods`). Use the `excel` command to convert spreadsheets to CSV first before processing with other qsv commands. The MCP server auto-converts Excel/ODS files when passed as input, but skills and agents should be aware of the underlying requirement. See the `data-convert` skill and the "Convert and Export" pipeline in `csv-wrangling` for details.
-
-## Documentation Standards
-
-When counting tools, commands, or features in documentation, always verify counts by explicitly listing each item. Never estimate or assume counts — miscounts have caused multiple review cycles.
-
-## Release & Publishing
-
-Before publishing, packaging, or releasing plugins, always read the relevant docs first (e.g., marketplace.json, plugin.json specs, packaging scripts). Do not guess workflows — consult project documentation.
-
-## Debugging Guidelines
-
-When debugging, form a hypothesis and verify it before moving to the next. Do not cycle through multiple wrong hypotheses (version mismatch, PATH issues, settings files) without evidence. State your reasoning before each investigation step.
-
-## MCP Tool Usage
-
-Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7 MCP for library documentation lookups. These tools are configured and should be preferred over Grep/Read for symbol-level exploration.
-
-## roborev is a Local Tool
-
-`roborev` is a **local, on-host code-review daemon** — it stores reviews in a local data store under the repo and does not post to GitHub, GitLab, or any external code-review service. All `roborev` subcommands (`review`, `show`, `comment`, `close`, `fix`, `refine`, `respond`, `init`, `fix --open --list`) mutate local state only and should be treated as in-project tooling, not as external publishes. `roborev comment` and `roborev close` in particular are local-only annotations on a local job record; they do not send data to any external endpoint.

@@ -602,7 +602,7 @@ use plotly::{
         HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
         Title,
     },
-    indicator::{Delta, Gauge, GaugeAxis, IndicatorTitle, Mode as IndicatorMode, Number},
+    indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
         LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
@@ -14491,7 +14491,11 @@ fn kpi_number_format(value: f64) -> String {
 
 /// Build one KPI `Indicator` trace for a tile, positioned by paper-domain `[x0,x1] × [y0,y1]`.
 /// A validated `gauge` adds an angular gauge, a `target` adds a "vs target" delta; the `mode`
-/// follows whichever are present (always including the big number).
+/// follows whichever are present (always including the big number). The tile LABEL is NOT set as
+/// the indicator's built-in title (which renders large, above the number, and overruns narrow
+/// tiles for long auto-generated labels) — the caller instead draws it as a smaller, word-wrapped
+/// subtitle annotation BELOW the tile via `kpi_label_annotation`, so the indicator here owns only
+/// the number/gauge/delta and leaves the bottom band of its domain for that label.
 fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<dyn Trace> {
     let mode = match (tile.gauge.is_some(), tile.target.is_some()) {
         (true, true) => IndicatorMode::NumberAndDeltaAndGauge,
@@ -14502,7 +14506,6 @@ fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<
     let mut ind = Indicator::new(tile.value)
         .mode(mode)
         .domain(Domain::new().x(&x_domain).y(&y_domain))
-        .title(IndicatorTitle::new().text(tile.label.clone()))
         .number(Number::new().value_format(tile.format.clone()));
     if let Some([g_lo, g_hi]) = tile.gauge {
         ind = ind.gauge(Gauge::new().axis(GaugeAxis::new().range([g_lo, g_hi])));
@@ -14513,6 +14516,54 @@ fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<
         ind = ind.delta(Delta::new().reference(target));
     }
     ind
+}
+
+/// Greedy word-wrap a KPI tile label into `<br>`-separated lines of at most `max_chars`
+/// characters, so a long auto-generated label (e.g. "Mean Profit Margin Percentage") renders as a
+/// compact multi-line subtitle under its tile instead of overrunning the tile width and colliding
+/// with its neighbours. A single word longer than `max_chars` is left intact (never hard-split
+/// mid-word — a broken token reads worse than a slightly-wide one).
+fn wrap_kpi_label(text: &str, max_chars: usize) -> String {
+    let max = max_chars.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in text.split_whitespace() {
+        if cur.is_empty() {
+            cur.push_str(word);
+        } else if cur.chars().count() + 1 + word.chars().count() <= max {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+        }
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines.join("<br>")
+}
+
+/// The word-wrapped subtitle label for one KPI tile, centered under the tile at paper-y `y_top`
+/// (anchored at its top so it hangs down into the band reserved below the indicator). Smaller than
+/// the number it captions; `font` follows the dashboard's themed/non-themed convention.
+fn kpi_label_annotation(
+    label: &str,
+    x_center: f64,
+    y_top: f64,
+    max_chars: usize,
+    font: Font,
+) -> Annotation {
+    Annotation::new()
+        .text(wrap_kpi_label(label, max_chars))
+        .x(x_center)
+        .y(y_top)
+        .x_ref("paper")
+        .y_ref("paper")
+        .x_anchor(Anchor::Center)
+        .y_anchor(Anchor::Top)
+        .show_arrow(false)
+        .font(font)
 }
 
 /// Build the leading KPI-tile row for `viz smart`: dataset-summary tiles (record count, field
@@ -16669,7 +16720,8 @@ fn smart_grid_parts(
 
         // KPI row: a full-width band of domain-positioned Indicator tiles (no cartesian axes).
         // Sub-divide this panel's paper x-domain into N tiles, emit each as an Indicator, then skip
-        // the cartesian axis assignment below. No section title — the tiles are self-labeling.
+        // the cartesian axis assignment below. No section title — each tile carries its own
+        // word-wrapped subtitle label below the number (`kpi_label_annotation`).
         if let PanelKind::KpiRow { tiles } = &panel.kind {
             let geom = &geoms[n];
             let x0 = geom.x_domain.first().copied().unwrap_or(0.0);
@@ -16679,10 +16731,23 @@ fn smart_grid_parts(
             let count = tiles.len().max(1) as f64;
             let width = (x1 - x0) / count;
             let gutter = width * 0.06;
+            // reserve the bottom slice of the row band for the subtitle labels, so the indicator's
+            // number/gauge sits above and the (smaller, wrapped) label hangs below it.
+            let label_band = (y1 - y0) * 0.26;
+            let ind_y0 = y0 + label_band;
+            // narrower tiles (more of them) wrap sooner; the smaller subtitle font fits ~2 lines.
+            let max_chars = ((170.0 / count) as usize).clamp(14, 40);
             for (i, tile) in tiles.iter().enumerate() {
                 let lo = x0 + i as f64 * width + gutter / 2.0;
                 let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
-                traces.push(kpi_indicator(tile, [lo, hi], [y0, y1]));
+                traces.push(kpi_indicator(tile, [lo, hi], [ind_y0, y1]));
+                annotations.push(kpi_label_annotation(
+                    &tile.label,
+                    f64::midpoint(lo, hi),
+                    ind_y0,
+                    max_chars,
+                    ann_font(10),
+                ));
             }
             continue;
         }
@@ -17661,18 +17726,36 @@ fn smart_inline_panel_plot(
         let count = tiles.len().max(1) as f64;
         // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
         let gutter = 0.02_f64;
+        // reserve the bottom slice for each tile's word-wrapped subtitle label; the indicator's
+        // number/gauge sits above it.
+        let label_band = 0.26_f64;
+        let max_chars = ((170.0 / count) as usize).clamp(14, 40);
+        let ann_font = |size: usize| {
+            let f = Font::new().size(size);
+            if themed { f } else { f.family(FONT_FAMILY) }
+        };
+        let mut kpi_labels: Vec<Annotation> = Vec::with_capacity(tiles.len());
         for (i, tile) in tiles.iter().enumerate() {
             let lo = (i as f64 / count) + gutter / 2.0;
             let hi = ((i + 1) as f64 / count) - gutter / 2.0;
-            plot.add_trace(kpi_indicator(tile, [lo, hi], [0.0, 1.0]));
+            plot.add_trace(kpi_indicator(tile, [lo, hi], [label_band, 1.0]));
+            kpi_labels.push(kpi_label_annotation(
+                &tile.label,
+                f64::midpoint(lo, hi),
+                label_band,
+                max_chars,
+                ann_font(10),
+            ));
         }
-        // no panel title — the tiles are self-labeling (each Indicator carries its own title), so
-        // reclaim the top band the title would occupy. Just the vertical hover modebar.
+        // no panel title — each tile carries its own word-wrapped subtitle label below its number
+        // (`kpi_label_annotation`), so reclaim the top band a title would occupy. Vertical hover
+        // modebar only.
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
             .margin(Margin::new().top(20).bottom(20).left(20).right(20).pad(4))
-            .mode_bar(ModeBar::new().orientation(Orientation::Vertical));
+            .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
+            .annotations(kpi_labels);
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -22705,6 +22788,29 @@ mod tests {
         assert_eq!(auto_hierarchy_style(2), HierStyle::Treemap);
         assert_eq!(auto_hierarchy_style(3), HierStyle::Sunburst);
         assert_eq!(auto_hierarchy_style(4), HierStyle::Sunburst);
+    }
+
+    #[test]
+    fn wrap_kpi_label_wraps_on_word_boundaries() {
+        // short labels stay on one line (no <br> injected), so exact-text consumers/tests still see
+        // the whole label.
+        assert_eq!(wrap_kpi_label("Completeness", 40), "Completeness");
+        assert_eq!(
+            wrap_kpi_label("Mean Customer Rating", 40),
+            "Mean Customer Rating"
+        );
+        // a long label wraps at the last word boundary that fits within max_chars.
+        assert_eq!(
+            wrap_kpi_label("Mean Profit Margin Percentage", 20),
+            "Mean Profit Margin<br>Percentage"
+        );
+        // a single word longer than max_chars is left intact rather than hard-split mid-word.
+        assert_eq!(
+            wrap_kpi_label("Supercalifragilistic", 8),
+            "Supercalifragilistic"
+        );
+        // multiple wraps.
+        assert_eq!(wrap_kpi_label("a b c d e", 3), "a b<br>c d<br>e");
     }
 
     #[test]

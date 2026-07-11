@@ -47,7 +47,8 @@ ROLE_VOCAB = ["dimension", "measure", "identifier", "timestamp"]
 
 CONCEPT_VOCAB = [
     # spatial
-    "geo.zip_code", "geo.city", "geo.state", "geo.country", "geo.latitude",
+    "geo.zip_code", "geo.city", "geo.county", "geo.county_fips",
+    "geo.state", "geo.state_fips", "geo.country", "geo.latitude",
     "geo.longitude", "geo.coordinate_pair", "geo.street_address",
     "geo.census_tract", "geo.crs_stateplane_x", "geo.crs_stateplane_y",
     # temporal

@@ -1530,11 +1530,41 @@ pub fn init_logger() -> CliResult<(String, flexi_logger::LoggerHandle)> {
     }
 }
 
+/// Turn a `self_update` error into an accurate, actionable message.
+///
+/// rc.4's `Error` is `#[non_exhaustive]` with structured HTTP variants, so we can
+/// distinguish a genuine GitHub rate-limit / auth failure (403/401/429) from a network
+/// timeout or connection failure - instead of the old blanket "Github is rate-limiting"
+/// message that masked every failure mode (including the fixed pagination-URL 403 bug).
+#[cfg(feature = "self_update")]
+fn describe_self_update_error(e: &self_update::errors::Error) -> String {
+    use self_update::errors::Error;
+
+    match e {
+        // 429 (and 403 below) are how GitHub signals secondary/primary rate limits
+        Error::HttpStatus { status: 429, .. } => {
+            format!(
+                "GitHub is rate-limiting self-update checks (HTTP 429). Try again in an hour: {e}"
+            )
+        },
+        Error::Unauthorized { status: 403, .. } => {
+            format!("GitHub returned HTTP 403 - likely rate-limiting. Try again in an hour: {e}")
+        },
+        Error::Unauthorized { status, .. } => {
+            format!("GitHub authorization failed (HTTP {status}): {e}")
+        },
+        Error::HttpStatus { status, .. } => format!("GitHub returned HTTP {status}: {e}"),
+        Error::NotFound { .. } => format!("Release not found on GitHub: {e}"),
+        Error::Transport(_) => {
+            format!("Network error reaching GitHub (timeout or connection failure): {e}")
+        },
+        _ => format!("Self-update check failed: {e}"),
+    }
+}
+
 #[cfg(feature = "self_update")]
 pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, String> {
     use self_update::cargo_crate_version;
-    const GITHUB_RATELIMIT_MSG: &str =
-        "Github is rate-limiting self-update checks at the moment. Try again in an hour.";
 
     if get_envvar_flag("QSV_NO_UPDATE") {
         return Ok(false);
@@ -1557,16 +1587,21 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
     let releases = match self_update::backends::github::ReleaseList::configure()
         .repo_owner("dathere")
         .repo_name("qsv")
+        // the release listing is a small JSON response, so bound it with a short timeout
+        // to avoid hanging indefinitely on a stalled connection. Pair with a couple of
+        // retries (exponential backoff, per self_update defaults) for transient failures.
+        .timeout(Duration::from_secs(20))
+        .retries(2)
         .build()
     {
         Ok(releases_list) => match releases_list.fetch() {
             Ok(releases) => releases,
             Err(e) => {
-                return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
+                return fail!(describe_self_update_error(&e));
             },
         },
         Err(e) => {
-            return fail!(format!("{GITHUB_RATELIMIT_MSG}: {e}"));
+            return fail!(describe_self_update_error(&e));
         },
     };
     let Some(first_release) = releases.latest() else {
@@ -1597,6 +1632,12 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
                 .no_confirm(no_confirm)
                 .current_version(curr_version)
                 .verifying_keys([*include_bytes!("qsv-zipsign-public.key")])
+                // NOTE: on the Update builder, timeout() also bounds the multi-MB binary
+                // download (a total-request timeout), so use a generous cap here - NOT the
+                // short listing timeout - to avoid aborting legitimate slow downloads.
+                // retries() only re-attempts before any bytes are streamed to disk.
+                .timeout(Duration::from_secs(600))
+                .retries(2)
                 .build()
             {
                 Ok(update_job) => match update_job.update() {
@@ -1609,9 +1650,9 @@ pub fn qsv_check_for_update(check_only: bool, no_confirm: bool) -> Result<bool, 
                         );
                         winfo!("{update_status}");
                     },
-                    Err(e) => werr!("Update job error: {e}"),
+                    Err(e) => werr!("Update job error: {}", describe_self_update_error(&e)),
                 },
-                Err(e) => werr!("Update builder error: {e}"),
+                Err(e) => werr!("Update builder error: {}", describe_self_update_error(&e)),
             }
         } else if check_only {
             winfo!("Use the --update option to upgrade {bin_name} to the latest release.");

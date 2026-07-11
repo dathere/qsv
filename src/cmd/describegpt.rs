@@ -7628,6 +7628,7 @@ p_fewshot_examples = ""
 
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         }];
         let first = build_first_pass_dictionary_json_string(&args, &entries);
         sleep(Duration::from_millis(10));
@@ -7829,6 +7830,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             dictionary::DictionaryEntry {
                 name:         "category|raw".to_string(),
@@ -7850,6 +7852,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -7933,6 +7936,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
@@ -7967,6 +7971,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -8066,6 +8071,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             dictionary::DictionaryEntry {
                 name:         "Status".to_string(),
@@ -8087,6 +8093,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -8161,6 +8168,7 @@ p_fewshot_examples = ""
 
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8249,6 +8257,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             // Text column with only `min_length` retained.
             dictionary::DictionaryEntry {
@@ -8271,6 +8280,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             // Text column with only `max_length` retained.
             dictionary::DictionaryEntry {
@@ -8293,6 +8303,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -8366,6 +8377,7 @@ p_fewshot_examples = ""
 
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         }];
 
         let shared = SharedRenderCtx::new(&args, model, base_url, PromptType::Dictionary);
@@ -8526,6 +8538,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             dictionary::DictionaryEntry {
                 name:         "category".to_string(),
@@ -8547,6 +8560,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -8612,6 +8626,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             // datetime with an inferred format (contains colons) over an RFC3339 min/max.
             dictionary::DictionaryEntry {
@@ -8634,6 +8649,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             // bare `date` token (no inferred fmt) — Min/Max stay as-is.
             dictionary::DictionaryEntry {
@@ -8656,6 +8672,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
             // non-date content type — Min/Max untouched even though numeric.
             dictionary::DictionaryEntry {
@@ -8678,6 +8695,7 @@ p_fewshot_examples = ""
 
                 null_values:     Vec::new(),
                 null_candidates: Vec::new(),
+                gauge_range:     None,
             },
         ];
 
@@ -8759,6 +8777,11 @@ p_fewshot_examples = ""
             !off.contains("Concept:") && !off.contains("\"concept\"") && !off.contains("\"grain\""),
             "flag-off prompt must not mention Concept/Role/grain:\n{off}"
         );
+        // gauge_range (the measure gauge hint for viz) rides the same flag.
+        assert!(
+            !off.contains("gauge_range") && !off.contains("Gauge Range"),
+            "flag-off prompt must not mention gauge_range:\n{off}"
+        );
         assert!(
             off.contains("\"label\" and \"description\" properties"),
             "flag-off prompt must keep the legacy properties sentence:\n{off}"
@@ -8779,9 +8802,16 @@ p_fewshot_examples = ""
         );
         assert!(
             on.contains(
-                "\"label\", \"description\", \"content_type\", \"role\" and \"concept\" properties"
+                "\"content_type\", \"role\", \"concept\" and (for canonical-scale numeric \
+                 measures only) an optional \"gauge_range\" properties"
             ),
-            "flag-on prompt must list content_type/role/concept in the properties sentence:\n{on}"
+            "flag-on prompt must list content_type/role/concept/gauge_range in the properties \
+             sentence:\n{on}"
+        );
+        // The Gauge Range instruction is injected when the flag is on.
+        assert!(
+            on.contains("- Gauge Range (OPTIONAL, numeric MEASURE fields only)"),
+            "flag-on prompt must include the Gauge Range instruction:\n{on}"
         );
         // Concept + Role instructions and vocabularies are injected when the flag is on.
         assert!(

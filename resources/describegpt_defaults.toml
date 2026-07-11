@@ -140,6 +140,18 @@ For each field, provide:
   none do. Do NOT invent tokens. NOTE: "id.surrogate_key" is RESERVED and set deterministically by
   qsv for unique-key columns - do not use it yourself.
   Allowed Concept tokens: {{ concept_vocab }}
+- Gauge Range (OPTIONAL, numeric MEASURE fields only): if - and ONLY if - this field is a numeric
+  "measure" that rides a well-known CANONICAL scale with a fixed, meaningful full-scale maximum,
+  add a "gauge_range" as a two-number array [min, max] giving that scale's bounds. Use it for a
+  percentage (`[0, 100]`), a probability or ratio (`[0, 1]`), a 1-to-5 or 0-to-10 rating/score
+  (`[0, 5]`, `[0, 10]`), or a bounded index. The range MUST contain the field's observed Min and
+  Max (from the Summary Statistics) - a dashboard draws the value against this scale, so a range
+  the data spills past is worse than none. Do NOT invent a range for an OPEN-ENDED measure whose
+  maximum is just "however big the data happens to get" - revenue, counts, amounts, durations,
+  distances, weights - OMIT "gauge_range" entirely for those. When in doubt, omit it: qsv drops
+  any range that does not contain the observed data, and a missing gauge_range simply renders as a
+  plain number instead of a dial. Never emit a "target", baseline, or goal value - you cannot know
+  a business goal from the data.
 {%- endif %}
 
 {%- if infer_content_type %}
@@ -199,7 +211,7 @@ automatically, so propose a numeric placeholder whenever the field's meaning gen
 one. Do not invent one to be thorough.
 {%- endif %}
 
-Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role" and "concept"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
+Return the results in JSON format where each field name is a key, and the value is an object with "label"{% if infer_content_type %},{% else %} and{% endif %} "description"{% if infer_content_type %}, "content_type", "role", "concept" and (for canonical-scale numeric measures only) an optional "gauge_range"{% endif %}{% if infer_null_values %} and "null_values"{% endif %} properties{% if infer_content_type %}, plus a top-level "grain" string and an optional "relationships" array{% endif %}:
 {% raw %}{
   "field_name_1": {
     "label": "Human-friendly label",

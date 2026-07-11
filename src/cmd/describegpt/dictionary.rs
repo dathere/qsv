@@ -1311,14 +1311,17 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
     // dissenting concept silently misroutes (and can drop) the column — charting it
     // WORSE than with no dictionary at all. Reconcile at two granularities:
     //   1. When the content_type pins a deterministic concept (`concept_from_content_type`),
-    //      require an EXACT match by default. That mapping is exact for the `geo`, `pii`, and `org`
-    //      namespaces (a `city` is `geo.city`, an `email` is `pii.email`), so a same-namespace
-    //      sibling is a real contradiction — `geo.city` tagged `geo.country` corrupts join identity
-    //      (both are linkable), and `geo.city` on a `latitude` column would suppress
-    //      `Route::MapCoord`. The lone exception is the COARSE namespaces `time` and `id`: `date` →
-    //      `time.date` and `uuid` → `id.uuid` are deliberately generic, so the LLM may legitimately
-    //      refine WITHIN the namespace (`time.created_at`, `time.due_at`, `id.foreign_key`). There,
-    //      a same-namespace value is kept and only a cross-namespace one is reset.
+    //      require an EXACT match by default — most mappings are exact (a `city` is `geo.city`, an
+    //      `email` is `pii.email`), so a same-namespace sibling is a real contradiction: `geo.city`
+    //      tagged `geo.country` corrupts join identity (both are linkable), and `geo.city` on a
+    //      `latitude` column would suppress `Route::MapCoord`. A few content_types map COARSELY to
+    //      a generic placeholder that has legitimate more-specific siblings, so there the LLM may
+    //      refine WITHIN the namespace and only a cross-namespace value is reset. Refinability is
+    //      per-content_type, NOT per-namespace — `org` is mixed: `company_name` → `org.company` is
+    //      coarse (a government "Agency Name" column has no `agency_name` content_type, so
+    //      `company_name` + `org.agency` is valid and must be kept), while `industry` →
+    //      `org.industry` is exact. New coarse mappings must be added here explicitly; the safe
+    //      default is exact.
     //   2. Otherwise, when the content_type still constrains the role, a concept whose namespace
     //      implies a different role is the dissenter → drop to "unknown".
     // `content_type: unknown` pins neither, so a specific concept like `geo.census_tract`
@@ -1328,12 +1331,12 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
         c.split('.').next().unwrap_or_default()
     }
     if let Some(deterministic) = concept_from_content_type(base) {
-        let deterministic_ns = concept_namespace(deterministic);
-        // `time` and `id` map coarsely, so a same-namespace refinement is legitimate;
-        // every other namespace maps exactly, so require the exact concept.
-        let refinable_namespace = matches!(deterministic_ns, "time" | "id");
-        let contradicts = if refinable_namespace {
-            concept_namespace(&entry.concept) != deterministic_ns
+        // content_types whose deterministic concept is a generic placeholder with legitimate
+        // same-namespace refinements: `date`/`datetime` → `time.*` (created_at/due_at/…),
+        // `uuid` → `id.*` (foreign_key/natural_key), `company_name` → `org.*` (agency/company).
+        let refinable = matches!(base, "date" | "datetime" | "uuid" | "company_name");
+        let contradicts = if refinable {
+            concept_namespace(&entry.concept) != concept_namespace(deterministic)
         } else {
             entry.concept != deterministic
         };
@@ -2120,8 +2123,8 @@ mod tests {
 
     #[test]
     fn coerce_concept_refinable_namespace_sibling_is_preserved() {
-        // `time` and `id` map coarsely (`date` -> `time.date`, `uuid` -> `id.uuid`), so a
-        // more specific same-namespace concept is a legitimate LLM refinement and is kept.
+        // A few content_types map coarsely to a generic concept, so a more specific
+        // same-namespace concept is a legitimate LLM refinement and is kept.
         assert_eq!(
             coerced_role_concept("date", "timestamp", "time.created_at", "Date").1,
             "time.created_at"
@@ -2134,10 +2137,26 @@ mod tests {
             coerced_role_concept("uuid", "identifier", "id.foreign_key", "String").1,
             "id.foreign_key"
         );
-        // ...but a CROSS-namespace concept on a refinable mapping is still reset.
+        // roborev #3590: `org` is a MIXED namespace. `company_name` -> `org.company` is coarse
+        // (a government "Agency Name" column has no `agency_name` content_type), so a supplied
+        // `org.agency` is a valid refinement and must be preserved.
+        assert_eq!(
+            coerced_role_concept("company_name", "dimension", "org.agency", "String").1,
+            "org.agency"
+        );
+        // ...but `industry` -> `org.industry` is EXACT: a same-namespace sibling is reset.
+        assert_eq!(
+            coerced_role_concept("industry", "dimension", "org.company", "String").1,
+            "org.industry"
+        );
+        // A CROSS-namespace concept on a refinable mapping is still reset.
         assert_eq!(
             coerced_role_concept("uuid", "identifier", "geo.city", "String").1,
             "id.uuid"
+        );
+        assert_eq!(
+            coerced_role_concept("company_name", "dimension", "geo.city", "String").1,
+            "org.company"
         );
     }
 

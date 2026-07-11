@@ -16735,16 +16735,22 @@ fn smart_grid_parts(
             // number/gauge sits above and the wrapped label sits below it.
             let label_band = (y1 - y0) * 0.30;
             let ind_y0 = y0 + label_band;
-            // the indicator leaves padding below its number, so anchor the label UP inside that
-            // padding (above `ind_y0`) to sit snug under the number rather than a band away from
-            // it.
-            let label_y = ind_y0 + (y1 - y0) * 0.14;
+            // a NUMBER-only tile centers its value high in the domain, leaving empty padding below,
+            // so raise its label up into that padding to sit snug under the number. A GAUGE tile
+            // fills the domain with the dial + a low-sitting number, so keep its label at `ind_y0`
+            // (fully below the indicator domain) — raising it there would overlap the gauge.
+            let number_label_y = ind_y0 + (y1 - y0) * 0.14;
             // narrower tiles (more of them) wrap sooner; the label font fits ~2 lines in the band.
             let max_chars = ((150.0 / count) as usize).clamp(12, 36);
             for (i, tile) in tiles.iter().enumerate() {
                 let lo = x0 + i as f64 * width + gutter / 2.0;
                 let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
                 traces.push(kpi_indicator(tile, [lo, hi], [ind_y0, y1]));
+                let label_y = if tile.gauge.is_some() {
+                    ind_y0
+                } else {
+                    number_label_y
+                };
                 annotations.push(kpi_label_annotation(
                     &tile.label,
                     f64::midpoint(lo, hi),
@@ -17733,9 +17739,11 @@ fn smart_inline_panel_plot(
         // reserve the bottom slice for each tile's word-wrapped label; the indicator's
         // number/gauge sits above it.
         let label_band = 0.30_f64;
-        // the indicator leaves padding below its number, so anchor the label UP inside that padding
-        // (above `label_band`) to sit snug under the number rather than a band away from it.
-        let label_y = label_band + 0.14;
+        // a NUMBER-only tile centers its value high in the domain, leaving empty padding below, so
+        // raise its label up into that padding to sit snug under the number. A GAUGE tile fills the
+        // domain with the dial + a low-sitting number, so keep its label at `label_band` (fully
+        // below the indicator domain) — raising it there would overlap the gauge.
+        let number_label_y = label_band + 0.14;
         let max_chars = ((150.0 / count) as usize).clamp(12, 36);
         let ann_font = |size: usize| {
             let f = Font::new().size(size);
@@ -17746,6 +17754,11 @@ fn smart_inline_panel_plot(
             let lo = (i as f64 / count) + gutter / 2.0;
             let hi = ((i + 1) as f64 / count) - gutter / 2.0;
             plot.add_trace(kpi_indicator(tile, [lo, hi], [label_band, 1.0]));
+            let label_y = if tile.gauge.is_some() {
+                label_band
+            } else {
+                number_label_y
+            };
             kpi_labels.push(kpi_label_annotation(
                 &tile.label,
                 f64::midpoint(lo, hi),

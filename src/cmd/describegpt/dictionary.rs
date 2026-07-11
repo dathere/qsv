@@ -266,6 +266,61 @@ pub(super) fn concept_from_content_type(content_type_base: &str) -> Option<&'sta
     })
 }
 
+/// Temporal `content_type` base tokens whose `role` must be `timestamp` (a clock
+/// time / calendar date is never a quantity to aggregate). `duration` is
+/// deliberately excluded — `duration:N` is a magnitude you sum/average, so it is
+/// measure-admissible. See issue #4177.
+fn is_temporal_content_type(base: &str) -> bool {
+    matches!(base, "date" | "datetime" | "time")
+}
+
+/// id-family `content_type` base tokens where a stray `role: measure` should be
+/// corrected to `identifier` rather than `dimension` (these name an entity, they
+/// are not categorical group-by attributes). See issue #4177.
+fn is_identifier_content_type(base: &str) -> bool {
+    matches!(
+        base,
+        "unique_id"
+            | "uuid"
+            | "isbn"
+            | "credit_card"
+            | "ip_address"
+            | "ipv6_address"
+            | "mac_address"
+            | "license_plate"
+    )
+}
+
+/// The `role` a `content_type` base token reliably implies, or `None` when it does
+/// not constrain role at all. `unknown`, `duration`, and any out-of-vocabulary token
+/// return `None` — numeric measures legitimately carry `content_type: unknown` and
+/// `duration:N` is a magnitude you aggregate, so role/concept are left as inferred.
+/// Anchors both the `role` coercion (#4177) and the `concept` reconciliation (#4176).
+fn role_from_content_type(base: &str) -> Option<&'static str> {
+    if is_temporal_content_type(base) {
+        Some("timestamp")
+    } else if is_identifier_content_type(base) {
+        Some("identifier")
+    } else if base != "unknown" && base != "duration" && CONTENT_TYPE_VOCAB.contains(&base) {
+        Some("dimension")
+    } else {
+        None
+    }
+}
+
+/// The `role` a catalog `concept`'s namespace implies (the segment before the first
+/// `.`), or `None` for `unknown` and any namespace with no role mapping. Used to
+/// detect a `concept` that contradicts a reliable `content_type` signal (#4176).
+fn role_from_concept_namespace(concept: &str) -> Option<&'static str> {
+    Some(match concept.split('.').next().unwrap_or_default() {
+        "measure" => "measure",
+        "time" => "timestamp",
+        "id" => "identifier",
+        "geo" | "org" | "pii" | "category" | "nyc" => "dimension",
+        _ => return None,
+    })
+}
+
 /// Merge an LLM-supplied `concept` onto the (possibly deterministically seeded)
 /// `current` value. `id.surrogate_key` is deterministic (tied to `is_unique_id`)
 /// and never overridden. Otherwise the LLM fills an empty slot, and on the
@@ -1210,11 +1265,6 @@ pub(super) fn combine_dictionary_entries(
     code_entries
 }
 
-/// Final fallback coercion for `role`/`concept` once the LLM merge(s) are done,
-/// mirroring the `content_type` → `"unknown"` coercion. Applied only when
-/// concept inference is on. Empty `concept` becomes `"unknown"` (excluded from
-/// the front-matter concept index and from join detection); empty `role`
-/// defaults to `measure` for numeric columns and `dimension` otherwise.
 fn coerce_role_concept(entry: &mut DictionaryEntry) {
     // Backfill the deterministic concept mapping from the now-merged `content_type`
     // before defaulting to "unknown". This recovers the documented mapping when a
@@ -1233,6 +1283,88 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
         } else {
             "dimension".to_string()
         };
+    }
+
+    let base = content_type_base(&entry.content_type);
+
+    // issue #4177: `content_type` constrains `role`. The LLM infers `content_type`,
+    // `role`, and `concept` independently, so it can emit contradictions like a
+    // `time` column tagged `role: measure` (a clock time is not a quantity to
+    // aggregate). Downstream consumers (e.g. `viz smart`'s `derive_semantics`) route
+    // on `role`, so the contradiction becomes a visible defect. Reconcile here — the
+    // single coercion choke point shared by both merge paths:
+    //   - a temporal content_type is always a `timestamp` (overrides any role);
+    //   - any other recognized (non-numeric) content_type must not be a `measure`, so a stray
+    //     `measure` becomes `identifier` (id-family) or `dimension`.
+    // `unknown`/`duration` yield no constraint (measure-admissible), so a numeric
+    // measure is left untouched.
+    match role_from_content_type(base) {
+        Some("timestamp") => entry.role = "timestamp".to_string(),
+        Some(required) if entry.role == "measure" => entry.role = required.to_string(),
+        _ => {},
+    }
+
+    // issue #4176: `concept` must not contradict a reliable `content_type`. describegpt
+    // infers concept independently, so it can emit e.g. `concept: measure.ratio` on a
+    // column whose `content_type` (`category`) and `role` (`dimension`) both say
+    // categorical. `viz`'s `derive_semantics` prefers concept over role, so the lone
+    // dissenting concept silently misroutes (and can drop) the column — charting it
+    // WORSE than with no dictionary at all. Reconcile at two granularities:
+    //   1. When the content_type pins a deterministic concept (`concept_from_content_type`),
+    //      require an EXACT match by default — most mappings are exact (a `city` is `geo.city`, an
+    //      `email` is `pii.email`), so any other concept is a real contradiction: `geo.city` tagged
+    //      `geo.country` corrupts join identity (both are linkable), and `geo.city` on a `latitude`
+    //      column would suppress `Route::MapCoord`. A few content_types map COARSELY to a generic
+    //      placeholder that has legitimate more-specific siblings; for those,
+    //      `admissible_refinements` lists the EXACT set the LLM may substitute. A namespace-wide
+    //      check was too broad — e.g. `company_name` → `org.company` admits `org.agency` (a
+    //      government "Agency Name" column has no `agency_name` content_type) but NOT
+    //      `org.industry` (a classification, not an org name); `date` admits the `time.*` event
+    //      points but not `time.duration` (a span). Any concept outside the admissible set is reset
+    //      to the deterministic value.
+    //   2. Otherwise, when the content_type still constrains the role, a concept whose namespace
+    //      implies a different role is the dissenter → drop to "unknown".
+    // `content_type: unknown` pins neither, so a specific concept like `geo.census_tract`
+    // on an untyped numeric column is deliberately left to win — that override is why
+    // `route_from_concept` exists.
+    //
+    // Coarse content_types → the exact concepts a model may substitute for the deterministic
+    // seed. A content_type absent here is EXACT (only its deterministic concept is admissible).
+    fn admissible_refinements(base: &str) -> &'static [&'static str] {
+        match base {
+            // a date/datetime is a point-in-time event, so any temporal event concept fits,
+            // but NOT `time.duration` (a span) or `time.date` vs `time.*` distinctions.
+            "date" | "datetime" => &[
+                "time.date",
+                "time.event_timestamp",
+                "time.created_at",
+                "time.closed_at",
+                "time.updated_at",
+                "time.due_at",
+            ],
+            // a uuid is a key; it may be a surrogate/natural/foreign key (id.surrogate_key is
+            // reserved+deterministic and handled upstream, so it is not offered here).
+            "uuid" => &["id.uuid", "id.natural_key", "id.foreign_key"],
+            // an org-name column may be a company or a (government) agency, never an industry.
+            "company_name" => &["org.company", "org.agency"],
+            _ => &[],
+        }
+    }
+    if let Some(deterministic) = concept_from_content_type(base) {
+        let admissible = admissible_refinements(base);
+        let contradicts = if admissible.is_empty() {
+            entry.concept != deterministic
+        } else {
+            !admissible.contains(&entry.concept.as_str())
+        };
+        if contradicts {
+            entry.concept = deterministic.to_string();
+        }
+    } else if let Some(ct_role) = role_from_content_type(base)
+        && let Some(concept_role) = role_from_concept_namespace(&entry.concept)
+        && ct_role != concept_role
+    {
+        entry.concept = "unknown".to_string();
     }
 }
 
@@ -1802,6 +1934,268 @@ mod tests {
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
         }
+    }
+
+    /// Build an entry, apply the merge-path coercion, and return the resulting role.
+    fn coerced_role(content_type: &str, role: &str, qsv_type: &str) -> String {
+        let mut entry = blank_entry("col");
+        entry.r#type = qsv_type.to_string();
+        entry.content_type = content_type.to_string();
+        entry.role = role.to_string();
+        coerce_role_concept(&mut entry);
+        entry.role
+    }
+
+    // issue #4177 — `content_type` constrains `role`. The matrix below makes the
+    // precedence rule explicit across the four column families hiSandog called out:
+    // temporal, identifier, categorical, and numeric.
+
+    #[test]
+    fn coerce_role_temporal_content_type_forces_timestamp() {
+        // The reported repro: a `time` column the LLM tagged `role: measure`.
+        assert_eq!(coerced_role("time", "measure", "String"), "timestamp");
+        // A temporal content_type overrides ANY inferred role, and a `:fmt` suffix
+        // is stripped before the check.
+        for ct in [
+            "date",
+            "datetime",
+            "time",
+            "date:%Y-%m-%d",
+            "datetime:%Y-%m-%dT%H:%M:%S",
+        ] {
+            for role in ["measure", "dimension", "timestamp", ""] {
+                assert_eq!(
+                    coerced_role(ct, role, "String"),
+                    "timestamp",
+                    "content_type={ct} role={role:?} should coerce to timestamp"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn coerce_role_identifier_content_type_forces_identifier() {
+        // id-family content_types must never be a `measure`; a stray one becomes
+        // `identifier` (an entity key), not `dimension`.
+        for ct in [
+            "uuid",
+            "unique_id",
+            "isbn",
+            "credit_card",
+            "ip_address",
+            "ipv6_address",
+            "mac_address",
+            "license_plate",
+        ] {
+            assert_eq!(
+                coerced_role(ct, "measure", "String"),
+                "identifier",
+                "content_type={ct} role=measure should coerce to identifier"
+            );
+        }
+    }
+
+    #[test]
+    fn coerce_role_categorical_content_type_demotes_measure_to_dimension() {
+        // A recognized non-numeric, non-id content_type tagged `measure` is a
+        // contradiction — coerce it to `dimension`.
+        for ct in ["category", "state", "country", "currency_code", "mime_type"] {
+            assert_eq!(
+                coerced_role(ct, "measure", "String"),
+                "dimension",
+                "content_type={ct} role=measure should coerce to dimension"
+            );
+            // A legitimate `dimension` role is left untouched.
+            assert_eq!(coerced_role(ct, "dimension", "String"), "dimension");
+        }
+    }
+
+    #[test]
+    fn coerce_role_numeric_measure_is_not_over_coerced() {
+        // Numeric measures legitimately carry `content_type: unknown` — role=measure
+        // must survive, whether inferred by the LLM or filled from the qsv type.
+        assert_eq!(coerced_role("unknown", "measure", "Integer"), "measure");
+        assert_eq!(coerced_role("unknown", "measure", "Float"), "measure");
+        assert_eq!(coerced_role("unknown", "", "Integer"), "measure");
+        assert_eq!(coerced_role("unknown", "", "Float"), "measure");
+        // `duration:N` is a magnitude you aggregate, so it is measure-admissible and
+        // exempt from the temporal→timestamp and categorical→dimension coercions.
+        assert_eq!(coerced_role("duration", "measure", "Integer"), "measure");
+        assert_eq!(
+            coerced_role("duration:3600", "measure", "Integer"),
+            "measure"
+        );
+    }
+
+    /// Build an entry, apply the merge-path coercion, and return `(role, concept)`.
+    fn coerced_role_concept(
+        content_type: &str,
+        role: &str,
+        concept: &str,
+        qsv_type: &str,
+    ) -> (String, String) {
+        let mut entry = blank_entry("col");
+        entry.r#type = qsv_type.to_string();
+        entry.content_type = content_type.to_string();
+        entry.role = role.to_string();
+        entry.concept = concept.to_string();
+        coerce_role_concept(&mut entry);
+        (entry.role, entry.concept)
+    }
+
+    #[test]
+    fn coerce_concept_contradicting_content_type_is_reset() {
+        // issue #4176 repro: content_type=category and role=dimension both say
+        // categorical, only concept=measure.ratio dissents. content_type breaks the
+        // tie: the concept is reset (category has no deterministic concept -> unknown),
+        // and role is left categorical.
+        let (role, concept) =
+            coerced_role_concept("category", "dimension", "measure.ratio", "String");
+        assert_eq!(role, "dimension");
+        assert_eq!(concept, "unknown");
+
+        // A concept whose content_type HAS a deterministic mapping is backfilled to the
+        // consistent value rather than dropped to "unknown".
+        let (_, concept) =
+            coerced_role_concept("zip_code", "dimension", "measure.amount", "String");
+        assert_eq!(concept, "geo.zip_code");
+
+        // Temporal content_type with a stray measure concept: role forced to timestamp,
+        // concept reset (time has no deterministic concept -> unknown).
+        let (role, concept) = coerced_role_concept("time", "measure", "measure.count", "String");
+        assert_eq!(role, "timestamp");
+        assert_eq!(concept, "unknown");
+    }
+
+    #[test]
+    fn coerce_concept_override_on_unknown_content_type_is_preserved() {
+        // The signal `route_from_concept` exists for: a specific concept on an untyped
+        // numeric column (content_type=unknown) must WIN, so it is NOT reset even though
+        // its namespace (geo -> dimension) disagrees with a role-defaulted `measure`.
+        let (role, concept) =
+            coerced_role_concept("unknown", "measure", "geo.census_tract", "Integer");
+        assert_eq!(role, "measure");
+        assert_eq!(concept, "geo.census_tract");
+
+        // A concept that AGREES with a recognized content_type is untouched.
+        let (_, concept) = coerced_role_concept("email", "dimension", "pii.email", "String");
+        assert_eq!(concept, "pii.email");
+    }
+
+    #[test]
+    fn coerce_concept_same_role_bucket_cross_namespace_is_reset() {
+        // A content_type that pins a deterministic concept must win against a concept in a
+        // DIFFERENT namespace even when both share a role bucket. `email` -> `pii.email`
+        // and a supplied `geo.city` are both the `dimension` bucket, so a role-only check
+        // would miss it and leave a PII field falsely tagged as linkable geography.
+        let (_, concept) = coerced_role_concept("email", "dimension", "geo.city", "String");
+        assert_eq!(concept, "pii.email");
+
+        // Same namespace but a different leaf is an LLM refinement, left untouched.
+        let (_, concept) =
+            coerced_role_concept("first_name", "dimension", "pii.full_name", "String");
+        assert_eq!(concept, "pii.full_name");
+
+        // A deterministic-concept content_type with a stray measure concept is corrected
+        // to the deterministic value (not merely dropped to "unknown").
+        let (_, concept) = coerced_role_concept("city", "dimension", "measure.amount", "String");
+        assert_eq!(concept, "geo.city");
+    }
+
+    #[test]
+    fn coerce_concept_coordinate_content_type_requires_exact_match() {
+        // roborev #3584: coordinate concepts route to MapCoord, while other geo.* route to
+        // Dimension, so a same-namespace sibling on a latitude/longitude column suppresses
+        // map rendering. Unlike coarse mappings, these enforce the EXACT concept.
+        let (_, concept) = coerced_role_concept("latitude", "dimension", "geo.city", "String");
+        assert_eq!(concept, "geo.latitude");
+        let (_, concept) = coerced_role_concept("longitude", "dimension", "geo.zip_code", "String");
+        assert_eq!(concept, "geo.longitude");
+        // A swapped coordinate concept is corrected too.
+        let (_, concept) = coerced_role_concept("latitude", "measure", "geo.longitude", "Float");
+        assert_eq!(concept, "geo.latitude");
+        // The correct coordinate concept is preserved.
+        let (_, concept) = coerced_role_concept("longitude", "measure", "geo.longitude", "Float");
+        assert_eq!(concept, "geo.longitude");
+    }
+
+    #[test]
+    fn coerce_concept_exact_namespace_sibling_is_reset() {
+        // roborev #3587: geo/pii/org content_types map EXACTLY, so a same-namespace sibling
+        // is a real contradiction (wrong join-compatible identity). `city` pins `geo.city`,
+        // so a supplied `geo.country` (both linkable geo.*) is corrected, not preserved.
+        assert_eq!(
+            coerced_role_concept("city", "dimension", "geo.country", "String").1,
+            "geo.city"
+        );
+        assert_eq!(
+            coerced_role_concept("state", "dimension", "geo.city", "String").1,
+            "geo.state"
+        );
+        assert_eq!(
+            coerced_role_concept("email", "dimension", "pii.phone", "String").1,
+            "pii.email"
+        );
+    }
+
+    #[test]
+    fn coerce_concept_refinable_namespace_sibling_is_preserved() {
+        // A few content_types map coarsely to a generic concept, so a more specific concept
+        // from the admissible set is a legitimate LLM refinement and is kept.
+        assert_eq!(
+            coerced_role_concept("date", "timestamp", "time.created_at", "Date").1,
+            "time.created_at"
+        );
+        assert_eq!(
+            coerced_role_concept("datetime", "timestamp", "time.due_at", "DateTime").1,
+            "time.due_at"
+        );
+        assert_eq!(
+            coerced_role_concept("uuid", "identifier", "id.foreign_key", "String").1,
+            "id.foreign_key"
+        );
+        // roborev #3590: `company_name` -> `org.company` is coarse (a government "Agency Name"
+        // column has no `agency_name` content_type), so a supplied `org.agency` is preserved.
+        assert_eq!(
+            coerced_role_concept("company_name", "dimension", "org.agency", "String").1,
+            "org.agency"
+        );
+        // `industry` -> `org.industry` is EXACT: a same-namespace sibling is reset.
+        assert_eq!(
+            coerced_role_concept("industry", "dimension", "org.company", "String").1,
+            "org.industry"
+        );
+        // A CROSS-namespace concept on a refinable mapping is still reset.
+        assert_eq!(
+            coerced_role_concept("uuid", "identifier", "geo.city", "String").1,
+            "id.uuid"
+        );
+        assert_eq!(
+            coerced_role_concept("company_name", "dimension", "geo.city", "String").1,
+            "org.company"
+        );
+    }
+
+    #[test]
+    fn coerce_concept_same_namespace_non_admissible_refinement_is_reset() {
+        // roborev #3593: refinability is an EXACT admissible set, not a whole namespace.
+        // `company_name` admits org.company/org.agency but NOT org.industry (an industry is a
+        // classification, not an organization's name) — both are linkable, so the mistag
+        // corrupts join identity.
+        assert_eq!(
+            coerced_role_concept("company_name", "dimension", "org.industry", "String").1,
+            "org.company"
+        );
+        // A `date` is a point-in-time event, so `time.duration` (a span) is not admissible.
+        assert_eq!(
+            coerced_role_concept("date", "timestamp", "time.duration", "Date").1,
+            "time.date"
+        );
+        // The reserved `id.surrogate_key` is not offered as a `uuid` refinement.
+        assert_eq!(
+            coerced_role_concept("uuid", "identifier", "id.surrogate_key", "String").1,
+            "id.uuid"
+        );
     }
 
     #[test]

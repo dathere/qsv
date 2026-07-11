@@ -129,9 +129,10 @@ For each field, provide:
 - Role: classify how this field is USED in analysis by choosing exactly ONE token from:
   {{ role_vocab }}. Use "identifier" for keys/codes that name an entity, "timestamp" for
   date/time fields, "measure" for numeric quantities you would aggregate (sum/avg/min/max), and
-  "dimension" for categorical attributes you would GROUP BY or filter on. NOTE: "identifier" (for
-  unique-key columns) and "timestamp" (for Date/DateTime columns) are re-derived deterministically
-  by qsv; your value is used for every other field.
+  "dimension" for categorical attributes you would GROUP BY or filter on. If you assigned a
+  temporal Content Type (date/datetime/time), role MUST be "timestamp", never "measure". NOTE:
+  "identifier" (for unique-key columns) and "timestamp" (for Date/DateTime columns) are re-derived
+  deterministically by qsv; your value is used for every other field.
 - Concept: give this field a CATALOG-WIDE semantic identity by choosing exactly ONE token from the
   fixed concept vocabulary below. Two columns in DIFFERENT datasets that share the same concept
   denote the same real-world thing and are join-compatible - this is what lets an agent correlate

@@ -44,6 +44,7 @@ MARKER = "Plotly.newPlot(graph_div, "
 # rather than reconstructed as a lossy uniform sub-grid. Keyed by figure title -> iframe filename.
 SMART_IFRAME = {
     "smart dashboard":                          "smart_sales.html",
+    "smart dashboard (KPI gauges & target delta)": "smart_sales_kpi.html",
     "smart dashboard (--smarter)":              "smart_smarter.html",
     "smart dashboard (--smarter, geospatial)":  "smart_geospatial.html",
     "smart dashboard (geographic outliers)":    "smart_geo_outliers.html",
@@ -437,6 +438,17 @@ FIGURES = [
      "sales_sample's region/payment_method/product_category are independent, so "
      "`--hierarchy-style sunburst` is passed to deliberately showcase the interactive sunburst.",
      True, ["smart", "sales_sample.csv", "--hierarchy-style", "sunburst", "--max-charts", "8"]),
+    ("smart dashboard (KPI gauges & target delta)",
+     "The KPI overview row driven by a hand-authored `--dictionary` "
+     "(sales_kpi_dict.schema.json). Two optional `x-qsv` hints turn plain measure tiles into "
+     "richer KPIs: a `gauge_range` of [0,1] draws Discount % and Profit Margin % as GAUGES on "
+     "their canonical ratio scale, and a `target` of 0.25 on Profit Margin adds a \"vs target\" "
+     "DELTA (the mean is 0.21, so a red -0.042 below the goal). qsv keeps a gauge only when the "
+     "data lies within its range, so a mis-scaled range can't mislead; `gauge_range` is what "
+     "`--dictionary infer` emits for canonical-scale ratios, while `target` is a business goal you "
+     "hand-author (never LLM-inferred). Overall dataset completeness rides quietly in the header "
+     "table, not as a tile.",
+     True, ["smart", "sales_sample.csv", "--dictionary", "sales_kpi_dict.schema.json"]),
     ("smart dashboard (--smarter)",
      "Same auto-profiler with `--smarter`, which runs `qsv moarstats --advanced` itself to enrich "
      "the stats cache in one step: the bimodal monthly_spend column renders as a histogram (a box "

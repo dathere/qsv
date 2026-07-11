@@ -14583,42 +14583,27 @@ fn kpi_label_annotation(
         .font(font)
 }
 
-/// Build the leading KPI-tile row for `viz smart`: dataset-summary tiles (record count, field
-/// count, a completeness gauge) followed by the headline numeric measures (capped at
+/// Build the leading KPI-tile row for `viz smart`: the headline numeric measures (capped at
 /// `KPI_MAX_TILES`). A measure tile becomes a gauge when its dictionary supplies a `gauge_range`
 /// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
 /// gauge), and a "vs target" delta when the dictionary supplies a `target` (a semantically
-/// justified goal, never a fabricated prior-period baseline). Returns `None` for empty stats.
+/// justified goal, never a fabricated prior-period baseline). Returns `None` when no measure tile
+/// results (dataset completeness now lives in the dashboard header, not as a KPI tile, so the row
+/// is worth drawing only when there is at least one measure to headline).
 fn build_kpi_row(
-    n: u64,
     stats: &[crate::cmd::stats::StatsData],
     panels: &[Panel],
     dict: Option<&DictData>,
 ) -> Option<Panel> {
-    let ncols = stats.len();
-    if ncols == 0 {
+    if stats.is_empty() {
         return None;
     }
     let mut tiles: Vec<KpiTile> = Vec::with_capacity(KPI_MAX_TILES);
-    // Record/field counts are intentionally omitted — they duplicate the "Rows"/"Columns" lines in
-    // the dashboard's metadata header. The KPI row leads with data-quality and measure signals the
-    // header doesn't carry.
+    // Record/field counts and overall completeness are intentionally NOT tiles — record/field
+    // counts duplicate the "Rows"/"Columns" header lines, and completeness (near 100% for most
+    // datasets) now rides quietly in the header table below "Columns:". The KPI row leads purely
+    // with the headline MEASURES.
     //
-    // completeness = non-null cells / total cells — an inherently 0–100% scale, so a built-in
-    // gauge that needs no LLM hint.
-    if n > 0 {
-        let total_cells = n as f64 * ncols as f64;
-        let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
-        let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
-        tiles.push(KpiTile {
-            label:  "Completeness".to_string(),
-            value:  completeness,
-            format: ".1%".to_string(),
-            gauge:  Some([0.0, 1.0]),
-            target: None,
-        });
-    }
-
     // headline measures: the numeric columns the dashboard already treats as continuous measures
     // (i.e. those that earned a box/violin/histogram distribution panel), summed (extensive) or
     // averaged (intensive), up to the remaining tile budget. Keying off the built panels keeps the
@@ -14669,6 +14654,11 @@ fn build_kpi_row(
             gauge,
             target,
         });
+    }
+
+    // No measures to headline → no KPI row (completeness alone no longer justifies one).
+    if tiles.is_empty() {
+        return None;
     }
 
     Some(Panel::new(
@@ -16059,6 +16049,19 @@ fn build_smart(
             "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
             HumanCount(stats.len() as u64)
         ));
+        // Completeness: share of non-empty cells across the whole dataset. A quiet header stat
+        // rather than a KPI gauge — it's near 100% for most datasets, so a permanent gauge tile
+        // just crowded the overview row.
+        let ncols = stats.len();
+        if n > 0 && ncols > 0 {
+            let total_cells = n as f64 * ncols as f64;
+            let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
+            let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
+            rows.push_str(&format!(
+                "<tr><td class=\"qsv-viz-meta-k\">Completeness:</td><td>{:.1}%</td></tr>\n",
+                completeness * 100.0
+            ));
+        }
         // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
         // design).
         rows.push_str(&format!(
@@ -16091,8 +16094,7 @@ fn build_smart(
     // render-path choice) so it stays invisible to them and simply lands at index 0, on top of the
     // dashboard. HTML only: Indicator tiles are domain-positioned and never enter a static image.
     if !out_format.is_image() {
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        if let Some(panel) = build_kpi_row(n, &stats, &panels, dict_data.as_ref()) {
+        if let Some(panel) = build_kpi_row(&stats, &panels, dict_data.as_ref()) {
             panels.insert(0, panel);
         }
     }

@@ -16731,12 +16731,12 @@ fn smart_grid_parts(
             let count = tiles.len().max(1) as f64;
             let width = (x1 - x0) / count;
             let gutter = width * 0.06;
-            // reserve the bottom slice of the row band for the subtitle labels, so the indicator's
-            // number/gauge sits above and the (smaller, wrapped) label hangs below it.
-            let label_band = (y1 - y0) * 0.26;
+            // reserve the bottom slice of the row band for the labels, so the indicator's
+            // number/gauge sits above and the wrapped label sits below it.
+            let label_band = (y1 - y0) * 0.30;
             let ind_y0 = y0 + label_band;
-            // narrower tiles (more of them) wrap sooner; the smaller subtitle font fits ~2 lines.
-            let max_chars = ((170.0 / count) as usize).clamp(14, 40);
+            // narrower tiles (more of them) wrap sooner; the label font fits ~2 lines in the band.
+            let max_chars = ((150.0 / count) as usize).clamp(12, 36);
             for (i, tile) in tiles.iter().enumerate() {
                 let lo = x0 + i as f64 * width + gutter / 2.0;
                 let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
@@ -16746,7 +16746,7 @@ fn smart_grid_parts(
                     f64::midpoint(lo, hi),
                     ind_y0,
                     max_chars,
-                    ann_font(10),
+                    ann_font(13),
                 ));
             }
             continue;
@@ -17726,10 +17726,10 @@ fn smart_inline_panel_plot(
         let count = tiles.len().max(1) as f64;
         // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
         let gutter = 0.02_f64;
-        // reserve the bottom slice for each tile's word-wrapped subtitle label; the indicator's
+        // reserve the bottom slice for each tile's word-wrapped label; the indicator's
         // number/gauge sits above it.
-        let label_band = 0.26_f64;
-        let max_chars = ((170.0 / count) as usize).clamp(14, 40);
+        let label_band = 0.30_f64;
+        let max_chars = ((150.0 / count) as usize).clamp(12, 36);
         let ann_font = |size: usize| {
             let f = Font::new().size(size);
             if themed { f } else { f.family(FONT_FAMILY) }
@@ -17744,7 +17744,7 @@ fn smart_inline_panel_plot(
                 f64::midpoint(lo, hi),
                 label_band,
                 max_chars,
-                ann_font(10),
+                ann_font(13),
             ));
         }
         // no panel title — each tile carries its own word-wrapped subtitle label below its number

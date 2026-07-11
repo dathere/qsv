@@ -141,8 +141,9 @@ the same way and both take a `/v1` base URL. Only the port differs:
 | ollama | `http://localhost:11434/v1` | `curl -s http://localhost:11434/v1/models` |
 
 ```bash
-BASE_URL=""
-curl -s -m 2 http://localhost:1234/v1/models  >/dev/null 2>&1 && BASE_URL=http://localhost:1234/v1
+# honor an explicit QSV_LLM_BASE_URL first; only probe local servers when it is unset
+BASE_URL="${QSV_LLM_BASE_URL:-}"
+[ -z "$BASE_URL" ] && curl -s -m 2 http://localhost:1234/v1/models  >/dev/null 2>&1 && BASE_URL=http://localhost:1234/v1
 [ -z "$BASE_URL" ] && curl -s -m 2 http://localhost:11434/api/tags >/dev/null 2>&1 && BASE_URL=http://localhost:11434/v1
 
 [ -n "$BASE_URL" ] && curl -s "$BASE_URL/models" \
@@ -163,7 +164,7 @@ memory.
 qsv describegpt "$WORK" \
   --dictionary --description --two-pass --infer-content-type \
   --format JSONSchema \
-  --base-url "$BASE_URL" --model "$MODEL" \
+  ${BASE_URL:+--base-url "$BASE_URL"} --model "$MODEL" \
   -o "$SCHEMA"
 ```
 
@@ -293,14 +294,30 @@ python3 - "$GEOJSON" <<'PY'
 import json, sys, re, os, collections, urllib.request
 
 def load_geojson(src):
-    """Local path, http(s) URL, or a QSV_GEOJSON_SHORTCUTS name."""
-    shortcuts = json.loads(os.environ.get("QSV_GEOJSON_SHORTCUTS", "{}") or "{}")
+    """Local path, http(s) URL, or a QSV_GEOJSON_SHORTCUTS name.
+
+    Mirror viz's resolution order (src/cmd/viz.rs resolve_and_validate_geojson): an
+    http(s) URL or an EXISTING local file is a direct source; only a value that is
+    neither is looked up as a shortcut NAME. This keeps a local file whose name
+    collides with a shortcut loading as the file (as viz does), and it never lets
+    a malformed QSV_GEOJSON_SHORTCUTS break a direct file/URL input.
+    """
     hint = None
-    if src in shortcuts:                      # resolve the shortcut FIRST
+    is_url = src.startswith(("http://", "https://"))
+    if not is_url and not os.path.isfile(src):
+        raw = os.environ.get("QSV_GEOJSON_SHORTCUTS")
+        if not raw:
+            sys.exit(f"--geojson '{src}' is not an existing file or http(s) URL, "
+                     "and QSV_GEOJSON_SHORTCUTS is not set")
+        shortcuts = json.loads(raw)           # invalid JSON surfaces as an error
+        if src not in shortcuts:
+            sys.exit(f"unknown --geojson shortcut '{src}'; "
+                     f"defined: {', '.join(sorted(shortcuts)) or '(none)'}")
         entry = shortcuts[src]
         hint = entry.get("id")                # shortcut may carry its own id key
         src = entry["path"]
-    if src.startswith(("http://", "https://")):
+        is_url = src.startswith(("http://", "https://"))
+    if is_url:
         with urllib.request.urlopen(src, timeout=30) as r:
             return json.loads(r.read().decode("utf-8")), src, hint
     with open(src) as fh:

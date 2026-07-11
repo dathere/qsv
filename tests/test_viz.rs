@@ -6427,6 +6427,48 @@ fn viz_smart_kpi_dictionary_gauge_and_delta() {
     assert!(html.contains(r#""delta":{"reference":4.0}"#));
 }
 
+// Regression (roborev #3602): the leading KPI row is domain-positioned and takes no cartesian
+// axis, but it still occupies panel index 0. With exactly MAX_SUBPLOTS (8) cartesian panels behind
+// it on the typed-grid path, the axes must number x1..x8 — before the fix the 8th chart was pushed
+// to x9, which the typed Layout has no slot for (`assign_typed_axis` drops it), orphaning that
+// trace onto the default axis. `--max-charts 8` on a wide numeric dataset forces the boundary.
+#[test]
+fn viz_smart_kpi_row_does_not_orphan_eighth_axis() {
+    let wrk = Workdir::new("viz_smart_kpi_row_does_not_orphan_eighth_axis");
+    let mut csv = (0..10)
+        .map(|j| format!("n{j}"))
+        .collect::<Vec<_>>()
+        .join(",");
+    csv.push('\n');
+    for i in 0..120 {
+        let row = (0..10)
+            .map(|j| ((i * (j * 37 + 13) + j * 7) % (50 + j)).to_string())
+            .collect::<Vec<_>>()
+            .join(",");
+        csv.push_str(&row);
+        csv.push('\n');
+    }
+    wrk.create_from_string("num_wide.csv", &csv);
+    let out_html = wrk.path("n.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "num_wide.csv",
+        "--max-charts",
+        "8",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("n.html").unwrap();
+    assert!(html.contains(r#""type":"indicator""#)); // KPI overview row is present
+    // the 8 cartesian charts behind it fill x1..x8 (typed Layout), with NO orphaned x9
+    assert!(html.contains(r#""xaxis8":{"#));
+    assert!(html.contains(r#""xaxis":"x8""#));
+    assert!(!html.contains(r#""xaxis":"x9""#));
+}
+
 #[test]
 fn viz_treemap_requires_two_cols() {
     let wrk = Workdir::new("viz_treemap_requires_two_cols");

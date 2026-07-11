@@ -16651,8 +16651,18 @@ fn smart_grid_parts(
     let mut axes: Vec<(usize, Axis, Axis)> = Vec::with_capacity(panels.len());
     let mut geos: Vec<(usize, serde_json::Value)> = Vec::new();
 
+    // The leading KPI row (index 0, when present) is domain-positioned and takes NO cartesian axis
+    // slot, so cartesian panels must number their axes from 1 as if it weren't there — otherwise 8
+    // real charts behind it would run to x9/y9, which the typed `Layout` (x1..x8) silently drops
+    // (`assign_typed_axis`). The KPI row and geo panels never coexist here (geo forces the inline
+    // path for HTML; image exports carry no KPI row), so a single leading offset is sufficient.
+    let axis_offset = usize::from(matches!(
+        panels.first().map(|p| &p.kind),
+        Some(PanelKind::KpiRow { .. })
+    ));
+
     for (n, panel) in panels.iter().enumerate() {
-        let pos = n + 1;
+        let pos = (n + 1).saturating_sub(axis_offset);
         let xref = axis_ref('x', pos);
         let yref = axis_ref('y', pos);
         let color = PALETTE[n % PALETTE.len()];

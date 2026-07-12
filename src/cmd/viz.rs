@@ -969,6 +969,18 @@ const ROW_HEIGHT_PX: usize = 320;
 /// has space.
 const OVERVIEW_ROW_HEIGHT_PX: usize = 420;
 
+/// Shorter height (in pixels) for the leading KPI overview row when its tiles are plain number
+/// tiles: a big number plus a one-to-two-line label under it is much shorter than a chart, so the
+/// full `OVERVIEW_ROW_HEIGHT_PX` leaves a large dead band below the labels. Sized to the tiles'
+/// actual content so the row sits snug above the charts below it.
+const KPI_ROW_HEIGHT_PX: usize = 230;
+
+/// Height (in pixels) for a KPI row that contains at least one gauge tile. Gauge mode renders the
+/// number lower (at the dial pivot), ~30px below where a plain number tile centers it, so the row
+/// needs more vertical room than a pure-number row for the shared label baseline to clear the
+/// gauge number without overlapping it.
+const KPI_ROW_GAUGE_HEIGHT_PX: usize = 250;
+
 /// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
 /// smart` static image export width.
 const SMART_COL_WIDTH_PX: usize = 500;
@@ -17752,14 +17764,20 @@ fn smart_inline_panel_plot(
         let count = tiles.len().max(1) as f64;
         // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
         let gutter = 0.02_f64;
-        // reserve the bottom slice for each tile's word-wrapped label; the indicator's
-        // number/gauge sits above it.
-        let label_band = 0.30_f64;
-        // Every tile — number-only OR gauge — puts empty space directly below its number: the
-        // gauge dial is a semicircle in the TOP of the domain and its number sits below it, so the
-        // label band under the number is clear of the dial. Anchor ALL labels at the same raised y
-        // so they share one clean baseline snug under the numbers (no per-tile step).
-        let label_y = label_band + 0.14;
+        // Indicator-domain bottom (`ind_y0`) and the shared label baseline (`label_y`), as paper
+        // fractions of this panel's plot (0 = bottom). Number tiles center the number in the
+        // domain; gauge tiles render it lower, at the dial pivot (~30px below a plain number at the
+        // gauge height). The whole row is height-matched to its content (`panel_render_height`),
+        // so the domain fills the plot and the label sits snug under the numbers with no dead band
+        // below. Anchor ALL labels at one baseline so they share a clean line (no per-tile step);
+        // in a mixed row the gauge number is binding, so it is pinned just under the gauge number
+        // and the plain-number tiles carry a slightly larger (still tidy) number-to-label gap.
+        let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
+        let (ind_y0, label_y) = if has_gauge {
+            (0.34_f64, 0.30_f64)
+        } else {
+            (0.10_f64, 0.24_f64)
+        };
         let max_chars = ((150.0 / count) as usize).clamp(12, 36);
         let ann_font = |size: usize| {
             let f = Font::new().size(size);
@@ -17769,7 +17787,7 @@ fn smart_inline_panel_plot(
         for (i, tile) in tiles.iter().enumerate() {
             let lo = (i as f64 / count) + gutter / 2.0;
             let hi = ((i + 1) as f64 / count) - gutter / 2.0;
-            plot.add_trace(kpi_indicator(tile, [lo, hi], [label_band, 1.0]));
+            plot.add_trace(kpi_indicator(tile, [lo, hi], [ind_y0, 1.0]));
             kpi_labels.push(kpi_label_annotation(
                 &tile.label,
                 f64::midpoint(lo, hi),
@@ -19206,11 +19224,19 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
 }
 
 /// Inline-dashboard render height (px) for a panel: hierarchy and Sankey panels get the tallest
-/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings, and stacked flow ribbons, need the room), other
-/// overview panels get `OVERVIEW_ROW_HEIGHT_PX`, and everything else the standard `ROW_HEIGHT_PX`.
+/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings, and stacked flow ribbons, need the room), the
+/// leading KPI row gets the short `KPI_ROW_HEIGHT_PX` (its number/gauge tiles are much shorter than
+/// a chart), other overview panels get `OVERVIEW_ROW_HEIGHT_PX`, and everything else
+/// `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
     if matches!(kind, PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. }) {
         HIER_ROW_HEIGHT_PX
+    } else if let PanelKind::KpiRow { tiles } = kind {
+        if tiles.iter().any(|t| t.gauge.is_some()) {
+            KPI_ROW_GAUGE_HEIGHT_PX
+        } else {
+            KPI_ROW_HEIGHT_PX
+        }
     } else if is_overview_panel(kind) {
         OVERVIEW_ROW_HEIGHT_PX
     } else {

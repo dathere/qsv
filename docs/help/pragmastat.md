@@ -182,7 +182,7 @@ qsv pragmastat --standalone --subsample 10000 --no-bounds data.csv
 ```
 
 Full Pragmastat manual:  
-<https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf>
+<https://github.com/AndreyAkinshin/pragmastat/releases/download/v13.0.1/pragmastat-v13.0.1.pdf>
 <https://pragmastat.dev/> (latest version)
 See also <https://github.com/dathere/qsv/wiki/Aggregation-and-Statistics#pragmastat>
 

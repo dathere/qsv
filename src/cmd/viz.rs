@@ -981,13 +981,6 @@ const KPI_ROW_HEIGHT_PX: usize = 230;
 /// gauge number without overlapping it.
 const KPI_ROW_GAUGE_HEIGHT_PX: usize = 250;
 
-/// Row-height scale for a leading KPI row in the typed grid (the ≤`MAX_SUBPLOTS`-panel path,
-/// which packs all panels into one `Plot` with uniform-height rows). The KPI tiles are shorter
-/// than a chart, so its row takes this fraction of a normal row's height; the freed space is
-/// reclaimed (the whole figure is shorter and the rows below move up). A scale of `1.0` reduces
-/// the grid geometry to the original uniform layout, so non-KPI dashboards are unaffected.
-const KPI_GRID_ROW_SCALE: f64 = 0.72;
-
 /// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
 /// smart` static image export width.
 const SMART_COL_WIDTH_PX: usize = 500;
@@ -16777,7 +16770,7 @@ fn smart_grid_parts(
             // (`smart_inline_panel_plot`): number tiles center the number in the domain; gauge
             // tiles render it lower (at the dial pivot), so a gauge row pins the one shared label
             // baseline just under the gauge number. The cell band is already height-matched to the
-            // tiles (`KPI_GRID_ROW_SCALE`), so the label sits snug with no dead band below.
+            // tiles (`kpi_grid_row_scale`), so the label sits snug with no dead band below.
             let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
             let (ind_frac, label_frac) = if has_gauge {
                 (0.34_f64, 0.30_f64)
@@ -19237,22 +19230,39 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
 
 /// Inline-dashboard render height (px) for a panel: hierarchy and Sankey panels get the tallest
 /// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings, and stacked flow ribbons, need the room), the
-/// leading KPI row gets the short `KPI_ROW_HEIGHT_PX` (its number/gauge tiles are much shorter than
-/// a chart), other overview panels get `OVERVIEW_ROW_HEIGHT_PX`, and everything else
-/// `ROW_HEIGHT_PX`.
+/// leading KPI row gets a short content-matched height (`kpi_row_height`), other overview panels
+/// get `OVERVIEW_ROW_HEIGHT_PX`, and everything else `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
     if matches!(kind, PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. }) {
         HIER_ROW_HEIGHT_PX
     } else if let PanelKind::KpiRow { tiles } = kind {
-        if tiles.iter().any(|t| t.gauge.is_some()) {
-            KPI_ROW_GAUGE_HEIGHT_PX
-        } else {
-            KPI_ROW_HEIGHT_PX
-        }
+        kpi_row_height(tiles)
     } else if is_overview_panel(kind) {
         OVERVIEW_ROW_HEIGHT_PX
     } else {
         ROW_HEIGHT_PX
+    }
+}
+
+/// Content-matched height (px) for a KPI overview row: a gauge tile renders its number lower (at
+/// the dial pivot) and needs the taller `KPI_ROW_GAUGE_HEIGHT_PX` so the shared label baseline
+/// clears it; a pure-number row uses the shorter `KPI_ROW_HEIGHT_PX`.
+fn kpi_row_height(tiles: &[KpiTile]) -> usize {
+    if tiles.iter().any(|t| t.gauge.is_some()) {
+        KPI_ROW_GAUGE_HEIGHT_PX
+    } else {
+        KPI_ROW_HEIGHT_PX
+    }
+}
+
+/// Row-height scale (fraction of a normal `ROW_HEIGHT_PX` row) for the leading grid row: a leading
+/// KPI row (always prepended at index 0) shrinks to its content-matched height so the rows below
+/// move up; every other layout keeps full-height rows (scale `1.0`, which reduces the weighted
+/// grid geometry to the original uniform layout — non-KPI dashboards are byte-identical).
+fn kpi_grid_row_scale(first: Option<&Panel>) -> f64 {
+    match first.map(|p| &p.kind) {
+        Some(PanelKind::KpiRow { tiles }) => kpi_row_height(tiles) as f64 / ROW_HEIGHT_PX as f64,
+        _ => 1.0,
     }
 }
 
@@ -19363,15 +19373,11 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     let rows = (if col_in_row > 0 { row + 1 } else { row }).max(1);
 
     // a leading KPI row (always prepended at index 0, so it lands on row 0) gets a shorter row;
-    // every other layout keeps full-height rows (scale 1.0 -> the original uniform grid).
-    let first_row_scale = if matches!(
-        panels.first().map(|p| &p.kind),
-        Some(PanelKind::KpiRow { .. })
-    ) {
-        KPI_GRID_ROW_SCALE
-    } else {
-        1.0
-    };
+    // every other layout keeps full-height rows (scale 1.0 -> the original uniform grid). The
+    // scale mirrors the inline path's height branch: a gauge KPI tile renders its number lower (at
+    // the dial pivot) and needs the taller `KPI_ROW_GAUGE_HEIGHT_PX` for the shared label baseline
+    // to clear it; a pure-number row uses the shorter `KPI_ROW_HEIGHT_PX`.
+    let first_row_scale = kpi_grid_row_scale(panels.first());
     let row_units = (rows as f64 - 1.0) + first_row_scale;
 
     let has_subtitles = panels.iter().any(|p| p.subtitle.is_some());
@@ -22515,6 +22521,59 @@ mod tests {
         assert!(geoms[1].x_domain[1] <= geoms[2].x_domain[0] + 1e-9);
         // the third bar wraps to its own (last) row, below the first bar row
         assert!(geoms[3].y_domain[1] <= geoms[1].y_domain[0] + 1e-9);
+    }
+
+    #[test]
+    fn kpi_grid_row_scale_is_content_aware() {
+        let tile = |gauge: Option<[f64; 2]>| KpiTile {
+            label: "m".to_string(),
+            value: 1.0,
+            format: ",".to_string(),
+            gauge,
+            target: None,
+        };
+        let plain = Panel::new(
+            "kpi".to_string(),
+            PanelKind::KpiRow {
+                tiles: vec![tile(None), tile(None)],
+            },
+        );
+        let gauged = Panel::new(
+            "kpi".to_string(),
+            PanelKind::KpiRow {
+                tiles: vec![tile(None), tile(Some([0.0, 1.0]))],
+            },
+        );
+
+        let plain_scale = kpi_grid_row_scale(Some(&plain));
+        let gauge_scale = kpi_grid_row_scale(Some(&gauged));
+
+        // the scale is the content-matched inline height as a fraction of a normal row
+        assert!((plain_scale - KPI_ROW_HEIGHT_PX as f64 / ROW_HEIGHT_PX as f64).abs() < 1e-9);
+        assert!((gauge_scale - KPI_ROW_GAUGE_HEIGHT_PX as f64 / ROW_HEIGHT_PX as f64).abs() < 1e-9);
+        // a gauge row is taller than a pure-number row (its number sits lower), and both are
+        // shorter than a full chart row
+        assert!(gauge_scale > plain_scale);
+        assert!(gauge_scale < 1.0 && plain_scale < 1.0);
+        // a non-KPI leading panel keeps a full-height row (uniform grid unchanged)
+        let bar = Panel::new("c".to_string(), PanelKind::FreqBar { idx: 0 });
+        assert!((kpi_grid_row_scale(Some(&bar)) - 1.0).abs() < 1e-9);
+        assert!((kpi_grid_row_scale(None) - 1.0).abs() < 1e-9);
+
+        // the gauge KPI first-row band is genuinely taller in the assembled grid geometry
+        let with_kpi = |lead: Panel| {
+            vec![
+                lead,
+                Panel::new("c1".to_string(), PanelKind::FreqBar { idx: 0 }),
+                Panel::new("c2".to_string(), PanelKind::FreqBar { idx: 1 }),
+            ]
+        };
+        let (pg, _pr, ph) = smart_grid_layout(&with_kpi(plain), 2);
+        let (gg, _gr, gh) = smart_grid_layout(&with_kpi(gauged), 2);
+        let band = |g: &SubplotGeometry| g.y_domain[1] - g.y_domain[0];
+        assert!(band(&gg[0]) > band(&pg[0]));
+        // and the taller KPI row makes the whole figure taller
+        assert!(gh > ph);
     }
 
     #[test]

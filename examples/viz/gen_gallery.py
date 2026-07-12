@@ -527,6 +527,17 @@ FIGURES = [
      "left-to-right layout keeps deep labels readable where a sunburst's outer ring would crowd; click a "
      "rectangle to zoom into that branch. Hover shows label + value + percent of parent.",
      False, ["icicle", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+    ("splom", "Scatter-plot matrix of four numeric columns (units_sold, revenue, discount_pct, "
+     "profit_margin_pct): every pairwise scatter in an N x N grid with shared axes, so correlation "
+     "structure is legible at a glance. viz smart auto-adds this panel when 3+ correlated numeric "
+     "columns exist, capped at 6 dims selected by correlation participation.",
+     False, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
+    ("parcats", "Parallel-categories flow over three categorical columns (region -> product_category "
+     "-> payment_method): each ribbon is a category combination, sized by how many rows share it, so "
+     "co-occurrence between the dimensions is visible without implying a part-to-whole nesting. viz "
+     "smart auto-adds this panel for 3-4 associated many-to-many categoricals (and suppresses the "
+     "hierarchy on the same columns); genuine rollup trees still auto-select a treemap/sunburst.",
+     False, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
     ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap.",
@@ -620,7 +631,9 @@ FIGURES = [
      "<i>Complaint Creation Date</i>, <i>Resolution Deadline</i>), so the "
      "profiler treats a service-request log as volume-and-category data. Alongside the maps the "
      "auto-profiler fills the dashboard with frequency bars, an <b>hour-of-day</b> seasonality "
-     "profile, a time trend, a hierarchical breakdown and a mean-by-borough panel. New here is an "
+     "profile, a time trend, a <b>parallel-categories (parcats) flow</b> over 3-4 associated "
+     "categorical columns (co-occurrence ribbons, auto-chosen over a nested treemap/sunburst for "
+     "this many-to-many set) and a mean-by-borough panel. New here is an "
      "auto-selected, colored <b>Sankey flow</b> (<i>Agency Code → Submission Channel</i>): it "
      "traces how each city agency's complaints arrive by channel, the thickest ribbons being "
      "<i>HPD → PHONE</i> (1,426) and <i>NYPD → PHONE</i> (1,348). "

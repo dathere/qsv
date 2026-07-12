@@ -6097,19 +6097,21 @@ fn two_dim_hierarchy(wrk: &Workdir) {
     wrk.create_from_string("two_dim.csv", &rows);
 }
 
-/// id (skipped) + three ASSOCIATED low-cardinality categorical dimensions (region → category →
-/// channel all co-vary), so every pair is dependent and the hierarchy clears the independence
-/// screen (max corrected Cramér's V ~0.86).
+/// id (skipped) + three categorical dimensions that form a STRICT rollup tree: each category rolls
+/// up to exactly one region and each channel to exactly one category (region → category → channel,
+/// a genuine parent→child nesting with no category appearing under two parents). This is the shape
+/// `viz smart` auto-selects a treemap/sunburst for — a functional-dependency hierarchy the
+/// part-to-whole panel sizes by rolled-up totals. (A many-to-many co-occurrence set of the same
+/// cardinalities is instead claimed by the parallel-categories (parcats) panel.) Cardinalities:
+/// region=3, category=4, channel=4.
 fn three_dim_hierarchy(wrk: &Workdir) {
     let mut rows = String::from("id,region,category,channel\n");
     for i in 1..=120 {
-        let (region, category, channel) = match i % 6 {
+        let (region, category, channel) = match i % 4 {
             0 => ("East", "Widgets", "Web"),
             1 => ("East", "Gadgets", "Retail"),
             2 => ("West", "Gizmos", "Phone"),
-            3 => ("West", "Doohickeys", "Partner"),
-            4 => ("North", "Widgets", "Web"),
-            _ => ("North", "Gizmos", "Retail"),
+            _ => ("North", "Doohickeys", "Partner"),
         };
         rows.push_str(&format!("{i},{region},{category},{channel}\n"));
     }
@@ -6427,6 +6429,65 @@ fn viz_parcats_standalone() {
     assert!(html.contains(r#""counts":["#));
     assert!(html.contains(r#""label":"region""#));
     assert!(html.contains(r#""label":"status""#));
+}
+
+// deterministic dataset that qualifies for BOTH new smart panels: a/b/d are low-cardinality
+// strongly-correlated numerics (splom), and region/tier/segment are 3 associated categoricals
+// each with >= 3 distinct values (parcats).
+fn smart_splom_parcats_csv(wrk: &Workdir) {
+    let regions = ["north", "south", "east"];
+    let tiers = ["gold", "silver", "bronze"];
+    let segs = ["retail", "wholesale", "online", "partner"];
+    let mut rows = String::from("a,b,c,d,region,tier,segment\n");
+    for i in 0..90usize {
+        let a = i % 12;
+        let b = a * 2; // perfectly correlated with a
+        let c = (i * 7) % 12; // independent
+        let d = 12 - a; // negatively correlated with a
+        let region = regions[i % 3];
+        let tier = tiers[(i % 3 + usize::from(i % 4 == 0)) % 3];
+        let ti = tiers.iter().position(|&t| t == tier).unwrap();
+        let seg = segs[(ti + usize::from(i % 5 == 0)) % 4];
+        rows.push_str(&format!("{a},{b},{c},{d},{region},{tier},{seg}\n"));
+    }
+    wrk.create_from_string("smart.csv", &rows);
+}
+
+#[test]
+fn viz_smart_splom_panel() {
+    let wrk = Workdir::new("viz_smart_splom_panel");
+    smart_splom_parcats_csv(&wrk);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "smart.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    // 3+ correlated low-cardinality numeric columns -> a scatter-plot-matrix overview panel
+    let html = wrk.read_to_string("s.html").unwrap();
+    assert!(html.contains(r#""type":"splom""#));
+}
+
+#[test]
+fn viz_smart_parcats_suppresses_hierarchy() {
+    let wrk = Workdir::new("viz_smart_parcats_suppresses_hierarchy");
+    smart_splom_parcats_csv(&wrk);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "smart.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("s.html").unwrap();
+    // 3 associated but MANY-TO-MANY categorical dimensions (a category appears under several
+    // parents) -> a parallel-categories flow panel. Such a co-occurrence set previously
+    // auto-selected a sunburst; parcats now claims it, while genuine rollup trees (see
+    // `viz_smart_hierarchy_sunburst_for_three_dims`) still auto-select the sunburst.
+    assert!(html.contains(r#""type":"parcats""#));
+    // ...which owns the 3-4-dimension relationship, so the hierarchy treemap/sunburst is suppressed
+    // on the same columns (mutual exclusivity).
+    assert!(!html.contains(r#""type":"treemap""#));
+    assert!(!html.contains(r#""type":"sunburst""#));
 }
 
 #[test]

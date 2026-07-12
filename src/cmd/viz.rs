@@ -981,6 +981,13 @@ const KPI_ROW_HEIGHT_PX: usize = 230;
 /// gauge number without overlapping it.
 const KPI_ROW_GAUGE_HEIGHT_PX: usize = 250;
 
+/// Row-height scale for a leading KPI row in the typed grid (the ≤`MAX_SUBPLOTS`-panel path,
+/// which packs all panels into one `Plot` with uniform-height rows). The KPI tiles are shorter
+/// than a chart, so its row takes this fraction of a normal row's height; the freed space is
+/// reclaimed (the whole figure is shorter and the rows below move up). A scale of `1.0` reduces
+/// the grid geometry to the original uniform layout, so non-KPI dashboards are unaffected.
+const KPI_GRID_ROW_SCALE: f64 = 0.72;
+
 /// Horizontal space (in pixels) per dashboard grid column, used to auto-size the `viz
 /// smart` static image export width.
 const SMART_COL_WIDTH_PX: usize = 500;
@@ -16623,7 +16630,8 @@ fn smart_grid_parts(
 ) -> SmartGridParts {
     let cols = args.flag_grid_cols.clamp(1, panels.len());
     // each leading overview panel takes a full-width row; the rest pack into `cols`-wide rows.
-    let (geoms, rows) = smart_grid_layout(panels, cols);
+    // `fig_height` accounts for a shorter leading KPI row (else it is `rows * ROW_HEIGHT_PX`).
+    let (geoms, _rows, fig_height) = smart_grid_layout(panels, cols);
 
     // widen the left margin when a correlation panel is present so its (long) numeric-column
     // tick labels — truncated to CORR_LABEL_MAX_CHARS — aren't clipped against the page edge.
@@ -16697,7 +16705,7 @@ fn smart_grid_parts(
 
     let mut base_layout = Layout::new()
         .show_legend(false)
-        .height(rows * ROW_HEIGHT_PX)
+        .height(fig_height)
         // vertical modebar, clear of the dashboard title and the top-right cell's panel title
         // (matching the inline panels — see `inline_panel_title`)
         .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
@@ -16764,15 +16772,21 @@ fn smart_grid_parts(
             let count = tiles.len().max(1) as f64;
             let width = (x1 - x0) / count;
             let gutter = width * 0.06;
-            // reserve the bottom slice of the row band for the labels, so the indicator's
-            // number/gauge sits above and the wrapped label sits below it.
-            let label_band = (y1 - y0) * 0.30;
-            let ind_y0 = y0 + label_band;
-            // Every tile — number-only OR gauge — puts empty space directly below its number: the
-            // gauge dial is a semicircle in the TOP of the domain and its number sits below it, so
-            // the label band under the number is clear of the dial. Anchor ALL labels at the same
-            // raised y so they share one clean baseline snug under the numbers (no per-tile step).
-            let label_y = ind_y0 + (y1 - y0) * 0.14;
+            // Indicator-domain bottom and the shared label baseline, as fractions of this KPI
+            // cell's band (mapped into `[y0, y1]`). Same tuning as the inline path
+            // (`smart_inline_panel_plot`): number tiles center the number in the domain; gauge
+            // tiles render it lower (at the dial pivot), so a gauge row pins the one shared label
+            // baseline just under the gauge number. The cell band is already height-matched to the
+            // tiles (`KPI_GRID_ROW_SCALE`), so the label sits snug with no dead band below.
+            let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
+            let (ind_frac, label_frac) = if has_gauge {
+                (0.34_f64, 0.30_f64)
+            } else {
+                (0.10_f64, 0.24_f64)
+            };
+            let band = y1 - y0;
+            let ind_y0 = y0 + band * ind_frac;
+            let label_y = y0 + band * label_frac;
             // narrower tiles (more of them) wrap sooner; the label font fits ~2 lines in the band.
             let max_chars = ((150.0 / count) as usize).clamp(12, 36);
             for (i, tile) in tiles.iter().enumerate() {
@@ -17065,7 +17079,7 @@ fn smart_grid_parts(
         annotations,
         base_layout,
         theme,
-        dims: (cols * SMART_COL_WIDTH_PX, rows * ROW_HEIGHT_PX),
+        dims: (cols * SMART_COL_WIDTH_PX, fig_height),
     }
 }
 
@@ -19154,10 +19168,8 @@ fn axis_ref(prefix: char, pos: usize) -> String {
 
 /// Plot-area height (pixels) of a `rows`-row dashboard: total height minus the top/bottom
 /// margins. Floored at 1 to avoid division by zero.
-fn smart_plot_area_h(rows: usize) -> f64 {
-    (rows * ROW_HEIGHT_PX)
-        .saturating_sub(TOP_MARGIN_PX + BOTTOM_MARGIN_PX)
-        .max(1) as f64
+fn smart_plot_area_h(row_units: f64) -> f64 {
+    (row_units * ROW_HEIGHT_PX as f64 - (TOP_MARGIN_PX + BOTTOM_MARGIN_PX) as f64).max(1.0)
 }
 
 /// Top of the subplot band (paper coords) for a `rows`-row dashboard. The strip above it
@@ -19166,20 +19178,20 @@ fn smart_plot_area_h(rows: usize) -> f64 {
 /// both short (one-row) and tall (eight-row) dashboards. When any panel carries a subtitle
 /// (a dictionary label under the title), the band grows by one extra text line so the
 /// two-line title has room. Capped at half the area.
-fn smart_grid_top(rows: usize, has_subtitles: bool) -> f64 {
+fn smart_grid_top(row_units: f64, has_subtitles: bool) -> f64 {
     let band_px = if has_subtitles {
         TITLE_BAND_PX + TITLE_SUBTITLE_EXTRA_PX
     } else {
         TITLE_BAND_PX
     };
-    let band = (band_px as f64 / smart_plot_area_h(rows)).min(0.5);
+    let band = (band_px as f64 / smart_plot_area_h(row_units)).min(0.5);
     1.0 - band
 }
 
 /// Paper-fraction gap between a cell's top and its title, fixed at `TITLE_OFFSET_PX` pixels
 /// so it doesn't scale with dashboard height (which would consume the reserved band).
-fn smart_title_offset(rows: usize) -> f64 {
-    (TITLE_OFFSET_PX as f64 / smart_plot_area_h(rows)).min(0.05)
+fn smart_title_offset(row_units: f64) -> f64 {
+    (TITLE_OFFSET_PX as f64 / smart_plot_area_h(row_units)).min(0.05)
 }
 
 /// Geometry (in paper coordinates, 0..1) for one subplot cell in the dashboard grid.
@@ -19254,6 +19266,10 @@ fn panel_render_height(kind: &PanelKind) -> usize {
 /// capped (`MAX_TOTAL_HGAP`/`MAX_TOTAL_VGAP`) so cells never collapse to a negative size: a fixed
 /// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
 /// 21-row dashboard would need 1.8 of vertical gap alone).
+///
+/// `first_row_scale` shrinks row 0's height to that fraction of a full row (for a leading KPI row,
+/// whose short tiles don't need a chart's height); every other row is a full unit. At `1.0` the
+/// per-row weighting collapses back to a uniform grid, so non-KPI dashboards are byte-identical.
 fn cell_geometry(
     row: usize,
     col: usize,
@@ -19262,6 +19278,7 @@ fn cell_geometry(
     full_width: bool,
     top: f64,
     title_offset: f64,
+    first_row_scale: f64,
 ) -> SubplotGeometry {
     const HGAP_BASE: f64 = 0.08;
     const VGAP_BASE: f64 = 0.09;
@@ -19283,7 +19300,19 @@ fn cell_geometry(
     };
 
     let cell_w = (1.0 - hgap * (cols_f - 1.0)) / cols_f;
-    let cell_h = (top - vgap * (rows_f - 1.0)) / rows_f;
+    // Row-height weights: row 0 counts as `first_row_scale` units, every other row as 1.0. The
+    // total drawable band (`top` minus the fixed vertical gaps) is divided by the summed weight to
+    // get one unit's height, so shrinking row 0 lets the rows below it move up. With
+    // `first_row_scale == 1.0` this is `(top - vgaps) / rows` — the original uniform height.
+    let row_units = (rows_f - 1.0) + first_row_scale;
+    let unit_h = (top - vgap * (rows_f - 1.0)) / row_units;
+    let this_h = unit_h * if row == 0 { first_row_scale } else { 1.0 };
+    // paper-weight of every row strictly above this one
+    let weight_above = if row == 0 {
+        0.0
+    } else {
+        first_row_scale + (row as f64 - 1.0)
+    };
 
     // a full-width overview cell spans the whole page; otherwise it occupies its single column.
     let (x0, x1) = if full_width {
@@ -19292,8 +19321,8 @@ fn cell_geometry(
         let x0 = col as f64 * (cell_w + hgap);
         (x0, x0 + cell_w)
     };
-    let y1 = top - row as f64 * (cell_h + vgap); // top edge of the cell
-    let y0 = y1 - cell_h;
+    let y1 = top - unit_h * weight_above - row as f64 * vgap; // top edge of the cell
+    let y0 = y1 - this_h;
 
     SubplotGeometry {
         x_domain: vec![x0, x1],
@@ -19305,8 +19334,10 @@ fn cell_geometry(
 
 /// Lay out the dashboard panels: each leading overview panel (see `is_overview_panel`) takes its
 /// own full-width row, while the remaining per-column distribution panels pack into `cols`-wide
-/// rows below. Returns the per-panel geometry (indexed like `panels`) and the total row count.
-fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, usize) {
+/// rows below. Returns the per-panel geometry (indexed like `panels`), the total row count, and
+/// the figure height in pixels (shorter than `rows * ROW_HEIGHT_PX` when a leading KPI row shrinks
+/// its own row).
+fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, usize, usize) {
     // assign each panel a (row, col, full_width) placement
     let mut placements: Vec<(usize, usize, bool)> = Vec::with_capacity(panels.len());
     let mut row = 0;
@@ -19331,14 +19362,29 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     }
     let rows = (if col_in_row > 0 { row + 1 } else { row }).max(1);
 
+    // a leading KPI row (always prepended at index 0, so it lands on row 0) gets a shorter row;
+    // every other layout keeps full-height rows (scale 1.0 -> the original uniform grid).
+    let first_row_scale = if matches!(
+        panels.first().map(|p| &p.kind),
+        Some(PanelKind::KpiRow { .. })
+    ) {
+        KPI_GRID_ROW_SCALE
+    } else {
+        1.0
+    };
+    let row_units = (rows as f64 - 1.0) + first_row_scale;
+
     let has_subtitles = panels.iter().any(|p| p.subtitle.is_some());
-    let top = smart_grid_top(rows, has_subtitles);
-    let title_offset = smart_title_offset(rows);
+    let top = smart_grid_top(row_units, has_subtitles);
+    let title_offset = smart_title_offset(row_units);
     let geoms = placements
         .into_iter()
-        .map(|(r, c, full)| cell_geometry(r, c, rows, cols, full, top, title_offset))
+        .map(|(r, c, full)| {
+            cell_geometry(r, c, rows, cols, full, top, title_offset, first_row_scale)
+        })
         .collect();
-    (geoms, rows)
+    let height_px = (row_units * ROW_HEIGHT_PX as f64).round() as usize;
+    (geoms, rows, height_px)
 }
 
 /// For a frequency-bar panel, the display-only truncated x-axis tick labels (in the same order
@@ -22342,7 +22388,7 @@ mod tests {
         // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
         let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
         for n in 0..4 {
-            let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset);
+            let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset, 1.0);
             // domains stay inside the paper area
             assert!(g.x_domain[0] >= 0.0 && g.x_domain[1] <= 1.0 + 1e-9);
             assert!(g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9);
@@ -22351,15 +22397,15 @@ mod tests {
             assert!(g.title_y >= g.y_domain[1] - 1e-9);
         }
         // top row is higher on the page than the bottom row
-        let upper = cell_geometry(0, 0, rows, cols, false, top, offset);
-        let lower = cell_geometry(1, 0, rows, cols, false, top, offset);
+        let upper = cell_geometry(0, 0, rows, cols, false, top, offset, 1.0);
+        let lower = cell_geometry(1, 0, rows, cols, false, top, offset, 1.0);
         assert!(upper.y_domain[0] > lower.y_domain[1]);
         // the two columns don't overlap horizontally
-        let left = cell_geometry(0, 0, rows, cols, false, top, offset);
-        let right = cell_geometry(0, 1, rows, cols, false, top, offset);
+        let left = cell_geometry(0, 0, rows, cols, false, top, offset, 1.0);
+        let right = cell_geometry(0, 1, rows, cols, false, top, offset, 1.0);
         assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
         // a full-width cell spans the whole page regardless of column
-        let full = cell_geometry(0, 0, rows, cols, true, top, offset);
+        let full = cell_geometry(0, 0, rows, cols, true, top, offset, 1.0);
         assert_eq!(full.x_domain, vec![0.0, 1.0]);
         assert!((full.title_x - 0.5).abs() < 1e-9);
     }
@@ -22371,15 +22417,16 @@ mod tests {
         // glyph height — must stay at/below y=1 so it never overlaps the dashboard title.
         const GLYPH_PX: f64 = 20.0; // generous estimate of the 13px title's rendered height
         for rows in 1..=MAX_SUBPLOTS {
-            let area = smart_plot_area_h(rows);
+            let area = smart_plot_area_h(rows as f64);
             let g = cell_geometry(
                 0,
                 0,
                 rows,
                 1,
                 false,
-                smart_grid_top(rows, false),
-                smart_title_offset(rows),
+                smart_grid_top(rows as f64, false),
+                smart_title_offset(rows as f64),
+                1.0,
             );
             let title_top = g.title_y + GLYPH_PX / area;
             assert!(
@@ -22391,7 +22438,7 @@ mod tests {
         }
 
         // the reserved band is a real pixel size even for a short one-row dashboard
-        let band_px = (1.0 - smart_grid_top(1, false)) * smart_plot_area_h(1);
+        let band_px = (1.0 - smart_grid_top(1.0, false)) * smart_plot_area_h(1.0);
         assert!(band_px >= 30.0, "one-row title band too thin: {band_px}px");
     }
 
@@ -22404,10 +22451,10 @@ mod tests {
         for panels in [9usize, 16, 30, 42, 64] {
             let cols = 2;
             let rows = panels.div_ceil(cols);
-            let top = smart_grid_top(rows, false);
-            let offset = smart_title_offset(rows);
+            let top = smart_grid_top(rows as f64, false);
+            let offset = smart_title_offset(rows as f64);
             for n in 0..panels {
-                let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset);
+                let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset, 1.0);
                 assert!(
                     g.y_domain[1] > g.y_domain[0],
                     "panels={panels} n={n}: non-positive cell height {:?}",
@@ -22426,7 +22473,8 @@ mod tests {
                 // each cell sits strictly below the one directly above it (n - cols)
                 if n >= cols {
                     let m = n - cols;
-                    let above = cell_geometry(m / cols, m % cols, rows, cols, false, top, offset);
+                    let above =
+                        cell_geometry(m / cols, m % cols, rows, cols, false, top, offset, 1.0);
                     assert!(
                         g.y_domain[1] <= above.y_domain[0] + 1e-9,
                         "panels={panels} n={n}: row overlaps the one above"
@@ -22452,7 +22500,7 @@ mod tests {
             Panel::new("c2".to_string(), PanelKind::FreqBar { idx: 1 }),
             Panel::new("c3".to_string(), PanelKind::FreqBar { idx: 2 }),
         ];
-        let (geoms, rows) = smart_grid_layout(&panels, 2);
+        let (geoms, rows, _height) = smart_grid_layout(&panels, 2);
         // 1 full-width overview row + ceil(3/2) = 2 grid rows
         assert_eq!(rows, 3);
         // the overview panel spans the full page width and leads the dashboard (top band)

@@ -6344,6 +6344,80 @@ fn viz_sunburst_standalone() {
 }
 
 #[test]
+fn viz_splom_standalone() {
+    let wrk = Workdir::new("viz_splom_standalone");
+    // three numeric columns; a and b are perfectly correlated, c is independent
+    let mut rows = String::from("a,b,c\n");
+    for i in 0..40 {
+        let a = i % 7;
+        let b = (i % 7) * 2;
+        let c = (i % 5) + 1;
+        rows.push_str(&format!("{a},{b},{c}\n"));
+    }
+    wrk.create_from_string("nums.csv", &rows);
+
+    let out_html = wrk.path("sp.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "nums.csv", "--cols", "a,b,c", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("sp.html").unwrap();
+    assert!(html.contains(r#""type":"splom""#));
+    // one dimension per selected numeric column, each carrying its label
+    assert!(html.contains(r#""label":"a""#));
+    assert!(html.contains(r#""label":"b""#));
+    assert!(html.contains(r#""label":"c""#));
+}
+
+#[test]
+fn viz_splom_needs_two_numeric_cols() {
+    // splom cross-plots numeric column pairs, so a single numeric column (the other selected
+    // column being non-numeric text) is not enough — it must error, not emit a 1x1 grid.
+    let wrk = Workdir::new("viz_splom_needs_two_numeric_cols");
+    wrk.create_from_string("one.csv", "a,name\n1,x\n2,y\n3,z\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "one.csv", "--cols", "a,name"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_parcats_standalone() {
+    let wrk = Workdir::new("viz_parcats_standalone");
+    // three low-cardinality categorical columns
+    let mut rows = String::from("region,tier,status\n");
+    let regions = ["north", "south"];
+    let tiers = ["gold", "silver"];
+    let statuses = ["open", "closed"];
+    for i in 0..40 {
+        let r = regions[i % regions.len()];
+        let t = tiers[(i / 2) % tiers.len()];
+        let s = statuses[(i / 3) % statuses.len()];
+        rows.push_str(&format!("{r},{t},{s}\n"));
+    }
+    wrk.create_from_string("cats.csv", &rows);
+
+    let out_html = wrk.path("pc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "parcats",
+        "cats.csv",
+        "--cols",
+        "region,tier,status",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("pc.html").unwrap();
+    assert!(html.contains(r#""type":"parcats""#));
+    // identical category tuples are aggregated into weighted paths (`counts`)
+    assert!(html.contains(r#""counts":["#));
+    assert!(html.contains(r#""label":"region""#));
+    assert!(html.contains(r#""label":"status""#));
+}
+
+#[test]
 fn viz_icicle_standalone() {
     let wrk = Workdir::new("viz_icicle_standalone");
     three_dim_hierarchy(&wrk);

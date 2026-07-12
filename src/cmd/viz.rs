@@ -48,6 +48,13 @@ Chart types (subcommands):
                 treemap). Better for deeper hierarchies.
     icicle      Part-to-whole hierarchy as stacked bars per level (same inputs as
                 treemap). Level-aligned; good for deep, wide hierarchies.
+    splom       Scatter-plot matrix: every pair of numeric --cols plotted against
+                each other in a grid, with each column's distribution on the
+                diagonal. Good for spotting correlations across many numeric
+                columns at once (default: all numeric columns).
+    parcats     Parallel categories: ribbons showing how rows flow across the
+                categorical --cols (best with 3-4). Complements sankey (which
+                takes 2 columns) for higher-dimensional categorical relationships.
     map         Geographic point map (or --density heatmap) on tile basemaps.
                 Pick the coordinate columns with the lat/lon options below.
     geo         Geographic point map on a projection basemap (coastlines/land/
@@ -217,6 +224,8 @@ Usage:
     qsv viz treemap     [options] <input>
     qsv viz sunburst    [options] <input>
     qsv viz icicle      [options] <input>
+    qsv viz splom       [options] <input>
+    qsv viz parcats     [options] <input>
     qsv viz --help
 
 viz options:
@@ -229,6 +238,9 @@ viz options:
                            the numeric axes to plot. For treemap/sunburst: the
                            categorical dimensions that form the hierarchy levels,
                            outermost first (e.g. region,category,subcategory).
+                           For splom: the numeric columns to cross-plot (default:
+                           all numeric). For parcats: the categorical dimensions
+                           to flow across (best with 3-4).
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
                            radar, map and geo.
@@ -611,8 +623,8 @@ use plotly::layout::update_menu::UpdateMenuDirection;
 use plotly::layout::update_menu::{Button, ButtonMethod, UpdateMenu, UpdateMenuType};
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    HeatMap, Histogram, Icicle, Indicator, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo,
-    ScatterMap, ScatterPolar, Sunburst, Trace, Treemap, Violin,
+    HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter, Scatter3D,
+    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -627,7 +639,9 @@ use plotly::{
         LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
         ProjectionType, themes::BuiltinTheme,
     },
+    parcats::{ParcatsArrangement, ParcatsDimension},
     sankey::{Arrangement, Link, Node},
+    splom::SplomDimension,
     sunburst::InsideTextOrientation,
     traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
@@ -1204,6 +1218,8 @@ struct Args {
     cmd_sunburst:            bool,
     cmd_icicle:              bool,
     cmd_choropleth:          bool,
+    cmd_splom:               bool,
+    cmd_parcats:             bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
     flag_y:                  Option<SelectColumns>,
@@ -1590,6 +1606,15 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
         return build_hierarchy_plot(args);
     }
 
+    // splom (scatter-plot matrix) self-generates its own N×N axis grid and parcats (parallel
+    // categories) is domain-based — neither is cartesian, so each owns its whole `Plot`.
+    if matches!(chart_kind(args), Chart::Splom) {
+        return build_splom_plot(args);
+    }
+    if matches!(chart_kind(args), Chart::Parcats) {
+        return build_parcats_plot(args);
+    }
+
     let mut plot = Plot::new();
 
     // the sankey chart carries an on-screen "node order" toggle (a layout updatemenu), stashed
@@ -1701,6 +1726,8 @@ enum Chart {
     Treemap,
     Sunburst,
     Icicle,
+    Splom,
+    Parcats,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -1744,6 +1771,10 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Sunburst
     } else if args.cmd_icicle {
         Chart::Icicle
+    } else if args.cmd_splom {
+        Chart::Splom
+    } else if args.cmd_parcats {
+        Chart::Parcats
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -5006,6 +5037,105 @@ fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
     let mut plot = Plot::new();
     plot.add_trace(hierarchy_trace(style, &labels, &parents, &values, &ids));
     let mut layout = Layout::new().show_legend(false);
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Build the `Plot` for `viz splom`: a scatter-plot matrix (SPLOM) over the numeric `--cols`
+/// (default: all numeric columns). Every pair of dimensions is cross-plotted in a grid, with each
+/// dimension's own axis and its distribution on the diagonal. Splom self-generates its N×N axis
+/// grid, so it owns its whole `Plot` (no shared cartesian axes), like the hierarchy charts above.
+fn build_splom_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    // default to all columns when --cols is omitted; read_numeric_columns keeps the numeric ones
+    let candidates: Vec<usize> = match args.flag_cols.as_ref() {
+        Some(_) => resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?,
+        None => (0..headers.len()).collect(),
+    };
+    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
+    if labels.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "splom needs at least 2 numeric --cols (a scatter-plot matrix cross-plots numeric \
+             column pairs)."
+        );
+    }
+
+    let dimensions: Vec<SplomDimension<f64>> = labels
+        .into_iter()
+        .zip(columns)
+        .map(|(label, values)| SplomDimension::new().label(label).values(values))
+        .collect();
+
+    let trace = Splom::new()
+        .dimensions(dimensions)
+        .marker(Marker::new().size(4).opacity(0.6));
+
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+    let mut layout = Layout::new();
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Build the `Plot` for `viz parcats`: a parallel-categories diagram over the categorical `--cols`
+/// (best with 3-4). Rows are aggregated into distinct category tuples (weighted by `counts`), each
+/// column becoming a dimension. Domain-based (no cartesian axes), so it owns its whole `Plot`.
+fn build_parcats_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let dims = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
+    if dims.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "parcats needs at least 2 categorical --cols (best with 3-4)."
+        );
+    }
+
+    // aggregate identical category tuples into weighted paths so the trace stays compact
+    let mut counts: HashMap<Vec<String>, f64> = HashMap::new();
+    let mut order: Vec<Vec<String>> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let tuple: Vec<String> = dims
+            .iter()
+            .map(|&i| cell_to_string(record.get(i)))
+            .collect();
+        counts
+            .entry(tuple.clone())
+            .and_modify(|c| *c += 1.0)
+            .or_insert_with(|| {
+                order.push(tuple);
+                1.0
+            });
+    }
+    if order.is_empty() {
+        return fail_clierror!("No rows to chart for the parcats diagram.");
+    }
+
+    let weights: Vec<f64> = order.iter().map(|t| counts[t]).collect();
+    let dimensions: Vec<ParcatsDimension<String>> = dims
+        .iter()
+        .enumerate()
+        .map(|(pos, &idx)| {
+            let values: Vec<String> = order.iter().map(|t| t[pos].clone()).collect();
+            ParcatsDimension::new()
+                .label(col_label(&headers, idx, nh))
+                .values(values)
+        })
+        .collect();
+
+    let trace = Parcats::new()
+        .dimensions(dimensions)
+        .counts_array(weights)
+        .arrangement(ParcatsArrangement::Perpendicular);
+
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+    let mut layout = Layout::new();
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }

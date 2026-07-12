@@ -462,14 +462,15 @@ sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash"
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# Pinned to our stacked feature branch `feature/trace-type-additions` (PR
-# https://github.com/plotly/plotly.rs/pull/423), a strict superset of the earlier pins:
+# Pinned to our stacked feature branch `feature/splom-parcats-traces` (PR
+# https://github.com/plotly/plotly.rs/pull/425), a strict superset of the earlier pins:
 #   - MapLibre `map`-subplot traces qsv's `viz` maps use (ChoroplethMap, DensityMap,
 #     ScatterMap; upstream PRs #406/#410/#415/#416) — now merged into plotly:main
 #   - plotly.js 3.7 attribute backfill (legendrank/zorder/fillgradient/... ; PR #421)
 #   - new trace types Indicator, Histogram2d, Icicle + layout-level `uirevision` (PR #423)
-# When #421/#423 merge upstream, repoint this to a plotly.rs release/main rev.
-plotly = { git = "https://github.com/dathere/plotly", branch = "feature/trace-type-additions" }
+#   - new trace types Splom, Parcats (PR #425) — used by qsv `viz splom`/`viz parcats`
+# When #421/#423/#425 merge upstream, repoint this to a plotly.rs release/main rev.
+plotly = { git = "https://github.com/dathere/plotly", branch = "feature/splom-parcats-traces" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #

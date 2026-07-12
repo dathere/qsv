@@ -141,7 +141,7 @@ rename:
   whenToUse: "Rename columns. Supports bulk/regex."
 
 template:
-  whenToUse: "Generate formatted output from CSV using Mini Jinja templates. For reports, markdown, HTML."
+  whenToUse: "Generate formatted output from CSV using MiniJinja templates. For reports, markdown, HTML."
   needsIndexHint: true
 
 index:

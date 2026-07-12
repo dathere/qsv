@@ -1,8 +1,8 @@
 # template
 
-> Renders a template using CSV data with the [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/) template engine ([Example](https://github.com/dathere/qsv/blob/4645ec07b5befe3b0c0e49bf0f547315d0d7514b/src/cmd/template.rs#L18-L44)).
+> Renders a template using CSV data with the [MiniJinja](https://docs.rs/minijinja/latest/minijinja/) template engine ([Example](https://github.com/dathere/qsv/blob/4645ec07b5befe3b0c0e49bf0f547315d0d7514b/src/cmd/template.rs#L18-L44)).
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/template.rs](https://github.com/dathere/qsv/blob/master/src/cmd/template.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[📚](TableOfContents.md#legend "has lookup table support, enabling runtime \"lookups\" against local or remote reference CSVs.")[⛩️](TableOfContents.md#legend "uses MiniJinja template engine.") [![CKAN](../images/ckan.png)](TableOfContents.md#legend "has CKAN-aware integration options.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Template Options](#template-options) | [Common Options](#common-options)

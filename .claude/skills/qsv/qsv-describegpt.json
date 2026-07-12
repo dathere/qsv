@@ -1,7 +1,7 @@
 {
   "name": "qsv-describegpt",
   "version": "21.1.0",
-  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, Mini Jinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema, Semantic Markdown, OKF, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
+  "description": "Infer a \"neuro-symbolic\" Data Dictionary, Description & Tags or ask questions about a CSV with a configurable, MiniJinja prompt file, using any OpenAI API-compatible LLM, including local LLMs. (e.g. Markdown, JSON, TOON, JSON Schema, Semantic Markdown, OKF, Everything, Spanish, Mandarin, Controlled Tags; --prompt \"What are the top 10 complaint types by community board & borough by year?\" - deterministic, hallucination-free SQL RAG result; iterative, session-based SQL RAG refinement - refined SQL RAG result)",
   "category": "documentation",
   "command": {
     "subcommand": "describegpt",
@@ -38,7 +38,7 @@
       {
         "flag": "--context-file",
         "type": "string",
-        "description": "Path to a file with additional context about the dataset - e.g. variable/code labels, provenance & domain notes - injected into the prompts as the {{ context }} Mini Jinja variable. The file TYPE is sniffed from its contents (not its extension). Supported types: plain text, Markdown, CSV, Excel/ODS spreadsheets (extracted to CSV), and PDF or image files (JPEG/PNG/WebP/GIF) sent to the LLM as a multimodal attachment (needs a multimodal model & endpoint; max ~32 MB). Word/PowerPoint (docx/pptx) are NOT supported - convert to PDF or text. By default qsv injects this context into the USER message; custom prompt file templates may reference {{ context }} anywhere to place it instead. If the option is unset or the file is empty, {{ context }} renders as an empty string and the prompts are unaffected. The file's contents are part of the cache key, so editing it produces a fresh LLM call."
+        "description": "Path to a file with additional context about the dataset - e.g. variable/code labels, provenance & domain notes - injected into the prompts as the {{ context }} MiniJinja variable. The file TYPE is sniffed from its contents (not its extension). Supported types: plain text, Markdown, CSV, Excel/ODS spreadsheets (extracted to CSV), and PDF or image files (JPEG/PNG/WebP/GIF) sent to the LLM as a multimodal attachment (needs a multimodal model & endpoint; max ~32 MB). Word/PowerPoint (docx/pptx) are NOT supported - convert to PDF or text. By default qsv injects this context into the USER message; custom prompt file templates may reference {{ context }} anywhere to place it instead. If the option is unset or the file is empty, {{ context }} renders as an empty string and the prompts are unaffected. The file's contents are part of the cache key, so editing it produces a fresh LLM call."
       },
       {
         "flag": "--description",
@@ -117,7 +117,7 @@
       {
         "flag": "--markdown-template",
         "type": "string",
-        "description": "TOML file with Mini Jinja templates for Markdown output. The TOML contains four wrapper templates - one per inference kind: dictionary_md_template, description_md_template, tags_md_template and custom_prompt_md_template - plus a dictionary_md_body_template that drives the per-field dictionary table that fills the dictionary wrapper's {{ llm_response }}. All template fields are optional; any omitted field falls back to the embedded default, so a minimal TOML can override just the templates you want to change. Custom Mini Jinja filters (pipe_escape, br_replace, human_count, dict_cell, humanize_examples) and template variables are documented inline in the default TOML referenced below. If no file is provided, built-in defaults are used (matching legacy output). See https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml"
+        "description": "TOML file with MiniJinja templates for Markdown output. The TOML contains four wrapper templates - one per inference kind: dictionary_md_template, description_md_template, tags_md_template and custom_prompt_md_template - plus a dictionary_md_body_template that drives the per-field dictionary table that fills the dictionary wrapper's {{ llm_response }}. All template fields are optional; any omitted field falls back to the embedded default, so a minimal TOML can override just the templates you want to change. Custom MiniJinja filters (pipe_escape, br_replace, human_count, dict_cell, humanize_examples) and template variables are documented inline in the default TOML referenced below. If no file is provided, built-in defaults are used (matching legacy output). See https://github.com/dathere/qsv/blob/master/resources/describegpt_md_defaults.toml"
       },
       {
         "flag": "--no-cache",

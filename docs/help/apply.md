@@ -1,8 +1,8 @@
 # apply
 
-> Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic [NLP](https://en.wikipedia.org/wiki/Natural_language_processing) functions ([similarity](https://crates.io/crates/strsim), [sentiment analysis](https://crates.io/crates/vader_sentiment), [profanity](https://docs.rs/censor/latest/censor/), [eudex](https://github.com/ticki/eudex#eudex-a-blazingly-fast-phonetic-reductionhashing-algorithm), [language](https://crates.io/crates/whatlang) & [name gender](https://github.com/Raduc4/gender_guesser?tab=readme-ov-file#gender-guesser)) detection. Its `summarize` subcommand condenses a column or group of columns using an OpenAI API-compatible LLM (local or commercial) with customizable, [Mini Jinja](https://docs.rs/minijinja/latest/minijinja/)-templated per-record prompts.
+> Apply series of string, date, math & currency transformations to given CSV column/s. It also has some basic [NLP](https://en.wikipedia.org/wiki/Natural_language_processing) functions ([similarity](https://crates.io/crates/strsim), [sentiment analysis](https://crates.io/crates/vader_sentiment), [profanity](https://docs.rs/censor/latest/censor/), [eudex](https://github.com/ticki/eudex#eudex-a-blazingly-fast-phonetic-reductionhashing-algorithm), [language](https://crates.io/crates/whatlang) & [name gender](https://github.com/Raduc4/gender_guesser?tab=readme-ov-file#gender-guesser)) detection. Its `summarize` subcommand condenses a column or group of columns using an OpenAI API-compatible LLM (local or commercial) with customizable, [MiniJinja](https://docs.rs/minijinja/latest/minijinja/)-templated per-record prompts.
 
-**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[⛩️](TableOfContents.md#legend "uses Mini Jinja template engine.")
+**[Table of Contents](TableOfContents.md)** | **Source: [src/cmd/apply.rs](https://github.com/dathere/qsv/blob/master/src/cmd/apply.rs)** | [📇](TableOfContents.md#legend "uses an index when available.")[🧠](TableOfContents.md#legend "expensive operations are memoized with available inter-session Redis/Disk caching for fetch commands.")[🤖](TableOfContents.md#legend "command uses Natural Language Processing or Generative AI.")[🚀](TableOfContents.md#legend "multithreaded even without an index.")[🔣](TableOfContents.md#legend "requires UTF-8 encoded input.")[👆](TableOfContents.md#legend "has powerful column selector support. See `select` for syntax.")[⛩️](TableOfContents.md#legend "uses MiniJinja template engine.")
 
 <a name="nav"></a>
 [Description](#description) | [Examples](#examples) | [Usage](#usage) | [Arguments](#arguments) | [Apply Options](#apply-options) | [Operations Options](#operations-options) | [Summarize Options](#summarize-options) | [Common Options](#common-options)
@@ -23,7 +23,7 @@ the <--formatstr> template.
 and conversions.
 5. summarize*    - summarize a column or group of columns using an OpenAI
 API-compatible LLM (local or commercial), with customizable,
-Mini Jinja-templated per-record prompts.
+MiniJinja-templated per-record prompts.
 * subcommand is multi-column capable.
 
 OPERATIONS (multi-column capable)
@@ -320,7 +320,7 @@ qsv apply calcconv --formatstr '{col1} Billion Trillion * {col2} quadrillion vig
 ### SUMMARIZE
 
 The summarize subcommand sends each record to an OpenAI API-compatible LLM and stores the
-returned summary in a new column. The prompt is a Mini Jinja template (like `qsv template`)
+returned summary in a new column. The prompt is a MiniJinja template (like `qsv template`)
 rendered per record - reference any column by its "safe" name (non-alphanumeric chars become
 '_'); the 1-based row number is available as {{QSV_ROWNO}}.
 If no --prompt/--prompt-file is given, a default prompt that summarizes the selected column/s
@@ -413,7 +413,7 @@ qsv apply --help
 | &nbsp;`‑t,`<br>`‑‑max‑tokens`&nbsp; | integer | Maximum number of tokens in the LLM output. Set to 0 to not send a max_tokens limit (automatically used for localhost endpoints). | `10000` |
 | &nbsp;`‑‑timeout`&nbsp; | integer | Timeout for each LLM request in seconds (0 = no timeout). | `300` |
 | &nbsp;`‑‑addl‑props`&nbsp; | string | Additional model properties as a JSON object, e.g. '{"reasoning_effort": "high", "temperature": 0.2}' |  |
-| &nbsp;`‑‑prompt`&nbsp; | string | Mini Jinja prompt template rendered per record. Overrides the default prompt. Reference columns by their safe name. |  |
+| &nbsp;`‑‑prompt`&nbsp; | string | MiniJinja prompt template rendered per record. Overrides the default prompt. Reference columns by their safe name. |  |
 | &nbsp;`‑‑prompt‑file`&nbsp; | string | Read the prompt template from a file. Ignored if --prompt is set. |  |
 | &nbsp;`‑‑rate‑limit`&nbsp; | float | Seconds to sleep between LLM requests to avoid provider rate limits. Accepts fractional seconds (e.g. 0.5). | `0` |
 | &nbsp;`‑‑on‑error`&nbsp; | string | What to do when an LLM request fails: "fail" aborts; "skip" writes an "<ERROR: ...>" cell and continues. | `fail` |

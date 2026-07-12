@@ -27,7 +27,7 @@ mod summarize_mock {
     }
 
     // OpenAI-compatible chat-completions handler. Echoes the received user prompt
-    // back as the completion content (so tests can assert the Mini Jinja prompt was
+    // back as the completion content (so tests can assert the MiniJinja prompt was
     // rendered with the expected columns), and reflects an addl-prop `temperature`
     // when present (so the --addl-props passthrough can be verified).
     async fn serve_chat(state: web::Data<ChatState>, body: web::Bytes) -> HttpResponse {

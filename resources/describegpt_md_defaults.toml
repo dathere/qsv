@@ -1,9 +1,9 @@
 name = "qsv Default Markdown Template File"
-description = "Default Mini Jinja templates for describegpt's Markdown output."
+description = "Default MiniJinja templates for describegpt's Markdown output."
 author = "qsv team"
 version = "1.0.0"
 
-### NOTE: The following VARIABLES are available in Mini Jinja templates (use {{ variable }} syntax):
+### NOTE: The following VARIABLES are available in MiniJinja templates (use {{ variable }} syntax):
 # Wrapper templates (dictionary_md_template / description_md_template / tags_md_template /
 # custom_prompt_md_template) receive:
 #   {{ llm_response }}      - the unescaped LLM response (post SQL-rewrite for Prompt mode,
@@ -25,7 +25,7 @@ version = "1.0.0"
 #   {{ infer_content_type }} - true when --infer-content-type is set; gates the optional
 #                             "Content Type" column in the default body template
 #
-### Custom Mini Jinja filters available in all describegpt markdown templates:
+### Custom MiniJinja filters available in all describegpt markdown templates:
 #   pipe_escape       - replaces "|" with "\|" (escapes pipe for markdown tables)
 #   br_replace        - replaces newlines with "<br>"
 #   human_count       - thousands-separator formatting (1234 -> "1,234")

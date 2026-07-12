@@ -12,7 +12,7 @@ format = "markdown"
 # Or "dialects" like Taglish, Pig Latin, Valley Girl, Pirate, Shakespearean English, etc.
 language = ""
 
-### NOTE: The following VARIABLES are available in Mini Jinja templates (use {{ variable }} syntax):
+### NOTE: The following VARIABLES are available in MiniJinja templates (use {{ variable }} syntax):
 # {{ stats }} - summary statistics in CSV format
 # {{ frequency }} - frequency distribution in CSV format
 # {{ dictionary }} - data dictionary in JSON format

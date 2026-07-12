@@ -3,7 +3,7 @@ Create a "neuro-symbolic" Data Dictionary and/or infer Description & Tags about 
 using an OpenAI API-compatible Large Language Model (LLM).
 
 It does this by compiling Summary Statistics & a Frequency Distribution of the Dataset,
-and then prompting the LLM with detailed, configurable, Mini Jinja-templated prompts with
+and then prompting the LLM with detailed, configurable, MiniJinja-templated prompts with
 these extended statistical context.
 
 The Data Dictionary is "neuro-symbolic" as it uses a hybrid approach. It's primarily populated
@@ -296,11 +296,11 @@ describegpt options:
                            the user can inspect why it failed and modify it.
     --prompt-file <file>   The configurable TOML file containing prompts to use for inferencing.
                            If no file is provided, default prompts will be used.
-                           The prompt file uses the Mini Jinja template engine (https://docs.rs/minijinja)
+                           The prompt file uses the MiniJinja template engine (https://docs.rs/minijinja)
                            See https://github.com/dathere/qsv/blob/master/resources/describegpt_defaults.toml
     --context-file <file>  Path to a file with additional context about the dataset - e.g.
                            variable/code labels, provenance & domain notes - injected into the
-                           prompts as the {{ context }} Mini Jinja variable. The file TYPE is
+                           prompts as the {{ context }} MiniJinja variable. The file TYPE is
                            sniffed from its contents (not its extension). Supported types:
                            plain text, Markdown, CSV, Excel/ODS spreadsheets (extracted to CSV),
                            and PDF or image files (JPEG/PNG/WebP/GIF) sent to the LLM as a
@@ -311,7 +311,7 @@ describegpt options:
                            If the option is unset or the file is empty, {{ context }} renders as an
                            empty string and the prompts are unaffected. The file's contents are part
                            of the cache key, so editing it produces a fresh LLM call.
-    --markdown-template <file>  TOML file with Mini Jinja templates for Markdown output. The TOML
+    --markdown-template <file>  TOML file with MiniJinja templates for Markdown output. The TOML
                            contains four wrapper templates - one per inference kind:
                            dictionary_md_template, description_md_template, tags_md_template
                            and custom_prompt_md_template - plus a dictionary_md_body_template
@@ -320,7 +320,7 @@ describegpt options:
                            All template fields are optional; any omitted field falls back to
                            the embedded default, so a minimal TOML can override just the
                            templates you want to change.
-                           Custom Mini Jinja filters (pipe_escape, br_replace, human_count,
+                           Custom MiniJinja filters (pipe_escape, br_replace, human_count,
                            dict_cell, humanize_examples) and template variables are documented
                            inline in the default TOML referenced below.
                            If no file is provided, built-in defaults are used (matching legacy output).
@@ -2303,7 +2303,7 @@ fn format_additional_context(context: &str) -> String {
 }
 
 /// Generates a prompt for a given prompt type based on either a custom prompt file or default
-/// prompts. Uses the Mini Jinja template engine to render prompt templates with variables.
+/// prompts. Uses the MiniJinja template engine to render prompt templates with variables.
 ///
 /// # Arguments
 ///
@@ -2316,8 +2316,8 @@ fn format_additional_context(context: &str) -> String {
 /// # Returns
 ///
 /// Returns a tuple containing:
-/// * The generated prompt string (rendered from Mini Jinja template)
-/// * The system prompt string (rendered from Mini Jinja template)
+/// * The generated prompt string (rendered from MiniJinja template)
+/// * The system prompt string (rendered from MiniJinja template)
 /// * Whether the SOURCE template referenced `{{ dictionary }}` (any whitespace variation). The
 ///   Description / Tags / Prompt phase callers use this to avoid the redundant chat-message-side
 ///   dictionary injection in `build_inference_messages` when the template already inlines
@@ -2330,7 +2330,7 @@ fn format_additional_context(context: &str) -> String {
 /// * Analysis results are missing when required
 /// * SQL guidelines markers cannot be found in the prompt template
 /// * `DuckDB` query execution fails when getting extension info
-/// * Mini Jinja template rendering fails
+/// * MiniJinja template rendering fails
 fn get_prompt(
     prompt_type: PromptType,
     analysis_results: Option<&AnalysisResults>,
@@ -2566,10 +2566,10 @@ fn get_prompt(
         .and_then(Option::as_ref)
         .map_or_else(String::new, ContextFile::context_text);
 
-    // Set up Mini Jinja environment for template rendering
+    // Set up MiniJinja environment for template rendering
     let mut env = Environment::new();
 
-    // add all the Mini Jinja contrib filters to the environment
+    // add all the MiniJinja contrib filters to the environment
     minijinja_contrib::add_to_environment(&mut env);
     crate::minijinja_filters::register(&mut env);
 
@@ -2622,7 +2622,7 @@ fn get_prompt(
         context => context_content.as_str(),
     };
 
-    // Render prompt using Mini Jinja
+    // Render prompt using MiniJinja
     let mut rendered_prompt = env
         .render_str(&prompt, &ctx)
         .map_err(|e| CliError::Other(format!("Failed to render prompt template: {e}")))?;

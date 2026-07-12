@@ -11,7 +11,7 @@ It has five subcommands:
                     and conversions.
  5. summarize*    - summarize a column or group of columns using an OpenAI
                     API-compatible LLM (local or commercial), with customizable,
-                    Mini Jinja-templated per-record prompts.
+                    MiniJinja-templated per-record prompts.
     * subcommand is multi-column capable.
 
 OPERATIONS (multi-column capable)
@@ -222,7 +222,7 @@ Examples:
 == SUMMARIZE ==
 
 The summarize subcommand sends each record to an OpenAI API-compatible LLM and stores the
-returned summary in a new column. The prompt is a Mini Jinja template (like `qsv template`)
+returned summary in a new column. The prompt is a MiniJinja template (like `qsv template`)
 rendered per record - reference any column by its "safe" name (non-alphanumeric chars become
 '_'); the 1-based row number is available as {{QSV_ROWNO}}.
 
@@ -344,7 +344,7 @@ SUMMARIZE options:
                                 [default: 300]
     --addl-props <json>         Additional model properties as a JSON object, e.g.
                                 '{"reasoning_effort": "high", "temperature": 0.2}'
-    --prompt <template>         Mini Jinja prompt template rendered per record. Overrides the
+    --prompt <template>         MiniJinja prompt template rendered per record. Overrides the
                                 default prompt. Reference columns by their safe name.
     --prompt-file <file>        Read the prompt template from a file. Ignored if --prompt is set.
     --rate-limit <secs>         Seconds to sleep between LLM requests to avoid provider rate limits.
@@ -944,7 +944,7 @@ fn is_localhost_url(base_url: &str) -> bool {
 /// Runs the `apply summarize` subcommand.
 ///
 /// Unlike the other (CPU-bound, Rayon-parallel) apply subcommands, summarize is network-bound:
-/// it renders a Mini Jinja prompt per record, calls an OpenAI API-compatible LLM, and stores
+/// it renders a MiniJinja prompt per record, calls an OpenAI API-compatible LLM, and stores
 /// the returned summary in a new column. It runs sequentially so HTTP errors propagate cleanly
 /// and requests can be rate-limited, and it caches results on disk so repeated rows / re-runs
 /// don't re-pay for inference.
@@ -964,12 +964,12 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
         return fail_incorrectusage_clierror!("apply summarize requires --new-column (-c).");
     };
 
-    // Sanitize header names into safe Mini Jinja context keys (non-alphanumeric -> '_').
+    // Sanitize header names into safe MiniJinja context keys (non-alphanumeric -> '_').
     // Use util::safe_header_names rather than a naive per-char map so that:
     //  - headers which sanitize to the same key (e.g. `a.b` and `a_b`) get unique disambiguated
     //    names (`a_b`, `a_b_2`) instead of silently colliding & overwriting each other; and
     //  - digit-leading headers (e.g. `1st_col`) get a leading `_` (check_first_char=true), since
-    //    Mini Jinja/Jinja identifiers can't start with a digit (`{{ 1st_col }}` would fail).
+    //    MiniJinja/Jinja identifiers can't start with a digit (`{{ 1st_col }}` would fail).
     // keep_case=true preserves the original casing. The SAME mapping drives both the default
     // prompt and the per-record context insertion.
     let (sanitized_headers, _) =
@@ -1031,7 +1031,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
         s
     };
 
-    // set up Mini Jinja with qsv's shared filter set (regex, datefmt, slugify, etc.)
+    // set up MiniJinja with qsv's shared filter set (regex, datefmt, slugify, etc.)
     let mut env = Environment::new();
     minijinja_contrib::add_to_environment(&mut env);
     env.set_unknown_method_callback(minijinja_contrib::pycompat::unknown_method_callback);

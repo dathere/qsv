@@ -69,6 +69,15 @@ auto-picks panels, so no --x/--y is needed:
     - ID-like (near-unique) and all-empty columns are skipped
 
   Overview panels (each leads the dashboard on its own full-width row):
+    - KPI overview row (leads the dashboard when the dataset has headline numeric
+      measures): a strip of "big number" tiles, one per headline measure (summed
+      for extensive quantities, averaged for intensive ones). A measure tile
+      becomes a GAUGE when the dictionary supplies a validated `x-qsv.gauge_range`
+      that contains the value, and gains a "vs target" DELTA when it supplies an
+      `x-qsv.target` (see --dictionary). Omitted for image exports and for datasets
+      with no headline measure. (Overall dataset completeness - the share of
+      non-empty cells - is a quiet "Completeness:" line in the header metadata
+      table, not a KPI tile.)
     - correlation heatmap, when 2+ continuous numeric columns exist (one extra
       data pass for Pearson correlations). If the strongest pair is at least
       moderately correlated, a drill-down is added beside it: a scatter (or a 2D
@@ -459,6 +468,16 @@ smart options:
                            file already exists, it is reused as-is (skipping the LLM) - edit it to
                            fine-tune, or delete it to force a fresh re-infer.
                            Generation/read failures soft-fall back to the stats-only dashboard.
+                           The dictionary also drives the KPI overview row via two optional
+                           per-field hints in a property's "x-qsv" object (edit them in the saved
+                           schema to fine-tune). A "gauge_range" of [min, max] on a continuous
+                           numeric measure renders its KPI tile as a GAUGE on that canonical scale
+                           (e.g. [0,1] for a ratio, [0,100] for a percent); qsv keeps it only when
+                           the observed data lies within the range, so a mis-scaled range can't draw
+                           a misleading dial, and "infer" emits it for canonical-scale measures.
+                           A "target" number on a measure renders a "vs target" DELTA against that
+                           goal (value minus target) - a GOAL you supply, never a fabricated
+                           prior-period baseline, so "infer" never emits it; hand-author it.
                            Only affects `smart`.
     --dictionary-context <file>  Path to a file with extra context about the dataset
                            (a glossary, README, data dictionary, PDF, etc.) forwarded to
@@ -602,7 +621,7 @@ use plotly::{
         HoverInfo, Line, Marker, Mode, Orientation, Pattern, PatternShape, TextPosition, TickMode,
         Title,
     },
-    indicator::{Delta, Gauge, GaugeAxis, IndicatorTitle, Mode as IndicatorMode, Number},
+    indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
         Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
         LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
@@ -14491,7 +14510,11 @@ fn kpi_number_format(value: f64) -> String {
 
 /// Build one KPI `Indicator` trace for a tile, positioned by paper-domain `[x0,x1] × [y0,y1]`.
 /// A validated `gauge` adds an angular gauge, a `target` adds a "vs target" delta; the `mode`
-/// follows whichever are present (always including the big number).
+/// follows whichever are present (always including the big number). The tile LABEL is NOT set as
+/// the indicator's built-in title (which renders large, above the number, and overruns narrow
+/// tiles for long auto-generated labels) — the caller instead draws it as a smaller, word-wrapped
+/// subtitle annotation BELOW the tile via `kpi_label_annotation`, so the indicator here owns only
+/// the number/gauge/delta and leaves the bottom band of its domain for that label.
 fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<dyn Trace> {
     let mode = match (tile.gauge.is_some(), tile.target.is_some()) {
         (true, true) => IndicatorMode::NumberAndDeltaAndGauge,
@@ -14502,7 +14525,6 @@ fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<
     let mut ind = Indicator::new(tile.value)
         .mode(mode)
         .domain(Domain::new().x(&x_domain).y(&y_domain))
-        .title(IndicatorTitle::new().text(tile.label.clone()))
         .number(Number::new().value_format(tile.format.clone()));
     if let Some([g_lo, g_hi]) = tile.gauge {
         ind = ind.gauge(Gauge::new().axis(GaugeAxis::new().range([g_lo, g_hi])));
@@ -14515,42 +14537,75 @@ fn kpi_indicator(tile: &KpiTile, x_domain: [f64; 2], y_domain: [f64; 2]) -> Box<
     ind
 }
 
-/// Build the leading KPI-tile row for `viz smart`: dataset-summary tiles (record count, field
-/// count, a completeness gauge) followed by the headline numeric measures (capped at
+/// Greedy word-wrap a KPI tile label into `<br>`-separated lines of at most `max_chars`
+/// characters, so a long auto-generated label (e.g. "Mean Profit Margin Percentage") renders as a
+/// compact multi-line subtitle under its tile instead of overrunning the tile width and colliding
+/// with its neighbours. A single word longer than `max_chars` is left intact (never hard-split
+/// mid-word — a broken token reads worse than a slightly-wide one).
+fn wrap_kpi_label(text: &str, max_chars: usize) -> String {
+    let max = max_chars.max(1);
+    let mut lines: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    for word in text.split_whitespace() {
+        if cur.is_empty() {
+            cur.push_str(word);
+        } else if cur.chars().count() + 1 + word.chars().count() <= max {
+            cur.push(' ');
+            cur.push_str(word);
+        } else {
+            lines.push(std::mem::take(&mut cur));
+            cur.push_str(word);
+        }
+    }
+    if !cur.is_empty() {
+        lines.push(cur);
+    }
+    lines.join("<br>")
+}
+
+/// The word-wrapped subtitle label for one KPI tile, centered under the tile at paper-y `y_top`
+/// (anchored at its top so it hangs down into the band reserved below the indicator). Smaller than
+/// the number it captions; `font` follows the dashboard's themed/non-themed convention.
+fn kpi_label_annotation(
+    label: &str,
+    x_center: f64,
+    y_top: f64,
+    max_chars: usize,
+    font: Font,
+) -> Annotation {
+    Annotation::new()
+        .text(wrap_kpi_label(label, max_chars))
+        .x(x_center)
+        .y(y_top)
+        .x_ref("paper")
+        .y_ref("paper")
+        .x_anchor(Anchor::Center)
+        .y_anchor(Anchor::Top)
+        .show_arrow(false)
+        .font(font)
+}
+
+/// Build the leading KPI-tile row for `viz smart`: the headline numeric measures (capped at
 /// `KPI_MAX_TILES`). A measure tile becomes a gauge when its dictionary supplies a `gauge_range`
 /// that CONTAINS the observed value (else it falls back to a plain number — never a misleading
 /// gauge), and a "vs target" delta when the dictionary supplies a `target` (a semantically
-/// justified goal, never a fabricated prior-period baseline). Returns `None` for empty stats.
+/// justified goal, never a fabricated prior-period baseline). Returns `None` when no measure tile
+/// results (dataset completeness now lives in the dashboard header, not as a KPI tile, so the row
+/// is worth drawing only when there is at least one measure to headline).
 fn build_kpi_row(
-    n: u64,
     stats: &[crate::cmd::stats::StatsData],
     panels: &[Panel],
     dict: Option<&DictData>,
 ) -> Option<Panel> {
-    let ncols = stats.len();
-    if ncols == 0 {
+    if stats.is_empty() {
         return None;
     }
     let mut tiles: Vec<KpiTile> = Vec::with_capacity(KPI_MAX_TILES);
-    // Record/field counts are intentionally omitted — they duplicate the "Rows"/"Columns" lines in
-    // the dashboard's metadata header. The KPI row leads with data-quality and measure signals the
-    // header doesn't carry.
+    // Record/field counts and overall completeness are intentionally NOT tiles — record/field
+    // counts duplicate the "Rows"/"Columns" header lines, and completeness (near 100% for most
+    // datasets) now rides quietly in the header table below "Columns:". The KPI row leads purely
+    // with the headline MEASURES.
     //
-    // completeness = non-null cells / total cells — an inherently 0–100% scale, so a built-in
-    // gauge that needs no LLM hint.
-    if n > 0 {
-        let total_cells = n as f64 * ncols as f64;
-        let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
-        let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
-        tiles.push(KpiTile {
-            label:  "Completeness".to_string(),
-            value:  completeness,
-            format: ".1%".to_string(),
-            gauge:  Some([0.0, 1.0]),
-            target: None,
-        });
-    }
-
     // headline measures: the numeric columns the dashboard already treats as continuous measures
     // (i.e. those that earned a box/violin/histogram distribution panel), summed (extensive) or
     // averaged (intensive), up to the remaining tile budget. Keying off the built panels keeps the
@@ -14601,6 +14656,11 @@ fn build_kpi_row(
             gauge,
             target,
         });
+    }
+
+    // No measures to headline → no KPI row (completeness alone no longer justifies one).
+    if tiles.is_empty() {
+        return None;
     }
 
     Some(Panel::new(
@@ -15991,6 +16051,19 @@ fn build_smart(
             "<tr><td class=\"qsv-viz-meta-k\">Columns:</td><td>{}</td></tr>\n",
             HumanCount(stats.len() as u64)
         ));
+        // Completeness: share of non-empty cells across the whole dataset. A quiet header stat
+        // rather than a KPI gauge — it's near 100% for most datasets, so a permanent gauge tile
+        // just crowded the overview row.
+        let ncols = stats.len();
+        if n > 0 && ncols > 0 {
+            let total_cells = n as f64 * ncols as f64;
+            let total_null: f64 = stats.iter().map(|s| s.nullcount as f64).sum();
+            let completeness = (1.0 - total_null / total_cells).clamp(0.0, 1.0);
+            rows.push_str(&format!(
+                "<tr><td class=\"qsv-viz-meta-k\">Completeness:</td><td>{:.1}%</td></tr>\n",
+                completeness * 100.0
+            ));
+        }
         // Compiled: dashboard build timestamp (makes smart HTML output non-deterministic by
         // design).
         rows.push_str(&format!(
@@ -16023,8 +16096,7 @@ fn build_smart(
     // render-path choice) so it stays invisible to them and simply lands at index 0, on top of the
     // dashboard. HTML only: Indicator tiles are domain-positioned and never enter a static image.
     if !out_format.is_image() {
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        if let Some(panel) = build_kpi_row(n, &stats, &panels, dict_data.as_ref()) {
+        if let Some(panel) = build_kpi_row(&stats, &panels, dict_data.as_ref()) {
             panels.insert(0, panel);
         }
     }
@@ -16669,7 +16741,8 @@ fn smart_grid_parts(
 
         // KPI row: a full-width band of domain-positioned Indicator tiles (no cartesian axes).
         // Sub-divide this panel's paper x-domain into N tiles, emit each as an Indicator, then skip
-        // the cartesian axis assignment below. No section title — the tiles are self-labeling.
+        // the cartesian axis assignment below. No section title — each tile carries its own
+        // word-wrapped subtitle label below the number (`kpi_label_annotation`).
         if let PanelKind::KpiRow { tiles } = &panel.kind {
             let geom = &geoms[n];
             let x0 = geom.x_domain.first().copied().unwrap_or(0.0);
@@ -16679,10 +16752,28 @@ fn smart_grid_parts(
             let count = tiles.len().max(1) as f64;
             let width = (x1 - x0) / count;
             let gutter = width * 0.06;
+            // reserve the bottom slice of the row band for the labels, so the indicator's
+            // number/gauge sits above and the wrapped label sits below it.
+            let label_band = (y1 - y0) * 0.30;
+            let ind_y0 = y0 + label_band;
+            // Every tile — number-only OR gauge — puts empty space directly below its number: the
+            // gauge dial is a semicircle in the TOP of the domain and its number sits below it, so
+            // the label band under the number is clear of the dial. Anchor ALL labels at the same
+            // raised y so they share one clean baseline snug under the numbers (no per-tile step).
+            let label_y = ind_y0 + (y1 - y0) * 0.14;
+            // narrower tiles (more of them) wrap sooner; the label font fits ~2 lines in the band.
+            let max_chars = ((150.0 / count) as usize).clamp(12, 36);
             for (i, tile) in tiles.iter().enumerate() {
                 let lo = x0 + i as f64 * width + gutter / 2.0;
                 let hi = x0 + (i as f64 + 1.0) * width - gutter / 2.0;
-                traces.push(kpi_indicator(tile, [lo, hi], [y0, y1]));
+                traces.push(kpi_indicator(tile, [lo, hi], [ind_y0, y1]));
+                annotations.push(kpi_label_annotation(
+                    &tile.label,
+                    f64::midpoint(lo, hi),
+                    label_y,
+                    max_chars,
+                    ann_font(13),
+                ));
             }
             continue;
         }
@@ -17661,18 +17752,41 @@ fn smart_inline_panel_plot(
         let count = tiles.len().max(1) as f64;
         // even horizontal split with a small inter-tile gutter so adjacent gauges/numbers breathe
         let gutter = 0.02_f64;
+        // reserve the bottom slice for each tile's word-wrapped label; the indicator's
+        // number/gauge sits above it.
+        let label_band = 0.30_f64;
+        // Every tile — number-only OR gauge — puts empty space directly below its number: the
+        // gauge dial is a semicircle in the TOP of the domain and its number sits below it, so the
+        // label band under the number is clear of the dial. Anchor ALL labels at the same raised y
+        // so they share one clean baseline snug under the numbers (no per-tile step).
+        let label_y = label_band + 0.14;
+        let max_chars = ((150.0 / count) as usize).clamp(12, 36);
+        let ann_font = |size: usize| {
+            let f = Font::new().size(size);
+            if themed { f } else { f.family(FONT_FAMILY) }
+        };
+        let mut kpi_labels: Vec<Annotation> = Vec::with_capacity(tiles.len());
         for (i, tile) in tiles.iter().enumerate() {
             let lo = (i as f64 / count) + gutter / 2.0;
             let hi = ((i + 1) as f64 / count) - gutter / 2.0;
-            plot.add_trace(kpi_indicator(tile, [lo, hi], [0.0, 1.0]));
+            plot.add_trace(kpi_indicator(tile, [lo, hi], [label_band, 1.0]));
+            kpi_labels.push(kpi_label_annotation(
+                &tile.label,
+                f64::midpoint(lo, hi),
+                label_y,
+                max_chars,
+                ann_font(13),
+            ));
         }
-        // no panel title — the tiles are self-labeling (each Indicator carries its own title), so
-        // reclaim the top band the title would occupy. Just the vertical hover modebar.
+        // no panel title — each tile carries its own word-wrapped subtitle label below its number
+        // (`kpi_label_annotation`), so reclaim the top band a title would occupy. Vertical hover
+        // modebar only.
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
             .margin(Margin::new().top(20).bottom(20).left(20).right(20).pad(4))
-            .mode_bar(ModeBar::new().orientation(Orientation::Vertical));
+            .mode_bar(ModeBar::new().orientation(Orientation::Vertical))
+            .annotations(kpi_labels);
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -22705,6 +22819,29 @@ mod tests {
         assert_eq!(auto_hierarchy_style(2), HierStyle::Treemap);
         assert_eq!(auto_hierarchy_style(3), HierStyle::Sunburst);
         assert_eq!(auto_hierarchy_style(4), HierStyle::Sunburst);
+    }
+
+    #[test]
+    fn wrap_kpi_label_wraps_on_word_boundaries() {
+        // short labels stay on one line (no <br> injected), so exact-text consumers/tests still see
+        // the whole label.
+        assert_eq!(wrap_kpi_label("Completeness", 40), "Completeness");
+        assert_eq!(
+            wrap_kpi_label("Mean Customer Rating", 40),
+            "Mean Customer Rating"
+        );
+        // a long label wraps at the last word boundary that fits within max_chars.
+        assert_eq!(
+            wrap_kpi_label("Mean Profit Margin Percentage", 20),
+            "Mean Profit Margin<br>Percentage"
+        );
+        // a single word longer than max_chars is left intact rather than hard-split mid-word.
+        assert_eq!(
+            wrap_kpi_label("Supercalifragilistic", 8),
+            "Supercalifragilistic"
+        );
+        // multiple wraps.
+        assert_eq!(wrap_kpi_label("a b c d e", 3), "a b<br>c d<br>e");
     }
 
     #[test]

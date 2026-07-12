@@ -5793,11 +5793,11 @@ fn viz_smart_compressed_map_figure_payload() {
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    // panel-0 is the leading KPI overview row; the map is the next full-width panel
-    // (qsv-viz-panel-1): payload + deferred render
-    assert!(html.contains("id=\"qsv-viz-panel-1-fig\""));
-    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-1\")"));
-    let figure = inflate_gz_payload(&html, "qsv-viz-panel-1-fig");
+    // this dataset has no headline measure (val is low-cardinality), so there is no KPI overview
+    // row; the map leads as panel-0: payload + deferred render
+    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
     assert!(figure.contains(r#""type":"scattermap""#));
     assert!(figure.contains(r#""cluster":{"enabled":false,"maxzoom":17.0}"#));
     // coordinates ride as little-endian float32 typed arrays, not decimal-text JSON
@@ -5885,11 +5885,11 @@ fn viz_cdn_keeps_gz_prelude_for_compressed_map_figures() {
     assert!(html.contains(r#"<script src="https://cdn.plot.ly/"#));
     assert!(!html.contains("window.__qsvPlotQ"));
     // the figure payload (not the bundle) is still gzipped, and its inflate helpers are present.
-    // panel-0 is the leading KPI overview row, so the map figure is panel-1.
-    assert!(html.contains("id=\"qsv-viz-panel-1-fig\""));
-    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-1\")"));
+    // this dataset has no headline measure, so there is no KPI overview row; the map is panel-0.
+    assert!(html.contains("id=\"qsv-viz-panel-0-fig\""));
+    assert!(html.contains("qsvNewPlotGz(\"qsv-viz-panel-0\")"));
     assert!(html.contains("__qsvGunzip"));
-    let figure = inflate_gz_payload(&html, "qsv-viz-panel-1-fig");
+    let figure = inflate_gz_payload(&html, "qsv-viz-panel-0-fig");
     assert!(figure.contains(r#""type":"scattermap""#));
 
     // Under CDN there is no bundle bootstrap to raise the "needs DecompressionStream" banner, so
@@ -6383,10 +6383,11 @@ fn viz_smart_kpi_row() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("k.html").unwrap();
+    // the KPI row leads with the headline numeric measures (amount, rating)
     assert!(html.contains(r#""type":"indicator""#));
-    // completeness is a built-in 0-1 gauge (needs no dictionary hint)
-    assert!(html.contains(r#""text":"Completeness""#));
-    assert!(html.contains(r#""axis":{"range":[0.0,1.0]}"#));
+    // completeness is now a quiet header metadata stat (below "Columns:"), NOT a KPI gauge tile
+    assert!(html.contains("Completeness:"));
+    assert!(!html.contains(r#""text":"Completeness""#));
     // record/field counts are intentionally NOT KPI tiles (they duplicate the header)
     assert!(!html.contains(r#""text":"Records""#));
     assert!(!html.contains(r#""text":"Fields""#));

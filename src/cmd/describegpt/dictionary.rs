@@ -532,6 +532,12 @@ pub(super) struct LlmDictField {
     /// (which alone can see the column's type and observed values) decides which
     /// are verifiable. Empty unless the dictionary prompt asked for them.
     pub(super) null_values:  Vec<String>,
+    /// RAW `[min, max]` gauge scale proposed by the LLM for a numeric measure.
+    /// `None` unless the dictionary prompt asked for it (under `--infer-content-type`)
+    /// and the model returned a well-formed 2-number array with `min < max`. The
+    /// role/stats VERIFICATION happens later in `combine_dictionary_entries`, not
+    /// here — this struct only carries the model's raw proposal.
+    pub(super) gauge_range:  Option<[f64; 2]>,
 }
 
 pub(crate) struct StatsRecord {
@@ -632,6 +638,16 @@ pub(super) struct DictionaryEntry {
     /// `#[serde(default)]` for cache backward-compatibility.
     #[serde(default)]
     pub(super) null_candidates: Vec<String>,
+    /// Optional `[min, max]` canonical scale for a KPI gauge on a numeric MEASURE
+    /// (e.g. `[0, 100]` for a percent, `[0, 5]` for a rating). The LLM proposes it
+    /// only under `--infer-content-type`; `combine_dictionary_entries` then keeps it
+    /// ONLY when the column's finalized `role` is `measure` AND the observed
+    /// `[min, max]` lies inside the proposed range — an unfalsifiable or
+    /// out-of-scale range is dropped, mirroring the propose-then-verify discipline
+    /// of `null_values`. Consumed by `viz smart --dictionary` to draw a gauge tile
+    /// (`x-qsv.gauge_range`). `#[serde(default)]` for cache backward-compatibility.
+    #[serde(default)]
+    pub(super) gauge_range:     Option<[f64; 2]>,
 }
 
 /// Parse the `stats` CSV into structured records, returning the records plus
@@ -1034,6 +1050,9 @@ pub(super) fn generate_code_based_dictionary(
             // deterministic seed, since proposing a sentinel requires judgment.
             null_values: Vec::new(),
             null_candidates: Vec::new(),
+            // Proposed by the LLM pass (measure gauges) and verified against the
+            // observed min/max in `combine_dictionary_entries`; no deterministic seed.
+            gauge_range: None,
         });
     }
 
@@ -1254,12 +1273,16 @@ pub(super) fn combine_dictionary_entries(
             entry.content_type = merge_content_type(&entry.content_type, &llm.content_type, false);
             entry.concept = merge_concept(&entry.concept, &llm.concept, false);
             entry.role = merge_role(&entry.role, &llm.role, false);
+            entry.gauge_range = llm.gauge_range;
         }
         if infer_content_type {
             if entry.content_type.is_empty() {
                 entry.content_type = "unknown".to_string();
             }
             coerce_role_concept(entry);
+            // AFTER role is finalized: keep the proposed gauge scale only if the
+            // column is a measure and its observed range fits inside it.
+            verify_gauge_range(entry);
         }
     }
     code_entries
@@ -1368,6 +1391,44 @@ fn coerce_role_concept(entry: &mut DictionaryEntry) {
     }
 }
 
+/// Verify (and otherwise drop) a proposed `gauge_range`. A KPI gauge is only
+/// meaningful, and only non-misleading, when:
+///
+///   1. the column's qsv `type` is numeric (`Integer`/`Float`) — a gauge scale on a String/Date
+///      column is nonsense even if the LLM mis-tagged it `role: measure` and its lexicographic
+///      min/max happen to parse as floats, and
+///   2. the column's FINALIZED `role` is `measure` (gauges are for quantities you aggregate — not
+///      dimensions, identifiers, or timestamps), and
+///   3. the column's OBSERVED `[min, max]` lies inside the proposed `[lo, hi]`.
+///
+/// Requirement 3 is the guardrail against a misleading gauge: `viz` renders the
+/// measure's value against this scale, so a range that does not contain the data
+/// would draw a needle pinned past the end. The shape (two finite numbers, `lo <
+/// hi`) was already validated in `parse_llm_dictionary_response`; this is where the
+/// SEMANTIC check happens, because only here are the merged role, the column type,
+/// and the observed min/max all known. Anything that fails is reset to `None` — an
+/// unverifiable gauge is simply not emitted (byte-identical to a run that never
+/// proposed one).
+///
+/// Must be called AFTER `coerce_role_concept`, so `role` is final.
+fn verify_gauge_range(entry: &mut DictionaryEntry) {
+    let Some([lo, hi]) = entry.gauge_range else {
+        return;
+    };
+    let keep = if matches!(entry.r#type.as_str(), "Integer" | "Float")
+        && entry.role == "measure"
+        && let Ok(obs_min) = entry.min.parse::<f64>()
+        && let Ok(obs_max) = entry.max.parse::<f64>()
+    {
+        obs_min.is_finite() && obs_max.is_finite() && obs_min >= lo && obs_max <= hi
+    } else {
+        false
+    };
+    if !keep {
+        entry.gauge_range = None;
+    }
+}
+
 /// Two-pass-aware merge: seed `code_entries` with the BASELINE LLM Label / Description /
 /// Content Type (from the first pass) and then overlay the REFINE pass's LLM fields on top.
 /// If the refine pass omits a field, the baseline Label / Description / Content Type are
@@ -1398,6 +1459,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
                 merge_content_type(&entry.content_type, &baseline.content_type, false);
             entry.concept = merge_concept(&entry.concept, &baseline.concept, false);
             entry.role = merge_role(&entry.role, &baseline.role, false);
+            entry.gauge_range = baseline.gauge_range;
         }
         // Stage 2: overlay refine-pass LLM values where present. Omitted fields keep their
         // baseline values from stage 1 — this is the whole point of the baseline merge.
@@ -1412,6 +1474,11 @@ pub(super) fn combine_dictionary_entries_with_baseline(
                 merge_content_type(&entry.content_type, &refine.content_type, true);
             entry.concept = merge_concept(&entry.concept, &refine.concept, true);
             entry.role = merge_role(&entry.role, &refine.role, true);
+            // A refine pass that re-proposes a gauge scale overrides the baseline; one
+            // that omits it keeps the baseline value (mirrors the label/description rule).
+            if refine.gauge_range.is_some() {
+                entry.gauge_range = refine.gauge_range;
+            }
         }
         // Stage 3: same final "unknown"/fallback coercion as `combine_dictionary_entries` so
         // the two-pass output matches single-pass invariants.
@@ -1420,6 +1487,7 @@ pub(super) fn combine_dictionary_entries_with_baseline(
                 entry.content_type = "unknown".to_string();
             }
             coerce_role_concept(entry);
+            verify_gauge_range(entry);
         }
     }
     code_entries
@@ -1816,6 +1884,28 @@ pub(super) fn parse_llm_dictionary_response(
                     })
                     .unwrap_or_default();
 
+                // `gauge_range` rides the same `infer_content_type` gate as role/concept
+                // (a gauge only makes sense once the field is classed as a measure). We
+                // accept only a well-formed `[min, max]` array of two FINITE numbers with
+                // `min < max`; anything else (missing key, wrong arity, NaN/inf, min>=max)
+                // yields `None`. This is purely SHAPE validation — whether the range is
+                // appropriate (role == measure, observed data lies inside it) is decided
+                // later in `combine_dictionary_entries`, the only place that sees the
+                // finalized role and the column's observed min/max.
+                let gauge_range = if infer_content_type {
+                    field_map
+                        .get("gauge_range")
+                        .and_then(|v| v.as_array())
+                        .and_then(|a| match a.as_slice() {
+                            [lo, hi] => Some((lo.as_f64()?, hi.as_f64()?)),
+                            _ => None,
+                        })
+                        .filter(|(lo, hi)| lo.is_finite() && hi.is_finite() && lo < hi)
+                        .map(|(lo, hi)| [lo, hi])
+                } else {
+                    None
+                };
+
                 result.insert(
                     field_name.clone(),
                     LlmDictField {
@@ -1825,6 +1915,7 @@ pub(super) fn parse_llm_dictionary_response(
                         concept,
                         role,
                         null_values,
+                        gauge_range,
                     },
                 );
             }
@@ -1933,6 +2024,7 @@ mod tests {
             role:            String::new(),
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         }
     }
 
@@ -2347,6 +2439,7 @@ mod tests {
     fn llm_nulls(tokens: &[&str]) -> LlmDictField {
         LlmDictField {
             null_values: tokens.iter().map(ToString::to_string).collect(),
+            gauge_range: None,
             ..Default::default()
         }
     }
@@ -2728,6 +2821,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -2735,6 +2829,121 @@ mod tests {
             combined[0].content_type, "unknown",
             "smuggled LLM 'unique_id' on a non-ALL_UNIQUE field must be rejected and fall back to \
              'unknown'"
+        );
+    }
+
+    #[test]
+    fn parse_gauge_range_shape_validation() {
+        // Only a well-formed [min, max] of two finite numbers with min < max survives.
+        let names: Vec<String> = ["a", "b", "c", "d", "e", "f"]
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        let resp = r#"{
+            "a": {"label":"A","description":"d","gauge_range":[0,100]},
+            "b": {"label":"B","description":"d","gauge_range":[100,0]},
+            "c": {"label":"C","description":"d","gauge_range":[5]},
+            "d": {"label":"D","description":"d"},
+            "e": {"label":"E","description":"d","gauge_range":["x","y"]},
+            "f": {"label":"F","description":"d","gauge_range":[0,0]}
+        }"#;
+        let got = parse_llm_dictionary_response(resp, &names, true).unwrap();
+        assert_eq!(got["a"].gauge_range, Some([0.0, 100.0]));
+        assert_eq!(got["b"].gauge_range, None, "min >= max rejected");
+        assert_eq!(got["c"].gauge_range, None, "wrong arity rejected");
+        assert_eq!(got["d"].gauge_range, None, "missing key -> None");
+        assert_eq!(got["e"].gauge_range, None, "non-numeric rejected");
+        assert_eq!(got["f"].gauge_range, None, "min == max rejected");
+    }
+
+    #[test]
+    fn parse_gauge_range_gated_off_without_infer_content_type() {
+        let names = vec!["a".to_string()];
+        let resp = r#"{"a":{"label":"A","description":"d","gauge_range":[0,100]}}"#;
+        let got = parse_llm_dictionary_response(resp, &names, false).unwrap();
+        assert_eq!(got["a"].gauge_range, None);
+    }
+
+    /// A numeric MEASURE whose observed [min, max] fits inside the proposed scale keeps it.
+    #[test]
+    fn combine_keeps_gauge_range_for_measure_when_observed_fits() {
+        let mut e = blank_entry("score");
+        e.r#type = "Float".to_string();
+        e.min = "10".to_string();
+        e.max = "90".to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "score".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].role, "measure");
+        assert_eq!(out[0].gauge_range, Some([0.0, 100.0]));
+    }
+
+    /// A range the observed data spills past is DROPPED (a misleading gauge is worse than none).
+    #[test]
+    fn combine_drops_gauge_range_when_observed_exceeds_scale() {
+        let mut e = blank_entry("pct");
+        e.r#type = "Float".to_string();
+        e.min = "10".to_string();
+        e.max = "90".to_string(); // spills past [0, 50]
+        let mut llm = HashMap::new();
+        llm.insert(
+            "pct".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 50.0]),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].gauge_range, None);
+    }
+
+    /// A gauge on a non-measure (dimension) is DROPPED regardless of the numbers.
+    #[test]
+    fn combine_drops_gauge_range_for_non_measure() {
+        let e = blank_entry("category"); // String -> coerces to dimension
+        let mut llm = HashMap::new();
+        llm.insert(
+            "category".to_string(),
+            LlmDictField {
+                role: "dimension".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].role, "dimension");
+        assert_eq!(out[0].gauge_range, None);
+    }
+
+    /// A String column the LLM mis-tags `role: measure` must NOT keep a gauge, even when
+    /// its lexicographic min/max happen to parse as floats (roborev #3606).
+    #[test]
+    fn combine_drops_gauge_range_for_non_numeric_type() {
+        let mut e = blank_entry("code"); // r#type stays "String"
+        e.min = "10".to_string(); // numeric-looking strings that parse as f64
+        e.max = "90".to_string();
+        let mut llm = HashMap::new();
+        llm.insert(
+            "code".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+        let out = combine_dictionary_entries(vec![e], &llm, true);
+        assert_eq!(out[0].r#type, "String");
+        assert_eq!(
+            out[0].gauge_range, None,
+            "a non-numeric column must not emit a gauge even if role==measure"
         );
     }
 
@@ -2845,6 +3054,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         // infer_content_type = false: pure copy, no "unknown" coercion.
@@ -2876,6 +3086,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         llm.insert(
@@ -2887,6 +3098,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         // "omitted" is intentionally absent from the LLM map.
@@ -2914,6 +3126,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         llm.insert(
@@ -2925,6 +3138,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code_entries, &llm, true);
@@ -3196,6 +3410,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         baseline.insert(
@@ -3207,6 +3422,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3221,6 +3437,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3238,6 +3455,88 @@ mod tests {
             "New description with cross-field context."
         );
         assert_eq!(combined[1].content_type, "address_street");
+    }
+
+    /// Two-pass: the refine prompt never asks for `gauge_range`, so the refine pass
+    /// re-emits the measure field (label/description) but with NO gauge — exactly what
+    /// the pipeline produces. The first-pass gauge scale MUST survive that overlay
+    /// (this is the line most at risk from a future refactor of the baseline merge).
+    #[test]
+    fn two_pass_refine_omitting_gauge_range_preserves_the_baseline() {
+        let mut score = blank_entry("score");
+        score.r#type = "Float".to_string();
+        score.min = "12".to_string();
+        score.max = "88".to_string();
+        let code_entries = vec![score];
+
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "score".to_string(),
+            LlmDictField {
+                label: "Score".to_string(),
+                description: "First-pass description.".to_string(),
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+
+        // Refine RETURNS the field (present in the map) but omits gauge_range — the
+        // realistic case, distinct from the field being absent entirely.
+        let mut refine = HashMap::new();
+        refine.insert(
+            "score".to_string(),
+            LlmDictField {
+                label: "Score".to_string(),
+                description: "Refined description.".to_string(),
+                role: "measure".to_string(),
+                gauge_range: None,
+                ..Default::default()
+            },
+        );
+
+        let combined =
+            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, true);
+        assert_eq!(combined[0].description, "Refined description.");
+        assert_eq!(
+            combined[0].gauge_range,
+            Some([0.0, 100.0]),
+            "baseline gauge scale must survive a refine pass that omits it"
+        );
+    }
+
+    /// Two-pass: a refine pass that DOES re-propose a gauge scale overrides the baseline
+    /// (and is still verified against the observed range).
+    #[test]
+    fn two_pass_refine_restating_gauge_range_overrides_the_baseline() {
+        let mut score = blank_entry("score");
+        score.r#type = "Float".to_string();
+        score.min = "1".to_string();
+        score.max = "4".to_string();
+        let code_entries = vec![score];
+
+        let mut baseline = HashMap::new();
+        baseline.insert(
+            "score".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 100.0]),
+                ..Default::default()
+            },
+        );
+        let mut refine = HashMap::new();
+        refine.insert(
+            "score".to_string(),
+            LlmDictField {
+                role: "measure".to_string(),
+                gauge_range: Some([0.0, 5.0]),
+                ..Default::default()
+            },
+        );
+
+        let combined =
+            combine_dictionary_entries_with_baseline(code_entries, &baseline, &refine, true);
+        assert_eq!(combined[0].gauge_range, Some([0.0, 5.0]));
     }
 
     #[test]
@@ -3265,6 +3564,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         refine.insert(
@@ -3277,6 +3577,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3311,6 +3612,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3324,6 +3626,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3352,6 +3655,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
 
@@ -3591,6 +3895,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -3612,6 +3917,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -3633,6 +3939,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -3654,6 +3961,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let mut refine = HashMap::new();
@@ -3666,6 +3974,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries_with_baseline(code, &baseline, &refine, true);
@@ -4207,6 +4516,7 @@ mod tests {
                 concept:      String::new(),
                 role:         "dimension".to_string(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4229,6 +4539,7 @@ mod tests {
                 concept:      "unknown".to_string(),
                 role:         "dimension".to_string(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);
@@ -4249,6 +4560,7 @@ mod tests {
                 concept:      String::new(),
                 role:         String::new(),
                 null_values:  Vec::new(),
+                gauge_range:  None,
             },
         );
         let combined = combine_dictionary_entries(code, &llm, true);

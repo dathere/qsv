@@ -431,6 +431,13 @@ fn build_x_qsv(
         if !entry.concept.is_empty() {
             x_qsv.insert("concept".to_string(), Value::String(entry.concept.clone()));
         }
+        // KPI gauge scale for a measure, already role/stats-verified in
+        // `combine_dictionary_entries` (so it is `Some` only when safe to draw).
+        // Emitted as the `[min, max]` array `viz smart --dictionary` reads back as
+        // `x-qsv.gauge_range`. Absent otherwise, keeping no-flag runs byte-identical.
+        if let Some([lo, hi]) = entry.gauge_range {
+            x_qsv.insert("gauge_range".to_string(), json!([lo, hi]));
+        }
     }
     // Null sentinels. Deliberately NOT gated on the flag: emission keys off the lists being
     // non-empty, and they are only populated when a response actually supplied `null_values`.
@@ -1097,6 +1104,7 @@ mod tests {
             role:            String::new(),
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         }
     }
 
@@ -1366,6 +1374,72 @@ mod tests {
     }
 
     #[test]
+    fn jsonschema_x_qsv_carries_gauge_range_for_measure() {
+        // A verified gauge_range emits as the 2-element numeric array `[min, max]`
+        // that `viz smart --dictionary` reads back from `x-qsv.gauge_range`.
+        let mut rating = sample_entry("rating", "");
+        rating.r#type = "Float".to_string();
+        rating.role = "measure".to_string();
+        rating.gauge_range = Some([0.0, 5.0]);
+        let schema = format_dictionary_jsonschema(
+            std::slice::from_ref(&rating),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+        );
+        let gr = &schema["properties"]["rating"]["x-qsv"]["gauge_range"];
+        assert_eq!(gr, &json!([0.0, 5.0]));
+        // Exactly the shape viz's `xq_range` matches: a 2-element numeric array.
+        assert_eq!(gr.as_array().map(Vec::len), Some(2));
+
+        // flag off: gauge_range absent (legacy schema stays byte-identical).
+        let off = format_dictionary_jsonschema(
+            std::slice::from_ref(&rating),
+            "test.csv",
+            10,
+            5,
+            25,
+            false,
+            false,
+            false,
+            None,
+        );
+        assert!(
+            off["properties"]["rating"]["x-qsv"]
+                .get("gauge_range")
+                .is_none(),
+            "gauge_range leaked when flag off"
+        );
+
+        // None gauge_range is omitted even with the flag on.
+        let mut plain = sample_entry("plain_measure", "");
+        plain.r#type = "Float".to_string();
+        plain.role = "measure".to_string();
+        let schema3 = format_dictionary_jsonschema(
+            std::slice::from_ref(&plain),
+            "test.csv",
+            10,
+            5,
+            25,
+            true,
+            false,
+            false,
+            None,
+        );
+        assert!(
+            schema3["properties"]["plain_measure"]["x-qsv"]
+                .get("gauge_range")
+                .is_none(),
+            "gauge_range emitted when None"
+        );
+    }
+
+    #[test]
     fn tsv_header_unchanged_when_flag_off() {
         let entries = vec![sample_entry("col", "email")];
         let tsv = format_dictionary_tsv(&entries, false);
@@ -1456,6 +1530,7 @@ mod tests {
 
             null_values:     Vec::new(),
             null_candidates: Vec::new(),
+            gauge_range:     None,
         };
         let schema = format_dictionary_jsonschema(
             std::slice::from_ref(&entry),

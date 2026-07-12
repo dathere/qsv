@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "description": "Hand-authored KPI dictionary for the sales_sample gallery example. It labels the numeric measures and supplies the two optional x-qsv KPI hints so `viz smart --dictionary` renders GAUGE and DELTA tiles in the overview row: `gauge_range` [min,max] draws a measure on a canonical scale (here the 0-1 ratios), and `target` draws a \"vs target\" delta. NOT LLM-generated — `target` is a business GOAL you choose (describegpt never emits it); `gauge_range` is what `--dictionary infer` would emit for these ratios. Columns omitted here fall back to qsv's statistical heuristic.",
+  "properties": {
+    "units_sold": {
+      "type": "integer",
+      "title": "Units Sold",
+      "x-qsv": { "role": "measure", "concept": "measure.count" }
+    },
+    "unit_price": {
+      "type": "integer",
+      "title": "Unit Price",
+      "x-qsv": { "role": "measure", "concept": "measure.amount" }
+    },
+    "shipping_cost": {
+      "type": "integer",
+      "title": "Shipping Cost",
+      "x-qsv": { "role": "measure", "concept": "measure.amount" }
+    },
+    "discount_pct": {
+      "type": "number",
+      "title": "Discount Percentage",
+      "x-qsv": { "role": "measure", "concept": "measure.ratio", "gauge_range": [0, 1] }
+    },
+    "profit_margin_pct": {
+      "type": "number",
+      "title": "Profit Margin Percentage",
+      "x-qsv": { "role": "measure", "concept": "measure.ratio", "gauge_range": [0, 1], "target": 0.25 }
+    }
+  }
+}

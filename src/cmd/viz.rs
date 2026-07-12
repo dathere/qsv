@@ -771,6 +771,13 @@ const SPLOM_MAX_DIMS: usize = 6;
 const PARCATS_MIN_DIMS: usize = 3;
 const PARCATS_MAX_DIMS: usize = 4;
 
+/// Max distinct category tuples (ribbons) the parcats panel emits. Each eligible dimension can have
+/// up to `CATEGORICAL_MAX_CARDINALITY` (30) values, so 4 dimensions could yield up to 30⁴ ≈ 810k
+/// distinct paths — an enormous, unreadable trace. The panel keeps only the `PARCATS_MAX_PATHS`
+/// heaviest tuples (by row count) and drops the long tail (logged), matching the bounded-node
+/// approach of the hierarchy (`HIER_MAX_NODES`) and Sankey panels.
+const PARCATS_MAX_PATHS: usize = 200;
+
 /// Minimum correlation ratio η² (ANOVA effect size: between-group variance / total variance) for
 /// `viz smart` to add a "measure by dimension" bar. η² ranges 0..1; 0.06 is Cohen's conventional
 /// "medium" effect. Below this the dimension barely explains the measure, so the grouped bar would
@@ -898,6 +905,15 @@ const VIOLIN_MIN_POINTS: u64 = 50;
 /// density and the "(sampled)" boundary, not chart-type or overlay decisions.
 static VIOLIN_SAMPLE_MAX: std::sync::LazyLock<u64> =
     std::sync::LazyLock::new(|| ((*MAX_SMART_POINTS as u64) / 5).max(1));
+
+/// Target row budget for the `viz smart` scatter-plot-matrix (splom) panel. Unlike a single
+/// scatter, a splom draws up to `SPLOM_MAX_DIMS`² cells that ALL render the same rows, so the
+/// on-screen marker count is `rows × cells` — a full `MAX_SMART_POINTS` in a 6×6 grid would embed
+/// millions of markers and freeze the browser. The row-aligned columns are therefore strided down
+/// to at most this many rows (one-fifth of `MAX_SMART_POINTS`, 30k at the 150k default — mirroring
+/// the violin sample budget), keeping the correlation structure legible at a bounded embed cost.
+static SPLOM_SAMPLE_MAX: std::sync::LazyLock<usize> =
+    std::sync::LazyLock::new(|| (*MAX_SMART_POINTS / 5).max(1));
 
 /// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
 /// only when moarstats says its distribution is concentrated rather than near-uniform: a
@@ -2215,6 +2231,24 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
         out_y.push(ys[idx].clone());
     }
     (out_x, out_y)
+}
+
+/// Uniformly downsample a set of row-aligned columns to at most `cap` rows via evenly spaced,
+/// endpoint-inclusive stride sampling. All columns share the SAME sampled row indices, so the rows
+/// stay aligned across columns (required for a splom, where each dimension reuses the same rows).
+/// Returns `columns` unchanged when the row count is already within `cap` (or `cap == 0`).
+fn downsample_columns(columns: Vec<Vec<f64>>, cap: usize) -> Vec<Vec<f64>> {
+    let n = columns.first().map_or(0, Vec::len);
+    if cap == 0 || n <= cap {
+        return columns;
+    }
+    let indices: Vec<usize> = (0..cap)
+        .map(|i| if cap == 1 { 0 } else { i * (n - 1) / (cap - 1) })
+        .collect();
+    columns
+        .iter()
+        .map(|col| indices.iter().map(|&idx| col[idx]).collect())
+        .collect()
 }
 
 /// Largest-Triangle-Three-Buckets downsampling. Returns the indices (into `xs`/`ys`) of at most
@@ -5211,7 +5245,12 @@ fn splom_panel(labels: &[String], columns: &[Vec<f64>], matrix: &[Vec<f64>]) -> 
         selected.sort_unstable();
     }
     let sel_labels: Vec<String> = selected.iter().map(|&i| labels[i].clone()).collect();
-    let sel_columns: Vec<Vec<f64>> = selected.iter().map(|&i| columns[i].clone()).collect();
+    // stride the row-aligned columns down to the splom row budget so a large correlated dataset
+    // can't embed millions of markers (rows × up-to-6² cells) and freeze the browser.
+    let sel_columns = downsample_columns(
+        selected.iter().map(|&i| columns[i].clone()).collect(),
+        *SPLOM_SAMPLE_MAX,
+    );
     Some(Panel::new(
         "Scatter matrix".to_string(),
         PanelKind::Splom {
@@ -5258,6 +5297,19 @@ fn parcats_panel(
     // for deterministic output.
     let mut paths: Vec<(Vec<String>, f64)> = leaves.into_iter().collect();
     paths.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    // bound the emitted trace: up to PARCATS_MAX_DIMS dims of up to CATEGORICAL_MAX_CARDINALITY
+    // values each could yield hundreds of thousands of distinct tuples. Keep only the heaviest
+    // ribbons (a parcats with thousands of near-zero-count paths is an unreadable tangle and bloats
+    // the HTML) and log the dropped tail.
+    if paths.len() > PARCATS_MAX_PATHS {
+        let dropped = paths.len() - PARCATS_MAX_PATHS;
+        let dropped_rows: f64 = paths[PARCATS_MAX_PATHS..].iter().map(|(_, c)| *c).sum();
+        viz_note(&format!(
+            "viz smart: parcats panel capped to the {PARCATS_MAX_PATHS} most common category \
+             combinations ({dropped} rarer combinations covering {dropped_rows:.0} rows omitted)."
+        ));
+        paths.truncate(PARCATS_MAX_PATHS);
+    }
     let counts: Vec<f64> = paths.iter().map(|(_, c)| *c).collect();
     let tuples: Vec<Vec<String>> = paths.into_iter().map(|(t, _)| t).collect();
     let dim_labels: Vec<String> = dims.into_iter().map(|(.., name)| name).collect();

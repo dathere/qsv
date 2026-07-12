@@ -6490,6 +6490,131 @@ fn viz_smart_parcats_suppresses_hierarchy() {
     assert!(!html.contains(r#""type":"sunburst""#));
 }
 
+// Length of the comma-separated `"<key>":[...]` array first appearing at/after the position of
+// `after` (0 for an empty array, None if not found). Plain string scan so the tests need no regex.
+fn array_len_after(html: &str, after: &str, key: &str) -> Option<usize> {
+    let start = html.find(after)?;
+    let needle = format!("\"{key}\":[");
+    let open = html[start..].find(&needle)? + start + needle.len();
+    let end = html[open..].find(']')? + open;
+    let body = &html[open..end];
+    Some(if body.trim().is_empty() {
+        0
+    } else {
+        body.split(',').count()
+    })
+}
+
+// Longest `"values":[...]` array anywhere in the HTML (splom dimensions each carry one).
+fn max_values_array_len(html: &str) -> usize {
+    let needle = "\"values\":[";
+    let mut max = 0;
+    let mut pos = 0;
+    while let Some(off) = html[pos..].find(needle) {
+        let open = pos + off + needle.len();
+        let Some(rel) = html[open..].find(']') else {
+            break;
+        };
+        let body = &html[open..open + rel];
+        let n = if body.trim().is_empty() {
+            0
+        } else {
+            body.split(',').count()
+        };
+        max = max.max(n);
+        pos = open + rel;
+    }
+    max
+}
+
+#[test]
+fn viz_smart_splom_downsamples_rows() {
+    // A splom draws `rows` markers in each of up to SPLOM_MAX_DIMS² cells, so smart strides the
+    // row-aligned columns down to SPLOM_SAMPLE_MAX (= QSV_VIZ_MAX_POINTS / 5). Pinning the budget
+    // to 100 (→ 20) means a 60-row correlated dataset must embed at most 20 values per
+    // dimension.
+    let wrk = Workdir::new("viz_smart_splom_downsamples_rows");
+    // low-cardinality repeated numerics (all-distinct columns get skipped as identifiers), three
+    // perfectly correlated so the splom signal gate fires, 90 rows so the 20-row budget bites.
+    let mut rows = String::from("x,y,z\n");
+    for i in 0..90 {
+        let a = i % 12;
+        rows.push_str(&format!("{a},{},{}\n", a * 2, 12 - a));
+    }
+    wrk.create_from_string("splom.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "splom.csv", "-o", &out_html]);
+    cmd.env("QSV_VIZ_MAX_POINTS", "100"); // SPLOM_SAMPLE_MAX = 100 / 5 = 20
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"splom""#));
+    let longest = max_values_array_len(&html);
+    assert!(
+        longest > 0 && longest <= 20,
+        "splom dimension values should be strided down to <= 20 rows, got {longest}"
+    );
+}
+
+#[test]
+fn viz_smart_parcats_caps_paths() {
+    // Four associated-but-noisy categoricals produce far more than PARCATS_MAX_PATHS (200) distinct
+    // tuples; the panel keeps only the 200 heaviest ribbons so the trace stays bounded (a 30^4
+    // worst case would otherwise embed hundreds of thousands of paths).
+    let wrk = Workdir::new("viz_smart_parcats_caps_paths");
+    let mut rows = String::from("d1,d2,d3,d4\n");
+    // deterministic LCG so the fixture (and its tuple spread) is reproducible across runs.
+    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = |m: u64, s: &mut u64| {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*s >> 33) % m
+    };
+    for _ in 0..6000 {
+        let a = next(15, &mut s);
+        // each dim tracks `a`/`b` ~55% of the time (keeps them associated) and draws freely
+        // otherwise (spreads the joint distribution across many tuples).
+        let b = if next(100, &mut s) < 55 {
+            a
+        } else {
+            next(15, &mut s)
+        };
+        let c = if next(100, &mut s) < 55 {
+            a
+        } else {
+            next(15, &mut s)
+        };
+        let d = if next(100, &mut s) < 55 {
+            b
+        } else {
+            next(15, &mut s)
+        };
+        rows.push_str(&format!("g{a},h{b},k{c},m{d}\n"));
+    }
+    wrk.create_from_string("pc.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"parcats""#));
+    let ribbons =
+        array_len_after(&html, r#""type":"parcats""#, "counts").expect("parcats counts array");
+    assert!(
+        ribbons <= 200,
+        "parcats ribbons must be capped at PARCATS_MAX_PATHS (200), got {ribbons}"
+    );
+    assert!(
+        ribbons > 100,
+        "test data should produce enough distinct tuples for the cap to engage, got {ribbons}"
+    );
+}
+
 #[test]
 fn viz_icicle_standalone() {
     let wrk = Workdir::new("viz_icicle_standalone");

@@ -8113,6 +8113,9 @@ fn viz_single_chart_has_fullscreen_button() {
     assert!(html.contains(r#"name: "qsv-fullscreen""#));
     assert!(html.contains("requestFullscreen"));
     assert!(html.contains(".js-plotly-plot:fullscreen"));
+    // ...plus the legend-toggle button.
+    assert!(html.contains(r#"name: "qsv-legend""#));
+    assert!(html.contains("Toggle legend"));
 }
 
 #[test]
@@ -8132,6 +8135,9 @@ fn viz_smart_has_fullscreen_button() {
     assert!(html.contains(r#"name: "qsv-fullscreen""#));
     assert!(html.contains("requestFullscreen"));
     assert!(html.contains(".js-plotly-plot:fullscreen"));
+    // ...plus the legend-toggle button.
+    assert!(html.contains(r#"name: "qsv-legend""#));
+    assert!(html.contains("Toggle legend"));
 }
 
 // The map zoom auto-fit recomputes MapLibre zoom for the real container size from the baked

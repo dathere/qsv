@@ -6424,6 +6424,29 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       } catch (e) {}
     }
   };
+  // A "Toggle legend" button: rows of a color swatch + a label bar so it reads as a legend.
+  var legendIcon = { width: 512, height: 512, path: "M0 96h96v64H0z M160 112h352v32H160z M0 224h96v64H0z M160 240h352v32H160z M0 352h96v64H0z M160 368h352v32H160z" };
+  var legendButton = {
+    name: "qsv-legend",
+    title: "Toggle legend",
+    icon: legendIcon,
+    click: function (gd) {
+      try {
+        // no-op on maps: Plotly.relayout throws on a MapLibre choroplethmap in our pinned
+        // plotly fork, and a choropleth's "legend" is a colorbar (not governed by showlegend).
+        if (mapKeys(gd).length) return;
+        // relayout is the lightweight toggle: it preserves config-added modebar buttons
+        // (gd._context.modeBarButtonsToAdd) and the plotly_buttonclicked handler that a
+        // newPlot re-render would drop.
+        // Read the EFFECTIVE state from _fullLayout (plotly's computed default is showlegend:true
+        // for multi-trace charts that never set it), not gd.layout — else the first click on a
+        // default-visible legend is a visual no-op.
+        var fl = gd._fullLayout || gd.layout || {};
+        var p = Plotly.relayout(gd, { showlegend: !fl.showlegend });
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+  };
   // The assumed pixel size the baked MapLibre zoom was computed against (published by a
   // per-page prelude). Fallback to the standalone HTML default (1000x600) if absent.
   function assumedDims() {
@@ -6575,7 +6598,7 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
       // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
       // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button] });
+      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
       // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.

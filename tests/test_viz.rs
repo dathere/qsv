@@ -6382,6 +6382,18 @@ fn viz_splom_needs_two_numeric_cols() {
 }
 
 #[test]
+fn viz_splom_no_joint_rows_errors() {
+    // both columns are majority-numeric on their own, but no single row has BOTH populated, so
+    // the listwise read drops every row. splom must error rather than emit an empty matrix.
+    let wrk = Workdir::new("viz_splom_no_joint_rows_errors");
+    wrk.create_from_string("disjoint.csv", "a,b\n1,\n2,\n,3\n,4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "disjoint.csv", "--cols", "a,b"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
 fn viz_parcats_standalone() {
     let wrk = Workdir::new("viz_parcats_standalone");
     // three low-cardinality categorical columns

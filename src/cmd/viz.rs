@@ -5062,6 +5062,15 @@ fn build_splom_plot(args: &Args) -> CliResult<Plot> {
              column pairs)."
         );
     }
+    // read_numeric_columns is listwise: a row is dropped if ANY kept column is non-numeric/empty.
+    // Columns that are each majority-numeric but never jointly complete leave empty value vectors,
+    // which would emit an empty SPLOM — error out instead of charting nothing.
+    if columns.first().map_or(0, Vec::len) == 0 {
+        return fail_clierror!(
+            "splom found no rows where all selected numeric --cols parse together (nothing to \
+             plot)."
+        );
+    }
 
     let dimensions: Vec<SplomDimension<f64>> = labels
         .into_iter()

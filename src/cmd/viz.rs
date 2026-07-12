@@ -888,9 +888,9 @@ const LABEL_MAX_BARS: usize = 40;
 /// map once embedded 745K opaque markers — an unreadable blob, a ~25 MB payload, and a browser
 /// that froze on the first pan/zoom. Originally 50K back when every embedded point cost ~200
 /// plaintext bytes; raised to 150K after the compressed-payload work (trace-level hovertemplates
-/// + float32 typed arrays + gzip'd figure payloads) cut the marginal cost to ~16 bytes/point
-/// (a 150K-point map dashboard is ~4.4 MB all-in) and MapLibre GL measured a steady 61 fps
-/// pan/zoom at 150K-250K markers.
+/// + float32 typed arrays + gzip'd figure payloads) cut the marginal cost to ~16 bytes/point (a
+///   150K-point map dashboard is ~4.4 MB all-in) and MapLibre GL measured a steady 61 fps pan/zoom
+///   at 150K-250K markers.
 const DEFAULT_MAX_SMART_POINTS: usize = 150_000;
 
 /// The resolved per-panel point budget, overridable with the `QSV_VIZ_MAX_POINTS` env var (an
@@ -16107,10 +16107,10 @@ fn build_smart(
     // `--max-charts` ranking, the "charting N columns" note, the box-overlay demotion, and the
     // render-path choice) so it stays invisible to them and simply lands at index 0, on top of the
     // dashboard. HTML only: Indicator tiles are domain-positioned and never enter a static image.
-    if !out_format.is_image() {
-        if let Some(panel) = build_kpi_row(&stats, &panels, dict_data.as_ref()) {
-            panels.insert(0, panel);
-        }
+    if !out_format.is_image()
+        && let Some(panel) = build_kpi_row(&stats, &panels, dict_data.as_ref())
+    {
+        panels.insert(0, panel);
     }
 
     progress.set_message("Rendering dashboard…");

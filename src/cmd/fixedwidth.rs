@@ -71,7 +71,10 @@ fn parse_positions(s: &str) -> CliResult<Vec<usize>> {
         }
         positions.push(pos - 1);
     }
-    if positions.windows(2).any(|w| w[0] >= w[1]) {
+    if positions.windows(2).any(|w| {
+        assert!(w.len() > 1);
+        w[0] >= w[1]
+    }) {
         return fail_incorrectusage_clierror!("column positions must be strictly increasing");
     }
     Ok(positions)

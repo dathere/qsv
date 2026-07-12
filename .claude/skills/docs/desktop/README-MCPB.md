@@ -18,7 +18,7 @@ Under the hood, it's powered by **qsv**: a purpose-built CLI tool written in hig
 
 Claude handles the rest automatically — no commands to remember, no syntax to learn.
 
-The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 66 commands (vs 75 in the full qsv binary), plus built-in session logging for increased reproducibility.
+The extension uses **qsvmcp**, a streamlined variant of qsv purpose-built for MCP server use. It ships with 69 commands (vs 78 in the full qsv binary), plus built-in session logging for increased reproducibility.
 
 ## Installation (Simple)
 
@@ -139,7 +139,7 @@ Claude: [Performs all three operations in sequence]
    - **Linux**: Place in `/usr/local/bin/` or specify the full path in settings
 4. Restart Claude Desktop
 
-> **Note**: qsvmcp is the recommended binary — it includes the 66 commands needed by the MCP server and is purpose-built for MCP server use.
+> **Note**: qsvmcp is the recommended binary — it includes the 69 commands needed by the MCP server and is purpose-built for MCP server use.
 
 ### "Permission denied" or "Access denied" errors
 
@@ -265,7 +265,7 @@ qsv-mcp-server.mcpb
 ┌──────────────▼──────────────────────┐
 │   qsvmcp binary (preferred) / qsv   │
 │  • Tabular data processing         │
-│  • 66 commands (qsvmcp) / 75 (qsv)  │
+│  • 69 commands (qsvmcp) / 78 (qsv)  │
 │  • High-performance operations      │
 │  • Multi-format support             │
 └─────────────────────────────────────┘
@@ -362,7 +362,7 @@ The MCP server enforces limits to prevent DoS attacks and resource exhaustion:
 **CRITICAL**: The `QSV_MCP_BIN_PATH` must point to a trusted qsvmcp or qsv binary:
 
 - Only use official releases from https://github.com/dathere/qsv/releases
-- The **qsvmcp** binary is recommended — it's optimized for MCP server use with 66 commands
+- The **qsvmcp** binary is recommended — it's optimized for MCP server use with 69 commands
 - Verify binary integrity (checksums provided in releases)
 - Ensure binary path is not writable by untrusted users
 - Do not use binaries from unknown sources

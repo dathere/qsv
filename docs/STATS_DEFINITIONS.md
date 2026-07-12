@@ -660,7 +660,7 @@ See: [Outlier](https://en.wikipedia.org/wiki/Outlier)
 
 ## `pragmastat`
 
-The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v12.1.0). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
+The `pragmastat` command computes robust, median-of-pairwise statistics using the [Pragmastat library](https://pragmastat.dev/) (v13.0.1). Designed for messy, heavy-tailed, or outlier-prone data where mean/stddev can mislead.
 
 Sourced from `src/cmd/pragmastat.rs`.
 
@@ -831,7 +831,7 @@ Cells are empty (blank) when:
 - **Sparsity required:** `spread`, `spread_lower`, `spread_upper`, `disparity`, `disparity_lower`, and `disparity_upper` need real variability (not tie-dominant data)
 - **Insufficient data for bounds:** All bounds columns need enough data for the requested misrate; try a higher misrate or more data
 
-See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v12.1.0/pragmastat-v12.1.0.pdf), [pragmastat.dev](https://pragmastat.dev/)
+See: [Pragmastat manual (PDF)](https://github.com/AndreyAkinshin/pragmastat/releases/download/v13.0.1/pragmastat-v13.0.1.pdf), [pragmastat.dev](https://pragmastat.dev/)
 
 ## `frequency`
 

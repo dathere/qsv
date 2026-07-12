@@ -14,7 +14,7 @@ The QSV MCP Server enables Claude Desktop to interact with qsv through natural l
 
 ## Recommended Binary: qsvmcp
 
-The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 66 commands needed by the MCP server (vs 75 in the full qsv binary), resulting in a smaller, faster binary.
+The **qsvmcp** binary variant is purpose-built for MCP server use. It includes only the 69 commands needed by the MCP server (vs 78 in the full qsv binary), resulting in a smaller, faster binary.
 
 **Features included in qsvmcp**: Polars, geocoding, disk-cache `get` (incl. cloud sources), self-update, MCP skill generation (`--update-mcp-skills`), and the `log` command for MCP audit logging.
 

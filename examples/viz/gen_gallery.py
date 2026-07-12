@@ -287,6 +287,17 @@ FS_BUTTON_JS = (
     'M0 0v208l80-80 96 96 48-48-96-96 80-80z"},'
     'click:function(gd){try{var p=document.fullscreenElement?document.exitFullscreen()'
     ':gd.requestFullscreen();if(p&&p.catch)p.catch(function(){});}catch(e){}}};'
+    # "Toggle legend" button — mirrors FULLSCREEN_SCRIPT in src/cmd/viz.rs. Reads the EFFECTIVE
+    # state from _fullLayout (plotly defaults showlegend:true for multi-trace charts that never set
+    # it) so the first click hides a default-visible legend. No-op on maps: Plotly.relayout throws on
+    # a MapLibre choroplethmap in our pinned fork, and a choropleth legend is a colorbar (not
+    # governed by showlegend). Uses qsvMapKeys (defined below; function decls hoist).
+    'var qsvLegendBtn={name:"qsv-legend",title:"Toggle legend",'
+    'icon:{width:512,height:512,path:"M0 96h96v64H0z M160 112h352v32H160z M0 224h96v64H0z '
+    'M160 240h352v32H160z M0 352h96v64H0z M160 368h352v32H160z"},'
+    'click:function(gd){try{if(qsvMapKeys(gd).length)return;var fl=gd._fullLayout||gd.layout||{};'
+    'var p=Plotly.relayout(gd,{showlegend:!fl.showlegend});if(p&&p.catch)p.catch(function(){});}'
+    'catch(e){}}};'
     'function qsvMapKeys(gd){var lay=(gd&&gd.layout)||{};return Object.keys(lay).filter('
     'function(k){return /^map\\d*$/.test(k)&&lay[k]&&typeof lay[k].zoom==="number";});}'
     'function qsvCaptureBaked(gd){if(gd.__qsvBaked)return;gd.__qsvBaked={};var lay=gd.layout||{};'
@@ -1060,7 +1071,7 @@ def main():
                 plots.append(
                     f'Plotly.newPlot("{gid}-p{k}", FIGS[{idx}][{k}].data, '
                     f'FIGS[{idx}][{k}].layout || {{}}, '
-                    f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn]}}, '
+                    f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn,qsvLegendBtn]}}, '
                     f'FIGS[{idx}][{k}].config || {{}}));'
                 )
         else:
@@ -1072,7 +1083,7 @@ def main():
             )
             plots.append(
                 f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
-                f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn]}}, '
+                f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn,qsvLegendBtn]}}, '
                 f'FIGS[{idx}].config || {{}}));'
             )
 

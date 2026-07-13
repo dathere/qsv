@@ -335,7 +335,9 @@ fn fetch_simple_diskcache() {
 
     wrk.assert_success(&mut cmd);
 
-    assert!(temp_dir.join("fetch_v1/conf").exists());
+    // cached v3 uses redb (a single file), not sled (a directory): the on-disk
+    // cache is `{name}_v{DISK_FILE_VERSION}.redb`, not `{name}_v1/conf`.
+    assert!(temp_dir.join("fetch_v3.redb").exists());
 
     let mut cmd_2 = wrk.command("fetch");
     cmd_2
@@ -1221,7 +1223,9 @@ fn fetchpost_simple_diskcache() {
 
     assert_eq!(got_parsed, expected);
 
-    assert!(temp_dir.join("fetchpost_v1/conf").exists());
+    // cached v3 uses redb (a single file), not sled (a directory): the on-disk
+    // cache is `{name}_v{DISK_FILE_VERSION}.redb`, not `{name}_v1/conf`.
+    assert!(temp_dir.join("fetchpost_v3.redb").exists());
 
     // let mut cmd_2 = wrk.command("fetchpost");
     // cmd.arg("URL")

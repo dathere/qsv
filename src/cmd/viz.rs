@@ -5596,13 +5596,15 @@ fn resolve_many(
 /// second time would consume/corrupt a streamed stdin. Shared by the standalone correlation
 /// heatmap and the `viz smart` correlation panel.
 ///
-/// When `drop_near_unique` is set, near-unique identifier columns (distinct value in > 95% of
-/// non-empty rows — a serial id, a monotonic order key) are dropped from the kept set *before*
+/// When `drop_near_unique` is set, near-unique identifier columns (a distinct value in > 95% of
+/// numeric rows — a serial id, a monotonic order key) are dropped from the kept set *before*
 /// the listwise row-drop, so a sparse or partially-non-numeric identifier can't discard rows
 /// from the surviving measures (mirrors `viz smart`, which pre-filters identifiers via the
-/// stats cache before calling this). Distinctness is measured on the raw cell bytes, not the
-/// parsed f64, so large integer ids beyond f64's 53-bit mantissa don't collapse and evade the
-/// filter. Guard: columns are stripped only when >= 2 non-near-unique columns remain as a
+/// stats cache before calling this). Distinctness is tracked as a `u64` hash of the raw cell
+/// bytes (not the parsed f64), so large integer ids beyond f64's 53-bit mantissa don't collapse
+/// and evade the filter, while never duplicating the cell strings themselves. Only numeric cells
+/// are tracked, so wide inputs with large free-form text columns (discarded as non-numeric) cost
+/// nothing. Guard: columns are stripped only when >= 2 non-near-unique columns remain as a
 /// correlation core; on tiny or all-continuous inputs every column is all-distinct and nothing
 /// is stripped.
 fn read_numeric_columns(
@@ -5612,12 +5614,16 @@ fn read_numeric_columns(
     candidates: &[usize],
     drop_near_unique: bool,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+    use std::hash::{Hash, Hasher};
+
     let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
-    // distinct raw (non-empty) cell values per candidate — populated only when we must detect
-    // near-unique identifier columns. Keyed on the raw bytes so large integer ids don't collapse.
-    let mut distinct: Vec<std::collections::HashSet<Box<[u8]>>> = if drop_near_unique {
+    // distinct hashes of the raw bytes of numeric cells per candidate — populated only when we
+    // must detect near-unique identifiers. Storing an 8-byte hash (not the cell bytes) bounds
+    // memory and avoids duplicating strings; tracking only numeric cells means large free-form
+    // text columns (dropped below as non-numeric) contribute nothing.
+    let mut distinct: Vec<std::collections::HashSet<u64>> = if drop_near_unique {
         vec![std::collections::HashSet::new(); candidates.len()]
     } else {
         Vec::new()
@@ -5632,9 +5638,11 @@ fn read_numeric_columns(
                 nonempty[k] += 1;
                 if v.is_some() {
                     parsed[k] += 1;
-                }
-                if drop_near_unique {
-                    distinct[k].insert(Box::from(cell.expect("nonempty implies Some")));
+                    if drop_near_unique {
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        cell.expect("nonempty implies Some").hash(&mut hasher);
+                        distinct[k].insert(hasher.finish());
+                    }
                 }
             }
             raw[k].push(v);
@@ -5645,14 +5653,15 @@ fn read_numeric_columns(
         .filter(|&k| nonempty[k] > 0 && parsed[k] * 2 >= nonempty[k])
         .collect();
     // strip near-unique identifiers from the kept set BEFORE the listwise transpose below, so a
-    // sparse identifier's blank rows don't drop rows from the surviving measures. Guarded on a
-    // >= 2 non-near-unique correlation core.
+    // sparse identifier's blank rows don't drop rows from the surviving measures. A kept column
+    // has parsed[k] >= 1 (majority-numeric with nonempty > 0), so the ratio is well-defined.
+    // Guarded on a >= 2 non-near-unique correlation core.
     if drop_near_unique {
         let near_unique: Vec<bool> = keep
             .iter()
             .map(|&k| {
                 #[allow(clippy::cast_precision_loss)]
-                let ratio = distinct[k].len() as f64 / nonempty[k] as f64;
+                let ratio = distinct[k].len() as f64 / parsed[k] as f64;
                 ratio > 0.95
             })
             .collect();

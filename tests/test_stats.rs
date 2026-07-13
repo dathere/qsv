@@ -6653,6 +6653,50 @@ fn stats_jsonl_conflicts_with_stats_jsonl() {
     );
 }
 
+#[test]
+fn stats_jsonl_reused_cache_with_cache_threshold_zero() {
+    // Regression: when a valid stats cache is reused, currstats_filename points at the
+    // cache file. With --cache-threshold 0, the cleanup block deletes that cache before
+    // the output stage runs. --jsonl must still emit the stats (it reads from a temp
+    // copy taken before deletion), not fail trying to reopen a removed file.
+    let wrk = Workdir::new("stats_jsonl_reused_cache_threshold_zero");
+    wrk.create("data.csv", jsonl_fixture());
+
+    // 1. create a valid stats cache (force caching)
+    let mut seed = wrk.command("stats");
+    seed.arg("--cache-threshold")
+        .arg("1")
+        .args(["--output", wrk.path("seed.csv").to_str().unwrap()])
+        .arg("data.csv");
+    wrk.assert_success(&mut seed);
+    assert!(
+        wrk.path("data.stats.csv").exists(),
+        "stats cache should exist after seeding"
+    );
+
+    // 2. reuse the cache while --cache-threshold 0 tears it down
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--jsonl")
+        .arg("--cache-threshold")
+        .arg("0")
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3, "expected one JSON object per column");
+    for line in &lines {
+        assert!(
+            serde_json::from_str::<serde_json::Value>(line).is_ok(),
+            "each line should be valid JSON: {line}"
+        );
+    }
+    // --cache-threshold 0 semantics preserved: the cache is gone afterward
+    assert!(
+        !wrk.path("data.stats.csv").exists(),
+        "stats cache should be deleted by --cache-threshold 0"
+    );
+}
+
 // --- --quantile-method approx (t-digest) tests --------------------------------------
 
 /// Build a uniform 1..=N column. With enough rows, t-digest's rank error stays small

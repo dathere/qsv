@@ -1856,9 +1856,9 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         std::fs::remove_file(pb)?;
     }
 
-    let currstats_filename = if compute_stats {
+    let mut currstats_filename = if compute_stats {
         // we computed the stats, use the stats temp file
-        stats_csv_tempfile_fname
+        stats_csv_tempfile_fname.clone()
     } else {
         // we didn't compute the stats, re-use the existing stats file
         // safety: we know the path is a valid PathBuf, so we can use unwrap
@@ -1918,6 +1918,16 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                     // fails silently if it can't remove the index file
                     log::warn!("Could not remove index file: {}", index_file.display());
                 }
+            }
+
+            // If we're reusing the existing cache, currstats_filename points at the
+            // very file we're about to delete. Copy it into our RAII temp file first
+            // and repoint currstats_filename, so the output stage below (CSV stdout,
+            // --output, --jsonl or --pretty-json) can still read the stats after the
+            // cache is removed.
+            if currstats_filename == stats_pathbuf.to_str().unwrap() {
+                fs::copy(&currstats_filename, &stats_csv_tempfile_fname)?;
+                currstats_filename = stats_csv_tempfile_fname.clone();
             }
 
             // remove the stats cache file

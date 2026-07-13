@@ -309,9 +309,12 @@ fn fetch_simple_diskcache() {
         ],
     );
 
-    // create a temporary directory for disk cache
-    use std::{env, fs};
-    let temp_dir = env::temp_dir().join("dcache");
+    // use an isolated, per-test disk-cache directory inside the workdir (which is
+    // uniquely named per test and auto-removed on drop). Being fresh each run, the
+    // redb-file assertion below genuinely verifies THIS run created the cache -
+    // without deleting any shared/global temp path.
+    use std::fs;
+    let temp_dir = wrk.path("dcache");
     fs::create_dir_all(&temp_dir).unwrap();
     let dc_dir = temp_dir.as_os_str().to_str().unwrap();
 
@@ -335,7 +338,9 @@ fn fetch_simple_diskcache() {
 
     wrk.assert_success(&mut cmd);
 
-    assert!(temp_dir.join("fetch_v1/conf").exists());
+    // cached v3 uses redb (a single file), not sled (a directory): the on-disk
+    // cache is `{name}_v{DISK_FILE_VERSION}.redb`, not `{name}_v1/conf`.
+    assert!(temp_dir.join("fetch_v3.redb").exists());
 
     let mut cmd_2 = wrk.command("fetch");
     cmd_2
@@ -1152,9 +1157,12 @@ fn fetchpost_simple_diskcache() {
         ],
     );
 
-    // create a temporary directory for disk cache
-    use std::{env, fs};
-    let temp_dir = env::temp_dir().join("fp_dcache");
+    // use an isolated, per-test disk-cache directory inside the workdir (which is
+    // uniquely named per test and auto-removed on drop). Being fresh each run, the
+    // redb-file assertion below genuinely verifies THIS run created the cache -
+    // without deleting any shared/global temp path.
+    use std::fs;
+    let temp_dir = wrk.path("fp_dcache");
     fs::create_dir_all(&temp_dir).unwrap();
     let dc_dir = temp_dir.as_os_str().to_str().unwrap();
 
@@ -1221,7 +1229,9 @@ fn fetchpost_simple_diskcache() {
 
     assert_eq!(got_parsed, expected);
 
-    assert!(temp_dir.join("fetchpost_v1/conf").exists());
+    // cached v3 uses redb (a single file), not sled (a directory): the on-disk
+    // cache is `{name}_v{DISK_FILE_VERSION}.redb`, not `{name}_v1/conf`.
+    assert!(temp_dir.join("fetchpost_v3.redb").exists());
 
     // let mut cmd_2 = wrk.command("fetchpost");
     // cmd.arg("URL")

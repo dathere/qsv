@@ -72,12 +72,14 @@ generated Data Dictionary), so changing any of them produces a fresh LLM call ra
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
 Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings.
+A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries are cached indefinitely).
 
 Alternatively a Redis cache can be used instead of the disk cache. This is especially useful if you want
 to share the cache across the network with other users or computers.
 The Redis cache is stored in database 3 by default with a TTL of 28 days and cache hits NOT refreshing
 an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE,
 QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
+A QSV_REDIS_TTL_SECS of 0 disables expiration (entries are cached indefinitely).
 
 
 <a name="examples"></a>

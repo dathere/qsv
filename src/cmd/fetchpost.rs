@@ -231,7 +231,8 @@ Fetchpost options:
                                It has a default Time To Live (TTL)/lifespan of 28 days and cache hits do not
                                refresh the TTL of cached values.
                                Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars
-                               to change DiskCache settings.
+                               to change DiskCache settings. A QSV_DISKCACHE_TTL_SECS of 0 disables
+                               time-based expiration (entries are cached indefinitely).
     --disk-cache-dir <dir>     The directory <dir> to store the disk cache. Note that if the directory
                                does not exist, it will be created. If the directory exists, it will be used as is,
                                and will not be flushed. This option allows you to maintain several disk caches
@@ -243,6 +244,7 @@ Fetchpost options:
                                NOT renewing an entry's TTL.
                                Adjust the QSV_FP_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE, QSV_REDIS_TTL_SECS &
                                QSV_REDIS_TTL_REFRESH respectively to change Redis settings.
+                               A QSV_REDIS_TTL_SECS of 0 disables expiration (entries cached indefinitely).
 
     --cache-error              Cache error responses even if a request fails. If an identical URL is requested,
                                the cached error is returned. Otherwise, the fetch is attempted again
@@ -266,7 +268,7 @@ Common options:
 use std::{fs, io::Write, num::NonZeroU32, path::PathBuf, sync::OnceLock, thread, time};
 
 use cached::{
-    Cached, ConcurrentCached, DiskCacheBuilder, LruCache, RedisCache, Return,
+    Cached, ConcurrentCached, LruCache, RedbCache, RedisCache, Return,
     macros::{cached, concurrent_cached},
 };
 use flate2::{Compression, write::GzEncoder};
@@ -803,18 +805,12 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut url = String::with_capacity(100);
     let mut redis_cache_hits: u64 = 0;
     let mut disk_cache_hits: u64 = 0;
-    let mut intermediate_redis_value: Return<String> = Return {
-        was_cached: false,
-        value:      String::new(),
-    };
-    let mut intermediate_value: Return<FetchResponse> = Return {
-        was_cached: false,
-        value:      FetchResponse {
-            response:    String::new(),
-            status_code: 0_u16,
-            retries:     0_u8,
-        },
-    };
+    let mut intermediate_redis_value: Return<String> = Return::new(String::new());
+    let mut intermediate_value: Return<FetchResponse> = Return::new(FetchResponse {
+        response:    String::new(),
+        status_code: 0_u16,
+        retries:     0_u8,
+    });
     let mut final_value = String::with_capacity(150);
     let mut final_response = FetchResponse {
         response:    String::new(),
@@ -932,14 +928,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         include_existing_columns,
                         args.flag_max_retries,
                     );
-                    final_response = intermediate_value.value;
-                    was_cached = intermediate_value.was_cached;
+                    was_cached = intermediate_value.was_cached();
+                    final_response = intermediate_value.into_inner();
                     if !args.flag_cache_error && final_response.status_code != 200 {
                         // key matches get_cached_response's convert macro
                         // (body-only — see NOTE above the cached fn).
                         let key = format!("{form_body_jsonmap:?}");
                         let mut cache = GET_CACHED_RESPONSE.write();
-                        cache.cache_remove(&key);
+                        let _ = cache.cache_remove(&key);
                     }
                 },
                 CacheType::Disk => {
@@ -956,8 +952,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         include_existing_columns,
                         args.flag_max_retries,
                     )?;
-                    final_response = intermediate_value.value;
-                    was_cached = intermediate_value.was_cached;
+                    was_cached = intermediate_value.was_cached();
+                    final_response = intermediate_value.into_inner();
                     if was_cached {
                         disk_cache_hits += 1;
                         // log::debug!("Disk cache hit for {url} hit: {disk_cache_hits}");
@@ -991,7 +987,7 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                         include_existing_columns,
                         args.flag_max_retries,
                     )?;
-                    was_cached = intermediate_redis_value.was_cached;
+                    was_cached = intermediate_redis_value.was_cached();
                     if was_cached {
                         redis_cache_hits += 1;
                     }
@@ -1154,7 +1150,6 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // to ensure all entries are written to disk
     if cache_type == CacheType::Disk {
         GET_DISKCACHE_RESPONSE
-            .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing DiskCache: {e}")))?;
     }
@@ -1242,16 +1237,23 @@ fn cross_session_cache_key(
 // include_existing_columns in the cache key
 #[concurrent_cached(
     disk = true,
-    ty = "cached::DiskCache<String, FetchResponse>",
+    ty = "cached::RedbCache<String, FetchResponse>",
     key = "String",
     convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
-        let diskcache = DiskCacheBuilder::new("fetchpost")
+        let mut diskcache_builder = RedbCache::builder("fetchpost")
             .disk_directory(cache_dir)
-            .ttl(diskcache_config.ttl_secs)
-            .refresh(diskcache_config.ttl_refresh)
+            .refresh_on_hit(diskcache_config.ttl_refresh)
+            .durable(false);
+        // A zero TTL disables time-based expiration (entries are cached
+        // indefinitely). v3's RedbCache builder rejects .ttl(0), so only set a
+        // TTL when it is non-zero; leaving it unset means "never expire".
+        if !diskcache_config.ttl_secs.is_zero() {
+            diskcache_builder = diskcache_builder.ttl(diskcache_config.ttl_secs);
+        }
+        let diskcache = diskcache_builder
             .build()
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -1303,11 +1305,17 @@ fn get_diskcache_response(
     convert = r#"{ cross_session_cache_key(url, form_body_jsonmap, payload_content_type, flag_jaq, flag_store_error, flag_pretty, flag_compress, include_existing_columns) }"#,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
-        let rediscache = RedisCache::new("fp", redis_config.ttl_secs)
+        let mut rediscache_builder = RedisCache::builder("fp")
             .namespace("q")
-            .refresh(redis_config.ttl_refresh)
+            .refresh_on_hit(redis_config.ttl_refresh)
             .connection_string(&redis_config.conn_str)
-            .connection_pool_max_size(redis_config.max_pool_size)
+            .connection_pool_max_size(redis_config.max_pool_size);
+        // A zero TTL disables expiry (entries are cached indefinitely). v3's
+        // RedisCache builder rejects .ttl(0); leaving it unset means "never expire".
+        if !redis_config.ttl_secs.is_zero() {
+            rediscache_builder = rediscache_builder.ttl(redis_config.ttl_secs);
+        }
+        let rediscache = rediscache_builder
             .build()
             .expect("error building redis cache");
         log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",

@@ -59,12 +59,14 @@ generated Data Dictionary), so changing any of them produces a fresh LLM call ra
 The default disk cache is stored in the ~/.qsv-cache/describegpt directory with a default TTL of 28 days
 and cache hits NOT refreshing an existing cached value's TTL.
 Adjust the QSV_DISKCACHE_TTL_SECS & QSV_DISKCACHE_TTL_REFRESH env vars to change disk cache settings.
+A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries are cached indefinitely).
 
 Alternatively a Redis cache can be used instead of the disk cache. This is especially useful if you want
 to share the cache across the network with other users or computers.
 The Redis cache is stored in database 3 by default with a TTL of 28 days and cache hits NOT refreshing
 an existing cached value's TTL. Adjust the QSV_DG_REDIS_CONNSTR, QSV_REDIS_MAX_POOL_SIZE,
 QSV_REDIS_TTL_SECS & QSV_REDIS_TTL_REFRESH env vars to change Redis cache settings.
+A QSV_REDIS_TTL_SECS of 0 disables expiration (entries are cached indefinitely).
 
 Examples:
 
@@ -521,9 +523,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use cached::{
-    ConcurrentCached, DiskCache, DiskCacheBuilder, RedisCache, Return, macros::concurrent_cached,
-};
+use cached::{ConcurrentCached, RedbCache, RedisCache, Return, macros::concurrent_cached};
 use foldhash::{HashMap, HashMapExt, HashSet};
 use indexmap::IndexSet;
 use minijinja::{Environment, context};
@@ -2992,17 +2992,23 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
 // this is a disk cache that can be used across qsv sessions
 #[concurrent_cached(
     disk = true,
-    ty = "cached::DiskCache<String, CompletionResponse>",
+    ty = "cached::RedbCache<String, CompletionResponse>",
     key = "String",
     convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
-        let diskcache: DiskCache<String, CompletionResponse> = DiskCacheBuilder::new("describegpt")
+        let mut diskcache_builder = RedbCache::builder("describegpt")
             .disk_directory(cache_dir)
-            .ttl(diskcache_config.ttl_secs)
-            .refresh(diskcache_config.ttl_refresh)
-            .sync_to_disk_on_cache_change(true)
+            .refresh_on_hit(diskcache_config.ttl_refresh)
+            .durable(true);
+        // A zero TTL disables time-based expiration (entries are cached
+        // indefinitely). v3's RedbCache builder rejects .ttl(0), so only set a
+        // TTL when it is non-zero; leaving it unset means "never expire".
+        if !diskcache_config.ttl_secs.is_zero() {
+            diskcache_builder = diskcache_builder.ttl(diskcache_config.ttl_secs);
+        }
+        let diskcache: RedbCache<String, CompletionResponse> = diskcache_builder
             .build()
             .expect("error building diskcache");
         log::info!("Disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -3033,11 +3039,17 @@ fn get_diskcache_completion(
     convert = r##"{ get_cache_key(args, kind, model) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
-        let rediscache: RedisCache<String, CompletionResponse> = RedisCache::new("f", redis_config.ttl_secs)
+        let mut rediscache_builder = RedisCache::builder("f")
             .namespace("descq")
-            .refresh(redis_config.ttl_refresh)
+            .refresh_on_hit(redis_config.ttl_refresh)
             .connection_string(&redis_config.conn_str)
-            .connection_pool_max_size(redis_config.max_pool_size)
+            .connection_pool_max_size(redis_config.max_pool_size);
+        // A zero TTL disables expiry (entries are cached indefinitely). v3's
+        // RedisCache builder rejects .ttl(0); leaving it unset means "never expire".
+        if !redis_config.ttl_secs.is_zero() {
+            rediscache_builder = rediscache_builder.ttl(redis_config.ttl_secs);
+        }
+        let rediscache: RedisCache<String, CompletionResponse> = rediscache_builder
             .build()
             .expect("error building redis cache");
         log::info!("Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
@@ -3066,17 +3078,23 @@ fn get_redis_completion(
 // Cached analysis results for disk cache
 #[concurrent_cached(
     disk = true,
-    ty = "cached::DiskCache<String, AnalysisResults>",
+    ty = "cached::RedbCache<String, AnalysisResults>",
     key = "String",
     convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
     create = r##"{
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
-        let diskcache: DiskCache<String, AnalysisResults> = DiskCacheBuilder::new("describegpt_analysis")
+        let mut diskcache_builder = RedbCache::builder("describegpt_analysis")
             .disk_directory(cache_dir)
-            .ttl(diskcache_config.ttl_secs)
-            .refresh(diskcache_config.ttl_refresh)
-            .sync_to_disk_on_cache_change(true)
+            .refresh_on_hit(diskcache_config.ttl_refresh)
+            .durable(true);
+        // A zero TTL disables time-based expiration (entries are cached
+        // indefinitely). v3's RedbCache builder rejects .ttl(0), so only set a
+        // TTL when it is non-zero; leaving it unset means "never expire".
+        if !diskcache_config.ttl_secs.is_zero() {
+            diskcache_builder = diskcache_builder.ttl(diskcache_config.ttl_secs);
+        }
+        let diskcache: RedbCache<String, AnalysisResults> = diskcache_builder
             .build()
             .expect("error building analysis diskcache");
         log::info!("Analysis disk cache created - dir: {cache_dir} - ttl: {ttl_secs:?}",
@@ -3101,11 +3119,17 @@ fn get_diskcache_analysis(
     convert = r##"{ get_analysis_cache_key(args, file_hash) }"##,
     create = r##" {
         let redis_config = REDISCONFIG.get().unwrap();
-        let rediscache: RedisCache<String, AnalysisResults> = RedisCache::new("analysis", redis_config.ttl_secs)
+        let mut rediscache_builder = RedisCache::builder("analysis")
             .namespace("descq")
-            .refresh(redis_config.ttl_refresh)
+            .refresh_on_hit(redis_config.ttl_refresh)
             .connection_string(&redis_config.conn_str)
-            .connection_pool_max_size(redis_config.max_pool_size)
+            .connection_pool_max_size(redis_config.max_pool_size);
+        // A zero TTL disables expiry (entries are cached indefinitely). v3's
+        // RedisCache builder rejects .ttl(0); leaving it unset means "never expire".
+        if !redis_config.ttl_secs.is_zero() {
+            rediscache_builder = rediscache_builder.ttl(redis_config.ttl_secs);
+        }
+        let rediscache: RedisCache<String, AnalysisResults> = rediscache_builder
             .build()
             .expect("error building analysis redis cache");
         log::info!("Analysis Redis cache created - conn_str: {conn_str} - refresh: {ttl_refresh} - ttl: {ttl_secs:?} - pool_size: {pool_size}",
@@ -3192,17 +3216,17 @@ fn get_cached_completion(
     match cache_type {
         CacheType::Disk => {
             let dc_result = get_diskcache_completion(args, client, model, api_key, kind, messages)?;
-            if dc_result.was_cached {
+            if dc_result.was_cached() {
                 print_status("    Disk cache hit!", None);
             }
-            Ok(dc_result.value)
+            Ok(dc_result.into_inner())
         },
         CacheType::Redis => {
             let rc_result = get_redis_completion(args, client, model, api_key, kind, messages)?;
-            if rc_result.was_cached {
+            if rc_result.was_cached() {
                 print_status("    Redis cache hit!", None);
             }
-            Ok(rc_result.value)
+            Ok(rc_result.into_inner())
         },
         CacheType::Fresh => {
             // Make fresh API call and manually update cache
@@ -5746,7 +5770,7 @@ fn remove_cache_entry_by_key(key: &str, args: &Args, kind: PromptType, success_m
             );
         } else {
             print_status(success_msg, None);
-            if let Err(e) = GET_DISKCACHE_COMPLETION.connection().flush() {
+            if let Err(e) = GET_DISKCACHE_COMPLETION.flush() {
                 print_status(&format!("Warning: Cannot flush disk cache: {e:?}"), None);
             } else if success_msg.contains("removed") {
                 print_status("Flushed disk cache after removing cache entry", None);
@@ -6660,13 +6684,11 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // if using a Diskcache, explicitly flush it to ensure entries are written to disk
     if cache_type == CacheType::Disk || (!args.flag_no_cache && cache_type == CacheType::Fresh) {
         GET_DISKCACHE_COMPLETION
-            .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing DiskCache: {e}")))?;
 
         // Also flush the analysis cache
         GET_DISKCACHE_ANALYSIS
-            .connection()
             .flush()
             .map_err(|e| CliError::Other(format!("Error flushing Analysis DiskCache: {e}")))?;
     }
@@ -6835,21 +6857,21 @@ fn get_cached_analysis(
     match cache_type {
         CacheType::Disk => {
             let result = get_diskcache_analysis(args, file_hash, input_path)?;
-            if result.was_cached {
+            if result.was_cached() {
                 print_status("    Analysis disk cache hit!", None);
             }
             // Always return the result, whether it was cached or not,
             // since the cache function has already performed the analysis
-            Ok(Some(result.value))
+            Ok(Some(result.into_inner()))
         },
         CacheType::Redis => {
             let result = get_redis_analysis(args, file_hash, input_path)?;
-            if result.was_cached {
+            if result.was_cached() {
                 print_status("    Analysis Redis cache hit!", None);
             }
             // Always return the result, whether it was cached or not,
             // since the cache function has already performed the analysis
-            Ok(Some(result.value))
+            Ok(Some(result.into_inner()))
         },
         CacheType::Fresh => {
             // Always use cached analysis results, even with --fresh
@@ -6859,10 +6881,10 @@ fn get_cached_analysis(
             } else {
                 get_diskcache_analysis(args, file_hash, input_path)?
             };
-            if result.was_cached {
+            if result.was_cached() {
                 print_status("    Analysis cache hit!", None);
             }
-            Ok(Some(result.value))
+            Ok(Some(result.into_inner()))
         },
         CacheType::None => Ok(None),
     }

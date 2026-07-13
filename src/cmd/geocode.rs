@@ -398,6 +398,8 @@ geocode options:
     --no-annotations            Omit OpenCage annotations (timezone, currency, etc.) from the
                                 result and from %json output.
     --cache-ttl <seconds>       Time-to-live for the persistent on-disk OpenCage result cache.
+                                A value of 0 disables time-based expiration (entries are
+                                cached indefinitely). Use --no-cache to disable caching entirely.
                                 [default: 1209600]
     --no-cache                  Disable the persistent on-disk OpenCage cache. Duplicate
                                 queries within a run are still de-duplicated.
@@ -553,7 +555,7 @@ use std::{
 };
 
 use cached::{
-    ConcurrentCached, DiskCache, DiskCacheBuilder,
+    ConcurrentCacheBase, ConcurrentCached, RedbCache,
     macros::{cached, concurrent_cached},
 };
 use dynfmt2::Format;
@@ -1510,7 +1512,7 @@ async fn geocode_main(args: Args) -> CliResult<()> {
                     // we're in dyncols mode, so use search_index_NO_CACHE fn
                     // as we need to inject the column values into each row of the output csv
                     // so we can't use the cache
-                    let search_results = search_index_no_cache(
+                    let search_results = search_index_uncached(
                         &engine,
                         geocode_cmd,
                         &cell,
@@ -1599,13 +1601,14 @@ async fn geocode_main(args: Args) -> CliResult<()> {
         // stats from the store's own metrics() snapshot.
         if dyncols_len == 0 {
             let metrics = SEARCH_INDEX.metrics();
-            if metrics.size > 0 {
+            let entry_count = metrics.entry_count.unwrap_or(0);
+            if entry_count > 0 {
                 #[allow(clippy::cast_precision_loss)]
                 progress.set_message(format!(
                     " of {} records. Cache {:.2}% entries: {} capacity: {}.",
                     indicatif::HumanCount(progress.length().unwrap()),
                     metrics.hit_ratio().unwrap_or(0.0) * 100.0,
-                    indicatif::HumanCount(metrics.size as u64),
+                    indicatif::HumanCount(entry_count as u64),
                     indicatif::HumanCount(metrics.capacity.unwrap_or(0) as u64),
                 ));
             }
@@ -1776,10 +1779,20 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
     let disk_cache = if args.flag_no_cache {
         None
     } else {
-        let cache = DiskCacheBuilder::new("geocode-opencage")
+        let mut cache_builder = RedbCache::builder("geocode-opencage")
             .disk_directory(cache_dir)
-            .ttl(std::time::Duration::from_secs(args.flag_cache_ttl))
-            .refresh(false)
+            .refresh_on_hit(false)
+            // preserve v2/sled non-durable behavior: OpenCage responses are
+            // recomputable external-API results, and fsync-per-write on the
+            // per-row geocoding hot path is the throughput hit we avoid.
+            .durable(false);
+        // --cache-ttl 0 disables time-based expiration (entries cached
+        // indefinitely). v3's RedbCache builder rejects .ttl(0), so only set a
+        // TTL when it is non-zero; leaving it unset means "never expire".
+        if args.flag_cache_ttl != 0 {
+            cache_builder = cache_builder.ttl(std::time::Duration::from_secs(args.flag_cache_ttl));
+        }
+        let cache = cache_builder
             .build()
             .map_err(|e| CliError::Other(format!("Error building OpenCage disk cache: {e}")))?;
         if let Err(e) = cache.remove_expired_entries() {
@@ -1909,28 +1922,9 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
 // ─────────────────────── OpenCage disk-cache management ───────────────────────
 
 /// The cache name used for the persistent on-disk `OpenCage` result cache.
-/// `cached`'s `DiskCacheBuilder` stores the sled DB in `{cache_dir}/{name}_v{N}`,
-/// where N is the crate's `DISK_FILE_VERSION` (currently 1).
+/// `cached`'s `RedbCache` stores the redb database file under `{cache_dir}`,
+/// naming it after this cache name.
 const OPENCAGE_CACHE_NAME: &str = "geocode-opencage";
-
-/// The on-disk directory `cached` uses for the `OpenCage` cache. The `_v1` suffix
-/// tracks `cached`'s `DISK_FILE_VERSION`; update it if the `cached` crate bumps it.
-fn opencage_cache_path(cache_dir: &Path) -> PathBuf {
-    cache_dir.join(format!("{OPENCAGE_CACHE_NAME}_v1"))
-}
-
-/// Deserialize-only mirror of `cached` 0.59's private `CachedDiskValue<String>`.
-/// Entries are rmp_serde-encoded positionally as [value, `created_at`, version],
-/// so the field ORDER here must match exactly. Used to read entry timestamps for
-/// `cache-info`; if `cached` changes its encoding, deserialization simply fails
-/// and oldest/newest gracefully degrade to "n/a".
-#[derive(serde::Deserialize)]
-#[allow(dead_code)]
-struct OpencageCacheEntry {
-    value:      String,
-    created_at: SystemTime,
-    version:    u64,
-}
 
 /// Parse a relative age like "30d", "2w", "48h", "90m", "3600s" (case-insensitive,
 /// surrounding whitespace allowed) into a Duration. Returns None when the input is
@@ -1950,7 +1944,7 @@ fn parse_relative_age(input: &str) -> Option<Duration> {
 }
 
 /// Resolve a `--older-than` value into an age threshold (the lifespan handed to
-/// `DiskCacheBuilder::ttl`). Accepts a relative age (30d, 2w, ...) or an
+/// `RedbCacheBuilder::ttl`). Accepts a relative age (30d, 2w, ...) or an
 /// absolute date/datetime parsed by `qsv_dateparser`. A future cutoff is rejected.
 fn resolve_older_than(value: &str) -> CliResult<Duration> {
     if let Some(age) = parse_relative_age(value) {
@@ -1989,19 +1983,27 @@ fn resolve_older_than(value: &str) -> CliResult<Duration> {
 /// the persistent on-disk `OpenCage` result cache. Synchronous - does not use the
 /// Geonames index nor make any network calls.
 fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResult<()> {
-    let cache_path = opencage_cache_path(cache_dir);
+    // graceful "no cache" path - detect an existing cache WITHOUT building one
+    // (building a RedbCache would create an empty redb file as a side effect).
+    // cached names the redb file after the cache name, so scan cache_dir for it.
+    let cache_exists = std::fs::read_dir(cache_dir).ok().is_some_and(|entries| {
+        entries.flatten().any(|e| {
+            e.file_name()
+                .to_string_lossy()
+                .starts_with(OPENCAGE_CACHE_NAME)
+        })
+    });
 
-    // graceful "no cache" path - do not create an empty sled DB as a side effect
-    if !cache_path.exists() {
+    if !cache_exists {
         winfo!(
-            "No OpenCage cache found at {}. Nothing to do.",
-            cache_path.display()
+            "No OpenCage cache found in {}. Nothing to do.",
+            cache_dir.display()
         );
         if mode == GeocodeSubCmd::CacheInfo {
             println!(
                 "{}",
                 json!({
-                    "cache_dir":   cache_path.display().to_string(),
+                    "cache_dir":   cache_dir.display().to_string(),
                     "exists":      false,
                     "entry_count": 0,
                 })
@@ -2010,102 +2012,87 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
         return Ok(());
     }
 
-    // for cache-prune, the lifespan is the resolved age threshold;
-    // remove_expired_entries() deletes entries where (now - created_at) >= lifespan.
-    let lifespan = if mode == GeocodeSubCmd::CachePrune {
-        // run() guarantees --older-than is present & valid for cache-prune
-        resolve_older_than(args.flag_older_than.as_deref().unwrap_or_default())?
-    } else {
-        Duration::from_secs(0)
-    };
-
-    let mut builder = DiskCacheBuilder::new(OPENCAGE_CACHE_NAME)
+    // TTL is only meaningful for cache-prune (it is the age threshold used by
+    // remove_expired_entries). v3's RedbCache builder rejects a zero TTL, and TTL
+    // is optional, so only set it for prune; clear/info open the cache without one.
+    let mut builder = RedbCache::builder(OPENCAGE_CACHE_NAME)
         .disk_directory(cache_dir)
-        .ttl(lifespan)
-        .refresh(false);
+        .refresh_on_hit(false);
     if mode == GeocodeSubCmd::CachePrune {
-        // remove_expired_entries() only persists to disk when this is set
-        builder = builder.sync_to_disk_on_cache_change(true);
+        // run() guarantees --older-than is present & valid for cache-prune
+        let lifespan = resolve_older_than(args.flag_older_than.as_deref().unwrap_or_default())?;
+        // a zero age threshold would mean "prune every entry" - that overlaps
+        // cache-clear, and v3's RedbCache builder rejects a zero TTL anyway, so
+        // reject it here with a pointer to the right subcommand.
+        if lifespan.is_zero() {
+            return Err(CliError::IncorrectUsage(
+                "--older-than resolves to a zero age threshold. To remove every entry, use `qsv \
+                 geocode cache-clear` instead."
+                    .to_string(),
+            ));
+        }
+        // fsync the removals durably to disk
+        builder = builder.ttl(lifespan).durable(true);
     }
-    let cache: DiskCache<String, String> = builder
+    let cache: RedbCache<String, String> = builder
         .build()
         .map_err(|e| CliError::Other(format!("Error opening OpenCage disk cache: {e}")))?;
-    let db = cache.connection();
 
     match mode {
         GeocodeSubCmd::CacheClear => {
-            let count = db.len();
-            db.clear()
+            // RedbCache cannot report a live entry count cheaply (cache_size() is
+            // Ok(None)), so we clear without claiming a (misleading) removed count.
+            cache
+                .cache_clear()
                 .map_err(|e| CliError::Other(format!("Error clearing OpenCage cache: {e}")))?;
-            db.flush()
+            cache
+                .flush()
                 .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
-            winfo!("Cleared the OpenCage cache - removed {count} entries.");
+            winfo!("Cleared the OpenCage cache.");
         },
         GeocodeSubCmd::CachePrune => {
-            let before = db.len();
-            cache
+            // remove_expired_entries() returns a real swept count (it scans), unlike
+            // cache_size() which RedbCache reports as Ok(None).
+            let pruned = cache
                 .remove_expired_entries()
                 .map_err(|e| CliError::Other(format!("Error pruning OpenCage cache: {e}")))?;
-            db.flush()
+            cache
+                .flush()
                 .map_err(|e| CliError::Other(format!("Error flushing OpenCage cache: {e}")))?;
-            let after = db.len();
-            let pruned = before.saturating_sub(after);
-            winfo!(
-                "Pruned the OpenCage cache - removed {pruned} of {before} entries ({after} \
-                 remaining)."
-            );
+            winfo!("Pruned {pruned} expired entries from the OpenCage cache.");
         },
         GeocodeSubCmd::CacheInfo => {
-            let entry_count = db.len();
-            // size_on_disk() can fail on I/O errors; degrade gracefully rather than
+            // RedbCache::cache_size() is Ok(None) (an exact count is an O(n) scan it
+            // won't pay implicitly), so entry_count is reported as unavailable rather
+            // than a misleading 0.
+            let entry_count = cache
+                .cache_size()
+                .map_err(|e| CliError::Other(format!("Error reading OpenCage cache: {e}")))?;
+            let disk_path = cache.disk_path();
+            // metadata() can fail on I/O errors; degrade gracefully rather than
             // reporting a misleading 0 bytes (None -> "unknown" / JSON null)
-            let size_on_disk: Option<u64> = db.size_on_disk().ok();
-
-            // oldest/newest created_at - degrade gracefully on a deserialize failure;
-            // surface sled iteration errors via a warning so a partial scan is visible
-            let mut oldest: Option<SystemTime> = None;
-            let mut newest: Option<SystemTime> = None;
-            for kv in db.iter() {
-                let (_key, value) = match kv {
-                    Ok(kv) => kv,
-                    Err(e) => {
-                        log::warn!("Error reading an OpenCage cache entry: {e}");
-                        continue;
-                    },
-                };
-                if let Ok(entry) = rmp_serde::from_slice::<OpencageCacheEntry>(&value) {
-                    oldest = Some(oldest.map_or(entry.created_at, |o| o.min(entry.created_at)));
-                    newest = Some(newest.map_or(entry.created_at, |n| n.max(entry.created_at)));
-                }
-            }
-            let fmt_ts = |t: Option<SystemTime>| t.map(|t| util::format_systemtime(t, "%+"));
+            let size_on_disk: Option<u64> = std::fs::metadata(disk_path).ok().map(|m| m.len());
             let size_human = size_on_disk.map(|s| HumanBytes(s).to_string());
 
-            winfo!("OpenCage cache directory: {}", cache_path.display());
-            winfo!("Entries: {entry_count}");
+            winfo!("OpenCage cache file: {}", disk_path.display());
+            winfo!(
+                "Entries: {}",
+                entry_count.map_or_else(|| "unknown".to_string(), |n| n.to_string())
+            );
             winfo!(
                 "Size on disk: {}",
                 size_human.clone().unwrap_or_else(|| "unknown".to_string())
-            );
-            winfo!(
-                "Oldest entry: {}",
-                fmt_ts(oldest).unwrap_or_else(|| "n/a".to_string())
-            );
-            winfo!(
-                "Newest entry: {}",
-                fmt_ts(newest).unwrap_or_else(|| "n/a".to_string())
             );
 
             println!(
                 "{}",
                 json!({
-                    "cache_dir":    cache_path.display().to_string(),
+                    "cache_dir":    cache_dir.display().to_string(),
+                    "cache_file":   disk_path.display().to_string(),
                     "exists":       true,
                     "entry_count":  entry_count,
                     "size_on_disk": size_on_disk,
                     "size_human":   size_human,
-                    "oldest_entry": fmt_ts(oldest),
-                    "newest_entry": fmt_ts(newest),
                 })
             );
         },
@@ -2315,12 +2302,12 @@ async fn load_engine_data(
 
 /// `search_index` returns a geocode result for a given cell value, used by the
 /// suggest/suggestnow and reverse/reversenow subcommands. It wraps
-/// `search_index_no_cache` with a cache keyed on the cell value, storing the
+/// `search_index_uncached` with a cache keyed on the cell value, storing the
 /// formatted geocoded result. We CANNOT use the cache in dyncols mode (the cached
 /// result is the formatted string, not the individual fields), so dyncols mode calls
-/// `search_index_no_cache` directly.
+/// `search_index_uncached` directly.
 ///
-/// `search_index` wraps `search_index_no_cache` with a *sharded* concurrent LRU cache
+/// `search_index` wraps `search_index_uncached` with a *sharded* concurrent LRU cache
 /// (cached 2.0 `#[concurrent_cached]`) keyed on the cell value. This replaces the
 /// single-`RwLock` `#[cached]` `LruCache`, whose per-hit recency-bump write lock
 /// serialized geocode's rayon-parallel pipeline (on a 16-core box this is ~2.2x faster
@@ -2350,7 +2337,7 @@ fn search_index(
     column_values: &[&str],
     record: &mut csv::StringRecord,
 ) -> Option<String> {
-    search_index_no_cache(
+    search_index_uncached(
         engine,
         mode,
         cell,
@@ -2367,7 +2354,7 @@ fn search_index(
 
 /// Uncached geocode lookup — the raw body shared by the cached `search_index`
 /// wrapper and dyncols mode (which cannot use the cache).
-fn search_index_no_cache(
+fn search_index_uncached(
     engine: &Engine,
     mode: GeocodeSubCmd,
     cell: &str,
@@ -3219,7 +3206,7 @@ async fn opencage_fetch(
 async fn opencage_lookup(
     client: &reqwest::Client,
     limiter: &DefaultDirectRateLimiter,
-    disk_cache: Option<&DiskCache<String, String>>,
+    disk_cache: Option<&RedbCache<String, String>>,
     mem_cache: &mut HashMap<String, String>,
     api_key: &str,
     query: &str,
@@ -3277,7 +3264,7 @@ async fn opencage_lookup(
 async fn opencage_lookup_dyncols(
     client: &reqwest::Client,
     limiter: &DefaultDirectRateLimiter,
-    disk_cache: Option<&DiskCache<String, String>>,
+    disk_cache: Option<&RedbCache<String, String>>,
     mem_cache: &mut HashMap<String, String>,
     api_key: &str,
     query: &str,

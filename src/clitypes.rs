@@ -5,7 +5,7 @@ use std::{
     sync::OnceLock,
 };
 
-use cached::{DiskCacheError, RedisCacheError};
+use cached::{RedbCacheError, RedisCacheError};
 
 /// write to stdout
 macro_rules! wout {
@@ -287,9 +287,9 @@ impl From<zip::result::ZipError> for CliError {
     }
 }
 
-impl From<DiskCacheError> for CliError {
-    fn from(err: DiskCacheError) -> CliError {
-        CliError::Other(format!("DiskCache error: {err:?}"))
+impl From<RedbCacheError> for CliError {
+    fn from(err: RedbCacheError) -> CliError {
+        CliError::Other(format!("RedbCache error: {err:?}"))
     }
 }
 

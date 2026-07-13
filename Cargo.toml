@@ -153,10 +153,10 @@ bytemuck = { version = "1.24", features = [
 ], optional = true }
 byteorder = "1.5"
 bytes = "1"
-cached = { version = "2.0.2", features = [
+cached = { version = "=3.0.0-rc.7", features = [
     "ahash",
-    "disk_store",
-    "redis_ahash",
+    "redb_store",
+    "redis_store",
 ] }
 calamine = { version = "0.36", features = ["chrono"] }
 censor = { version = "0.3", optional = true }

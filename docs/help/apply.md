@@ -418,7 +418,7 @@ qsv apply --help
 | &nbsp;`‑‑rate‑limit`&nbsp; | float | Seconds to sleep between LLM requests to avoid provider rate limits. Accepts fractional seconds (e.g. 0.5). | `0` |
 | &nbsp;`‑‑on‑error`&nbsp; | string | What to do when an LLM request fails: "fail" aborts; "skip" writes an "<ERROR: ...>" cell and continues. | `fail` |
 | &nbsp;`‑‑user‑agent`&nbsp; | string | Custom user agent for LLM requests. Supports variables like $QSV_VERSION. |  |
-| &nbsp;`‑‑cache‑dir`&nbsp; | string | Directory for the disk cache. | `~/.qsv-cache/apply-summarize` |
+| &nbsp;`‑‑cache‑dir`&nbsp; | string | Directory for the disk cache. The cache TTL defaults to 28 days; set the QSV_DISKCACHE_TTL_SECS env var to change it. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching. | `~/.qsv-cache/apply-summarize` |
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the disk cache (one LLM call per row, always). |  |
 | &nbsp;`‑‑fresh`&nbsp; | flag | Force fresh LLM calls, refreshing any cached values. |  |
 | &nbsp;`‑‑stats`&nbsp; | flag | Append two extra columns per row alongside --new-column: "<new-column>_elapsed_ms" (inference time in milliseconds) and "<new-column>_tokens" (total tokens used). For cached rows, these report the values captured when the summary was first computed. |  |

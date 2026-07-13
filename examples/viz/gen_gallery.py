@@ -534,7 +534,10 @@ FIGURES = [
      False, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
     ("parcats", "Parallel-categories flow over three categorical columns (region -> product_category "
      "-> payment_method): each ribbon is a category combination, sized by how many rows share it, so "
-     "co-occurrence between the dimensions is visible without implying a part-to-whole nesting. viz "
+     "co-occurrence between the dimensions is visible without implying a part-to-whole nesting. "
+     "Ribbons are <b>colored by their first-axis category</b> and bundled (like a Sankey), and each "
+     "axis opens ordered by frequency with a <b>&#8645; category order</b> toggle that flips every "
+     "axis between frequency and alphabetical order. viz "
      "smart auto-adds this panel for 3-4 associated many-to-many categoricals (and suppresses the "
      "hierarchy on the same columns); genuine rollup trees still auto-select a treemap/sunburst.",
      False, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),

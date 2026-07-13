@@ -6429,6 +6429,18 @@ fn viz_parcats_standalone() {
     assert!(html.contains(r#""counts":["#));
     assert!(html.contains(r#""label":"region""#));
     assert!(html.contains(r#""label":"status""#));
+    // ribbons are colored (by first-dim category) and bundled, like a Sankey — not the default gray
+    assert!(html.contains(r#""line":{"color""#));
+    assert!(html.contains(r#""bundlecolors":true"#));
+    // opens count-ordered (categoryarray baked, categoryorder=array) with an on-screen "category
+    // order" toggle (updatemenus button) that flips each axis' categoryorder via restyle
+    assert!(html.contains(r#""categoryorder":"array""#));
+    assert!(html.contains(r#""categoryarray":["#));
+    assert!(
+        html.contains(r#""updatemenus""#) && html.contains("category order"),
+        "parcats should bake in a category-order toggle button; html: {html}"
+    );
+    assert!(html.contains("dimensions[0].categoryorder"));
 }
 
 // deterministic dataset that qualifies for BOTH new smart panels: a/b/d are low-cardinality

@@ -635,11 +635,11 @@ use plotly::{
     },
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
-        Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
-        ProjectionType, themes::BuiltinTheme,
+        Annotation, Axis, AxisType, CategoryOrder, Center, GeoFitBounds, GeoResolution, HoverMode,
+        Layout, LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar,
+        Projection, ProjectionType, themes::BuiltinTheme,
     },
-    parcats::{ParcatsArrangement, ParcatsDimension},
+    parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
     sankey::{Arrangement, Link, Node},
     splom::SplomDimension,
     sunburst::InsideTextOrientation,
@@ -5173,30 +5173,154 @@ fn build_parcats_plot(args: &Args) -> CliResult<Plot> {
     }
 
     let weights: Vec<f64> = order.iter().map(|t| counts[t]).collect();
-    let dimensions: Vec<ParcatsDimension<String>> = dims
+    let labels: Vec<String> = dims
         .iter()
-        .enumerate()
-        .map(|(pos, &idx)| {
-            let values: Vec<String> = order.iter().map(|t| t[pos].clone()).collect();
-            ParcatsDimension::new()
-                .label(col_label(&headers, idx, nh))
-                .values(values)
-        })
+        .map(|&idx| col_label(&headers, idx, nh))
         .collect();
+    let (dimensions, line, ordered) = parcats_dimensions_and_line(&labels, &order, &weights);
 
-    let trace = Parcats::new()
+    let mut trace = Parcats::new()
         .dimensions(dimensions)
         .counts_array(weights)
-        .arrangement(ParcatsArrangement::Perpendicular);
+        .arrangement(ParcatsArrangement::Perpendicular)
+        .bundle_colors(true);
+    if let Some(line) = line {
+        trace = trace.line(line);
+    }
 
     let mut plot = Plot::new();
     plot.add_trace(trace);
-    let mut layout = Layout::new();
+    let mut layout = Layout::new().update_menus(vec![parcats_order_toggle_menu(&ordered)]);
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
     plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
+}
+
+/// Build the parcats dimensions with a count-ordered `categoryarray` baked into each axis (so the
+/// heaviest categories cluster together — the view the chart opens in), plus a `ParcatsLine` that
+/// colors each ribbon by its FIRST dimension's category (color-by-source, like a Sankey) and
+/// bundles like colors. `tuples` are the distinct category combinations, `weights` their row
+/// counts. Returns the dimensions, the colored line (`None` when there are no dimensions), and the
+/// per-dimension count-ordered category arrays (fed to the order toggle so it can re-supply
+/// `categoryarray` — plotly drops it from the trace whenever `categoryorder` leaves "array").
+fn parcats_dimensions_and_line(
+    labels: &[String],
+    tuples: &[Vec<String>],
+    weights: &[f64],
+) -> (
+    Vec<ParcatsDimension<String>>,
+    Option<ParcatsLine>,
+    Vec<Vec<String>>,
+) {
+    let ndims = labels.len();
+    // per-dimension categories ordered by descending total weight (tie-break by name) — the baked
+    // `categoryarray` the "category order" toggle switches on and off.
+    let ordered: Vec<Vec<String>> = (0..ndims)
+        .map(|pos| {
+            let mut totals: HashMap<&str, f64> = HashMap::new();
+            for (t, &w) in tuples.iter().zip(weights) {
+                *totals.entry(t[pos].as_str()).or_insert(0.0) += w;
+            }
+            let mut cats: Vec<(&str, f64)> = totals.into_iter().collect();
+            cats.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+            cats.into_iter().map(|(c, _)| c.to_string()).collect()
+        })
+        .collect();
+
+    let dimensions: Vec<ParcatsDimension<String>> = labels
+        .iter()
+        .enumerate()
+        .map(|(pos, label)| {
+            let values: Vec<String> = tuples.iter().map(|t| t[pos].clone()).collect();
+            ParcatsDimension::new()
+                .label(label.clone())
+                .values(values)
+                .category_order(CategoryOrder::Array)
+                .category_array(ordered[pos].clone())
+        })
+        .collect();
+
+    // color each ribbon by the rank of its first-dimension category (0..ncats-1), so ribbons
+    // sharing an origin share a color; a sequential colorscale over the (usually few, since the
+    // first axis is the coarsest) origin categories. No colorbar — the coloring is categorical.
+    let line = ordered.first().map(|first| {
+        let rank: HashMap<&str, usize> = first
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.as_str(), i))
+            .collect();
+        let colors: Vec<f64> = tuples.iter().map(|t| rank[t[0].as_str()] as f64).collect();
+        let mut l = ParcatsLine::new()
+            .color_array(colors)
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(false);
+        if first.len() > 1 {
+            l = l.cmin(0.0).cmax((first.len() - 1) as f64);
+        }
+        l
+    });
+    (dimensions, line, ordered)
+}
+
+/// On-graph "category order" toggle for a parcats chart (standalone `viz parcats` and the `viz
+/// smart` flow panel), mirroring the Sankey node-order toggle. Every dimension opens count-ordered
+/// (its `categoryarray` — passed here as `ordered` — is baked into the trace and honored only while
+/// `categoryorder == "array"`); the button flips every dimension's `categoryorder` to alphabetical
+/// ("category ascending") and back. `args` fires on the FIRST click, so — since the chart opens in
+/// array/count order — it is the alphabetical state (click 1 flips, click 2 restores), matching
+/// `sankey_order_toggle_menu`.
+///
+/// The "back to array" state (`args2`) re-supplies each dimension's `categoryarray` alongside
+/// `categoryorder: "array"`, because plotly DROPS `categoryarray` from the trace the moment
+/// `categoryorder` leaves "array" — without re-supplying it the count order would be lost after the
+/// first toggle and "array" would fall back to first-appearance order.
+fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
+    let ndims = ordered.len();
+    // alphabetical state: just flip categoryorder (categoryarray is ignored while != "array").
+    let alpha: serde_json::Map<String, serde_json::Value> = (0..ndims)
+        .map(|i| {
+            (
+                format!("dimensions[{i}].categoryorder"),
+                serde_json::json!(["category ascending"]),
+            )
+        })
+        .collect();
+    // count/array state: restore BOTH categoryorder="array" AND the baked categoryarray.
+    let mut array_state = serde_json::Map::new();
+    for (i, cats) in ordered.iter().enumerate() {
+        array_state.insert(
+            format!("dimensions[{i}].categoryorder"),
+            serde_json::json!(["array"]),
+        );
+        array_state.insert(
+            format!("dimensions[{i}].categoryarray"),
+            serde_json::json!([cats]),
+        );
+    }
+    let alpha_args = serde_json::json!([serde_json::Value::Object(alpha), [0]]);
+    let array_args = serde_json::json!([serde_json::Value::Object(array_state), [0]]);
+    let toggle = Button::new()
+        .label("⇅ category order")
+        .method(ButtonMethod::Restyle)
+        .args(alpha_args)
+        .args2(array_args);
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // top-left of the plot, clear of the centered title and the top-right modebar.
+        .x(0.0)
+        .x_anchor(Anchor::Left)
+        .y(1.0)
+        .y_anchor(Anchor::Bottom)
+        // a stateless flip: no persistent "pressed" highlight (both orders are valid states).
+        .show_active(false)
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
 /// Build the `viz smart` scatter-plot-matrix (splom) overview panel from the numeric columns
@@ -18392,25 +18516,22 @@ fn smart_inline_panel_plot(
         counts,
     } = &panel.kind
     {
-        let dimensions: Vec<ParcatsDimension<String>> = dim_labels
-            .iter()
-            .enumerate()
-            .map(|(pos, label)| {
-                let values: Vec<String> = tuples.iter().map(|t| t[pos].clone()).collect();
-                ParcatsDimension::new().label(label.clone()).values(values)
-            })
-            .collect();
+        let (dimensions, line, ordered) = parcats_dimensions_and_line(dim_labels, tuples, counts);
+        let mut trace = Parcats::new()
+            .dimensions(dimensions)
+            .counts_array(counts.clone())
+            .arrangement(ParcatsArrangement::Perpendicular)
+            .bundle_colors(true);
+        if let Some(line) = line {
+            trace = trace.line(line);
+        }
         let mut plot = Plot::new();
-        plot.add_trace(
-            Parcats::new()
-                .dimensions(dimensions)
-                .counts_array(counts.clone())
-                .arrangement(ParcatsArrangement::Perpendicular),
-        );
+        plot.add_trace(trace);
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .update_menus(vec![parcats_order_toggle_menu(&ordered)]);
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))

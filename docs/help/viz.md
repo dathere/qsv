@@ -62,6 +62,13 @@ sunburst    Part-to-whole hierarchy as concentric rings (same inputs as
             treemap). Better for deeper hierarchies.
 icicle      Part-to-whole hierarchy as stacked bars per level (same inputs as
             treemap). Level-aligned; good for deep, wide hierarchies.
+splom       Scatter-plot matrix: every pair of numeric --cols plotted against
+            each other in a grid, with each column's distribution on the
+            diagonal. Good for spotting correlations across many numeric
+            columns at once (default: all numeric columns).
+parcats     Parallel categories: ribbons showing how rows flow across the
+            categorical --cols (best with 3-4). Complements sankey (which
+            takes 2 columns) for higher-dimensional categorical relationships.
 map         Geographic point map (or --density heatmap) on tile basemaps.
             Pick the coordinate columns with the lat/lon options below.
 geo         Geographic point map on a projection basemap (coastlines/land/
@@ -325,6 +332,8 @@ qsv viz choropleth  [options] <input>
 qsv viz treemap     [options] <input>
 qsv viz sunburst    [options] <input>
 qsv viz icicle      [options] <input>
+qsv viz splom       [options] <input>
+qsv viz parcats     [options] <input>
 qsv viz --help
 ```
 
@@ -337,7 +346,7 @@ qsv viz --help
 | &nbsp;`‑x,`<br>`‑‑x`&nbsp; | string | Column for the x-axis / category / bin / group. |  |
 | &nbsp;`‑y,`<br>`‑‑y`&nbsp; | string | Column for the y-axis / value. |  |
 | &nbsp;`‑z,`<br>`‑‑z`&nbsp; | string | The z column: a heatmap pivot value (with --x and --y), or the third numeric axis for scatter3d. |  |
-| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). |  |
+| &nbsp;`‑‑cols`&nbsp; | string | Columns to use. For heatmap: numeric columns for the correlation matrix (default: all numeric). For radar: the numeric axes to plot. For treemap/sunburst: the categorical dimensions that form the hierarchy levels, outermost first (e.g. region,category,subcategory). For splom: the numeric columns to cross-plot (default: all numeric). For parcats: the categorical dimensions to flow across (best with 3-4). |  |
 | &nbsp;`‑‑series`&nbsp; | string | Column to split into multiple series (one trace per distinct value). Applies to bar, line, scatter, scatter3d, radar, map and geo. |  |
 | &nbsp;`‑‑color`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker color (a continuous colorscale with a colorbar). For categorical coloring, use the --series option instead. Cannot be combined with --series. In map density mode, this column is the heatmap weight. |  |
 | &nbsp;`‑‑size`&nbsp; | string | For scatter/scatter3d/map/geo: a numeric column to encode as marker size, producing a bubble chart (values are rescaled to a readable pixel range). Cannot be combined with --series. In map density mode, this column is the heatmap weight. |  |

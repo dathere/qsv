@@ -1855,6 +1855,107 @@ fn viz_heatmap_correlation_insufficient_rows_errors() {
 }
 
 #[test]
+fn viz_heatmap_correlation_excludes_identifier() {
+    // A standalone correlation heatmap in auto mode (no --cols) drops near-unique identifier
+    // columns — a monotonic order key holds a distinct value in nearly every row and has no
+    // meaningful linear relationship — mirroring `viz smart`. The two repeated-value measures
+    // remain.
+    let wrk = Workdir::new("viz_heatmap_correlation_excludes_identifier");
+    let mut rows = String::from("order_id,units,revenue\n");
+    for i in 0..60 {
+        // order_id: monotonic unique key; units/revenue: low-cardinality, repeated, correlated.
+        let u = i % 6;
+        rows.push_str(&format!("{},{u},{}\n", 1000 + i, u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("order_id"),
+        "near-unique identifier column should be excluded from the auto correlation heatmap"
+    );
+    assert!(html.contains("units") && html.contains("revenue"));
+
+    // an explicit --cols is the user's deliberate selection and is honored as-is (order_id kept).
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv", "--cols", "order_id,units,revenue"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("order_id"),
+        "explicit --cols must keep the identifier column"
+    );
+}
+
+#[test]
+fn viz_heatmap_correlation_sparse_identifier_keeps_measure_rows() {
+    // A sparse identifier (order_id present in only 1 of 60 rows) must be dropped from the kept
+    // set BEFORE the listwise row-drop, so its blank rows don't starve the fully-populated
+    // measures. With the old post-transpose ordering, order_id was kept through the listwise
+    // pass, collapsing the matrix to the single complete row and failing the "at least 2 rows"
+    // check. Now the heatmap succeeds on the two dense measures.
+    let wrk = Workdir::new("viz_heatmap_correlation_sparse_identifier");
+    let mut rows = String::from("order_id,units,revenue\n");
+    for i in 0..60 {
+        let u = i % 6;
+        // order_id is populated only in the first row; units/revenue are dense in every row.
+        let id = if i == 0 {
+            "1000".to_string()
+        } else {
+            String::new()
+        };
+        rows.push_str(&format!("{id},{u},{}\n", u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "a sparse identifier must not starve the dense measures of their rows"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("order_id"));
+    assert!(html.contains("units") && html.contains("revenue"));
+}
+
+#[test]
+fn viz_heatmap_correlation_excludes_large_int_identifier() {
+    // Near-unique detection measures distinctness on raw cell bytes, not the parsed f64. A column
+    // of distinct 17-digit ids beyond f64's 53-bit mantissa collapses to far fewer distinct floats
+    // (consecutive integers near 1e16 share a float), which would let the identifier evade an
+    // f64-based distinct-ratio and pollute the matrix. On the raw bytes every id is distinct, so it
+    // is correctly dropped.
+    let wrk = Workdir::new("viz_heatmap_correlation_large_int_identifier");
+    let mut rows = String::from("big_id,units,revenue\n");
+    for i in 0..60 {
+        let u = i % 6;
+        // 10_000_000_000_000_000 + 2*i keeps every id distinct as text but pairs of them round to
+        // the same f64 at this magnitude, halving the f64-distinct count.
+        let big_id = 10_000_000_000_000_000_u64 + 2 * i as u64;
+        rows.push_str(&format!("{big_id},{u},{}\n", u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("big_id"),
+        "a large-integer identifier must be detected via raw bytes and excluded"
+    );
+    assert!(html.contains("units") && html.contains("revenue"));
+}
+
+#[test]
 fn viz_heatmap_pivot() {
     let wrk = Workdir::new("viz_heatmap_pivot");
     wrk.create_from_string(
@@ -6097,19 +6198,21 @@ fn two_dim_hierarchy(wrk: &Workdir) {
     wrk.create_from_string("two_dim.csv", &rows);
 }
 
-/// id (skipped) + three ASSOCIATED low-cardinality categorical dimensions (region → category →
-/// channel all co-vary), so every pair is dependent and the hierarchy clears the independence
-/// screen (max corrected Cramér's V ~0.86).
+/// id (skipped) + three categorical dimensions that form a STRICT rollup tree: each category rolls
+/// up to exactly one region and each channel to exactly one category (region → category → channel,
+/// a genuine parent→child nesting with no category appearing under two parents). This is the shape
+/// `viz smart` auto-selects a treemap/sunburst for — a functional-dependency hierarchy the
+/// part-to-whole panel sizes by rolled-up totals. (A many-to-many co-occurrence set of the same
+/// cardinalities is instead claimed by the parallel-categories (parcats) panel.) Cardinalities:
+/// region=3, category=4, channel=4.
 fn three_dim_hierarchy(wrk: &Workdir) {
     let mut rows = String::from("id,region,category,channel\n");
     for i in 1..=120 {
-        let (region, category, channel) = match i % 6 {
+        let (region, category, channel) = match i % 4 {
             0 => ("East", "Widgets", "Web"),
             1 => ("East", "Gadgets", "Retail"),
             2 => ("West", "Gizmos", "Phone"),
-            3 => ("West", "Doohickeys", "Partner"),
-            4 => ("North", "Widgets", "Web"),
-            _ => ("North", "Gizmos", "Retail"),
+            _ => ("North", "Doohickeys", "Partner"),
         };
         rows.push_str(&format!("{i},{region},{category},{channel}\n"));
     }
@@ -6341,6 +6444,220 @@ fn viz_sunburst_standalone() {
     assert!(html.contains(r#""textinfo":"label+value+percent parent""#));
     // plotly.js 3.6 radial in-sector text keeps deep-ring labels legible along each spoke
     assert!(html.contains(r#""insidetextorientation":"radial""#));
+}
+
+#[test]
+fn viz_splom_standalone() {
+    let wrk = Workdir::new("viz_splom_standalone");
+    // three numeric columns; a and b are perfectly correlated, c is independent
+    let mut rows = String::from("a,b,c\n");
+    for i in 0..40 {
+        let a = i % 7;
+        let b = (i % 7) * 2;
+        let c = (i % 5) + 1;
+        rows.push_str(&format!("{a},{b},{c}\n"));
+    }
+    wrk.create_from_string("nums.csv", &rows);
+
+    let out_html = wrk.path("sp.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "nums.csv", "--cols", "a,b,c", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("sp.html").unwrap();
+    assert!(html.contains(r#""type":"splom""#));
+    // one dimension per selected numeric column, each carrying its label
+    assert!(html.contains(r#""label":"a""#));
+    assert!(html.contains(r#""label":"b""#));
+    assert!(html.contains(r#""label":"c""#));
+}
+
+#[test]
+fn viz_splom_needs_two_numeric_cols() {
+    // splom cross-plots numeric column pairs, so a single numeric column (the other selected
+    // column being non-numeric text) is not enough — it must error, not emit a 1x1 grid.
+    let wrk = Workdir::new("viz_splom_needs_two_numeric_cols");
+    wrk.create_from_string("one.csv", "a,name\n1,x\n2,y\n3,z\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "one.csv", "--cols", "a,name"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_splom_no_joint_rows_errors() {
+    // both columns are majority-numeric on their own, but no single row has BOTH populated, so
+    // the listwise read drops every row. splom must error rather than emit an empty matrix.
+    let wrk = Workdir::new("viz_splom_no_joint_rows_errors");
+    wrk.create_from_string("disjoint.csv", "a,b\n1,\n2,\n,3\n,4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["splom", "disjoint.csv", "--cols", "a,b"]);
+    wrk.assert_err(&mut cmd);
+}
+
+#[test]
+fn viz_parcats_standalone() {
+    let wrk = Workdir::new("viz_parcats_standalone");
+    // three low-cardinality categorical columns
+    let mut rows = String::from("region,tier,status\n");
+    let regions = ["north", "south"];
+    let tiers = ["gold", "silver"];
+    let statuses = ["open", "closed"];
+    for i in 0..40 {
+        let r = regions[i % regions.len()];
+        let t = tiers[(i / 2) % tiers.len()];
+        let s = statuses[(i / 3) % statuses.len()];
+        rows.push_str(&format!("{r},{t},{s}\n"));
+    }
+    wrk.create_from_string("cats.csv", &rows);
+
+    let out_html = wrk.path("pc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "parcats",
+        "cats.csv",
+        "--cols",
+        "region,tier,status",
+        "-o",
+        &out_html,
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("pc.html").unwrap();
+    assert!(html.contains(r#""type":"parcats""#));
+    // identical category tuples are aggregated into weighted paths (`counts`)
+    assert!(html.contains(r#""counts":["#));
+    assert!(html.contains(r#""label":"region""#));
+    assert!(html.contains(r#""label":"status""#));
+    // ribbons are colored (by first-dim category) and bundled, like a Sankey — not the default gray
+    assert!(html.contains(r#""line":{"color""#));
+    assert!(html.contains(r#""bundlecolors":true"#));
+    // opens count-ordered (categoryarray baked, categoryorder=array) with an on-screen "category
+    // order" toggle (updatemenus button) that flips each axis' categoryorder via restyle
+    assert!(html.contains(r#""categoryorder":"array""#));
+    assert!(html.contains(r#""categoryarray":["#));
+    assert!(
+        html.contains(r#""updatemenus""#) && html.contains("category order"),
+        "parcats should bake in a category-order toggle button; html: {html}"
+    );
+    assert!(html.contains("dimensions[0].categoryorder"));
+}
+
+// deterministic dataset that qualifies for the smart parcats panel: region/tier/segment are 3
+// associated, many-to-many categoricals each with >= 3 well-spread distinct values (no
+// near-constant column), while a/b/c/d are numeric filler.
+fn smart_parcats_csv(wrk: &Workdir) {
+    let regions = ["north", "south", "east"];
+    let tiers = ["gold", "silver", "bronze"];
+    let segs = ["retail", "wholesale", "online", "partner"];
+    let mut rows = String::from("a,b,c,d,region,tier,segment\n");
+    for i in 0..90usize {
+        let a = i % 12;
+        let b = a * 2; // perfectly correlated with a
+        let c = (i * 7) % 12; // independent
+        let d = 12 - a; // negatively correlated with a
+        let region = regions[i % 3];
+        let tier = tiers[(i % 3 + usize::from(i % 4 == 0)) % 3];
+        let ti = tiers.iter().position(|&t| t == tier).unwrap();
+        let seg = segs[(ti + usize::from(i % 5 == 0)) % 4];
+        rows.push_str(&format!("{a},{b},{c},{d},{region},{tier},{seg}\n"));
+    }
+    wrk.create_from_string("smart.csv", &rows);
+}
+
+#[test]
+fn viz_smart_parcats_suppresses_hierarchy() {
+    let wrk = Workdir::new("viz_smart_parcats_suppresses_hierarchy");
+    smart_parcats_csv(&wrk);
+
+    let out_html = wrk.path("s.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "smart.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("s.html").unwrap();
+    // 3 associated but MANY-TO-MANY categorical dimensions (a category appears under several
+    // parents) -> a parallel-categories flow panel. Such a co-occurrence set previously
+    // auto-selected a sunburst; parcats now claims it, while genuine rollup trees (see
+    // `viz_smart_hierarchy_sunburst_for_three_dims`) still auto-select the sunburst.
+    assert!(html.contains(r#""type":"parcats""#));
+    // ...which owns the 3-4-dimension relationship, so the hierarchy treemap/sunburst is suppressed
+    // on the same columns (mutual exclusivity).
+    assert!(!html.contains(r#""type":"treemap""#));
+    assert!(!html.contains(r#""type":"sunburst""#));
+}
+
+// Length of the comma-separated `"<key>":[...]` array first appearing at/after the position of
+// `after` (0 for an empty array, None if not found). Plain string scan so the tests need no regex.
+fn array_len_after(html: &str, after: &str, key: &str) -> Option<usize> {
+    let start = html.find(after)?;
+    let needle = format!("\"{key}\":[");
+    let open = html[start..].find(&needle)? + start + needle.len();
+    let end = html[open..].find(']')? + open;
+    let body = &html[open..end];
+    Some(if body.trim().is_empty() {
+        0
+    } else {
+        body.split(',').count()
+    })
+}
+
+#[test]
+fn viz_smart_parcats_caps_paths() {
+    // Four associated-but-noisy categoricals produce far more than PARCATS_MAX_PATHS (200) distinct
+    // tuples; the panel keeps only the 200 heaviest ribbons so the trace stays bounded (a 30^4
+    // worst case would otherwise embed hundreds of thousands of paths).
+    let wrk = Workdir::new("viz_smart_parcats_caps_paths");
+    let mut rows = String::from("d1,d2,d3,d4\n");
+    // deterministic LCG so the fixture (and its tuple spread) is reproducible across runs.
+    let mut s: u64 = 0x9E37_79B9_7F4A_7C15;
+    let mut next = |m: u64, s: &mut u64| {
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*s >> 33) % m
+    };
+    for _ in 0..6000 {
+        let a = next(15, &mut s);
+        // each dim tracks `a`/`b` ~55% of the time (keeps them associated) and draws freely
+        // otherwise (spreads the joint distribution across many tuples).
+        let b = if next(100, &mut s) < 55 {
+            a
+        } else {
+            next(15, &mut s)
+        };
+        let c = if next(100, &mut s) < 55 {
+            a
+        } else {
+            next(15, &mut s)
+        };
+        let d = if next(100, &mut s) < 55 {
+            b
+        } else {
+            next(15, &mut s)
+        };
+        rows.push_str(&format!("g{a},h{b},k{c},m{d}\n"));
+    }
+    wrk.create_from_string("pc.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "pc.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    assert!(html.contains(r#""type":"parcats""#));
+    let ribbons =
+        array_len_after(&html, r#""type":"parcats""#, "counts").expect("parcats counts array");
+    assert!(
+        ribbons <= 200,
+        "parcats ribbons must be capped at PARCATS_MAX_PATHS (200), got {ribbons}"
+    );
+    assert!(
+        ribbons > 100,
+        "test data should produce enough distinct tuples for the cap to engage, got {ribbons}"
+    );
 }
 
 #[test]

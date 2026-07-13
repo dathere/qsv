@@ -5828,7 +5828,7 @@ dependencies = [
 [[package]]
 name = "plotly"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feature%2Ftrace-type-additions#554f6609e2861ce82b481e5beb8d6e1fed50ba3f"
+source = "git+https://github.com/dathere/plotly?branch=feature%2Fsplom-parcats-traces#2ea3d6114d5dd33b62f2a05617d7d73953723268"
 dependencies = [
  "askama",
  "async-trait",
@@ -5851,7 +5851,7 @@ dependencies = [
 [[package]]
 name = "plotly_derive"
 version = "0.14.1"
-source = "git+https://github.com/dathere/plotly?branch=feature%2Ftrace-type-additions#554f6609e2861ce82b481e5beb8d6e1fed50ba3f"
+source = "git+https://github.com/dathere/plotly?branch=feature%2Fsplom-parcats-traces#2ea3d6114d5dd33b62f2a05617d7d73953723268"
 dependencies = [
  "darling 0.23.0",
  "proc-macro2",
@@ -5862,7 +5862,7 @@ dependencies = [
 [[package]]
 name = "plotly_static"
 version = "0.1.0"
-source = "git+https://github.com/dathere/plotly?branch=feature%2Ftrace-type-additions#554f6609e2861ce82b481e5beb8d6e1fed50ba3f"
+source = "git+https://github.com/dathere/plotly?branch=feature%2Fsplom-parcats-traces#2ea3d6114d5dd33b62f2a05617d7d73953723268"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

@@ -48,6 +48,13 @@ Chart types (subcommands):
                 treemap). Better for deeper hierarchies.
     icicle      Part-to-whole hierarchy as stacked bars per level (same inputs as
                 treemap). Level-aligned; good for deep, wide hierarchies.
+    splom       Scatter-plot matrix: every pair of numeric --cols plotted against
+                each other in a grid, with each column's distribution on the
+                diagonal. Good for spotting correlations across many numeric
+                columns at once (default: all numeric columns).
+    parcats     Parallel categories: ribbons showing how rows flow across the
+                categorical --cols (best with 3-4). Complements sankey (which
+                takes 2 columns) for higher-dimensional categorical relationships.
     map         Geographic point map (or --density heatmap) on tile basemaps.
                 Pick the coordinate columns with the lat/lon options below.
     geo         Geographic point map on a projection basemap (coastlines/land/
@@ -217,6 +224,8 @@ Usage:
     qsv viz treemap     [options] <input>
     qsv viz sunburst    [options] <input>
     qsv viz icicle      [options] <input>
+    qsv viz splom       [options] <input>
+    qsv viz parcats     [options] <input>
     qsv viz --help
 
 viz options:
@@ -229,6 +238,9 @@ viz options:
                            the numeric axes to plot. For treemap/sunburst: the
                            categorical dimensions that form the hierarchy levels,
                            outermost first (e.g. region,category,subcategory).
+                           For splom: the numeric columns to cross-plot (default:
+                           all numeric). For parcats: the categorical dimensions
+                           to flow across (best with 3-4).
     --series <col>         Column to split into multiple series (one trace per
                            distinct value). Applies to bar, line, scatter, scatter3d,
                            radar, map and geo.
@@ -611,8 +623,8 @@ use plotly::layout::update_menu::UpdateMenuDirection;
 use plotly::layout::update_menu::{Button, ButtonMethod, UpdateMenu, UpdateMenuType};
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
-    HeatMap, Histogram, Icicle, Indicator, Ohlc, Pie, Plot, Sankey, Scatter, Scatter3D, ScatterGeo,
-    ScatterMap, ScatterPolar, Sunburst, Trace, Treemap, Violin,
+    HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter, Scatter3D,
+    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -623,11 +635,13 @@ use plotly::{
     },
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
-        Annotation, Axis, AxisType, Center, GeoFitBounds, GeoResolution, HoverMode, Layout,
-        LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection,
-        ProjectionType, themes::BuiltinTheme,
+        Annotation, Axis, AxisType, CategoryOrder, Center, GeoFitBounds, GeoResolution, HoverMode,
+        Layout, LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar,
+        Projection, ProjectionType, themes::BuiltinTheme,
     },
+    parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
     sankey::{Arrangement, Link, Node},
+    splom::SplomDimension,
     sunburst::InsideTextOrientation,
     traces::{icicle::BranchValues as IcicleBranchValues, scatter_map::Cluster},
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
@@ -654,6 +668,15 @@ const MAX_PANELS_INLINE: usize = 64;
 /// A column whose cardinality is at or below this is treated as categorical (frequency
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
+
+/// A categorical column whose single most-common category (a value, or empty/null) covers more than
+/// this fraction of rows is treated as near-constant: too degenerate to be a meaningful hierarchy
+/// or parallel-categories dimension (it renders as one dominant ribbon/block that conveys nothing),
+/// yet its low cardinality would otherwise make it a preferred (coarsest) level. 0.90 keeps
+/// genuinely spread columns — a 63%-dominant facility type, a 50/50 channel split — while excluding
+/// near-empty log columns (a 311 log's `Taxi Company Borough`, blank on 99.9% of rows) and lopsided
+/// flags (a 95%-"Closed" status).
+const CATEGORICAL_DIM_MAX_DOMINANCE: f64 = 0.90;
 
 /// A discrete integer scale with at most this many distinct levels — a 1..N ordinal rating
 /// (satisfaction 1-5, 1-7 Likert, 1-10 / 0-10 NPS) — is treated as categorical even when a
@@ -743,6 +766,19 @@ const LOG_SCALE_MIN_RATIO: f64 = 50.0;
 /// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
+
+/// `viz smart` parallel-categories (parcats) panel bounds. parcats is reserved for PARCATS_MIN_DIMS
+/// to PARCATS_MAX_DIMS categorical dimensions: 2-dimension relationships are shown as a directed
+/// Sankey, and beyond 4 dimensions the ribbon flow becomes an unreadable tangle.
+const PARCATS_MIN_DIMS: usize = 3;
+const PARCATS_MAX_DIMS: usize = 4;
+
+/// Max distinct category tuples (ribbons) the parcats panel emits. Each eligible dimension can have
+/// up to `CATEGORICAL_MAX_CARDINALITY` (30) values, so 4 dimensions could yield up to 30⁴ ≈ 810k
+/// distinct paths — an enormous, unreadable trace. The panel keeps only the `PARCATS_MAX_PATHS`
+/// heaviest tuples (by row count) and drops the long tail (logged), matching the bounded-node
+/// approach of the hierarchy (`HIER_MAX_NODES`) and Sankey panels.
+const PARCATS_MAX_PATHS: usize = 200;
 
 /// Minimum correlation ratio η² (ANOVA effect size: between-group variance / total variance) for
 /// `viz smart` to add a "measure by dimension" bar. η² ranges 0..1; 0.06 is Cohen's conventional
@@ -1204,6 +1240,8 @@ struct Args {
     cmd_sunburst:            bool,
     cmd_icicle:              bool,
     cmd_choropleth:          bool,
+    cmd_splom:               bool,
+    cmd_parcats:             bool,
     arg_input:               Option<String>,
     flag_x:                  Option<SelectColumns>,
     flag_y:                  Option<SelectColumns>,
@@ -1590,6 +1628,15 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
         return build_hierarchy_plot(args);
     }
 
+    // splom (scatter-plot matrix) self-generates its own N×N axis grid and parcats (parallel
+    // categories) is domain-based — neither is cartesian, so each owns its whole `Plot`.
+    if matches!(chart_kind(args), Chart::Splom) {
+        return build_splom_plot(args);
+    }
+    if matches!(chart_kind(args), Chart::Parcats) {
+        return build_parcats_plot(args);
+    }
+
     let mut plot = Plot::new();
 
     // the sankey chart carries an on-screen "node order" toggle (a layout updatemenu), stashed
@@ -1701,6 +1748,8 @@ enum Chart {
     Treemap,
     Sunburst,
     Icicle,
+    Splom,
+    Parcats,
 }
 
 fn chart_kind(args: &Args) -> Chart {
@@ -1744,6 +1793,10 @@ fn chart_kind(args: &Args) -> Chart {
         Chart::Sunburst
     } else if args.cmd_icicle {
         Chart::Icicle
+    } else if args.cmd_splom {
+        Chart::Splom
+    } else if args.cmd_parcats {
+        Chart::Parcats
     } else {
         unreachable!("docopt guarantees exactly one chart subcommand")
     }
@@ -5013,6 +5066,392 @@ fn build_hierarchy_plot(args: &Args) -> CliResult<Plot> {
     Ok(plot)
 }
 
+/// Build the `Plot` for `viz splom`: a scatter-plot matrix (SPLOM) over the numeric `--cols`
+/// (default: all numeric columns). Every pair of dimensions is cross-plotted in a grid, with each
+/// dimension's own axis and its distribution on the diagonal. Splom self-generates its N×N axis
+/// grid, so it owns its whole `Plot` (no shared cartesian axes), like the hierarchy charts above.
+fn build_splom_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    // default to all columns when --cols is omitted; read_numeric_columns keeps the numeric ones
+    let candidates: Vec<usize> = match args.flag_cols.as_ref() {
+        Some(_) => resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?,
+        None => (0..headers.len()).collect(),
+    };
+    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates, false)?;
+    if labels.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "splom needs at least 2 numeric --cols (a scatter-plot matrix cross-plots numeric \
+             column pairs)."
+        );
+    }
+    // read_numeric_columns is listwise: a row is dropped if ANY kept column is non-numeric/empty.
+    // Columns that are each majority-numeric but never jointly complete leave empty value vectors,
+    // which would emit an empty SPLOM — error out instead of charting nothing.
+    if columns.first().map_or(0, Vec::len) == 0 {
+        return fail_clierror!(
+            "splom found no rows where all selected numeric --cols parse together (nothing to \
+             plot)."
+        );
+    }
+
+    let dimensions: Vec<SplomDimension<f64>> = labels
+        .into_iter()
+        .zip(columns)
+        .map(|(label, values)| SplomDimension::new().label(label).values(values))
+        .collect();
+
+    let trace = Splom::new()
+        .dimensions(dimensions)
+        .marker(Marker::new().size(4).opacity(0.6));
+
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+    let mut layout = Layout::new();
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Build the `Plot` for `viz parcats`: a parallel-categories diagram over the categorical `--cols`
+/// (best with 3-4). Rows are aggregated into distinct category tuples (weighted by `counts`), each
+/// column becoming a dimension. Domain-based (no cartesian axes), so it owns its whole `Plot`.
+fn build_parcats_plot(args: &Args) -> CliResult<Plot> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let dims = resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?;
+    if dims.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "parcats needs at least 2 categorical --cols (best with 3-4)."
+        );
+    }
+
+    // aggregate identical category tuples into weighted paths so the trace stays compact
+    let mut counts: HashMap<Vec<String>, f64> = HashMap::new();
+    let mut order: Vec<Vec<String>> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let tuple: Vec<String> = dims
+            .iter()
+            .map(|&i| cell_to_string(record.get(i)))
+            .collect();
+        counts
+            .entry(tuple.clone())
+            .and_modify(|c| *c += 1.0)
+            .or_insert_with(|| {
+                order.push(tuple);
+                1.0
+            });
+    }
+    if order.is_empty() {
+        return fail_clierror!("No rows to chart for the parcats diagram.");
+    }
+
+    let weights: Vec<f64> = order.iter().map(|t| counts[t]).collect();
+    let labels: Vec<String> = dims
+        .iter()
+        .map(|&idx| col_label(&headers, idx, nh))
+        .collect();
+    let (dimensions, line, ordered) = parcats_dimensions_and_line(&labels, &order, &weights);
+
+    let mut trace = Parcats::new()
+        .dimensions(dimensions)
+        .counts_array(weights)
+        .arrangement(ParcatsArrangement::Perpendicular)
+        .bundle_colors(true);
+    if let Some(line) = line {
+        trace = trace.line(line);
+    }
+
+    let mut plot = Plot::new();
+    plot.add_trace(trace);
+    let mut layout = Layout::new().update_menus(vec![parcats_order_toggle_menu(&ordered)]);
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Build the parcats dimensions with a count-ordered `categoryarray` baked into each axis (so the
+/// heaviest categories cluster together — the view the chart opens in), plus a `ParcatsLine` that
+/// colors each ribbon by its FIRST dimension's category (color-by-source, like a Sankey) and
+/// bundles like colors. `tuples` are the distinct category combinations, `weights` their row
+/// counts. Returns the dimensions, the colored line (`None` when there are no dimensions), and the
+/// per-dimension count-ordered category arrays (fed to the order toggle so it can re-supply
+/// `categoryarray` — plotly drops it from the trace whenever `categoryorder` leaves "array").
+fn parcats_dimensions_and_line(
+    labels: &[String],
+    tuples: &[Vec<String>],
+    weights: &[f64],
+) -> (
+    Vec<ParcatsDimension<String>>,
+    Option<ParcatsLine>,
+    Vec<Vec<String>>,
+) {
+    let ndims = labels.len();
+    // per-dimension categories ordered by descending total weight (tie-break by name) — the baked
+    // `categoryarray` the "category order" toggle switches on and off.
+    let ordered: Vec<Vec<String>> = (0..ndims)
+        .map(|pos| {
+            let mut totals: HashMap<&str, f64> = HashMap::new();
+            for (t, &w) in tuples.iter().zip(weights) {
+                *totals.entry(t[pos].as_str()).or_insert(0.0) += w;
+            }
+            let mut cats: Vec<(&str, f64)> = totals.into_iter().collect();
+            cats.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(b.0)));
+            cats.into_iter().map(|(c, _)| c.to_string()).collect()
+        })
+        .collect();
+
+    let dimensions: Vec<ParcatsDimension<String>> = labels
+        .iter()
+        .enumerate()
+        .map(|(pos, label)| {
+            let values: Vec<String> = tuples.iter().map(|t| t[pos].clone()).collect();
+            ParcatsDimension::new()
+                .label(label.clone())
+                .values(values)
+                .category_order(CategoryOrder::Array)
+                .category_array(ordered[pos].clone())
+        })
+        .collect();
+
+    // color each ribbon by the rank of its first-dimension category (0..ncats-1), so ribbons
+    // sharing an origin share a color; a sequential colorscale over the (usually few, since the
+    // first axis is the coarsest) origin categories. No colorbar — the coloring is categorical.
+    let line = ordered.first().map(|first| {
+        let rank: HashMap<&str, usize> = first
+            .iter()
+            .enumerate()
+            .map(|(i, c)| (c.as_str(), i))
+            .collect();
+        let colors: Vec<f64> = tuples.iter().map(|t| rank[t[0].as_str()] as f64).collect();
+        let mut l = ParcatsLine::new()
+            .color_array(colors)
+            .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+            .show_scale(false);
+        if first.len() > 1 {
+            l = l.cmin(0.0).cmax((first.len() - 1) as f64);
+        }
+        l
+    });
+    (dimensions, line, ordered)
+}
+
+/// On-graph "category order" toggle for a parcats chart (standalone `viz parcats` and the `viz
+/// smart` flow panel), mirroring the Sankey node-order toggle. Every dimension opens count-ordered
+/// (its `categoryarray` — passed here as `ordered` — is baked into the trace and honored only while
+/// `categoryorder == "array"`); the button flips every dimension's `categoryorder` to alphabetical
+/// ("category ascending") and back. `args` fires on the FIRST click, so — since the chart opens in
+/// array/count order — it is the alphabetical state (click 1 flips, click 2 restores), matching
+/// `sankey_order_toggle_menu`.
+///
+/// The "back to array" state (`args2`) re-supplies each dimension's `categoryarray` alongside
+/// `categoryorder: "array"`, because plotly DROPS `categoryarray` from the trace the moment
+/// `categoryorder` leaves "array" — without re-supplying it the count order would be lost after the
+/// first toggle and "array" would fall back to first-appearance order.
+fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
+    let ndims = ordered.len();
+    // alphabetical state: just flip categoryorder (categoryarray is ignored while != "array").
+    let alpha: serde_json::Map<String, serde_json::Value> = (0..ndims)
+        .map(|i| {
+            (
+                format!("dimensions[{i}].categoryorder"),
+                serde_json::json!(["category ascending"]),
+            )
+        })
+        .collect();
+    // count/array state: restore BOTH categoryorder="array" AND the baked categoryarray.
+    let mut array_state = serde_json::Map::new();
+    for (i, cats) in ordered.iter().enumerate() {
+        array_state.insert(
+            format!("dimensions[{i}].categoryorder"),
+            serde_json::json!(["array"]),
+        );
+        array_state.insert(
+            format!("dimensions[{i}].categoryarray"),
+            serde_json::json!([cats]),
+        );
+    }
+    let alpha_args = serde_json::json!([serde_json::Value::Object(alpha), [0]]);
+    let array_args = serde_json::json!([serde_json::Value::Object(array_state), [0]]);
+    let toggle = Button::new()
+        .label("⇅ category order")
+        .method(ButtonMethod::Restyle)
+        .args(alpha_args)
+        .args2(array_args);
+    UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .buttons(vec![toggle])
+        // top-left of the plot, clear of the centered title and the top-right modebar.
+        .x(0.0)
+        .x_anchor(Anchor::Left)
+        .y(1.0)
+        .y_anchor(Anchor::Bottom)
+        // a stateless flip: no persistent "pressed" highlight (both orders are valid states).
+        .show_active(false)
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
+}
+
+/// True when a single category — a value, or empty/null — covers more than
+/// `CATEGORICAL_DIM_MAX_DOMINANCE` of the `n` rows, making the column near-constant. qsv stats'
+/// `mode_occurrences` (the most-frequent-value count) already counts empty/null when that is the
+/// dominant "value", so it captures both null-dominated and value-dominated near-constants; it
+/// falls back to the raw null count when the mode stat is absent from the cache (still catches the
+/// common mostly-empty case). `n == 0` (unknown row count) disables the screen so behavior degrades
+/// to the pre-existing "keep everything".
+fn is_near_constant(s: &crate::cmd::stats::StatsData, n: u64) -> bool {
+    if n == 0 {
+        return false;
+    }
+    let dominant = s.mode_occurrences.unwrap_or(0).max(s.nullcount);
+    #[allow(clippy::cast_precision_loss)]
+    let share = dominant as f64 / n as f64;
+    share > CATEGORICAL_DIM_MAX_DOMINANCE
+}
+
+/// Collect the eligible categorical dimensions shared by the hierarchy (treemap/sunburst) and
+/// parallel-categories (parcats) overview panels: the `String` frequency-bar columns whose
+/// cardinality is in `[HIER_MIN_DIM_CARDINALITY, CATEGORICAL_MAX_CARDINALITY]`, EXCLUDING
+/// near-constant columns (see `is_near_constant`). Restricting to `String` excludes numeric codes
+/// and booleans, which make poor — and surprising — flow/nesting levels. Returns `(idx,
+/// cardinality, label)` tuples in panel order; callers sort by their own preference (both sort
+/// coarsest-first). Both panels draw from this one pool so they stay mutually exclusive on the same
+/// dimensions.
+fn eligible_categorical_dims(
+    panels: &[Panel],
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    n: u64,
+) -> Vec<(usize, u64, String)> {
+    panels
+        .iter()
+        .filter_map(|p| match p.kind {
+            PanelKind::FreqBar { idx } => {
+                let s = &stats[idx];
+                let card = s.cardinality;
+                let eligible = s.r#type == "String"
+                    && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card)
+                    && !is_near_constant(s, n);
+                eligible.then(|| {
+                    // composite panels keep the dictionary's human label (like measure-by-dim /
+                    // bivariate) rather than the raw field name per-column titles use; fall back to
+                    // the header, or a positional name when headerless.
+                    let sem = &col_sems[idx];
+                    let label = if !sem.label.is_empty() {
+                        sem.label.clone()
+                    } else if s.field.is_empty() {
+                        format!("col {}", idx + 1)
+                    } else {
+                        s.field.clone()
+                    };
+                    (idx, card, label)
+                })
+            },
+            _ => None,
+        })
+        .collect()
+}
+
+/// Build the `viz smart` parallel-categories (parcats) overview panel over 3-4 associated
+/// low-cardinality categorical dimensions. Returns the panel plus the dimension indices it claimed
+/// (so the hierarchy panel can stay mutually exclusive on the same columns). Returns `None` when
+/// there are fewer than `PARCATS_MIN_DIMS` eligible dimensions, when they are statistically
+/// independent (max pairwise Cramér's V below `HIER_MIN_ASSOCIATION_CRAMERS_V`) — flowing
+/// independent categoricals just replicates each marginal — or when they form a strict rollup tree
+/// (a genuine part-to-whole nesting the treemap/sunburst panel visualizes better). HTML-only
+/// (domain-based, like Sankey).
+fn parcats_panel(
+    args: &Args,
+    mut dims: Vec<(usize, u64, String)>,
+) -> CliResult<Option<(Panel, Vec<usize>)>> {
+    if dims.len() < PARCATS_MIN_DIMS {
+        return Ok(None);
+    }
+    // coarsest (lowest-cardinality) dimensions first, capped so the ribbon flow stays legible.
+    dims.sort_by_key(|&(idx, card, _)| (card, idx));
+    dims.truncate(PARCATS_MAX_DIMS);
+    let depth = dims.len();
+    let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
+    // independence screen (same as the hierarchy panel; reads the joint counts, no extra pass here
+    // beyond the one aggregation).
+    let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
+    if max_pairwise_cramers_v(&leaves, depth) < HIER_MIN_ASSOCIATION_CRAMERS_V {
+        return Ok(None);
+    }
+    // a strict rollup tree (each finer category has a single parent) is a genuine part-to-whole
+    // hierarchy — leave it to the treemap/sunburst panel, which sizes each ring by rolled-up
+    // totals. parcats is for many-to-many (co-occurrence) categorical relationships, where a
+    // category legitimately appears under several parents.
+    if is_strict_nesting(&leaves, depth) {
+        return Ok(None);
+    }
+    // one ribbon per distinct category tuple, weighted by count; sorted (count desc, then tuple)
+    // for deterministic output.
+    let mut paths: Vec<(Vec<String>, f64)> = leaves.into_iter().collect();
+    paths.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    // bound the emitted trace: up to PARCATS_MAX_DIMS dims of up to CATEGORICAL_MAX_CARDINALITY
+    // values each could yield hundreds of thousands of distinct tuples. Keep only the heaviest
+    // ribbons (a parcats with thousands of near-zero-count paths is an unreadable tangle and bloats
+    // the HTML) and log the dropped tail.
+    if paths.len() > PARCATS_MAX_PATHS {
+        let dropped = paths.len() - PARCATS_MAX_PATHS;
+        let dropped_rows: f64 = paths[PARCATS_MAX_PATHS..].iter().map(|(_, c)| *c).sum();
+        viz_note(&format!(
+            "viz smart: parcats panel capped to the {PARCATS_MAX_PATHS} most common category \
+             combinations ({dropped} rarer combinations covering {dropped_rows:.0} rows omitted)."
+        ));
+        paths.truncate(PARCATS_MAX_PATHS);
+    }
+    let counts: Vec<f64> = paths.iter().map(|(_, c)| *c).collect();
+    let tuples: Vec<Vec<String>> = paths.into_iter().map(|(t, _)| t).collect();
+    let dim_labels: Vec<String> = dims.into_iter().map(|(.., name)| name).collect();
+    let title = format!("Category flow: {}", dim_labels.join(" \u{b7} "));
+    let panel = Panel::new(
+        title,
+        PanelKind::Parcats {
+            dim_labels,
+            tuples,
+            counts,
+        },
+    );
+    Ok(Some((panel, dim_idxs)))
+}
+
+/// Returns true when the joint category tuples form a strict rollup tree: across every adjacent
+/// dimension pair, each finer-level category maps to exactly one coarser-level category (a
+/// functional dependency finer → coarser). Such a set is a genuine part-to-whole hierarchy that
+/// the treemap/sunburst panel sizes by rolled-up totals, so parcats abstains and leaves it to the
+/// hierarchy panel; a many-to-many (co-occurrence) set — where a category appears under several
+/// parents — is parcats' domain. `tuples` are keyed coarsest-first (index 0 = coarsest level),
+/// matching `collect_hierarchy_counts`.
+fn is_strict_nesting(tuples: &HashMap<Vec<String>, f64>, depth: usize) -> bool {
+    if depth < 2 {
+        return false;
+    }
+    for level in 0..depth - 1 {
+        // child (finer, level+1) → parent (coarser, level) must be a function: a single parent.
+        let mut child_to_parent: HashMap<&str, &str> = HashMap::new();
+        for key in tuples.keys() {
+            let parent = key[level].as_str();
+            let child = key[level + 1].as_str();
+            match child_to_parent.get(child) {
+                Some(&existing) if existing != parent => return false,
+                Some(_) => {},
+                None => {
+                    child_to_parent.insert(child, parent);
+                },
+            }
+        }
+    }
+    true
+}
+
 fn build_histogram(args: &Args) -> CliResult<(Box<dyn Trace>, String)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
@@ -5156,15 +5595,39 @@ fn resolve_many(
 /// from the caller (rather than opening its own) so the input is read exactly once — opening a
 /// second time would consume/corrupt a streamed stdin. Shared by the standalone correlation
 /// heatmap and the `viz smart` correlation panel.
+///
+/// When `drop_near_unique` is set, near-unique identifier columns (a distinct value in > 95% of
+/// numeric rows — a serial id, a monotonic order key) are dropped from the kept set *before*
+/// the listwise row-drop, so a sparse or partially-non-numeric identifier can't discard rows
+/// from the surviving measures (mirrors `viz smart`, which pre-filters identifiers via the
+/// stats cache before calling this). Distinctness is tracked as a `u64` hash of the raw cell
+/// bytes (not the parsed f64), so large integer ids beyond f64's 53-bit mantissa don't collapse
+/// and evade the filter, while never duplicating the cell strings themselves. Only numeric cells
+/// are tracked, so wide inputs with large free-form text columns (discarded as non-numeric) cost
+/// nothing. Guard: columns are stripped only when >= 2 non-near-unique columns remain as a
+/// correlation core; on tiny or all-continuous inputs every column is all-distinct and nothing
+/// is stripped.
 fn read_numeric_columns(
     rdr: &mut csv::Reader<Box<dyn std::io::Read + Send>>,
     headers: &csv::ByteRecord,
     nh: bool,
     candidates: &[usize],
+    drop_near_unique: bool,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+    use std::hash::{Hash, Hasher};
+
     let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
+    // distinct hashes of the raw bytes of numeric cells per candidate — populated only when we
+    // must detect near-unique identifiers. Storing an 8-byte hash (not the cell bytes) bounds
+    // memory and avoids duplicating strings; tracking only numeric cells means large free-form
+    // text columns (dropped below as non-numeric) contribute nothing.
+    let mut distinct: Vec<std::collections::HashSet<u64>> = if drop_near_unique {
+        vec![std::collections::HashSet::new(); candidates.len()]
+    } else {
+        Vec::new()
+    };
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         for (k, &idx) in candidates.iter().enumerate() {
@@ -5175,15 +5638,41 @@ fn read_numeric_columns(
                 nonempty[k] += 1;
                 if v.is_some() {
                     parsed[k] += 1;
+                    if drop_near_unique {
+                        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+                        cell.expect("nonempty implies Some").hash(&mut hasher);
+                        distinct[k].insert(hasher.finish());
+                    }
                 }
             }
             raw[k].push(v);
         }
     }
     // keep majority-numeric columns (drops text/ID/date columns from an all-columns default)
-    let keep: Vec<usize> = (0..candidates.len())
+    let mut keep: Vec<usize> = (0..candidates.len())
         .filter(|&k| nonempty[k] > 0 && parsed[k] * 2 >= nonempty[k])
         .collect();
+    // strip near-unique identifiers from the kept set BEFORE the listwise transpose below, so a
+    // sparse identifier's blank rows don't drop rows from the surviving measures. A kept column
+    // has parsed[k] >= 1 (majority-numeric with nonempty > 0), so the ratio is well-defined.
+    // Guarded on a >= 2 non-near-unique correlation core.
+    if drop_near_unique {
+        let near_unique: Vec<bool> = keep
+            .iter()
+            .map(|&k| {
+                #[allow(clippy::cast_precision_loss)]
+                let ratio = distinct[k].len() as f64 / parsed[k] as f64;
+                ratio > 0.95
+            })
+            .collect();
+        if near_unique.iter().filter(|&&nu| !nu).count() >= 2 {
+            keep = keep
+                .into_iter()
+                .zip(near_unique)
+                .filter_map(|(k, nu)| (!nu).then_some(k))
+                .collect();
+        }
+    }
     if keep.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -5580,11 +6069,19 @@ fn build_heatmap_correlation(
     args: &Args,
 ) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let explicit_cols = args.flag_cols.is_some();
     let candidates: Vec<usize> = match args.flag_cols.as_ref() {
         Some(s) => resolve_many(Some(s), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
-    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
+    // In auto mode (no explicit --cols), drop near-unique identifier columns (a monotonic order
+    // key, a serial id): they hold a distinct value in nearly every row, carry no meaningful linear
+    // relationship, and only add a noise row/column to the matrix. `read_numeric_columns` applies
+    // this BEFORE its listwise row-drop, so a sparse identifier can't discard rows from the
+    // surviving measures. Mirrors `viz smart`'s correlation filter (uniqueness_ratio > 0.95). An
+    // explicit --cols is the user's deliberate selection and is charted as-is.
+    let (labels, columns) =
+        read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
     if labels.len() < 2 {
         return fail_clierror!(
             "A correlation heatmap needs at least 2 numeric columns (found {}). Use --cols to \
@@ -9169,6 +9666,15 @@ enum PanelKind {
         link_value:  Vec<f64>,
         /// Rank nodes by flow (largest at top) instead of plotly's default snap order.
         value_order: bool,
+    },
+    /// `viz smart` parallel-categories (parcats) overview: ribbons flowing across 3-4 associated
+    /// categorical dimensions. Rows are aggregated into distinct category `tuples` (one value per
+    /// dimension), weighted by `counts`. Domain-based (no cartesian axes) like the Sankey panel, so
+    /// it renders on the inline path only.
+    Parcats {
+        dim_labels: Vec<String>,
+        tuples:     Vec<Vec<String>>,
+        counts:     Vec<f64>,
     },
 }
 
@@ -15382,7 +15888,8 @@ fn build_smart(
     if numeric_indices.len() >= 2 {
         progress.set_message("Computing correlations…");
         let (mut rdr, headers, nh) = reader_and_headers(args)?;
-        let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices)?;
+        let (labels, columns) =
+            read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
         if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
             let matrix = pearson_matrix(&columns);
@@ -15593,6 +16100,40 @@ fn build_smart(
         }
     }
 
+    // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
+    // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
+    // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
+    // claims (a ribbon flow conveys the same 3-4-way relationship without implying a part-to-whole
+    // nesting). HTML-only, like the hierarchy/Sankey panels.
+    // An explicit `--hierarchy-style treemap|sunburst|icicle` is a deliberate request for the
+    // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the nested
+    // view) and, below, bypasses the hierarchy's independence/Sankey screens.
+    let explicit_hierarchy_style = matches!(
+        args.flag_hierarchy_style
+            .as_deref()
+            .map(str::to_ascii_lowercase)
+            .as_deref(),
+        Some("treemap" | "sunburst" | "icicle")
+    );
+    let mut parcats_dims: Option<Vec<usize>> = None;
+    if !out_format.is_image() && !explicit_hierarchy_style {
+        // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel nests
+        // (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on a shared
+        // pool and neither flows a near-constant (mostly-empty / single-value) column.
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        let parcats_eligible = eligible_categorical_dims(&panels, &stats, &col_sems, n);
+        match parcats_panel(args, parcats_eligible) {
+            Ok(Some((panel, dim_idxs))) => {
+                parcats_dims = Some(dim_idxs);
+                panels.insert(0, panel);
+            },
+            Ok(None) => {},
+            Err(e) => viz_note(&format!(
+                "viz smart: parallel-categories (parcats) panel skipped ({e})"
+            )),
+        }
+    }
+
     // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
     // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with the
     // typed x/y subplot grid, so it forces the inline render path. The chosen dimensions also keep
@@ -15605,33 +16146,8 @@ fn build_smart(
         // Restricting to String type excludes numeric codes (low-card Integer/Float also become
         // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
         // ascending by cardinality so the coarsest grouping is the outermost level/ring.
-        let mut dims: Vec<(usize, u64, String)> = panels
-            .iter()
-            .filter_map(|p| match p.kind {
-                PanelKind::FreqBar { idx } => {
-                    let s = &stats[idx];
-                    let card = s.cardinality;
-                    (s.r#type == "String"
-                        && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card))
-                    .then(|| {
-                        // the hierarchy overview is a composite panel, so its title keeps the
-                        // dictionary's human label (like measure-by-dim / bivariate) rather than
-                        // the raw field name that per-column titles now use. Fall back to the
-                        // header, or a positional name when headerless.
-                        let sem = &col_sems[idx];
-                        let label = if !sem.label.is_empty() {
-                            sem.label.clone()
-                        } else if s.field.is_empty() {
-                            format!("col {}", idx + 1)
-                        } else {
-                            s.field.clone()
-                        };
-                        (idx, card, label)
-                    })
-                },
-                _ => None,
-            })
-            .collect();
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        let mut dims = eligible_categorical_dims(&panels, &stats, &col_sems, n);
         if dims.len() >= HIER_MIN_DIMS {
             dims.sort_by_key(|&(idx, card, _)| (card, idx));
             dims.truncate(HIER_MAX_DEPTH);
@@ -15644,14 +16160,9 @@ fn build_smart(
                 .collect::<Vec<_>>()
                 .join(" › ");
             // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
-            // bypasses both the independence screen and the Sankey mutual-exclusion below.
-            let explicit_style = matches!(
-                args.flag_hierarchy_style
-                    .as_deref()
-                    .map(str::to_ascii_lowercase)
-                    .as_deref(),
-                Some("treemap" | "sunburst" | "icicle")
-            );
+            // bypasses both the independence screen and the Sankey mutual-exclusion below
+            // (computed once above, before the parcats panel).
+            let explicit_style = explicit_hierarchy_style;
             // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of exactly
             // the pair already drawn as a Sankey is redundant, so skip it (the flow view conveys
             // that many-to-many relationship better). Deeper 3-level sunbursts are unaffected.
@@ -15659,7 +16170,19 @@ fn build_smart(
             let sankey_owns_pair = depth == 2
                 && !explicit_style
                 && sankey_pair.is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
-            if sankey_owns_pair {
+            // Mutual exclusivity with the parallel-categories (parcats) panel: parcats owns 3-4
+            // associated dimensions, so if it already claimed these columns, skip the hierarchy —
+            // the ribbon flow shows the same relationship without implying part-to-whole nesting.
+            let parcats_owns = !explicit_style
+                && parcats_dims
+                    .as_ref()
+                    .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
+            if parcats_owns {
+                viz_note(&format!(
+                    "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
+                     already shown as a parallel-categories (parcats) panel."
+                ));
+            } else if sankey_owns_pair {
                 viz_note(&format!(
                     "viz smart: skipping the '{title}' hierarchy panel — its two dimensions are \
                      already shown as a directed-flow (Sankey) panel, which conveys their \
@@ -15782,6 +16305,7 @@ fn build_smart(
                 | PanelKind::CyclicProfile { .. }
                 | PanelKind::Hierarchy { .. }
                 | PanelKind::Sankey { .. }
+                | PanelKind::Parcats { .. }
         )
     });
 
@@ -15925,7 +16449,8 @@ fn build_smart(
             | PanelKind::Choropleth { .. }
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. }
-            | PanelKind::Sankey { .. } => None,
+            | PanelKind::Sankey { .. }
+            | PanelKind::Parcats { .. } => None,
         })
         .collect();
     let top_n = args.flag_limit.max(1);
@@ -16600,10 +17125,11 @@ fn panel_trace(
         | PanelKind::Scatter3D { .. }
         | PanelKind::CyclicProfile { .. }
         | PanelKind::Hierarchy { .. }
-        | PanelKind::Sankey { .. } => {
+        | PanelKind::Sankey { .. }
+        | PanelKind::Parcats { .. } => {
             unreachable!(
-                "map/geo/choropleth/3D/polar/hierarchy/sankey panels are rendered via the inline \
-                 path, not panel_trace"
+                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats panels are rendered via the \
+                 inline path, not panel_trace"
             )
         },
     };
@@ -16677,7 +17203,8 @@ fn smart_grid_parts(
             | PanelKind::Choropleth { .. }
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. }
-            | PanelKind::Sankey { .. } => None,
+            | PanelKind::Sankey { .. }
+            | PanelKind::Parcats { .. } => None,
         })
         .flat_map(<[String]>::iter)
         .map(|l| l.chars().count().min(CORR_LABEL_MAX_CHARS))
@@ -17898,6 +18425,40 @@ fn smart_inline_panel_plot(
         if let Some((xs, ys)) = &positions {
             layout = layout.update_menus(vec![sankey_order_toggle_menu(xs, ys, *value_order)]);
         }
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // Parallel categories: a domain-based ribbon flow (like the Sankey above) — no cartesian axes.
+    if let PanelKind::Parcats {
+        dim_labels,
+        tuples,
+        counts,
+    } = &panel.kind
+    {
+        let (dimensions, line, ordered) = parcats_dimensions_and_line(dim_labels, tuples, counts);
+        let mut trace = Parcats::new()
+            .dimensions(dimensions)
+            .counts_array(counts.clone())
+            .arrangement(ParcatsArrangement::Perpendicular)
+            .bundle_colors(true);
+        if let Some(line) = line {
+            trace = trace.line(line);
+        }
+        let mut plot = Plot::new();
+        plot.add_trace(trace);
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .update_menus(vec![parcats_order_toggle_menu(&ordered)]);
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -19241,7 +19802,8 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::Choropleth { .. }
         | PanelKind::ChoroplethMap { .. }
         | PanelKind::Hierarchy { .. }
-        | PanelKind::Sankey { .. } => true,
+        | PanelKind::Sankey { .. }
+        | PanelKind::Parcats { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -19256,7 +19818,10 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
 /// leading KPI row gets a short content-matched height (`kpi_row_height`), other overview panels
 /// get `OVERVIEW_ROW_HEIGHT_PX`, and everything else `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
-    if matches!(kind, PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. }) {
+    if matches!(
+        kind,
+        PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. } | PanelKind::Parcats { .. }
+    ) {
         HIER_ROW_HEIGHT_PX
     } else if let PanelKind::KpiRow { tiles } = kind {
         kpi_row_height(tiles)

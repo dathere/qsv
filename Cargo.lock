@@ -8166,9 +8166,9 @@ checksum = "b12e76d157a900eb52e81bc6e9f3069344290341720e9178cde2407113ac8d89"
 
 [[package]]
 name = "self_update"
-version = "1.0.0-rc.4"
+version = "1.0.0-rc.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "473b46166b870b9630d3a65987268e5f69664b338dd3394d237ad5eb6c04206b"
+checksum = "bc3ded72e05f9b62c325cf3da9072fbefc2319e178c79a1355cb95ead740f8d4"
 dependencies = [
  "http 1.4.2",
  "indicatif",

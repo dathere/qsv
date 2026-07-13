@@ -6458,6 +6458,201 @@ fn stats_jsonl_tsv_delimiter() {
     }
 }
 
+// --- --jsonl / --pretty-json stdout output mode tests --------------------------------
+
+fn jsonl_fixture() -> Vec<Vec<String>> {
+    vec![
+        svec!["id", "name", "score"],
+        svec!["1", "Al", "10.5"],
+        svec!["2", "Bo", "20.0"],
+        svec!["3", "Cy", ""],
+    ]
+}
+
+#[test]
+fn stats_jsonl_stdout() {
+    let wrk = Workdir::new("stats_jsonl_stdout");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cache-threshold")
+        .arg("0")
+        .arg("--jsonl")
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+
+    // one NDJSON object per column, each a valid JSON object with the metadata fields
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3, "expected one JSON object per column");
+    let fields: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            let v: serde_json::Value = serde_json::from_str(line)
+                .unwrap_or_else(|_| panic!("each line should be valid JSON: {line}"));
+            v.get("field")
+                .and_then(serde_json::Value::as_str)
+                .unwrap()
+                .to_string()
+        })
+        .collect();
+    assert_eq!(fields, vec!["id", "name", "score"]);
+
+    // metadata fields the CSV->tojsonl pipe would lose are present
+    let first: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(first.get("type").unwrap().as_str().unwrap(), "Integer");
+    let name_obj: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(name_obj.get("is_ascii").unwrap().as_bool().unwrap(), true);
+}
+
+#[test]
+fn stats_pretty_json_stdout() {
+    let wrk = Workdir::new("stats_pretty_json_stdout");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cache-threshold")
+        .arg("0")
+        .arg("--pretty-json")
+        .arg("data.csv");
+    let got: String = wrk.stdout(&mut cmd);
+
+    // a single pretty-printed JSON array of per-column objects
+    let arr: serde_json::Value = serde_json::from_str(&got).unwrap();
+    let arr = arr.as_array().expect("output should be a JSON array");
+    assert_eq!(arr.len(), 3);
+    let fields: Vec<&str> = arr
+        .iter()
+        .map(|v| v.get("field").unwrap().as_str().unwrap())
+        .collect();
+    assert_eq!(fields, vec!["id", "name", "score"]);
+    // "pretty" => the raw text is multi-line
+    assert!(got.lines().count() > 3, "pretty-json should be multi-line");
+}
+
+#[test]
+fn stats_jsonl_matches_stats_jsonl_sidecar() {
+    // --jsonl stdout must be byte-identical to what --stats-jsonl writes to its sidecar.
+    let wrk = Workdir::new("stats_jsonl_matches_sidecar");
+    wrk.create("data.csv", jsonl_fixture());
+
+    // 1. produce the sidecar via --stats-jsonl
+    let mut sidecar_cmd = wrk.command("stats");
+    sidecar_cmd
+        .arg("--force")
+        .arg("--stats-jsonl")
+        .args(["--output", wrk.path("out.csv").to_str().unwrap()])
+        .arg("data.csv");
+    wrk.assert_success(&mut sidecar_cmd);
+    let sidecar = std::fs::read_to_string(wrk.path("data.stats.csv.data.jsonl")).unwrap();
+
+    // 2. produce the stdout NDJSON via --jsonl
+    let mut jsonl_cmd = wrk.command("stats");
+    jsonl_cmd
+        .arg("--force")
+        .arg("--cache-threshold")
+        .arg("0")
+        .arg("--jsonl")
+        .arg("data.csv");
+    let stdout: String = wrk.stdout(&mut jsonl_cmd);
+
+    // stdout has no trailing newline (wrk.stdout trims); compare line-by-line
+    let sidecar_lines: Vec<&str> = sidecar.lines().collect();
+    let stdout_lines: Vec<&str> = stdout.lines().collect();
+    assert_eq!(sidecar_lines, stdout_lines);
+}
+
+#[test]
+fn stats_jsonl_stdin() {
+    let wrk = Workdir::new("stats_jsonl_stdin");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let file_content = wrk.read_to_string("data.csv").unwrap();
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cache-threshold")
+        .arg("0")
+        .arg("--jsonl")
+        .stdin(process::Stdio::piped())
+        .stdout(process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        let mut stdin = child.stdin.take().unwrap();
+        stdin.write_all(file_content.as_bytes()).unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(out.status.success(), "stdin --jsonl should succeed");
+    let got = String::from_utf8(out.stdout).unwrap();
+    let lines: Vec<&str> = got.lines().collect();
+    assert_eq!(lines.len(), 3, "expected one JSON object per column");
+    for line in &lines {
+        assert!(
+            serde_json::from_str::<serde_json::Value>(line).is_ok(),
+            "each line should be valid JSON: {line}"
+        );
+    }
+}
+
+#[test]
+fn stats_jsonl_output_file() {
+    let wrk = Workdir::new("stats_jsonl_output_file");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let out_path = wrk.path("stats.jsonl");
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--cache-threshold")
+        .arg("0")
+        .arg("--jsonl")
+        .args(["--output", out_path.to_str().unwrap()])
+        .arg("data.csv");
+    wrk.assert_success(&mut cmd);
+
+    let content = std::fs::read_to_string(&out_path).unwrap();
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(
+        lines.len(),
+        3,
+        "expected one JSON object per column in file"
+    );
+    for line in &lines {
+        assert!(
+            serde_json::from_str::<serde_json::Value>(line).is_ok(),
+            "each line should be valid JSON: {line}"
+        );
+    }
+}
+
+#[test]
+fn stats_jsonl_conflicts_with_pretty_json() {
+    let wrk = Workdir::new("stats_jsonl_conflicts_pretty");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--jsonl").arg("--pretty-json").arg("data.csv");
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("cannot be combined"),
+        "expected mutual-exclusivity error, got: {stderr}"
+    );
+}
+
+#[test]
+fn stats_jsonl_conflicts_with_stats_jsonl() {
+    let wrk = Workdir::new("stats_jsonl_conflicts_stats_jsonl");
+    wrk.create("data.csv", jsonl_fixture());
+
+    let mut cmd = wrk.command("stats");
+    cmd.arg("--jsonl").arg("--stats-jsonl").arg("data.csv");
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(
+        stderr.contains("cannot be combined"),
+        "expected mutual-exclusivity error, got: {stderr}"
+    );
+}
+
 // --- --quantile-method approx (t-digest) tests --------------------------------------
 
 /// Build a uniform 1..=N column. With enough rows, t-digest's rank error stays small

@@ -3213,6 +3213,8 @@ pub fn get_stats_records(
             flag_force:                args.flag_force,
             flag_jobs:                 Some(njobs(args.flag_jobs)),
             flag_stats_jsonl:          true,
+            flag_jsonl:                false,
+            flag_pretty_json:          false,
             flag_cache_threshold:      1, // force the creation of stats cache files
             flag_output:               None,
             flag_no_headers:           args.flag_no_headers,
@@ -3645,6 +3647,75 @@ pub fn csv_to_jsonl(
     output_jsonl: &PathBuf,
     delimiter: u8,
 ) -> CliResult<()> {
+    let output = File::create(output_jsonl)?;
+    let writer = BufWriter::new(output);
+    csv_to_jsonl_writer(input_csv, csv_types, writer, delimiter)
+}
+
+// Build a `serde_json::Map` from a CSV record, coercing each cell to the JSON type
+// declared in `csv_types` (defaulting to String for unknown keys). Empty cells are
+// skipped entirely (no key is emitted), matching the JSONL sidecar behavior.
+fn csv_record_to_json_map(
+    record: &csv::StringRecord,
+    key_vec: &[String],
+    csv_types: &phf::Map<&'static str, JsonTypes>,
+    json_object: &mut serde_json::Map<String, serde_json::Value>,
+) {
+    json_object.clear();
+    for (i, val) in record.iter().enumerate() {
+        // Skip extra fields when a record has more columns than headers.
+        let Some(key) = key_vec.get(i) else {
+            break;
+        };
+        let data_type = csv_types.get(key.as_str()).unwrap_or(&JsonTypes::String);
+        let value = if val.is_empty() {
+            continue;
+        } else {
+            match *data_type {
+                JsonTypes::String => serde_json::Value::String(val.to_owned()),
+                JsonTypes::Int => {
+                    if let Ok(num) = val.parse::<u64>() {
+                        serde_json::Value::Number(serde_json::Number::from(num))
+                    } else {
+                        serde_json::Value::String(val.to_owned())
+                    }
+                },
+                JsonTypes::Float => {
+                    if let Ok(num) = val.parse::<f64>() {
+                        if let Some(n) = serde_json::Number::from_f64(num) {
+                            serde_json::Value::Number(n)
+                        } else {
+                            serde_json::Value::Number(
+                                serde_json::Number::from_f64(0.0).unwrap_or_else(|| {
+                                    // safety: we know that 0.0 is a valid f64
+                                    serde_json::Number::from_f64(0.0).unwrap()
+                                }),
+                            )
+                        }
+                    } else {
+                        serde_json::Value::Number(
+                            serde_json::Number::from_f64(0.0)
+                                // safety: we know that 0.0 is a valid f64
+                                .unwrap_or_else(|| serde_json::Number::from_f64(0.0).unwrap()),
+                        )
+                    }
+                },
+                JsonTypes::Bool => serde_json::Value::Bool(val.parse::<bool>().unwrap_or(false)),
+            }
+        };
+        json_object.insert(key.to_string(), value);
+    }
+}
+
+// Stream a CSV file to a writer as JSON Lines (NDJSON) - one JSON object per record.
+// This is the shared core of `csv_to_jsonl` (which writes to a file) and the
+// `qsv stats --jsonl` stdout output mode.
+pub fn csv_to_jsonl_writer<W: Write>(
+    input_csv: &str,
+    csv_types: &phf::Map<&'static str, JsonTypes>,
+    mut writer: W,
+    delimiter: u8,
+) -> CliResult<()> {
     let file = File::open(input_csv)?;
     let mut rdr = csv::ReaderBuilder::new()
         .has_headers(true)
@@ -3657,62 +3728,12 @@ pub fn csv_to_jsonl(
         .map(std::string::ToString::to_string)
         .collect();
 
-    let output = File::create(output_jsonl)?;
-    let mut writer = BufWriter::new(output);
-
     let mut json_object = serde_json::Map::with_capacity(key_vec.len());
     let mut record = csv::StringRecord::new();
     let mut json_line: String;
 
     while rdr.read_record(&mut record)? {
-        json_object.clear();
-
-        for (i, val) in record.iter().enumerate() {
-            // Skip extra fields when a record has more columns than headers.
-            let Some(key) = key_vec.get(i) else {
-                break;
-            };
-            let data_type = csv_types.get(key.as_str()).unwrap_or(&JsonTypes::String);
-            let value = if val.is_empty() {
-                continue;
-            } else {
-                match *data_type {
-                    JsonTypes::String => serde_json::Value::String(val.to_owned()),
-                    JsonTypes::Int => {
-                        if let Ok(num) = val.parse::<u64>() {
-                            serde_json::Value::Number(serde_json::Number::from(num))
-                        } else {
-                            serde_json::Value::String(val.to_owned())
-                        }
-                    },
-                    JsonTypes::Float => {
-                        if let Ok(num) = val.parse::<f64>() {
-                            if let Some(n) = serde_json::Number::from_f64(num) {
-                                serde_json::Value::Number(n)
-                            } else {
-                                serde_json::Value::Number(
-                                    serde_json::Number::from_f64(0.0).unwrap_or_else(|| {
-                                        // safety: we know that 0.0 is a valid f64
-                                        serde_json::Number::from_f64(0.0).unwrap()
-                                    }),
-                                )
-                            }
-                        } else {
-                            // serde_json::Value::String(val.to_owned())
-                            serde_json::Value::Number(
-                                serde_json::Number::from_f64(0.0)
-                                    // safety: we know that 0.0 is a valid f64
-                                    .unwrap_or_else(|| serde_json::Number::from_f64(0.0).unwrap()),
-                            )
-                        }
-                    },
-                    JsonTypes::Bool => {
-                        serde_json::Value::Bool(val.parse::<bool>().unwrap_or(false))
-                    },
-                }
-            };
-            json_object.insert(key.to_string(), value);
-        }
+        csv_record_to_json_map(&record, &key_vec, csv_types, &mut json_object);
 
         // Use platform-appropriate JSON serialization
         json_line = cfg_select! {
@@ -3721,6 +3742,45 @@ pub fn csv_to_jsonl(
         };
         writeln!(writer, "{json_line}")?;
     }
+
+    Ok(writer.flush()?)
+}
+
+// Write a CSV file to a writer as a single pretty-printed JSON array of per-record
+// objects. Used by the `qsv stats --pretty-json` stdout output mode.
+pub fn csv_to_json_array_writer<W: Write>(
+    input_csv: &str,
+    csv_types: &phf::Map<&'static str, JsonTypes>,
+    mut writer: W,
+    delimiter: u8,
+) -> CliResult<()> {
+    let file = File::open(input_csv)?;
+    let mut rdr = csv::ReaderBuilder::new()
+        .has_headers(true)
+        .delimiter(delimiter)
+        .from_reader(file);
+
+    let headers = rdr.headers()?;
+    let key_vec: Vec<String> = headers
+        .iter()
+        .map(std::string::ToString::to_string)
+        .collect();
+
+    let mut json_object = serde_json::Map::with_capacity(key_vec.len());
+    let mut record = csv::StringRecord::new();
+    let mut json_array: Vec<serde_json::Value> = Vec::new();
+
+    while rdr.read_record(&mut record)? {
+        csv_record_to_json_map(&record, &key_vec, csv_types, &mut json_object);
+        json_array.push(serde_json::Value::Object(json_object.clone()));
+    }
+
+    // Use platform-appropriate JSON serialization
+    let json_output = cfg_select! {
+        target_endian = "little" => simd_json::to_string_pretty(&json_array)?,
+        _ => serde_json::to_string_pretty(&json_array)?,
+    };
+    writeln!(writer, "{json_output}")?;
 
     Ok(writer.flush()?)
 }

@@ -347,6 +347,14 @@ stats options:
                               to load cached stats to make them work smarter & faster.
                               You can preemptively create the stats-jsonl file by using this option
                               BEFORE running "smart" commands and they will automatically use it.
+    --jsonl                   Emit the stats to stdout as JSON Lines (NDJSON) - one JSON object
+                              per column - instead of CSV. This is the same per-column shape
+                              the --stats-jsonl sidecar file uses, but streamed to stdout.
+                              Respects --output (the NDJSON is written to the file instead).
+                              Cannot be combined with --stats-jsonl or --pretty-json.
+    --pretty-json             Like --jsonl, but emit a single pretty-printed JSON array of the
+                              per-column objects instead of newline-delimited objects.
+                              Cannot be combined with --stats-jsonl or --jsonl.
  -c, --cache-threshold <arg>  Controls the creation of stats cache files.
                                 * when greater than 1, the threshold in milliseconds before caching
                                   stats results. If a stats run takes longer than this threshold,
@@ -479,6 +487,8 @@ pub struct Args {
     pub flag_force:                bool,
     pub flag_jobs:                 Option<usize>,
     pub flag_stats_jsonl:          bool,
+    pub flag_jsonl:                bool,
+    pub flag_pretty_json:          bool,
     pub flag_cache_threshold:      isize,
     pub flag_output:               Option<String>,
     pub flag_no_headers:           bool,
@@ -1139,6 +1149,21 @@ fn try_enable_approx_sketches(
 /// * Provides detailed error messages for configuration issues
 pub fn run(argv: &[&str]) -> CliResult<()> {
     let mut args: Args = util::get_args(USAGE, argv)?;
+
+    // --jsonl and --pretty-json are mutually exclusive stdout JSON output modes,
+    // and neither can be combined with the --stats-jsonl sidecar (the same data
+    // would land in two different places/shapes).
+    if args.flag_jsonl && args.flag_pretty_json {
+        return fail_incorrectusage_clierror!(
+            "--jsonl cannot be combined with --pretty-json. Choose one JSON output mode."
+        );
+    }
+    if (args.flag_jsonl || args.flag_pretty_json) && args.flag_stats_jsonl {
+        return fail_incorrectusage_clierror!(
+            "--jsonl/--pretty-json (stdout JSON output) cannot be combined with --stats-jsonl \
+             (JSONL sidecar file)."
+        );
+    }
 
     // Detect whether the user explicitly passed --quantile-method /
     // --cardinality-method on the command line. docopt fills in the default
@@ -1947,6 +1972,36 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
                 )?;
             }
         }
+    }
+
+    if args.flag_jsonl || args.flag_pretty_json {
+        // JSON stdout output mode: emit the per-column stats as JSON Lines (--jsonl)
+        // or a single pretty JSON array (--pretty-json), reusing the same serialization
+        // the --stats-jsonl sidecar uses. The stats cache CSV is always comma-delimited.
+        // Respects --output: when set, the JSON is written to the file instead of stdout.
+        let emit = |writer: &mut dyn io::Write| -> CliResult<()> {
+            // dyn dispatch is fine here: this runs once over the tiny stats result
+            // (one row per column), not the input data.
+            if args.flag_pretty_json {
+                util::csv_to_json_array_writer(
+                    &currstats_filename,
+                    &STATSDATA_TYPES_MAP,
+                    writer,
+                    b',',
+                )
+            } else {
+                util::csv_to_jsonl_writer(&currstats_filename, &STATSDATA_TYPES_MAP, writer, b',')
+            }
+        };
+        if let Some(output) = &args.flag_output {
+            let mut writer = io::BufWriter::new(fs::File::create(output)?);
+            emit(&mut writer)?;
+        } else {
+            let stdout = io::stdout();
+            let mut writer = io::BufWriter::new(stdout.lock());
+            emit(&mut writer)?;
+        }
+        return Ok(());
     }
 
     if stdout_output_flag {

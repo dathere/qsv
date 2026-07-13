@@ -1855,6 +1855,44 @@ fn viz_heatmap_correlation_insufficient_rows_errors() {
 }
 
 #[test]
+fn viz_heatmap_correlation_excludes_identifier() {
+    // A standalone correlation heatmap in auto mode (no --cols) drops near-unique identifier
+    // columns — a monotonic order key holds a distinct value in nearly every row and has no
+    // meaningful linear relationship — mirroring `viz smart`. The two repeated-value measures
+    // remain.
+    let wrk = Workdir::new("viz_heatmap_correlation_excludes_identifier");
+    let mut rows = String::from("order_id,units,revenue\n");
+    for i in 0..60 {
+        // order_id: monotonic unique key; units/revenue: low-cardinality, repeated, correlated.
+        let u = i % 6;
+        rows.push_str(&format!("{},{u},{}\n", 1000 + i, u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("order_id"),
+        "near-unique identifier column should be excluded from the auto correlation heatmap"
+    );
+    assert!(html.contains("units") && html.contains("revenue"));
+
+    // an explicit --cols is the user's deliberate selection and is honored as-is (order_id kept).
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv", "--cols", "order_id,units,revenue"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("order_id"),
+        "explicit --cols must keep the identifier column"
+    );
+}
+
+#[test]
 fn viz_heatmap_pivot() {
     let wrk = Workdir::new("viz_heatmap_pivot");
     wrk.create_from_string(
@@ -6443,10 +6481,10 @@ fn viz_parcats_standalone() {
     assert!(html.contains("dimensions[0].categoryorder"));
 }
 
-// deterministic dataset that qualifies for BOTH new smart panels: a/b/d are low-cardinality
-// strongly-correlated numerics (splom), and region/tier/segment are 3 associated categoricals
-// each with >= 3 distinct values (parcats).
-fn smart_splom_parcats_csv(wrk: &Workdir) {
+// deterministic dataset that qualifies for the smart parcats panel: region/tier/segment are 3
+// associated, many-to-many categoricals each with >= 3 well-spread distinct values (no
+// near-constant column), while a/b/c/d are numeric filler.
+fn smart_parcats_csv(wrk: &Workdir) {
     let regions = ["north", "south", "east"];
     let tiers = ["gold", "silver", "bronze"];
     let segs = ["retail", "wholesale", "online", "partner"];
@@ -6466,24 +6504,9 @@ fn smart_splom_parcats_csv(wrk: &Workdir) {
 }
 
 #[test]
-fn viz_smart_splom_panel() {
-    let wrk = Workdir::new("viz_smart_splom_panel");
-    smart_splom_parcats_csv(&wrk);
-
-    let out_html = wrk.path("s.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "smart.csv", "-o", &out_html]);
-    wrk.assert_success(&mut cmd);
-
-    // 3+ correlated low-cardinality numeric columns -> a scatter-plot-matrix overview panel
-    let html = wrk.read_to_string("s.html").unwrap();
-    assert!(html.contains(r#""type":"splom""#));
-}
-
-#[test]
 fn viz_smart_parcats_suppresses_hierarchy() {
     let wrk = Workdir::new("viz_smart_parcats_suppresses_hierarchy");
-    smart_splom_parcats_csv(&wrk);
+    smart_parcats_csv(&wrk);
 
     let out_html = wrk.path("s.html").to_string_lossy().to_string();
     let mut cmd = wrk.command("viz");
@@ -6515,59 +6538,6 @@ fn array_len_after(html: &str, after: &str, key: &str) -> Option<usize> {
     } else {
         body.split(',').count()
     })
-}
-
-// Longest `"values":[...]` array anywhere in the HTML (splom dimensions each carry one).
-fn max_values_array_len(html: &str) -> usize {
-    let needle = "\"values\":[";
-    let mut max = 0;
-    let mut pos = 0;
-    while let Some(off) = html[pos..].find(needle) {
-        let open = pos + off + needle.len();
-        let Some(rel) = html[open..].find(']') else {
-            break;
-        };
-        let body = &html[open..open + rel];
-        let n = if body.trim().is_empty() {
-            0
-        } else {
-            body.split(',').count()
-        };
-        max = max.max(n);
-        pos = open + rel;
-    }
-    max
-}
-
-#[test]
-fn viz_smart_splom_downsamples_rows() {
-    // A splom draws `rows` markers in each of up to SPLOM_MAX_DIMS² cells, so smart strides the
-    // row-aligned columns down to SPLOM_SAMPLE_MAX (= QSV_VIZ_MAX_POINTS / 5). Pinning the budget
-    // to 100 (→ 20) means a 60-row correlated dataset must embed at most 20 values per
-    // dimension.
-    let wrk = Workdir::new("viz_smart_splom_downsamples_rows");
-    // low-cardinality repeated numerics (all-distinct columns get skipped as identifiers), three
-    // perfectly correlated so the splom signal gate fires, 90 rows so the 20-row budget bites.
-    let mut rows = String::from("x,y,z\n");
-    for i in 0..90 {
-        let a = i % 12;
-        rows.push_str(&format!("{a},{},{}\n", a * 2, 12 - a));
-    }
-    wrk.create_from_string("splom.csv", &rows);
-
-    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
-    let mut cmd = wrk.command("viz");
-    cmd.args(["smart", "splom.csv", "-o", &out_html]);
-    cmd.env("QSV_VIZ_MAX_POINTS", "100"); // SPLOM_SAMPLE_MAX = 100 / 5 = 20
-    wrk.assert_success(&mut cmd);
-
-    let html = wrk.read_to_string("dash.html").unwrap();
-    assert!(html.contains(r#""type":"splom""#));
-    let longest = max_values_array_len(&html);
-    assert!(
-        longest > 0 && longest <= 20,
-        "splom dimension values should be strided down to <= 20 rows, got {longest}"
-    );
 }
 
 #[test]

@@ -669,6 +669,15 @@ const MAX_PANELS_INLINE: usize = 64;
 /// bar) rather than continuous (box plot).
 const CATEGORICAL_MAX_CARDINALITY: u64 = 30;
 
+/// A categorical column whose single most-common category (a value, or empty/null) covers more than
+/// this fraction of rows is treated as near-constant: too degenerate to be a meaningful hierarchy
+/// or parallel-categories dimension (it renders as one dominant ribbon/block that conveys nothing),
+/// yet its low cardinality would otherwise make it a preferred (coarsest) level. 0.90 keeps
+/// genuinely spread columns — a 63%-dominant facility type, a 50/50 channel split — while excluding
+/// near-empty log columns (a 311 log's `Taxi Company Borough`, blank on 99.9% of rows) and lopsided
+/// flags (a 95%-"Closed" status).
+const CATEGORICAL_DIM_MAX_DOMINANCE: f64 = 0.90;
+
 /// A discrete integer scale with at most this many distinct levels — a 1..N ordinal rating
 /// (satisfaction 1-5, 1-7 Likert, 1-10 / 0-10 NPS) — is treated as categorical even when a
 /// dictionary tagged it an explicit `measure.*` concept. Much tighter than
@@ -757,13 +766,6 @@ const LOG_SCALE_MIN_RATIO: f64 = 50.0;
 /// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
-
-/// `viz smart` scatter-plot-matrix (splom) panel bounds. A splom needs at least SPLOM_MIN_DIMS
-/// numeric columns to be worth drawing (2 columns are already covered by the correlation
-/// drill-down scatter), and is capped at SPLOM_MAX_DIMS columns — beyond ~6 the N×N grid of cells
-/// becomes too small to read, so the panel keeps only the most correlation-active columns.
-const SPLOM_MIN_DIMS: usize = 3;
-const SPLOM_MAX_DIMS: usize = 6;
 
 /// `viz smart` parallel-categories (parcats) panel bounds. parcats is reserved for PARCATS_MIN_DIMS
 /// to PARCATS_MAX_DIMS categorical dimensions: 2-dimension relationships are shown as a directed
@@ -905,15 +907,6 @@ const VIOLIN_MIN_POINTS: u64 = 50;
 /// density and the "(sampled)" boundary, not chart-type or overlay decisions.
 static VIOLIN_SAMPLE_MAX: std::sync::LazyLock<u64> =
     std::sync::LazyLock::new(|| ((*MAX_SMART_POINTS as u64) / 5).max(1));
-
-/// Target row budget for the `viz smart` scatter-plot-matrix (splom) panel. Unlike a single
-/// scatter, a splom draws up to `SPLOM_MAX_DIMS`² cells that ALL render the same rows, so the
-/// on-screen marker count is `rows × cells` — a full `MAX_SMART_POINTS` in a 6×6 grid would embed
-/// millions of markers and freeze the browser. The row-aligned columns are therefore strided down
-/// to at most this many rows (one-fifth of `MAX_SMART_POINTS`, 30k at the 150k default — mirroring
-/// the violin sample budget), keeping the correlation structure legible at a bounded embed cost.
-static SPLOM_SAMPLE_MAX: std::sync::LazyLock<usize> =
-    std::sync::LazyLock::new(|| (*MAX_SMART_POINTS / 5).max(1));
 
 /// `viz smart` charts a high-cardinality categorical column (one that would otherwise be skipped)
 /// only when moarstats says its distribution is concentrated rather than near-uniform: a
@@ -2231,24 +2224,6 @@ fn downsample_pair<X: Clone, Y: Clone>(xs: &[X], ys: &[Y], cap: usize) -> (Vec<X
         out_y.push(ys[idx].clone());
     }
     (out_x, out_y)
-}
-
-/// Uniformly downsample a set of row-aligned columns to at most `cap` rows via evenly spaced,
-/// endpoint-inclusive stride sampling. All columns share the SAME sampled row indices, so the rows
-/// stay aligned across columns (required for a splom, where each dimension reuses the same rows).
-/// Returns `columns` unchanged when the row count is already within `cap` (or `cap == 0`).
-fn downsample_columns(columns: Vec<Vec<f64>>, cap: usize) -> Vec<Vec<f64>> {
-    let n = columns.first().map_or(0, Vec::len);
-    if cap == 0 || n <= cap {
-        return columns;
-    }
-    let indices: Vec<usize> = (0..cap)
-        .map(|i| if cap == 1 { 0 } else { i * (n - 1) / (cap - 1) })
-        .collect();
-    columns
-        .iter()
-        .map(|col| indices.iter().map(|&idx| col[idx]).collect())
-        .collect()
 }
 
 /// Largest-Triangle-Three-Buckets downsampling. Returns the indices (into `xs`/`ys`) of at most
@@ -5323,65 +5298,64 @@ fn parcats_order_toggle_menu(ordered: &[Vec<String>]) -> UpdateMenu {
         .font(Font::new().family(FONT_FAMILY).color(INK).size(11))
 }
 
-/// Build the `viz smart` scatter-plot-matrix (splom) overview panel from the numeric columns
-/// already read for the correlation heatmap (no extra data pass). Returns `None` when there are
-/// fewer than `SPLOM_MIN_DIMS` numeric columns, or when no column pair reaches
-/// `SCATTER_PAIR_MIN_ABS_R` (a splom of uncorrelated noise clouds adds nothing over the per-column
-/// histograms). With more than `SPLOM_MAX_DIMS` columns, keeps only the most correlation-active
-/// ones so the capped N×N grid shows real structure. HTML-only (splom self-generates its axes).
-fn splom_panel(labels: &[String], columns: &[Vec<f64>], matrix: &[Vec<f64>]) -> Option<Panel> {
-    let n = labels.len();
-    if n < SPLOM_MIN_DIMS {
-        return None;
+/// True when a single category — a value, or empty/null — covers more than
+/// `CATEGORICAL_DIM_MAX_DOMINANCE` of the `n` rows, making the column near-constant. qsv stats'
+/// `mode_occurrences` (the most-frequent-value count) already counts empty/null when that is the
+/// dominant "value", so it captures both null-dominated and value-dominated near-constants; it
+/// falls back to the raw null count when the mode stat is absent from the cache (still catches the
+/// common mostly-empty case). `n == 0` (unknown row count) disables the screen so behavior degrades
+/// to the pre-existing "keep everything".
+fn is_near_constant(s: &crate::cmd::stats::StatsData, n: u64) -> bool {
+    if n == 0 {
+        return false;
     }
-    // a constant column has undefined (NaN) correlation; count it as 0 so it never wins selection.
-    let abs_r = |i: usize, j: usize| -> f64 {
-        let r = matrix[i][j];
-        if r.is_finite() { r.abs() } else { 0.0 }
-    };
-    // signal gate: require at least one moderately correlated pair, else skip.
-    let strongest = (0..n)
-        .flat_map(|i| (i + 1..n).map(move |j| (i, j)))
-        .map(|(i, j)| abs_r(i, j))
-        .fold(0.0_f64, f64::max);
-    if strongest < SCATTER_PAIR_MIN_ABS_R {
-        return None;
-    }
-    // choose columns by correlation participation (each column's strongest pairwise |r|), NOT raw
-    // variance — variance just favours large-unit columns and can pick mutually-uncorrelated ones
-    // that fail the gate above. Rank by participation, ties broken by original position.
-    let mut selected: Vec<usize> = (0..n).collect();
-    if n > SPLOM_MAX_DIMS {
-        let participation: Vec<f64> = (0..n)
-            .map(|i| {
-                (0..n)
-                    .filter(|&j| j != i)
-                    .map(|j| abs_r(i, j))
-                    .fold(0.0_f64, f64::max)
-            })
-            .collect();
-        selected.sort_by(|&a, &b| {
-            participation[b]
-                .total_cmp(&participation[a])
-                .then(a.cmp(&b))
-        });
-        selected.truncate(SPLOM_MAX_DIMS);
-        selected.sort_unstable();
-    }
-    let sel_labels: Vec<String> = selected.iter().map(|&i| labels[i].clone()).collect();
-    // stride the row-aligned columns down to the splom row budget so a large correlated dataset
-    // can't embed millions of markers (rows × up-to-6² cells) and freeze the browser.
-    let sel_columns = downsample_columns(
-        selected.iter().map(|&i| columns[i].clone()).collect(),
-        *SPLOM_SAMPLE_MAX,
-    );
-    Some(Panel::new(
-        "Scatter matrix".to_string(),
-        PanelKind::Splom {
-            labels:  sel_labels,
-            columns: sel_columns,
-        },
-    ))
+    let dominant = s.mode_occurrences.unwrap_or(0).max(s.nullcount);
+    #[allow(clippy::cast_precision_loss)]
+    let share = dominant as f64 / n as f64;
+    share > CATEGORICAL_DIM_MAX_DOMINANCE
+}
+
+/// Collect the eligible categorical dimensions shared by the hierarchy (treemap/sunburst) and
+/// parallel-categories (parcats) overview panels: the `String` frequency-bar columns whose
+/// cardinality is in `[HIER_MIN_DIM_CARDINALITY, CATEGORICAL_MAX_CARDINALITY]`, EXCLUDING
+/// near-constant columns (see `is_near_constant`). Restricting to `String` excludes numeric codes
+/// and booleans, which make poor — and surprising — flow/nesting levels. Returns `(idx,
+/// cardinality, label)` tuples in panel order; callers sort by their own preference (both sort
+/// coarsest-first). Both panels draw from this one pool so they stay mutually exclusive on the same
+/// dimensions.
+fn eligible_categorical_dims(
+    panels: &[Panel],
+    stats: &[crate::cmd::stats::StatsData],
+    col_sems: &[ColSemantics],
+    n: u64,
+) -> Vec<(usize, u64, String)> {
+    panels
+        .iter()
+        .filter_map(|p| match p.kind {
+            PanelKind::FreqBar { idx } => {
+                let s = &stats[idx];
+                let card = s.cardinality;
+                let eligible = s.r#type == "String"
+                    && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card)
+                    && !is_near_constant(s, n);
+                eligible.then(|| {
+                    // composite panels keep the dictionary's human label (like measure-by-dim /
+                    // bivariate) rather than the raw field name per-column titles use; fall back to
+                    // the header, or a positional name when headerless.
+                    let sem = &col_sems[idx];
+                    let label = if !sem.label.is_empty() {
+                        sem.label.clone()
+                    } else if s.field.is_empty() {
+                        format!("col {}", idx + 1)
+                    } else {
+                        s.field.clone()
+                    };
+                    (idx, card, label)
+                })
+            },
+            _ => None,
+        })
+        .collect()
 }
 
 /// Build the `viz smart` parallel-categories (parcats) overview panel over 3-4 associated
@@ -6041,15 +6015,72 @@ fn build_heatmap(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Opti
     build_heatmap_correlation(args)
 }
 
+/// Drop near-unique identifier columns (distinct-value ratio > 0.95 — a monotonic order key, a
+/// serial id) from a `(labels, columns)` pair: such a column holds a distinct value in nearly every
+/// row, has no meaningful linear relationship with anything, and only adds a noise row/column to a
+/// correlation matrix. This mirrors `viz smart`'s correlation filter (`uniqueness_ratio > 0.95`),
+/// computed here directly from the read values because the standalone heatmap carries no stats
+/// cache.
+///
+/// Guard: the columns are stripped only when at least 2 non-near-unique (repeated-value) columns
+/// would remain — a solid correlation core. On tiny or all-continuous inputs every column is
+/// all-distinct, so uniqueness cannot distinguish an id from a genuine measure; there, everything
+/// is kept and the caller's usual `< 2 columns` / `< 2 rows` checks apply.
+fn drop_near_unique_columns(
+    labels: Vec<String>,
+    columns: Vec<Vec<f64>>,
+) -> (Vec<String>, Vec<Vec<f64>>) {
+    let near_unique: Vec<bool> = columns
+        .iter()
+        .map(|col| {
+            !col.is_empty() && {
+                let distinct = col
+                    .iter()
+                    .map(|v| v.to_bits())
+                    .collect::<std::collections::HashSet<u64>>()
+                    .len();
+                #[allow(clippy::cast_precision_loss)]
+                let ratio = distinct as f64 / col.len() as f64;
+                ratio > 0.95
+            }
+        })
+        .collect();
+    // keep everything unless a correlation core of >= 2 non-near-unique columns survives the strip.
+    if near_unique.iter().filter(|&&nu| !nu).count() < 2 {
+        return (labels, columns);
+    }
+    let mut out_labels = Vec::with_capacity(labels.len());
+    let mut out_columns = Vec::with_capacity(columns.len());
+    for ((label, col), &nu) in labels.into_iter().zip(columns).zip(&near_unique) {
+        if !nu {
+            out_labels.push(label);
+            out_columns.push(col);
+        }
+    }
+    (out_labels, out_columns)
+}
+
 fn build_heatmap_correlation(
     args: &Args,
 ) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let explicit_cols = args.flag_cols.is_some();
     let candidates: Vec<usize> = match args.flag_cols.as_ref() {
         Some(s) => resolve_many(Some(s), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
     let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
+    // In auto mode (no explicit --cols), drop near-unique identifier columns (a monotonic order
+    // key, a serial id): they hold a distinct value in nearly every row, carry no meaningful linear
+    // relationship, and only add a noise row/column to the matrix. Mirrors `viz smart`'s
+    // correlation filter (uniqueness_ratio > 0.95), computed here directly from the read values
+    // since the standalone heatmap carries no stats cache. An explicit --cols is the user's
+    // deliberate selection and is charted as-is.
+    let (labels, columns) = if explicit_cols {
+        (labels, columns)
+    } else {
+        drop_near_unique_columns(labels, columns)
+    };
     if labels.len() < 2 {
         return fail_clierror!(
             "A correlation heatmap needs at least 2 numeric columns (found {}). Use --cols to \
@@ -9634,15 +9665,6 @@ enum PanelKind {
         link_value:  Vec<f64>,
         /// Rank nodes by flow (largest at top) instead of plotly's default snap order.
         value_order: bool,
-    },
-    /// `viz smart` scatter-plot-matrix (splom) overview: every pair of the selected numeric columns
-    /// cross-plotted in a grid, with each column's distribution on the diagonal. splom
-    /// self-generates its own N×N axis grid from the `columns` array, so it can't share the typed
-    /// x/y subplot grid — rendered on the inline path only (HTML), like the hierarchy/Sankey
-    /// panels.
-    Splom {
-        labels:  Vec<String>,
-        columns: Vec<Vec<f64>>,
     },
     /// `viz smart` parallel-categories (parcats) overview: ribbons flowing across 3-4 associated
     /// categorical dimensions. Rows are aggregated into distinct category `tuples` (one value per
@@ -15958,17 +15980,6 @@ fn build_smart(
                     })
                 });
 
-            // scatter-plot matrix (splom) overview: an all-pairs grid of the numeric columns,
-            // capped to the most correlation-active ones. Built here, before `labels`/`matrix` are
-            // moved into the CorrHeatmap panel below. HTML-only: a splom self-generates its own N×N
-            // axis grid, so — like the 3D drill-down — it can't compose with the typed image-export
-            // grid.
-            let splom_panel_opt = if out_format.is_image() {
-                None
-            } else {
-                splom_panel(&labels, &columns, &matrix)
-            };
-
             // Show only the lower triangle: a correlation matrix mirrors across the diagonal (and
             // the diagonal is a trivial 1.0), so masking the upper half + diagonal drops redundant
             // cells. `matrix` was already consumed by `strongest_pair`/the 3D third-axis pick above
@@ -15990,10 +16001,6 @@ fn build_smart(
                 at += 1;
             }
             if let Some(panel) = scatter3d_panel {
-                panels.insert(at, panel);
-                at += 1;
-            }
-            if let Some(panel) = splom_panel_opt {
                 panels.insert(at, panel);
             }
         }
@@ -16108,31 +16115,11 @@ fn build_smart(
     );
     let mut parcats_dims: Option<Vec<usize>> = None;
     if !out_format.is_image() && !explicit_hierarchy_style {
-        // eligible dims = the same String freq-bar columns the hierarchy panel nests, so the two
-        // stay mutually exclusive on a shared pool.
-        let parcats_eligible: Vec<(usize, u64, String)> = panels
-            .iter()
-            .filter_map(|p| match p.kind {
-                PanelKind::FreqBar { idx } => {
-                    let s = &stats[idx];
-                    let card = s.cardinality;
-                    (s.r#type == "String"
-                        && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card))
-                    .then(|| {
-                        let sem = &col_sems[idx];
-                        let label = if !sem.label.is_empty() {
-                            sem.label.clone()
-                        } else if s.field.is_empty() {
-                            format!("col {}", idx + 1)
-                        } else {
-                            s.field.clone()
-                        };
-                        (idx, card, label)
-                    })
-                },
-                _ => None,
-            })
-            .collect();
+        // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel nests
+        // (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on a shared
+        // pool and neither flows a near-constant (mostly-empty / single-value) column.
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        let parcats_eligible = eligible_categorical_dims(&panels, &stats, &col_sems, n);
         match parcats_panel(args, parcats_eligible) {
             Ok(Some((panel, dim_idxs))) => {
                 parcats_dims = Some(dim_idxs);
@@ -16157,33 +16144,8 @@ fn build_smart(
         // Restricting to String type excludes numeric codes (low-card Integer/Float also become
         // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
         // ascending by cardinality so the coarsest grouping is the outermost level/ring.
-        let mut dims: Vec<(usize, u64, String)> = panels
-            .iter()
-            .filter_map(|p| match p.kind {
-                PanelKind::FreqBar { idx } => {
-                    let s = &stats[idx];
-                    let card = s.cardinality;
-                    (s.r#type == "String"
-                        && (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).contains(&card))
-                    .then(|| {
-                        // the hierarchy overview is a composite panel, so its title keeps the
-                        // dictionary's human label (like measure-by-dim / bivariate) rather than
-                        // the raw field name that per-column titles now use. Fall back to the
-                        // header, or a positional name when headerless.
-                        let sem = &col_sems[idx];
-                        let label = if !sem.label.is_empty() {
-                            sem.label.clone()
-                        } else if s.field.is_empty() {
-                            format!("col {}", idx + 1)
-                        } else {
-                            s.field.clone()
-                        };
-                        (idx, card, label)
-                    })
-                },
-                _ => None,
-            })
-            .collect();
+        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+        let mut dims = eligible_categorical_dims(&panels, &stats, &col_sems, n);
         if dims.len() >= HIER_MIN_DIMS {
             dims.sort_by_key(|&(idx, card, _)| (card, idx));
             dims.truncate(HIER_MAX_DEPTH);
@@ -16341,7 +16303,6 @@ fn build_smart(
                 | PanelKind::CyclicProfile { .. }
                 | PanelKind::Hierarchy { .. }
                 | PanelKind::Sankey { .. }
-                | PanelKind::Splom { .. }
                 | PanelKind::Parcats { .. }
         )
     });
@@ -16487,7 +16448,6 @@ fn build_smart(
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. }
             | PanelKind::Sankey { .. }
-            | PanelKind::Splom { .. }
             | PanelKind::Parcats { .. } => None,
         })
         .collect();
@@ -17164,11 +17124,10 @@ fn panel_trace(
         | PanelKind::CyclicProfile { .. }
         | PanelKind::Hierarchy { .. }
         | PanelKind::Sankey { .. }
-        | PanelKind::Splom { .. }
         | PanelKind::Parcats { .. } => {
             unreachable!(
-                "map/geo/choropleth/3D/polar/hierarchy/sankey/splom/parcats panels are rendered \
-                 via the inline path, not panel_trace"
+                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats panels are rendered via the \
+                 inline path, not panel_trace"
             )
         },
     };
@@ -17243,7 +17202,6 @@ fn smart_grid_parts(
             | PanelKind::ChoroplethMap { .. }
             | PanelKind::Hierarchy { .. }
             | PanelKind::Sankey { .. }
-            | PanelKind::Splom { .. }
             | PanelKind::Parcats { .. } => None,
         })
         .flat_map(<[String]>::iter)
@@ -18465,39 +18423,6 @@ fn smart_inline_panel_plot(
         if let Some((xs, ys)) = &positions {
             layout = layout.update_menus(vec![sankey_order_toggle_menu(xs, ys, *value_order)]);
         }
-        if !themed {
-            layout = layout
-                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
-                .paper_background_color(PAPER_BG);
-        }
-        let layout = inline_panel_title(layout, panel, themed, Vec::new());
-        plot.set_layout(apply_theme(layout, theme));
-        plot.set_configuration(Configuration::new().responsive(true));
-        return plot;
-    }
-
-    // Scatter-plot matrix: splom self-generates its own N×N axis grid from the dimensions array, so
-    // it owns its whole Plot here (it can't share the typed x/y subplot grid).
-    if let PanelKind::Splom { labels, columns } = &panel.kind {
-        let dimensions: Vec<SplomDimension<f64>> = labels
-            .iter()
-            .zip(columns)
-            .map(|(label, values)| {
-                SplomDimension::new()
-                    .label(label.clone())
-                    .values(values.clone())
-            })
-            .collect();
-        let mut plot = Plot::new();
-        plot.add_trace(
-            Splom::new()
-                .dimensions(dimensions)
-                .marker(Marker::new().size(4).opacity(0.6)),
-        );
-        let mut layout = Layout::new()
-            .show_legend(false)
-            .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4));
         if !themed {
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
@@ -19876,7 +19801,6 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::ChoroplethMap { .. }
         | PanelKind::Hierarchy { .. }
         | PanelKind::Sankey { .. }
-        | PanelKind::Splom { .. }
         | PanelKind::Parcats { .. } => true,
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
@@ -19894,10 +19818,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
 fn panel_render_height(kind: &PanelKind) -> usize {
     if matches!(
         kind,
-        PanelKind::Hierarchy { .. }
-            | PanelKind::Sankey { .. }
-            | PanelKind::Splom { .. }
-            | PanelKind::Parcats { .. }
+        PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. } | PanelKind::Parcats { .. }
     ) {
         HIER_ROW_HEIGHT_PX
     } else if let PanelKind::KpiRow { tiles } = kind {

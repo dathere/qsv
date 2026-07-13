@@ -312,6 +312,10 @@ fn fetch_simple_diskcache() {
     // create a temporary directory for disk cache
     use std::{env, fs};
     let temp_dir = env::temp_dir().join("dcache");
+    // start from a clean cache dir so the redb-file assertion below genuinely
+    // verifies THIS run created the cache - a stale `.redb` (or legacy sled
+    // dir) from a prior run would otherwise mask a failure to create it.
+    fs::remove_dir_all(&temp_dir).ok();
     fs::create_dir_all(&temp_dir).unwrap();
     let dc_dir = temp_dir.as_os_str().to_str().unwrap();
 
@@ -1157,6 +1161,10 @@ fn fetchpost_simple_diskcache() {
     // create a temporary directory for disk cache
     use std::{env, fs};
     let temp_dir = env::temp_dir().join("fp_dcache");
+    // start from a clean cache dir so the redb-file assertion below genuinely
+    // verifies THIS run created the cache - a stale `.redb` (or legacy sled
+    // dir) from a prior run would otherwise mask a failure to create it.
+    fs::remove_dir_all(&temp_dir).ok();
     fs::create_dir_all(&temp_dir).unwrap();
     let dc_dir = temp_dir.as_os_str().to_str().unwrap();
 

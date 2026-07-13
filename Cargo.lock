@@ -2950,16 +2950,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fs2"
-version = "0.4.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
-dependencies = [
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "fs4"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6938,7 +6928,6 @@ dependencies = [
  "sha2 0.11.0",
  "simd-json",
  "simdutf8",
- "sled",
  "smallvec",
  "snap",
  "spreadsheet-ods",
@@ -8585,21 +8574,6 @@ name = "slab"
 version = "0.4.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
-name = "sled"
-version = "0.34.7"
-source = "git+https://github.com/dathere/sled?branch=v0.34.7-drop-fxhash#113a14ffdd8ff061d4244bbdc119d7bc9c1696b0"
-dependencies = [
- "crc32fast",
- "crossbeam-epoch",
- "crossbeam-utils",
- "fs2",
- "libc",
- "log",
- "parking_lot",
- "rustc-hash",
-]
 
 [[package]]
 name = "slotmap"

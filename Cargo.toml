@@ -389,7 +389,6 @@ simdutf8 = "0.1"
 spreadsheet-ods = { version = "1", optional = true }
 toml = "1.1"
 toon-format = { version = "0.5", default-features = false }
-sled = { version = "0.34", optional = true }
 smallvec = "1"
 snap = "1"
 strsim = { version = "0.11", optional = true }
@@ -454,10 +453,6 @@ csvlens = { git = "https://github.com/YS-L/csvlens", rev = "6acf060" }
 
 # use our patched fork of csvs_convert to bump dependencies until our PR is merged
 csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "replace-streaming-stats-redux", optional = true }
-
-# use our patched fork of sled to get rid of unmaintained instant (parking_lot
-# bump) and unmaintained fxhash (RUSTSEC-2025-0057; replaced with rustc-hash)
-sled = { git = "https://github.com/dathere/sled", branch = "v0.34.7-drop-fxhash" }
 
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
@@ -590,7 +585,6 @@ fetch = [
     "flate2",
     "governor",
     "serde_urlencoded",
-    "sled",
 ]
 foreach = []
 # get: fetch tabular data from local/URL/CKAN/cloud sources into a managed,
@@ -612,7 +606,6 @@ geocode = [
     "geozero",
     "governor",
     "rmp-serde",
-    "sled",
 ]
 # luau lookup tables auto-decompress remote .gz/.zlib/.zst/.zip/.sz sources, so
 # luau pulls the flate2 + zstd codecs (.zip/.sz need no extra deps). See #1417.

@@ -1893,6 +1893,69 @@ fn viz_heatmap_correlation_excludes_identifier() {
 }
 
 #[test]
+fn viz_heatmap_correlation_sparse_identifier_keeps_measure_rows() {
+    // A sparse identifier (order_id present in only 1 of 60 rows) must be dropped from the kept
+    // set BEFORE the listwise row-drop, so its blank rows don't starve the fully-populated
+    // measures. With the old post-transpose ordering, order_id was kept through the listwise
+    // pass, collapsing the matrix to the single complete row and failing the "at least 2 rows"
+    // check. Now the heatmap succeeds on the two dense measures.
+    let wrk = Workdir::new("viz_heatmap_correlation_sparse_identifier");
+    let mut rows = String::from("order_id,units,revenue\n");
+    for i in 0..60 {
+        let u = i % 6;
+        // order_id is populated only in the first row; units/revenue are dense in every row.
+        let id = if i == 0 {
+            "1000".to_string()
+        } else {
+            String::new()
+        };
+        rows.push_str(&format!("{id},{u},{}\n", u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(
+        out.status.success(),
+        "a sparse identifier must not starve the dense measures of their rows"
+    );
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(!html.contains("order_id"));
+    assert!(html.contains("units") && html.contains("revenue"));
+}
+
+#[test]
+fn viz_heatmap_correlation_excludes_large_int_identifier() {
+    // Near-unique detection measures distinctness on raw cell bytes, not the parsed f64. A column
+    // of distinct 17-digit ids beyond f64's 53-bit mantissa collapses to far fewer distinct floats
+    // (consecutive integers near 1e16 share a float), which would let the identifier evade an
+    // f64-based distinct-ratio and pollute the matrix. On the raw bytes every id is distinct, so it
+    // is correctly dropped.
+    let wrk = Workdir::new("viz_heatmap_correlation_large_int_identifier");
+    let mut rows = String::from("big_id,units,revenue\n");
+    for i in 0..60 {
+        let u = i % 6;
+        // 10_000_000_000_000_000 + 2*i keeps every id distinct as text but pairs of them round to
+        // the same f64 at this magnitude, halving the f64-distinct count.
+        let big_id = 10_000_000_000_000_000_u64 + 2 * i as u64;
+        rows.push_str(&format!("{big_id},{u},{}\n", u * 10));
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["heatmap", "s.csv"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        !html.contains("big_id"),
+        "a large-integer identifier must be detected via raw bytes and excluded"
+    );
+    assert!(html.contains("units") && html.contains("revenue"));
+}
+
+#[test]
 fn viz_heatmap_pivot() {
     let wrk = Workdir::new("viz_heatmap_pivot");
     wrk.create_from_string(

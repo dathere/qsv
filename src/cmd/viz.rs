@@ -5077,7 +5077,7 @@ fn build_splom_plot(args: &Args) -> CliResult<Plot> {
         Some(_) => resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
-    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
+    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates, false)?;
     if labels.len() < 2 {
         return fail_incorrectusage_clierror!(
             "splom needs at least 2 numeric --cols (a scatter-plot matrix cross-plots numeric \
@@ -5595,15 +5595,33 @@ fn resolve_many(
 /// from the caller (rather than opening its own) so the input is read exactly once — opening a
 /// second time would consume/corrupt a streamed stdin. Shared by the standalone correlation
 /// heatmap and the `viz smart` correlation panel.
+///
+/// When `drop_near_unique` is set, near-unique identifier columns (distinct value in > 95% of
+/// non-empty rows — a serial id, a monotonic order key) are dropped from the kept set *before*
+/// the listwise row-drop, so a sparse or partially-non-numeric identifier can't discard rows
+/// from the surviving measures (mirrors `viz smart`, which pre-filters identifiers via the
+/// stats cache before calling this). Distinctness is measured on the raw cell bytes, not the
+/// parsed f64, so large integer ids beyond f64's 53-bit mantissa don't collapse and evade the
+/// filter. Guard: columns are stripped only when >= 2 non-near-unique columns remain as a
+/// correlation core; on tiny or all-continuous inputs every column is all-distinct and nothing
+/// is stripped.
 fn read_numeric_columns(
     rdr: &mut csv::Reader<Box<dyn std::io::Read + Send>>,
     headers: &csv::ByteRecord,
     nh: bool,
     candidates: &[usize],
+    drop_near_unique: bool,
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
     let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
+    // distinct raw (non-empty) cell values per candidate — populated only when we must detect
+    // near-unique identifier columns. Keyed on the raw bytes so large integer ids don't collapse.
+    let mut distinct: Vec<std::collections::HashSet<Box<[u8]>>> = if drop_near_unique {
+        vec![std::collections::HashSet::new(); candidates.len()]
+    } else {
+        Vec::new()
+    };
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         for (k, &idx) in candidates.iter().enumerate() {
@@ -5615,14 +5633,37 @@ fn read_numeric_columns(
                 if v.is_some() {
                     parsed[k] += 1;
                 }
+                if drop_near_unique {
+                    distinct[k].insert(Box::from(cell.expect("nonempty implies Some")));
+                }
             }
             raw[k].push(v);
         }
     }
     // keep majority-numeric columns (drops text/ID/date columns from an all-columns default)
-    let keep: Vec<usize> = (0..candidates.len())
+    let mut keep: Vec<usize> = (0..candidates.len())
         .filter(|&k| nonempty[k] > 0 && parsed[k] * 2 >= nonempty[k])
         .collect();
+    // strip near-unique identifiers from the kept set BEFORE the listwise transpose below, so a
+    // sparse identifier's blank rows don't drop rows from the surviving measures. Guarded on a
+    // >= 2 non-near-unique correlation core.
+    if drop_near_unique {
+        let near_unique: Vec<bool> = keep
+            .iter()
+            .map(|&k| {
+                #[allow(clippy::cast_precision_loss)]
+                let ratio = distinct[k].len() as f64 / nonempty[k] as f64;
+                ratio > 0.95
+            })
+            .collect();
+        if near_unique.iter().filter(|&&nu| !nu).count() >= 2 {
+            keep = keep
+                .into_iter()
+                .zip(near_unique)
+                .filter_map(|(k, nu)| (!nu).then_some(k))
+                .collect();
+        }
+    }
     if keep.is_empty() {
         return Ok((Vec::new(), Vec::new()));
     }
@@ -6015,51 +6056,6 @@ fn build_heatmap(args: &Args) -> CliResult<(Box<dyn Trace>, Option<String>, Opti
     build_heatmap_correlation(args)
 }
 
-/// Drop near-unique identifier columns (distinct-value ratio > 0.95 — a monotonic order key, a
-/// serial id) from a `(labels, columns)` pair: such a column holds a distinct value in nearly every
-/// row, has no meaningful linear relationship with anything, and only adds a noise row/column to a
-/// correlation matrix. This mirrors `viz smart`'s correlation filter (`uniqueness_ratio > 0.95`),
-/// computed here directly from the read values because the standalone heatmap carries no stats
-/// cache.
-///
-/// Guard: the columns are stripped only when at least 2 non-near-unique (repeated-value) columns
-/// would remain — a solid correlation core. On tiny or all-continuous inputs every column is
-/// all-distinct, so uniqueness cannot distinguish an id from a genuine measure; there, everything
-/// is kept and the caller's usual `< 2 columns` / `< 2 rows` checks apply.
-fn drop_near_unique_columns(
-    labels: Vec<String>,
-    columns: Vec<Vec<f64>>,
-) -> (Vec<String>, Vec<Vec<f64>>) {
-    let near_unique: Vec<bool> = columns
-        .iter()
-        .map(|col| {
-            !col.is_empty() && {
-                let distinct = col
-                    .iter()
-                    .map(|v| v.to_bits())
-                    .collect::<std::collections::HashSet<u64>>()
-                    .len();
-                #[allow(clippy::cast_precision_loss)]
-                let ratio = distinct as f64 / col.len() as f64;
-                ratio > 0.95
-            }
-        })
-        .collect();
-    // keep everything unless a correlation core of >= 2 non-near-unique columns survives the strip.
-    if near_unique.iter().filter(|&&nu| !nu).count() < 2 {
-        return (labels, columns);
-    }
-    let mut out_labels = Vec::with_capacity(labels.len());
-    let mut out_columns = Vec::with_capacity(columns.len());
-    for ((label, col), &nu) in labels.into_iter().zip(columns).zip(&near_unique) {
-        if !nu {
-            out_labels.push(label);
-            out_columns.push(col);
-        }
-    }
-    (out_labels, out_columns)
-}
-
 fn build_heatmap_correlation(
     args: &Args,
 ) -> CliResult<(Box<dyn Trace>, Option<String>, Option<String>)> {
@@ -6069,18 +6065,14 @@ fn build_heatmap_correlation(
         Some(s) => resolve_many(Some(s), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
-    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates)?;
     // In auto mode (no explicit --cols), drop near-unique identifier columns (a monotonic order
     // key, a serial id): they hold a distinct value in nearly every row, carry no meaningful linear
-    // relationship, and only add a noise row/column to the matrix. Mirrors `viz smart`'s
-    // correlation filter (uniqueness_ratio > 0.95), computed here directly from the read values
-    // since the standalone heatmap carries no stats cache. An explicit --cols is the user's
-    // deliberate selection and is charted as-is.
-    let (labels, columns) = if explicit_cols {
-        (labels, columns)
-    } else {
-        drop_near_unique_columns(labels, columns)
-    };
+    // relationship, and only add a noise row/column to the matrix. `read_numeric_columns` applies
+    // this BEFORE its listwise row-drop, so a sparse identifier can't discard rows from the
+    // surviving measures. Mirrors `viz smart`'s correlation filter (uniqueness_ratio > 0.95). An
+    // explicit --cols is the user's deliberate selection and is charted as-is.
+    let (labels, columns) =
+        read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
     if labels.len() < 2 {
         return fail_clierror!(
             "A correlation heatmap needs at least 2 numeric columns (found {}). Use --cols to \
@@ -15887,7 +15879,8 @@ fn build_smart(
     if numeric_indices.len() >= 2 {
         progress.set_message("Computing correlations…");
         let (mut rdr, headers, nh) = reader_and_headers(args)?;
-        let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices)?;
+        let (labels, columns) =
+            read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
         if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
             let matrix = pearson_matrix(&columns);

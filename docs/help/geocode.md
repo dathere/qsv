@@ -532,7 +532,7 @@ qsv geocode --help
 | &nbsp;`‑‑rate‑limit`&nbsp; | integer | Maximum number of OpenCage API requests per second. The free tier allows 1 request/second (2,500/day). | `1` |
 | &nbsp;`‑‑reverse`&nbsp; | flag | Force reverse geocoding for opencage/opencagenow (treat the query as a "lat, long" WGS-84 coordinate). If not set, forward and reverse mode is auto-detected per row. |  |
 | &nbsp;`‑‑no‑annotations`&nbsp; | flag | Omit OpenCage annotations (timezone, currency, etc.) from the result and from %json output. |  |
-| &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk OpenCage result cache. | `1209600` |
+| &nbsp;`‑‑cache‑ttl`&nbsp; | integer | Time-to-live for the persistent on-disk OpenCage result cache. A value of 0 disables time-based expiration (entries are cached indefinitely). Use --no-cache to disable caching entirely. | `1209600` |
 | &nbsp;`‑‑no‑cache`&nbsp; | flag | Disable the persistent on-disk OpenCage cache. Duplicate queries within a run are still de-duplicated. |  |
 
 <a name="dynamic-formatting-options"></a>

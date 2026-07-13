@@ -722,6 +722,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "async-task"
+version = "4.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b75356056920673b02621b35afd0f7dda9306d03c79a30f5c56c44cf256e3de"
+
+[[package]]
 name = "async-trait"
 version = "0.1.89"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1031,6 +1037,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "blocking"
+version = "1.6.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e83f8d02be6967315521be875afa792a316e28d57b5a2d401897e2a7921b7f21"
+dependencies = [
+ "async-channel",
+ "async-task",
+ "futures-io",
+ "futures-lite",
+ "piper",
+]
+
+[[package]]
 name = "bnum"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1255,33 +1274,35 @@ dependencies = [
 
 [[package]]
 name = "cached"
-version = "2.0.2"
+version = "3.0.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dc0df7748fe2f601e376916ab19e7bfc2c74461b8abe3bce2ce20036ad8de38f"
+checksum = "0232c69c6c2a4356023f5b6bfc1227308f819ab3a4d3e6b24c71c4d088755a5e"
 dependencies = [
  "ahash 0.8.12",
+ "blocking",
  "cached_proc_macro",
  "cached_proc_macro_types",
  "directories",
- "hashbrown 0.16.1",
+ "hashbrown 0.17.1",
  "parking_lot",
  "r2d2",
+ "redb",
  "redis",
  "rmp-serde",
  "serde",
  "serde_json",
- "sled",
  "thiserror 2.0.18",
  "web-time",
 ]
 
 [[package]]
 name = "cached_proc_macro"
-version = "2.0.0"
+version = "3.0.0-rc.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66e734c52502e6cf54dce2ba07108906b04b8fe57f4f5e3ef7d58267b4abf060"
+checksum = "f0a3d4dde14a40e5f67fdbac55593545398dcaa1707ebd3f794549a5a9ccea9f"
 dependencies = [
  "darling 0.20.11",
+ "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -1289,9 +1310,9 @@ dependencies = [
 
 [[package]]
 name = "cached_proc_macro_types"
-version = "1.0.0"
+version = "3.0.0-rc.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "26cf465651fa6ad902a2d327ba60c3a6bc61c6a2f4ad70d091cf20dfda0074ef"
+checksum = "830092917db2471656c13c20bc1f812641638719b9ab9d6fb384ff58944821db"
 
 [[package]]
 name = "calamine"
@@ -3017,6 +3038,16 @@ name = "futures-io"
 version = "0.3.32"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cecba35d7ad927e23624b22ad55235f2239cfa44fd10428eecbeba6d6a717718"
+
+[[package]]
+name = "futures-lite"
+version = "2.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f78e10609fe0e0b3f4157ffab1876319b5b0db102a2c60dc4626306dc46b44ad"
+dependencies = [
+ "futures-core",
+ "pin-project-lite",
+]
 
 [[package]]
 name = "futures-macro"
@@ -5800,6 +5831,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
 
 [[package]]
+name = "piper"
+version = "0.2.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c835479a4443ded371d6c535cbfd8d31ad92c5d23ae9770a61bc155e4992a3c1"
+dependencies = [
+ "atomic-waker",
+ "fastrand",
+ "futures-io",
+]
+
+[[package]]
 name = "pkcs8"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7448,6 +7490,15 @@ checksum = "76009fbe0614077fc1a2ce255e3a1881a2e3a3527097d5dc6d8212c585e7e38b"
 dependencies = [
  "quote",
  "syn 2.0.118",
+]
+
+[[package]]
+name = "redb"
+version = "4.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8e925444704b5f17d32bf42f5b6e2df050bceebc3dcd6e71cc73dafe8092e839"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

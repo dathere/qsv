@@ -353,6 +353,9 @@ SUMMARIZE options:
                                 an "<ERROR: ...>" cell and continues. [default: fail]
     --user-agent <agent>        Custom user agent for LLM requests. Supports variables like $QSV_VERSION.
     --cache-dir <dir>           Directory for the disk cache. [default: ~/.qsv-cache/apply-summarize]
+                                The cache TTL defaults to 28 days; set the QSV_DISKCACHE_TTL_SECS env
+                                var to change it. A value of 0 disables time-based expiration
+                                (entries are cached indefinitely). Use --no-cache to disable caching.
     --no-cache                  Disable the disk cache (one LLM call per row, always).
     --fresh                     Force fresh LLM calls, refreshing any cached values.
     --stats                     Append two extra columns per row alongside --new-column:
@@ -373,7 +376,7 @@ Common options:
 use std::{collections::BTreeMap, str::FromStr, sync::OnceLock, time::Duration};
 
 use base64_simd::STANDARD as BASE64;
-use cached::{ConcurrentCached, DiskCache, DiskCacheBuilder};
+use cached::{ConcurrentCached, RedbCache};
 use censor::{Censor, Sex, Zealous};
 use cpc::eval;
 use dynfmt2::Format;
@@ -1050,7 +1053,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
     )?;
 
     // set up the disk cache (unless --no-cache)
-    let cache: Option<DiskCache<String, CachedSummary>> = if args.flag_no_cache {
+    let cache: Option<RedbCache<String, CachedSummary>> = if args.flag_no_cache {
         None
     } else {
         let cache_dir = if let Some(dir) = args.flag_cache_dir.clone() {
@@ -1067,10 +1070,16 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
             .ok()
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(DEFAULT_SUMMARIZE_CACHE_TTL_SECS);
-        let dc = DiskCacheBuilder::new("apply-summarize")
+        let mut dc_builder = RedbCache::builder("apply-summarize")
             .disk_directory(&cache_dir)
-            .ttl(Duration::from_secs(ttl_secs))
-            .sync_to_disk_on_cache_change(true)
+            .durable(true);
+        // A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries
+        // are cached indefinitely). v3's RedbCache builder rejects .ttl(0), so
+        // only set a TTL when it is non-zero; leaving it unset means "never expire".
+        if ttl_secs != 0 {
+            dc_builder = dc_builder.ttl(Duration::from_secs(ttl_secs));
+        }
+        let dc = dc_builder
             .build()
             .map_err(|e| CliError::Other(format!("Cannot build disk cache: {e:?}")))?;
         Some(dc)

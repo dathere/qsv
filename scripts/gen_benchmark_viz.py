@@ -643,11 +643,13 @@ def main():
                     "validate gained modes — the fast no-schema structural pass, batch validation, "
                     "dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept "
                     f"pace: validate_index now runs {v_idx:.1f}x its first-release speed. The no-schema "
-                    "structural path ran ~40% below its launch speed for several releases (17.0.0 → "
-                    f"20.1.0), then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x — back above launch. "
-                    "Full-schema and no-schema paths are shown base vs index, each normalized to its own "
-                    "debut. (The sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed "
-                    "benchmark runs, not regressions.)"))
+                    "structural path — the most parse-bound variant — dipped ~40% below launch from "
+                    "17.0.0 to 20.1.0, when qsv's CSV parser (the csv-nose fork) moved to its 1.0.x "
+                    f"line, then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x (back above launch) once "
+                    "csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema "
+                    "and no-schema paths are shown base vs index, each normalized to its own debut. (The "
+                    "sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark "
+                    "runs, not regressions.)"))
     figs.append(viz("heatmap", prep_heatmap(hm_versions),
                     ["--x", "version", "--y", "name", "--z", "rel",
                      "--title", "Relative throughput vs each command's recent peak"],

@@ -650,12 +650,18 @@ def main():
     figs.append(viz("box", prep_delta_box(),
                     ["--y", "delta (%)", "--x", "family",
                      "--title", "Release-over-release change by command family",
-                     "--y-title", "% faster vs previous version"],
+                     "--y-title", "% faster vs previous version",
+                     # the real per-family boxes all sit within [-6, +51]; fix the axis to that
+                     # window (with light padding) so a lone bad-CI-run outlier can't squash them
+                     "--y-range=-10:55",
+                     "--annotation",
+                     "1 point clipped: frequency_ignorecase -79% (a bad CI run)"],
                     "change_by_family", "Change distribution by family",
                     "The wider view behind the speedups: the spread of per-release change within each "
                     "family (above zero = faster). Most families cluster just north of zero — steady, "
                     f"unglamorous progress. Extreme outliers (|Δ| > {int(DELTA_CLAMP)}%, usually "
-                    "measurement noise) are omitted."))
+                    "measurement noise) are omitted; the y-axis is fixed to [-10, 55] so the boxes "
+                    "stay readable, clipping one bad-CI-run point (frequency_ignorecase, -79%)."))
 
     build_index(figs, info)
     render_hero(index_src)

@@ -269,11 +269,14 @@ def merge_index(commands, dst):
              'local n=name; if n:sub(-6)=="_index" then return n:sub(1,#n-6) else return n end',
              f], tmp("mi1.csv"))
     f = qsv(["luau", "map", "has_index", '(name:sub(-6)=="_index") and 1 or 0', f], tmp("mi2.csv"))
+    # One row per (command, version): prefer the index variant (has_index DESC), and among the
+    # runs of the chosen variant take the LATEST (tstamp DESC) — not MAX(recs_per_sec), which on a
+    # re-benchmarked release would report the fastest run rather than the current one.
     return qsv(["sqlp", f,
-                "SELECT command, version, MAX(tstamp) AS tstamp, "
-                "COALESCE(MAX(CASE WHEN has_index=1 THEN recs_per_sec END), "
-                "MAX(CASE WHEN has_index=0 THEN recs_per_sec END)) AS recs_per_sec "
-                "FROM _t_1 GROUP BY command, version ORDER BY tstamp"], dst)
+                "SELECT command, version, tstamp, recs_per_sec FROM ("
+                "SELECT command, version, tstamp, recs_per_sec, ROW_NUMBER() OVER "
+                "(PARTITION BY command, version ORDER BY has_index DESC, tstamp DESC) AS rn "
+                "FROM _t_1) WHERE rn = 1 ORDER BY tstamp"], dst)
 
 
 def prep_trend():
@@ -300,14 +303,21 @@ def prep_growth(names, dst):
     records an impossible recs_per_sec (e.g. frequency_sorted @ 6.0.1 = 52M/s, mean 18ms). On a
     normalized axis a single such spike flattens every real line, so drop physically-impossible
     rows: no non-`count` command approaches GROWTH_CEILING, and `count` is never in a growth set.
-    Applied inside the WHERE so the =1.0 baseline is a real release, not a glitch."""
+    Applied inside the WHERE so the =1.0 baseline is a real release, not a glitch.
+
+    A release that was benchmarked more than once (the history has duplicate `(name, version)`
+    rows) is collapsed to its LATEST run first, so the growth story is per-release, not per-run —
+    the normalization and `last_rel()` see one point per version, not duplicated x-axis points."""
     f = qsv(["search", "-s", "name", alt(names), HISTORY], tmp("gr0.csv"))
     f = qsv(["sort", "-s", "tstamp", f], tmp("gr1.csv"))
     return qsv(["sqlp", f,
                 "SELECT name, version, tstamp, CAST(recs_per_sec AS DOUBLE) / "
                 "FIRST_VALUE(CAST(recs_per_sec AS DOUBLE)) OVER "
-                "(PARTITION BY name ORDER BY tstamp) AS rel FROM _t_1 "
-                f"WHERE CAST(recs_per_sec AS DOUBLE) < {GROWTH_CEILING} ORDER BY tstamp"], dst)
+                "(PARTITION BY name ORDER BY tstamp) AS rel FROM ("
+                "SELECT name, version, tstamp, recs_per_sec, ROW_NUMBER() OVER "
+                "(PARTITION BY name, version ORDER BY tstamp DESC) AS rn FROM _t_1 "
+                f"WHERE CAST(recs_per_sec AS DOUBLE) < {GROWTH_CEILING}) "
+                "WHERE rn = 1 ORDER BY tstamp"], dst)
 
 
 def prep_treemap():

@@ -2234,8 +2234,9 @@ fn moarstats_parallel_path_matches_sequential() {
     // util::chunk_size / util::num_of_chunks. Capture the log to prove it.
     let log_dir = wrk.path("mchunk_logs");
     std::fs::create_dir_all(&log_dir).unwrap();
-    let mut cmd2 = wrk.command("moarstats");
-    cmd2.env("QSV_MAX_JOBS", "2")
+    let mut cmd_2 = wrk.command("moarstats");
+    cmd_2
+        .env("QSV_MAX_JOBS", "2")
         .env("QSV_LOG_LEVEL", "info")
         .env("QSV_LOG_DIR", &log_dir)
         .arg("--advanced")
@@ -2243,7 +2244,7 @@ fn moarstats_parallel_path_matches_sequential() {
         .args(["--stats-options", shared_opts])
         .arg("data.csv")
         .args(["--output", "out_jobs2.csv"]);
-    wrk.assert_success(&mut cmd2);
+    wrk.assert_success(&mut cmd_2);
 
     let out1 = wrk.read_to_string("out_jobs1.csv").unwrap();
     let out2 = wrk.read_to_string("out_jobs2.csv").unwrap();

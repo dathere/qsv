@@ -447,11 +447,11 @@ fn viz_box_y_range_invalid_errors() {
     assert!(stderr.contains("--y-range"));
 
     // non-numeric is rejected
-    let mut cmd2 = wrk.command("viz");
-    cmd2.args(["box", "fruits.csv", "--y", "Price", "--y-range=abc"]);
-    let out2 = wrk.output(&mut cmd2);
+    let mut cmd_2 = wrk.command("viz");
+    cmd_2.args(["box", "fruits.csv", "--y", "Price", "--y-range=abc"]);
+    let out2 = wrk.output(&mut cmd_2);
     assert!(!out2.status.success());
-    let stderr2 = wrk.output_stderr(&mut cmd2);
+    let stderr2 = wrk.output_stderr(&mut cmd_2);
     assert!(stderr2.contains("--y-range"));
 }
 

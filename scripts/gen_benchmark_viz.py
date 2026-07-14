@@ -644,7 +644,7 @@ def main():
                     "dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept "
                     f"pace: validate_index now runs {v_idx:.1f}x its first-release speed. The no-schema "
                     "structural path — the most parse-bound variant — dipped ~40% below launch from "
-                    "17.0.0 to 20.1.0, when qsv's CSV parser (the csv-nose fork) moved to its 1.0.x "
+                    "17.0.0 through 21.0.0, when qsv's CSV parser (the csv-nose fork) moved to its 1.0.x "
                     f"line, then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x (back above launch) once "
                     "csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema "
                     "and no-schema paths are shown base vs index, each normalized to its own debut. (The "

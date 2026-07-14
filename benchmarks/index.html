@@ -141,7 +141,7 @@ details.vizsrc .srclink{font-size:12.5px}
 </section>
 <section>
 <h2>Flagship deep-dive: validate</h2>
-<p class=desc>qsv&#x27;s data-quality workhorse, each variant indexed to its own launch speed. As validate gained modes — the fast no-schema structural pass, batch validation, dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept pace: validate_index now runs 1.3x its first-release speed. The no-schema structural path — the most parse-bound variant — dipped ~40% below launch from 17.0.0 to 20.1.0, when qsv&#x27;s CSV parser (the csv-nose fork) moved to its 1.0.x line, then recovered sharply in 21.1.0 to 1.1x (back above launch) once csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema and no-schema paths are shown base vs index, each normalized to its own debut. (The sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark runs, not regressions.)</p>
+<p class=desc>qsv&#x27;s data-quality workhorse, each variant indexed to its own launch speed. As validate gained modes — the fast no-schema structural pass, batch validation, dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept pace: validate_index now runs 1.3x its first-release speed. The no-schema structural path — the most parse-bound variant — dipped ~40% below launch from 17.0.0 through 21.0.0, when qsv&#x27;s CSV parser (the csv-nose fork) moved to its 1.0.x line, then recovered sharply in 21.1.0 to 1.1x (back above launch) once csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema and no-schema paths are shown base vs index, each normalized to its own debut. (The sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark runs, not regressions.)</p>
 <iframe class=chart loading=lazy scrolling=no src='validate_growth.html'></iframe>
 <details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;line&quot;, validate_src,
                 [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;rel&quot;, &quot;--series&quot;, &quot;name&quot;,
@@ -153,7 +153,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept &quot;
                 f&quot;pace: validate_index now runs {v_idx:.1f}x its first-release speed. The no-schema &quot;
                 &quot;structural path — the most parse-bound variant — dipped ~40% below launch from &quot;
-                &quot;17.0.0 to 20.1.0, when qsv&#x27;s CSV parser (the csv-nose fork) moved to its 1.0.x &quot;
+                &quot;17.0.0 through 21.0.0, when qsv&#x27;s CSV parser (the csv-nose fork) moved to its 1.0.x &quot;
                 f&quot;line, then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x (back above launch) once &quot;
                 &quot;csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema &quot;
                 &quot;and no-schema paths are shown base vs index, each normalized to its own debut. (The &quot;

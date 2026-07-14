@@ -62,7 +62,7 @@ Always use Serena MCP tools (find_symbol, etc.) for code navigation and Context7
 
 ## docopt / USAGE Editing Conventions
 
-When editing docopt USAGE strings, never let a wrapped help line begin with a flag (e.g., `--grid-cols-wide`); docopt will parse it as an option definition and break arg parsing for all commands. Verify by running the viz test suite after any USAGE edit.
+When editing docopt USAGE strings, never let a wrapped help line begin with a flag (e.g., `--grid-cols-wide`); docopt will parse it as an option definition and break arg parsing for all commands. Indent continuation lines so a wrapped line never starts with a flag. Verify by running the full viz test suite after any USAGE edit.
 
 ## Visualization Workflow
 
@@ -70,5 +70,5 @@ After implementing or fixing a viz/dashboard feature, always verify the result v
 
 ## Testing / Plotly JSON
 
-When editing plotly JSON in tests, edit programmatically rather than with the Edit tool, since plotly unicode-escapes angle brackets and the Edit tool normalizes the escaped form, causing assertion failures.
+When editing plotly-generated JSON, edit programmatically rather than with the Edit tool, since plotly unicode-escapes angle brackets and control chars and the Edit tool normalizes the escaped form, causing assertion failures. Prefer a programmatic rewrite over string-literal Edit tool matches.
 

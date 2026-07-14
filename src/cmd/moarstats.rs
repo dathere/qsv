@@ -2445,6 +2445,13 @@ fn compute_outliers_and_kga(
     let n_outlier = outlier_fields.len();
     let n_kga = kga_fields.len();
 
+    // Resolve the job count up front (also sizes Rayon's global pool via
+    // `util::njobs`). This must happen on EVERY path — including the sequential
+    // scan fallbacks below — so the parallel KGA finalize (`into_par_iter`) honors
+    // `--jobs` (e.g. `--jobs 1` stays single-threaded) instead of defaulting to
+    // Rayon's all-cores global pool.
+    let njobs = util::njobs(flag_jobs);
+
     // (merged_outliers, kga_concat) produced by whichever path runs.
     let (merged_outliers, kga_concat): (Vec<OutlierStats>, Vec<Vec<f64>>) = if let Some(idx) =
         indexed_result
@@ -2470,7 +2477,6 @@ fn compute_outliers_and_kga(
             (fused.outlier_stats, fused.kga_values)
         } else {
             // Parallel path: chunk by index, one fused scan per chunk.
-            let njobs = util::njobs(flag_jobs);
             let chunk_size = util::chunk_size(idx_count, njobs);
             let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
@@ -4369,11 +4375,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
             .has_headers(true)
             .from_path(actual_input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
-        let header_pos: HashMap<&str, usize> = csv_headers
-            .iter()
-            .enumerate()
-            .map(|(idx, h)| (h, idx))
-            .collect();
+        // First occurrence wins for duplicate header names, matching the prior
+        // `csv_headers.iter().position(|h| h == field_name)` (first-match) semantics
+        // — a plain `.collect()` would keep the LAST duplicate instead.
+        let mut header_pos: HashMap<&str, usize> = HashMap::with_capacity(csv_headers.len());
+        for (idx, h) in csv_headers.iter().enumerate() {
+            header_pos.entry(h).or_insert(idx);
+        }
 
         let mut o_fields = Vec::with_capacity(fields_to_count.len());
         let mut o_names = Vec::with_capacity(fields_to_count.len());

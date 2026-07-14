@@ -2151,6 +2151,91 @@ fn moarstats_kurtosis_gini_multiple_numeric_fields() {
 }
 
 #[test]
+fn moarstats_parallel_path_matches_sequential() {
+    // Regression for the fused outlier+KGA PARALLEL path. The exact-value goldens
+    // only exercise files below PARALLEL_THRESHOLD (10_000 rows), i.e. the
+    // sequential fallback. This drives an indexed CSV ABOVE the threshold and
+    // asserts that a single-chunk run (--jobs 1) and a multi-chunk run (--jobs 8)
+    // produce byte-identical output — proving the chunk-index-ordered KGA merge is
+    // deterministic and equal to a single-pass read. Both runs share ONE stats
+    // cache (--stats-options omits --force, so it is built once and reused), so any
+    // difference can only come from the outlier/KGA parallel code.
+    let wrk = Workdir::new("moarstats_parallel_path");
+
+    let mut rows: Vec<Vec<String>> = vec![svec!["id", "amount", "score", "when"]];
+    for i in 0..15_000u32 {
+        let base = 1000.0 + f64::from(i % 500);
+        // Occasional extreme values so IQR fences flag real outliers.
+        let amount = if i % 250 == 0 {
+            base + 90_000.0
+        } else {
+            base + f64::from(i % 37) * 1.7
+        };
+        let score = f64::from(i % 1000) * 0.125 + 0.333;
+        let month = 1 + (i % 9);
+        let year = 2000 + (i % 25);
+        rows.push(vec![
+            i.to_string(),
+            format!("{amount:.4}"),
+            format!("{score:.6}"),
+            format!("{year}-0{month}-15"),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+
+    // Index so the parallel path is reachable.
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    // Options WITHOUT --force so the baseline stats cache is generated once and
+    // then reused by every moarstats run below (identical baseline for all runs).
+    let shared_opts = "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles \
+                       --percentiles --stats-jsonl";
+
+    // Prime the shared stats cache.
+    let mut prime = wrk.command("moarstats");
+    prime
+        .arg("--advanced")
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "primed.csv"]);
+    wrk.assert_success(&mut prime);
+
+    // Single chunk (reference).
+    let mut cmd1 = wrk.command("moarstats");
+    cmd1.arg("--advanced")
+        .args(["--jobs", "1"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "out_jobs1.csv"]);
+    wrk.assert_success(&mut cmd1);
+
+    // Many chunks (parallel).
+    let mut cmd8 = wrk.command("moarstats");
+    cmd8.arg("--advanced")
+        .args(["--jobs", "8"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "out_jobs8.csv"]);
+    wrk.assert_success(&mut cmd8);
+
+    let out1 = wrk.read_to_string("out_jobs1.csv").unwrap();
+    let out8 = wrk.read_to_string("out_jobs8.csv").unwrap();
+    assert_eq!(
+        out1, out8,
+        "multi-chunk parallel output must equal the single-chunk reference"
+    );
+
+    // Sanity: the advanced KGA columns are actually present (so the test really
+    // exercised the fused KGA path, not an empty diff).
+    assert!(
+        out1.contains("kurtosis") && out1.contains("gini_coefficient"),
+        "advanced KGA columns should be present in the output"
+    );
+}
+
+#[test]
 fn moarstats_without_advanced_flag() {
     let wrk = Workdir::new("moarstats_without_advanced");
     let test_file = wrk.load_test_file("boston311-100.csv");

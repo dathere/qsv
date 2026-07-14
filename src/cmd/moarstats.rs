@@ -2576,14 +2576,21 @@ fn compute_outliers_and_kga(
         outlier_names.into_iter().zip(merged_outliers).collect();
 
     // Finalize KGA per field (slot -> name) over its file-ordered value vector.
-    let mut kga_stats: HashMap<String, KGAStats> = HashMap::with_capacity(n_kga);
-    for (j, values) in kga_concat.into_iter().enumerate() {
-        let (mean, variance, sum) = kga_precalc[j];
-        kga_stats.insert(
-            kga_names[j].clone(),
-            finalize_kga(&values, mean, variance, sum, atkinson_epsilon),
-        );
-    }
+    // Each field's finalize is independent and dominated by a per-column sort
+    // (Gini) plus kurtosis/Theil/mean_ad, so fan out across fields with rayon.
+    // Results are keyed by name and each field's math is order-independent of the
+    // others, so this stays bit-identical to a sequential finalize.
+    let kga_stats: HashMap<String, KGAStats> = kga_concat
+        .into_par_iter()
+        .zip(kga_precalc)
+        .zip(kga_names)
+        .map(|((values, (mean, variance, sum)), name)| {
+            (
+                name,
+                finalize_kga(&values, mean, variance, sum, atkinson_epsilon),
+            )
+        })
+        .collect();
 
     Ok((outlier_counts, kga_stats))
 }

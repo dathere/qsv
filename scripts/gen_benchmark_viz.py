@@ -70,16 +70,21 @@ SOURCE_URL = "https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_v
 # validate and sample are deliberately excluded — an index barely helps them).
 INDEX_PAIR_COMMANDS = ["stats", "frequency", "search", "searchset", "tojsonl"]
 # Full-history trend & heatmap: marquee commands shown with their index variant wherever it
-# exists (all releases for stats/frequency; from 10.0.0 for search/searchset — the base
+# exists (all releases for stats/frequency/validate; from 10.0.0 for search/searchset — the base
 # variant is used before, so each line stays continuous and the index-adoption jump is visible).
+# validate carried its index from launch, so its line is steady with no adoption step.
 # `count` is in the heatmap only (per-row normalized); it's excluded from the trend line and
 # the shared-scale charts because its ~90M "records/sec" index read would squash everything.
-TREND_NAMES = ["stats", "frequency", "search", "searchset"]
+TREND_NAMES = ["stats", "frequency", "search", "searchset", "validate"]
 HEATMAP_NAMES = ["count", "stats", "frequency", "search", "searchset"]
 # Flagship deep-dives: variant sets whose growth-since-first-release shows throughput held (or
-# improved) even as the two top commands gained features over ~60 releases.
+# improved) even as the flagship commands gained features over ~60 releases.
 STATS_GROWTH = ["stats", "stats_index", "stats_everything", "stats_everything_index"]
 FREQ_GROWTH = ["frequency", "frequency_index", "frequency_no_limit", "frequency_sorted"]
+# validate deep-dive: full JSON-Schema validation (base + index) vs the fast no-schema
+# structural path (base + index). no_schema runs ~3x faster in absolute terms, but each series
+# is normalized to its own launch, so the growth trajectories are directly comparable.
+VALIDATE_GROWTH = ["validate", "validate_index", "validate_no_schema", "validate_no_schema_index"]
 # "Index superpowers": commands whose index win is not just skipping the opening scan but doing
 # an order of magnitude less work — seeking straight to the wanted rows (slice, sample) or reusing
 # cached statistics (schema). Shown as a speedup FACTOR so the biggest multiple reads as the
@@ -487,9 +492,9 @@ for the methodology and the raw CSVs.
 
 The dashboard is rendered by qsv's own `viz` command and is fully interactive (hover for
 values, zoom, download PNGs). It covers the with/without-index advantage, the `sqlp`
-schema-cache knob, throughput across every release, deep-dives into the two flagship
-commands (`stats` and `frequency`) showing they grew features without losing speed, and
-this release's biggest speedups.
+schema-cache knob, throughput across every release, deep-dives into three flagship
+commands (`stats`, `frequency` and `validate`) showing they grew features without losing
+speed, and this release's biggest speedups.
 
 [![qsv benchmark dashboard]({url}hero.png)]({url})
 
@@ -598,12 +603,16 @@ def main():
                     f"Records/sec for the marquee commands across all {n_releases} releases since "
                     f"{first_release}. Each line follows the fastest path available at the time: the "
                     "plain scan early on, then the indexed variant once search and searchset learned "
-                    "to use an index at 10.0.0 — the visible step up. Broad trajectory only (see the "
-                    "note above); count is omitted for scale."))
+                    "to use an index at 10.0.0 — the visible step up. stats, frequency and validate "
+                    "carried their index from launch, so those lines run flat-to-up with no step. "
+                    "Broad trajectory only (see the note above); count is omitted for scale."))
     stats_src = prep_growth(STATS_GROWTH, tmp("stats_growth.csv"))
     freq_src = prep_growth(FREQ_GROWTH, tmp("freq_growth.csv"))
+    validate_src = prep_growth(VALIDATE_GROWTH, tmp("validate_growth.csv"))
     s_base, s_heavy = last_rel(stats_src, "stats"), last_rel(stats_src, "stats_everything_index")
     f_base, f_idx = last_rel(freq_src, "frequency"), last_rel(freq_src, "frequency_index")
+    v_idx = last_rel(validate_src, "validate_index")
+    v_ns_idx = last_rel(validate_src, "validate_no_schema_index")
     figs.append(viz("line", stats_src,
                     ["--x", "version", "--y", "rel", "--series", "name",
                      "--title", "Flagship deep-dive: stats got richer AND faster",
@@ -625,6 +634,20 @@ def main():
                     f"base frequency is now {f_base:.1f}x its launch speed and the indexed run "
                     f"{f_idx:.1f}x. Newer modes join partway, each measured from its own debut; the "
                     "transient dips are measurement artifacts, not regressions."))
+    figs.append(viz("line", validate_src,
+                    ["--x", "version", "--y", "rel", "--series", "name",
+                     "--title", "Flagship deep-dive: validate",
+                     "--y-title", "speed vs first release (1.0 = launch)"],
+                    "validate_growth", "Flagship deep-dive: validate",
+                    "qsv's data-quality workhorse, each variant indexed to its own launch speed. As "
+                    "validate gained modes — the fast no-schema structural pass, batch validation, "
+                    "dynamic-enum lookups, newer JSON Schema drafts — full JSON-Schema validation kept "
+                    f"pace: validate_index now runs {v_idx:.1f}x its first-release speed. The no-schema "
+                    "structural path ran ~40% below its launch speed for several releases (17.0.0 → "
+                    f"20.1.0), then recovered sharply in 21.1.0 to {v_ns_idx:.1f}x — back above launch. "
+                    "Full-schema and no-schema paths are shown base vs index, each normalized to its own "
+                    "debut. (The sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed "
+                    "benchmark runs, not regressions.)"))
     figs.append(viz("heatmap", prep_heatmap(hm_versions),
                     ["--x", "version", "--y", "name", "--z", "rel",
                      "--title", "Relative throughput vs each command's recent peak"],

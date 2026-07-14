@@ -37,6 +37,30 @@ See [benchmarks.sh](benchmarks.sh) for more details.
 > the interpreter-overhead gap it was designed to show, as PGO has little effect on the
 > interpreter hot loops.
 
+## gen_benchmark_viz.py - interactive benchmark dashboard generator
+
+Regenerates `benchmarks/index.html`, an interactive [`qsv viz`](../docs/help/viz.md)
+dashboard of the benchmark results in `results/*.csv` (produced by `benchmarks.sh`). It
+dogfoods qsv end-to-end — shaping the data with `qsv` and charting it with `qsv viz` — so
+the dashboard doubles as a `viz` showcase spanning bar, grouped-bar, line, heatmap, treemap
+and box traces.
+
+```bash
+cargo build --bin qsv -F all_features   # or set QSV_BIN
+python3 scripts/gen_benchmark_viz.py
+git add benchmarks && git commit        # Pages redeploys on push to master
+```
+
+The interactive dashboard is deployed to GitHub Pages by
+[`viz-gallery-pages.yml`](../.github/workflows/viz-gallery-pages.yml) →
+<https://dathere.github.io/qsv/benchmarks/>. A static `hero.png` is also rendered
+(best-effort, needs the `viz_static` feature + a local browser).
+
+Publishing the Wiki **Benchmarks** page is a separate manual step (interactive Plotly can't
+render in wiki markdown): copy the generated `benchmarks/Benchmarks.wiki.md` starter page
+into the `qsv.wiki` repo as `Benchmarks.md` and push. See the script's docstring for the
+exact commands.
+
 ## misc/docopt-wordlist.bash - optional qsv tab completion support
 qsv's command-line options are quite extensive. Thankfully, since it uses [docopt](http://docopt.org/) for CLI processing,
 we can take advantage of [docopt.rs' tab completion support](https://github.com/docopt/docopt.rs#tab-completion-support) to make it

@@ -1,0 +1,100 @@
+# Publish the benchmark dashboard's Wiki page — the manual "release" step.
+#
+# What is and isn't automatic:
+#   - The INTERACTIVE dashboard (benchmarks/index.html + charts) redeploys to
+#     GitHub Pages automatically on any push to `master` that touches
+#     benchmarks/** — see viz-gallery-pages.yml. Nothing to do here for that.
+#   - The Wiki "Benchmarks" page is the ONE piece that can't be automatic on push:
+#     GitHub wiki markdown strips <script>/iframes, so it can't render interactive
+#     Plotly. The wiki page is therefore a static starter (benchmarks/Benchmarks.wiki.md)
+#     that links to the Pages dashboard and shows the hero.png. This workflow copies
+#     that committed page into the <repo>.wiki repository.
+#
+# This workflow ASSUMES you already regenerated AND committed benchmarks/ (i.e. ran
+# `python3 scripts/gen_benchmark_viz.py` and committed the result to the branch this
+# runs on — normally `master`). It publishes whatever is committed; it does NOT run
+# the generator or the benchmarks.
+#
+# Trigger: manual (workflow_dispatch). Optional `dry_run` stages without pushing.
+
+name: Publish benchmarks to Wiki
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Stage the wiki page but do not push (preview only)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write   # push to the <repo>.wiki repository
+
+concurrency:
+  group: publish-benchmarks-wiki
+  cancel-in-progress: false
+
+jobs:
+  publish-wiki:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # persist-credentials: false → no global auth header is left behind, so the
+      # token-in-URL clone of the wiki below is the only credential in play (no
+      # double-auth). qsv is public, so the source checkout needs no persisted token.
+      - name: Checkout qsv source (with the committed benchmarks/)
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Publish Benchmarks page to the Wiki
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+
+          if [ ! -f benchmarks/Benchmarks.wiki.md ]; then
+            echo "::error::benchmarks/Benchmarks.wiki.md not found. Regenerate and commit the dashboard first: python3 scripts/gen_benchmark_viz.py"
+            exit 1
+          fi
+
+          # The wiki is a separate git repo; GitHub Actions can't run from inside it,
+          # so clone it in (with token auth) and update the one page.
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.wiki.git" wiki
+
+          cp benchmarks/Benchmarks.wiki.md wiki/Benchmarks.md
+          # Stamp the commit with the benchmarked qsv version (col 1, row 2 of the TSV).
+          version="$(awk -F'\t' 'NR==2 {print $1; exit}' scripts/results/latest_run_info.tsv 2>/dev/null || true)"
+
+          cd wiki
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Benchmarks.md
+
+          if git diff --cached --quiet; then
+            echo "Benchmarks.md is already up to date — nothing to publish."
+            exit 0
+          fi
+
+          if [ "${DRY_RUN}" = "true" ]; then
+            echo "DRY RUN — would commit and push these changes:"
+            git --no-pager diff --cached --stat
+            exit 0
+          fi
+
+          git commit -m "Update Benchmarks dashboard page${version:+ (qsv $version)}"
+          git push
+          echo "Published Benchmarks page to the wiki."
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Benchmarks — Wiki publish"
+            echo ""
+            echo "- Wiki page: https://github.com/${{ github.repository }}/wiki/Benchmarks"
+            echo "- Interactive dashboard (auto-deploys to Pages on push to \`master\`): https://dathere.github.io/qsv/benchmarks/"
+            echo ""
+            echo "This workflow only (re)publishes the committed \`benchmarks/Benchmarks.wiki.md\` to the Wiki. It does not run the generator or redeploy Pages."
+          } >> "$GITHUB_STEP_SUMMARY"

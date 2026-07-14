@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang=en><head><meta charset=utf-8>
+<meta name=viewport content='width=device-width,initial-scale=1'>
+<title>qsv benchmark dashboard</title>
+<style>
+:root{--fg:#1f2733;--muted:#5b6673;--bg:#ffffff;--card:#fbfcfe;--border:#e6e9f0;--accent:#2a6df4}
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+color:var(--fg);background:var(--bg)}
+header{max-width:1180px;margin:0 auto;padding:34px 22px 8px}
+h1{margin:0 0 6px;font-size:26px}
+.sub{color:var(--muted);margin:0 0 16px}
+.meta{display:flex;flex-wrap:wrap;gap:8px 18px;font-size:13px;color:var(--muted);
+border:1px solid var(--border);background:var(--card);border-radius:8px;padding:12px 16px}
+.meta b{color:var(--fg);font-weight:600}
+.caveat{max-width:1180px;margin:16px auto 0;padding:12px 16px;font-size:13.5px;color:#7a5b00;
+background:#fff8e6;border:1px solid #f2e2ad;border-radius:8px}
+main{max-width:1180px;margin:0 auto;padding:8px 22px 60px}
+section{margin-top:30px}
+h2{font-size:19px;margin:0 0 4px}
+.desc{color:var(--muted);margin:0 0 12px;font-size:14px}
+iframe.chart{width:100%;border:1px solid var(--border);border-radius:8px;height:420px;display:block;
+background:var(--card)}
+footer{max-width:1180px;margin:0 auto;padding:0 22px 50px;color:var(--muted);font-size:13px}
+a{color:var(--accent)}
+code{background:#eef1f6;border-radius:4px;padding:1px 5px;font-size:12.5px}
+details.vizsrc{margin-top:10px;font-size:13px}
+details.vizsrc summary{cursor:pointer;color:var(--accent);user-select:none;width:max-content}
+details.vizsrc pre{overflow-x:auto;background:var(--card);border:1px solid var(--border);
+border-radius:8px;padding:12px 14px;margin:10px 0 8px;font-size:12.5px;line-height:1.45;
+font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+details.vizsrc pre code{background:none;padding:0;font-size:inherit}
+details.vizsrc .srclink{font-size:12.5px}
+</style></head><body>
+<header>
+<h1>qsv benchmark dashboard</h1>
+<p class=sub>Interactive charts of the qsv benchmark suite, rendered with <code>qsv viz</code> — a live showcase of the command charting its own performance.</p>
+<div class=meta><span><b>qsv</b> 21.1.0</span><span><b>Platform</b> aarch64-apple-darwin</span><span><b>CPU</b> Apple M2 Pro (12 cores)</span><span><b>RAM</b> 32 GiB</span><span><b>Dataset</b> NYC 311 — 1M rows × 41 cols (520 MB)</span></div>
+</header>
+<div class=caveat><b>Read me first.</b> Throughput is records/sec = 1,000,000 rows ÷ mean of 3 runs (2 warmups) via hyperfine. Cross-version numbers are <b>not strictly apples-to-apples</b> — commands gain features over time, so a command's benchmark in an old release may do less work than today's. Read the historical charts (the trend, the flagship deep-dives and the heatmap) as broad trajectory, not exact speedup. <code>count</code> gets its own panel below (not the shared-scale charts) because with an index it just reads a stored row count (tens of millions of records/sec) and would flatten every other bar.</div>
+<main>
+<section>
+<h2>The index advantage</h2>
+<p class=desc>Build an index once and qsv can skip the opening scan on every run after. The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next to nothing for streaming commands — so only the standouts are shown here.</p>
+<iframe class=chart loading=lazy scrolling=no src='index_advantage.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;bar&quot;, index_src,
+                [&quot;--x&quot;, &quot;command&quot;, &quot;--y&quot;, &quot;recs_per_sec&quot;, &quot;--series&quot;, &quot;index_status&quot;,
+                 &quot;--title&quot;, &quot;The index advantage&quot;, &quot;--y-title&quot;, &quot;records/sec&quot;],
+                &quot;index_advantage&quot;, &quot;The index advantage&quot;,
+                &quot;Build an index once and qsv can skip the opening scan on every run after. &quot;
+                &quot;The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next &quot;
+                &quot;to nothing for streaming commands — so only the standouts are shown here.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L544-L550' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 544–550)</a></details>
+</section>
+<section>
+<h2>count with an index is effectively instant</h2>
+<p class=desc>The index advantage at its extreme. With an index, count doesn&#x27;t scan at all — it reads a row count qsv already stored, a ~10x jump from ~9M to ~90M rows/sec. It sits on its own axis precisely because that number would flatten every other bar on the page.</p>
+<iframe class=chart loading=lazy scrolling=no src='count_callout.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;bar&quot;, prep_count(),
+                [&quot;--x&quot;, &quot;index_status&quot;, &quot;--y&quot;, &quot;recs_per_sec&quot;,
+                 &quot;--title&quot;, &quot;count: the index-read superpower&quot;, &quot;--y-title&quot;, &quot;records/sec&quot;],
+                &quot;count_callout&quot;, &quot;count with an index is effectively instant&quot;,
+                &quot;The index advantage at its extreme. With an index, count doesn&#x27;t scan at all — &quot;
+                &quot;it reads a row count qsv already stored, a ~10x jump from ~9M to ~90M rows/sec. &quot;
+                &quot;It sits on its own axis precisely because that number would flatten every &quot;
+                &quot;other bar on the page.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L551-L558' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 551–558)</a></details>
+</section>
+<section>
+<h2>The index superpowers</h2>
+<p class=desc>Some commands don&#x27;t just skip the opening scan with an index — they skip almost all the work. slice and sample seek straight to the rows they need; schema reuses cached statistics. That&#x27;s a different order of magnitude: schema runs 78x faster, and slice and sample tens of times over — versus the low single digits for the scan-skippers above.</p>
+<iframe class=chart loading=lazy scrolling=no src='index_superpowers.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;bar&quot;, sp_src,
+                [&quot;--x&quot;, &quot;command&quot;, &quot;--y&quot;, &quot;speedup&quot;,
+                 &quot;--title&quot;, &quot;The index superpowers — times faster with an index&quot;,
+                 &quot;--y-title&quot;, &quot;× faster with an index&quot;],
+                &quot;index_superpowers&quot;, &quot;The index superpowers&quot;,
+                &quot;Some commands don&#x27;t just skip the opening scan with an index — they skip almost &quot;
+                &quot;all the work. slice and sample seek straight to the rows they need; schema reuses &quot;
+                f&quot;cached statistics. That&#x27;s a different order of magnitude: {sp_top_cmd} runs &quot;
+                f&quot;{sp_top_x:.0f}x faster, and slice and sample tens of times over — versus the &quot;
+                &quot;low single digits for the scan-skippers above.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L561-L570' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 561–570)</a></details>
+</section>
+<section>
+<h2>sqlp tuning: the schema-cache knob</h2>
+<p class=desc>sqlp infers a schema before it runs. Cache that schema and the re-inference cost disappears on the next query — worth about a third more throughput on these aggregations, for a one-line option.</p>
+<iframe class=chart loading=lazy scrolling=no src='sqlp_tuning.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;bar&quot;, prep_sqlp(),
+                [&quot;--x&quot;, &quot;name&quot;, &quot;--y&quot;, &quot;recs_per_sec&quot;,
+                 &quot;--title&quot;, &quot;sqlp tuning: the Polars schema-cache knob&quot;,
+                 &quot;--y-title&quot;, &quot;records/sec&quot;],
+                &quot;sqlp_tuning&quot;, &quot;sqlp tuning: the schema-cache knob&quot;,
+                &quot;sqlp infers a schema before it runs. Cache that schema and the re-inference &quot;
+                &quot;cost disappears on the next query — worth about a third more throughput on &quot;
+                &quot;these aggregations, for a one-line option.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L571-L578' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 571–578)</a></details>
+</section>
+<section>
+<h2>The long view — every release</h2>
+<p class=desc>Records/sec for the marquee commands across all 59 releases since 0.113.0. Each line follows the fastest path available at the time: the plain scan early on, then the indexed variant once search and searchset learned to use an index at 10.0.0 — the visible step up. Broad trajectory only (see the note above); count is omitted for scale.</p>
+<iframe class=chart loading=lazy scrolling=no src='trend.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;line&quot;, prep_trend(),
+                [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;recs_per_sec&quot;, &quot;--series&quot;, &quot;command&quot;,
+                 &quot;--title&quot;, f&quot;Throughput across every release ({first_release} → {latest_release})&quot;,
+                 &quot;--y-title&quot;, &quot;records/sec&quot;],
+                &quot;trend&quot;, &quot;The long view — every release&quot;,
+                f&quot;Records/sec for the marquee commands across all {n_releases} releases since &quot;
+                f&quot;{first_release}. Each line follows the fastest path available at the time: the &quot;
+                &quot;plain scan early on, then the indexed variant once search and searchset learned &quot;
+                &quot;to use an index at 10.0.0 — the visible step up. Broad trajectory only (see the &quot;
+                &quot;note above); count is omitted for scale.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L579-L588' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 579–588)</a></details>
+</section>
+<section>
+<h2>Flagship deep-dive: stats</h2>
+<p class=desc>qsv&#x27;s most-used command, indexed to its own launch speed. Over the years stats kept adding statistics — cardinality, quartiles, MAD, skewness — yet never got slower: plain stats now runs 1.8x its first-release speed, and the full --everything pass with an index 5.7x. Features grew; the curve still points up. (The odd single-release dip is a failed benchmark run, not a regression.)</p>
+<iframe class=chart loading=lazy scrolling=no src='stats_growth.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;line&quot;, stats_src,
+                [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;rel&quot;, &quot;--series&quot;, &quot;name&quot;,
+                 &quot;--title&quot;, &quot;Flagship deep-dive: stats got richer AND faster&quot;,
+                 &quot;--y-title&quot;, &quot;speed vs first release (1.0 = launch)&quot;],
+                &quot;stats_growth&quot;, &quot;Flagship deep-dive: stats&quot;,
+                &quot;qsv&#x27;s most-used command, indexed to its own launch speed. Over the years stats &quot;
+                &quot;kept adding statistics — cardinality, quartiles, MAD, skewness — yet never got &quot;
+                f&quot;slower: plain stats now runs {s_base:.1f}x its first-release speed, and the &quot;
+                f&quot;full --everything pass with an index {s_heavy:.1f}x. Features grew; the curve &quot;
+                &quot;still points up. (The odd single-release dip is a failed benchmark run, not a &quot;
+                &quot;regression.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L593-L603' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 593–603)</a></details>
+</section>
+<section>
+<h2>Flagship deep-dive: frequency</h2>
+<p class=desc>The same story for qsv&#x27;s second flagship. As frequency gained sorted, case-insensitive and unlimited modes, throughput climbed rather than eroded — base frequency is now 1.5x its launch speed and the indexed run 2.0x. Newer modes join partway, each measured from its own debut; the transient dips are measurement artifacts, not regressions.</p>
+<iframe class=chart loading=lazy scrolling=no src='freq_growth.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;line&quot;, freq_src,
+                [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;rel&quot;, &quot;--series&quot;, &quot;name&quot;,
+                 &quot;--title&quot;, &quot;Flagship deep-dive: frequency held its ground&quot;,
+                 &quot;--y-title&quot;, &quot;speed vs first release (1.0 = launch)&quot;],
+                &quot;freq_growth&quot;, &quot;Flagship deep-dive: frequency&quot;,
+                &quot;The same story for qsv&#x27;s second flagship. As frequency gained sorted, &quot;
+                &quot;case-insensitive and unlimited modes, throughput climbed rather than eroded — &quot;
+                f&quot;base frequency is now {f_base:.1f}x its launch speed and the indexed run &quot;
+                f&quot;{f_idx:.1f}x. Newer modes join partway, each measured from its own debut; the &quot;
+                &quot;transient dips are measurement artifacts, not regressions.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L604-L613' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 604–613)</a></details>
+</section>
+<section>
+<h2>Relative throughput heatmap</h2>
+<p class=desc>The indexed marquee commands over the recent window, each row normalized to its own peak (1.0 = that command&#x27;s fastest release). Normalizing per row lets a 90M-rows/sec count and a 600k-rows/sec frequency share one canvas — the colour shows trajectory, not absolute speed.</p>
+<iframe class=chart loading=lazy scrolling=no src='heatmap.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;heatmap&quot;, prep_heatmap(hm_versions),
+                [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;name&quot;, &quot;--z&quot;, &quot;rel&quot;,
+                 &quot;--title&quot;, &quot;Relative throughput vs each command&#x27;s recent peak&quot;],
+                &quot;heatmap&quot;, &quot;Relative throughput heatmap&quot;,
+                &quot;The indexed marquee commands over the recent window, each row normalized to its &quot;
+                &quot;own peak (1.0 = that command&#x27;s fastest release). Normalizing per row lets a &quot;
+                &quot;90M-rows/sec count and a 600k-rows/sec frequency share one canvas — the colour &quot;
+                &quot;shows trajectory, not absolute speed.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L614-L621' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 614–621)</a></details>
+</section>
+<section>
+<h2>Where the suite spends its time</h2>
+<p class=desc>The whole suite by wall-clock, family then benchmark. The biggest tiles are where a speedup would move the needle most — a map of where the optimization effort is best spent.</p>
+<iframe class=chart loading=lazy scrolling=no src='time_spent.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;treemap&quot;, prep_treemap(),
+                [&quot;--cols&quot;, &quot;family,name&quot;, &quot;--value&quot;, &quot;mean&quot;, &quot;--agg&quot;, &quot;sum&quot;,
+                 &quot;--title&quot;, &quot;Where the suite spends time (mean run time)&quot;],
+                &quot;time_spent&quot;, &quot;Where the suite spends its time&quot;,
+                &quot;The whole suite by wall-clock, family then benchmark. The biggest tiles are &quot;
+                &quot;where a speedup would move the needle most — a map of where the optimization &quot;
+                &quot;effort is best spent.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L622-L628' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 622–628)</a></details>
+</section>
+<section>
+<h2>Biggest speedups this release</h2>
+<p class=desc>The 15 benchmarks that improved most over the previous release. Bigger, brighter bubbles are larger wins — the percentage cut in mean run time from one version to the next.</p>
+<iframe class=chart loading=lazy scrolling=no src='gainers.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;scatter&quot;, prep_gainers(),
+                [&quot;--x&quot;, &quot;name&quot;, &quot;--y&quot;, &quot;delta (%)&quot;, &quot;--size&quot;, &quot;delta (%)&quot;, &quot;--color&quot;, &quot;delta (%)&quot;,
+                 &quot;--title&quot;, &quot;Biggest speedups this release&quot;, &quot;--y-title&quot;, &quot;% faster vs previous version&quot;],
+                &quot;gainers&quot;, &quot;Biggest speedups this release&quot;,
+                &quot;The 15 benchmarks that improved most over the previous release. Bigger, brighter &quot;
+                &quot;bubbles are larger wins — the percentage cut in mean run time from one version &quot;
+                &quot;to the next.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L629-L635' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 629–635)</a></details>
+</section>
+<section>
+<h2>Change distribution by family</h2>
+<p class=desc>The wider view behind the speedups: the spread of per-release change within each family (above zero = faster). Most families cluster just north of zero — steady, unglamorous progress. Extreme outliers (|Δ| &gt; 100%, usually measurement noise) are omitted.</p>
+<iframe class=chart loading=lazy scrolling=no src='change_by_family.html'></iframe>
+<details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;box&quot;, prep_delta_box(),
+                [&quot;--y&quot;, &quot;delta (%)&quot;, &quot;--x&quot;, &quot;family&quot;,
+                 &quot;--title&quot;, &quot;Release-over-release change by command family&quot;,
+                 &quot;--y-title&quot;, &quot;% faster vs previous version&quot;],
+                &quot;change_by_family&quot;, &quot;Change distribution by family&quot;,
+                &quot;The wider view behind the speedups: the spread of per-release change within each &quot;
+                &quot;family (above zero = faster). Most families cluster just north of zero — steady, &quot;
+                f&quot;unglamorous progress. Extreme outliers (|Δ| &gt; {int(DELTA_CLAMP)}%, usually &quot;
+                &quot;measurement noise) are omitted.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L636-L644' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 636–644)</a></details>
+</section>
+</main>
+<footer>Regenerated by <code>scripts/gen_benchmark_viz.py</code> from <code>scripts/results/*.csv</code>. Charts are interactive — hover for values, drag to zoom, use the toolbar to pan or download a PNG. Under each chart, <b>see the qsv viz command</b> reveals the exact <code>qsv viz</code> call that produced it. Source benchmarks: <a href='https://github.com/dathere/qsv/blob/master/scripts/results/'>scripts/results</a>.</footer>
+<script>addEventListener("message",function(e){var h=e.data&&e.data.qsvVizHeight;if(typeof h!=="number")return;var f=document.getElementsByClassName("chart");for(var i=0;i<f.length;i++)if(f[i].contentWindow===e.source){if(Math.abs(f[i].clientHeight-h)>1)f[i].style.height=h+"px";break;}});</script>
+</body></html>

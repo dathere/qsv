@@ -384,6 +384,78 @@ fn viz_box_points_invalid_errors() {
 }
 
 #[test]
+fn viz_box_y_range_applied() {
+    let wrk = Workdir::new("viz_box_y_range_applied");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "box",
+        "fruits.csv",
+        "--y",
+        "Price",
+        "--x",
+        "Fruit",
+        "--y-range=-10:55",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // an explicit --y-range fixes the y-axis (autorange off), so out-of-range points clip
+    assert!(
+        html.contains(r#""range":[-10.0,55.0]"#),
+        "expected the fixed y-axis range in the layout; html: {html}"
+    );
+}
+
+#[test]
+fn viz_box_annotation_present() {
+    let wrk = Workdir::new("viz_box_annotation_present");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "box",
+        "fruits.csv",
+        "--y",
+        "Price",
+        "--x",
+        "Fruit",
+        "--annotation",
+        "1 pt clipped below -10",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        html.contains("1 pt clipped below -10"),
+        "expected the --annotation note in the chart; html: {html}"
+    );
+}
+
+#[test]
+fn viz_box_y_range_invalid_errors() {
+    let wrk = Workdir::new("viz_box_y_range_invalid_errors");
+    fruits(&wrk);
+
+    // min >= max is rejected
+    let mut cmd = wrk.command("viz");
+    cmd.args(["box", "fruits.csv", "--y", "Price", "--y-range=5:1"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--y-range"));
+
+    // non-numeric is rejected
+    let mut cmd2 = wrk.command("viz");
+    cmd2.args(["box", "fruits.csv", "--y", "Price", "--y-range=abc"]);
+    let out2 = wrk.output(&mut cmd2);
+    assert!(!out2.status.success());
+    let stderr2 = wrk.output_stderr(&mut cmd2);
+    assert!(stderr2.contains("--y-range"));
+}
+
+#[test]
 fn viz_violin_basic() {
     let wrk = Workdir::new("viz_violin_basic");
     fruits(&wrk);

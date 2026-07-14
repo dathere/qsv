@@ -584,6 +584,14 @@ smart options:
     --title <s>            Chart title.
     --x-title <s>          X-axis title. (defaults to the x column name)
     --y-title <s>          Y-axis title. (defaults to the y column name)
+    --y-range <min:max>    Fix the y-axis to an explicit min:max range (two colon-
+                           separated numbers, e.g. -10:55) instead of autoscaling;
+                           points outside are clipped from view. Handy when one
+                           extreme outlier squashes the rest. Applies to cartesian
+                           charts (bar/line/scatter/histogram/box/violin/heatmap/
+                           contour). Pass a negative min with `=`: --y-range=-10:55.
+    --annotation <s>       Caption note drawn at the bottom of the plot (e.g. to note
+                           a clipped outlier). Cartesian charts only.
     --theme <name>         Plotly theme that drives the chart's overall look
                            (background, fonts, axis styling). One of: default,
                            plotly_white, plotly_dark, seaborn, seaborn_whitegrid,
@@ -1304,6 +1312,8 @@ struct Args {
     flag_title:              Option<String>,
     flag_x_title:            Option<String>,
     flag_y_title:            Option<String>,
+    flag_y_range:            Option<String>,
+    flag_annotation:         Option<String>,
     flag_theme:              Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
     // and height are optional: when unset, `viz smart` derives them from its grid shape and
@@ -1707,7 +1717,7 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
         },
     };
 
-    let mut layout = build_layout(args, default_x, default_y);
+    let mut layout = build_layout(args, default_x, default_y)?;
     if let Some(menu) = sankey_order_menu {
         layout = layout.update_menus(vec![menu]);
     }
@@ -4409,7 +4419,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             layout = layout.title(Title::with_text(title));
         }
         if let Some(note) = &below_note {
-            layout = with_below_map_note(layout, note);
+            layout = with_below_note(layout, note);
         }
         plot.set_layout(apply_theme(layout, args.theme()));
     } else {
@@ -4474,7 +4484,7 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
             layout = layout.title(Title::with_text(title));
         }
         if let Some(note) = &below_note {
-            layout = with_below_map_note(layout, note);
+            layout = with_below_note(layout, note);
         }
         plot.set_layout(apply_theme(layout, args.theme()));
     }
@@ -4483,9 +4493,10 @@ fn build_choropleth_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> 
 
 /// Append a paper-anchored note centered just beneath the plot area, reserving bottom margin so it
 /// isn't clipped. Used for the `viz choropleth --no-snap` coverage note (points dropped because
-/// they fell outside every GeoJSON region). The font color is left to inherit so the smart
-/// light/dark toggle (and themes) flip it instead of baking in a fixed ink.
-fn with_below_map_note(layout: Layout, note: &str) -> Layout {
+/// they fell outside every GeoJSON region) — a map has no bottom axis, so `y=0` sits in open space.
+/// The font color is left to inherit so the smart light/dark toggle (and themes) flip it instead of
+/// baking in a fixed ink.
+fn with_below_note(layout: Layout, note: &str) -> Layout {
     layout.margin(Margin::new().bottom(60)).annotations(vec![
         Annotation::new()
             .text(note)
@@ -4495,6 +4506,26 @@ fn with_below_map_note(layout: Layout, note: &str) -> Layout {
             .y_ref("paper")
             .x_anchor(Anchor::Center)
             .y_anchor(Anchor::Top)
+            .show_arrow(false)
+            .font(Font::new().size(12)),
+    ])
+}
+
+/// Append the generic `--annotation` caption, centered below the plot. Unlike `with_below_note`
+/// (used for maps), a cartesian chart's x-axis ticks and title occupy the space just under the plot
+/// area, so the note is pushed further down with `y_shift` and a larger bottom margin to clear
+/// them.
+fn with_chart_note(layout: Layout, note: &str) -> Layout {
+    layout.margin(Margin::new().bottom(110)).annotations(vec![
+        Annotation::new()
+            .text(note)
+            .x(0.5)
+            .y(0.0)
+            .x_ref("paper")
+            .y_ref("paper")
+            .x_anchor(Anchor::Center)
+            .y_anchor(Anchor::Top)
+            .y_shift(-58.0)
             .show_arrow(false)
             .font(Font::new().size(12)),
     ])
@@ -7552,7 +7583,7 @@ fn build_layout(
     args: &Args,
     default_x: Option<String>,
     default_y: Option<String>,
-) -> plotly::Layout {
+) -> CliResult<plotly::Layout> {
     let mut layout = plotly::Layout::new();
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
@@ -7561,10 +7592,53 @@ fn build_layout(
     if let Some(t) = args.flag_x_title.clone().or(default_x) {
         layout = layout.x_axis(Axis::new().title(Title::with_text(t)));
     }
-    if let Some(t) = args.flag_y_title.clone().or(default_y) {
-        layout = layout.y_axis(Axis::new().title(Title::with_text(t)));
+    // y-axis: title (flag or column label) and/or an explicit --y-range. Only emit the axis
+    // when at least one is set, so the default (autoranging, untitled) case is untouched.
+    let y_title = args.flag_y_title.clone().or(default_y);
+    if y_title.is_some() || args.flag_y_range.is_some() {
+        let mut y = Axis::new();
+        if let Some(t) = y_title {
+            y = y.title(Title::with_text(t));
+        }
+        if let Some(r) = &args.flag_y_range {
+            let (lo, hi) = parse_y_range(r)?;
+            // an explicit range turns autorange off, so out-of-range points clip from view
+            y = y.range(vec![lo, hi]);
+        }
+        layout = layout.y_axis(y);
     }
-    apply_theme(layout, args.theme())
+    if let Some(note) = &args.flag_annotation {
+        layout = with_chart_note(layout, note);
+    }
+    Ok(apply_theme(layout, args.theme()))
+}
+
+fn parse_y_range(spec: &str) -> CliResult<(f64, f64)> {
+    let parts: Vec<&str> = spec.split(':').collect();
+    if parts.len() != 2 {
+        return fail_incorrectusage_clierror!(
+            "--y-range must be two colon-separated numbers (min:max), e.g. -10:55; got `{spec}`"
+        );
+    }
+    let Ok(lo) = parts[0].trim().parse::<f64>() else {
+        return fail_incorrectusage_clierror!(
+            "--y-range min `{}` is not a number",
+            parts[0].trim()
+        );
+    };
+    let Ok(hi) = parts[1].trim().parse::<f64>() else {
+        return fail_incorrectusage_clierror!(
+            "--y-range max `{}` is not a number",
+            parts[1].trim()
+        );
+    };
+    if !lo.is_finite() || !hi.is_finite() {
+        return fail_incorrectusage_clierror!("--y-range values must be finite; got `{spec}`");
+    }
+    if lo >= hi {
+        return fail_incorrectusage_clierror!("--y-range min ({lo}) must be less than max ({hi})");
+    }
+    Ok((lo, hi))
 }
 
 fn output_plot(

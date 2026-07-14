@@ -425,6 +425,8 @@ qsv viz --help
 | &nbsp;`‑‑title`&nbsp; | string | Chart title. |  |
 | &nbsp;`‑‑x‑title`&nbsp; | string | X-axis title. (defaults to the x column name) |  |
 | &nbsp;`‑‑y‑title`&nbsp; | string | Y-axis title. (defaults to the y column name) |  |
+| &nbsp;`‑‑y‑range`&nbsp; | string | Fix the y-axis to an explicit min:max range (two colon- separated numbers, e.g. -10:55) instead of autoscaling; points outside are clipped from view. Handy when one extreme outlier squashes the rest. Applies to cartesian charts (bar/line/scatter/histogram/box/violin/heatmap/ contour). Pass a negative min with `=`: --y-range=-10:55. |  |
+| &nbsp;`‑‑annotation`&nbsp; | string | Caption note drawn at the bottom of the plot (e.g. to note a clipped outlier). Cartesian charts only. |  |
 | &nbsp;`‑‑theme`&nbsp; | string | Plotly theme that drives the chart's overall look (background, fonts, axis styling). One of: default, plotly_white, plotly_dark, seaborn, seaborn_whitegrid, seaborn_dark, matplotlib, plotnine (case-insensitive; hyphens accepted). When omitted, qsv's built-in look is used. Applies to all chart types, including `smart`. |  |
 | &nbsp;`‑‑width`&nbsp; | integer | Image width in pixels for static export. Default 1000; for `smart`, auto-scaled to the grid's column count. |  |
 | &nbsp;`‑‑height`&nbsp; | integer | Image height in pixels for static export. Default 600; for `smart`, auto-scaled to the number of panel rows. |  |

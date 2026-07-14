@@ -2151,6 +2151,137 @@ fn moarstats_kurtosis_gini_multiple_numeric_fields() {
 }
 
 #[test]
+fn moarstats_parallel_path_matches_sequential() {
+    // Regression for the fused outlier+KGA PARALLEL path. The exact-value goldens
+    // only exercise files below PARALLEL_THRESHOLD (10_000 rows), i.e. the
+    // sequential fallback. This drives an indexed CSV ABOVE the threshold and
+    // asserts that a single-chunk run and a multi-chunk run produce byte-identical
+    // output — proving the chunk-index-ordered KGA merge is deterministic and equal
+    // to a single-pass read. Both runs share ONE stats cache (--stats-options omits
+    // --force, so it is built once and reused), so any difference can only come from
+    // the outlier/KGA parallel code.
+    //
+    // `util::njobs` caps the effective job count to the available cores (and
+    // QSV_MAX_JOBS), so on a single-core/constrained runner BOTH runs would collapse
+    // to a single chunk and the multi-chunk merge would go untested while the test
+    // still passed. Guard against that: skip when < 2 cores, pin QSV_MAX_JOBS per run
+    // so the chunk counts are deterministic, and assert from the log that the
+    // parallel run actually used >= 2 chunks.
+    let cores = std::thread::available_parallelism().map_or(1, std::num::NonZeroUsize::get);
+    if cores < 2 {
+        eprintln!(
+            "skipping moarstats_parallel_path_matches_sequential: needs >= 2 cores to exercise \
+             the multi-chunk path (have {cores})"
+        );
+        return;
+    }
+
+    let wrk = Workdir::new("moarstats_parallel_path");
+
+    let mut rows: Vec<Vec<String>> = vec![svec!["id", "amount", "score", "when"]];
+    for i in 0..15_000u32 {
+        let base = 1000.0 + f64::from(i % 500);
+        // Occasional extreme values so IQR fences flag real outliers.
+        let amount = if i % 250 == 0 {
+            base + 90_000.0
+        } else {
+            base + f64::from(i % 37) * 1.7
+        };
+        let score = f64::from(i % 1000) * 0.125 + 0.333;
+        let month = 1 + (i % 9);
+        let year = 2000 + (i % 25);
+        rows.push(vec![
+            i.to_string(),
+            format!("{amount:.4}"),
+            format!("{score:.6}"),
+            format!("{year}-0{month}-15"),
+        ]);
+    }
+    wrk.create("data.csv", rows);
+
+    // Index so the parallel path is reachable.
+    let mut idx_cmd = wrk.command("index");
+    idx_cmd.arg("data.csv");
+    wrk.assert_success(&mut idx_cmd);
+
+    // Options WITHOUT --force so the baseline stats cache is generated once and
+    // then reused by every moarstats run below (identical baseline for all runs).
+    let shared_opts = "--infer-dates --infer-boolean --cardinality --mode --mad --quartiles \
+                       --percentiles --stats-jsonl";
+
+    // Prime the shared stats cache.
+    let mut prime = wrk.command("moarstats");
+    prime
+        .arg("--advanced")
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "primed.csv"]);
+    wrk.assert_success(&mut prime);
+
+    // Single chunk (reference): QSV_MAX_JOBS=1 pins njobs=1 regardless of the
+    // runner's core count or any inherited QSV_MAX_JOBS -> exactly one chunk.
+    let mut cmd1 = wrk.command("moarstats");
+    cmd1.env("QSV_MAX_JOBS", "1")
+        .arg("--advanced")
+        .args(["--jobs", "1"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "out_jobs1.csv"]);
+    wrk.assert_success(&mut cmd1);
+
+    // Multiple chunks (parallel): QSV_MAX_JOBS=2 + --jobs 2 pins njobs=2 (cores >= 2
+    // was checked above), which with 15_000 rows yields 2 chunks via
+    // util::chunk_size / util::num_of_chunks. Capture the log to prove it.
+    let log_dir = wrk.path("mchunk_logs");
+    std::fs::create_dir_all(&log_dir).unwrap();
+    let mut cmd_2 = wrk.command("moarstats");
+    cmd_2
+        .env("QSV_MAX_JOBS", "2")
+        .env("QSV_LOG_LEVEL", "info")
+        .env("QSV_LOG_DIR", &log_dir)
+        .arg("--advanced")
+        .args(["--jobs", "2"])
+        .args(["--stats-options", shared_opts])
+        .arg("data.csv")
+        .args(["--output", "out_jobs2.csv"]);
+    wrk.assert_success(&mut cmd_2);
+
+    let out1 = wrk.read_to_string("out_jobs1.csv").unwrap();
+    let out2 = wrk.read_to_string("out_jobs2.csv").unwrap();
+    assert_eq!(
+        out1, out2,
+        "multi-chunk parallel output must equal the single-chunk reference"
+    );
+
+    // Sanity: the advanced KGA columns are actually present (so the test really
+    // exercised the fused KGA path, not an empty diff).
+    assert!(
+        out1.contains("kurtosis") && out1.contains("gini_coefficient"),
+        "advanced KGA columns should be present in the output"
+    );
+
+    // Prove the parallel run genuinely used >= 2 chunks (otherwise the multi-chunk
+    // merge would be untested even though the equality assertion passed).
+    let log_name = format!(
+        "{}_rCURRENT.log",
+        wrk.qsv_bin().file_stem().unwrap().to_string_lossy()
+    );
+    let log = std::fs::read_to_string(log_dir.join(&log_name)).unwrap_or_default();
+    let chunks = log
+        .lines()
+        .filter_map(|l| l.split("outlier+KGA computation: ").nth(1))
+        .filter_map(|s| s.split(" chunks").next())
+        .filter_map(|s| s.trim().parse::<usize>().ok())
+        .max()
+        .unwrap_or(0);
+    assert!(
+        chunks >= 2,
+        "expected the parallel moarstats run to use >= 2 chunks, but the log reported {chunks}; \
+         log ({log_name}):\n{log}"
+    );
+}
+
+#[test]
 fn moarstats_without_advanced_flag() {
     let wrk = Workdir::new("moarstats_without_advanced");
     let test_file = wrk.load_test_file("boston311-100.csv");

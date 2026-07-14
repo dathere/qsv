@@ -2123,46 +2123,169 @@ struct KGAFieldInfo {
     sum:        Option<f64>, // sum for Gini coefficient
 }
 
-/// Count outliers for a chunk of records and compute statistics
-/// Returns a `HashMap` mapping field names to their outlier statistics
-fn count_chunk_outliers<I>(
-    fields_to_count: &HashMap<String, OutlierFieldInfo>,
+/// Combined per-chunk output from a single fused scan that BOTH counts outliers
+/// and collects values for Kurtosis/Gini/Atkinson (KGA). Both vectors are
+/// slot-indexed (parallel to the `outlier_fields` / `kga_fields` slices passed to
+/// `count_and_collect_chunk`).
+struct FusedChunkOutput {
+    outlier_stats: Vec<OutlierStats>,
+    kga_values:    Vec<Vec<f64>>,
+}
+
+/// Merge one chunk's outlier stats for a single field slot into the running total.
+/// Order-independent (sums, counts, min/max), so chunks may be merged in any order.
+fn merge_outlier_stats(total: &mut OutlierStats, stats: &OutlierStats) {
+    for i in 0..OUTLIER_COUNTS_LEN {
+        total.counts[i] += stats.counts[i];
+    }
+    total.sum_outliers += stats.sum_outliers;
+    total.sum_normal += stats.sum_normal;
+    total.sum_all += stats.sum_all;
+    total.count_all += stats.count_all;
+    total.winsorized_sum += stats.winsorized_sum;
+    total.winsorized_count += stats.winsorized_count;
+    total.trimmed_sum += stats.trimmed_sum;
+    total.trimmed_count += stats.trimmed_count;
+    total.sum_squares_outliers += stats.sum_squares_outliers;
+    total.sum_squares_normal += stats.sum_squares_normal;
+    total.sum_squares_trimmed += stats.sum_squares_trimmed;
+    total.sum_squares_winsorized += stats.sum_squares_winsorized;
+    if let Some(min) = stats.min_outliers {
+        total.min_outliers = Some(total.min_outliers.map_or(min, |m| m.min(min)));
+    }
+    if let Some(max) = stats.max_outliers {
+        total.max_outliers = Some(total.max_outliers.map_or(max, |m| m.max(max)));
+    }
+    if let Some(min) = stats.min_normal {
+        total.min_normal = Some(total.min_normal.map_or(min, |m| m.min(min)));
+    }
+    if let Some(max) = stats.max_normal {
+        total.max_normal = Some(total.max_normal.map_or(max, |m| m.max(max)));
+    }
+    if let Some(min) = stats.min_trimmed {
+        total.min_trimmed = Some(total.min_trimmed.map_or(min, |m| m.min(min)));
+    }
+    if let Some(max) = stats.max_trimmed {
+        total.max_trimmed = Some(total.max_trimmed.map_or(max, |m| m.max(max)));
+    }
+    if let Some(min) = stats.min_winsorized {
+        total.min_winsorized = Some(total.min_winsorized.map_or(min, |m| m.min(min)));
+    }
+    if let Some(max) = stats.max_winsorized {
+        total.max_winsorized = Some(total.max_winsorized.map_or(max, |m| m.max(max)));
+    }
+}
+
+/// Finalize Kurtosis, Gini, Atkinson, Theil & mean absolute deviation for a single
+/// field from its full (file-ordered) value vector. Kept bit-identical to the former
+/// sequential `compute_all_kga_from_reader` finalize block.
+fn finalize_kga(
+    values: &[f64],
+    precalc_mean: Option<f64>,
+    precalc_variance: Option<f64>,
+    precalc_sum: Option<f64>,
+    atkinson_epsilon: f64,
+) -> KGAStats {
+    // Need at least 2 values for meaningful statistics
+    if values.len() < 2 {
+        return KGAStats::default();
+    }
+
+    // Compute kurtosis with precalculated mean and variance
+    let kurtosis_val = kurtosis(values.iter().copied(), precalc_mean, precalc_variance);
+
+    // Compute Gini coefficient with precalculated sum (not mean!)
+    let gini_val = gini(values.iter().copied(), precalc_sum);
+
+    // Compute Atkinson Index (epsilon parameter configurable via --epsilon)
+    let atkinson_val = atkinson(values.iter().copied(), atkinson_epsilon, precalc_mean, None);
+
+    // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
+    // Only for positive values (Theil index is undefined for non-positive values)
+    #[allow(clippy::cast_precision_loss)]
+    let theil_val = {
+        // First pass: compute sum and count of positive values
+        let mut pos_sum = 0.0_f64;
+        let mut pos_count: usize = 0;
+        for &v in values {
+            if v > 0.0 {
+                pos_sum += v;
+                pos_count += 1;
+            }
+        }
+
+        if pos_count >= 2 {
+            let n = pos_count as f64;
+            let pos_mean = pos_sum / n;
+            if pos_mean > f64::EPSILON {
+                // Second pass: accumulate Theil sum over positive values
+                let mut theil_sum = 0.0_f64;
+                for &v in values {
+                    if v > 0.0 {
+                        let ratio = v / pos_mean;
+                        // use CPU's Fused Multiply-Add (FMA) for better precision
+                        theil_sum = ratio.mul_add(ratio.ln(), theil_sum);
+                    }
+                }
+                Some(theil_sum / n)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    };
+
+    // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
+    #[allow(clippy::cast_precision_loss)]
+    let mean_ad_val = if let Some(mean_val) = precalc_mean {
+        let n = values.len() as f64;
+        let sum_abs_dev: f64 = values.iter().map(|&x| (x - mean_val).abs()).sum();
+        Some(sum_abs_dev / n)
+    } else {
+        None
+    };
+
+    KGAStats {
+        kurtosis:         kurtosis_val,
+        gini_coefficient: gini_val,
+        atkinson_index:   atkinson_val,
+        theil_index:      theil_val,
+        mean_ad:          mean_ad_val,
+    }
+}
+
+/// Single fused scan over a chunk of records that BOTH counts outliers (into
+/// slot-indexed `OutlierStats`) and collects numeric values for KGA (into
+/// slot-indexed `Vec<f64>`), replacing the two former independent full-file passes.
+/// Uses index-based slot access (no per-cell String-keyed HashMap lookup) and a
+/// single reused `csv::ByteRecord`.
+fn count_and_collect_chunk<I>(
+    outlier_fields: &[OutlierFieldInfo],
+    kga_fields: &[KGAFieldInfo],
+    prefer_dmy: bool,
     records: I,
-) -> CliResult<HashMap<String, OutlierStats>>
+) -> CliResult<FusedChunkOutput>
 where
     I: Iterator<Item = csv::Result<csv::ByteRecord>>,
 {
-    if fields_to_count.is_empty() {
-        return Ok(HashMap::new());
-    }
+    let mut outlier_stats: Vec<OutlierStats> = vec![OutlierStats::default(); outlier_fields.len()];
+    let mut kga_values: Vec<Vec<f64>> = vec![Vec::new(); kga_fields.len()];
 
-    // Initialize statistics for all fields
-    let mut chunk_stats: HashMap<String, OutlierStats> = fields_to_count
-        .keys()
-        .map(|k| (k.clone(), OutlierStats::default()))
-        .collect();
-
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
     #[allow(unused_assignments)]
     let mut record: csv::ByteRecord = csv::ByteRecord::new();
-    let mut value_bytes;
-    let mut numeric_value;
 
-    // Process each record in the chunk
     for result in records {
         record = result?;
 
-        for (field_name, field_info) in fields_to_count {
-            value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
-
+        // --- Outlier slots: bucket each value against its IQR fences ---
+        for (i, field_info) in outlier_fields.iter().enumerate() {
+            let value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
             if value_bytes.is_empty() {
                 continue; // Skip null/empty values
             }
 
-            // Parse the value based on field type
-            numeric_value = if field_info.field_type.is_date_or_datetime() {
-                // Convert bytes to string for date parsing. UTF-8 decode failure
-                // is exceptional in CSV data — mark as cold for branch prediction.
+            let numeric_value = if field_info.field_type.is_date_or_datetime() {
                 if let Ok(value_str) = from_utf8(value_bytes) {
                     parse_date_to_days(value_str, prefer_dmy)
                 } else {
@@ -2177,13 +2300,8 @@ where
                 continue; // Skip values that can't be parsed
             };
 
-            // Get mutable reference to stats for this field
-            // safety: chunk_stats is pre-populated with all field names
-            let Some(stats) = chunk_stats.get_mut(field_name) else {
-                cold_path();
-                debug_assert!(false, "chunk_stats missing expected key: {field_name}");
-                continue;
-            };
+            // safety: outlier_stats is sized to outlier_fields.len()
+            let stats = &mut outlier_stats[i];
 
             // Update sums and count
             stats.sum_all += val;
@@ -2195,7 +2313,6 @@ where
                 .min(field_info.upper_threshold);
             stats.winsorized_sum += winsorized_val;
             stats.winsorized_count += 1;
-            // Track winsorized min/max and sum of squares
             stats.min_winsorized = Some(
                 stats
                     .min_winsorized
@@ -2213,7 +2330,6 @@ where
             if val >= field_info.lower_threshold && val <= field_info.upper_threshold {
                 stats.trimmed_sum += val;
                 stats.trimmed_count += 1;
-                // Track trimmed min/max and sum of squares
                 stats.min_trimmed = Some(stats.min_trimmed.map_or(val, |m| m.min(val)));
                 stats.max_trimmed = Some(stats.max_trimmed.map_or(val, |m| m.max(val)));
                 stats.sum_squares_trimmed = val.mul_add(val, stats.sum_squares_trimmed);
@@ -2256,177 +2372,233 @@ where
                 stats.max_outliers = Some(stats.max_outliers.map_or(val, |m| m.max(val)));
             }
         }
+
+        // --- KGA slots: collect parsed values in file order for later finalize ---
+        for (j, field_info) in kga_fields.iter().enumerate() {
+            let value_bytes = record.get(field_info.col_idx).unwrap_or(&[]);
+            if value_bytes.is_empty() {
+                continue; // Skip null/empty values
+            }
+
+            let numeric_value = if field_info.field_type.is_date_or_datetime() {
+                if let Ok(value_str) = from_utf8(value_bytes) {
+                    parse_date_to_days(value_str, prefer_dmy)
+                } else {
+                    cold_path();
+                    None
+                }
+            } else {
+                parse_float_opt_from_bytes(value_bytes)
+            };
+
+            if let Some(val) = numeric_value {
+                // safety: kga_values is sized to kga_fields.len()
+                kga_values[j].push(val);
+            }
+        }
     }
 
-    Ok(chunk_stats)
+    Ok(FusedChunkOutput {
+        outlier_stats,
+        kga_values,
+    })
 }
 
-/// Count outliers for all fields, using parallel processing if index is available
-/// Returns a `HashMap` mapping field names to their outlier statistics
-fn count_all_outliers(
-    fields_to_count: HashMap<String, OutlierFieldInfo>,
+/// Fused replacement for the former `count_all_outliers` + `compute_all_kga`:
+/// computes outlier statistics AND Kurtosis/Gini/Atkinson in a SINGLE scan of the
+/// original CSV (chunked & parallel when an index exists and the file is large
+/// enough, sequential otherwise). Outlier stats merge order-independently; KGA
+/// value vectors are concatenated in strict chunk-index (file) order so results
+/// are bit-identical to a sequential read.
+///
+/// `outlier_names`/`kga_names` are parallel to `outlier_fields`/`kga_fields` (slot
+/// i <-> field name i) and map the slot-indexed results back to name-keyed maps.
+#[allow(clippy::type_complexity)]
+fn compute_outliers_and_kga(
+    outlier_fields: Vec<OutlierFieldInfo>,
+    outlier_names: Vec<String>,
+    kga_fields: Vec<KGAFieldInfo>,
+    kga_names: Vec<String>,
     input_path: &Path,
     flag_jobs: Option<usize>,
-) -> CliResult<HashMap<String, OutlierStats>> {
-    if fields_to_count.is_empty() {
-        return Ok(HashMap::new());
+    atkinson_epsilon: f64,
+) -> CliResult<(HashMap<String, OutlierStats>, HashMap<String, KGAStats>)> {
+    if outlier_fields.is_empty() && kga_fields.is_empty() {
+        return Ok((HashMap::new(), HashMap::new()));
     }
 
-    // Check if index exists for parallel processing
+    // Precompute KGA per-field (mean, variance, sum) for finalize BEFORE the field
+    // list is moved into an Arc for the parallel workers.
+    let kga_precalc: Vec<(Option<f64>, Option<f64>, Option<f64>)> = kga_fields
+        .iter()
+        .map(|f| (f.mean, f.variance, f.sum))
+        .collect();
+
     let input_path_str = input_path
         .to_str()
         .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
     let input_path_string = input_path_str.to_string();
     let rconfig = Config::new(Some(&input_path_string));
     let indexed_result = rconfig.indexed()?;
+    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
 
-    if let Some(idx) = indexed_result {
-        // Parallel processing path
+    let n_outlier = outlier_fields.len();
+    let n_kga = kga_fields.len();
+
+    // Resolve the job count up front (also sizes Rayon's global pool via
+    // `util::njobs`). This must happen on EVERY path — including the sequential
+    // scan fallbacks below — so the parallel KGA finalize (`into_par_iter`) honors
+    // `--jobs` (e.g. `--jobs 1` stays single-threaded) instead of defaulting to
+    // Rayon's all-cores global pool.
+    let njobs = util::njobs(flag_jobs);
+
+    // (merged_outliers, kga_concat) produced by whichever path runs.
+    let (merged_outliers, kga_concat): (Vec<OutlierStats>, Vec<Vec<f64>>) = if let Some(idx) =
+        indexed_result
+    {
         let idx_count = idx.count() as usize;
-        if idx_count == 0 {
-            return Ok(HashMap::new());
-        }
 
-        // Only parallelize if file is large enough
-        if idx_count < PARALLEL_THRESHOLD {
-            // Fall back to sequential for small files
+        if idx_count == 0 {
+            // Empty CSV: match the former behavior — outliers = empty map (the old
+            // count_all_outliers early-returned an empty map), KGA = all-None
+            // entries (finalize on empty vecs). Empty merged_outliers zips to an
+            // empty outlier map below.
+            (Vec::new(), vec![Vec::new(); n_kga])
+        } else if idx_count < PARALLEL_THRESHOLD {
+            // Sequential fallback for small files (test-covered golden path).
             let mut rdr = rconfig.reader_file()?;
             let _headers = rdr.headers()?.clone();
-            return count_chunk_outliers(&fields_to_count, rdr.byte_records());
-        }
+            let fused = count_and_collect_chunk(
+                &outlier_fields,
+                &kga_fields,
+                prefer_dmy,
+                rdr.byte_records(),
+            )?;
+            (fused.outlier_stats, fused.kga_values)
+        } else {
+            // Parallel path: chunk by index, one fused scan per chunk.
+            let chunk_size = util::chunk_size(idx_count, njobs);
+            let nchunks = util::num_of_chunks(idx_count, chunk_size);
 
-        let njobs = util::njobs(flag_jobs);
-        let chunk_size = util::chunk_size(idx_count, njobs);
-        let nchunks = util::num_of_chunks(idx_count, chunk_size);
+            log::info!("Parallelizing outlier+KGA computation: {nchunks} chunks, {njobs} jobs");
 
-        log::info!("Parallelizing outlier counting: {nchunks} chunks, {njobs} jobs");
+            // Retain freed jemalloc pages for this parallel, allocation-heavy pass.
+            util::retain_alloc_pages_for_aggregation();
 
-        // Retain freed jemalloc pages for this parallel, hashmap-heavy outlier pass
-        // (no-op when background_thread is active or QSV_NO_ALLOC_TUNING is set).
-        util::retain_alloc_pages_for_aggregation();
+            let pool = ThreadPool::new(njobs);
+            let (send, recv) = crossbeam_channel::bounded(nchunks);
 
-        let pool = ThreadPool::new(njobs);
-        let (send, recv) = crossbeam_channel::bounded(nchunks);
+            // Share the read-only slot-ordered field lists via Arc (no clones).
+            let outlier_arc = Arc::new(outlier_fields);
+            let kga_arc = Arc::new(kga_fields);
 
-        // Process each chunk in parallel. Share the read-only field map via Arc
-        // instead of deep-cloning the HashMap into every worker. Since the caller
-        // no longer needs `fields_to_count` after this call, we move it directly
-        // into the Arc — zero map clones. `input_path_string` from above is already
-        // UTF-8-validated, so no need to re-validate here.
-        let fields_arc = Arc::new(fields_to_count);
-        for i in 0..nchunks {
-            let send = send.clone();
-            let fields_arc = Arc::clone(&fields_arc);
-            let input_path_string_clone = input_path_string.clone();
-            pool.execute(move || {
-                // Open index for this thread. If this fails, propagate an error
-                // through the channel — dropping the chunk silently would
-                // under-count outliers without any indication to the user.
-                let rconfig_chunk = Config::new(Some(&input_path_string_clone));
-                let mut idx_chunk = match rconfig_chunk.indexed() {
-                    Ok(Some(idx)) => idx,
-                    Ok(None) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: index is not available for {input_path_string_clone}"
-                        ))));
+            for i in 0..nchunks {
+                let send = send.clone();
+                let outlier_arc = Arc::clone(&outlier_arc);
+                let kga_arc = Arc::clone(&kga_arc);
+                let input_path_string_clone = input_path_string.clone();
+                pool.execute(move || {
+                    // Open index for this thread; propagate failures through the
+                    // channel rather than silently dropping (would under-count).
+                    let rconfig_chunk = Config::new(Some(&input_path_string_clone));
+                    let mut idx_chunk = match rconfig_chunk.indexed() {
+                        Ok(Some(idx)) => idx,
+                        Ok(None) => {
+                            let _ = send.send((
+                                i,
+                                Err(CliError::Other(format!(
+                                    "Chunk {i}: index is not available for \
+                                     {input_path_string_clone}"
+                                ))),
+                            ));
+                            return;
+                        },
+                        Err(e) => {
+                            let _ = send.send((
+                                i,
+                                Err(CliError::Other(format!(
+                                    "Chunk {i}: failed to open index: {e}"
+                                ))),
+                            ));
+                            return;
+                        },
+                    };
+
+                    // Seek to chunk start position
+                    if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
+                        let _ = send.send((
+                            i,
+                            Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))),
+                        ));
                         return;
-                    },
-                    Err(e) => {
-                        let _ = send.send(Err(CliError::Other(format!(
-                            "Chunk {i}: failed to open index: {e}"
-                        ))));
-                        return;
-                    },
+                    }
+
+                    let it = idx_chunk.byte_records().take(chunk_size);
+                    let result = count_and_collect_chunk(&outlier_arc, &kga_arc, prefer_dmy, it);
+                    let _ = send.send((i, result));
+                });
+            }
+
+            drop(send);
+
+            // Collect chunks by index so the KGA merge can be file-ordered.
+            let mut chunks: Vec<Option<FusedChunkOutput>> = (0..nchunks).map(|_| None).collect();
+            for (i, chunk_result) in recv {
+                chunks[i] = Some(chunk_result?);
+            }
+
+            let mut merged_outliers: Vec<OutlierStats> = vec![OutlierStats::default(); n_outlier];
+            let mut kga_concat: Vec<Vec<f64>> = vec![Vec::new(); n_kga];
+
+            // Merge in ASCENDING chunk index. Outliers are order-independent, but
+            // KGA value vectors MUST be concatenated in file order to keep float
+            // summation bit-identical to a sequential read.
+            for chunk in &mut chunks {
+                let Some(c) = chunk.take() else {
+                    continue;
                 };
-
-                // Seek to chunk start position
-                if let Err(e) = idx_chunk.seek((i * chunk_size) as u64) {
-                    let _ = send.send(Err(CliError::Other(format!("Chunk {i}: seek failed: {e}"))));
-                    return;
+                for (slot, stats) in c.outlier_stats.iter().enumerate() {
+                    merge_outlier_stats(&mut merged_outliers[slot], stats);
                 }
-
-                // Process chunk records
-                let it = idx_chunk.byte_records().take(chunk_size);
-                let result = count_chunk_outliers(&fields_arc, it);
-                let _ = send.send(result);
-            });
-        }
-
-        drop(send);
-
-        // Aggregate results from all chunks
-        let mut all_stats: HashMap<String, OutlierStats> = fields_arc
-            .keys()
-            .map(|k| (k.clone(), OutlierStats::default()))
-            .collect();
-
-        for chunk_result in &recv {
-            let chunk_stats = chunk_result?;
-            for (field_name, stats) in chunk_stats {
-                if let Some(total_stats) = all_stats.get_mut(&field_name) {
-                    // Aggregate counts
-                    for i in 0..OUTLIER_COUNTS_LEN {
-                        total_stats.counts[i] += stats.counts[i];
-                    }
-                    // Aggregate sums
-                    total_stats.sum_outliers += stats.sum_outliers;
-                    total_stats.sum_normal += stats.sum_normal;
-                    total_stats.sum_all += stats.sum_all;
-                    total_stats.count_all += stats.count_all;
-                    // Aggregate winsorized/trimmed stats
-                    total_stats.winsorized_sum += stats.winsorized_sum;
-                    total_stats.winsorized_count += stats.winsorized_count;
-                    total_stats.trimmed_sum += stats.trimmed_sum;
-                    total_stats.trimmed_count += stats.trimmed_count;
-                    // Aggregate sum of squares
-                    total_stats.sum_squares_outliers += stats.sum_squares_outliers;
-                    total_stats.sum_squares_normal += stats.sum_squares_normal;
-                    total_stats.sum_squares_trimmed += stats.sum_squares_trimmed;
-                    total_stats.sum_squares_winsorized += stats.sum_squares_winsorized;
-                    // Aggregate min/max
-                    if let Some(min) = stats.min_outliers {
-                        total_stats.min_outliers =
-                            Some(total_stats.min_outliers.map_or(min, |m| m.min(min)));
-                    }
-                    if let Some(max) = stats.max_outliers {
-                        total_stats.max_outliers =
-                            Some(total_stats.max_outliers.map_or(max, |m| m.max(max)));
-                    }
-                    if let Some(min) = stats.min_normal {
-                        total_stats.min_normal =
-                            Some(total_stats.min_normal.map_or(min, |m| m.min(min)));
-                    }
-                    if let Some(max) = stats.max_normal {
-                        total_stats.max_normal =
-                            Some(total_stats.max_normal.map_or(max, |m| m.max(max)));
-                    }
-                    if let Some(min) = stats.min_trimmed {
-                        total_stats.min_trimmed =
-                            Some(total_stats.min_trimmed.map_or(min, |m| m.min(min)));
-                    }
-                    if let Some(max) = stats.max_trimmed {
-                        total_stats.max_trimmed =
-                            Some(total_stats.max_trimmed.map_or(max, |m| m.max(max)));
-                    }
-                    if let Some(min) = stats.min_winsorized {
-                        total_stats.min_winsorized =
-                            Some(total_stats.min_winsorized.map_or(min, |m| m.min(min)));
-                    }
-                    if let Some(max) = stats.max_winsorized {
-                        total_stats.max_winsorized =
-                            Some(total_stats.max_winsorized.map_or(max, |m| m.max(max)));
-                    }
+                for (slot, mut v) in c.kga_values.into_iter().enumerate() {
+                    kga_concat[slot].append(&mut v);
                 }
             }
-        }
 
-        Ok(all_stats)
+            (merged_outliers, kga_concat)
+        }
     } else {
-        // Sequential fallback when no index exists
+        // No index: single sequential fused scan over the whole file.
         let mut rdr = rconfig.reader_file()?;
         let _headers = rdr.headers()?.clone();
-        count_chunk_outliers(&fields_to_count, rdr.byte_records())
-    }
+        let fused =
+            count_and_collect_chunk(&outlier_fields, &kga_fields, prefer_dmy, rdr.byte_records())?;
+        (fused.outlier_stats, fused.kga_values)
+    };
+
+    // Build the outlier map (slot -> name). For the empty-CSV case merged_outliers
+    // is empty and this yields an empty map (matching the former behavior).
+    let outlier_counts: HashMap<String, OutlierStats> =
+        outlier_names.into_iter().zip(merged_outliers).collect();
+
+    // Finalize KGA per field (slot -> name) over its file-ordered value vector.
+    // Each field's finalize is independent and dominated by a per-column sort
+    // (Gini) plus kurtosis/Theil/mean_ad, so fan out across fields with rayon.
+    // Results are keyed by name and each field's math is order-independent of the
+    // others, so this stays bit-identical to a sequential finalize.
+    let kga_stats: HashMap<String, KGAStats> = kga_concat
+        .into_par_iter()
+        .zip(kga_precalc)
+        .zip(kga_names)
+        .map(|((values, (mean, variance, sum)), name)| {
+            (
+                name,
+                finalize_kga(&values, mean, variance, sum, atkinson_epsilon),
+            )
+        })
+        .collect();
+
+    Ok((outlier_counts, kga_stats))
 }
 
 /// Process a chunk of records and update bivariate statistics
@@ -3080,189 +3252,6 @@ fn compute_all_bivariatestats_sequential(
             )
         })
         .collect()
-}
-
-/// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields.
-/// Since Kurtosis, Gini & Atkinson Index require all values from the entire dataset, this always
-/// uses sequential processing to read all values in a single pass.
-/// Returns a `HashMap` mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
-/// statistics
-fn compute_all_kga(
-    fields_to_compute: &HashMap<String, KGAFieldInfo>,
-    input_path: &Path,
-    atkinson_epsilon: f64,
-) -> CliResult<HashMap<String, KGAStats>> {
-    if fields_to_compute.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    let input_path_str = input_path
-        .to_str()
-        .ok_or_else(|| CliError::Other(format!("Invalid input path: {}", input_path.display())))?;
-    let input_path_string = input_path_str.to_string();
-    let rconfig = Config::new(Some(&input_path_string));
-    let mut rdr = rconfig.reader_file()?;
-    let _headers = rdr.headers()?.clone();
-    compute_all_kga_from_reader(fields_to_compute, rdr, atkinson_epsilon)
-}
-
-/// Compute Kurtosis, Gini coefficient, and Atkinson index for all fields in a single pass through
-/// the CSV (sequential) The CSV reader should already be positioned after the headers
-/// Returns a `HashMap` mapping field names to their Kurtosis, Gini coefficient, and Atkinson index
-/// statistics
-fn compute_all_kga_from_reader(
-    fields_to_compute: &HashMap<String, KGAFieldInfo>,
-    mut rdr: csv::Reader<std::fs::File>,
-    atkinson_epsilon: f64,
-) -> CliResult<HashMap<String, KGAStats>> {
-    if fields_to_compute.is_empty() {
-        return Ok(HashMap::new());
-    }
-
-    // Collect all values for each field
-    let mut field_values: HashMap<String, Vec<f64>> = fields_to_compute
-        .keys()
-        .map(|k| (k.clone(), Vec::new()))
-        .collect();
-
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-
-    // amortize allocations
-    #[allow(unused_assignments)]
-    let mut record: StringRecord = StringRecord::new();
-    let mut value_str;
-    let mut numeric_value;
-
-    // Process each record once, collecting values for all fields
-    for result in rdr.records() {
-        record = result?;
-
-        for (field_name, field_info) in fields_to_compute {
-            value_str = record.get(field_info.col_idx).unwrap_or("");
-
-            if value_str.is_empty() {
-                continue; // Skip null/empty values
-            }
-
-            // Parse the value based on field type
-            numeric_value = if field_info.field_type.is_date_or_datetime() {
-                parse_date_to_days(value_str, prefer_dmy)
-            } else {
-                parse_float_opt(value_str)
-            };
-
-            if let Some(val) = numeric_value
-                && let Some(values) = field_values.get_mut(field_name)
-            {
-                values.push(val);
-            }
-        }
-    }
-
-    // Compute statistics for each field
-    let mut all_stats: HashMap<String, KGAStats> = HashMap::with_capacity(field_values.len());
-
-    for (field_name, values) in field_values {
-        if values.len() < 2 {
-            // Need at least 2 values for meaningful statistics
-            all_stats.insert(
-                field_name,
-                KGAStats {
-                    kurtosis:         None,
-                    gini_coefficient: None,
-                    atkinson_index:   None,
-                    theil_index:      None,
-                    mean_ad:          None,
-                },
-            );
-            continue;
-        }
-
-        // Get precalculated stats for this field
-        let (precalc_mean, precalc_variance, precalc_sum) = fields_to_compute
-            .get(&field_name)
-            .map_or((None, None, None), |info| {
-                (info.mean, info.variance, info.sum)
-            });
-
-        // Compute kurtosis with precalculated mean and variance
-        let kurtosis_val = kurtosis(values.iter().copied(), precalc_mean, precalc_variance);
-
-        // Compute Gini coefficient with precalculated sum (not mean!)
-        let gini_val = gini(values.iter().copied(), precalc_sum);
-
-        // Compute Atkinson Index (epsilon parameter typically 0.5 or 1.0, configurable via
-        // --epsilon) atkinson function signature: atkinson(iter, epsilon,
-        // precalc_mean, precalc_geometric_sum) See: https://docs.rs/qsv-stats/latest/stats/fn.atkinson.html
-        let atkinson_val = atkinson(
-            values.iter().copied(),
-            atkinson_epsilon,
-            precalc_mean,
-            None, // geometric sum not precalculated
-        );
-
-        // Compute Theil Index: (1/n) * Σ((x_i / mean) * ln(x_i / mean))
-        // Only for positive values (Theil index is undefined for non-positive values)
-        // Uses mean of positive values only, so it works even when overall mean is <= 0
-        #[allow(clippy::cast_precision_loss)]
-        let theil_val = {
-            // First pass: compute sum and count of positive values
-            let mut pos_sum = 0.0_f64;
-            let mut pos_count: usize = 0;
-            for &v in &values {
-                if v > 0.0 {
-                    pos_sum += v;
-                    pos_count += 1;
-                }
-            }
-
-            if pos_count >= 2 {
-                let n = pos_count as f64;
-                let pos_mean = pos_sum / n;
-                if pos_mean > f64::EPSILON {
-                    // Second pass: accumulate Theil sum over positive values
-                    let mut theil_sum = 0.0_f64;
-                    for &v in &values {
-                        if v > 0.0 {
-                            let ratio = v / pos_mean;
-                            // use CPU's Fused Multiply-Add (FMA) for better precision and to reduce
-                            // intermediate rounding errors in the sum
-                            // theil_sum += ratio * ratio.ln();
-                            theil_sum = ratio.mul_add(ratio.ln(), theil_sum);
-                        }
-                    }
-                    Some(theil_sum / n)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        };
-
-        // Compute Mean Absolute Deviation from mean: (1/n) * Σ|x_i - mean|
-        #[allow(clippy::cast_precision_loss)]
-        let mean_ad_val = if let Some(mean_val) = precalc_mean {
-            let n = values.len() as f64;
-            let sum_abs_dev: f64 = values.iter().map(|&x| (x - mean_val).abs()).sum();
-            Some(sum_abs_dev / n)
-        } else {
-            None
-        };
-
-        all_stats.insert(
-            field_name,
-            KGAStats {
-                kurtosis:         kurtosis_val,
-                gini_coefficient: gini_val,
-                atkinson_index:   atkinson_val,
-                theil_index:      theil_val,
-                mean_ad:          mean_ad_val,
-            },
-        );
-    }
-
-    Ok(all_stats)
 }
 
 /// Compute Shannon Entropy for all fields by calling the frequency command.
@@ -4376,54 +4365,61 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
         }
     }
 
-    // Count outliers for all fields in a single pass through the original CSV
-    let outlier_counts = if fields_to_count.is_empty() {
-        HashMap::new()
-    } else {
-        // Get headers to map field names to column indices
+    // Build slot-ordered field vectors for the FUSED outlier + KGA pass. Both
+    // outliers and KGA scan the same original CSV over the same numeric/date
+    // columns, so they are computed together in a SINGLE (chunked, parallel) pass
+    // instead of two independent full-file reads. A single header read maps each
+    // field name to its column index (dropping fields not present in the CSV).
+    let (outlier_fields, outlier_names, kga_fields, kga_names) = {
         let mut csv_rdr = ReaderBuilder::new()
             .has_headers(true)
             .from_path(actual_input_path)?;
         let csv_headers = csv_rdr.headers()?.clone();
+        // First occurrence wins for duplicate header names, matching the prior
+        // `csv_headers.iter().position(|h| h == field_name)` (first-match) semantics
+        // — a plain `.collect()` would keep the LAST duplicate instead.
+        let mut header_pos: HashMap<&str, usize> = HashMap::with_capacity(csv_headers.len());
+        for (idx, h) in csv_headers.iter().enumerate() {
+            header_pos.entry(h).or_insert(idx);
+        }
 
-        // Update column indices in fields_to_count and remove fields not found in CSV
-        fields_to_count.retain(|field_name, field_info| {
-            if let Some(col_idx) = csv_headers.iter().position(|h| h == field_name) {
-                field_info.col_idx = col_idx;
-                true
-            } else {
-                false
+        let mut o_fields = Vec::with_capacity(fields_to_count.len());
+        let mut o_names = Vec::with_capacity(fields_to_count.len());
+        for (name, mut info) in fields_to_count {
+            if let Some(&col_idx) = header_pos.get(name.as_str()) {
+                info.col_idx = col_idx;
+                o_fields.push(info);
+                o_names.push(name);
             }
-        });
+        }
 
-        // Count outliers (will use parallel processing if index exists).
-        // Pass fields_to_count by value so the parallel path can move it
-        // directly into an Arc without an extra deep-clone.
-        count_all_outliers(fields_to_count, actual_input_path, args.flag_jobs)?
+        let mut k_fields = Vec::with_capacity(fields_for_kga.len());
+        let mut k_names = Vec::with_capacity(fields_for_kga.len());
+        for (name, mut info) in fields_for_kga {
+            if let Some(&col_idx) = header_pos.get(name.as_str()) {
+                info.col_idx = col_idx;
+                k_fields.push(info);
+                k_names.push(name);
+            }
+        }
+
+        (o_fields, o_names, k_fields, k_names)
     };
 
-    // Compute kurtosis, Gini coefficient & Atkinson Index for all fields
-    let kga_stats = if fields_for_kga.is_empty() {
-        HashMap::new()
+    // Single fused pass: outlier counting + Kurtosis/Gini/Atkinson in one scan
+    // (parallel when an index exists and the file is large enough).
+    let (outlier_counts, kga_stats) = if outlier_fields.is_empty() && kga_fields.is_empty() {
+        (HashMap::new(), HashMap::new())
     } else {
-        // Get headers to map field names to column indices
-        let mut csv_rdr = ReaderBuilder::new()
-            .has_headers(true)
-            .from_path(actual_input_path)?;
-        let csv_headers = csv_rdr.headers()?.clone();
-
-        // Update column indices in fields_for_kga and remove fields not found in CSV
-        fields_for_kga.retain(|field_name, field_info| {
-            if let Some(col_idx) = csv_headers.iter().position(|h| h == field_name) {
-                field_info.col_idx = col_idx;
-                true
-            } else {
-                false
-            }
-        });
-
-        // Compute Kurtosis, Gini & Atkinson Index (will use sequential processing for correctness)
-        compute_all_kga(&fields_for_kga, actual_input_path, args.flag_epsilon)?
+        compute_outliers_and_kga(
+            outlier_fields,
+            outlier_names,
+            kga_fields,
+            kga_names,
+            actual_input_path,
+            args.flag_jobs,
+            args.flag_epsilon,
+        )?
     };
 
     // Compute Shannon Entropy for all fields

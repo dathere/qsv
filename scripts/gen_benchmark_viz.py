@@ -477,6 +477,10 @@ sample of NYC's 311 data, timed with [hyperfine](https://github.com/sharkdp/hype
 [`scripts/results/README.md`](https://github.com/dathere/qsv/blob/master/scripts/results/README.md)
 for the methodology and the raw CSVs.
 
+> Looking for the **full per-command timing tables**? See the classic
+> [tabular benchmarks at qsv.dathere.com](https://qsv.dathere.com/benchmarks). This page is the
+> interactive, visual companion to it.
+
 ## 📊 Interactive dashboard
 
 **➡️ [Open the interactive benchmark dashboard]({url})**

@@ -15,6 +15,10 @@ Add dozens of additional statistics, including extended outlier, robust & bivari
 statistics to an existing stats CSV file. It also maps the field type to the most specific
 W3C XML Schema Definition (XSD) datatype (<https://www.w3.org/TR/xmlschema-2/>).
 
+> [!IMPORTANT]
+> The `moarstats` command is designed to be run AFTER the `stats` command, as it relies
+> on the baseline statistics computed by `stats` to calculate "moar" statistics.
+
 The `moarstats` command extends an existing stats CSV file (created by the `stats` command)
 by computing "moar" (<https://www.dictionary.com/culture/slang/moar>) statistics that can be
 derived from existing stats columns and by scanning the original CSV file.

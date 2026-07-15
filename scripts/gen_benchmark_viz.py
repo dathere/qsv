@@ -85,6 +85,19 @@ FREQ_GROWTH = ["frequency", "frequency_index", "frequency_no_limit", "frequency_
 # structural path (base + index). no_schema runs ~3x faster in absolute terms, but each series
 # is normalized to its own launch, so the growth trajectories are directly comparable.
 VALIDATE_GROWTH = ["validate", "validate_index", "validate_no_schema", "validate_no_schema_index"]
+# moarstats deep-dive: the four bivariate variants — base and --advanced, each in the default
+# and --bivariate-stats all battery — every one normalized to its own launch. The two UNIVARIATE
+# variants (moarstats_index, moarstats_advanced_index) are omitted because their benchmark numbers
+# don't reflect real throughput: moarstats persists its computed columns into the .stats.csv and
+# skips any statistic whose column is already present (the column_exists guard in
+# src/cmd/moarstats.rs), so the suite's repeated timed runs short-circuit the scan and report a
+# nominal ~90-100M recs/sec of skipped work (above GROWTH_CEILING, so prep_growth drops them anyway).
+# The univariate paths DO scan the original CSV (outliers always; kurtosis/Gini/Atkinson/entropy
+# under --advanced); only the separate bivariate computation is redone every run, so the bivariate
+# variants are the ones with a real per-row story. That ~90M scale is also why moarstats stays out of
+# TREND_NAMES (it would squash the trend's shared axis like count) — a deep-dive-only feature.
+MOARSTATS_GROWTH = ["moarstats_bivariate_index", "moarstats_advanced_bivariate_index",
+                    "moarstats_bivariate_all_index", "moarstats_advanced_bivariate_all_index"]
 # "Index superpowers": commands whose index win is not just skipping the opening scan but doing
 # an order of magnitude less work — seeking straight to the wanted rows (slice, sample) or reusing
 # cached statistics (schema). Shown as a speedup FACTOR so the biggest multiple reads as the
@@ -492,9 +505,9 @@ for the methodology and the raw CSVs.
 
 The dashboard is rendered by qsv's own `viz` command and is fully interactive (hover for
 values, zoom, download PNGs). It covers the with/without-index advantage, the `sqlp`
-schema-cache knob, throughput across every release, deep-dives into three flagship
-commands (`stats`, `frequency` and `validate`) showing they grew features without losing
-speed, and this release's biggest speedups.
+schema-cache knob, throughput across every release, deep-dives into four flagship
+commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
+without losing speed, and this release's biggest speedups.
 
 [![qsv benchmark dashboard]({url}hero.png)]({url})
 
@@ -609,10 +622,13 @@ def main():
     stats_src = prep_growth(STATS_GROWTH, tmp("stats_growth.csv"))
     freq_src = prep_growth(FREQ_GROWTH, tmp("freq_growth.csv"))
     validate_src = prep_growth(VALIDATE_GROWTH, tmp("validate_growth.csv"))
+    moarstats_src = prep_growth(MOARSTATS_GROWTH, tmp("moarstats_growth.csv"))
     s_base, s_heavy = last_rel(stats_src, "stats"), last_rel(stats_src, "stats_everything_index")
     f_base, f_idx = last_rel(freq_src, "frequency"), last_rel(freq_src, "frequency_index")
     v_idx = last_rel(validate_src, "validate_index")
     v_ns_idx = last_rel(validate_src, "validate_no_schema_index")
+    m_biv = last_rel(moarstats_src, "moarstats_bivariate_index")
+    m_all = last_rel(moarstats_src, "moarstats_bivariate_all_index")
     figs.append(viz("line", stats_src,
                     ["--x", "version", "--y", "rel", "--series", "name",
                      "--title", "Flagship deep-dive: stats got richer AND faster",
@@ -650,6 +666,30 @@ def main():
                     "and no-schema paths are shown base vs index, each normalized to its own debut. (The "
                     "sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark "
                     "runs, not regressions.)"))
+    figs.append(viz("line", moarstats_src,
+                    ["--x", "version", "--y", "rel", "--series", "name",
+                     "--title", "Flagship deep-dive: moarstats",
+                     "--y-title", "speed vs first release (1.0 = launch)"],
+                    "moarstats_growth", "Flagship deep-dive: moarstats",
+                    "qsv's advanced-statistics command — moarstats is designed to run right AFTER stats, "
+                    "extending the stats CSV that stats produces. Only its bivariate variants are charted "
+                    "here. The two univariate variants (moarstats and moarstats --advanced) are left out "
+                    "because their benchmark numbers don't reflect real throughput: moarstats persists its "
+                    "computed columns into the .stats.csv and skips any statistic whose column is already "
+                    "present, so the suite's repeated timed runs short-circuit the work and report a "
+                    "nominal ~90M recs/sec that measures skipped work, not per-row cost. Those univariate "
+                    "paths do genuinely scan the original data — always for the outlier statistics, and "
+                    "for kurtosis, Gini/Atkinson and entropy under --advanced. The bivariate computation, "
+                    "by contrast, is recomputed on every run, so it carries a real throughput-over-time "
+                    "story. Each charted variant is indexed to its own launch speed. moarstats does real "
+                    "pairwise work — the default bivariate pass runs at hundreds of thousands of "
+                    "records/sec and the full --bivariate-stats all battery at a few thousand — so unlike "
+                    f"stats or frequency there is genuine per-row cost to hold down. It held: the default "
+                    f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0 "
+                    "and again at 20.0.0. The full all battery is heavier and choppier — it climbed to a "
+                    f"~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 "
+                    f"to {m_all:.1f}x launch. All four lines are base vs --advanced, each normalized to its "
+                    "own debut."))
     figs.append(viz("heatmap", prep_heatmap(hm_versions),
                     ["--x", "version", "--y", "name", "--z", "rel",
                      "--title", "Relative throughput vs each command's recent peak"],

@@ -16,9 +16,9 @@ for the methodology and the raw CSVs.
 
 The dashboard is rendered by qsv's own `viz` command and is fully interactive (hover for
 values, zoom, download PNGs). It covers the with/without-index advantage, the `sqlp`
-schema-cache knob, throughput across every release, deep-dives into three flagship
-commands (`stats`, `frequency` and `validate`) showing they grew features without losing
-speed, and this release's biggest speedups.
+schema-cache knob, throughput across every release, deep-dives into four flagship
+commands (`stats`, `frequency`, `validate` and `moarstats`) showing they grew features
+without losing speed, and this release's biggest speedups.
 
 [![qsv benchmark dashboard](https://dathere.github.io/qsv/benchmarks/hero.png)](https://dathere.github.io/qsv/benchmarks/)
 

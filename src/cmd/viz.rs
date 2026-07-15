@@ -606,8 +606,9 @@ smart options:
                            added: the numeric pair whose per-time-bucket centroid path
                            bends the most (a trailing-window scatter colored by time
                            bucket), or an animated geo map of global-extent dated points,
-                           or a Gapminder entity-bubble chart (at most one, in that
-                           priority). auto (default) adds one only on a strong signal (a
+                           or a Gapminder entity-bubble chart (at most one is shown; when
+                           several qualify the bubble wins, then the geo map, then the
+                           pair). auto (default) adds one only on a strong signal (a
                            date column and enough time buckets); on lowers the bar (as few
                            as two buckets) but still requires a genuinely drifting or
                            animatable relationship; off never does. Axis ranges are pinned

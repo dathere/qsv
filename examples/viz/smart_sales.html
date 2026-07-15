@@ -48,7 +48,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>500</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>13</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-13 06:09 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-15 11:28 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -306,6 +306,12 @@
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
+      // animation frames live on gd._transitionData, NOT gd.data/gd.layout, so the button-injection
+      // newPlot below would drop them (killing the slider/Play animation). Capture them first and
+      // re-add via Plotly.addFrames once newPlot resolves. .filter(Boolean) skips plotly's leading
+      // hole; panels without frames leave this null (no-op).
+      var qsvFrames = (gd._transitionData && gd._transitionData._frames)
+        ? gd._transitionData._frames.filter(Boolean) : null;
       captureBaked(gd);
       // initial-display fit: bake the fitted zoom into the layout the button-injection newPlot
       // renders, so the first paint already fills the real container (no relayout, no reflow).
@@ -316,7 +322,11 @@
       // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
       // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
       // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
+      var qsvNp = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
+      if (qsvFrames && qsvFrames.length) {
+        if (qsvNp && qsvNp.then) qsvNp.then(function () { Plotly.addFrames(gd, qsvFrames); });
+        else Plotly.addFrames(gd, qsvFrames);
+      }
       // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.

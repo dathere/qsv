@@ -590,6 +590,26 @@ smart options:
                            extreme outlier squashes the rest. Applies to cartesian
                            charts (bar/line/scatter/histogram/box/violin/heatmap/
                            contour). Pass a negative min with `=`: --y-range=-10:55.
+    --rangeslider          Add a draggable range-slider (a navigator strip) under the
+                           x-axis for panning and zooming. Best for an ordered x-axis
+                           (time series, line, candlestick/ohlc). Applies to cartesian
+                           charts (bar/line/scatter/histogram/box/violin/candlestick/
+                           ohlc); off by default.
+    --slider <arg>         Animate the chart over a column: each distinct value of the
+                           given column becomes an animation frame, with a Play/Pause
+                           button and a slider to scrub through the frames (Gapminder-
+                           style). Supported for bar/line/scatter and may be split into
+                           animated traces with the --series option. For `smart`, pass
+                           auto, on or off to control the automatic use of an animated
+                           panel, or a column name to force that column as the animation
+                           axis (default: auto). Axis ranges are pinned across frames so
+                           nothing jumps.
+    --slider-speed <ms>    Milliseconds each animation frame is shown while playing.
+                           [default: 800]
+    --slider-cumulative    Accumulate rows across frames: frame N includes every row
+                           whose --slider value is at or below the Nth value, so the
+                           animation builds up cumulatively instead of replacing each
+                           step. Applies to bar/line/scatter.
     --annotation <s>       Caption note drawn at the bottom of the plot (e.g. to note
                            a clipped outlier). Cartesian charts only.
     --theme <name>         Plotly theme that drives the chart's overall look
@@ -623,16 +643,16 @@ use std::{
 };
 
 use indicatif::{HumanCount, HumanDuration, ProgressBar, ProgressDrawTarget, ProgressStyle};
-#[cfg(feature = "geocode")]
-use plotly::layout::update_menu::UpdateMenuDirection;
-// the sankey node-order toggle and the map cluster/basemap toggles are viz-general, so these
-// are imported unconditionally; UpdateMenuDirection is referenced only by the geocode-gated
-// extent menu.
-use plotly::layout::update_menu::{Button, ButtonMethod, UpdateMenu, UpdateMenuType};
+// the sankey node-order toggle, the map cluster/basemap toggles and the slider Play/Pause menu
+// are all viz-general, so these are imported unconditionally; UpdateMenuDirection lays out the
+// horizontal Play/Pause button row (and the geocode-gated extent menu).
+use plotly::layout::update_menu::{
+    Button, ButtonBuilder, ButtonMethod, UpdateMenu, UpdateMenuDirection, UpdateMenuType,
+};
 use plotly::{
     Bar, BoxPlot, Candlestick, Choropleth, ChoroplethMap, Configuration, Contour, DensityMap,
     HeatMap, Histogram, Icicle, Indicator, Ohlc, Parcats, Pie, Plot, Sankey, Scatter, Scatter3D,
-    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Treemap, Violin,
+    ScatterGeo, ScatterMap, ScatterPolar, Splom, Sunburst, Trace, Traces, Treemap, Violin,
     box_plot::{BoxPoints, QuartileMethod},
     choropleth::{LocationMode, Marker as ChoroplethMarker},
     color::NamedColor,
@@ -643,9 +663,11 @@ use plotly::{
     },
     indicator::{Delta, Gauge, GaugeAxis, Mode as IndicatorMode, Number},
     layout::{
-        Annotation, Axis, AxisType, CategoryOrder, Center, GeoFitBounds, GeoResolution, HoverMode,
-        Layout, LayoutGeo, LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar,
-        Projection, ProjectionType, themes::BuiltinTheme,
+        Animation, AnimationMode, AnimationOptions, Annotation, Axis, AxisType, CategoryOrder,
+        Center, Frame, FrameSettings, GeoFitBounds, GeoResolution, HoverMode, Layout, LayoutGeo,
+        LayoutMap, LayoutScene, MapBounds, MapStyle, Margin, ModeBar, Projection, ProjectionType,
+        RangeSlider, Slider, SliderCurrentValue, SliderStepBuilder, TransitionSettings,
+        themes::BuiltinTheme,
     },
     parcats::{ParcatsArrangement, ParcatsDimension, ParcatsLine},
     sankey::{Arrangement, Link, Node},
@@ -1313,6 +1335,10 @@ struct Args {
     flag_x_title:            Option<String>,
     flag_y_title:            Option<String>,
     flag_y_range:            Option<String>,
+    flag_rangeslider:        bool,
+    flag_slider:             Option<String>,
+    flag_slider_speed:       u64,
+    flag_slider_cumulative:  bool,
     flag_annotation:         Option<String>,
     flag_theme:              Option<String>,
     // width/height/scale only affect static image export (the viz_static feature). width
@@ -1606,6 +1632,48 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
                  single series."
             );
         }
+    }
+
+    // --rangeslider adds an x-axis navigator strip; it only makes sense on cartesian charts with a
+    // real x-axis (ordered x especially: line, candlestick/ohlc), so reject it on non-cartesian
+    // kinds (map/geo/choropleth/pie/sankey/radar/hierarchy/splom/parcats/scatter3d/heatmap/
+    // contour).
+    if args.flag_rangeslider
+        && !matches!(
+            chart_kind(args),
+            Chart::Bar
+                | Chart::Line
+                | Chart::Scatter
+                | Chart::Histogram
+                | Chart::Box
+                | Chart::Violin
+                | Chart::Candlestick
+                | Chart::Ohlc
+        )
+    {
+        return fail_incorrectusage_clierror!(
+            "--rangeslider only applies to cartesian charts (bar, line, scatter, histogram, box, \
+             violin, candlestick, ohlc)."
+        );
+    }
+
+    // --slider animates the chart over a column's distinct values (one animation frame per value,
+    // with a Play/Pause button and a scrub slider). It partitions the rows and builds its own
+    // frames + slider/menu layout, so it's dispatched here before the per-kind builders below.
+    // Currently supported for bar/line/scatter; histogram/box and map/geo are follow-ups.
+    if let Some(slider_col) = resolve_slider_col(args)? {
+        if !matches!(chart_kind(args), Chart::Bar | Chart::Line | Chart::Scatter) {
+            return fail_incorrectusage_clierror!(
+                "--slider currently supports `viz bar`, `viz line` and `viz scatter`."
+            );
+        }
+        if encoded_scatter(args) {
+            return fail_incorrectusage_clierror!(
+                "--slider cannot yet be combined with --color/--size (bubble animation is a \
+                 follow-up). Use --series to split into animated traces, or drop --color/--size."
+            );
+        }
+        return build_slider_xy_plot(args, chart_kind(args), &slider_col);
     }
 
     // maps use a `map` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
@@ -1921,25 +1989,53 @@ fn read_xy(args: &Args) -> CliResult<XyData> {
 fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, String, String)> {
     let data = read_xy(args)?;
     let agg = parse_agg(args.flag_agg.as_deref())?;
+    let traces = xy_groups_to_traces(data.groups, kind, agg, true);
+    if traces.is_empty() {
+        return fail_clierror!("No plottable rows found (is --y numeric?).");
+    }
+    Ok((traces, data.x_label, data.y_label))
+}
 
+/// Apply the per-group transform shared by the trace builder and the slider's range computation:
+/// `--agg` (bar/line) collapses duplicate x, and line charts sort numeric x ascending. Keeping this
+/// in one place ensures the pinned animation ranges are computed over the SAME values that are
+/// actually plotted (e.g. summed bar heights, not raw rows).
+fn apply_xy_transform(
+    xs: Vec<String>,
+    ys: Vec<f64>,
+    kind: Chart,
+    agg: Option<Agg>,
+) -> (Vec<String>, Vec<f64>) {
+    let (xs, ys) = match agg {
+        Some(agg) if matches!(kind, Chart::Bar | Chart::Line) => aggregate(xs, ys, agg),
+        _ => (xs, ys),
+    };
+    if matches!(kind, Chart::Line) {
+        sort_line_xy(xs, ys)
+    } else {
+        (xs, ys)
+    }
+}
+
+/// Turn `(series, xs, ys)` groups into bar/line/scatter traces, applying per-group `--agg`
+/// (bar/line) and line x-sorting exactly like the non-animated path. `allow_bar_labels` enables the
+/// SI value labels on single-series bar charts; animation frames pass `false` (per-frame labels are
+/// noise, and the label-eligibility test depends on a single series which frames can't guarantee).
+fn xy_groups_to_traces(
+    groups: Vec<(String, Vec<String>, Vec<f64>)>,
+    kind: Chart,
+    agg: Option<Agg>,
+    allow_bar_labels: bool,
+) -> Vec<Box<dyn Trace>> {
     // value labels only make sense for a single-series bar chart with a modest bar count
-    let single_series = data.groups.len() == 1;
+    let single_series = groups.len() == 1;
 
-    let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(data.groups.len());
-    for (name, xs, ys) in data.groups {
-        let (xs, ys) = match agg {
-            Some(agg) if matches!(kind, Chart::Bar | Chart::Line) => aggregate(xs, ys, agg),
-            _ => (xs, ys),
-        };
-        // line charts connect points in order, so sort numeric x ascending
-        let (xs, ys) = if matches!(kind, Chart::Line) {
-            sort_line_xy(xs, ys)
-        } else {
-            (xs, ys)
-        };
+    let mut traces: Vec<Box<dyn Trace>> = Vec::with_capacity(groups.len());
+    for (name, xs, ys) in groups {
+        let (xs, ys) = apply_xy_transform(xs, ys, kind, agg);
         match kind {
             Chart::Bar => {
-                let show_labels = single_series && ys.len() <= LABEL_MAX_BARS;
+                let show_labels = allow_bar_labels && single_series && ys.len() <= LABEL_MAX_BARS;
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
                     t = t.name(name);
@@ -1965,10 +2061,365 @@ fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, 
             },
         }
     }
-    if traces.is_empty() {
+    traces
+}
+
+/// Resolve the `--slider` value for a standalone (non-`smart`) chart into an optional frame column.
+/// Keyword-first, mirroring `parse_cluster_mode`: absent or `off` → no slider; `auto`/`on` are
+/// `smart`-only and error here; anything else is parsed as a column selector.
+fn resolve_slider_col(args: &Args) -> CliResult<Option<SelectColumns>> {
+    let Some(spec) = args.flag_slider.as_deref() else {
+        return Ok(None);
+    };
+    match spec.to_ascii_lowercase().as_str() {
+        "off" => Ok(None),
+        "auto" | "on" => fail_incorrectusage_clierror!(
+            "--slider needs a column here (e.g. --slider year); auto/on/off only apply to `viz \
+             smart`."
+        ),
+        _ => match SelectColumns::parse(spec) {
+            Ok(sc) => Ok(Some(sc)),
+            Err(e) => fail_incorrectusage_clierror!("invalid --slider column `{spec}`: {e}"),
+        },
+    }
+}
+
+/// Row data partitioned into ordered animation frames for the `--slider` path.
+struct XySliderData {
+    x_label:      String,
+    y_label:      String,
+    /// the `--slider` column's label, shown as the slider's current-value prefix
+    frame_label:  String,
+    /// distinct slider values in animation order (numeric if all parse, else lexical)
+    frame_values: Vec<String>,
+    /// per frame: one `(series, xs, ys)` group per `series_union` member (empty arrays for a
+    /// series absent from that frame) so every frame has the SAME trace count and order
+    frames:       Vec<Vec<(String, Vec<String>, Vec<f64>)>>,
+    /// pinned global x-range (only when every x parses as finite — a numeric axis)
+    x_range:      Option<(f64, f64)>,
+    /// pinned global y-range
+    y_range:      (f64, f64),
+}
+
+/// Read the rows and partition them into ordered animation frames by the `--slider` column,
+/// grouping within each frame by `--series` (a single empty-named group when `--series` is unset).
+/// Computes global x/y ranges over the ACTUAL PLOTTED values (post-`--agg`) so the axes stay pinned
+/// and correctly sized across every frame.
+fn read_xy_slider(
+    args: &Args,
+    slider_col: &SelectColumns,
+    kind: Chart,
+    agg: Option<Agg>,
+) -> CliResult<XySliderData> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let x_idx = resolve_one(args.flag_x.as_ref(), &headers, nh, "x")?;
+    let y_idx = resolve_one(args.flag_y.as_ref(), &headers, nh, "y")?;
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let frame_idx = resolve_one(Some(slider_col), &headers, nh, "slider")?;
+
+    // frame value -> series -> (xs, ys); insertion order tracked separately
+    let mut frame_order: Vec<String> = Vec::new();
+    let mut series_order: Vec<String> = Vec::new();
+    let mut map: HashMap<String, HashMap<String, (Vec<String>, Vec<f64>)>> = HashMap::new();
+
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(y) = parse_f64(record.get(y_idx)) else {
+            continue;
+        };
+        let x = cell_to_string(record.get(x_idx));
+        let series = match series_idx {
+            Some(i) => cell_to_string(record.get(i)),
+            None => String::new(),
+        };
+        let frame = cell_to_string(record.get(frame_idx));
+
+        if !map.contains_key(&frame) {
+            frame_order.push(frame.clone());
+        }
+        let fmap = map.entry(frame).or_default();
+        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+            series_order.push(series.clone());
+        }
+        let entry = fmap
+            .entry(series)
+            .or_insert_with(|| (Vec::new(), Vec::new()));
+        entry.0.push(x);
+        entry.1.push(y);
+    }
+    if frame_order.is_empty() {
         return fail_clierror!("No plottable rows found (is --y numeric?).");
     }
-    Ok((traces, data.x_label, data.y_label))
+    // a single frame is not an animation
+    if frame_order.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
+        );
+    }
+
+    // animation order: numeric when every frame value parses as finite, else lexical
+    if frame_order.iter().all(|f| parse_finite_f64(f).is_some()) {
+        frame_order.sort_by(|a, b| {
+            parse_finite_f64(a)
+                .unwrap_or(f64::NAN)
+                .partial_cmp(&parse_finite_f64(b).unwrap_or(f64::NAN))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        frame_order.sort();
+    }
+
+    let cumulative = args.flag_slider_cumulative;
+    let mut frames: Vec<Vec<(String, Vec<String>, Vec<f64>)>> =
+        Vec::with_capacity(frame_order.len());
+    // ranges are computed over the transformed (plotted) values, not the raw rows
+    let mut ymin = f64::INFINITY;
+    let mut ymax = f64::NEG_INFINITY;
+    let mut all_x_numeric = true;
+    let mut xmin = f64::INFINITY;
+    let mut xmax = f64::NEG_INFINITY;
+    let mut saw_x = false;
+
+    for fi in 0..frame_order.len() {
+        let mut groups: Vec<(String, Vec<String>, Vec<f64>)> =
+            Vec::with_capacity(series_order.len());
+        for s in &series_order {
+            let (mut xs, mut ys): (Vec<String>, Vec<f64>) = (Vec::new(), Vec::new());
+            // cumulative frames accumulate every value at or below this one
+            let lo = if cumulative { 0 } else { fi };
+            for prev in &frame_order[lo..=fi] {
+                if let Some(fm) = map.get(prev)
+                    && let Some((fx, fy)) = fm.get(s)
+                {
+                    xs.extend_from_slice(fx);
+                    ys.extend_from_slice(fy);
+                }
+            }
+            // apply the same transform the trace builder uses, so ranges match plotted values
+            let (xs, ys) = apply_xy_transform(xs, ys, kind, agg);
+            for &y in &ys {
+                ymin = ymin.min(y);
+                ymax = ymax.max(y);
+            }
+            if all_x_numeric {
+                for x in &xs {
+                    saw_x = true;
+                    if let Some(xn) = parse_finite_f64(x) {
+                        xmin = xmin.min(xn);
+                        xmax = xmax.max(xn);
+                    } else {
+                        all_x_numeric = false;
+                        break;
+                    }
+                }
+            }
+            groups.push((s.clone(), xs, ys));
+        }
+        frames.push(groups);
+    }
+
+    // pinned y-range over the plotted values (bars start at 0); a small pad keeps points off the
+    // edge
+    if matches!(kind, Chart::Bar) {
+        ymin = ymin.min(0.0);
+        ymax = ymax.max(0.0);
+    }
+    let yspan = (ymax - ymin).abs();
+    let ypad = if yspan > f64::EPSILON {
+        yspan * 0.05
+    } else {
+        ymax.abs().max(1.0) * 0.05
+    };
+    // don't pad a bar's baseline below 0
+    let ylo = if matches!(kind, Chart::Bar) {
+        ymin
+    } else {
+        ymin - ypad
+    };
+    let y_range = (ylo, ymax + ypad);
+
+    // pinned x-range only when the axis is numeric (categorical bars auto-order)
+    let x_range = if all_x_numeric && saw_x && xmin.is_finite() && xmax.is_finite() {
+        let xspan = (xmax - xmin).abs();
+        let xpad = if xspan > f64::EPSILON {
+            xspan * 0.05
+        } else {
+            xmax.abs().max(1.0) * 0.05
+        };
+        Some((xmin - xpad, xmax + xpad))
+    } else {
+        None
+    };
+
+    Ok(XySliderData {
+        x_label: col_label(&headers, x_idx, nh),
+        y_label: col_label(&headers, y_idx, nh),
+        frame_label: col_label(&headers, frame_idx, nh),
+        frame_values: frame_order,
+        frames,
+        x_range,
+        y_range,
+    })
+}
+
+/// Build an animated bar/line/scatter `Plot`: frame-0 traces as the base, one `Frame` per slider
+/// value, and a layout carrying pinned axis ranges, a scrub `Slider` and a Play/Pause menu.
+fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) -> CliResult<Plot> {
+    let agg = parse_agg(args.flag_agg.as_deref())?;
+    let data = read_xy_slider(args, slider_col, kind, agg)?;
+
+    let mut plot = Plot::new();
+
+    // base = frame 0's traces; every frame carries the same trace count/order
+    let base = xy_groups_to_traces(data.frames[0].clone(), kind, agg, false);
+    let n_traces = base.len();
+    for t in base {
+        plot.add_trace(t);
+    }
+    if n_traces == 0 {
+        return fail_clierror!("No plottable rows found (is --y numeric?).");
+    }
+
+    // one animation frame per slider value
+    for (fkey, groups) in data.frame_values.iter().zip(data.frames.iter()) {
+        let traces = xy_groups_to_traces(groups.clone(), kind, agg, false);
+        let mut td = Traces::new();
+        for t in traces {
+            td.push(t);
+        }
+        let frame = Frame::new()
+            .name(fkey.clone())
+            .data(td)
+            .traces((0..n_traces).collect());
+        plot.add_frame(frame);
+    }
+
+    // layout: titles + pinned axis ranges + optional rangeslider, then the slider + Play/Pause menu
+    let mut layout = Layout::new();
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    let mut x = Axis::new().title(Title::with_text(
+        args.flag_x_title
+            .clone()
+            .unwrap_or_else(|| data.x_label.clone()),
+    ));
+    if let Some((lo, hi)) = data.x_range {
+        x = x.range(vec![lo, hi]);
+    }
+    if args.flag_rangeslider {
+        x = x.range_slider(RangeSlider::new().visible(true));
+    }
+    layout = layout.x_axis(x);
+
+    let mut y = Axis::new().title(Title::with_text(
+        args.flag_y_title
+            .clone()
+            .unwrap_or_else(|| data.y_label.clone()),
+    ));
+    // an explicit --y-range wins over the pinned global range
+    let (ylo, yhi) = if let Some(r) = &args.flag_y_range {
+        parse_y_range(r)?
+    } else {
+        data.y_range
+    };
+    y = y.range(vec![ylo, yhi]);
+    layout = layout.y_axis(y);
+
+    if let Some(note) = &args.flag_annotation {
+        layout = with_chart_note(layout, note);
+    }
+
+    layout = layout.sliders(vec![slider_control(
+        &data.frame_label,
+        &data.frame_values,
+        args.flag_slider_speed,
+    )?]);
+    layout = layout.update_menus(vec![play_pause_menu(args.flag_slider_speed)?]);
+
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Animation options for a slider step / Play button: immediate mode, `speed_ms` per frame, a
+/// half-speed tween, and a redraw so trace-data changes actually repaint.
+fn slider_anim_options(speed_ms: u64) -> AnimationOptions {
+    AnimationOptions::new()
+        .mode(AnimationMode::Immediate)
+        .frame(
+            FrameSettings::new()
+                .duration(speed_ms as usize)
+                .redraw(true),
+        )
+        .transition(TransitionSettings::new().duration((speed_ms / 2) as usize))
+}
+
+/// A scrub `Slider` with one animate step per frame value; dragging a step animates to that frame.
+fn slider_control(col_label: &str, frame_values: &[String], speed_ms: u64) -> CliResult<Slider> {
+    let mut steps = Vec::with_capacity(frame_values.len());
+    for label in frame_values {
+        let step = SliderStepBuilder::new()
+            .label(label.clone())
+            .value(label.clone())
+            .animation(
+                Animation::frames(vec![label.clone()]).options(slider_anim_options(speed_ms)),
+            )
+            .build();
+        match step {
+            Ok(s) => steps.push(s),
+            Err(e) => return fail_clierror!("failed to build slider step: {e}"),
+        }
+    }
+    Ok(Slider::new()
+        .active(0)
+        .current_value(
+            SliderCurrentValue::new()
+                .visible(true)
+                .prefix(format!("{col_label}: ")),
+        )
+        // top padding drops the slider (and its current-value readout) clear of the x-axis title
+        // so the two don't collide (the `common::Pad(t, b, l)` type — NOT the unqualified
+        // `treemap::Pad` imported in this file)
+        .pad(plotly::common::Pad::new(60, 10, 0))
+        .steps(steps))
+}
+
+/// A top-left Play/Pause button row that runs / halts the frame animation.
+fn play_pause_menu(speed_ms: u64) -> CliResult<UpdateMenu> {
+    let play = ButtonBuilder::new()
+        .label("▶ Play")
+        .animation(Animation::all_frames().options(slider_anim_options(speed_ms).fromcurrent(true)))
+        .build();
+    let play = match play {
+        Ok(b) => b,
+        Err(e) => return fail_clierror!("failed to build play button: {e}"),
+    };
+    let pause = ButtonBuilder::new()
+        .label("⏸ Pause")
+        .animation(Animation::pause())
+        .build();
+    let pause = match pause {
+        Ok(b) => b,
+        Err(e) => return fail_clierror!("failed to build pause button: {e}"),
+    };
+    Ok(UpdateMenu::new()
+        .ty(UpdateMenuType::Buttons)
+        .direction(UpdateMenuDirection::Left)
+        .buttons(vec![play, pause])
+        // top-left, clear of the centered title and the top-right modebar
+        .x(0.0)
+        .x_anchor(Anchor::Left)
+        .y(1.0)
+        .y_anchor(Anchor::Bottom)
+        .show_active(false)
+        .active(-1)
+        .background_color(NamedColor::White)
+        .border_color(NamedColor::Gray)
+        .border_width(1)
+        .font(Font::new().family(FONT_FAMILY).color(INK).size(11)))
 }
 
 /// Build a Scatter trace, using a numeric x-axis when every x value parses as a finite number
@@ -7116,6 +7567,12 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
+      // animation frames live on gd._transitionData, NOT gd.data/gd.layout, so the button-injection
+      // newPlot below would drop them (killing the slider/Play animation). Capture them first and
+      // re-add via Plotly.addFrames once newPlot resolves. .filter(Boolean) skips plotly's leading
+      // hole; panels without frames leave this null (no-op).
+      var qsvFrames = (gd._transitionData && gd._transitionData._frames)
+        ? gd._transitionData._frames.filter(Boolean) : null;
       captureBaked(gd);
       // initial-display fit: bake the fitted zoom into the layout the button-injection newPlot
       // renders, so the first paint already fills the real container (no relayout, no reflow).
@@ -7126,7 +7583,11 @@ const FULLSCREEN_SCRIPT: &str = r#"<script>
       // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
       // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
       // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
+      var qsvNp = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
+      if (qsvFrames && qsvFrames.length) {
+        if (qsvNp && qsvNp.then) qsvNp.then(function () { Plotly.addFrames(gd, qsvFrames); });
+        else Plotly.addFrames(gd, qsvFrames);
+      }
       // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.
@@ -7588,9 +8049,19 @@ fn build_layout(
     if let Some(title) = &args.flag_title {
         layout = layout.title(Title::with_text(title));
     }
-    // axis titles: prefer the explicit flag, else the resolved column label
-    if let Some(t) = args.flag_x_title.clone().or(default_x) {
-        layout = layout.x_axis(Axis::new().title(Title::with_text(t)));
+    // x-axis: title (explicit flag, else resolved column label) and/or an optional range-slider
+    // navigator strip. Emit the axis when either is set so --rangeslider works even without a
+    // title.
+    let x_title = args.flag_x_title.clone().or(default_x);
+    if x_title.is_some() || args.flag_rangeslider {
+        let mut x = Axis::new();
+        if let Some(t) = x_title {
+            x = x.title(Title::with_text(t));
+        }
+        if args.flag_rangeslider {
+            x = x.range_slider(RangeSlider::new().visible(true));
+        }
+        layout = layout.x_axis(x);
     }
     // y-axis: title (flag or column label) and/or an explicit --y-range. Only emit the axis
     // when at least one is set, so the default (autoranging, untitled) case is untouched.

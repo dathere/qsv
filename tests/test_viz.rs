@@ -179,6 +179,156 @@ fn viz_histogram() {
 }
 
 #[test]
+fn viz_line_rangeslider() {
+    let wrk = Workdir::new("viz_line_rangeslider");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "line",
+        "fruits.csv",
+        "--x",
+        "Qty",
+        "--y",
+        "Price",
+        "--rangeslider",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+    // the x-axis carries a visible range-slider navigator strip
+    assert!(html.contains(r#""rangeslider":{"visible":true}"#));
+}
+
+#[test]
+fn viz_rangeslider_non_cartesian_errors() {
+    let wrk = Workdir::new("viz_rangeslider_non_cartesian_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "pie",
+        "fruits.csv",
+        "--x",
+        "Fruit",
+        "--y",
+        "Price",
+        "--rangeslider",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--rangeslider only applies to cartesian charts"));
+}
+
+#[test]
+fn viz_bar_slider_animation() {
+    let wrk = Workdir::new("viz_bar_slider_animation");
+    wrk.create_from_string(
+        "anim.csv",
+        "year,fruit,sales\n2020,apple,10\n2021,apple,14\n2022,apple,9\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar", "anim.csv", "--x", "fruit", "--y", "sales", "--slider", "year",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // a scrub slider + a Play/Pause menu drive the animation
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains(r#""updatemenus":["#));
+    assert!(html.contains("▶ Play"));
+    assert!(html.contains("⏸ Pause"));
+    // one animation frame per distinct year
+    assert!(html.contains(r#""name":"2020""#));
+    assert!(html.contains(r#""name":"2021""#));
+    assert!(html.contains(r#""name":"2022""#));
+    // the y-axis is pinned to a fixed range so it doesn't jump between frames (bars start at 0)
+    assert!(html.contains(r#""yaxis""#) && html.contains(r#""range":[0.0,"#));
+}
+
+#[test]
+fn viz_scatter_slider_numeric_frame_order() {
+    // frames must order numerically (2 before 10), not lexically ("10" < "2" as strings)
+    let wrk = Workdir::new("viz_scatter_slider_numeric_frame_order");
+    wrk.create_from_string("t.csv", "t,x,y\n10,1,1\n2,1,2\n2,2,3\n10,2,4\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["scatter", "t.csv", "--x", "x", "--y", "y", "--slider", "t"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    let p2 = html.find(r#""name":"2""#).expect("frame 2 present");
+    let p10 = html.find(r#""name":"10""#).expect("frame 10 present");
+    assert!(
+        p2 < p10,
+        "frame 2 must come before frame 10 (numeric order)"
+    );
+}
+
+#[test]
+fn viz_slider_series_stable_trace_count() {
+    // banana is absent in 2021 and cherry appears only in 2022, but every frame must still carry
+    // all three series (equal trace count + stable indices) or plotly leaves stale traces on screen
+    let wrk = Workdir::new("viz_slider_series_stable_trace_count");
+    wrk.create_from_string(
+        "d.csv",
+        "year,fruit,sales\n2020,apple,10\n2020,banana,8\n2021,apple,14\n2022,apple,9\n2022,banana,\
+         12\n2022,cherry,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "scatter", "d.csv", "--x", "fruit", "--y", "sales", "--slider", "year", "--series", "fruit",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // each of the 3 frames maps the same 3 trace indices
+    assert_eq!(html.matches(r#""traces":[0,1,2]"#).count(), 3);
+}
+
+#[test]
+fn viz_slider_auto_standalone_errors() {
+    let wrk = Workdir::new("viz_slider_auto_standalone_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar",
+        "fruits.csv",
+        "--x",
+        "Fruit",
+        "--y",
+        "Price",
+        "--slider",
+        "auto",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("auto/on/off only apply to `viz smart`"));
+}
+
+#[test]
+fn viz_slider_unsupported_chart_errors() {
+    let wrk = Workdir::new("viz_slider_unsupported_chart_errors");
+    fruits(&wrk);
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["histogram", "fruits.csv", "--x", "Price", "--slider", "Qty"]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("--slider currently supports"));
+}
+
+#[test]
 fn viz_scatter3d_hover_labels_columns() {
     // plotly's default 3D hover labels the coordinates with the bare letters x/y/z; we override
     // it with a template that names the real columns and comma-groups the values.

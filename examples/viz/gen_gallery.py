@@ -468,6 +468,16 @@ FIGURES = [
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
+    ("bar (animated slider)",
+     "Revenue by product category, <b>animated over an ordinal column</b> with "
+     "<code>--slider</code>: each distinct satisfaction rating (1&ndash;5) becomes an animation "
+     "frame, with a <b>&#9654; Play</b>/<b>&#9208; Pause</b> button and a scrub slider to step "
+     "through them (Gapminder-style). Axis ranges are <b>pinned across frames</b> so the bars stay "
+     "comparable frame to frame instead of rescaling. <code>--slider</code> also works on line and "
+     "scatter, may be split into animated traces with <code>--series</code>, and can accumulate "
+     "with <code>--slider-cumulative</code>.",
+     False, ["bar", "sales_sample.csv", "--x", "product_category", "--y", "revenue", "--agg", "sum",
+             "--slider", "satisfaction"]),
     ("line", "Closing price over time.",
      False, ["line", "stock_prices.csv", "--x", "date", "--y", "close"]),
     ("scatter", "Units sold vs revenue.",
@@ -1097,10 +1107,14 @@ def main():
                 f'<figure class="{cls}" id="{anchor}">{figcaption_html(title, desc, args)}'
                 f'<div id="{gid}" class="plot"></div></figure>'
             )
+            # animation frames live on the figure object but the positional newPlot(div,data,layout,
+            # config) form drops them, so re-add via Plotly.addFrames once newPlot resolves (mirrors
+            # the CLI's FULLSCREEN_SCRIPT enhance() fix). No-op for the non-animated figures.
             plots.append(
                 f'Plotly.newPlot("{gid}", FIGS[{idx}].data, FIGS[{idx}].layout || {{}}, '
                 f'Object.assign({{responsive:true,scrollZoom:false,modeBarButtonsToAdd:[qsvFsBtn,qsvLegendBtn]}}, '
-                f'FIGS[{idx}].config || {{}}));'
+                f'FIGS[{idx}].config || {{}})).then(function(){{'
+                f'var fr=FIGS[{idx}].frames; if(fr&&fr.length)Plotly.addFrames("{gid}",fr);}});'
             )
 
     # Final, clickable-screenshot entry (a full-width cell, no plotly figure): opens the standalone

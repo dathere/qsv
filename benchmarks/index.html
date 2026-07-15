@@ -49,7 +49,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;index_advantage&quot;, &quot;The index advantage&quot;,
                 &quot;Build an index once and qsv can skip the opening scan on every run after. &quot;
                 &quot;The payoff is lopsided — a ~6x jump for stats and ~3x for search, but next &quot;
-                &quot;to nothing for streaming commands — so only the standouts are shown here.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L574-L580' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 574–580)</a></details>
+                &quot;to nothing for streaming commands — so only the standouts are shown here.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L576-L582' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 576–582)</a></details>
 </section>
 <section>
 <h2>count with an index is effectively instant</h2>
@@ -62,7 +62,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;The index advantage at its extreme. With an index, count doesn&#x27;t scan at all — &quot;
                 &quot;it reads a row count qsv already stored, a ~10x jump from ~9M to ~90M rows/sec. &quot;
                 &quot;It sits on its own axis precisely because that number would flatten every &quot;
-                &quot;other bar on the page.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L581-L588' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 581–588)</a></details>
+                &quot;other bar on the page.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L583-L590' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 583–590)</a></details>
 </section>
 <section>
 <h2>The index superpowers</h2>
@@ -77,7 +77,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;all the work. slice and sample seek straight to the rows they need; schema reuses &quot;
                 f&quot;cached statistics. That&#x27;s a different order of magnitude: {sp_top_cmd} runs &quot;
                 f&quot;{sp_top_x:.0f}x faster, and slice and sample tens of times over — versus the &quot;
-                &quot;low single digits for the scan-skippers above.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L591-L600' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 591–600)</a></details>
+                &quot;low single digits for the scan-skippers above.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L593-L602' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 593–602)</a></details>
 </section>
 <section>
 <h2>sqlp tuning: the schema-cache knob</h2>
@@ -90,7 +90,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;sqlp_tuning&quot;, &quot;sqlp tuning: the schema-cache knob&quot;,
                 &quot;sqlp infers a schema before it runs. Cache that schema and the re-inference &quot;
                 &quot;cost disappears on the next query — worth about a third more throughput on &quot;
-                &quot;these aggregations, for a one-line option.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L601-L608' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 601–608)</a></details>
+                &quot;these aggregations, for a one-line option.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L603-L610' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 603–610)</a></details>
 </section>
 <section>
 <h2>The long view — every release</h2>
@@ -106,7 +106,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;plain scan early on, then the indexed variant once search and searchset learned &quot;
                 &quot;to use an index at 10.0.0 — the visible step up. stats, frequency and validate &quot;
                 &quot;carried their index from launch, so those lines run flat-to-up with no step. &quot;
-                &quot;Broad trajectory only (see the note above); count is omitted for scale.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L609-L619' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 609–619)</a></details>
+                &quot;Broad trajectory only (see the note above); count is omitted for scale.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L611-L621' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 611–621)</a></details>
 </section>
 <section>
 <h2>Flagship deep-dive: stats</h2>
@@ -122,7 +122,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 f&quot;slower: plain stats now runs {s_base:.1f}x its first-release speed, and the &quot;
                 f&quot;full --everything pass with an index {s_heavy:.1f}x. Features grew; the curve &quot;
                 &quot;still points up. (The odd single-release dip is a failed benchmark run, not a &quot;
-                &quot;regression.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L630-L640' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 630–640)</a></details>
+                &quot;regression.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L632-L642' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 632–642)</a></details>
 </section>
 <section>
 <h2>Flagship deep-dive: frequency</h2>
@@ -137,7 +137,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;case-insensitive and unlimited modes, throughput climbed rather than eroded — &quot;
                 f&quot;base frequency is now {f_base:.1f}x its launch speed and the indexed run &quot;
                 f&quot;{f_idx:.1f}x. Newer modes join partway, each measured from its own debut; the &quot;
-                &quot;transient dips are measurement artifacts, not regressions.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L641-L650' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 641–650)</a></details>
+                &quot;transient dips are measurement artifacts, not regressions.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L643-L652' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 643–652)</a></details>
 </section>
 <section>
 <h2>Flagship deep-dive: validate</h2>
@@ -158,36 +158,36 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;csv-nose 1.1.0 landed SIMD UTF-8 validation and memchr-based scanning. Full-schema &quot;
                 &quot;and no-schema paths are shown base vs index, each normalized to its own debut. (The &quot;
                 &quot;sharp single-release spikes down — e.g. at 1.0.0 and 2.2.1 — are failed benchmark &quot;
-                &quot;runs, not regressions.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L651-L666' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 651–666)</a></details>
+                &quot;runs, not regressions.)&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L653-L668' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 653–668)</a></details>
 </section>
 <section>
 <h2>Flagship deep-dive: moarstats</h2>
-<p class=desc>qsv&#x27;s advanced-statistics command, each bivariate variant indexed to its own launch speed. moarstats does real pairwise work — the default bivariate pass runs at hundreds of thousands of records/sec and the full --bivariate-stats all battery at a few thousand — so unlike stats or frequency there is genuine per-row cost to hold down. It held: the default bivariate pass now runs 1.7x its first-release speed, stepping up at 17.0.0 and again at 20.0.0. The full all battery is heavier and choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 to 1.3x launch. All four lines are base vs --advanced, each normalized to its own debut. The two univariate variants (moarstats and moarstats --advanced) are deliberately not charted: moarstats derives its univariate statistics — skewness, trimean, the MAD/IQR ratios and the rest — arithmetically from the existing .stats.csv that the stats command already produced, rather than scanning the data itself. With that cache present (as it is in the suite) the univariate run just appends columns to ~100 rows of cached stats, so it clocks a nominal ~90M recs/sec — effectively instant, with no real per-row cost to track over releases. Its speed is really the stats cache-read already covered by the stats deep-dive above; only moarstats&#x27; bivariate passes actually scan the data, so they are the only variants with a throughput-over-time story worth charting.</p>
+<p class=desc>qsv&#x27;s advanced-statistics command — moarstats is designed to run right AFTER stats, extending the stats CSV that stats produces. Each charted variant is a bivariate one, indexed to its own launch speed. moarstats does real pairwise work — the default bivariate pass runs at hundreds of thousands of records/sec and the full --bivariate-stats all battery at a few thousand — so unlike stats or frequency there is genuine per-row cost to hold down. It held: the default bivariate pass now runs 1.7x its first-release speed, stepping up at 17.0.0 and again at 20.0.0. The full all battery is heavier and choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 to 1.3x launch. All four lines are base vs --advanced, each normalized to its own debut. The two univariate variants (moarstats and moarstats --advanced) are NOT charted because their benchmark numbers don&#x27;t reflect real throughput: moarstats persists its computed columns into the .stats.csv and skips any statistic whose column is already present, so the suite&#x27;s repeated timed runs short-circuit the work and report a nominal ~90M recs/sec that measures skipped work, not per-row cost. Those univariate paths do genuinely scan the original data — always for the outlier statistics, and for kurtosis, Gini/Atkinson and entropy under --advanced. The bivariate computation, by contrast, is recomputed on every run, which is why the bivariate variants are the ones with a real throughput-over-time story.</p>
 <iframe class=chart loading=lazy scrolling=no src='moarstats_growth.html'></iframe>
 <details class=vizsrc><summary>see the qsv viz command</summary><pre><code>figs.append(viz(&quot;line&quot;, moarstats_src,
                 [&quot;--x&quot;, &quot;version&quot;, &quot;--y&quot;, &quot;rel&quot;, &quot;--series&quot;, &quot;name&quot;,
                  &quot;--title&quot;, &quot;Flagship deep-dive: moarstats&quot;,
                  &quot;--y-title&quot;, &quot;speed vs first release (1.0 = launch)&quot;],
                 &quot;moarstats_growth&quot;, &quot;Flagship deep-dive: moarstats&quot;,
-                &quot;qsv&#x27;s advanced-statistics command, each bivariate variant indexed to its own launch &quot;
-                &quot;speed. moarstats does real pairwise work — the default bivariate pass runs at &quot;
-                &quot;hundreds of thousands of records/sec and the full --bivariate-stats all battery at a &quot;
-                &quot;few thousand — so unlike stats or frequency there is genuine per-row cost to hold &quot;
-                f&quot;down. It held: the default bivariate pass now runs {m_biv:.1f}x its &quot;
-                &quot;first-release speed, stepping up at 17.0.0 and again at 20.0.0. The full all battery is &quot;
-                &quot;heavier and &quot;
-                f&quot;choppier — it climbed to a ~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and &quot;
-                f&quot;recovered partway in 21.1.0 to {m_all:.1f}x launch. All four lines are base vs &quot;
-                &quot;--advanced, each normalized to its own debut. The two univariate variants &quot;
-                &quot;(moarstats and moarstats --advanced) are deliberately not charted: moarstats derives &quot;
-                &quot;its univariate statistics — skewness, trimean, the MAD/IQR ratios and the rest — &quot;
-                &quot;arithmetically from the existing .stats.csv that the stats command already produced, &quot;
-                &quot;rather than scanning the data itself. With that cache present (as it is in the suite) &quot;
-                &quot;the univariate run just appends columns to ~100 rows of cached stats, so it clocks a &quot;
-                &quot;nominal ~90M recs/sec — effectively instant, with no real per-row cost to track over &quot;
-                &quot;releases. Its speed is really the stats cache-read already covered by the stats &quot;
-                &quot;deep-dive above; only moarstats&#x27; bivariate passes actually scan the data, so they are &quot;
-                &quot;the only variants with a throughput-over-time story worth charting.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L667-L690' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 667–690)</a></details>
+                &quot;qsv&#x27;s advanced-statistics command — moarstats is designed to run right AFTER stats, &quot;
+                &quot;extending the stats CSV that stats produces. Each charted variant is a bivariate one, &quot;
+                &quot;indexed to its own launch speed. moarstats does real pairwise work — the default &quot;
+                &quot;bivariate pass runs at hundreds of thousands of records/sec and the full &quot;
+                &quot;--bivariate-stats all battery at a few thousand — so unlike stats or frequency there &quot;
+                f&quot;is genuine per-row cost to hold down. It held: the default bivariate pass now runs &quot;
+                f&quot;{m_biv:.1f}x its first-release speed, stepping up at 17.0.0 and again at 20.0.0. The &quot;
+                &quot;full all battery is heavier and choppier — it climbed to a ~6k-recs/sec peak around &quot;
+                f&quot;19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 to {m_all:.1f}x launch. &quot;
+                &quot;All four lines are base vs --advanced, each normalized to its own debut. The two &quot;
+                &quot;univariate variants (moarstats and moarstats --advanced) are NOT charted because &quot;
+                &quot;their benchmark numbers don&#x27;t reflect real throughput: moarstats persists its &quot;
+                &quot;computed columns into the .stats.csv and skips any statistic whose column is already &quot;
+                &quot;present, so the suite&#x27;s repeated timed runs short-circuit the work and report a &quot;
+                &quot;nominal ~90M recs/sec that measures skipped work, not per-row cost. Those univariate &quot;
+                &quot;paths do genuinely scan the original data — always for the outlier statistics, and &quot;
+                &quot;for kurtosis, Gini/Atkinson and entropy under --advanced. The bivariate computation, &quot;
+                &quot;by contrast, is recomputed on every run, which is why the bivariate variants are the &quot;
+                &quot;ones with a real throughput-over-time story.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L669-L692' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 669–692)</a></details>
 </section>
 <section>
 <h2>Relative throughput heatmap</h2>
@@ -200,7 +200,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;The indexed marquee commands over the recent window, each row normalized to its &quot;
                 &quot;own peak (1.0 = that command&#x27;s fastest release). Normalizing per row lets a &quot;
                 &quot;90M-rows/sec count and a 600k-rows/sec frequency share one canvas — the colour &quot;
-                &quot;shows trajectory, not absolute speed.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L691-L698' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 691–698)</a></details>
+                &quot;shows trajectory, not absolute speed.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L693-L700' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 693–700)</a></details>
 </section>
 <section>
 <h2>Where the suite spends its time</h2>
@@ -212,7 +212,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;time_spent&quot;, &quot;Where the suite spends its time&quot;,
                 &quot;The whole suite by wall-clock, family then benchmark. The biggest tiles are &quot;
                 &quot;where a speedup would move the needle most — a map of where the optimization &quot;
-                &quot;effort is best spent.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L699-L705' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 699–705)</a></details>
+                &quot;effort is best spent.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L701-L707' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 701–707)</a></details>
 </section>
 <section>
 <h2>Biggest speedups this release</h2>
@@ -224,7 +224,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;gainers&quot;, &quot;Biggest speedups this release&quot;,
                 &quot;The 15 benchmarks that improved most over the previous release. Bigger, brighter &quot;
                 &quot;bubbles are larger wins — the percentage cut in mean run time from one version &quot;
-                &quot;to the next.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L706-L712' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 706–712)</a></details>
+                &quot;to the next.&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L708-L714' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 708–714)</a></details>
 </section>
 <section>
 <h2>Change distribution by family</h2>
@@ -244,7 +244,7 @@ details.vizsrc .srclink{font-size:12.5px}
                 &quot;family (above zero = faster). Most families cluster just north of zero — steady, &quot;
                 f&quot;unglamorous progress. Extreme outliers (|Δ| &gt; {int(DELTA_CLAMP)}%, usually &quot;
                 &quot;measurement noise) are omitted; the y-axis is fixed to [-10, 55] so the boxes &quot;
-                &quot;stay readable, clipping one bad-CI-run point (frequency_ignorecase, -79%).&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L713-L727' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 713–727)</a></details>
+                &quot;stay readable, clipping one bad-CI-run point (frequency_ignorecase, -79%).&quot;))</code></pre><a class=srclink href='https://github.com/dathere/qsv/blob/master/scripts/gen_benchmark_viz.py#L715-L729' target=_blank rel=noopener>view on GitHub ↗ (gen_benchmark_viz.py, lines 715–729)</a></details>
 </section>
 </main>
 <footer>Regenerated by <code>scripts/gen_benchmark_viz.py</code> from <code>scripts/results/*.csv</code>. Charts are interactive — hover for values, drag to zoom, use the toolbar to pan or download a PNG. Under each chart, <b>see the qsv viz command</b> reveals the exact <code>qsv viz</code> call that produced it. Source benchmarks: <a href='https://github.com/dathere/qsv/blob/master/scripts/results/'>scripts/results</a>.</footer>

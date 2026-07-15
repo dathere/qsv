@@ -55,6 +55,8 @@ SMART_IFRAME = {
     "smart dashboard (--dictionary infer, world choropleth)": "smart_world_choropleth.html",
     "smart dashboard (--smarter, committed --dictionary, NYC 311 metro choropleth)": "smart_nyc311.html",
     "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
+    "smart dashboard (animated geo, world events)":   "smart_world_events.html",
+    "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -593,7 +595,10 @@ FIGURES = [
              "--map", "--style", "carto-positron"]),
     ("smart dashboard (time-series)",
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
-     "date) leads, alongside box-plot summaries of the OHLC columns.",
+     "date) leads; the strongest-correlated pair drill-down is <b>animated over time</b> — a "
+     "cumulative scatter colored by time bucket (early&rarr;late, Play/Pause + scrub slider) that "
+     "reveals the relationship's drift a static scatter can't — alongside box-plot summaries of "
+     "the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
     ("smart dashboard (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "
@@ -717,6 +722,23 @@ FIGURES = [
             "--dictionary", "allegheny_dogs_dict.schema.json",
             "--geojson", "allegheny_zip_boundaries.geojson",
             "--feature-id-key", "properties.ZIP"]),
+    ("smart dashboard (animated geo, world events)",
+     "Auto dashboard for world_events_dated: global-extent dated points across six continents "
+     "(lon span ~300&deg;, lat span ~99&deg;). Because the extent is continental/global, "
+     "<code>viz smart</code> draws a <b>ScatterGeo projection basemap</b> (which animates natively, "
+     "unlike a MapLibre tile map) and adds an <b>animated geographic reveal</b>: the points "
+     "accumulate <b>cumulatively over monthly time buckets</b> (Play/Pause + scrub slider). A "
+     "city-scale point cloud would stay a static map — the animation only fires for large extents.",
+     True, ["smart", "world_events_dated.csv"]),
+    ("smart dashboard (Gapminder bubble, regions growth)",
+     "Auto dashboard for regions_growth: a low-cardinality categorical entity "
+     "(<code>region</code>) + a measure pair (<code>gdp_index</code> vs "
+     "<code>wellbeing_index</code>) + a quarterly date drive a <b>Gapminder-style animated bubble "
+     "chart</b> &mdash; one bubble per region, each tracing a <b>distinct curved path</b> through "
+     "the measure space over time, sized by per-cell record count and colored by region (Play/Pause "
+     "+ scrub slider, legend of regions). Strict quality gates (min rows per cell, near-complete "
+     "per-entity panel) keep it a real drift story rather than noisy jitter.",
+     True, ["smart", "regions_growth.csv"]),
 ]
 
 # A final, non-plotly gallery entry: a clickable screenshot that links out to the full, standalone

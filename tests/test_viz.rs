@@ -418,6 +418,454 @@ fn viz_map_slider_errors() {
     assert!(stderr.contains("viz geo"));
 }
 
+/// 36 rows: a TAUTOLOGICAL numeric pair (x, y = 2x → r=1.0, a rigid line) over 3 monthly dates.
+/// Its centroids can only slide along the line (curvature ~0), so `viz smart` must NOT animate it —
+/// animation is reserved for relationships whose 2-D shape genuinely evolves over time.
+fn smart_anim_pair_csv() -> String {
+    let mut rows = String::from("date,x,y\n");
+    for m in 1..=3 {
+        for x in 0..12 {
+            let y = x * 2;
+            rows.push_str(&format!("2024-0{m}-01,{x},{y}\n"));
+        }
+    }
+    rows
+}
+
+/// 45 rows: a pair (a, b) whose per-month centroids trace an inverted-U ARC — a genuinely evolving
+/// 2-D relationship with ~zero global linear correlation (r≈0). A 3×3 integer grid per month keeps
+/// both columns low-cardinality (not near-unique, so they stay in the correlation matrix). This is
+/// the case the curvature selector animates and the old max-|r| logic never could.
+fn smart_arc_pair_csv() -> String {
+    let cents = [(0, 2), (3, 10), (6, 13), (9, 10), (12, 2)];
+    let mut rows = String::from("date,a,b\n");
+    for (m, (cx, cy)) in cents.iter().enumerate() {
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                rows.push_str(&format!("2024-0{}-01,{},{}\n", m + 1, cx + dx, cy + dy));
+            }
+        }
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_animated_scatter_pair_when_temporal() {
+    // a pair whose per-month centroids ARC (a genuinely evolving 2-D relationship) + a canonical
+    // date column => `viz smart` (auto) animates the pair over time: a time-colored trailing-window
+    // scatter with frames + a slider + Play/Pause. Note the relationship has r≈0 — the old max-|r|
+    // logic would never have picked it; the curvature selector does.
+    let wrk = Workdir::new("viz_smart_animated_scatter_pair_when_temporal");
+    wrk.create_from_string("s.csv", &smart_arc_pair_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    // NO_COMPRESS so the panel JSON is assertable in plaintext (the browser check covers the
+    // compressed replay-chain path separately).
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the animated pair panel: "<a> vs <b> (r=..) over time"
+    assert!(
+        html.contains("over time"),
+        "expected an animated pair title; html: {html}"
+    );
+    // frames (one per monthly bucket) + a scrub slider + Play
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains("▶ Play"));
+    assert!(html.contains(r#""name":"2024-01-01""#));
+    assert!(html.contains(r#""name":"2024-05-01""#));
+    // markers colored by time bucket (an array color + a sequential scale + a legend)
+    assert!(html.contains(r#""mode":"markers""#));
+    assert!(html.contains(r#""color":["#));
+    assert!(html.contains("Viridis"));
+    assert!(html.contains(r#""showscale":true"#));
+    // 5 monthly buckets => 5 frames, each keeping the single stable trace index
+    assert_eq!(html.matches(r#""traces":[0]"#).count(), 5);
+}
+
+#[test]
+fn viz_smart_pair_gated_out_when_tautological() {
+    // headline critique fix: a rigid tautological pair (y = 2x, r=1.0) with a date column must NOT
+    // animate — its centroids only slide along the line (curvature ~0), so a time reveal adds
+    // nothing over a static scatter. The static correlation drill-down still appears.
+    let wrk = Workdir::new("viz_smart_pair_gated_out_when_tautological");
+    wrk.create_from_string("s.csv", &smart_anim_pair_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // no animation for the tautological pair
+    assert!(
+        !html.contains("over time"),
+        "a tautological pair should not animate; html: {html}"
+    );
+    assert!(!html.contains(r#""sliders":["#));
+    assert!(!html.contains("▶ Play"));
+    // but the static strongest-pair drill-down is still present
+    assert!(
+        html.contains("x vs y (r=1.00)"),
+        "static strongest-pair drill-down should remain; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_slider_off_no_animation() {
+    // `--slider off` keeps the pair drill-down static (no frames/slider), even when the data WOULD
+    // otherwise animate (the arc fixture).
+    let wrk = Workdir::new("viz_smart_slider_off_no_animation");
+    wrk.create_from_string("s.csv", &smart_arc_pair_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "--slider", "off", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // no animation chrome under --slider off
+    assert!(
+        !html.contains("over time"),
+        "slider off should not animate; html: {html}"
+    );
+    assert!(!html.contains(r#""sliders":["#));
+    assert!(!html.contains("▶ Play"));
+}
+
+#[test]
+fn viz_smart_animated_pair_gated_without_temporal_axis() {
+    // judiciousness guard: the arc pair but NO date column => no animation under `auto` (the pair
+    // drill-down stays a static scatter). Same numbers as the arc fixture, date column removed.
+    let wrk = Workdir::new("viz_smart_animated_pair_gated_without_temporal_axis");
+    let arc = smart_arc_pair_csv();
+    // drop the leading "date," header and the leading "2024-0m-01," of each row
+    let mut rows = String::from("a,b\n");
+    for line in arc.lines().skip(1) {
+        let cols: Vec<&str> = line.splitn(2, ',').collect();
+        rows.push_str(cols[1]);
+        rows.push('\n');
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // no temporal axis => no animated pair
+    assert!(
+        !html.contains("over time"),
+        "no date column should not animate; html: {html}"
+    );
+    assert!(!html.contains(r#""sliders":["#));
+    assert!(!html.contains("▶ Play"));
+}
+
+// ~30-row global-extent dated point cloud (5+ continents, lon span ~300°, lat span ~98°) across 5
+// monthly dates. Header names `lat`/`lon` so `latlon_indices` detects the coordinate pair.
+fn smart_world_dated_csv() -> String {
+    let cities = [
+        ("Tokyo", 35.68, 139.69),
+        ("Santiago", -33.45, -70.67),
+        ("Reykjavik", 64.15, -21.94),
+        ("Cape Town", -33.92, 18.42),
+        ("Sydney", -33.87, 151.21),
+        ("Anchorage", 61.22, -149.90),
+    ];
+    let mut rows = String::from("place,lat,lon,event_date\n");
+    for m in 1..=5 {
+        for (place, lat, lon) in &cities {
+            rows.push_str(&format!("{place},{lat},{lon},2024-0{m}-15\n"));
+        }
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_geo_animates_large_extent() {
+    // continental/global dated points + a canonical date column => `viz smart` (auto) animates a
+    // cumulative geographic reveal on the ScatterGeo projection basemap (slider + Play/Pause).
+    let wrk = Workdir::new("viz_smart_geo_animates_large_extent");
+    wrk.create_from_string("s.csv", &smart_world_dated_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        html.contains("locations over time"),
+        "expected the animated geo panel title; html: {html}"
+    );
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains("\u{25b6} Play"));
+    // one frame per monthly bucket, named by ISO date
+    assert!(html.contains(r#""name":"2024-01-15""#));
+    assert!(html.contains(r#""name":"2024-05-15""#));
+    // rendered on the geo projection basemap (not a cartesian scatter)
+    assert!(html.contains(r#""type":"scattergeo""#));
+}
+
+#[test]
+fn viz_smart_geo_gated_city_scale() {
+    // city-scale dated points (~0.3° span) must NOT animate a geo panel — T2 only fires for a
+    // continental/global extent (a MapLibre tile map, which can't animate natively, is left
+    // static).
+    let wrk = Workdir::new("viz_smart_geo_gated_city_scale");
+    let pts = [
+        (40.70, -74.01),
+        (40.75, -73.98),
+        (40.68, -73.95),
+        (40.80, -73.96),
+        (40.72, -74.00),
+        (40.78, -73.99),
+    ];
+    let mut rows = String::from("place,lat,lon,event_date\n");
+    for m in 1..=5 {
+        for (i, (lat, lon)) in pts.iter().enumerate() {
+            rows.push_str(&format!("stop{i},{lat},{lon},2024-0{m}-15\n"));
+        }
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        !html.contains("locations over time"),
+        "city-scale points should not animate a geo panel; html: {html}"
+    );
+}
+
+// 5 regions x 6 quarters x 3 rows: each region traces a DISTINCT curved path in
+// (gdp_index, wellbeing_index) space (real Gapminder-like divergence, not parallel lines), with
+// exactly 3 rows per region-quarter so the min_cell_rows gate passes and the panel is complete.
+// `population_m` is a distinct per-region third measure (Gapminder's bubble-SIZE variable); it is
+// weakly/anti-correlated with the pair, so the selector still animates gdp-vs-wellbeing and sizes
+// by population.
+fn smart_gapminder_csv() -> String {
+    let traj: [(&str, i32, [(i32, i32); 6]); 5] = [
+        (
+            "Northland",
+            12,
+            [(60, 55), (66, 62), (72, 68), (78, 71), (84, 72), (90, 73)],
+        ),
+        (
+            "Eastmark",
+            30,
+            [(50, 48), (58, 50), (67, 53), (76, 60), (83, 70), (88, 80)],
+        ),
+        (
+            "Sudland",
+            48,
+            [(45, 40), (48, 50), (50, 60), (52, 69), (55, 77), (58, 84)],
+        ),
+        (
+            "Westfall",
+            9,
+            [(70, 58), (64, 61), (60, 63), (63, 66), (70, 70), (78, 74)],
+        ),
+        (
+            "Centra",
+            22,
+            [(55, 52), (61, 57), (66, 63), (71, 66), (75, 71), (80, 75)],
+        ),
+    ];
+    let q = [
+        "2023-01-01",
+        "2023-04-01",
+        "2023-07-01",
+        "2023-10-01",
+        "2024-01-01",
+        "2024-04-01",
+    ];
+    let mut rows = String::from("region,quarter_date,gdp_index,wellbeing_index,population_m\n");
+    for (region, pop, path) in &traj {
+        for (qi, (gx, wy)) in path.iter().enumerate() {
+            for k in -1..=1 {
+                rows.push_str(&format!("{region},{},{},{},{pop}\n", q[qi], gx + k, wy + k));
+            }
+        }
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_bubble_when_entity_and_drift() {
+    // a low-cardinality categorical entity + a measure pair + a canonical date => `viz smart`
+    // animates a Gapminder-style bubble chart: one bubble per entity moving through the measure
+    // space over time (slider + Play/Pause, legend of entities), SIZED by a third data measure.
+    let wrk = Workdir::new("viz_smart_bubble_when_entity_and_drift");
+    wrk.create_from_string("s.csv", &smart_gapminder_csv());
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // title "<y> vs <x> by <entity> over time"
+    assert!(
+        html.contains(" by region over time"),
+        "expected the animated bubble title; html: {html}"
+    );
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains("\u{25b6} Play"));
+    // one trace per entity => the entity names appear as legend/trace names
+    assert!(html.contains(r#""name":"Northland""#));
+    assert!(html.contains(r#""name":"Sudland""#));
+    // one frame per quarter bucket, named by ISO date
+    assert!(html.contains(r#""name":"2023-01-01""#));
+    assert!(html.contains(r#""name":"2024-04-01""#));
+    // Gapminder's defining feature: bubbles are SIZED by a third data measure (population_m),
+    // NOT the per-cell row count — so the hover names it and the marker sizes VARY across entities
+    // (with a uniform 3-rows-per-cell dataset, count-sizing would collapse every bubble to one
+    // size).
+    assert!(
+        html.contains("population_m"),
+        "the bubble should be sized/labeled by the third measure; html: {html}"
+    );
+    let sizes: std::collections::HashSet<&str> = html
+        .match_indices(r#""size":"#)
+        .map(|(i, m)| {
+            let rest = &html[i + m.len()..];
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            &rest[..end]
+        })
+        .filter(|s| !s.is_empty())
+        .collect();
+    assert!(
+        sizes.len() >= 2,
+        "bubble marker sizes should vary (sized by the 3rd measure), got: {sizes:?}"
+    );
+}
+
+#[test]
+fn viz_smart_bubble_gated_without_entity() {
+    // the same measure pair + date but NO categorical entity column => no bubble (and the
+    // near-linear gdp/wellbeing trend doesn't drift, so nothing else animates either). Isolates the
+    // entity as the discriminator.
+    let wrk = Workdir::new("viz_smart_bubble_gated_without_entity");
+    let with_entity = smart_gapminder_csv();
+    // drop the leading "region," header and the leading "<region>," of each row
+    let mut rows = String::from("quarter_date,gdp_index,wellbeing_index,population_m\n");
+    for line in with_entity.lines().skip(1) {
+        let cols: Vec<&str> = line.splitn(2, ',').collect();
+        rows.push_str(cols[1]);
+        rows.push('\n');
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        !html.contains("over time"),
+        "without a categorical entity there is no bubble panel; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bubble_gated_when_cells_too_sparse() {
+    // 5 entities x 6 quarters, but each entity has >= 3 rows in only 3 of the 6 quarters (1 row in
+    // the rest). Cells clear min_cell_rows in too few buckets, so the panel-completeness gate
+    // rejects it — a half-empty, flickering bubble panel is noise, not a Gapminder story. (This is
+    // the gate that rejects delivery_stops, whose many daily dates coarsen to monthly buckets with
+    // only a fraction dense per zone.)
+    let wrk = Workdir::new("viz_smart_bubble_gated_when_cells_too_sparse");
+    let ents = ["r1", "r2", "r3", "r4", "r5"];
+    let q = [
+        "2023-01-01",
+        "2023-04-01",
+        "2023-07-01",
+        "2023-10-01",
+        "2024-01-01",
+        "2024-04-01",
+    ];
+    let mut rows = String::from("region,quarter_date,gdp_index,wellbeing_index\n");
+    for (ei, e) in ents.iter().enumerate() {
+        for (qi, qd) in q.iter().enumerate() {
+            let n = if qi < 3 { 3 } else { 1 }; // dense in only the first 3 quarters
+            for k in 0..n {
+                let g = 50 + ei * 5 + qi * 4 + k;
+                let w = 45 + ei * 4 + qi * 5 + k;
+                rows.push_str(&format!("{e},{qd},{g},{w}\n"));
+            }
+        }
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    assert!(
+        !html.contains(" by region over time"),
+        "a sparse/incomplete panel should not animate a bubble; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_bubble_wins_arbitration_over_scatter_pair() {
+    // arbitration (§5): a dataset qualifying for BOTH the T1 scatter-pair animation (the a/b
+    // centroid path ARCS) AND the T3 bubble (a complete 3-entity panel) shows ONLY the T3 bubble.
+    let wrk = Workdir::new("viz_smart_bubble_wins_arbitration_over_scatter_pair");
+    let cents = [(0, 2), (3, 10), (6, 13), (9, 10), (12, 2)];
+    let ents = ["north", "south", "east"];
+    let mut rows = String::from("date,region,a,b\n");
+    for (m, (cx, cy)) in cents.iter().enumerate() {
+        for e in &ents {
+            for k in -1..=1 {
+                rows.push_str(&format!("2024-0{}-01,{e},{},{}\n", m + 1, cx + k, cy + k));
+            }
+        }
+    }
+    wrk.create_from_string("s.csv", &rows);
+
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.env("QSV_VIZ_NO_COMPRESS", "1");
+    cmd.args(["smart", "s.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+    let html = wrk.read_to_string("dash.html").unwrap();
+
+    // the bubble is present ...
+    assert!(
+        html.contains(" by region over time"),
+        "expected the T3 bubble to win arbitration; html: {html}"
+    );
+    // ... and it is the ONLY animated panel (each animated panel contributes exactly one slider)
+    assert_eq!(
+        html.matches(r#""sliders":["#).count(),
+        1,
+        "exactly one animated panel (the bubble) should appear; html: {html}"
+    );
+}
+
 #[test]
 fn viz_scatter3d_hover_labels_columns() {
     // plotly's default 3D hover labels the coordinates with the bare letters x/y/z; we override

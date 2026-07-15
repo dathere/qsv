@@ -373,6 +373,52 @@ fn viz_slider_unsupported_chart_errors() {
 }
 
 #[test]
+fn viz_geo_slider_animation() {
+    // scattergeo animates natively (unlike MapLibre scattermap), so `viz geo --slider` builds a
+    // full animated point map with frames + a scrub slider + Play/Pause
+    let wrk = Workdir::new("viz_geo_slider_animation");
+    wrk.create_from_string(
+        "pts.csv",
+        "year,cat,lat,lon\n2020,A,37,-122\n2020,B,40,-74\n2021,A,38,-121\n2021,B,41,-73\n2022,A,\
+         39,-120\n2022,B,42,-72\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "geo", "pts.csv", "--lat", "lat", "--lon", "lon", "--slider", "year", "--series", "cat",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""type":"scattergeo""#));
+    assert!(html.contains(r#""sliders":["#));
+    assert!(html.contains("▶ Play"));
+    assert!(html.contains(r#""name":"2020""#));
+    assert!(html.contains(r#""name":"2022""#));
+    // both series appear in every frame with stable trace indices
+    assert_eq!(html.matches(r#""traces":[0,1]"#).count(), 3);
+}
+
+#[test]
+fn viz_map_slider_errors() {
+    // MapLibre scattermap can't animate reliably, so --slider on `viz map` is rejected with a
+    // pointer to `viz geo`
+    let wrk = Workdir::new("viz_map_slider_errors");
+    wrk.create_from_string("pts.csv", "year,lat,lon\n2020,37,-122\n2021,40,-74\n");
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "map", "pts.csv", "--lat", "lat", "--lon", "lon", "--slider", "year",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(!out.status.success());
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("isn't supported for `viz map`"));
+    assert!(stderr.contains("viz geo"));
+}
+
+#[test]
 fn viz_scatter3d_hover_labels_columns() {
     // plotly's default 3D hover labels the coordinates with the bare letters x/y/z; we override
     // it with a template that names the real columns and comma-groups the values.

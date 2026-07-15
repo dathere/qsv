@@ -637,7 +637,7 @@ Common options:
 "#;
 
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashMap, HashSet},
     io::{IsTerminal, Write},
     time::{Duration, Instant},
 };
@@ -2093,18 +2093,23 @@ struct XySliderData {
     /// distinct slider values in animation order (numeric if all parse, else lexical)
     frame_values: Vec<String>,
     /// per frame: one `(series, xs, ys)` group per `series_union` member (empty arrays for a
-    /// series absent from that frame) so every frame has the SAME trace count and order
+    /// series absent from that frame) so every frame has the SAME trace count and order. Stored
+    /// RAW (untransformed) — the trace builder applies `--agg` exactly once.
     frames:       Vec<Vec<(String, Vec<String>, Vec<f64>)>>,
     /// pinned global x-range (only when every x parses as finite — a numeric axis)
     x_range:      Option<(f64, f64)>,
+    /// fixed category order for a non-numeric x-axis, so categorical bars/points don't reorder or
+    /// drop between frames (mutually exclusive with `x_range`)
+    x_categories: Option<Vec<String>>,
     /// pinned global y-range
     y_range:      (f64, f64),
 }
 
 /// Read the rows and partition them into ordered animation frames by the `--slider` column,
 /// grouping within each frame by `--series` (a single empty-named group when `--series` is unset).
-/// Computes global x/y ranges over the ACTUAL PLOTTED values (post-`--agg`) so the axes stay pinned
-/// and correctly sized across every frame.
+/// Frame groups are stored RAW (untransformed) so the trace builder applies `--agg` exactly once;
+/// the global x/y ranges (and the categorical x union) are computed from a transformed copy so they
+/// reflect the actual PLOTTED values and stay pinned across every frame.
 fn read_xy_slider(
     args: &Args,
     slider_col: &SelectColumns,
@@ -2175,13 +2180,16 @@ fn read_xy_slider(
     let cumulative = args.flag_slider_cumulative;
     let mut frames: Vec<Vec<(String, Vec<String>, Vec<f64>)>> =
         Vec::with_capacity(frame_order.len());
-    // ranges are computed over the transformed (plotted) values, not the raw rows
+    // ranges + the categorical x union are computed over the transformed (plotted) values, while
+    // the frame groups themselves are stored RAW (the trace builder transforms them once)
     let mut ymin = f64::INFINITY;
     let mut ymax = f64::NEG_INFINITY;
     let mut all_x_numeric = true;
     let mut xmin = f64::INFINITY;
     let mut xmax = f64::NEG_INFINITY;
-    let mut saw_x = false;
+    let mut saw_numeric_x = false;
+    let mut x_union: Vec<String> = Vec::new();
+    let mut x_seen: HashSet<String> = HashSet::new();
 
     for fi in 0..frame_order.len() {
         let mut groups: Vec<(String, Vec<String>, Vec<f64>)> =
@@ -2198,21 +2206,25 @@ fn read_xy_slider(
                     ys.extend_from_slice(fy);
                 }
             }
-            // apply the same transform the trace builder uses, so ranges match plotted values
-            let (xs, ys) = apply_xy_transform(xs, ys, kind, agg);
-            for &y in &ys {
+            // transform a COPY only to measure the plotted values (ranges + categorical union);
+            // the RAW xs/ys are stored so the trace builder aggregates exactly once
+            let (txs, tys) = apply_xy_transform(xs.clone(), ys.clone(), kind, agg);
+            for &y in &tys {
                 ymin = ymin.min(y);
                 ymax = ymax.max(y);
             }
-            if all_x_numeric {
-                for x in &xs {
-                    saw_x = true;
+            for x in &txs {
+                // categorical x union in first-seen order (used to pin a non-numeric axis)
+                if x_seen.insert(x.clone()) {
+                    x_union.push(x.clone());
+                }
+                if all_x_numeric {
                     if let Some(xn) = parse_finite_f64(x) {
+                        saw_numeric_x = true;
                         xmin = xmin.min(xn);
                         xmax = xmax.max(xn);
                     } else {
                         all_x_numeric = false;
-                        break;
                     }
                 }
             }
@@ -2241,17 +2253,20 @@ fn read_xy_slider(
     };
     let y_range = (ylo, ymax + ypad);
 
-    // pinned x-range only when the axis is numeric (categorical bars auto-order)
-    let x_range = if all_x_numeric && saw_x && xmin.is_finite() && xmax.is_finite() {
+    // pin the x-axis one of two ways: a numeric range when every x parses, else a fixed category
+    // array (order + membership) so categorical bars/points don't reorder or drop between frames
+    let (x_range, x_categories) = if all_x_numeric && saw_numeric_x {
         let xspan = (xmax - xmin).abs();
         let xpad = if xspan > f64::EPSILON {
             xspan * 0.05
         } else {
             xmax.abs().max(1.0) * 0.05
         };
-        Some((xmin - xpad, xmax + xpad))
+        (Some((xmin - xpad, xmax + xpad)), None)
+    } else if !x_union.is_empty() {
+        (None, Some(x_union))
     } else {
-        None
+        (None, None)
     };
 
     Ok(XySliderData {
@@ -2261,6 +2276,7 @@ fn read_xy_slider(
         frame_values: frame_order,
         frames,
         x_range,
+        x_categories,
         y_range,
     })
 }
@@ -2309,6 +2325,10 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
     ));
     if let Some((lo, hi)) = data.x_range {
         x = x.range(vec![lo, hi]);
+    } else if let Some(cats) = data.x_categories {
+        // pin a categorical x-axis to a fixed category array so bars/points keep the same order
+        // and set of categories across every animation frame
+        x = x.category_order(CategoryOrder::Array).category_array(cats);
     }
     if args.flag_rangeslider {
         x = x.range_slider(RangeSlider::new().visible(true));

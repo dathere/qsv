@@ -294,6 +294,50 @@ fn viz_slider_series_stable_trace_count() {
 }
 
 #[test]
+fn viz_slider_agg_count_not_double_aggregated() {
+    // regression: frame groups are stored raw and aggregated exactly once. With --agg count,
+    // category A has 3 rows in 2020, so its bar height is 3 — a second aggregation pass would
+    // collapse each already-counted bucket to 1.
+    let wrk = Workdir::new("viz_slider_agg_count_not_double_aggregated");
+    wrk.create_from_string(
+        "d.csv",
+        "year,cat,v\n2020,A,1\n2020,A,1\n2020,A,1\n2020,B,1\n2020,B,1\n2021,A,1\n2021,B,1\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "bar", "d.csv", "--x", "cat", "--y", "v", "--agg", "count", "--slider", "year",
+    ]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // frame 2020 counts A=3, B=2 — a second aggregation pass would collapse each bucket to 1
+    // (yielding [1.0,1.0]), so the presence of [3.0,2.0] proves it aggregated exactly once
+    assert!(html.contains(r#""y":[3.0,2.0]"#));
+}
+
+#[test]
+fn viz_slider_categorical_x_pinned() {
+    // a categorical x-axis is pinned to a fixed category array (order + membership) so bars don't
+    // reorder or drop between frames — here A only appears in 2020 and C only in 2021
+    let wrk = Workdir::new("viz_slider_categorical_x_pinned");
+    wrk.create_from_string(
+        "d.csv",
+        "year,cat,v\n2020,A,5\n2020,B,3\n2021,B,4\n2021,C,2\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["bar", "d.csv", "--x", "cat", "--y", "v", "--slider", "year"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    assert!(html.contains(r#""categoryorder":"array""#));
+    assert!(html.contains(r#""categoryarray":["A","B","C"]"#));
+}
+
+#[test]
 fn viz_slider_auto_standalone_errors() {
     let wrk = Workdir::new("viz_slider_auto_standalone_errors");
     fruits(&wrk);

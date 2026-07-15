@@ -72,3 +72,4 @@ profile*-handoff.md
 
 # Python bytecode from examples/viz/gen_gallery.py (the viz gallery generator)
 examples/viz/__pycache__/
+*.pyc

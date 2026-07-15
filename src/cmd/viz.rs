@@ -611,7 +611,7 @@ smart options:
     --slider-cumulative    Accumulate rows across frames: frame N includes every row
                            whose --slider value is at or below the Nth value, so the
                            animation builds up cumulatively instead of replacing each
-                           step. Applies to bar/line/scatter.
+                           step. Applies to bar/line/scatter and geo.
     --annotation <s>       Caption note drawn at the bottom of the plot (e.g. to note
                            a clipped outlier). Cartesian charts only.
     --theme <name>         Plotly theme that drives the chart's overall look

@@ -559,6 +559,16 @@ FIGURES = [
      "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",
      False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude",
              "--projection", "natural-earth"]),
+    ("geo (animated slider)",
+     "An <b>animated point map</b>: <code>--slider</code> steps through the region column, "
+     "revealing the world's seismicity <b>continent by continent</b>, each region in its own "
+     "color via <code>--series</code>. With <code>--slider-cumulative</code> the points "
+     "<b>accumulate</b> as the animation plays (Play/Pause + a scrub slider). Unlike the MapLibre "
+     "tile map, <code>scattergeo</code> animates natively, so <code>--slider</code> is supported "
+     "on <code>viz geo</code> &mdash; use it instead of <code>viz map</code> for animated point "
+     "maps.",
+     False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--slider", "region",
+             "--series", "region", "--slider-cumulative", "--projection", "natural-earth"]),
     ("choropleth", "Filled-region map coloring countries by GDP, matched by ISO-3 code on a "
      "token-free projection basemap. Use --location-mode usa-states / country-names / geojson-id "
      "for other region keys, --map for a MapLibre tile basemap, or --geocode to derive codes from "

@@ -313,6 +313,10 @@ qsv viz map quakes.csv --lat lat --lon lon --density --style carto-positron -o m
 # geo — offline projection map (no tiles/token); viz smart auto-uses this for global coordinates
 qsv viz geo quakes.csv --lat lat --lon lon --color magnitude --projection natural-earth -o geo.html
 
+# geo (animated slider) — animate a point map over a column (scattergeo animates; viz map cannot)
+# --slider-cumulative accumulates points as the animation plays, colored per region via --series
+qsv viz geo quakes.csv --lat lat --lon lon --slider region --series region --slider-cumulative --projection natural-earth -o geo_animated.html
+
 # choropleth — fill countries by a value, matched by ISO-3 code (also: usa-states, country-names,
 # geojson-id; --map for a MapLibre basemap; --geocode to derive codes from lat/lon or place names)
 qsv viz choropleth country_stats.csv --locations iso3 --value gdp_usd_tn --color-scale viridis -o choropleth.html

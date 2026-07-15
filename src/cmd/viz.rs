@@ -598,8 +598,10 @@ smart options:
     --slider <arg>         Animate the chart over a column: each distinct value of the
                            given column becomes an animation frame, with a Play/Pause
                            button and a slider to scrub through the frames (Gapminder-
-                           style). Supported for bar/line/scatter and may be split into
-                           animated traces with the --series option. For `smart`, pass
+                           style). Supported for bar/line/scatter and geo, and may be
+                           split into animated traces with the --series option. (Not
+                           supported for `viz map` — the MapLibre basemap can't animate;
+                           use `viz geo` for an animated point map.) For `smart`, pass
                            auto, on or off to control the automatic use of an animated
                            panel, or a column name to force that column as the animation
                            axis (default: auto). Axis ranges are pinned across frames so
@@ -609,7 +611,7 @@ smart options:
     --slider-cumulative    Accumulate rows across frames: frame N includes every row
                            whose --slider value is at or below the Nth value, so the
                            animation builds up cumulatively instead of replacing each
-                           step. Applies to bar/line/scatter.
+                           step. Applies to bar/line/scatter and geo.
     --annotation <s>       Caption note drawn at the bottom of the plot (e.g. to note
                            a clipped outlier). Cartesian charts only.
     --theme <name>         Plotly theme that drives the chart's overall look
@@ -1660,20 +1662,43 @@ fn build_plot(args: &Args, out_format: OutFormat, progress: &ProgressBar) -> Cli
     // --slider animates the chart over a column's distinct values (one animation frame per value,
     // with a Play/Pause button and a scrub slider). It partitions the rows and builds its own
     // frames + slider/menu layout, so it's dispatched here before the per-kind builders below.
-    // Currently supported for bar/line/scatter; histogram/box and map/geo are follow-ups.
+    // Supported for bar/line/scatter and geo; histogram/box are follow-ups, and `viz map` can't
+    // animate (the MapLibre backend never settles its animation frames — use `viz geo` instead).
     if let Some(slider_col) = resolve_slider_col(args)? {
-        if !matches!(chart_kind(args), Chart::Bar | Chart::Line | Chart::Scatter) {
-            return fail_incorrectusage_clierror!(
-                "--slider currently supports `viz bar`, `viz line` and `viz scatter`."
-            );
+        match chart_kind(args) {
+            Chart::Bar | Chart::Line | Chart::Scatter => {
+                if encoded_scatter(args) {
+                    return fail_incorrectusage_clierror!(
+                        "--slider cannot yet be combined with --color/--size (bubble animation is \
+                         a follow-up). Use --series to split into animated traces, or drop \
+                         --color/--size."
+                    );
+                }
+                return build_slider_xy_plot(args, chart_kind(args), &slider_col);
+            },
+            Chart::Geo => {
+                if encoded_scatter(args) {
+                    return fail_incorrectusage_clierror!(
+                        "--slider cannot yet be combined with --color/--size on `viz geo` (a \
+                         follow-up). Use --series to split into animated traces, or drop \
+                         --color/--size."
+                    );
+                }
+                return build_slider_geo_plot(args, &slider_col);
+            },
+            Chart::Map => {
+                return fail_incorrectusage_clierror!(
+                    "--slider isn't supported for `viz map` — the MapLibre tile basemap can't \
+                     animate reliably. Use `viz geo` for an animated point map."
+                );
+            },
+            _ => {
+                return fail_incorrectusage_clierror!(
+                    "--slider currently supports `viz bar`, `viz line`, `viz scatter` and `viz \
+                     geo`."
+                );
+            },
         }
-        if encoded_scatter(args) {
-            return fail_incorrectusage_clierror!(
-                "--slider cannot yet be combined with --color/--size (bubble animation is a \
-                 follow-up). Use --series to split into animated traces, or drop --color/--size."
-            );
-        }
-        return build_slider_xy_plot(args, chart_kind(args), &slider_col);
     }
 
     // maps use a `map` layout (tile basemap, center, zoom) rather than cartesian x/y axes,
@@ -3283,12 +3308,34 @@ fn geo_series_traces(
         .collect()
 }
 
+/// The shared `geo` projection layout for `viz geo` (static and animated): a coastline/land/ocean
+/// projection basemap (no tiles or token), the chart title, and legend visibility. The theme and
+/// any slider/menu are applied by the caller.
+fn geo_base_layout(args: &Args, show_legend: bool) -> CliResult<Layout> {
+    let projection = parse_projection(args.flag_projection.as_deref().unwrap_or("natural-earth"))?;
+    let (geo_land, geo_water, geo_bg) = geo_palette(args.theme());
+    let geo = LayoutGeo::new()
+        .projection(Projection::new().projection_type(projection))
+        .resolution(GeoResolution::OneOverFiftyMillion)
+        .showland(true)
+        .landcolor(geo_land)
+        .showocean(true)
+        .oceancolor(geo_water)
+        .showlakes(true)
+        .lakecolor(geo_water)
+        .showcountries(true)
+        .bgcolor(geo_bg);
+    let mut layout = Layout::new().geo(geo).show_legend(show_legend);
+    if let Some(title) = &args.flag_title {
+        layout = layout.title(Title::with_text(title));
+    }
+    Ok(layout)
+}
+
 /// Build the complete `Plot` for `viz geo`: a `ScatterGeo` point map on a projection basemap
 /// (coastlines/land/countries, no tiles or token), with optional `--color`/`--size` marker
 /// encodings or `--series` per-category traces. Mirrors `build_map_plot` minus the tile basemap.
 fn build_geo_plot(args: &Args) -> CliResult<Plot> {
-    let projection = parse_projection(args.flag_projection.as_deref().unwrap_or("natural-earth"))?;
-
     let (mut rdr, headers, nh) = reader_and_headers(args)?;
     let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
     let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
@@ -3387,22 +3434,192 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
         plot.add_trace(scatter_geo_with_marker(lats, lons, marker, text));
     }
 
-    let (geo_land, geo_water, geo_bg) = geo_palette(args.theme());
-    let geo = LayoutGeo::new()
-        .projection(Projection::new().projection_type(projection))
-        .resolution(GeoResolution::OneOverFiftyMillion)
-        .showland(true)
-        .landcolor(geo_land)
-        .showocean(true)
-        .oceancolor(geo_water)
-        .showlakes(true)
-        .lakecolor(geo_water)
-        .showcountries(true)
-        .bgcolor(geo_bg);
-    let mut layout = Layout::new().geo(geo).show_legend(series_idx.is_some());
-    if let Some(title) = &args.flag_title {
-        layout = layout.title(Title::with_text(title));
+    let layout = geo_base_layout(args, series_idx.is_some())?;
+    plot.set_layout(apply_theme(layout, args.theme()));
+    Ok(plot)
+}
+
+/// Row coordinates partitioned into ordered animation frames for `viz geo --slider`.
+struct GeoSliderData {
+    /// the `--slider` column's label, shown as the slider's current-value prefix
+    frame_label:  String,
+    /// distinct slider values in animation order (numeric if all parse, else lexical)
+    frame_values: Vec<String>,
+    /// per frame: one `(series, lats, lons, texts)` group per `--series` category union member
+    /// (empty arrays for a series absent from that frame) so every frame has the SAME trace count
+    /// and order
+    frames:       Vec<Vec<(String, Vec<f64>, Vec<f64>, Vec<String>)>>,
+}
+
+/// Read lat/lon rows and partition them into ordered animation frames by the `--slider` column,
+/// grouping within each frame by `--series` (a single empty-named group when `--series` is unset).
+/// The `geo` projection auto-frames the full extent, so no per-frame view pinning is needed.
+fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSliderData> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let lat_idx = resolve_one(args.flag_lat.as_ref(), &headers, nh, "lat")?;
+    let lon_idx = resolve_one(args.flag_lon.as_ref(), &headers, nh, "lon")?;
+    let series_idx = match args.flag_series.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "series")?),
+        None => None,
+    };
+    let text_idx = match args.flag_text.as_ref() {
+        Some(s) => Some(resolve_one(Some(s), &headers, nh, "text")?),
+        None => None,
+    };
+    let frame_idx = resolve_one(Some(slider_col), &headers, nh, "slider")?;
+
+    let mut frame_order: Vec<String> = Vec::new();
+    let mut series_order: Vec<String> = Vec::new();
+    let mut map: HashMap<String, HashMap<String, (Vec<f64>, Vec<f64>, Vec<String>)>> =
+        HashMap::new();
+
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+            continue;
+        }
+        let series = match series_idx {
+            Some(i) => cell_to_string(record.get(i)),
+            None => String::new(),
+        };
+        let frame = cell_to_string(record.get(frame_idx));
+
+        if !map.contains_key(&frame) {
+            frame_order.push(frame.clone());
+        }
+        let fmap = map.entry(frame).or_default();
+        if !fmap.contains_key(&series) && !series_order.contains(&series) {
+            series_order.push(series.clone());
+        }
+        let entry = fmap
+            .entry(series)
+            .or_insert_with(|| (Vec::new(), Vec::new(), Vec::new()));
+        entry.0.push(lat);
+        entry.1.push(lon);
+        if let Some(i) = text_idx {
+            // plotly renders hover text as pseudo-HTML, so escape `<`/`&` to show the literal value
+            entry.2.push(escape_hover(&cell_to_string(record.get(i))));
+        }
     }
+    if frame_order.is_empty() {
+        return fail_clierror!(
+            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        );
+    }
+    if frame_order.len() < 2 {
+        return fail_incorrectusage_clierror!(
+            "--slider needs at least 2 distinct values in the chosen column to animate; found 1."
+        );
+    }
+
+    // animation order: numeric when every frame value parses as finite, else lexical
+    if frame_order.iter().all(|f| parse_finite_f64(f).is_some()) {
+        frame_order.sort_by(|a, b| {
+            parse_finite_f64(a)
+                .unwrap_or(f64::NAN)
+                .partial_cmp(&parse_finite_f64(b).unwrap_or(f64::NAN))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    } else {
+        frame_order.sort();
+    }
+
+    let cumulative = args.flag_slider_cumulative;
+    let mut frames: Vec<Vec<(String, Vec<f64>, Vec<f64>, Vec<String>)>> =
+        Vec::with_capacity(frame_order.len());
+    for fi in 0..frame_order.len() {
+        let mut groups: Vec<(String, Vec<f64>, Vec<f64>, Vec<String>)> =
+            Vec::with_capacity(series_order.len());
+        for s in &series_order {
+            let (mut la, mut lo, mut tx): (Vec<f64>, Vec<f64>, Vec<String>) =
+                (Vec::new(), Vec::new(), Vec::new());
+            let start = if cumulative { 0 } else { fi };
+            for prev in &frame_order[start..=fi] {
+                if let Some(fm) = map.get(prev)
+                    && let Some((pla, plo, ptx)) = fm.get(s)
+                {
+                    la.extend_from_slice(pla);
+                    lo.extend_from_slice(plo);
+                    tx.extend_from_slice(ptx);
+                }
+            }
+            groups.push((s.clone(), la, lo, tx));
+        }
+        frames.push(groups);
+    }
+
+    Ok(GeoSliderData {
+        frame_label: col_label(&headers, frame_idx, nh),
+        frame_values: frame_order,
+        frames,
+    })
+}
+
+/// One `ScatterGeo` trace per `(series, lats, lons, texts)` group. Empty groups still emit an empty
+/// trace so a frame's trace count/indices stay constant (matching the base plot).
+fn geo_frame_traces(groups: &[(String, Vec<f64>, Vec<f64>, Vec<String>)]) -> Vec<Box<dyn Trace>> {
+    groups
+        .iter()
+        .map(|(name, la, lo, tx)| {
+            let mut t = ScatterGeo::new(la.clone(), lo.clone()).mode(Mode::Markers);
+            if !name.is_empty() {
+                t = t.name(name.clone());
+            }
+            if !tx.is_empty() && tx.len() == la.len() {
+                t = t.text_array(tx.clone());
+            }
+            let trace: Box<dyn Trace> = t;
+            trace
+        })
+        .collect()
+}
+
+/// Build an animated `viz geo` `Plot`: frame-0 `ScatterGeo` traces as the base, one `Frame` per
+/// slider value, and the geo layout carrying a scrub `Slider` and a Play/Pause menu. `scattergeo`
+/// animates natively (unlike MapLibre `scattermap`), so this reuses the same slider/frame core as
+/// the cartesian path.
+fn build_slider_geo_plot(args: &Args, slider_col: &SelectColumns) -> CliResult<Plot> {
+    let data = read_geo_slider(args, slider_col)?;
+
+    let mut plot = Plot::new();
+    let base = geo_frame_traces(&data.frames[0]);
+    let n_traces = base.len();
+    for t in base {
+        plot.add_trace(t);
+    }
+    if n_traces == 0 {
+        return fail_clierror!(
+            "No mappable rows found (are --lat/--lon numeric and within valid coordinate ranges?)."
+        );
+    }
+
+    for (fkey, groups) in data.frame_values.iter().zip(data.frames.iter()) {
+        let traces = geo_frame_traces(groups);
+        let mut td = Traces::new();
+        for t in traces {
+            td.push(t);
+        }
+        plot.add_frame(
+            Frame::new()
+                .name(fkey.clone())
+                .data(td)
+                .traces((0..n_traces).collect()),
+        );
+    }
+
+    let mut layout = geo_base_layout(args, args.flag_series.is_some())?;
+    layout = layout.sliders(vec![slider_control(
+        &data.frame_label,
+        &data.frame_values,
+        args.flag_slider_speed,
+    )?]);
+    layout = layout.update_menus(vec![play_pause_menu(args.flag_slider_speed)?]);
     plot.set_layout(apply_theme(layout, args.theme()));
     Ok(plot)
 }

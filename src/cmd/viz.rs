@@ -601,11 +601,18 @@ smart options:
                            style). Supported for bar/line/scatter and geo, and may be
                            split into animated traces with the --series option. (Not
                            supported for `viz map` — the MapLibre basemap can't animate;
-                           use `viz geo` for an animated point map.) For `smart`, pass
-                           auto, on or off to control the automatic use of an animated
-                           panel, or a column name to force that column as the animation
-                           axis (default: auto). Axis ranges are pinned across frames so
-                           nothing jumps.
+                           use `viz geo` for an animated point map.) For `smart`, this
+                           controls whether one animated relationship-over-time panel is
+                           added: the numeric pair whose per-time-bucket centroid path
+                           bends the most (a trailing-window scatter colored by time
+                           bucket), or an animated geo map of global-extent dated points,
+                           or a Gapminder entity-bubble chart (at most one is shown; when
+                           several qualify the bubble wins, then the geo map, then the
+                           pair). auto (default) adds one only on a strong signal (a
+                           date column and enough time buckets); on lowers the bar (as few
+                           as two buckets) but still requires a genuinely drifting or
+                           animatable relationship; off never does. Axis ranges are pinned
+                           across frames so nothing jumps.
     --slider-speed <ms>    Milliseconds each animation frame is shown while playing.
                            [default: 800]
     --slider-cumulative    Accumulate rows across frames: frame N includes every row
@@ -798,6 +805,26 @@ const LOG_SCALE_MIN_RATIO: f64 = 50.0;
 /// strongly correlated numeric pair. Below this (a weak relationship) the scatter is just a
 /// noise cloud, so it's skipped — the correlation heatmap already conveys weak correlations.
 const SCATTER_PAIR_MIN_ABS_R: f64 = 0.5;
+
+/// Minimum centroid-path CURVATURE (in standardized units) for `viz smart` to ANIMATE a numeric
+/// pair over time. Score = the perpendicular spread of the per-time-bucket centroids about their
+/// OWN best-fit line (the smaller eigenvalue's √ of the standardized centroid-path covariance) —
+/// how much the relationship's centroid path BENDS as time advances. It cleanly separates the only
+/// case worth animating (a genuinely evolving 2-D relationship — a curved path) from the cases that
+/// are NOT: a tautological near-line (centroids slide along the thin line → ~0), and two
+/// independent 1-D trends (a straight centroid path, already told by the per-axis trend panels →
+/// low). No |r| bound is needed — a high-|r| pair is a thin line whose centroids can't leave it, so
+/// its curvature is intrinsically ~0. Empirically both tautological showcase pairs score ≤ 0.16 and
+/// every boring dual-trend pair ≤ 0.26, while a real time-arc scores ~0.94; this bar sits
+/// comfortably between.
+const PAIR_CURVATURE_MIN: f64 = 0.5;
+
+/// Trailing-window width (in time buckets) for the animated pair reveal: each frame shows the
+/// current bucket plus the `ANIM_TRAILING_WINDOW - 1` preceding ones, so the cloud is seen to
+/// MIGRATE rather than merely accumulate (a cumulative reveal hides motion — the whole point of a
+/// drift-selected pair is the motion). Geo panels keep a cumulative reveal (events accumulating
+/// across a map reads naturally).
+const ANIM_TRAILING_WINDOW: usize = 3;
 
 /// `viz smart` parallel-categories (parcats) panel bounds. parcats is reserved for PARCATS_MIN_DIMS
 /// to PARCATS_MAX_DIMS categorical dimensions: 2-dimension relationships are shown as a directed
@@ -5796,7 +5823,7 @@ fn build_splom_plot(args: &Args) -> CliResult<Plot> {
         Some(_) => resolve_many(args.flag_cols.as_ref(), &headers, nh, "cols")?,
         None => (0..headers.len()).collect(),
     };
-    let (labels, columns) = read_numeric_columns(&mut rdr, &headers, nh, &candidates, false)?;
+    let (labels, columns, _) = read_numeric_columns(&mut rdr, &headers, nh, &candidates, false)?;
     if labels.len() < 2 {
         return fail_incorrectusage_clierror!(
             "splom needs at least 2 numeric --cols (a scatter-plot matrix cross-plots numeric \
@@ -6332,7 +6359,7 @@ fn read_numeric_columns(
     nh: bool,
     candidates: &[usize],
     drop_near_unique: bool,
-) -> CliResult<(Vec<String>, Vec<Vec<f64>>)> {
+) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<usize>)> {
     use std::hash::{Hash, Hasher};
 
     let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
@@ -6393,8 +6420,12 @@ fn read_numeric_columns(
         }
     }
     if keep.is_empty() {
-        return Ok((Vec::new(), Vec::new()));
+        return Ok((Vec::new(), Vec::new(), Vec::new()));
     }
+    // original source-column index for each kept column (kept columns may be a subset of
+    // `candidates` after the majority-numeric / near-unique filters), so callers can map a
+    // by-position pick (e.g. the strongest correlation pair) back to its source column.
+    let kept_indices: Vec<usize> = keep.iter().map(|&k| candidates[k]).collect();
     let labels: Vec<String> = keep
         .iter()
         .map(|&k| col_label(headers, candidates[k], nh))
@@ -6410,7 +6441,7 @@ fn read_numeric_columns(
             }
         }
     }
-    Ok((labels, columns))
+    Ok((labels, columns, kept_indices))
 }
 
 /// Pearson correlation of two equal-length numeric slices via a numerically stable, centered
@@ -6799,7 +6830,7 @@ fn build_heatmap_correlation(
     // this BEFORE its listwise row-drop, so a sparse identifier can't discard rows from the
     // surviving measures. Mirrors `viz smart`'s correlation filter (uniqueness_ratio > 0.95). An
     // explicit --cols is the user's deliberate selection and is charted as-is.
-    let (labels, columns) =
+    let (labels, columns, _) =
         read_numeric_columns(&mut rdr, &headers, nh, &candidates, !explicit_cols)?;
     if labels.len() < 2 {
         return fail_clierror!(
@@ -10209,6 +10240,63 @@ enum PanelKind {
         xs:      Vec<String>,
         ys:      Vec<f64>,
     },
+    /// Animated scatter of the strongest-correlated numeric pair, revealed cumulatively over time
+    /// and colored by time bucket (early → late) — the temporal companion to `ScatterPair`. The
+    /// static pair shows the relationship; this shows the relationship AND its drift over time in
+    /// one view (the color encoding is what makes an animated 2-var scatter more informative than
+    /// its static form). `xs`/`ys`/`bucket` are parallel and sorted by `bucket` ascending, so a
+    /// cumulative frame is a contiguous prefix; `bucket_labels` names each time bucket in
+    /// chronological order (one per distinct bucket). Axis ranges are pinned globally so nothing
+    /// jumps. Rendered as its own inline Plot (slider + Play/Pause), so (like map/geo/3D) its
+    /// presence forces the inline dashboard path and it is HTML-only (no static-export
+    /// composition).
+    AnimatedScatterPair {
+        xs:            Vec<f64>,
+        ys:            Vec<f64>,
+        /// per-point time-bucket index (parallel to xs/ys, ascending)
+        bucket:        Vec<usize>,
+        /// chronological label per distinct bucket (drives the slider steps + color legend ends)
+        bucket_labels: Vec<String>,
+        x_label:       String,
+        y_label:       String,
+        /// the date column's label, shown as the slider's current-value prefix
+        frame_label:   String,
+        x_range:       (f64, f64),
+        y_range:       (f64, f64),
+    },
+    /// Animated geographic point map: dated points on a `ScatterGeo` projection basemap, revealed
+    /// CUMULATIVELY over time buckets (dated events accumulating across the map reads naturally).
+    /// Only built for continental/global extents (where `viz smart` already uses a ScatterGeo
+    /// projection, which animates natively — unlike a MapLibre tile map). Its `geo` subplot can't
+    /// share the typed x/y grid, so it forces the inline render path and is HTML-only.
+    /// `bucket_lats`/`bucket_lons` are parallel-per-bucket point clouds (index = bucket);
+    /// `bucket_labels` names each bucket chronologically. Reuses the standalone animated-geo core.
+    AnimatedGeo {
+        bucket_lats:   Vec<Vec<f64>>,
+        bucket_lons:   Vec<Vec<f64>>,
+        bucket_labels: Vec<String>,
+        frame_label:   String, // the date column's label (slider prefix)
+    },
+    /// Gapminder-style animated bubble chart: one bubble per ENTITY (a low-cardinality categorical
+    /// dimension), each tracing a path through a 2-measure space over time, sized by a third
+    /// aggregate (per-cell record count) and colored by entity. Per (entity,bucket): x/y centroid +
+    /// size. Non-cartesian only in that it's inline+HTML-only (it IS an x/y scatter, but the
+    /// per-frame full-replacement + per-entity trace structure needs the inline Plot path).
+    /// `entities` indexes the outer vecs; `xs`/`ys`/`sizes` are `[entity][bucket]` (NaN where an
+    /// entity is absent in a bucket).
+    AnimatedBubble {
+        entities:      Vec<String>,
+        xs:            Vec<Vec<f64>>,
+        ys:            Vec<Vec<f64>>,
+        sizes:         Vec<Vec<f64>>,
+        bucket_labels: Vec<String>,
+        x_label:       String,
+        y_label:       String,
+        size_label:    String,
+        frame_label:   String,
+        x_range:       (f64, f64),
+        y_range:       (f64, f64),
+    },
     /// Cyclic "seasonality" profile: a date/datetime column folded onto a repeating phase —
     /// hour-of-day, day-of-week, or month-of-year — with record volume as the radial value. Exposes
     /// periodicity (rush-hour, weekly, seasonal) that the absolute `TimeSeries` timeline hides.
@@ -13091,24 +13179,17 @@ fn parse_record_date(
     qsv_dateparser::parse_with_preference(text, prefer_dmy).ok()
 }
 
-fn build_timeseries_panel(
-    args: &Args,
+/// Pick the canonical date/datetime column for temporal panels (time-series overview, animated
+/// scatter). When a dictionary tagged timestamps, prefer the event/created one (`timestamp_rank`);
+/// among equal ranks prefer a column the file is physically sorted by (`sort_order_rank` — likely
+/// the primary event time); remaining ties break on column order. `stats` emits "Date"/"DateTime"
+/// once dates are inferred. Returns the column index and whether it carries a time-of-day
+/// component.
+fn canonical_date_col(
     stats: &[crate::cmd::stats::StatsData],
-    prefer_dmy: bool,
-    map_cols: Option<(usize, usize)>,
     sems: &[ColSemantics],
-    grain: Option<&str>,
-    dict_icons: Option<&DictData>,
-) -> CliResult<Option<Panel>> {
-    use std::collections::BTreeMap;
-
-    use qsv_dateparser::parse_with_preference;
-
-    // pick the canonical date/datetime column: when a dictionary tagged timestamps, prefer the
-    // event/created one (timestamp_rank); among equal ranks prefer a column the file is
-    // physically sorted by (sort_order_rank — likely the primary event time); remaining ties
-    // break on column order. stats emits "Date"/"DateTime" once dates are inferred.
-    let Some((date_idx, is_datetime)) = stats
+) -> Option<(usize, bool)> {
+    stats
         .iter()
         .enumerate()
         .filter_map(|(i, s)| match s.r#type.as_str() {
@@ -13123,7 +13204,22 @@ fn build_timeseries_panel(
                 i,
             )
         })
-    else {
+}
+
+fn build_timeseries_panel(
+    args: &Args,
+    stats: &[crate::cmd::stats::StatsData],
+    prefer_dmy: bool,
+    map_cols: Option<(usize, usize)>,
+    sems: &[ColSemantics],
+    grain: Option<&str>,
+    dict_icons: Option<&DictData>,
+) -> CliResult<Option<Panel>> {
+    use std::collections::BTreeMap;
+
+    use qsv_dateparser::parse_with_preference;
+
+    let Some((date_idx, is_datetime)) = canonical_date_col(stats, sems) else {
         return Ok(None);
     };
     // --dict-info: the overview trend anchors its info icon on the date column's entry (the
@@ -13335,6 +13431,593 @@ fn build_timeseries_panel(
             ))
         },
     }
+}
+
+/// How `viz smart` should treat the `--slider` flag: whether to auto-animate an eligible panel.
+enum SmartSliderMode {
+    /// never animate
+    Off,
+    /// animate whenever a candidate exists (a strong pair + a temporal axis), a lower bar than Auto
+    On,
+    /// animate only on a strong signal — the default
+    Auto,
+}
+
+/// Resolve `--slider` for `viz smart`. `off`/`on`/`auto` (case-insensitive) are mode keywords;
+/// absent defaults to `auto`; any other value (a column name) forces animation (`on`). A custom
+/// frame column is not yet honored in smart (v1 always animates over the canonical date axis) —
+/// it only turns animation on.
+fn smart_slider_mode(args: &Args) -> SmartSliderMode {
+    match args.flag_slider.as_deref().map(str::trim) {
+        None | Some("") => SmartSliderMode::Auto,
+        Some(s) if s.eq_ignore_ascii_case("off") => SmartSliderMode::Off,
+        Some(s) if s.eq_ignore_ascii_case("on") => SmartSliderMode::On,
+        Some(s) if s.eq_ignore_ascii_case("auto") => SmartSliderMode::Auto,
+        // a column name forces animation on (over the canonical date axis, for v1)
+        Some(_) => SmartSliderMode::On,
+    }
+}
+
+/// A numeric axis range padded 5% on each side (a degenerate single-value span pads by 5% of the
+/// magnitude, or a unit when the value is ~0). Empty input yields a `(0, 1)` fallback.
+fn padded_range(vs: &[f64]) -> (f64, f64) {
+    let (lo, hi) = vs
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), &v| {
+            (a.min(v), b.max(v))
+        });
+    if !lo.is_finite() || !hi.is_finite() {
+        return (0.0, 1.0);
+    }
+    let span = (hi - lo).abs();
+    let pad = if span > f64::EPSILON {
+        span * 0.05
+    } else {
+        hi.abs().max(1.0) * 0.05
+    };
+    (lo - pad, hi + pad)
+}
+
+/// The row-aligned data for an [`PanelKind::AnimatedScatterPair`] panel: the pair's `xs`/`ys`
+/// values with a per-point time-bucket index (all sorted by bucket ascending), the chronological
+/// bucket labels, and the globally-pinned axis ranges.
+struct ScatterPairAnim {
+    xs:            Vec<f64>,
+    ys:            Vec<f64>,
+    bucket:        Vec<usize>,
+    bucket_labels: Vec<String>,
+    x_range:       (f64, f64),
+    y_range:       (f64, f64),
+}
+
+/// Max animation frames / slider steps for `viz smart` time animations: each distinct calendar
+/// bucket is one slider step, so the count is capped for legibility (see `choose_anim_bucket`).
+const SMART_ANIM_MAX_FRAMES: usize = 30;
+
+/// Choose the finest calendar bucket (Day → Week → Month) whose distinct-period count stays within
+/// `SMART_ANIM_MAX_FRAMES`, returning it with the sorted, de-duplicated distinct bucket keys.
+/// Shared by the animated readers and the curvature selector so every time animation
+/// agrees on the same frame axis. Falls back to Month (coarsest) when even weekly exceeds the cap.
+fn choose_anim_bucket(dates: &[chrono::NaiveDate]) -> (TsBucket, Vec<chrono::NaiveDate>) {
+    let distinct_for = |bkt: TsBucket| -> Vec<chrono::NaiveDate> {
+        let mut d: Vec<chrono::NaiveDate> = dates.iter().map(|&x| ts_bucket_key(x, bkt)).collect();
+        d.sort_unstable();
+        d.dedup();
+        d
+    };
+    [TsBucket::Day, TsBucket::Week, TsBucket::Month]
+        .into_iter()
+        .map(|b| (b, distinct_for(b)))
+        .find(|(_, d)| d.len() <= SMART_ANIM_MAX_FRAMES)
+        .unwrap_or_else(|| (TsBucket::Month, distinct_for(TsBucket::Month)))
+}
+
+/// Population standard deviation of a slice (0.0 for < 2 values or non-finite results). Used to put
+/// centroid-path curvature in per-axis standardized units.
+fn population_stddev(v: &[f64]) -> f64 {
+    if v.len() < 2 {
+        return 0.0;
+    }
+    let n = v.len() as f64;
+    let mean = v.iter().sum::<f64>() / n;
+    let var = v.iter().map(|&x| (x - mean).powi(2)).sum::<f64>() / n;
+    let sd = var.sqrt();
+    if sd.is_finite() { sd } else { 0.0 }
+}
+
+/// Centroid-path curvature for a pair, in standardized units (see `PAIR_CURVATURE_MIN`).
+/// Standardize each per-time-bucket centroid `(cx[k], cy[k])` to z-space using the axis global
+/// mean/stddev, then return the perpendicular spread of that path about its own best-fit line — √
+/// of the smaller eigenvalue of the 2×2 covariance of the standardized path points. A straight path
+/// (a stable or tautological relationship, or two independent trends) yields ~0; only a path that
+/// genuinely bends over time scores high. Needs ≥ 3 buckets to bend at all (the caller guarantees
+/// this).
+fn pair_path_curvature(
+    cx: &[f64],
+    cy: &[f64],
+    mean_x: f64,
+    std_x: f64,
+    mean_y: f64,
+    std_y: f64,
+) -> f64 {
+    let n = cx.len();
+    if std_x <= 0.0 || std_y <= 0.0 || cy.len() != n || n < 3 {
+        return 0.0;
+    }
+    let nf = n as f64;
+    let zx: Vec<f64> = cx.iter().map(|&x| (x - mean_x) / std_x).collect();
+    let zy: Vec<f64> = cy.iter().map(|&y| (y - mean_y) / std_y).collect();
+    let mx = zx.iter().sum::<f64>() / nf;
+    let my = zy.iter().sum::<f64>() / nf;
+    let sxx = zx.iter().map(|&x| (x - mx).powi(2)).sum::<f64>() / nf;
+    let syy = zy.iter().map(|&y| (y - my).powi(2)).sum::<f64>() / nf;
+    let sxy = zx
+        .iter()
+        .zip(&zy)
+        .map(|(&x, &y)| (x - mx) * (y - my))
+        .sum::<f64>()
+        / nf;
+    // smaller eigenvalue of [[sxx, sxy], [sxy, syy]] = variance perpendicular to the path's own
+    // axis
+    let tr = sxx + syy;
+    let det = sxx * syy - sxy * sxy;
+    let disc = (tr * tr / 4.0 - det).max(0.0);
+    let lam_min = (tr / 2.0 - disc.sqrt()).max(0.0);
+    let curv = lam_min.sqrt();
+    if curv.is_finite() { curv } else { 0.0 }
+}
+
+/// One pass over the candidate numeric columns (`kept_indices`, in correlation-matrix order) plus
+/// the canonical date column, returning the per-`(bucket, column)` mean for the frame axis chosen
+/// by `choose_anim_bucket`. Rows missing the date or ANY column are skipped (listwise, matching the
+/// correlation matrix). `None` when fewer than `min_frames` distinct buckets result. Feeds the
+/// centroid-path-curvature pair selector.
+fn read_bucketed_means(
+    args: &Args,
+    kept_indices: &[usize],
+    date_idx: usize,
+    prefer_dmy: bool,
+    min_frames: usize,
+) -> CliResult<Option<Vec<Vec<f64>>>> {
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    let ncol = kept_indices.len();
+    let mut rows: Vec<(chrono::NaiveDate, Vec<f64>)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    'row: while rdr.read_byte_record(&mut record)? {
+        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+            continue;
+        };
+        let mut vals = Vec::with_capacity(ncol);
+        for &ci in kept_indices {
+            let Some(v) = parse_f64(record.get(ci)).filter(|v| v.is_finite()) else {
+                continue 'row;
+            };
+            vals.push(v);
+        }
+        rows.push((dt.date_naive(), vals));
+    }
+    if rows.len() < 2 {
+        return Ok(None);
+    }
+    let dates: Vec<chrono::NaiveDate> = rows.iter().map(|r| r.0).collect();
+    let (bkt, distinct) = choose_anim_bucket(&dates);
+    if distinct.len() < min_frames {
+        return Ok(None);
+    }
+    let nb = distinct.len();
+    let mut sums = vec![vec![0.0_f64; ncol]; nb];
+    let mut counts = vec![0_usize; nb];
+    for (d, vals) in &rows {
+        let key = ts_bucket_key(*d, bkt);
+        let bi = distinct
+            .binary_search(&key)
+            .expect("key came from distinct");
+        counts[bi] += 1;
+        for (acc, &v) in sums[bi].iter_mut().zip(vals) {
+            *acc += v;
+        }
+    }
+    let means: Vec<Vec<f64>> = sums
+        .iter()
+        .zip(&counts)
+        .map(|(s, &c)| {
+            let cf = c.max(1) as f64;
+            s.iter().map(|v| v / cf).collect()
+        })
+        .collect();
+    Ok(Some(means))
+}
+
+/// Decoupled animation-pair selector: pick the numeric pair whose per-time-bucket centroid path
+/// BENDS the most (`pair_path_curvature`), requiring the curvature to clear `PAIR_CURVATURE_MIN`.
+/// Deliberately NOT `strongest_pair`: the most-correlated pair is the most tautological — a near-
+/// line whose centroids can't leave it (curvature ~0) — so it is the LEAST worth animating. Needs
+/// no |r| band: only a genuinely evolving 2-D relationship (a curved centroid path) clears the bar;
+/// a tautological line or two independent trends (a straight path) does not. Returns `(i, j,
+/// signed_r)` in matrix/`columns` index space, or `None`. `bucket_means` is `[bucket][column]` from
+/// `read_bucketed_means`.
+fn select_drifting_pair(
+    matrix: &[Vec<f64>],
+    columns: &[Vec<f64>],
+    bucket_means: &[Vec<f64>],
+) -> Option<(usize, usize, f64)> {
+    let n = matrix.len();
+    let means: Vec<f64> = columns
+        .iter()
+        .map(|c| {
+            if c.is_empty() {
+                0.0
+            } else {
+                c.iter().sum::<f64>() / c.len() as f64
+            }
+        })
+        .collect();
+    let stds: Vec<f64> = columns.iter().map(|c| population_stddev(c)).collect();
+    let mut best: Option<(usize, usize, f64, f64)> = None; // (i, j, r, curvature)
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let r = matrix[i][j];
+            if r.is_nan() {
+                continue;
+            }
+            let cx: Vec<f64> = bucket_means.iter().map(|b| b[i]).collect();
+            let cy: Vec<f64> = bucket_means.iter().map(|b| b[j]).collect();
+            let curv = pair_path_curvature(&cx, &cy, means[i], stds[i], means[j], stds[j]);
+            if curv >= PAIR_CURVATURE_MIN && best.is_none_or(|(.., b)| curv > b) {
+                best = Some((i, j, r, curv));
+            }
+        }
+    }
+    best.map(|(i, j, r, _)| (i, j, r))
+}
+
+/// Read the strongest-pair columns (`x_idx`/`y_idx`) together with the canonical date column in one
+/// pass and bucket the points by calendar period for an animated, time-colored cumulative scatter.
+/// The bucket granularity is chosen as the finest (Day/Week/Month) that keeps the frame/slider-step
+/// count legible. Returns `None` (no animation) when fewer than `min_frames` distinct buckets
+/// result or too few points survive — the caller then keeps the static `ScatterPair`.
+fn read_scatter_pair_anim(
+    args: &Args,
+    x_idx: usize,
+    y_idx: usize,
+    date_idx: usize,
+    prefer_dmy: bool,
+    min_frames: usize,
+) -> CliResult<Option<ScatterPairAnim>> {
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    // (bucket date, x, y) for every row with a finite x, a finite y, AND a parseable date
+    let mut pts: Vec<(chrono::NaiveDate, f64, f64)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let Some(x) = parse_f64(record.get(x_idx)).filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+            continue;
+        };
+        pts.push((dt.date_naive(), x, y));
+    }
+    if pts.len() < 2 {
+        return Ok(None);
+    }
+    // Each distinct bucket is a SLIDER STEP, so pick the finest granularity (Day/Week/Month) that
+    // keeps the step count legible — shared with the drift selector via `choose_anim_bucket` so
+    // both agree on the frame axis. Unlike the trend LINE (`ts_bucket_for_span`, span-based),
+    // this is frame-count-based: a daily series over 8 months (205 daily buckets) coarsens to
+    // ~weekly.
+    let dates: Vec<chrono::NaiveDate> = pts.iter().map(|p| p.0).collect();
+    let (bkt, distinct) = choose_anim_bucket(&dates);
+    if distinct.len() < min_frames {
+        return Ok(None);
+    }
+
+    // (bucket_index, x, y) sorted by bucket ascending so a cumulative frame is a contiguous prefix
+    let mut triples: Vec<(usize, f64, f64)> = pts
+        .iter()
+        .map(|p| {
+            let key = ts_bucket_key(p.0, bkt);
+            let bi = distinct
+                .binary_search(&key)
+                .expect("key came from distinct");
+            (bi, p.1, p.2)
+        })
+        .collect();
+    triples.sort_by_key(|t| t.0);
+    // cap the embedded points (rarely hit at MAX_SMART_POINTS); a stride keep preserves bucket
+    // order
+    if triples.len() > *MAX_SMART_POINTS {
+        let stride = triples.len().div_ceil(*MAX_SMART_POINTS);
+        triples = triples.into_iter().step_by(stride).collect();
+    }
+
+    let xs: Vec<f64> = triples.iter().map(|t| t.1).collect();
+    let ys: Vec<f64> = triples.iter().map(|t| t.2).collect();
+    let bucket: Vec<usize> = triples.iter().map(|t| t.0).collect();
+    let bucket_labels: Vec<String> = distinct.iter().map(|k| ts_bucket_label(*k, bkt)).collect();
+    let x_range = padded_range(&xs);
+    let y_range = padded_range(&ys);
+    Ok(Some(ScatterPairAnim {
+        xs,
+        ys,
+        bucket,
+        bucket_labels,
+        x_range,
+        y_range,
+    }))
+}
+
+/// The per-bucket point clouds for an [`PanelKind::AnimatedGeo`] panel: `bucket_lats[k]` /
+/// `bucket_lons[k]` are the coordinates first seen in bucket `k` (render accumulates prefixes for
+/// the cumulative reveal), and `bucket_labels` names each bucket chronologically.
+struct GeoAnim {
+    bucket_lats:   Vec<Vec<f64>>,
+    bucket_lons:   Vec<Vec<f64>>,
+    bucket_labels: Vec<String>,
+}
+
+/// Read dated lat/lon rows in one pass and partition them into calendar buckets for an animated,
+/// cumulative geographic reveal. Only fires for a continental/global extent (where `viz smart`
+/// draws a ScatterGeo projection, which animates natively) — a city-scale cloud returns `None`, so
+/// T2 never tries to animate a MapLibre tile map (blocked by issue #4155). Returns `None` when the
+/// extent isn't global, when fewer than `min_frames` distinct buckets result, or when too few rows
+/// survive.
+fn read_geo_anim(
+    args: &Args,
+    lat_idx: usize,
+    lon_idx: usize,
+    date_idx: usize,
+    prefer_dmy: bool,
+    min_frames: usize,
+) -> CliResult<Option<GeoAnim>> {
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    // (bucket date, lat, lon) for every row with valid coordinates AND a parseable date
+    let mut pts: Vec<(chrono::NaiveDate, f64, f64)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let (Some(lat), Some(lon)) = (
+            parse_f64(record.get(lat_idx)),
+            parse_f64(record.get(lon_idx)),
+        ) else {
+            continue;
+        };
+        if !(-90.0..=90.0).contains(&lat) || !(-180.0..=180.0).contains(&lon) {
+            continue;
+        }
+        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+            continue;
+        };
+        pts.push((dt.date_naive(), lat, lon));
+    }
+    if pts.len() < 2 {
+        return Ok(None);
+    }
+
+    // require a continental/global extent: the FULL-cloud trimmed lon span >= SMART_GEO_MIN_LON_
+    // SPAN_DEG OR trimmed lat span >= SMART_GEO_MIN_LAT_SPAN_DEG (the same thresholds
+    // `geo_framing`/`build_map_panel` use to switch to the world projection). A city-scale cloud
+    // falls through to the (non-animated) MapLibre map.
+    let lons: Vec<f64> = pts.iter().map(|p| p.2).collect();
+    let (_, lon_span) = lon_center_and_span(&lons, MAP_FRAME_TRIM_FRAC);
+    let mut lats_sorted: Vec<f64> = pts.iter().map(|p| p.1).collect();
+    lats_sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    let lat_span = sorted_quantile(&lats_sorted, 1.0 - MAP_FRAME_TRIM_FRAC)
+        - sorted_quantile(&lats_sorted, MAP_FRAME_TRIM_FRAC);
+    let global = lon_span >= SMART_GEO_MIN_LON_SPAN_DEG || lat_span >= SMART_GEO_MIN_LAT_SPAN_DEG;
+    if !global {
+        return Ok(None);
+    }
+
+    // bucket the dates: each distinct bucket is one slider step, so pick the finest granularity
+    // that keeps the step count legible.
+    let dates: Vec<chrono::NaiveDate> = pts.iter().map(|p| p.0).collect();
+    let (bkt, distinct) = choose_anim_bucket(&dates);
+    if distinct.len() < min_frames {
+        return Ok(None);
+    }
+    let nb = distinct.len();
+    let mut bucket_lats: Vec<Vec<f64>> = vec![Vec::new(); nb];
+    let mut bucket_lons: Vec<Vec<f64>> = vec![Vec::new(); nb];
+    for (d, lat, lon) in &pts {
+        let key = ts_bucket_key(*d, bkt);
+        let bi = distinct
+            .binary_search(&key)
+            .expect("key came from distinct");
+        bucket_lats[bi].push(*lat);
+        bucket_lons[bi].push(*lon);
+    }
+
+    // keep the grand total of embedded points bounded: stride each bucket's cloud when the total
+    // exceeds the cap (rarely hit at MAX_SMART_POINTS).
+    let total: usize = bucket_lats.iter().map(Vec::len).sum();
+    if total > *MAX_SMART_POINTS {
+        let stride = total.div_ceil(*MAX_SMART_POINTS);
+        for (la, lo) in bucket_lats.iter_mut().zip(bucket_lons.iter_mut()) {
+            *la = la.iter().copied().step_by(stride).collect();
+            *lo = lo.iter().copied().step_by(stride).collect();
+        }
+    }
+
+    let bucket_labels: Vec<String> = distinct.iter().map(|k| ts_bucket_label(*k, bkt)).collect();
+    Ok(Some(GeoAnim {
+        bucket_lats,
+        bucket_lons,
+        bucket_labels,
+    }))
+}
+
+/// The per-`[entity][bucket]` aggregates for an [`PanelKind::AnimatedBubble`] panel: centroid x/y
+/// and record-count size per surviving cell (`f64::NAN` where a cell was dropped or absent), the
+/// chronological bucket labels, and the globally-pinned axis ranges.
+struct EntityBucketAgg {
+    entities:      Vec<String>,
+    xs:            Vec<Vec<f64>>,
+    ys:            Vec<Vec<f64>>,
+    sizes:         Vec<Vec<f64>>,
+    bucket_labels: Vec<String>,
+    x_range:       (f64, f64),
+    y_range:       (f64, f64),
+}
+
+/// Read one pass of (entity, x, y, size, date) rows and aggregate them into per-`(entity, bucket)`
+/// centroids for a Gapminder-style animated bubble chart. STRICT quality gates keep the chart a
+/// real story rather than noisy jitter: a cell with fewer than `min_cell_rows` rows is dropped, a
+/// surviving entity must be present in `>= min_frames` buckets to trace a path, and at least 3
+/// entities must survive. Returns `None` when the date column yields fewer than `min_frames`
+/// distinct buckets or when too few entities survive (this is what stops a sparse zone-per-month
+/// dataset from producing noisy jitter).
+///
+/// `size_idx` picks the bubble-SIZE measure — Gapminder's defining third data variable. When
+/// `Some`, each cell's size is the MEAN of that measure over the cell's rows (like the x/y
+/// centroids), and a row missing/non-finite in that column is dropped (so the cell's row count and
+/// its size mean stay over the same rows). When `None` (a 2-numeric dataset with no third measure),
+/// size falls back to the per-cell row COUNT so the chart still animates.
+fn read_entity_bucket_agg(
+    args: &Args,
+    entity_idx: usize,
+    x_idx: usize,
+    y_idx: usize,
+    size_idx: Option<usize>,
+    date_idx: usize,
+    prefer_dmy: bool,
+    min_frames: usize,
+    min_cell_rows: usize,
+) -> CliResult<Option<EntityBucketAgg>> {
+    let (mut rdr, _headers, _nh) = reader_and_headers(args)?;
+    // (entity, bucket date, x, y, size) for every row with a non-empty entity, finite x/y (and a
+    // finite size when a size measure is requested), and a parseable date
+    let mut rows: Vec<(String, chrono::NaiveDate, f64, f64, f64)> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        let entity = cell_to_string(record.get(entity_idx));
+        if entity.trim().is_empty() {
+            continue;
+        }
+        let Some(x) = parse_f64(record.get(x_idx)).filter(|v| v.is_finite()) else {
+            continue;
+        };
+        let Some(y) = parse_f64(record.get(y_idx)).filter(|v| v.is_finite()) else {
+            continue;
+        };
+        // when sizing by a measure, require it finite too so the cell mean is well-defined over the
+        // same rows the count/x/y use; the count fallback ignores this (size = row count).
+        let size = match size_idx {
+            Some(si) => match parse_f64(record.get(si)).filter(|v| v.is_finite()) {
+                Some(v) => v,
+                None => continue,
+            },
+            None => 0.0,
+        };
+        let Some(dt) = parse_record_date(&record, date_idx, prefer_dmy) else {
+            continue;
+        };
+        rows.push((entity, dt.date_naive(), x, y, size));
+    }
+    if rows.len() < 2 {
+        return Ok(None);
+    }
+    let dates: Vec<chrono::NaiveDate> = rows.iter().map(|r| r.1).collect();
+    let (bkt, distinct) = choose_anim_bucket(&dates);
+    if distinct.len() < min_frames {
+        return Ok(None);
+    }
+    let nb = distinct.len();
+
+    // accumulate (sum_x, sum_y, sum_size, count) per (entity, bucket index), tracking first-seen
+    // entity order
+    let mut acc: HashMap<(String, usize), (f64, f64, f64, usize)> = HashMap::new();
+    let mut entity_order: Vec<String> = Vec::new();
+    let mut seen: HashSet<String> = HashSet::new();
+    for (entity, d, x, y, size) in &rows {
+        let key = ts_bucket_key(*d, bkt);
+        let bi = distinct
+            .binary_search(&key)
+            .expect("key came from distinct");
+        if seen.insert(entity.clone()) {
+            entity_order.push(entity.clone());
+        }
+        let e = acc
+            .entry((entity.clone(), bi))
+            .or_insert((0.0, 0.0, 0.0, 0));
+        e.0 += x;
+        e.1 += y;
+        e.2 += size;
+        e.3 += 1;
+    }
+
+    // drop sparse cells, then keep only entities whose surviving (>= min_cell_rows) cells cover a
+    // near-complete panel — dense in >= 80% of the buckets. This extends the per-cell "too sparse"
+    // gate to the WHOLE PANEL: a Gapminder bubble reads as continuous motion only if each entity
+    // has a value for most frames; an entity present in only ~half the buckets flickers in and out
+    // and its inter-frame "movement" is mostly sampling noise. (A per-cell threshold alone doesn't
+    // suffice: a dataset with many daily dates coarsens via `choose_anim_bucket` to a few monthly
+    // buckets, so even ~3 rows/cell can clear `min_cell_rows` while leaving a sparse, jittery
+    // panel.) The completeness bound subsumes `>= min_frames` for typical bucket counts.
+    let min_dense = min_frames.max((nb * 4).div_ceil(5));
+    let surviving: Vec<String> = entity_order
+        .into_iter()
+        .filter(|ent| {
+            (0..nb)
+                .filter(|&bi| {
+                    acc.get(&(ent.clone(), bi))
+                        .is_some_and(|&(_, _, _, c)| c >= min_cell_rows)
+                })
+                .count()
+                >= min_dense
+        })
+        .collect();
+    // a Gapminder story needs at least 3 entities to compare
+    if surviving.len() < 3 {
+        return Ok(None);
+    }
+
+    // build [entity][bucket] centroid/size matrices; NaN where a cell was dropped or absent. The
+    // per-cell size is the MEAN of the size measure (Gapminder's third data variable) when one was
+    // supplied, else the per-cell row COUNT.
+    let mut xs: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
+    let mut ys: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
+    let mut sizes: Vec<Vec<f64>> = Vec::with_capacity(surviving.len());
+    let (mut xv, mut yv): (Vec<f64>, Vec<f64>) = (Vec::new(), Vec::new());
+    for ent in &surviving {
+        let mut ex = Vec::with_capacity(nb);
+        let mut ey = Vec::with_capacity(nb);
+        let mut es = Vec::with_capacity(nb);
+        for bi in 0..nb {
+            match acc.get(&(ent.clone(), bi)) {
+                Some(&(sx, sy, ss, c)) if c >= min_cell_rows => {
+                    let cf = c as f64;
+                    let cx = sx / cf;
+                    let cy = sy / cf;
+                    ex.push(cx);
+                    ey.push(cy);
+                    es.push(if size_idx.is_some() { ss / cf } else { cf });
+                    xv.push(cx);
+                    yv.push(cy);
+                },
+                _ => {
+                    ex.push(f64::NAN);
+                    ey.push(f64::NAN);
+                    es.push(f64::NAN);
+                },
+            }
+        }
+        xs.push(ex);
+        ys.push(ey);
+        sizes.push(es);
+    }
+    let x_range = padded_range(&xv);
+    let y_range = padded_range(&yv);
+    Ok(Some(EntityBucketAgg {
+        entities: surviving,
+        xs,
+        ys,
+        sizes,
+        bucket_labels: distinct.iter().map(|k| ts_bucket_label(*k, bkt)).collect(),
+        x_range,
+        y_range,
+    }))
 }
 
 /// The repeating phase a `CyclicProfile` folds timestamps onto.
@@ -16647,6 +17330,52 @@ fn build_smart(
         }
     }
 
+    // Animated panels (T2 geo, T3 bubble). At most ONE animated panel is shown; precedence is
+    // T3 (bubble) > T2 (geo) > T1 (scatter pair). geo_anim_panel is filled HERE — outside the
+    // numeric block, since T2 needs no numeric pair and a global dated-points dataset often has a
+    // single numeric (making the numeric block below a no-op) — while bubble_panel is filled INSIDE
+    // the numeric block (T3 needs a measure pair). The T1 insertion consults both, and the winner
+    // is inserted after the numeric block. Declared here so both are in scope across the block.
+    let mut geo_anim_panel: Option<Panel> = None;
+    let mut bubble_panel: Option<Panel> = None;
+    {
+        let mode = smart_slider_mode(args);
+        // respect `--slider off` and image output (animations are HTML-only), like T1
+        if !out_format.is_image()
+            && !matches!(mode, SmartSliderMode::Off)
+            && let (Some((lat_idx, lon_idx)), Some((date_idx, _))) = (
+                map_cols.or_else(|| latlon_indices(&stats)),
+                canonical_date_col(&stats, &col_sems),
+            )
+        {
+            // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the bar
+            let min_frames = if matches!(mode, SmartSliderMode::On) {
+                2
+            } else {
+                3
+            };
+            let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+            if let Some(data) =
+                read_geo_anim(args, lat_idx, lon_idx, date_idx, prefer_dmy, min_frames)?
+            {
+                let frame_label = col_sems
+                    .get(date_idx)
+                    .map(|s| s.label.as_str())
+                    .filter(|l| !l.is_empty())
+                    .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
+                geo_anim_panel = Some(Panel::new(
+                    "locations over time".to_string(),
+                    PanelKind::AnimatedGeo {
+                        bucket_lats: data.bucket_lats,
+                        bucket_lons: data.bucket_lons,
+                        bucket_labels: data.bucket_labels,
+                        frame_label,
+                    },
+                ));
+            }
+        }
+    }
+
     // when 2+ continuous numeric columns exist, prepend a correlation-heatmap panel. This is
     // the one panel that re-scans the data (a single extra pass), since Pearson correlations
     // are not in the stats cache; it's prepended so it survives the panel cap below.
@@ -16670,7 +17399,7 @@ fn build_smart(
     if numeric_indices.len() >= 2 {
         progress.set_message("Computing correlations…");
         let (mut rdr, headers, nh) = reader_and_headers(args)?;
-        let (labels, columns) =
+        let (labels, columns, kept_indices) =
             read_numeric_columns(&mut rdr, &headers, nh, &numeric_indices, false)?;
         // need 2+ numeric columns AND 2+ complete rows for a meaningful correlation matrix
         if labels.len() >= 2 && columns.first().is_some_and(|c| c.len() >= 2) {
@@ -16681,14 +17410,61 @@ fn build_smart(
             let pair =
                 strongest_pair(&matrix).filter(|&(_, _, r)| r.abs() >= SCATTER_PAIR_MIN_ABS_R);
 
-            // pair drill-down beside the heatmap: a 2D density contour for large datasets (a
-            // scatter would overplot into a solid mass, and the contour embeds only a fixed grid),
-            // or a scatter otherwise. The title carries Pearson r, plus Spearman rho when the two
-            // diverge enough to mean the relationship is monotonic-but-curved (nonlinear) — so the
-            // reader doesn't take the single r as proof of a linear relationship.
-            let pair_panel = pair.map(|(i, j, r)| {
+            // Animated relationship-over-time drill-down (T1), DECOUPLED from the strongest pair.
+            // The strongest pair is usually the most tautological (a near-line whose 2-D shape
+            // can't evolve), so animating it adds nothing over a static time-colored
+            // scatter. Instead pick the pair whose per-time-bucket centroid path BENDS
+            // the most — a genuinely evolving 2-D relationship
+            // (`select_drifting_pair`) — and animate that. HTML only; needs a canonical
+            // date column; `--slider off` suppresses. Computed BEFORE the correlation
+            // heatmap consumes `labels`/`matrix`; returns the selected (i, j) plus the built Panel
+            // so the static drill-down below can de-dupe when they coincide.
+            let anim_sel: Option<(usize, usize, Panel)> = 'anim: {
+                let mode = smart_slider_mode(args);
+                if out_format.is_image() || matches!(mode, SmartSliderMode::Off) {
+                    break 'anim None;
+                }
+                let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems) else {
+                    break 'anim None;
+                };
+                // `auto` (default) only fires on a strong signal (>= 3 buckets); `on` lowers the
+                // bar
+                let min_frames = if matches!(mode, SmartSliderMode::On) {
+                    2
+                } else {
+                    3
+                };
+                let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                let Some(bucket_means) =
+                    read_bucketed_means(args, &kept_indices, date_idx, prefer_dmy, min_frames)?
+                else {
+                    break 'anim None;
+                };
+                let Some((i, j, r)) = select_drifting_pair(&matrix, &columns, &bucket_means) else {
+                    break 'anim None;
+                };
+                // large-N contours aren't animatable (a scatter would overplot into a solid mass)
+                if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                    break 'anim None;
+                }
+                let Some(data) = read_scatter_pair_anim(
+                    args,
+                    kept_indices[i],
+                    kept_indices[j],
+                    date_idx,
+                    prefer_dmy,
+                    min_frames,
+                )?
+                else {
+                    break 'anim None;
+                };
+                let frame_label = col_sems
+                    .get(date_idx)
+                    .map(|s| s.label.as_str())
+                    .filter(|l| !l.is_empty())
+                    .map_or_else(|| col_label(&headers, date_idx, nh), ToString::to_string);
                 let rho = spearman_rho(&columns[i], &columns[j]);
-                let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                let rel = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
                     format!(
                         "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
                         labels[i], labels[j]
@@ -16696,42 +17472,167 @@ fn build_smart(
                 } else {
                     format!("{} vs {} (r={r:.2})", labels[i], labels[j])
                 };
-                if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
-                    let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                    Panel::new(name, PanelKind::ContourPair { x, y, z })
-                } else {
-                    let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
-                    // Encode a third numeric (the axis MOST associated with the pair, so size
-                    // shows a real gradient — the complement of the least-redundant axis
-                    // `Scatter3D` picks) as marker size: a 3-variable bubble
-                    // view that, unlike the HTML-only 3D panel, also survives
-                    // static image export. Aligned to xs/ys because
-                    // `downsample_pair` picks the same row indices for the same (n, cap).
-                    let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
-                        Some(k) => {
-                            let (_, sizes) =
-                                downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
-                            (
-                                format!("{name} \u{b7} size: {}", labels[k]),
-                                Some(sizes),
-                                Some(labels[k].clone()),
-                            )
-                        },
-                        None => (name, None, None),
-                    };
-                    Panel::new(
-                        name,
-                        PanelKind::ScatterPair {
-                            xs,
-                            ys,
-                            sizes,
-                            x_label: labels[i].clone(),
-                            y_label: labels[j].clone(),
-                            size_label,
-                        },
-                    )
+                let panel = Panel::new(
+                    format!("{rel} over time"),
+                    PanelKind::AnimatedScatterPair {
+                        xs: data.xs,
+                        ys: data.ys,
+                        bucket: data.bucket,
+                        bucket_labels: data.bucket_labels,
+                        x_label: labels[i].clone(),
+                        y_label: labels[j].clone(),
+                        frame_label,
+                        x_range: data.x_range,
+                        y_range: data.y_range,
+                    },
+                );
+                Some((i, j, panel))
+            };
+            let anim_ij = anim_sel.as_ref().map(|&(i, j, _)| (i, j));
+
+            // T3 (Gapminder bubble): fill bubble_panel INSIDE the numeric block (it needs a measure
+            // pair) and BEFORE the T1 insertion, so the arbitration T3 > T1 can be applied.
+            // `matrix` is still alive here (consumed by `mask_to_lower_triangle` only
+            // at the CorrHeatmap insert below). Requires a low-cardinality categorical
+            // entity, a measure pair (the strongest pair in the [0.5, 0.9) |r| band —
+            // strong enough to relate, not a tautological near-line — else the first
+            // two numerics), a canonical date, and — via `read_entity_bucket_agg`'s
+            // strict cell/entity gates — enough non-sparse per-(entity,bucket) support
+            // (this is what rejects sparse zone-per-month datasets).
+            {
+                let mode = smart_slider_mode(args);
+                if bubble_panel.is_none()
+                    && !out_format.is_image()
+                    && !matches!(mode, SmartSliderMode::Off)
+                    && let Some((date_idx, _)) = canonical_date_col(&stats, &col_sems)
+                {
+                    let n =
+                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
+                    // first (lowest-idx) eligible categorical dimension is the bubble entity
+                    let entity = eligible_categorical_dims(&panels, &stats, &col_sems, n)
+                        .into_iter()
+                        .min_by_key(|&(idx, ..)| idx);
+                    // measure pair: the strongest pair in [SCATTER_PAIR_MIN_ABS_R, 0.9), else the
+                    // first two numerics
+                    let measure_pair = strongest_pair(&matrix)
+                        .filter(|&(_, _, r)| (SCATTER_PAIR_MIN_ABS_R..0.9).contains(&r.abs()))
+                        .map(|(i, j, _)| (i, j))
+                        .or(Some((0, 1)));
+                    if let (Some((e_idx, _, entity_label)), Some((i, j))) = (entity, measure_pair) {
+                        let min_frames = if matches!(mode, SmartSliderMode::On) {
+                            2
+                        } else {
+                            3
+                        };
+                        // bubble SIZE = Gapminder's third data variable: the leftover numeric least
+                        // redundant with the (x,y) pair (so size adds new information, not a
+                        // near-copy of an axis). `None` for a 2-numeric dataset — the reader then
+                        // falls back to the per-cell row count and the label stays "records".
+                        let size_k = least_redundant_third(&matrix, i, j);
+                        let size_idx = size_k.map(|k| kept_indices[k]);
+                        let size_label = size_k
+                            .map(|k| labels[k].clone())
+                            .unwrap_or_else(|| "records".to_string());
+                        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+                        if let Some(data) = read_entity_bucket_agg(
+                            args,
+                            e_idx,
+                            kept_indices[i],
+                            kept_indices[j],
+                            size_idx,
+                            date_idx,
+                            prefer_dmy,
+                            min_frames,
+                            3,
+                        )? {
+                            let (x_label, y_label) = (labels[i].clone(), labels[j].clone());
+                            let frame_label = col_sems
+                                .get(date_idx)
+                                .map(|s| s.label.as_str())
+                                .filter(|l| !l.is_empty())
+                                .map_or_else(|| stats[date_idx].field.clone(), ToString::to_string);
+                            bubble_panel = Some(Panel::new(
+                                format!("{y_label} vs {x_label} by {entity_label} over time"),
+                                PanelKind::AnimatedBubble {
+                                    entities: data.entities,
+                                    xs: data.xs,
+                                    ys: data.ys,
+                                    sizes: data.sizes,
+                                    bucket_labels: data.bucket_labels,
+                                    x_label,
+                                    y_label,
+                                    size_label,
+                                    frame_label,
+                                    x_range: data.x_range,
+                                    y_range: data.y_range,
+                                },
+                            ));
+                        }
+                    }
                 }
-            });
+            }
+
+            // Static pair drill-down beside the heatmap: the STRONGEST correlated pair as a 2D
+            // density contour for large datasets (a scatter would overplot into a solid mass, and
+            // the contour embeds only a fixed grid) or a static bubble scatter. The title carries
+            // Pearson r, plus Spearman rho when the two diverge enough to mean the relationship is
+            // monotonic-but-curved (nonlinear) — so the reader doesn't take the single r as proof
+            // of a linear relationship. Suppressed when the animated drill-down above
+            // already covers the very same pair (a moderate strongest pair that also
+            // drifts), so we don't show both a static and an animated scatter of one
+            // relationship — but ONLY when that animated pair (T1) will actually be
+            // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
+            // arbitration, T1 is discarded, so suppressing the static pair too would drop
+            // the strongest-pair drill-down entirely.
+            let t1_wins = bubble_panel.is_none() && geo_anim_panel.is_none();
+            let pair_panel = pair
+                .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
+                .map(|(i, j, r)| {
+                    let rho = spearman_rho(&columns[i], &columns[j]);
+                    let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
+                        format!(
+                            "{} vs {} (r={r:.2}, \u{3c1}={rho:.2} \u{2014} nonlinear)",
+                            labels[i], labels[j]
+                        )
+                    } else {
+                        format!("{} vs {} (r={r:.2})", labels[i], labels[j])
+                    };
+                    if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
+                        let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
+                        Panel::new(name, PanelKind::ContourPair { x, y, z })
+                    } else {
+                        let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                        // Encode a third numeric (the axis MOST associated with the pair, so size
+                        // shows a real gradient — the complement of the least-redundant axis
+                        // `Scatter3D` picks) as marker size: a 3-variable bubble
+                        // view that, unlike the HTML-only 3D panel, also survives
+                        // static image export. Aligned to xs/ys because
+                        // `downsample_pair` picks the same row indices for the same (n, cap).
+                        let (name, sizes, size_label) = match most_associated_third(&matrix, i, j) {
+                            Some(k) => {
+                                let (_, sizes) =
+                                    downsample_pair(&columns[i], &columns[k], *MAX_SMART_POINTS);
+                                (
+                                    format!("{name} \u{b7} size: {}", labels[k]),
+                                    Some(sizes),
+                                    Some(labels[k].clone()),
+                                )
+                            },
+                            None => (name, None, None),
+                        };
+                        Panel::new(
+                            name,
+                            PanelKind::ScatterPair {
+                                xs,
+                                ys,
+                                sizes,
+                                x_label: labels[i].clone(),
+                                y_label: labels[j].clone(),
+                                size_label,
+                            },
+                        )
+                    }
+                });
 
             // 3D drill-down: with 3+ numeric columns, a Scatter3D of the strongest pair plus a
             // third axis chosen to be the LEAST redundant with that pair (minimizing
@@ -16778,8 +17679,22 @@ fn build_smart(
                     },
                 ),
             );
-            // place the drill-down panels right after the heatmap
+            // place the drill-down panels right after the heatmap: the animated relationship-over-
+            // time scatter (when a drifting pair was found) leads, then the static strongest-pair
+            // drill-down (suppressed above if it is the same pair), then the 3D scatter.
+            // ARBITRATION (§5): at most one animated panel; T3 (bubble) > T2 (geo) > T1. The T1
+            // scatter-pair animation is inserted only when neither T3 nor T2 won (the static
+            // pair/3D drill-downs still show, keyed off `anim_ij`, as before).
+            let anim_panel = if bubble_panel.is_none() && geo_anim_panel.is_none() {
+                anim_sel.map(|(_, _, panel)| panel)
+            } else {
+                None
+            };
             let mut at = 1;
+            if let Some(panel) = anim_panel {
+                panels.insert(at, panel);
+                at += 1;
+            }
             if let Some(panel) = pair_panel {
                 panels.insert(at, panel);
                 at += 1;
@@ -16788,6 +17703,14 @@ fn build_smart(
                 panels.insert(at, panel);
             }
         }
+    }
+
+    // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
+    // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
+    // violin / hierarchy `insert(0, ..)` overview panels below) lands it among the correlation
+    // drill-downs, just like the T1 slot it supersedes.
+    if let Some(winner) = bubble_panel.or(geo_anim_panel) {
+        panels.insert(0, winner);
     }
 
     // prepend a "measure by dimension" bar when a low-cardinality categorical dimension strongly
@@ -17088,6 +18011,9 @@ fn build_smart(
                 | PanelKind::Hierarchy { .. }
                 | PanelKind::Sankey { .. }
                 | PanelKind::Parcats { .. }
+                | PanelKind::AnimatedScatterPair { .. }
+                | PanelKind::AnimatedGeo { .. }
+                | PanelKind::AnimatedBubble { .. }
         )
     });
 
@@ -17220,6 +18146,9 @@ fn build_smart(
             | PanelKind::AssocHeatmap { .. }
             | PanelKind::TopRelationships { .. }
             | PanelKind::TimeSeries { .. }
+            | PanelKind::AnimatedScatterPair { .. }
+            | PanelKind::AnimatedGeo { .. }
+            | PanelKind::AnimatedBubble { .. }
             | PanelKind::ScatterPair { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
@@ -17908,10 +18837,13 @@ fn panel_trace(
         | PanelKind::CyclicProfile { .. }
         | PanelKind::Hierarchy { .. }
         | PanelKind::Sankey { .. }
-        | PanelKind::Parcats { .. } => {
+        | PanelKind::Parcats { .. }
+        | PanelKind::AnimatedScatterPair { .. }
+        | PanelKind::AnimatedGeo { .. }
+        | PanelKind::AnimatedBubble { .. } => {
             unreachable!(
-                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats panels are rendered via the \
-                 inline path, not panel_trace"
+                "map/geo/choropleth/3D/polar/hierarchy/sankey/parcats/animated-scatter panels are \
+                 rendered via the inline path, not panel_trace"
             )
         },
     };
@@ -17980,6 +18912,9 @@ fn smart_grid_parts(
             | PanelKind::TopRelationships { .. }
             | PanelKind::CyclicProfile { .. }
             | PanelKind::Histogram { .. }
+            | PanelKind::AnimatedScatterPair { .. }
+            | PanelKind::AnimatedGeo { .. }
+            | PanelKind::AnimatedBubble { .. }
             | PanelKind::Map { .. }
             | PanelKind::Geo { .. }
             | PanelKind::Choropleth { .. }
@@ -19245,6 +20180,297 @@ fn smart_inline_panel_plot(
             layout = layout
                 .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
                 .paper_background_color(PAPER_BG);
+        }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // Animated geographic point map: dated points on a ScatterGeo projection basemap, revealed
+    // cumulatively over time buckets. Reconstructs the geo layout inline (like the static Geo block
+    // above — this render fn has no `args`, so `geo_base_layout` isn't reachable) and adds a scrub
+    // slider + Play/Pause. Reuses the standalone animated-geo core (native ScatterGeo animation).
+    if let PanelKind::AnimatedGeo {
+        bucket_lats,
+        bucket_lons,
+        bucket_labels,
+        frame_label,
+    } = &panel.kind
+    {
+        const SMART_SLIDER_SPEED_MS: u64 = 700;
+        // a fixed high-contrast marker (warm fill + thin white outline), matching the static Geo
+        // panel, so points read on both land and ocean and in dark themes.
+        let geo_marker = || {
+            Marker::new()
+                .color(NamedColor::Crimson)
+                .opacity(MAP_POINT_OPACITY)
+                .line(Line::new().color(NamedColor::White).width(0.5))
+        };
+        let mut plot = Plot::new();
+        // base = ALL points (every bucket flattened) so the initial/static view shows the full
+        // cloud; Play then reveals it accumulating chronologically.
+        let all_lats: Vec<f64> = bucket_lats.iter().flatten().copied().collect();
+        let all_lons: Vec<f64> = bucket_lons.iter().flatten().copied().collect();
+        plot.add_trace(
+            ScatterGeo::new(all_lats, all_lons)
+                .mode(Mode::Markers)
+                .marker(geo_marker()),
+        );
+        // one CUMULATIVE frame per bucket: points from buckets 0..=k concatenated
+        for (k, label) in bucket_labels.iter().enumerate() {
+            let mut la: Vec<f64> = Vec::new();
+            let mut lo: Vec<f64> = Vec::new();
+            for b in 0..=k {
+                la.extend_from_slice(&bucket_lats[b]);
+                lo.extend_from_slice(&bucket_lons[b]);
+            }
+            let mut td = Traces::new();
+            td.push(
+                ScatterGeo::new(la, lo)
+                    .mode(Mode::Markers)
+                    .marker(geo_marker()),
+            );
+            plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
+        }
+        let (geo_land, geo_water, geo_bg) = geo_palette(theme);
+        let geo = LayoutGeo::new()
+            .projection(Projection::new().projection_type(ProjectionType::NaturalEarth))
+            .resolution(GeoResolution::OneOverFiftyMillion)
+            .showland(true)
+            .landcolor(geo_land)
+            .showocean(true)
+            .oceancolor(geo_water)
+            .showlakes(true)
+            .lakecolor(geo_water)
+            .showcountries(true)
+            .bgcolor(geo_bg);
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            .geo(geo);
+        if let (Ok(slider), Ok(menu)) = (
+            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+            play_pause_menu(SMART_SLIDER_SPEED_MS),
+        ) {
+            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
+        }
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG);
+        }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // Gapminder-style animated bubble chart: one trace per entity, each a single (x,y) bubble that
+    // moves + resizes per frame (per-frame full replacement). Rendered as its own inline Plot with
+    // a scrub slider + Play/Pause and a legend of entities. Bubble sizes are scaled GLOBALLY over
+    // all cells so an entity's size is comparable across frames and entities (a per-point
+    // scale_bubble_sizes call would collapse each single value to mid-size).
+    if let PanelKind::AnimatedBubble {
+        entities,
+        xs,
+        ys,
+        sizes,
+        bucket_labels,
+        x_label,
+        y_label,
+        size_label,
+        frame_label,
+        x_range,
+        y_range,
+    } = &panel.kind
+    {
+        const SMART_SLIDER_SPEED_MS: u64 = 700;
+        let n_entities = entities.len();
+        let (smin, smax) = sizes
+            .iter()
+            .flatten()
+            .filter(|v| v.is_finite())
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(lo, hi), &v| {
+                (lo.min(v), hi.max(v))
+            });
+        let sspan = smax - smin;
+        let size_px = |v: f64| -> usize {
+            let t = if !v.is_finite() {
+                0.0
+            } else if sspan > 0.0 {
+                (v - smin) / sspan
+            } else {
+                0.5
+            };
+            (BUBBLE_MIN_PX + t * (BUBBLE_MAX_PX - BUBBLE_MIN_PX)).round() as usize
+        };
+        // one entity's single-point marker trace for bucket `k` (empty when the cell is NaN/absent,
+        // so the entity vanishes that frame while trace count/order stays constant)
+        let bubble = |e: usize, k: usize| {
+            let (px, py, sz) = (xs[e][k], ys[e][k], sizes[e][k]);
+            let (pxv, pyv) = if px.is_finite() && py.is_finite() {
+                (vec![px], vec![py])
+            } else {
+                (Vec::new(), Vec::new())
+            };
+            // format the size measure cleanly: integral values (e.g. a row count) show with no
+            // decimal, fractional measures (e.g. a mean population) keep up to 2 places — do NOT
+            // cast to an integer, which would truncate a decimal measure and misreport it.
+            let size_disp = if sz.is_finite() {
+                format!("{}", (sz * 100.0).round() / 100.0)
+            } else {
+                "0".to_string()
+            };
+            Scatter::new(pxv, pyv)
+                .mode(Mode::Markers)
+                .name(entities[e].clone())
+                .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
+                .hover_template(format!(
+                    "{}<br>{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>{size_label}: \
+                     {size_disp}<extra></extra>",
+                    entities[e]
+                ))
+        };
+        let mut plot = Plot::new();
+        // base = bucket 0 positions (one trace per entity, in entity order)
+        for e in 0..n_entities {
+            plot.add_trace(bubble(e, 0));
+        }
+        // one per-frame replacement per bucket: every entity trace updates (traces 0..n)
+        for (k, label) in bucket_labels.iter().enumerate() {
+            let mut td = Traces::new();
+            for e in 0..n_entities {
+                td.push(bubble(e, k));
+            }
+            plot.add_frame(
+                Frame::new()
+                    .name(label.clone())
+                    .data(td)
+                    .traces((0..n_entities).collect()),
+            );
+        }
+        // pin axes globally so bubbles don't reframe as they move
+        let x_axis = Axis::new()
+            .title(Title::with_text(x_label.clone()))
+            .range(vec![x_range.0, x_range.1]);
+        let y_axis = Axis::new()
+            .title(Title::with_text(y_label.clone()))
+            .range(vec![y_range.0, y_range.1]);
+        let mut layout = Layout::new()
+            .show_legend(true)
+            .height(row_height)
+            .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
+            .x_axis(x_axis)
+            .y_axis(y_axis);
+        if let (Ok(slider), Ok(menu)) = (
+            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+            play_pause_menu(SMART_SLIDER_SPEED_MS),
+        ) {
+            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
+        }
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG)
+                .plot_background_color(PAPER_BG);
+        }
+        let layout = inline_panel_title(layout, panel, themed, Vec::new());
+        plot.set_layout(apply_theme(layout, theme));
+        plot.set_configuration(Configuration::new().responsive(true));
+        return plot;
+    }
+
+    // Animated scatter pair: the strongest numeric pair revealed cumulatively over time, colored by
+    // time bucket (early → late), rendered as its own inline Plot (scrub slider + Play/Pause).
+    // Forces the inline dashboard path (see has_noncartesian) and is HTML-only. Reuses the
+    // standalone animation core (slider_control/play_pause_menu).
+    if let PanelKind::AnimatedScatterPair {
+        xs,
+        ys,
+        bucket,
+        bucket_labels,
+        x_label,
+        y_label,
+        frame_label,
+        x_range,
+        y_range,
+    } = &panel.kind
+    {
+        const SMART_SLIDER_SPEED_MS: u64 = 700;
+        let n_buckets = bucket_labels.len();
+        // pin the color scale to the full bucket range so a point keeps its color across frames
+        let cmax = n_buckets.saturating_sub(1) as f64;
+        // a two-tick color legend showing the earliest → latest bucket the gradient spans
+        let colorbar = || {
+            ColorBar::new()
+                .thickness(10)
+                .tick_mode(TickMode::Array)
+                .tick_vals(vec![0.0, cmax])
+                .tick_text(vec![
+                    bucket_labels.first().cloned().unwrap_or_default(),
+                    bucket_labels.last().cloned().unwrap_or_default(),
+                ])
+        };
+        // one scatter over points whose bucket index is in `[start, end)` — a contiguous slice,
+        // since points are sorted by bucket ascending — colored by each point's bucket index
+        let scatter = |start: usize, end: usize| {
+            Scatter::new(xs[start..end].to_vec(), ys[start..end].to_vec())
+                .mode(Mode::Markers)
+                .name(y_label.clone())
+                .marker(
+                    Marker::new()
+                        .color_array(bucket[start..end].iter().map(|&b| b as f64).collect())
+                        .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
+                        .cmin(0.0)
+                        .cmax(cmax)
+                        .show_scale(true)
+                        .color_bar(colorbar())
+                        .opacity(MAP_POINT_OPACITY),
+                )
+        };
+        let mut plot = Plot::new();
+        // base = the full cloud so the initial paint and any non-playing/static view degrade to the
+        // static ScatterPair + time color; Play then reveals a TRAILING WINDOW migrating over time.
+        plot.add_trace(scatter(0, xs.len()));
+        // one trailing-window frame per bucket: show the current bucket plus the
+        // `ANIM_TRAILING_WINDOW - 1` preceding buckets so the cloud is seen to MIGRATE, not merely
+        // accumulate (a cumulative reveal hides motion — the point of a drift-selected pair is the
+        // motion). Both bounds are `partition_point`s on the ascending bucket vector. Every frame
+        // keeps the same single trace index so plotly leaves no stale traces on screen.
+        for (k, label) in bucket_labels.iter().enumerate() {
+            let lo_bucket = k.saturating_sub(ANIM_TRAILING_WINDOW - 1);
+            let start = bucket.partition_point(|&b| b < lo_bucket);
+            let end = bucket.partition_point(|&b| b <= k);
+            let mut td = Traces::new();
+            td.push(scatter(start, end));
+            plot.add_frame(Frame::new().name(label.clone()).data(td).traces(vec![0]));
+        }
+        // pin axes globally so the cloud doesn't reframe as points accumulate
+        let x_axis = Axis::new()
+            .title(Title::with_text(x_label.clone()))
+            .range(vec![x_range.0, x_range.1]);
+        let y_axis = Axis::new()
+            .title(Title::with_text(y_label.clone()))
+            .range(vec![y_range.0, y_range.1]);
+        let mut layout = Layout::new()
+            .show_legend(false)
+            .height(row_height)
+            .margin(Margin::new().top(48).bottom(60).left(60).right(30).pad(4))
+            .x_axis(x_axis)
+            .y_axis(y_axis);
+        if let (Ok(slider), Ok(menu)) = (
+            slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
+            play_pause_menu(SMART_SLIDER_SPEED_MS),
+        ) {
+            layout = layout.sliders(vec![slider]).update_menus(vec![menu]);
+        }
+        if !themed {
+            layout = layout
+                .font(Font::new().family(FONT_FAMILY).color(INK).size(12))
+                .paper_background_color(PAPER_BG)
+                .plot_background_color(PAPER_BG);
         }
         let layout = inline_panel_title(layout, panel, themed, Vec::new());
         plot.set_layout(apply_theme(layout, theme));
@@ -20579,6 +21805,9 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::GroupedViolin { .. }
         | PanelKind::CyclicProfile { .. }
         | PanelKind::TimeSeries { .. }
+        | PanelKind::AnimatedScatterPair { .. }
+        | PanelKind::AnimatedGeo { .. }
+        | PanelKind::AnimatedBubble { .. }
         | PanelKind::Map { .. }
         | PanelKind::Geo { .. }
         | PanelKind::Choropleth { .. }

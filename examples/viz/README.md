@@ -243,6 +243,10 @@ qsv viz smart sales_sample.csv --dictionary infer --hierarchy-style sunburst -o 
 # bar — revenue by region (aggregated)
 qsv viz bar sales_sample.csv --x region --y revenue --agg sum -o bar.html
 
+# bar (animated slider) — animate revenue by category over the satisfaction rating
+# (each distinct value becomes a frame; Play/Pause + a scrub slider; axes pinned across frames)
+qsv viz bar sales_sample.csv --x product_category --y revenue --agg sum --slider satisfaction -o bar_animated.html
+
 # line — closing price over time
 qsv viz line stock_prices.csv --x date --y close -o line.html
 

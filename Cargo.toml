@@ -411,6 +411,7 @@ tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 unicode-width = { version = "0.2", optional = true }
 uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
+webdriver-downloader = { version = "0.16", optional = true }
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "8"
@@ -501,6 +502,10 @@ object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }
+
+# use our patched fork of webdriver-downloader until our PR is merged fixing
+# RUSTSEC-2025-0134: rustls-pemfile is unmaintained
+webdriver-downloader = { git = "https://github.com/jqnatividad/webdriver-downloader", branch = "bump-reqwest-and-fantocinni-to-remove-rustls-pemfile-advisory" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases
@@ -641,6 +646,7 @@ viz = [
     "dep:geojson",
     "plotly/plotly_embed_js",
     "base64-simd",
+    "webdriver-downloader",
 ]
 # viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
 # which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a

@@ -646,12 +646,11 @@ viz = [
     "dep:geojson",
     "plotly/plotly_embed_js",
     "base64-simd",
-    "webdriver-downloader",
 ]
 # viz_static: adds static PNG/SVG/PDF/JPEG/WebP export to `viz` via plotly_static,
 # which drives a headless Chromium/Firefox (webdriver auto-downloaded). Requires a
 # browser at runtime; keep out of big-endian / headless-only publish targets.
-viz_static = ["viz", "plotly/static_export_default"]
+viz_static = ["viz", "plotly/static_export_default", "webdriver-downloader"]
 lens = ["csvlens"]
 lite = []
 datapusher_plus = [

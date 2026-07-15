@@ -595,10 +595,10 @@ FIGURES = [
              "--map", "--style", "carto-positron"]),
     ("smart dashboard (time-series)",
      "Auto dashboard for stock_prices: a time-series trend panel (the first numeric column over the "
-     "date) leads; the strongest-correlated pair drill-down is <b>animated over time</b> — a "
-     "cumulative scatter colored by time bucket (early&rarr;late, Play/Pause + scrub slider) that "
-     "reveals the relationship's drift a static scatter can't — alongside box-plot summaries of "
-     "the OHLC columns.",
+     "date) leads; the strongest-correlated pair drill-down (open vs close) is shown as a <b>static "
+     "scatter</b> — that relationship is a near-perfect line whose 2-D shape doesn't evolve, so "
+     "the judicious animation gate withholds the (uninformative) animated version — alongside "
+     "box-plot summaries of the OHLC columns.",
      True, ["smart", "stock_prices.csv", "--max-charts", "8"]),
     ("smart dashboard (per-US-state choropleth)",
      "`viz smart` reverse-geocodes each point; because every city "

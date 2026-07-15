@@ -602,11 +602,15 @@ smart options:
                            split into animated traces with the --series option. (Not
                            supported for `viz map` — the MapLibre basemap can't animate;
                            use `viz geo` for an animated point map.) For `smart`, this
-                           controls whether the strongest correlated numeric pair is
-                           animated over time (a cumulative scatter colored by time
-                           bucket): auto (default) animates it only when a date column
-                           exists and there are enough time buckets, on always animates
-                           when a pair exists, off never does. Axis ranges are pinned
+                           controls whether one animated relationship-over-time panel is
+                           added: the numeric pair whose per-time-bucket centroid path
+                           bends the most (a trailing-window scatter colored by time
+                           bucket), or an animated geo map of global-extent dated points,
+                           or a Gapminder entity-bubble chart (at most one, in that
+                           priority). auto (default) adds one only on a strong signal (a
+                           date column and enough time buckets); on lowers the bar (as few
+                           as two buckets) but still requires a genuinely drifting or
+                           animatable relationship; off never does. Axis ranges are pinned
                            across frames so nothing jumps.
     --slider-speed <ms>    Milliseconds each animation frame is shown while playing.
                            [default: 800]
@@ -17575,9 +17579,13 @@ fn build_smart(
             // of a linear relationship. Suppressed when the animated drill-down above
             // already covers the very same pair (a moderate strongest pair that also
             // drifts), so we don't show both a static and an animated scatter of one
-            // relationship.
+            // relationship — but ONLY when that animated pair (T1) will actually be
+            // inserted. If a higher-priority bubble (T3) or geo (T2) animation won
+            // arbitration, T1 is discarded, so suppressing the static pair too would drop
+            // the strongest-pair drill-down entirely.
+            let t1_wins = bubble_panel.is_none() && geo_anim_panel.is_none();
             let pair_panel = pair
-                .filter(|&(i, j, _)| anim_ij != Some((i, j)))
+                .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
                 .map(|(i, j, r)| {
                     let rho = spearman_rho(&columns[i], &columns[j]);
                     let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
@@ -20306,14 +20314,21 @@ fn smart_inline_panel_plot(
             } else {
                 (Vec::new(), Vec::new())
             };
-            let count = if sz.is_finite() { sz as u64 } else { 0 };
+            // format the size measure cleanly: integral values (e.g. a row count) show with no
+            // decimal, fractional measures (e.g. a mean population) keep up to 2 places — do NOT
+            // cast to an integer, which would truncate a decimal measure and misreport it.
+            let size_disp = if sz.is_finite() {
+                format!("{}", (sz * 100.0).round() / 100.0)
+            } else {
+                "0".to_string()
+            };
             Scatter::new(pxv, pyv)
                 .mode(Mode::Markers)
                 .name(entities[e].clone())
                 .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
                 .hover_template(format!(
                     "{}<br>{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>{size_label}: \
-                     {count}<extra></extra>",
+                     {size_disp}<extra></extra>",
                     entities[e]
                 ))
         };

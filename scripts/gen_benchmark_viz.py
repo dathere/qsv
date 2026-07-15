@@ -672,24 +672,24 @@ def main():
                      "--y-title", "speed vs first release (1.0 = launch)"],
                     "moarstats_growth", "Flagship deep-dive: moarstats",
                     "qsv's advanced-statistics command — moarstats is designed to run right AFTER stats, "
-                    "extending the stats CSV that stats produces. Each charted variant is a bivariate one, "
-                    "indexed to its own launch speed. moarstats does real pairwise work — the default "
-                    "bivariate pass runs at hundreds of thousands of records/sec and the full "
-                    "--bivariate-stats all battery at a few thousand — so unlike stats or frequency there "
-                    f"is genuine per-row cost to hold down. It held: the default bivariate pass now runs "
-                    f"{m_biv:.1f}x its first-release speed, stepping up at 17.0.0 and again at 20.0.0. The "
-                    "full all battery is heavier and choppier — it climbed to a ~6k-recs/sec peak around "
-                    f"19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 to {m_all:.1f}x launch. "
-                    "All four lines are base vs --advanced, each normalized to its own debut. The two "
-                    "univariate variants (moarstats and moarstats --advanced) are NOT charted because "
-                    "their benchmark numbers don't reflect real throughput: moarstats persists its "
+                    "extending the stats CSV that stats produces. Only its bivariate variants are charted "
+                    "here. The two univariate variants (moarstats and moarstats --advanced) are left out "
+                    "because their benchmark numbers don't reflect real throughput: moarstats persists its "
                     "computed columns into the .stats.csv and skips any statistic whose column is already "
                     "present, so the suite's repeated timed runs short-circuit the work and report a "
                     "nominal ~90M recs/sec that measures skipped work, not per-row cost. Those univariate "
                     "paths do genuinely scan the original data — always for the outlier statistics, and "
                     "for kurtosis, Gini/Atkinson and entropy under --advanced. The bivariate computation, "
-                    "by contrast, is recomputed on every run, which is why the bivariate variants are the "
-                    "ones with a real throughput-over-time story."))
+                    "by contrast, is recomputed on every run, so it carries a real throughput-over-time "
+                    "story. Each charted variant is indexed to its own launch speed. moarstats does real "
+                    "pairwise work — the default bivariate pass runs at hundreds of thousands of "
+                    "records/sec and the full --bivariate-stats all battery at a few thousand — so unlike "
+                    f"stats or frequency there is genuine per-row cost to hold down. It held: the default "
+                    f"bivariate pass now runs {m_biv:.1f}x its first-release speed, stepping up at 17.0.0 "
+                    "and again at 20.0.0. The full all battery is heavier and choppier — it climbed to a "
+                    f"~6k-recs/sec peak around 19.x-20.x, dipped at 21.0.0, and recovered partway in 21.1.0 "
+                    f"to {m_all:.1f}x launch. All four lines are base vs --advanced, each normalized to its "
+                    "own debut."))
     figs.append(viz("heatmap", prep_heatmap(hm_versions),
                     ["--x", "version", "--y", "name", "--z", "rel",
                      "--title", "Relative throughput vs each command's recent peak"],

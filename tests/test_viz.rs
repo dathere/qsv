@@ -9261,9 +9261,10 @@ fn viz_smart_map_has_zoom_autofit() {
     // theme toggle restyles MapLibre map traces via newPlot, not relayout (the fork's relayout
     // blanks them).
     assert!(html.contains("hasMapLibre"));
-    // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x352).
+    // smart panels frame against MAP_PANEL_ASSUMED_WIDTH_PX x MAP_PANEL_USABLE_HEIGHT_PX (960x472;
+    // MAP_ROW_HEIGHT_PX 540 minus the 48+20 plotly margins).
     assert!(html.contains("window.__qsvMapAssumedW=960"));
-    assert!(html.contains("window.__qsvMapAssumedH=352"));
+    assert!(html.contains("window.__qsvMapAssumedH=472"));
 }
 
 // --- `viz smart --bivariate` ----------------------------------------------------------------

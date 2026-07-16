@@ -1064,6 +1064,38 @@ const ROW_HEIGHT_PX: usize = 320;
 /// has space.
 const OVERVIEW_ROW_HEIGHT_PX: usize = 420;
 
+/// Taller height (in pixels) for geographic overview panels (`Map`/`Geo`/`Choropleth`/
+/// `ChoroplethMap`) in the inline HTML dashboard. A world/continental map at the default overview
+/// height renders its points cramped into a short band; maps get their own taller base so the
+/// markers are legible and the projection fills the cell. Fixed (not extent-aspect-driven) so
+/// `MAP_PANEL_USABLE_HEIGHT_PX` — which `map_center_zoom` uses to frame the map — stays a constant.
+const MAP_ROW_HEIGHT_PX: usize = 540;
+
+/// Extra vertical band (in pixels) reserved BELOW an animated map (`AnimatedGeo`) for the scrub
+/// slider + Play/Pause menu, so the controls sit under the map instead of overlaying and shrinking
+/// it. Added to the panel height AND to the render-block bottom margin, so the map's usable draw
+/// height matches a static map (`MAP_ROW_HEIGHT_PX - 48 - 20`) and the controls occupy this band.
+const SLIDER_CONTROL_ALLOWANCE_PX: usize = 96;
+
+/// Per-distinct-category vertical step (px) for a `Parcats` panel, and its clamp. Parcats height
+/// scales with the tallest dimension's distinct-category count so many categories aren't crammed
+/// into a short panel; clamped so a pathological high-cardinality axis can't produce a giant panel.
+const PARCATS_PX_PER_CATEGORY: usize = 44;
+const PARCATS_HEIGHT_MIN_PX: usize = 560;
+const PARCATS_HEIGHT_MAX_PX: usize = 980;
+
+/// Per-node vertical step (px) for a `Sankey` panel (scaled by the tallest column's node count),
+/// and its clamp — same rationale as the parcats scaling.
+const SANKEY_PX_PER_NODE: usize = 40;
+const SANKEY_HEIGHT_MIN_PX: usize = 520;
+const SANKEY_HEIGHT_MAX_PX: usize = 960;
+
+/// Shorter height (in pixels) for a `ScatterPair` whose points are sparse / piled at one corner
+/// (e.g. a heavily zero-skewed measure): the full overview height would be mostly an empty box, so
+/// a low-fill scatter gets a compact panel. A DEGENERATE scatter (nearly all points identical) is
+/// dropped entirely at build time rather than shrunk (see `scatter_fill_stats`).
+const SCATTER_SPARSE_HEIGHT_PX: usize = 240;
+
 /// Shorter height (in pixels) for the leading KPI overview row when its tiles are plain number
 /// tiles: a big number plus a one-to-two-line label under it is much shorter than a chart, so the
 /// full `OVERVIEW_ROW_HEIGHT_PX` leaves a large dead band below the labels. Sized to the tiles'
@@ -1092,11 +1124,13 @@ const MAP_TILE_SIZE_PX: f64 = 512.0;
 /// Anti-clip margin for the `fitbounds_zoom` framing (a 1.15× span pad ≈ a 0.20 zoom reduction).
 const MAP_FIT_PAD: f64 = 1.15;
 
-/// Usable map draw height (px) for a `viz smart` MAP overview panel: `OVERVIEW_ROW_HEIGHT_PX`
-/// (420) minus the map layout's top (48) + bottom (20) margins = 352. This is the *reliable*
-/// dimension at HTML-generation time (width is `responsive`/unknown) and, for the wide-short map
-/// panel, the binding constraint — so the latitude fit is computed against it.
-const MAP_PANEL_USABLE_HEIGHT_PX: f64 = OVERVIEW_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
+/// Usable map draw height (px) for a `viz smart` MAP overview panel: `MAP_ROW_HEIGHT_PX` (540)
+/// minus the map layout's top (48) + bottom (20) margins = 472. This is the *reliable* dimension at
+/// HTML-generation time (width is `responsive`/unknown) and, for the wide-short map panel, the
+/// binding constraint — so the latitude fit is computed against it. An animated map (`AnimatedGeo`)
+/// reserves an extra `SLIDER_CONTROL_ALLOWANCE_PX` band in BOTH its height and its bottom margin,
+/// so its usable draw height equals this same value.
+const MAP_PANEL_USABLE_HEIGHT_PX: f64 = MAP_ROW_HEIGHT_PX as f64 - 48.0 - 20.0;
 
 /// Assumed map draw width (px) for the smart MAP panel longitude fit. The panel spans the full
 /// grid (`grid-column: 1 / -1`) and its real width is responsive/unknown when the HTML is
@@ -17587,7 +17621,7 @@ fn build_smart(
             let t1_wins = bubble_panel.is_none() && geo_anim_panel.is_none();
             let pair_panel = pair
                 .filter(|&(i, j, _)| !(t1_wins && anim_ij == Some((i, j))))
-                .map(|(i, j, r)| {
+                .and_then(|(i, j, r)| {
                     let rho = spearman_rho(&columns[i], &columns[j]);
                     let name = if rho.abs() - r.abs() >= SMART_NONLINEAR_MIN_GAP {
                         format!(
@@ -17599,9 +17633,17 @@ fn build_smart(
                     };
                     if columns[i].len() >= SMART_CONTOUR_MIN_POINTS {
                         let (x, y, z) = bin_2d(&columns[i], &columns[j], SMART_CONTOUR_BINS);
-                        Panel::new(name, PanelKind::ContourPair { x, y, z })
+                        Some(Panel::new(name, PanelKind::ContourPair { x, y, z }))
                     } else {
                         let (xs, ys) = downsample_pair(&columns[i], &columns[j], *MAX_SMART_POINTS);
+                        // Drop a DEGENERATE scatter (essentially no 2-D spread — e.g. a heavily
+                        // zero-skewed measure collapses every point onto one axis): it would render
+                        // as an empty box, so omit the panel entirely. A merely sparse-but-
+                        // informative scatter is kept and just gets a compact height (see
+                        // `panel_render_height`).
+                        if scatter_fill_stats(&xs, &ys).degenerate {
+                            return None;
+                        }
                         // Encode a third numeric (the axis MOST associated with the pair, so size
                         // shows a real gradient — the complement of the least-redundant axis
                         // `Scatter3D` picks) as marker size: a 3-variable bubble
@@ -17620,7 +17662,7 @@ fn build_smart(
                             },
                             None => (name, None, None),
                         };
-                        Panel::new(
+                        Some(Panel::new(
                             name,
                             PanelKind::ScatterPair {
                                 xs,
@@ -17630,7 +17672,7 @@ fn build_smart(
                                 y_label: labels[j].clone(),
                                 size_label,
                             },
-                        )
+                        ))
                     }
                 });
 
@@ -19037,7 +19079,7 @@ fn smart_grid_parts(
             // (`smart_inline_panel_plot`): number tiles center the number in the domain; gauge
             // tiles render it lower (at the dial pivot), so a gauge row pins the one shared label
             // baseline just under the gauge number. The cell band is already height-matched to the
-            // tiles (`kpi_grid_row_scale`), so the label sits snug with no dead band below.
+            // tiles (`panel_row_scale`), so the label sits snug with no dead band below.
             let has_gauge = tiles.iter().any(|t| t.gauge.is_some());
             let (ind_frac, label_frac) = if has_gauge {
                 (0.34_f64, 0.30_f64)
@@ -20248,7 +20290,18 @@ fn smart_inline_panel_plot(
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
-            .margin(Margin::new().top(48).bottom(20).left(20).right(20).pad(4))
+            // reserve a band below the map for the slider + Play/Pause (the panel height added the
+            // same allowance), so the controls sit UNDER the map rather than overlaying/shrinking
+            // it; usable draw height then equals a static map's (MAP_ROW_HEIGHT_PX - 48
+            // - 20)
+            .margin(
+                Margin::new()
+                    .top(48)
+                    .bottom(20 + SLIDER_CONTROL_ALLOWANCE_PX)
+                    .left(20)
+                    .right(20)
+                    .pad(4),
+            )
             .geo(geo);
         if let (Ok(slider), Ok(menu)) = (
             slider_control(frame_label, bucket_labels, SMART_SLIDER_SPEED_MS),
@@ -21824,22 +21877,138 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
     }
 }
 
-/// Inline-dashboard render height (px) for a panel: hierarchy and Sankey panels get the tallest
-/// `HIER_ROW_HEIGHT_PX` (nested rectangles / rings, and stacked flow ribbons, need the room), the
-/// leading KPI row gets a short content-matched height (`kpi_row_height`), other overview panels
-/// get `OVERVIEW_ROW_HEIGHT_PX`, and everything else `ROW_HEIGHT_PX`.
+/// Fill classification of a `ScatterPair`'s point cloud, used to right-size (or drop) the panel.
+/// `degenerate` = the cloud carries essentially no 2-D information (fewer than 3 distinct points,
+/// no spread on an axis, or nearly every point collapsed onto a single edge) — such a panel is an
+/// empty box and is omitted at build time. `sparse` = the cloud hugs one axis edge or has very few
+/// distinct points (e.g. a heavily zero-skewed measure) — informative enough to keep, but it gets a
+/// compact height instead of the full overview height.
+struct ScatterFill {
+    degenerate: bool,
+    sparse:     bool,
+}
+
+/// Classify a scatter's fill from its row-aligned `xs`/`ys` in one O(n) pass. Thresholds live here
+/// (one place) so the build-time drop guard and the render-height branch stay in agreement.
+fn scatter_fill_stats(xs: &[f64], ys: &[f64]) -> ScatterFill {
+    let n = xs.len().min(ys.len());
+    if n < 4 {
+        return ScatterFill {
+            degenerate: true,
+            sparse:     true,
+        };
+    }
+    let (mut xmin, mut xmax) = (f64::INFINITY, f64::NEG_INFINITY);
+    let (mut ymin, mut ymax) = (f64::INFINITY, f64::NEG_INFINITY);
+    for k in 0..n {
+        let (x, y) = (xs[k], ys[k]);
+        if x.is_finite() {
+            xmin = xmin.min(x);
+            xmax = xmax.max(x);
+        }
+        if y.is_finite() {
+            ymin = ymin.min(y);
+            ymax = ymax.max(y);
+        }
+    }
+    let (xr, yr) = (xmax - xmin, ymax - ymin);
+    // an axis with no spread makes this a 1-D line, not a 2-D relationship → nothing to show
+    if !xr.is_finite() || !yr.is_finite() || xr <= 0.0 || yr <= 0.0 {
+        return ScatterFill {
+            degenerate: true,
+            sparse:     true,
+        };
+    }
+    let (ex, ey) = (xr * 0.01, yr * 0.01);
+    // points hugging each axis's low/high edge (within 1% of an extreme): a large share on one edge
+    // means the cloud has collapsed to a line (e.g. every event with killed == 0)
+    let (mut x_lo, mut x_hi, mut y_lo, mut y_hi) = (0usize, 0usize, 0usize, 0usize);
+    // distinct points on a coarse 100×100 grid over the bounding box
+    let mut cells: std::collections::HashSet<(i32, i32)> = std::collections::HashSet::new();
+    for k in 0..n {
+        let (x, y) = (xs[k], ys[k]);
+        if !x.is_finite() || !y.is_finite() {
+            continue;
+        }
+        if x - xmin <= ex {
+            x_lo += 1;
+        }
+        if xmax - x <= ex {
+            x_hi += 1;
+        }
+        if y - ymin <= ey {
+            y_lo += 1;
+        }
+        if ymax - y <= ey {
+            y_hi += 1;
+        }
+        let gx = (((x - xmin) / xr) * 100.0) as i32;
+        let gy = (((y - ymin) / yr) * 100.0) as i32;
+        cells.insert((gx, gy));
+    }
+    let nf = n as f64;
+    let edge_collapse = [x_lo, x_hi, y_lo, y_hi]
+        .into_iter()
+        .map(|c| c as f64 / nf)
+        .fold(0.0_f64, f64::max);
+    let distinct_ratio = cells.len() as f64 / nf;
+    let degenerate = cells.len() < 3 || edge_collapse > 0.98;
+    let sparse = degenerate || edge_collapse > 0.70 || distinct_ratio < 0.12;
+    ScatterFill { degenerate, sparse }
+}
+
+/// Inline-dashboard render height (px) for a panel, CONTEXT-SENSITIVE to the panel's data:
+/// geographic panels get a taller `MAP_ROW_HEIGHT_PX` (an animated map adds a
+/// `SLIDER_CONTROL_ALLOWANCE_PX` band for its controls); parcats/sankey scale with their
+/// category/node count (clamped); a sparse scatter gets a compact height; hierarchy gets the tall
+/// `HIER_ROW_HEIGHT_PX`; the leading KPI row a short content-matched height; other overview panels
+/// `OVERVIEW_ROW_HEIGHT_PX`; everything else `ROW_HEIGHT_PX`.
 fn panel_render_height(kind: &PanelKind) -> usize {
-    if matches!(
-        kind,
-        PanelKind::Hierarchy { .. } | PanelKind::Sankey { .. } | PanelKind::Parcats { .. }
-    ) {
-        HIER_ROW_HEIGHT_PX
-    } else if let PanelKind::KpiRow { tiles } = kind {
-        kpi_row_height(tiles)
-    } else if is_overview_panel(kind) {
-        OVERVIEW_ROW_HEIGHT_PX
-    } else {
-        ROW_HEIGHT_PX
+    match kind {
+        PanelKind::Hierarchy { .. } => HIER_ROW_HEIGHT_PX,
+        PanelKind::Parcats {
+            dim_labels, tuples, ..
+        } => {
+            // tallest dimension's distinct-category count (small parcats still get the floor)
+            let max_cat = (0..dim_labels.len())
+                .map(|pos| {
+                    tuples
+                        .iter()
+                        .filter_map(|t| t.get(pos))
+                        .collect::<std::collections::HashSet<_>>()
+                        .len()
+                })
+                .max()
+                .unwrap_or(0);
+            (max_cat * PARCATS_PX_PER_CATEGORY).clamp(PARCATS_HEIGHT_MIN_PX, PARCATS_HEIGHT_MAX_PX)
+        },
+        PanelKind::Sankey {
+            link_source,
+            link_target,
+            ..
+        } => {
+            // tallest column = max of distinct source nodes vs distinct target nodes
+            let src = link_source
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            let tgt = link_target
+                .iter()
+                .collect::<std::collections::HashSet<_>>()
+                .len();
+            (src.max(tgt) * SANKEY_PX_PER_NODE).clamp(SANKEY_HEIGHT_MIN_PX, SANKEY_HEIGHT_MAX_PX)
+        },
+        PanelKind::KpiRow { tiles } => kpi_row_height(tiles),
+        PanelKind::Map { .. }
+        | PanelKind::Geo { .. }
+        | PanelKind::Choropleth { .. }
+        | PanelKind::ChoroplethMap { .. } => MAP_ROW_HEIGHT_PX,
+        PanelKind::AnimatedGeo { .. } => MAP_ROW_HEIGHT_PX + SLIDER_CONTROL_ALLOWANCE_PX,
+        PanelKind::ScatterPair { xs, ys, .. } if scatter_fill_stats(xs, ys).sparse => {
+            SCATTER_SPARSE_HEIGHT_PX
+        },
+        _ if is_overview_panel(kind) => OVERVIEW_ROW_HEIGHT_PX,
+        _ => ROW_HEIGHT_PX,
     }
 }
 
@@ -21854,15 +22023,13 @@ fn kpi_row_height(tiles: &[KpiTile]) -> usize {
     }
 }
 
-/// Row-height scale (fraction of a normal `ROW_HEIGHT_PX` row) for the leading grid row: a leading
-/// KPI row (always prepended at index 0) shrinks to its content-matched height so the rows below
-/// move up; every other layout keeps full-height rows (scale `1.0`, which reduces the weighted
-/// grid geometry to the original uniform layout — non-KPI dashboards are byte-identical).
-fn kpi_grid_row_scale(first: Option<&Panel>) -> f64 {
-    match first.map(|p| &p.kind) {
-        Some(PanelKind::KpiRow { tiles }) => kpi_row_height(tiles) as f64 / ROW_HEIGHT_PX as f64,
-        _ => 1.0,
-    }
+/// Fractional row height (in units of `ROW_HEIGHT_PX`) for a panel in the STATIC-export grid,
+/// mirroring the inline path's `panel_render_height` so PNG/SVG/PDF exports match the interactive
+/// HTML dashboard. One row unit is `ROW_HEIGHT_PX`; a taller overview/map/parcats panel scales
+/// above 1.0, a short KPI row below it, a sparse scatter below it. At `1.0` for every row the
+/// weighted grid geometry reduces to the original uniform layout.
+fn panel_row_scale(kind: &PanelKind) -> f64 {
+    panel_render_height(kind) as f64 / ROW_HEIGHT_PX as f64
 }
 
 /// Compute the paper-space domains for a cell at grid position (`row`, `col`) in a `rows`×`cols`
@@ -21876,9 +22043,11 @@ fn kpi_grid_row_scale(first: Option<&Panel>) -> f64 {
 /// per-gap fraction overflows the `0..=top` band once there are enough rows (e.g. a 42-panel,
 /// 21-row dashboard would need 1.8 of vertical gap alone).
 ///
-/// `first_row_scale` shrinks row 0's height to that fraction of a full row (for a leading KPI row,
-/// whose short tiles don't need a chart's height); every other row is a full unit. At `1.0` the
-/// per-row weighting collapses back to a uniform grid, so non-KPI dashboards are byte-identical.
+/// `row_scales[r]` is row `r`'s height as a fraction of a full `ROW_HEIGHT_PX` row (its tallest
+/// panel's `panel_row_scale`), so a row can be taller (map/parcats overview) or shorter (KPI,
+/// sparse scatter) than the rest. With every entry `1.0` the per-row weighting collapses back to a
+/// uniform grid, so a dashboard of only same-height rows is byte-identical to the old layout.
+/// `row_scales.len()` must equal `rows`.
 fn cell_geometry(
     row: usize,
     col: usize,
@@ -21887,7 +22056,7 @@ fn cell_geometry(
     full_width: bool,
     top: f64,
     title_offset: f64,
-    first_row_scale: f64,
+    row_scales: &[f64],
 ) -> SubplotGeometry {
     const HGAP_BASE: f64 = 0.08;
     const VGAP_BASE: f64 = 0.09;
@@ -21909,19 +22078,15 @@ fn cell_geometry(
     };
 
     let cell_w = (1.0 - hgap * (cols_f - 1.0)) / cols_f;
-    // Row-height weights: row 0 counts as `first_row_scale` units, every other row as 1.0. The
-    // total drawable band (`top` minus the fixed vertical gaps) is divided by the summed weight to
-    // get one unit's height, so shrinking row 0 lets the rows below it move up. With
-    // `first_row_scale == 1.0` this is `(top - vgaps) / rows` — the original uniform height.
-    let row_units = (rows_f - 1.0) + first_row_scale;
+    // Row-height weights: each row counts as its `row_scales[r]` units. The total drawable band
+    // (`top` minus the fixed vertical gaps) is divided by the summed weight to get one unit's
+    // height, so a taller row (a map/parcats overview) claims more of the band and the rows below
+    // it move down. With every scale `1.0` this is `(top - vgaps) / rows` — the uniform grid.
+    let row_units: f64 = row_scales.iter().sum();
     let unit_h = (top - vgap * (rows_f - 1.0)) / row_units;
-    let this_h = unit_h * if row == 0 { first_row_scale } else { 1.0 };
+    let this_h = unit_h * row_scales[row];
     // paper-weight of every row strictly above this one
-    let weight_above = if row == 0 {
-        0.0
-    } else {
-        first_row_scale + (row as f64 - 1.0)
-    };
+    let weight_above: f64 = row_scales[..row].iter().sum();
 
     // a full-width overview cell spans the whole page; otherwise it occupies its single column.
     let (x0, x1) = if full_width {
@@ -21976,36 +22141,59 @@ fn smart_grid_layout(panels: &[Panel], cols: usize) -> (Vec<SubplotGeometry>, us
     // scale mirrors the inline path's height branch: a gauge KPI tile renders its number lower (at
     // the dial pivot) and needs the taller `KPI_ROW_GAUGE_HEIGHT_PX` for the shared label baseline
     // to clear it; a pure-number row uses the shorter `KPI_ROW_HEIGHT_PX`.
-    let first_row_scale = kpi_grid_row_scale(panels.first());
-    let row_units = (rows as f64 - 1.0) + first_row_scale;
+    // per-row height scale: each row takes its tallest panel's `panel_row_scale`, so the static
+    // grid mirrors the context-sensitive inline heights (taller maps/parcats/sankey, shorter KPI
+    // and sparse-scatter rows). With all rows the same height this reduces to the uniform grid.
+    let mut row_scales = vec![0.0_f64; rows];
+    for (panel, &(r, _, _)) in panels.iter().zip(placements.iter()) {
+        row_scales[r] = row_scales[r].max(panel_row_scale(&panel.kind));
+    }
+    for s in &mut row_scales {
+        if *s <= 0.0 {
+            *s = 1.0; // defensive: a row with no panel (shouldn't happen) keeps a full unit
+        }
+    }
+    let row_units: f64 = row_scales.iter().sum();
 
     let has_subtitles = panels.iter().any(|p| p.subtitle.is_some());
     let top = smart_grid_top(row_units, has_subtitles);
     let title_offset = smart_title_offset(row_units);
     let geoms = placements
-        .into_iter()
-        .map(|(r, c, full)| {
-            cell_geometry(r, c, rows, cols, full, top, title_offset, first_row_scale)
-        })
+        .iter()
+        .map(|&(r, c, full)| cell_geometry(r, c, rows, cols, full, top, title_offset, &row_scales))
         .collect();
     let height_px = (row_units * ROW_HEIGHT_PX as f64).round() as usize;
     (geoms, rows, height_px)
 }
 
-/// For a frequency-bar panel, the display-only truncated x-axis tick labels (in the same order
-/// as the bar's x data). Very long category names (full agency names, datetime strings) would
-/// otherwise rotate into tall labels that squeeze the plot area and clip the top value labels.
+/// For a categorical bar panel, the display-only x-axis tick labels (in the same order as the
+/// bar's x data), which ALSO force the axis into category mode. Two panel kinds need this:
+/// - `FreqBar`: long category names (full agency names, datetime strings) would otherwise rotate
+///   into tall labels that squeeze the plot area and clip the top value labels, so they're
+///   truncated here.
+/// - `MeasureByDim`: its x-labels are grouping-dimension VALUES that can look numeric (e.g.
+///   magnitude "5.3", "6"). Without a forced category axis, plotly infers a LINEAR x-axis and drops
+///   every non-numeric label (and its bar) — which silently hid the one meaningful bar when the
+///   dominant group's label was non-numeric (e.g. "6 SR").
+///
 /// Returns `None` for non-bar panels (their axes are left untouched).
 fn freq_bar_tick_text(panel: &Panel, freq: &FreqMap) -> Option<Vec<String>> {
-    if let PanelKind::FreqBar { idx } = &panel.kind {
-        let labels = freq
-            .get(idx)?
-            .iter()
-            .map(|b| truncate_label(&b.label, BAR_LABEL_MAX_CHARS))
-            .collect();
-        Some(labels)
-    } else {
-        None
+    match &panel.kind {
+        PanelKind::FreqBar { idx } => {
+            let labels = freq
+                .get(idx)?
+                .iter()
+                .map(|b| truncate_label(&b.label, BAR_LABEL_MAX_CHARS))
+                .collect();
+            Some(labels)
+        },
+        PanelKind::MeasureByDim { labels, .. } => Some(
+            labels
+                .iter()
+                .map(|l| truncate_label(l, BAR_LABEL_MAX_CHARS))
+                .collect(),
+        ),
+        _ => None,
     }
 }
 
@@ -22039,7 +22227,8 @@ fn styled_x_axis(
     if is_date {
         a = a.type_(AxisType::Date);
     }
-    // display-only truncated labels for frequency-bar panels. Force the axis to category mode:
+    // display-only truncated labels for categorical bar panels (freq bars, measure-by-dim). Force
+    // the axis to category mode:
     // a category axis positions categories at integer indices 0..n in x-data order regardless
     // of how the category strings look, so our integer `tickvals` line up with the bars. Without
     // this, numeric ("10", "2") or date-like ("2026-06-21") category values could be inferred as
@@ -24993,7 +25182,16 @@ mod tests {
         // a 4-panel, 2-column dashboard -> 2 rows, occupying the full band (top = 1.0)
         let (rows, cols, top, offset) = (2, 2, 1.0, 0.01);
         for n in 0..4 {
-            let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset, 1.0);
+            let g = cell_geometry(
+                n / cols,
+                n % cols,
+                rows,
+                cols,
+                false,
+                top,
+                offset,
+                &vec![1.0; rows],
+            );
             // domains stay inside the paper area
             assert!(g.x_domain[0] >= 0.0 && g.x_domain[1] <= 1.0 + 1e-9);
             assert!(g.y_domain[0] >= -1e-9 && g.y_domain[1] <= 1.0 + 1e-9);
@@ -25002,15 +25200,15 @@ mod tests {
             assert!(g.title_y >= g.y_domain[1] - 1e-9);
         }
         // top row is higher on the page than the bottom row
-        let upper = cell_geometry(0, 0, rows, cols, false, top, offset, 1.0);
-        let lower = cell_geometry(1, 0, rows, cols, false, top, offset, 1.0);
+        let upper = cell_geometry(0, 0, rows, cols, false, top, offset, &vec![1.0; rows]);
+        let lower = cell_geometry(1, 0, rows, cols, false, top, offset, &vec![1.0; rows]);
         assert!(upper.y_domain[0] > lower.y_domain[1]);
         // the two columns don't overlap horizontally
-        let left = cell_geometry(0, 0, rows, cols, false, top, offset, 1.0);
-        let right = cell_geometry(0, 1, rows, cols, false, top, offset, 1.0);
+        let left = cell_geometry(0, 0, rows, cols, false, top, offset, &vec![1.0; rows]);
+        let right = cell_geometry(0, 1, rows, cols, false, top, offset, &vec![1.0; rows]);
         assert!(left.x_domain[1] <= right.x_domain[0] + 1e-9);
         // a full-width cell spans the whole page regardless of column
-        let full = cell_geometry(0, 0, rows, cols, true, top, offset, 1.0);
+        let full = cell_geometry(0, 0, rows, cols, true, top, offset, &vec![1.0; rows]);
         assert_eq!(full.x_domain, vec![0.0, 1.0]);
         assert!((full.title_x - 0.5).abs() < 1e-9);
     }
@@ -25031,7 +25229,7 @@ mod tests {
                 false,
                 smart_grid_top(rows as f64, false),
                 smart_title_offset(rows as f64),
-                1.0,
+                &vec![1.0; rows],
             );
             let title_top = g.title_y + GLYPH_PX / area;
             assert!(
@@ -25059,7 +25257,16 @@ mod tests {
             let top = smart_grid_top(rows as f64, false);
             let offset = smart_title_offset(rows as f64);
             for n in 0..panels {
-                let g = cell_geometry(n / cols, n % cols, rows, cols, false, top, offset, 1.0);
+                let g = cell_geometry(
+                    n / cols,
+                    n % cols,
+                    rows,
+                    cols,
+                    false,
+                    top,
+                    offset,
+                    &vec![1.0; rows],
+                );
                 assert!(
                     g.y_domain[1] > g.y_domain[0],
                     "panels={panels} n={n}: non-positive cell height {:?}",
@@ -25078,8 +25285,16 @@ mod tests {
                 // each cell sits strictly below the one directly above it (n - cols)
                 if n >= cols {
                     let m = n - cols;
-                    let above =
-                        cell_geometry(m / cols, m % cols, rows, cols, false, top, offset, 1.0);
+                    let above = cell_geometry(
+                        m / cols,
+                        m % cols,
+                        rows,
+                        cols,
+                        false,
+                        top,
+                        offset,
+                        &vec![1.0; rows],
+                    );
                     assert!(
                         g.y_domain[1] <= above.y_domain[0] + 1e-9,
                         "panels={panels} n={n}: row overlaps the one above"
@@ -25123,7 +25338,7 @@ mod tests {
     }
 
     #[test]
-    fn kpi_grid_row_scale_is_content_aware() {
+    fn panel_row_scale_is_content_aware() {
         let tile = |gauge: Option<[f64; 2]>| KpiTile {
             label: "m".to_string(),
             value: 1.0,
@@ -25144,8 +25359,8 @@ mod tests {
             },
         );
 
-        let plain_scale = kpi_grid_row_scale(Some(&plain));
-        let gauge_scale = kpi_grid_row_scale(Some(&gauged));
+        let plain_scale = panel_row_scale(&plain.kind);
+        let gauge_scale = panel_row_scale(&gauged.kind);
 
         // the scale is the content-matched inline height as a fraction of a normal row
         assert!((plain_scale - KPI_ROW_HEIGHT_PX as f64 / ROW_HEIGHT_PX as f64).abs() < 1e-9);
@@ -25154,10 +25369,9 @@ mod tests {
         // shorter than a full chart row
         assert!(gauge_scale > plain_scale);
         assert!(gauge_scale < 1.0 && plain_scale < 1.0);
-        // a non-KPI leading panel keeps a full-height row (uniform grid unchanged)
+        // a non-KPI panel keeps a full-height row (uniform grid unchanged)
         let bar = Panel::new("c".to_string(), PanelKind::FreqBar { idx: 0 });
-        assert!((kpi_grid_row_scale(Some(&bar)) - 1.0).abs() < 1e-9);
-        assert!((kpi_grid_row_scale(None) - 1.0).abs() < 1e-9);
+        assert!((panel_row_scale(&bar.kind) - 1.0).abs() < 1e-9);
 
         // the gauge KPI first-row band is genuinely taller in the assembled grid geometry
         let with_kpi = |lead: Panel| {
@@ -25173,6 +25387,158 @@ mod tests {
         assert!(band(&gg[0]) > band(&pg[0]));
         // and the taller KPI row makes the whole figure taller
         assert!(gh > ph);
+    }
+
+    #[test]
+    fn map_render_heights_are_taller_and_reserve_a_slider_band() {
+        // the inline map usable draw height is the fixed map row minus the plotly top+bottom
+        // margins (48 + 20); the animated map reserves an EXTRA control band so the slider
+        // sits below the map
+        assert!((MAP_PANEL_USABLE_HEIGHT_PX - (MAP_ROW_HEIGHT_PX as f64 - 68.0)).abs() < 1e-9);
+
+        // a static geographic panel renders at the tall map row height
+        let geo = PanelKind::Geo {
+            lats:               vec![0.0, 1.0],
+            lons:               vec![0.0, 1.0],
+            outlier_lats:       vec![],
+            outlier_lons:       vec![],
+            hover_text:         vec![String::new(), String::new()],
+            outlier_hover_text: vec![],
+            sizes:              None,
+        };
+        // an animated map adds the control-band allowance on top of the map row
+        let anim = PanelKind::AnimatedGeo {
+            bucket_lats:   vec![vec![0.0], vec![1.0]],
+            bucket_lons:   vec![vec![0.0], vec![1.0]],
+            bucket_labels: vec!["a".to_string(), "b".to_string()],
+            frame_label:   "t".to_string(),
+        };
+        assert_eq!(panel_render_height(&geo), MAP_ROW_HEIGHT_PX);
+        assert_eq!(
+            panel_render_height(&anim),
+            MAP_ROW_HEIGHT_PX + SLIDER_CONTROL_ALLOWANCE_PX
+        );
+        assert!(panel_render_height(&anim) > panel_render_height(&geo));
+    }
+
+    #[test]
+    fn parcats_height_grows_with_category_count_and_clamps() {
+        // one dimension carries `n` distinct categories; the other is constant → max_cat == n
+        let parcats = |n: usize| PanelKind::Parcats {
+            dim_labels: vec!["d0".to_string(), "d1".to_string()],
+            tuples:     (0..n)
+                .map(|i| vec![format!("c{i}"), "x".to_string()])
+                .collect(),
+            counts:     vec![1.0; n],
+        };
+        let small = panel_render_height(&parcats(3)); // 3*44=132 -> floored
+        let mid = panel_render_height(&parcats(15)); // 15*44=660 -> between
+        let big = panel_render_height(&parcats(40)); // 40*44=1760 -> ceiled
+
+        assert_eq!(small, PARCATS_HEIGHT_MIN_PX);
+        assert_eq!(mid, 15 * PARCATS_PX_PER_CATEGORY);
+        assert_eq!(big, PARCATS_HEIGHT_MAX_PX);
+        // monotonic non-decreasing in category count
+        assert!(small <= mid && mid <= big);
+        // the mid case is genuinely interior to the clamp band
+        assert!(mid > PARCATS_HEIGHT_MIN_PX && mid < PARCATS_HEIGHT_MAX_PX);
+    }
+
+    #[test]
+    fn sankey_height_grows_with_node_count_and_clamps() {
+        // `n` distinct source nodes all flowing to a single target → tallest column == n
+        let sankey = |n: usize| PanelKind::Sankey {
+            node_labels: (0..=n).map(|i| format!("n{i}")).collect(),
+            link_source: (0..n).collect(),
+            link_target: vec![n; n],
+            link_value:  vec![1.0; n],
+            value_order: false,
+        };
+        let small = panel_render_height(&sankey(3)); // 3*40=120 -> floored
+        let mid = panel_render_height(&sankey(18)); // 18*40=720 -> between
+        let big = panel_render_height(&sankey(40)); // 40*40=1600 -> ceiled
+
+        assert_eq!(small, SANKEY_HEIGHT_MIN_PX);
+        assert_eq!(mid, 18 * SANKEY_PX_PER_NODE);
+        assert_eq!(big, SANKEY_HEIGHT_MAX_PX);
+        assert!(small <= mid && mid <= big);
+        assert!(mid > SANKEY_HEIGHT_MIN_PX && mid < SANKEY_HEIGHT_MAX_PX);
+    }
+
+    #[test]
+    fn scatter_fill_classifies_zero_pile_and_well_spread() {
+        // a well-spread cloud filling its bounding box: many distinct cells, no edge pileup
+        let xs: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        let ys: Vec<f64> = (0..100).map(|i| ((i * 37) % 100) as f64).collect();
+        let spread = scatter_fill_stats(&xs, &ys);
+        assert!(!spread.degenerate && !spread.sparse);
+        let spread_panel = PanelKind::ScatterPair {
+            xs:         xs.clone(),
+            ys:         ys.clone(),
+            sizes:      None,
+            x_label:    "x".to_string(),
+            y_label:    "y".to_string(),
+            size_label: None,
+        };
+        // a well-filled ScatterPair keeps its full overview-panel height
+        assert_eq!(panel_render_height(&spread_panel), OVERVIEW_ROW_HEIGHT_PX);
+        // and a sparse one is shorter than a well-filled one
+        assert!(SCATTER_SPARSE_HEIGHT_PX < OVERVIEW_ROW_HEIGHT_PX);
+
+        // sparse-but-not-degenerate: most points pile against the low x/y edge, a few spread out
+        let mut sx = vec![0.0_f64; 75];
+        let mut sy = vec![0.0_f64; 75];
+        for i in 0..25 {
+            sx.push(i as f64 * 4.0);
+            sy.push(i as f64 * 4.0);
+        }
+        let sparse = scatter_fill_stats(&sx, &sy);
+        assert!(sparse.sparse && !sparse.degenerate);
+        let sparse_panel = PanelKind::ScatterPair {
+            xs:         sx,
+            ys:         sy,
+            sizes:      None,
+            x_label:    "x".to_string(),
+            y_label:    "y".to_string(),
+            size_label: None,
+        };
+        assert_eq!(panel_render_height(&sparse_panel), SCATTER_SPARSE_HEIGHT_PX);
+
+        // degenerate: a flat line (no y-spread) collapses to 1-D → dropped at build time
+        let flat_x: Vec<f64> = (0..50).map(|i| i as f64).collect();
+        let flat_y = vec![7.0_f64; 50];
+        let degen = scatter_fill_stats(&flat_x, &flat_y);
+        assert!(degen.degenerate && degen.sparse);
+    }
+
+    #[test]
+    fn measure_by_dim_forces_category_x_axis() {
+        // MeasureByDim x-labels can look numeric (magnitude "5.3", "6") while also including a
+        // non-numeric label ("6 SR") that carries the meaningful value. freq_bar_tick_text must
+        // return the labels so styled_x_axis pins a CATEGORY axis; otherwise plotly infers a
+        // linear x-axis and drops the non-numeric label's bar. Regression guard for the
+        // "killed by magnitude looked empty" bug (the 550 bar was rendered at zero width).
+        let panel = Panel::new(
+            "killed by magnitude".to_string(),
+            PanelKind::MeasureByDim {
+                labels: vec!["6 SR".to_string(), "5.3".to_string(), "(NULL)".to_string()],
+                values: vec![550.0, 0.0, 2.0],
+            },
+        );
+        let freq: FreqMap = std::collections::HashMap::new();
+        let ticks =
+            freq_bar_tick_text(&panel, &freq).expect("MeasureByDim must supply category ticks");
+        assert_eq!(ticks, vec!["6 SR", "5.3", "(NULL)"]);
+
+        // a non-bar panel still leaves its axis untouched (returns None → autodetected axis)
+        let other = Panel::new(
+            "c".to_string(),
+            PanelKind::CyclicProfile {
+                theta: vec![],
+                r:     vec![],
+            },
+        );
+        assert!(freq_bar_tick_text(&other, &freq).is_none());
     }
 
     #[test]

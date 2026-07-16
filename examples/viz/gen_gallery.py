@@ -733,7 +733,7 @@ FIGURES = [
     ("smart dashboard (Gapminder bubble, regions growth)",
      "Auto dashboard for regions_growth: a low-cardinality categorical entity "
      "(<code>region</code>) + a measure pair (<code>gdp_index</code> vs "
-     "<code>wellbeing_index</code>) + a quarterly date drive a <b>Gapminder-style animated bubble "
+     "<code>wellbeing_index</code>) + a monthly date drive a <b>Gapminder-style animated bubble "
      "chart</b> &mdash; one bubble per region, each tracing a <b>distinct curved path</b> through "
      "the measure space over time, sized by per-cell record count and colored by region (Play/Pause "
      "+ scrub slider, legend of regions). Strict quality gates (min rows per cell, near-complete "

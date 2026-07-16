@@ -1,55 +1,333 @@
 city,lat,lon,census_region,population_m,median_age
-New York,40.7128,-74.0060,Northeast,8.3,38.2
-Los Angeles,34.0522,-118.2437,West,3.8,35.8
-Chicago,41.8781,-87.6298,Midwest,2.7,35.2
-Houston,29.7604,-95.3698,South,2.3,33.4
-Phoenix,33.4484,-112.0740,West,1.6,34.1
-Philadelphia,39.9526,-75.1652,Northeast,1.6,34.7
-San Antonio,29.4241,-98.4936,South,1.5,34.0
-San Diego,32.7157,-117.1611,West,1.4,35.1
-Dallas,32.7767,-96.7970,South,1.3,32.9
-San Jose,37.3382,-121.8863,West,1.0,37.0
-Austin,30.2672,-97.7431,South,1.0,34.0
-Jacksonville,30.3322,-81.6557,South,0.95,36.0
-Fort Worth,32.7555,-97.3308,South,0.92,33.5
-Columbus,39.9612,-82.9988,Midwest,0.9,32.6
-Indianapolis,39.7684,-86.1581,Midwest,0.88,34.3
-Charlotte,35.2271,-80.8431,South,0.9,34.5
-Seattle,47.6062,-122.3321,West,0.74,35.5
-Denver,39.7392,-104.9903,West,0.71,34.6
-Washington,38.9072,-77.0369,South,0.69,34.0
-Boston,42.3601,-71.0589,Northeast,0.65,32.1
-Nashville,36.1627,-86.7816,South,0.69,34.3
-Portland,45.5152,-122.6784,West,0.65,37.6
-Las Vegas,36.1699,-115.1398,West,0.64,38.0
-Detroit,42.3314,-83.0458,Midwest,0.63,34.6
-Memphis,35.1495,-90.0490,South,0.63,34.0
-Louisville,38.2527,-85.7585,South,0.62,38.4
-Milwaukee,43.0389,-87.9065,Midwest,0.57,31.5
-Albuquerque,35.0844,-106.6504,West,0.56,36.0
-Tucson,32.2226,-110.9747,West,0.54,33.9
-Sacramento,38.5816,-121.4944,West,0.52,34.6
-Kansas City,39.0997,-94.5786,Midwest,0.51,34.9
-Atlanta,33.7490,-84.3880,South,0.5,33.2
-Omaha,41.2565,-95.9345,Midwest,0.49,34.4
-Raleigh,35.7796,-78.6382,South,0.47,33.8
-Minneapolis,44.9778,-93.2650,Midwest,0.43,32.4
-Tulsa,36.1540,-95.9928,South,0.41,34.5
-New Orleans,29.9511,-90.0715,South,0.38,38.0
-Wichita,37.6872,-97.3301,Midwest,0.39,35.0
-Cleveland,41.4993,-81.6944,Midwest,0.37,36.1
-Tampa,27.9506,-82.4572,South,0.4,35.6
-St. Louis,38.6270,-90.1994,Midwest,0.3,35.5
-Pittsburgh,40.4406,-79.9959,Northeast,0.3,32.9
-Cincinnati,39.1031,-84.5120,Midwest,0.31,32.1
-Salt Lake City,40.7608,-111.8910,West,0.2,32.0
-Birmingham,33.5186,-86.8104,South,0.2,35.6
-Boise,43.6150,-116.2023,West,0.24,36.6
-Richmond,37.5407,-77.4360,South,0.23,34.0
-Des Moines,41.5868,-93.6250,Midwest,0.21,34.0
-Hartford,41.7658,-72.6734,Northeast,0.12,30.5
-Providence,41.8240,-71.4128,Northeast,0.19,29.8
-Charleston,32.7765,-79.9311,South,0.15,34.5
-Anchorage,61.2181,-149.9003,West,0.29,34.5
-Honolulu,21.3069,-157.8583,West,0.35,43.0
+Birmingham,33.5186,-86.8104,South,0.2,36.1
+Montgomery,32.3668,-86.3000,South,0.2,35.4
+Huntsville,34.7304,-86.5861,South,0.22,37.9
+Mobile,30.6954,-88.0399,South,0.18,37.2
+Tuscaloosa,33.2098,-87.5692,South,0.1,29.8
+Auburn,32.6099,-85.4808,South,0.07,25.4
+Anchorage,61.2181,-149.9003,West,0.29,34.6
+Fairbanks,64.8378,-147.7164,West,0.03,30.9
+Juneau,58.3019,-134.4197,West,0.03,39.1
+Sitka,57.0531,-135.3300,West,0.01,42.3
+Wasilla,61.5814,-149.4394,West,0.01,33.7
+Phoenix,33.4484,-112.0740,West,1.64,34.3
+Tucson,32.2226,-110.9747,West,0.54,34.1
+Mesa,33.4152,-111.8315,West,0.51,37.6
+Chandler,33.3062,-111.8413,West,0.28,37.3
+Scottsdale,33.4942,-111.9261,West,0.24,47.3
+Glendale,33.5387,-112.1860,West,0.25,33.8
+Flagstaff,35.1983,-111.6513,West,0.08,27.5
+Little Rock,34.7465,-92.2896,South,0.2,35.9
+Fayetteville,36.0626,-94.1574,South,0.09,29.3
+Fort Smith,35.3859,-94.3985,South,0.09,35.1
+Springdale,36.1867,-94.1288,South,0.08,31.4
+Jonesboro,35.8423,-90.7043,South,0.08,32.0
+Hot Springs,34.5037,-93.0552,South,0.04,42.6
+Los Angeles,34.0522,-118.2437,West,3.82,35.8
+San Diego,32.7157,-117.1611,West,1.38,35.1
+San Jose,37.3382,-121.8863,West,0.97,37.0
+San Francisco,37.7749,-122.4194,West,0.81,38.3
+Fresno,36.7378,-119.7871,West,0.54,31.4
+Sacramento,38.5816,-121.4944,West,0.52,34.9
+Long Beach,33.7701,-118.1937,West,0.46,35.2
+Oakland,37.8044,-122.2712,West,0.44,37.1
+Bakersfield,35.3733,-119.0187,West,0.41,30.7
+Anaheim,33.8366,-117.9143,West,0.35,34.6
+Santa Ana,33.7455,-117.8677,West,0.31,32.9
+Riverside,33.9806,-117.3755,West,0.31,31.6
+Stockton,37.9577,-121.2908,West,0.32,32.1
+Irvine,33.6846,-117.8265,West,0.31,34.2
+San Bernardino,34.1083,-117.2898,West,0.22,30.4
+Denver,39.7392,-104.9903,West,0.72,34.7
+Colorado Springs,38.8339,-104.8214,West,0.48,34.9
+Aurora,39.7294,-104.8319,West,0.39,33.8
+Fort Collins,40.5853,-105.0844,West,0.17,30.1
+Lakewood,39.7047,-105.0814,West,0.16,38.4
+Boulder,40.0150,-105.2705,West,0.11,28.8
+Pueblo,38.2544,-104.6091,West,0.11,36.3
+Bridgeport,41.1865,-73.1952,Northeast,0.15,33.7
+New Haven,41.3083,-72.9279,Northeast,0.14,30.6
+Stamford,41.0534,-73.5387,Northeast,0.14,37.2
+Hartford,41.7658,-72.6734,Northeast,0.12,30.8
+Waterbury,41.5582,-73.0515,Northeast,0.11,35.0
+Norwalk,41.1177,-73.4079,Northeast,0.09,38.6
+Wilmington,39.7391,-75.5398,South,0.07,35.2
+Dover,39.1582,-75.5244,South,0.04,34.1
+Newark,39.6837,-75.7497,South,0.03,25.3
+Middletown,39.4496,-75.7163,South,0.02,33.9
+Bear,39.6293,-75.6580,South,0.02,36.7
+Smyrna,39.2998,-75.6046,South,0.01,34.5
+Jacksonville,30.3322,-81.6557,South,0.97,35.9
 Miami,25.7617,-80.1918,South,0.44,40.1
+Tampa,27.9506,-82.4572,South,0.4,35.4
+Orlando,28.5383,-81.3792,South,0.31,33.7
+St. Petersburg,27.7676,-82.6403,South,0.26,42.3
+Hialeah,25.8576,-80.2781,South,0.22,44.8
+Tallahassee,30.4383,-84.2807,South,0.2,27.5
+Fort Lauderdale,26.1224,-80.1373,South,0.18,42.9
+Port St. Lucie,27.2730,-80.3582,South,0.23,44.0
+Cape Coral,26.5629,-81.9495,South,0.2,46.5
+Pembroke Pines,26.0086,-80.2963,South,0.17,41.2
+Atlanta,33.7490,-84.3880,South,0.5,33.2
+Augusta,33.4735,-82.0105,South,0.2,34.8
+Columbus,32.4610,-84.9877,South,0.21,34.0
+Savannah,32.0809,-81.0912,South,0.15,31.5
+Athens,33.9519,-83.3576,South,0.13,26.8
+Macon,32.8407,-83.6324,South,0.16,35.6
+Sandy Springs,33.9304,-84.3733,South,0.11,37.4
+Honolulu,21.3069,-157.8583,West,0.35,43.1
+Hilo,19.7297,-155.0900,West,0.05,42.0
+Kailua,21.4022,-157.7394,West,0.04,44.5
+Kaneohe,21.4180,-157.8036,West,0.03,43.8
+Waipahu,21.3867,-158.0092,West,0.04,38.9
+Kahului,20.8893,-156.4729,West,0.03,39.4
+Boise,43.6150,-116.2023,West,0.24,36.6
+Meridian,43.6121,-116.3915,West,0.13,35.8
+Nampa,43.5407,-116.5635,West,0.11,32.7
+Idaho Falls,43.4917,-112.0340,West,0.07,33.1
+Pocatello,42.8713,-112.4455,West,0.06,31.4
+Caldwell,43.6629,-116.6874,West,0.06,30.2
+Coeur d'Alene,47.6777,-116.7805,West,0.06,38.5
+Chicago,41.8781,-87.6298,Midwest,2.66,35.3
+Aurora,41.7606,-88.3201,Midwest,0.18,34.6
+Naperville,41.7508,-88.1535,Midwest,0.15,40.9
+Joliet,41.5250,-88.0817,Midwest,0.15,34.1
+Rockford,42.2711,-89.0940,Midwest,0.15,36.7
+Springfield,39.7817,-89.6501,Midwest,0.11,39.4
+Peoria,40.6936,-89.5890,Midwest,0.11,34.2
+Indianapolis,39.7684,-86.1581,Midwest,0.89,34.3
+Fort Wayne,41.0793,-85.1394,Midwest,0.27,35.1
+Evansville,37.9716,-87.5711,Midwest,0.12,36.0
+South Bend,41.6764,-86.2520,Midwest,0.1,33.2
+Carmel,39.9784,-86.1180,Midwest,0.1,41.6
+Fishers,39.9568,-85.9686,Midwest,0.1,36.7
+Bloomington,39.1653,-86.5264,Midwest,0.08,24.1
+Des Moines,41.5868,-93.6250,Midwest,0.21,34.2
+Cedar Rapids,41.9779,-91.6656,Midwest,0.14,36.5
+Davenport,41.5236,-90.5776,Midwest,0.1,35.7
+Sioux City,42.4999,-96.4003,Midwest,0.08,33.9
+Iowa City,41.6611,-91.5302,Midwest,0.08,26.3
+Ames,42.0308,-93.6319,Midwest,0.07,23.8
+Wichita,37.6872,-97.3301,Midwest,0.4,34.6
+Overland Park,38.9822,-94.6708,Midwest,0.2,38.9
+Kansas City,39.1155,-94.6268,Midwest,0.16,34.1
+Olathe,38.8814,-94.8191,Midwest,0.15,34.8
+Topeka,39.0473,-95.6752,Midwest,0.13,37.0
+Lawrence,38.9717,-95.2353,Midwest,0.09,27.4
+Louisville,38.2527,-85.7585,South,0.63,37.4
+Lexington,38.0406,-84.5037,South,0.32,34.9
+Bowling Green,36.9685,-86.4808,South,0.07,29.9
+Owensboro,37.7742,-87.1133,South,0.06,37.6
+Covington,39.0837,-84.5086,South,0.04,34.2
+Frankfort,38.2009,-84.8733,South,0.03,39.1
+New Orleans,29.9511,-90.0715,South,0.38,37.2
+Baton Rouge,30.4515,-91.1871,South,0.22,31.5
+Shreveport,32.5252,-93.7502,South,0.19,35.4
+Lafayette,30.2241,-92.0198,South,0.12,34.0
+Lake Charles,30.2266,-93.2174,South,0.08,34.7
+Kenner,29.9941,-90.2417,South,0.07,37.1
+Portland,43.6591,-70.2568,Northeast,0.07,37.1
+Lewiston,44.1004,-70.2148,Northeast,0.04,36.5
+Bangor,44.8016,-68.7712,Northeast,0.03,37.9
+South Portland,43.6415,-70.2409,Northeast,0.03,41.2
+Auburn,44.0979,-70.2312,Northeast,0.02,40.8
+Augusta,44.3106,-69.7795,Northeast,0.02,42.3
+Baltimore,39.2904,-76.6122,South,0.58,35.5
+Frederick,39.4143,-77.4105,South,0.08,36.8
+Rockville,39.0840,-77.1528,South,0.07,39.4
+Gaithersburg,39.1434,-77.2014,South,0.07,36.1
+Bowie,38.9427,-76.7302,South,0.06,40.2
+Annapolis,38.9784,-76.4922,South,0.04,37.7
+Boston,42.3601,-71.0589,Northeast,0.65,32.5
+Worcester,42.2626,-71.8023,Northeast,0.21,34.0
+Springfield,42.1015,-72.5898,Northeast,0.15,33.1
+Cambridge,42.3736,-71.1097,Northeast,0.12,30.6
+Lowell,42.6334,-71.3162,Northeast,0.11,33.4
+Quincy,42.2529,-71.0023,Northeast,0.1,38.9
+Detroit,42.3314,-83.0458,Midwest,0.63,35.1
+Grand Rapids,42.9634,-85.6681,Midwest,0.2,31.4
+Warren,42.5145,-83.0147,Midwest,0.14,40.2
+Sterling Heights,42.5803,-83.0302,Midwest,0.13,42.6
+Ann Arbor,42.2808,-83.7430,Midwest,0.12,27.8
+Lansing,42.7325,-84.5555,Midwest,0.11,32.9
+Flint,43.0125,-83.6875,Midwest,0.08,34.7
+Minneapolis,44.9778,-93.2650,Midwest,0.43,32.4
+St. Paul,44.9537,-93.0900,Midwest,0.31,32.0
+Rochester,44.0121,-92.4802,Midwest,0.12,36.1
+Duluth,46.7867,-92.1005,Midwest,0.09,33.8
+Bloomington,44.8408,-93.2983,Midwest,0.09,41.7
+Brooklyn Park,45.0941,-93.3563,Midwest,0.08,34.2
+Jackson,32.2988,-90.1848,South,0.15,32.6
+Gulfport,30.3674,-89.0928,South,0.07,36.0
+Southaven,34.9889,-90.0126,South,0.05,35.4
+Hattiesburg,31.3271,-89.2903,South,0.05,28.4
+Biloxi,30.3960,-88.8853,South,0.05,36.9
+Meridian,32.3643,-88.7037,South,0.03,36.2
+Kansas City,39.0997,-94.5786,Midwest,0.51,35.0
+St. Louis,38.6270,-90.1994,Midwest,0.3,35.9
+Springfield,37.2089,-93.2923,Midwest,0.17,33.4
+Columbia,38.9517,-92.3341,Midwest,0.13,27.6
+Independence,39.0911,-94.4155,Midwest,0.12,38.1
+Lees Summit,38.9108,-94.3822,Midwest,0.1,39.4
+Billings,45.7833,-108.5007,West,0.12,37.1
+Missoula,46.8721,-113.9940,West,0.08,31.6
+Great Falls,47.5053,-111.3008,West,0.06,38.4
+Bozeman,45.6770,-111.0429,West,0.05,28.2
+Butte,46.0038,-112.5348,West,0.03,40.1
+Helena,46.5891,-112.0391,West,0.03,39.0
+Omaha,41.2565,-95.9345,Midwest,0.49,34.6
+Lincoln,40.8136,-96.7026,Midwest,0.29,32.4
+Bellevue,41.1544,-95.9146,Midwest,0.06,35.9
+Grand Island,40.9264,-98.3420,Midwest,0.05,33.7
+Kearney,40.6994,-99.0817,Midwest,0.03,29.8
+Fremont,41.4333,-96.4981,Midwest,0.03,36.5
+Las Vegas,36.1699,-115.1398,West,0.65,37.9
+Henderson,36.0395,-114.9817,West,0.32,41.2
+Reno,39.5296,-119.8138,West,0.26,35.8
+North Las Vegas,36.1989,-115.1175,West,0.28,32.0
+Sparks,39.5349,-119.7527,West,0.11,36.4
+Carson City,39.1638,-119.7674,West,0.06,41.0
+Manchester,42.9956,-71.4548,Northeast,0.11,36.1
+Nashua,42.7654,-71.4676,Northeast,0.09,39.2
+Concord,43.2081,-71.5376,Northeast,0.04,40.3
+Dover,43.1979,-70.8737,Northeast,0.03,36.8
+Rochester,43.3045,-70.9756,Northeast,0.03,41.5
+Portsmouth,43.0718,-70.7626,Northeast,0.02,43.7
+Newark,40.7357,-74.1724,Northeast,0.31,34.6
+Jersey City,40.7178,-74.0431,Northeast,0.29,34.1
+Paterson,40.9168,-74.1718,Northeast,0.16,33.2
+Elizabeth,40.6640,-74.2107,Northeast,0.14,33.9
+Trenton,40.2171,-74.7429,Northeast,0.09,34.5
+Camden,39.9259,-75.1196,Northeast,0.07,33.0
+Albuquerque,35.0844,-106.6504,West,0.56,36.4
+Las Cruces,32.3199,-106.7637,West,0.11,33.1
+Rio Rancho,35.2328,-106.6630,West,0.1,38.6
+Santa Fe,35.6870,-105.9378,West,0.09,45.2
+Roswell,33.3943,-104.5230,West,0.05,35.8
+Farmington,36.7281,-108.2187,West,0.04,34.3
+New York,40.7128,-74.0060,Northeast,8.34,38.2
+Buffalo,42.8864,-78.8784,Northeast,0.28,33.4
+Rochester,43.1566,-77.6088,Northeast,0.21,31.9
+Yonkers,40.9312,-73.8988,Northeast,0.21,38.5
+Syracuse,43.0481,-76.1474,Northeast,0.15,30.7
+Albany,42.6526,-73.7562,Northeast,0.1,31.2
+New Rochelle,40.9115,-73.7823,Northeast,0.08,39.8
+Charlotte,35.2271,-80.8431,South,0.88,34.7
+Raleigh,35.7796,-78.6382,South,0.47,33.8
+Greensboro,36.0726,-79.7920,South,0.3,35.1
+Durham,35.9940,-78.8986,South,0.28,33.9
+Winston-Salem,36.0999,-80.2442,South,0.25,35.6
+Fayetteville,35.0527,-78.8784,South,0.21,30.4
+Cary,35.7915,-78.7811,South,0.17,38.2
+Fargo,46.8772,-96.7898,Midwest,0.13,31.4
+Bismarck,46.8083,-100.7837,Midwest,0.07,36.2
+Grand Forks,47.9253,-97.0329,Midwest,0.06,29.7
+Minot,48.2330,-101.2923,Midwest,0.05,32.8
+West Fargo,46.8747,-96.9003,Midwest,0.04,33.5
+Williston,48.1470,-103.6180,Midwest,0.03,31.0
+Columbus,39.9612,-82.9988,Midwest,0.91,32.6
+Cleveland,41.4993,-81.6944,Midwest,0.37,36.3
+Cincinnati,39.1031,-84.5120,Midwest,0.31,32.5
+Toledo,41.6528,-83.5379,Midwest,0.27,35.1
+Akron,41.0814,-81.5190,Midwest,0.19,36.8
+Dayton,39.7589,-84.1916,Midwest,0.14,34.0
+Oklahoma City,35.4676,-97.5164,South,0.69,34.5
+Tulsa,36.1540,-95.9928,South,0.41,35.0
+Norman,35.2226,-97.4395,South,0.13,29.4
+Broken Arrow,36.0526,-95.7908,South,0.11,36.1
+Lawton,34.6036,-98.3959,South,0.09,32.7
+Edmond,35.6528,-97.4781,South,0.09,36.9
+Portland,45.5152,-122.6784,West,0.65,37.7
+Salem,44.9429,-123.0351,West,0.18,35.6
+Eugene,44.0521,-123.0868,West,0.18,34.2
+Gresham,45.5001,-122.4302,West,0.11,35.4
+Hillsboro,45.5229,-122.9898,West,0.11,35.9
+Bend,44.0582,-121.3153,West,0.1,38.7
+Philadelphia,39.9526,-75.1652,Northeast,1.58,34.6
+Pittsburgh,40.4406,-79.9959,Northeast,0.3,32.9
+Allentown,40.6084,-75.4902,Northeast,0.13,33.1
+Erie,42.1292,-80.0851,Northeast,0.09,34.8
+Reading,40.3356,-75.9269,Northeast,0.09,30.6
+Scranton,41.4090,-75.6624,Northeast,0.08,35.0
+Providence,41.8240,-71.4128,Northeast,0.19,29.4
+Cranston,41.7798,-71.4373,Northeast,0.08,40.6
+Warwick,41.7001,-71.4162,Northeast,0.08,44.2
+Pawtucket,41.8787,-71.3826,Northeast,0.07,35.7
+East Providence,41.8137,-71.3701,Northeast,0.05,42.1
+Woonsocket,42.0028,-71.5153,Northeast,0.04,36.3
+Columbia,34.0007,-81.0348,South,0.14,29.1
+Charleston,32.7765,-79.9311,South,0.15,34.6
+North Charleston,32.8546,-79.9748,South,0.12,32.4
+Mount Pleasant,32.8323,-79.8284,South,0.09,40.3
+Greenville,34.8526,-82.3940,South,0.07,34.1
+Rock Hill,34.9249,-81.0251,South,0.07,33.5
+Sioux Falls,43.5460,-96.7313,Midwest,0.2,35.1
+Rapid City,44.0805,-103.2310,Midwest,0.08,35.8
+Aberdeen,45.4647,-98.4865,Midwest,0.03,34.2
+Brookings,44.3114,-96.7984,Midwest,0.03,25.6
+Watertown,44.8994,-97.1151,Midwest,0.02,36.4
+Pierre,44.3683,-100.3510,Midwest,0.01,38.9
+Nashville,36.1627,-86.7816,South,0.69,34.2
+Memphis,35.1495,-90.0490,South,0.63,34.4
+Knoxville,35.9606,-83.9207,South,0.19,33.6
+Chattanooga,35.0456,-85.3097,South,0.18,37.1
+Clarksville,36.5298,-87.3595,South,0.17,29.8
+Murfreesboro,35.8456,-86.3903,South,0.16,30.9
+Houston,29.7604,-95.3698,South,2.3,33.4
+San Antonio,29.4241,-98.4936,South,1.47,34.0
+Dallas,32.7767,-96.7970,South,1.3,33.1
+Austin,30.2672,-97.7431,South,0.96,34.0
+Fort Worth,32.7555,-97.3308,South,0.96,33.2
+El Paso,31.7619,-106.4850,South,0.68,33.7
+Arlington,32.7357,-97.1081,South,0.39,33.0
+Corpus Christi,27.8006,-97.3964,South,0.32,35.1
+Plano,33.0198,-96.6989,South,0.29,38.9
+Laredo,27.5306,-99.4803,South,0.26,29.4
+Lubbock,33.5779,-101.8552,South,0.26,30.6
+Garland,32.9126,-96.6389,South,0.24,34.2
+Salt Lake City,40.7608,-111.8910,West,0.2,32.6
+West Valley City,40.6916,-112.0011,West,0.14,30.1
+Provo,40.2338,-111.6585,West,0.12,24.3
+West Jordan,40.6097,-111.9391,West,0.12,31.4
+Orem,40.2969,-111.6946,West,0.1,25.8
+Ogden,41.2230,-111.9738,West,0.09,30.9
+St. George,37.0965,-113.5684,West,0.1,35.7
+Burlington,44.4759,-73.2121,Northeast,0.04,27.3
+South Burlington,44.4670,-73.1710,Northeast,0.02,40.6
+Rutland,43.6106,-72.9726,Northeast,0.02,42.1
+Essex,44.4906,-73.1104,Northeast,0.02,43.5
+Colchester,44.5438,-73.1476,Northeast,0.02,38.7
+Montpelier,44.2601,-72.5754,Northeast,0.01,44.8
+Virginia Beach,36.8529,-75.9780,South,0.46,37.4
+Norfolk,36.8508,-76.2859,South,0.24,31.2
+Chesapeake,36.7682,-76.2875,South,0.25,37.9
+Richmond,37.5407,-77.4360,South,0.23,34.1
+Arlington,38.8816,-77.0910,South,0.24,34.3
+Alexandria,38.8048,-77.0469,South,0.16,36.0
+Newport News,37.0871,-76.4730,South,0.19,34.8
+Seattle,47.6062,-122.3321,West,0.74,35.5
+Spokane,47.6588,-117.4260,West,0.23,35.8
+Tacoma,47.2529,-122.4443,West,0.22,35.2
+Vancouver,45.6387,-122.6615,West,0.19,37.1
+Bellevue,47.6101,-122.2015,West,0.15,38.4
+Everett,47.9790,-122.2021,West,0.11,34.9
+Kent,47.3809,-122.2348,West,0.13,33.6
+Charleston,38.3498,-81.6326,South,0.05,40.2
+Huntington,38.4192,-82.4452,South,0.05,35.1
+Morgantown,39.6295,-79.9559,South,0.03,26.4
+Parkersburg,39.2667,-81.5615,South,0.03,41.8
+Wheeling,40.0640,-80.7209,South,0.03,42.6
+Martinsburg,39.4562,-77.9639,South,0.02,36.9
+Milwaukee,43.0389,-87.9065,Midwest,0.56,31.7
+Madison,43.0731,-89.4012,Midwest,0.27,31.2
+Green Bay,44.5133,-88.0158,Midwest,0.11,35.4
+Kenosha,42.5847,-87.8212,Midwest,0.1,35.0
+Racine,42.7261,-87.7829,Midwest,0.08,35.9
+Appleton,44.2619,-88.4154,Midwest,0.08,37.1
+Cheyenne,41.1400,-104.8202,West,0.07,36.4
+Casper,42.8666,-106.3131,West,0.06,36.9
+Laramie,41.3114,-105.5911,West,0.03,26.1
+Gillette,44.2911,-105.5022,West,0.03,32.0
+Rock Springs,41.5875,-109.2029,West,0.02,33.5
+Sheridan,44.7972,-106.9562,West,0.02,39.8
+Washington,38.9072,-77.0369,South,0.71,34.0

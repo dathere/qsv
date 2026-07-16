@@ -1,21 +1,111 @@
 iso3,country,gdp_usd_tn
 USA,United States,27.4
-CHN,China,17.8
-JPN,Japan,4.2
-DEU,Germany,4.5
-IND,India,3.9
-GBR,United Kingdom,3.3
-FRA,France,3.0
-BRA,Brazil,2.2
-CAN,Canada,2.1
-ITA,Italy,2.3
-AUS,Australia,1.7
-ESP,Spain,1.6
-MEX,Mexico,1.8
-KOR,South Korea,1.7
-RUS,Russia,2.0
-ZAF,South Africa,0.4
-NGA,Nigeria,0.5
+CAN,Canada,2.14
+MEX,Mexico,1.79
+GTM,Guatemala,0.1
+CRI,Costa Rica,0.09
+PAN,Panama,0.08
+CUB,Cuba,0.11
+DOM,Dominican Republic,0.12
+HND,Honduras,0.03
+JAM,Jamaica,0.02
+SLV,El Salvador,0.03
+NIC,Nicaragua,0.02
+BRA,Brazil,2.17
+ARG,Argentina,0.64
+COL,Colombia,0.36
+CHL,Chile,0.34
+PER,Peru,0.27
+ECU,Ecuador,0.12
+VEN,Venezuela,0.1
+BOL,Bolivia,0.05
+PRY,Paraguay,0.04
+URY,Uruguay,0.08
+GUY,Guyana,0.02
+DEU,Germany,4.46
+GBR,United Kingdom,3.34
+FRA,France,3.03
+ITA,Italy,2.25
+ESP,Spain,1.58
+NLD,Netherlands,1.12
+CHE,Switzerland,0.91
+POL,Poland,0.81
+SWE,Sweden,0.59
+BEL,Belgium,0.63
+IRL,Ireland,0.55
+AUT,Austria,0.52
+NOR,Norway,0.49
+DNK,Denmark,0.4
+FIN,Finland,0.3
+PRT,Portugal,0.29
+CZE,Czechia,0.34
+ROU,Romania,0.35
+GRC,Greece,0.24
+HUN,Hungary,0.21
+UKR,Ukraine,0.18
+SVK,Slovakia,0.13
+BGR,Bulgaria,0.1
+HRV,Croatia,0.08
+SRB,Serbia,0.07
+LTU,Lithuania,0.08
+SVN,Slovenia,0.07
+LUX,Luxembourg,0.09
+ISL,Iceland,0.03
+CHN,China,17.79
+JPN,Japan,4.21
+IND,India,3.55
+KOR,South Korea,1.71
+IDN,Indonesia,1.37
+TUR,Turkey,1.11
+SAU,Saudi Arabia,1.07
+TWN,Taiwan,0.79
+THA,Thailand,0.51
+ISR,Israel,0.52
+ARE,United Arab Emirates,0.5
+SGP,Singapore,0.5
+PHL,Philippines,0.44
+MYS,Malaysia,0.42
+BGD,Bangladesh,0.45
+VNM,Vietnam,0.43
+PAK,Pakistan,0.34
+IRN,Iran,0.4
+IRQ,Iraq,0.25
+KAZ,Kazakhstan,0.26
+QAT,Qatar,0.24
+KWT,Kuwait,0.16
+UZB,Uzbekistan,0.09
+LKA,Sri Lanka,0.08
+MMR,Myanmar,0.07
+JOR,Jordan,0.05
+LBN,Lebanon,0.02
+NPL,Nepal,0.04
+KHM,Cambodia,0.03
+AZE,Azerbaijan,0.07
+OMN,Oman,0.11
+BHR,Bahrain,0.04
+GEO,Georgia,0.03
+NGA,Nigeria,0.36
+ZAF,South Africa,0.38
 EGY,Egypt,0.4
-ARG,Argentina,0.6
-SAU,Saudi Arabia,1.1
+DZA,Algeria,0.24
+MAR,Morocco,0.14
+KEN,Kenya,0.11
+ETH,Ethiopia,0.16
+GHA,Ghana,0.08
+AGO,Angola,0.09
+TZA,Tanzania,0.08
+CIV,Cote d'Ivoire,0.08
+TUN,Tunisia,0.05
+UGA,Uganda,0.05
+CMR,Cameroon,0.05
+ZMB,Zambia,0.03
+SEN,Senegal,0.03
+ZWE,Zimbabwe,0.03
+MOZ,Mozambique,0.02
+LBY,Libya,0.04
+SDN,Sudan,0.03
+BWA,Botswana,0.02
+AUS,Australia,1.69
+NZL,New Zealand,0.25
+PNG,Papua New Guinea,0.03
+FJI,Fiji,0.01

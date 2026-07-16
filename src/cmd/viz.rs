@@ -8770,6 +8770,36 @@ fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
     }
 }
 
+/// Whether a `MeasureByDim` bar panel's value (y) axis should be logarithmic under the resolved
+/// `--log-scale` mode, from its already-aggregated top-N bar values. A log axis can't place 0 or
+/// negative values, so EVERY shown bar must be strictly positive — a single dominant bar over a
+/// pile of zeros (the common degenerate case) therefore stays LINEAR, since log couldn't render
+/// the zeros anyway. Under `Auto`, additionally requires the max/min ratio to span
+/// `LOG_SCALE_MIN_RATIO` — the high-dynamic-range case a linear axis squashes into one tall bar
+/// with the rest flattened against the baseline.
+fn measure_by_dim_logs(mode: LogScale, values: &[f64]) -> bool {
+    if mode == LogScale::Off {
+        return false;
+    }
+    let (mut min_pos, mut max_pos) = (f64::INFINITY, f64::NEG_INFINITY);
+    let mut n = 0_usize;
+    for &v in values {
+        if !v.is_finite() || v <= 0.0 {
+            // any non-positive (or non-finite) bar rules out a log value axis outright
+            return false;
+        }
+        n += 1;
+        min_pos = min_pos.min(v);
+        max_pos = max_pos.max(v);
+    }
+    match mode {
+        // forcing log still needs 2+ positive bars to be meaningful
+        LogScale::On => n >= 2,
+        LogScale::Auto => n >= 3 && max_pos >= min_pos * LOG_SCALE_MIN_RATIO,
+        LogScale::Off => false,
+    }
+}
+
 /// Whether a `viz smart` distribution panel should render as a violin instead of a box, under
 /// the resolved `--violin` mode. A violin (KDE silhouette + inner quartile box + mean line) is a
 /// strict superset of a box plot, so under `auto` it's the DEFAULT representation whenever it can
@@ -8796,19 +8826,20 @@ fn wants_violin(
 }
 
 /// Whether a panel will render with a logarithmic y-axis under the resolved `--log-scale` mode.
-/// Frequency bars decide from their counts (high dynamic range); box panels carry the verdict
-/// resolved at classification time (`Panel::value_log`, from the cached min/max — see
-/// `box_panel_logs`); every other panel kind is always linear. Used both to gate the panel's
-/// y-axis title cue and to size the dashboard's left margin to fit it.
+/// Frequency bars and measure-by-dimension bars decide from their values (high dynamic range); box
+/// panels carry the verdict resolved at classification time (`Panel::value_log`, from the cached
+/// min/max — see `box_panel_logs`); every other panel kind is always linear. Used both to gate the
+/// panel's y-axis title cue and to size the dashboard's left margin to fit it.
 fn panel_is_log(panel: &Panel, freq: &FreqMap, log_scale: LogScale) -> bool {
-    match panel.kind {
+    match &panel.kind {
         PanelKind::FreqBar { idx } => {
             let counts: Vec<u64> = freq
-                .get(&idx)
+                .get(idx)
                 .map(|bars| bars.iter().map(|b| b.count).collect())
                 .unwrap_or_default();
             freq_panel_logs(log_scale, &counts)
         },
+        PanelKind::MeasureByDim { values, .. } => measure_by_dim_logs(log_scale, values),
         PanelKind::BoxStats { .. }
         | PanelKind::BoxRaw { .. }
         | PanelKind::BoxOutliers { .. }
@@ -18852,7 +18883,16 @@ fn panel_trace(
             sc
         },
         PanelKind::MeasureByDim { labels, values } => {
-            bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
+            // a high-dynamic-range measure (one big group over much smaller ones) squashes on a
+            // linear axis; a log value axis spreads the bars out — but only when every bar is
+            // strictly positive (see `measure_by_dim_logs`).
+            log_y = measure_by_dim_logs(log_scale, values);
+            // headroom only frames the LINEAR range (`0..=max*1.15`); a log value axis autoranges
+            // like a box panel (it can't assume counts >= 1, so `bar_max` stays None → the "log
+            // scale" value cue, not "count (log)").
+            if !log_y {
+                bar_max = Some(values.iter().copied().fold(0.0_f64, f64::max));
+            }
             let mut bar = Bar::new(labels.clone(), values.clone())
                 .name(panel.name.clone())
                 .marker(Marker::new().color(color))
@@ -21892,7 +21932,10 @@ struct ScatterFill {
 /// (one place) so the build-time drop guard and the render-height branch stay in agreement.
 fn scatter_fill_stats(xs: &[f64], ys: &[f64]) -> ScatterFill {
     let n = xs.len().min(ys.len());
-    if n < 4 {
+    // fewer than 3 points can't form the 3 distinct cells the degenerate check below requires, so
+    // they're degenerate outright; 3+ points fall through to the real spread/distinct/edge checks
+    // (a valid 3-point, non-collinear scatter with axis spread is NOT dropped).
+    if n < 3 {
         return ScatterFill {
             degenerate: true,
             sparse:     true,
@@ -24325,6 +24368,30 @@ mod tests {
     }
 
     #[test]
+    fn measure_by_dim_logs_needs_all_positive_and_dynamic_range() {
+        // a dominating positive group (550) over much smaller positive groups (>= 50x) -> log
+        let dominated = [550.0, 8.0, 3.0, 2.0];
+        assert!(measure_by_dim_logs(LogScale::Auto, &dominated));
+        // a balanced spread (max/min < 50x) stays linear under auto
+        let balanced = [100.0, 80.0, 60.0];
+        assert!(!measure_by_dim_logs(LogScale::Auto, &balanced));
+        // auto needs at least 3 positive bars
+        assert!(!measure_by_dim_logs(LogScale::Auto, &[10_000.0, 1.0]));
+        // ANY non-positive bar rules out a log value axis (a log axis can't place 0 or negatives)
+        // -- this is the common "one tall bar over a pile of zeros" degenerate case, which
+        // stays LINEAR
+        assert!(!measure_by_dim_logs(
+            LogScale::Auto,
+            &[550.0, 0.0, 0.0, 0.0]
+        ));
+        assert!(!measure_by_dim_logs(LogScale::On, &[550.0, 0.0]));
+        assert!(!measure_by_dim_logs(LogScale::Auto, &[100.0, -5.0, 3.0]));
+        // `on` forces log for 2+ all-positive bars regardless of range; `off` never logs
+        assert!(measure_by_dim_logs(LogScale::On, &[100.0, 90.0]));
+        assert!(!measure_by_dim_logs(LogScale::Off, &[10_000.0, 100.0, 1.0]));
+    }
+
+    #[test]
     fn classify_low_card_string_is_bar() {
         assert!(matches!(
             classify(0, &stat("String", 3, Some(0.1))),
@@ -25509,6 +25576,12 @@ mod tests {
         let flat_y = vec![7.0_f64; 50];
         let degen = scatter_fill_stats(&flat_x, &flat_y);
         assert!(degen.degenerate && degen.sparse);
+
+        // exactly 3 non-collinear points with real 2-D spread are NOT degenerate (the early cutoff
+        // is n < 3, matching the "3 distinct cells" degenerate threshold — see roborev 3691); fewer
+        // than 3 points can't form a cloud and stay degenerate.
+        assert!(!scatter_fill_stats(&[0.0, 10.0, 5.0], &[0.0, 3.0, 10.0]).degenerate);
+        assert!(scatter_fill_stats(&[0.0, 10.0], &[0.0, 10.0]).degenerate);
     }
 
     #[test]

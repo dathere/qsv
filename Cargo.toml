@@ -230,7 +230,7 @@ itoa = "1"
 jaq-core = "3"
 jaq-json = { version = "2", features = ["serde"] }
 jaq-std = "3"
-jsonschema = { version = "0.47", features = [
+jsonschema = { version = "0.48", features = [
     "resolve-file",
     "resolve-http",
     "tls-aws-lc-rs",

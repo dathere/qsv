@@ -12,7 +12,7 @@ categories    = ["command-line-utilities", "parser-implementations"]
 license       = "MIT"
 autotests     = false
 edition       = "2024"
-rust-version  = "1.96"
+rust-version  = "1.97"
 resolver      = "3"
 autobins      = false
 

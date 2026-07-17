@@ -338,6 +338,38 @@ fn viz_slider_categorical_x_pinned() {
 }
 
 #[test]
+fn viz_bar_slider_distinct_bar_colors() {
+    // a single-series animated bar chart gives each category a distinct, category-keyed color
+    // (from PALETTE, in pinned category-array order) AND a stable per-bar `ids` (the category)
+    // so bars read as growing/shrinking in place instead of sliding between columns as it plays.
+    // `ids` is plotly's animation_group / object-constancy mechanism: without it plotly matches
+    // bars across frames by ARRAY INDEX, so a frame whose rows arrive in a different order makes
+    // a bar physically slide from one category's slot to another during the transition.
+    let wrk = Workdir::new("viz_bar_slider_distinct_bar_colors");
+    // frame 2021's rows are deliberately in a DIFFERENT order (C,B,A) than 2020 (A,B,C) so the
+    // index-vs-id distinction actually matters
+    wrk.create_from_string(
+        "d.csv",
+        "year,cat,v\n2020,A,5\n2020,B,3\n2020,C,7\n2021,C,2\n2021,B,6\n2021,A,4\n",
+    );
+
+    let mut cmd = wrk.command("viz");
+    cmd.args(["bar", "d.csv", "--x", "cat", "--y", "v", "--slider", "year"]);
+    let out = wrk.output(&mut cmd);
+    assert!(out.status.success());
+    let html = String::from_utf8_lossy(&out.stdout);
+
+    // pinned category order A,B,C -> PALETTE[0],[1],[2]; the base (2020) trace carries a
+    // per-category color array so A stays #4C78A8, B stays #F58518, C stays #54A24B
+    assert!(html.contains(r##""marker":{"color":["#4C78A8","#F58518","#54A24B"]}"##));
+    // the base trace's bars carry stable category ids in data order (A,B,C)...
+    assert!(html.contains(r#""ids":["A","B","C"]"#));
+    // ...and the 2021 frame keeps each bar's id even though its rows are in C,B,A order, so
+    // plotly transitions each bar in place by identity rather than sliding by index
+    assert!(html.contains(r#""ids":["C","B","A"]"#));
+}
+
+#[test]
 fn viz_slider_auto_standalone_errors() {
     let wrk = Workdir::new("viz_slider_auto_standalone_errors");
     fruits(&wrk);
@@ -2870,12 +2902,14 @@ fn viz_sankey() {
         html.contains("rgba("),
         "link ribbons should be source-tinted; html: {html}"
     );
-    // value-order is the DEFAULT: explicit per-column node positions baked onto the node object
-    // (which serializes `…,"thickness":20,"x":[…],"y":[…]`) + snap arrangement.
+    // snap (plotly's crossing-min layout) is the DEFAULT: arrangement snap, and NO explicit
+    // per-node x/y positions baked onto the node object (which would serialize as
+    // `…,"thickness":20,"x":[…],"y":[…]`). The value-order positions still ride in the toggle
+    // button's restyle args, hence the precise node-scoped discriminator.
     assert!(html.contains(r#""arrangement":"snap""#), "html: {html}");
     assert!(
-        html.contains(r#""thickness":20,"x":["#),
-        "default should bake value-ordered node positions on the node; html: {html}"
+        !html.contains(r#""thickness":20,"x":["#),
+        "default (snap) should not bake per-node x positions on the node; html: {html}"
     );
     // an on-screen "node order" toggle (updatemenus button) is baked in either way.
     assert!(
@@ -2885,8 +2919,8 @@ fn viz_sankey() {
 }
 
 #[test]
-fn viz_sankey_snap_order_opts_out_of_value_ordering() {
-    let wrk = Workdir::new("viz_sankey_snap_order");
+fn viz_sankey_value_order_opts_into_flow_ranking() {
+    let wrk = Workdir::new("viz_sankey_value_order");
     wrk.create_from_string(
         "flows.csv",
         "from,to,weight\nEast,Widget,5\nEast,Widget,3\nWest,Gadget,4\n",
@@ -2901,21 +2935,20 @@ fn viz_sankey_snap_order_opts_out_of_value_ordering() {
         "to",
         "--value",
         "weight",
-        "--sankey-snap-order",
+        "--sankey-value-order",
     ]);
     let out = wrk.output(&mut cmd);
     assert!(out.status.success());
     let html = String::from_utf8_lossy(&out.stdout);
-    // --sankey-snap-order opens in plotly's crossing-min layout: arrangement snap, but NO explicit
-    // node x/y positions baked onto the node object (the node closes right after `"thickness":20`).
-    // (The value-order positions still ride in the toggle button's restyle args, hence the precise
-    // node-scoped discriminator rather than a bare `"x":[` check.)
+    // --sankey-value-order opts into the flow-ranked layout: explicit per-column node positions
+    // baked onto the node object (which serializes `…,"thickness":20,"x":[…],"y":[…]`) + snap
+    // arrangement.
     assert!(html.contains(r#""arrangement":"snap""#), "html: {html}");
     assert!(
-        !html.contains(r#""thickness":20,"x":["#),
-        "snap-order should not bake per-node x positions on the node; html: {html}"
+        html.contains(r#""thickness":20,"x":["#),
+        "--sankey-value-order should bake flow-ranked node positions on the node; html: {html}"
     );
-    // the toggle is still offered so the reader can switch to value order at runtime.
+    // the toggle is still offered so the reader can switch back to snap order at runtime.
     assert!(
         html.contains(r#""updatemenus""#) && html.contains("node order"),
         "the runtime node-order toggle button should be present; html: {html}"
@@ -3830,6 +3863,11 @@ fn viz_map_color_scale() {
     assert!(html.contains(r#""colorscale":"Viridis""#));
     assert!(html.contains(r#""showscale":true"#));
     assert!(html.contains(r#""colorbar":{"title":{"text":"magnitude"#));
+    // per-point hover surfaces the --color value (labeled) beside the coordinates, not just
+    // the bare lat/lon plotly shows by default
+    assert!(html.contains(r#""hoverinfo":"text""#));
+    assert!(html.contains(r#""hovertext":["#));
+    assert!(html.contains("magnitude: "));
 }
 
 #[test]
@@ -5904,6 +5942,10 @@ fn viz_geo_projection_and_color() {
     // --color maps a numeric column onto a continuous colorscale with a colorbar
     assert!(html.contains(r#""colorscale":"Viridis""#));
     assert!(html.contains(r#""colorbar":{"title":{"text":"magnitude"#));
+    // per-point hover surfaces the --color value (labeled) beside the coordinates
+    assert!(html.contains(r#""hoverinfo":"text""#));
+    assert!(html.contains(r#""hovertext":["#));
+    assert!(html.contains("magnitude: "));
 }
 
 #[test]
@@ -5931,6 +5973,11 @@ fn viz_geo_series_traces() {
     assert!(html.contains(r#""name":"Asia""#));
     assert!(html.contains(r#""name":"Europe""#));
     assert!(html.contains(r#""showlegend":true"#));
+    // each point's hover leads with its series (region) value, then the coordinates, instead of
+    // only lat/lon. Asia is the first-seen region (Tokyo), so its trace's hovertext array opens the
+    // series; the region name is plain ASCII (the `<br>` separator after it is unicode-escaped).
+    assert!(html.contains(r#""hoverinfo":"text""#));
+    assert!(html.contains(r#""hovertext":["Asia"#));
 }
 
 #[test]

@@ -48,7 +48,7 @@
 <tr><td class="qsv-viz-meta-k">Rows:</td><td>300</td></tr>
 <tr><td class="qsv-viz-meta-k">Columns:</td><td>5</td></tr>
 <tr><td class="qsv-viz-meta-k">Completeness:</td><td>100.0%</td></tr>
-<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-12 02:12 UTC</td></tr>
+<tr><td class="qsv-viz-meta-k">Compiled:</td><td>2026-07-17 13:19 UTC</td></tr>
 </table>
 <div class="qsv-viz-grid">
     <div class="qsv-viz-cell full-width">
@@ -79,7 +79,7 @@
       <div class="qsv-viz-plot" style="height:420px">
 <div id="qsv-viz-panel-3" class="plotly-graph-div" style="height:100%; width:100%;"></div>
 <script type="text/javascript">
-    Plotly.newPlot("qsv-viz-panel-3", {"data":[{"type":"bar","x":["South","East","West","Central"],"y":[16649.03,16349.419999999995,2345.2900000000004,2272.8399999999997],"name":"Monthly Spend by Region (sum, η²=0.98)","textposition":"outside","texttemplate":"%{y:.3s}","marker":{"color":"#E45756"},"textfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":9},"cliponaxis":false}],"layout":{"title":{"text":"Monthly Spend by Region (sum, η²=0.98)"},"showlegend":false,"margin":{"l":60,"r":30,"t":48,"b":60,"pad":4},"height":420,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","plot_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","xaxis":{"tickcolor":"#BCC4CE","tickfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":10},"showline":true,"linecolor":"#BCC4CE","showgrid":false,"zeroline":false},"yaxis":{"range":[0.0,19146.384499999996],"tickcolor":"#BCC4CE","tickfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":10},"showline":false,"showgrid":true,"gridcolor":"#ECECEC","gridwidth":1,"zeroline":false}},"config":{"responsive":true},"frames":null});
+    Plotly.newPlot("qsv-viz-panel-3", {"data":[{"type":"bar","x":["South","East","West","Central"],"y":[16649.03,16349.419999999995,2345.2900000000004,2272.8399999999997],"name":"Monthly Spend by Region (sum, η²=0.98)","textposition":"outside","texttemplate":"%{y:.3s}","marker":{"color":"#E45756"},"textfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":9},"cliponaxis":false}],"layout":{"title":{"text":"Monthly Spend by Region (sum, η²=0.98)"},"showlegend":false,"margin":{"l":60,"r":30,"t":48,"b":60,"pad":4},"height":420,"font":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":12,"color":"#2A3F5F"},"paper_bgcolor":"#FFFFFF","plot_bgcolor":"#FFFFFF","modebar":{"orientation":"v"},"uirevision":"qsv-viz","xaxis":{"type":"category","tickmode":"array","tickvals":[0.0,1.0,2.0,3.0],"ticktext":["South","East","West","Central"],"tickcolor":"#BCC4CE","tickfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":10},"showline":true,"linecolor":"#BCC4CE","showgrid":false,"zeroline":false},"yaxis":{"range":[0.0,19146.384499999996],"tickcolor":"#BCC4CE","tickfont":{"family":"Helvetica Neue, Helvetica, Arial, sans-serif","size":10},"showline":false,"showgrid":true,"gridcolor":"#ECECEC","gridwidth":1,"zeroline":false}},"config":{"responsive":true},"frames":null});
 </script>
       </div>
     </div>
@@ -108,7 +108,7 @@
       </div>
     </div>
 </div>
-<script>window.__qsvMapAssumedW=960;window.__qsvMapAssumedH=352;</script>
+<script>window.__qsvMapAssumedW=960;window.__qsvMapAssumedH=472;</script>
 <script>
 (function () {
   var icon = { width: 512, height: 512, path: "M512 512v-208l-80 80-96-96-48 48 96 96-80 80z M512 0h-208l80 80-96 96 48 48 96-96 80 80z M0 512h208l-80-80 96-96-48-48-96 96-80-80z M0 0v208l80-80 96 96 48-48-96-96 80-80z" };
@@ -122,6 +122,29 @@
         // activation (or when a Permissions-Policy blocks fullscreen); swallow it so it doesn't
         // surface as an unhandled rejection.
         var p = document.fullscreenElement ? document.exitFullscreen() : gd.requestFullscreen();
+        if (p && p.catch) p.catch(function () {});
+      } catch (e) {}
+    }
+  };
+  // A "Toggle legend" button: rows of a color swatch + a label bar so it reads as a legend.
+  var legendIcon = { width: 512, height: 512, path: "M0 96h96v64H0z M160 112h352v32H160z M0 224h96v64H0z M160 240h352v32H160z M0 352h96v64H0z M160 368h352v32H160z" };
+  var legendButton = {
+    name: "qsv-legend",
+    title: "Toggle legend",
+    icon: legendIcon,
+    click: function (gd) {
+      try {
+        // no-op on maps: Plotly.relayout throws on a MapLibre choroplethmap in our pinned
+        // plotly fork, and a choropleth's "legend" is a colorbar (not governed by showlegend).
+        if (mapKeys(gd).length) return;
+        // relayout is the lightweight toggle: it preserves config-added modebar buttons
+        // (gd._context.modeBarButtonsToAdd) and the plotly_buttonclicked handler that a
+        // newPlot re-render would drop.
+        // Read the EFFECTIVE state from _fullLayout (plotly's computed default is showlegend:true
+        // for multi-trace charts that never set it), not gd.layout — else the first click on a
+        // default-visible legend is a visual no-op.
+        var fl = gd._fullLayout || gd.layout || {};
+        var p = Plotly.relayout(gd, { showlegend: !fl.showlegend });
         if (p && p.catch) p.catch(function () {});
       } catch (e) {}
     }
@@ -267,6 +290,12 @@
   function enhance(gd) {
     gd.__qsvFs = true;
     try {
+      // animation frames live on gd._transitionData, NOT gd.data/gd.layout, so the button-injection
+      // newPlot below would drop them (killing the slider/Play animation). Capture them first and
+      // re-add via Plotly.addFrames once newPlot resolves. .filter(Boolean) skips plotly's leading
+      // hole; panels without frames leave this null (no-op).
+      var qsvFrames = (gd._transitionData && gd._transitionData._frames)
+        ? gd._transitionData._frames.filter(Boolean) : null;
       captureBaked(gd);
       // initial-display fit: bake the fitted zoom into the layout the button-injection newPlot
       // renders, so the first paint already fills the real container (no relayout, no reflow).
@@ -277,7 +306,11 @@
       // newPlot governs the final render — it overrides the Rust-side Configuration — so scrollZoom
       // is set HERE. A MapLibre `map` panel ignores it at the GL level, so applyScrollZoom() below
       // disables that handler directly once the map attaches; `fullscreenchange` re-enables it.
-      Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button] });
+      var qsvNp = Plotly.newPlot(gd, gd.data, gd.layout, { responsive: true, scrollZoom: document.fullscreenElement === gd, modeBarButtonsToAdd: [button, legendButton] });
+      if (qsvFrames && qsvFrames.length) {
+        if (qsvNp && qsvNp.then) qsvNp.then(function () { Plotly.addFrames(gd, qsvFrames); });
+        else Plotly.addFrames(gd, qsvFrames);
+      }
       // disable the MapLibre GL wheel-zoom handler inline (see applyScrollZoom): plotly leaves it on
       // regardless of the render config, so a scroll over the map would otherwise pan/zoom it and
       // swallow the page scroll.

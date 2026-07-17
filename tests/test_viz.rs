@@ -10643,3 +10643,81 @@ fn viz_smart_hints_at_denull_even_when_every_column_is_skipped() {
         "an all-skipped dashboard must still point at denull, got: {stderr}"
     );
 }
+
+// a highly unequal additive measure: 250 tiny holders (value 1) plus 50 large holders
+// (1000..1049) -> the top ~17% of records hold ~99% of the total, so the Gini is very high. A
+// second, near-uniform additive column (widgets, 100..159) has a low Gini. `id` is a near-unique
+// integer, so it is skipped.
+fn unequal_income_csv() -> String {
+    let mut rows = String::from("id,income,widgets\n");
+    let mut id = 1;
+    for _ in 0..250 {
+        rows.push_str(&format!("{id},1,{}\n", 100 + id % 60));
+        id += 1;
+    }
+    for v in 0..50 {
+        rows.push_str(&format!("{id},{},{}\n", 1000 + v, 100 + id % 60));
+        id += 1;
+    }
+    rows
+}
+
+#[test]
+fn viz_smart_smarter_adds_lorenz_for_unequal_measure() {
+    // `viz smart --smarter` runs `qsv moarstats --advanced`, populating gini_coefficient. The
+    // highly unequal additive `income` column earns a dedicated Lorenz-curve panel (whose geometry
+    // IS the Gini), ADDED ALONGSIDE its distribution panel. The near-uniform `widgets` column has
+    // a low Gini and gets NO Lorenz, so exactly one Lorenz panel appears.
+    let wrk = Workdir::new("viz_smart_smarter_adds_lorenz_for_unequal_measure");
+    wrk.create_from_string("inc.csv", &unequal_income_csv());
+
+    let out_html = wrk.path("inc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "inc.csv", "--smarter", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("inc.html").unwrap();
+    // exactly one Lorenz panel: its equality-diagonal trace is drawn once per panel (the title
+    // string itself appears twice — as the curve's trace name AND the cell title annotation — so
+    // the diagonal is the reliable panel counter).
+    assert_eq!(
+        html.matches(r#""name":"equality""#).count(),
+        1,
+        "exactly one Lorenz panel (the unequal income column) expected; html: {html}"
+    );
+    // and it is the income column, not the near-uniform (low-Gini) widgets column
+    assert!(
+        html.contains("income \u{2014} Lorenz curve (Gini")
+            || html.contains(r"income — Lorenz curve (Gini"),
+        "the Lorenz panel should be the income column; html: {html}"
+    );
+    assert!(
+        !html.contains("widgets \u{2014} Lorenz curve")
+            && !html.contains(r"widgets — Lorenz curve"),
+        "the low-Gini widgets column must NOT get a Lorenz panel; html: {html}"
+    );
+    // ADDED ALONGSIDE: income still has a distribution (box/violin) panel too
+    assert!(
+        html.contains(r#""type":"box""#) || html.contains(r#""type":"violin""#),
+        "the distribution panel should remain alongside the Lorenz curve; html: {html}"
+    );
+}
+
+#[test]
+fn viz_smart_plain_adds_no_lorenz_without_smarter() {
+    // Plain `viz smart` (NO --smarter) never populates gini_coefficient, so no Lorenz panel is
+    // built even for the same highly unequal column — the feature is gated on --smarter.
+    let wrk = Workdir::new("viz_smart_plain_adds_no_lorenz_without_smarter");
+    wrk.create_from_string("inc.csv", &unequal_income_csv());
+
+    let out_html = wrk.path("inc.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "inc.csv", "-o", &out_html]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("inc.html").unwrap();
+    assert!(
+        !html.contains("Lorenz curve"),
+        "plain viz smart (no --smarter) must not add a Lorenz panel; html: {html}"
+    );
+}

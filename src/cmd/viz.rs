@@ -443,9 +443,10 @@ smart options:
                            categories were rolled up) and is shown by default.
     --smarter              Before building the dashboard, run `qsv moarstats --advanced`
                            to enrich the stats cache with distribution-shape statistics
-                           (bimodality, entropy, skewness, outlier share). This unlocks
+                           (bimodality, entropy, skewness, outlier share, Gini). This unlocks
                            histograms for bimodal columns, frequency bars for concentrated
-                           high-cardinality columns, and skew/outlier hints on box panels.
+                           high-cardinality columns, skew/outlier hints on box panels, and
+                           Lorenz curves for the most unequal additive measures (high Gini).
                            Costs one extra pass over the data and writes <stem>.stats.csv,
                            its sidecars, and an .idx index (like running `qsv moarstats`
                            manually). On geocode-enabled builds it also enriches map point
@@ -1276,6 +1277,10 @@ const OTHER_TEXT: &str = "Other";
 /// Muted grey for the aggregate `(NULL)` / `Other (N)` frequency bars so they read as summary
 /// buckets, visually distinct from the palette-colored real categories.
 const MUTED_COLOR: &str = "#999999";
+
+/// Faint grey wash used as the fill of a box/violin distribution panel when it renders on a
+/// log value axis (see `log_distribution_body_cue`).
+const LOG_DISTRIB_FILL: &str = "rgba(153, 153, 153, 0.15)";
 
 /// Zero-width space suffixed onto the plotly category-axis key of the synthetic aggregate
 /// frequency bars. It keeps their `x_key` distinct from a real category that happens to share
@@ -8751,23 +8756,103 @@ fn freq_panel_logs(mode: LogScale, counts: &[u64]) -> bool {
 }
 
 /// Whether a smart box panel's VALUE axis should be logarithmic under the resolved `--log-scale`
-/// mode, from the column's observed min/max. Log is only possible when every value is strictly
-/// positive (`min > 0` — a log axis can't place 0 or negatives, and `min > 0` also implies
-/// `n_zero == n_negative == 0`). Under `Auto`, additionally requires the observed max/min ratio
-/// to span `LOG_SCALE_MIN_RATIO` — the high-dynamic-range case where the linear box squashes
-/// into a sliver against its extremes.
-fn box_panel_logs(mode: LogScale, min: Option<f64>, max: Option<f64>) -> bool {
+/// mode, from the column's observed min/max. The strictly-positive fast path takes log when every
+/// value is placeable on a log axis (`min > 0`, which also implies `n_zero == n_negative == 0`);
+/// under `Auto` it additionally requires the observed max/min ratio to span `LOG_SCALE_MIN_RATIO`
+/// — the high-dynamic-range case where a linear box squashes into a sliver against its extremes.
+/// When `min <= 0`, `box_log_skew_fallback` still allows log for a heavily right-skewed,
+/// overwhelmingly-positive column (with only a negligible non-positive tail) that would otherwise
+/// needle on a linear axis — see issue #4219.
+fn box_panel_logs(
+    mode: LogScale,
+    s: &crate::cmd::stats::StatsData,
+    min: Option<f64>,
+    max: Option<f64>,
+) -> bool {
+    if mode == LogScale::Off {
+        return false;
+    }
     let (Some(lo), Some(hi)) = (min, max) else {
         return false;
     };
-    if lo <= 0.0 || hi < lo {
+    // strictly-positive fast path: every value is placeable on a log axis.
+    if lo > 0.0 && hi >= lo {
+        return match mode {
+            LogScale::On => true,
+            LogScale::Auto => hi >= lo * LOG_SCALE_MIN_RATIO,
+            LogScale::Off => false,
+        };
+    }
+    // skew-aware fallback (issue #4219): `min` is not strictly positive, so a strict log axis is
+    // impossible — but a heavily right-skewed, overwhelmingly-positive column would collapse a
+    // LINEAR box/violin into a needle against a lone far outlier. Prefer a log axis (dropping the
+    // negligible non-positive tail, which plotly does on a log axis) when it stays legible. Fully
+    // cache-driven and independent of which min/max the caller passed.
+    box_log_skew_fallback(mode, s)
+}
+
+/// Skew-aware log-axis fallback for `box_panel_logs`, consulted only when a column's minimum is
+/// not strictly positive (so the strictly-positive fast path declined). Enables a log value axis
+/// for a heavily right-skewed, overwhelmingly-positive column whose linear box/violin would
+/// degenerate into a needle against a lone far outlier (issue #4219). All signals come from the
+/// stats cache, so plain `viz smart` benefits too (skew has a base-cache derivation; the sign
+/// counts and quartiles are always cached). Guards, ALL required:
+///   - the non-positive share (zeros + negatives) is negligible (`<= BOX_LOG_NONPOS_MAX`), so the
+///     dropped tail is a rounding error, not the story — this is what keeps a zero-inflated column
+///     (e.g. 45–60% zeros) LINEAR;
+///   - the interquartile box sits in positive space (`q1 > 0`), so the median and quartiles render
+///     on a log axis even though the tiny non-positive tail cannot;
+///   - the skew is pronounced and to the RIGHT (`pearson_skewness >= BOX_LOG_SKEW_MIN`, the same
+///     threshold that labels the title "right-skewed") — a left tail toward zero gains nothing;
+///   - under `Auto`, the positive dynamic range (`max / q1`) spans `LOG_SCALE_MIN_RATIO`, the
+///     high-dynamic-range case a linear axis squashes. `On` forces log without the range guard.
+fn box_log_skew_fallback(mode: LogScale, s: &crate::cmd::stats::StatsData) -> bool {
+    // at most this share of values may be non-positive (dropped on the log axis)
+    const BOX_LOG_NONPOS_MAX: f64 = 0.05;
+    // matches box_shape_hint's SKEW_MIN_ABS so a "right-skewed" title and a log axis agree
+    const BOX_LOG_SKEW_MIN: f64 = 0.5;
+
+    if mode == LogScale::Off {
+        return false;
+    }
+    let (Some(neg), Some(zero), Some(pos)) = (s.n_negative, s.n_zero, s.n_positive) else {
+        return false;
+    };
+    let total = neg + zero + pos;
+    if total == 0 {
+        return false;
+    }
+    #[allow(clippy::cast_precision_loss)]
+    let nonpos_share = (neg + zero) as f64 / total as f64;
+    if nonpos_share > BOX_LOG_NONPOS_MAX {
+        return false;
+    }
+    let (Some(q1), Some(hi)) = (s.q1, parse_stat_f64(s.max.as_deref())) else {
+        return false;
+    };
+    if q1 <= 0.0 || !hi.is_finite() || hi < q1 {
+        return false;
+    }
+    // right-skew only: the needle is a high-tail phenomenon, so require positive skew
+    if pearson_skewness_stat(s).is_none_or(|sk| sk < BOX_LOG_SKEW_MIN) {
         return false;
     }
     match mode {
-        LogScale::Off => false,
         LogScale::On => true,
-        LogScale::Auto => hi >= lo * LOG_SCALE_MIN_RATIO,
+        LogScale::Auto => hi >= q1 * LOG_SCALE_MIN_RATIO,
+        LogScale::Off => false,
     }
+}
+
+/// On a log value axis, a precomputed box whose lower whisker is `<= 0` (the observed min can be 0
+/// for a heavily right-skewed column — issue #4219) is log-undefined and breaks the ENTIRE box
+/// trace: plotly drops the box and only stray outlier points survive, which is worse than the
+/// linear needle the log axis set out to fix. Clamp such a whisker up to `q1` so the box body,
+/// median and upper whisker render; the sub-zero tail is unshowable on a log axis anyway. On a
+/// linear axis (or when the whisker is already strictly positive) the whisker is returned
+/// unchanged.
+fn log_safe_lower_fence(log_y: bool, fence: f64, q1: f64) -> f64 {
+    if log_y && fence <= 0.0 { q1 } else { fence }
 }
 
 /// Whether a `MeasureByDim` bar panel's value (y) axis should be logarithmic under the resolved
@@ -10426,6 +10511,23 @@ enum PanelKind {
         y_label:    String,
         size_label: Option<String>,
     },
+    /// Lorenz curve for an additive measure with income/wealth-style inequality — the plot whose
+    /// geometry IS the Gini coefficient (Gini = 2× the area between the curve and the equality
+    /// diagonal). Built only under `--smarter` (which populates `gini_coefficient`) for a
+    /// non-negative additive measure whose cached Gini clears `LORENZ_GINI_MIN`; see
+    /// `is_inequality_candidate`. `pop`/`share` are the precomputed cumulative population fraction
+    /// (x, ascending) and cumulative value share (y), both 0→1 and row-aligned; the equality
+    /// diagonal is the trivial (0,0)→(1,1) reference line, added as a second trace at render.
+    /// `gini` is the CACHED coefficient (shown in the title, never recomputed here, so it matches
+    /// the box hint / pivotp / scoresql); `label` is the measure's human label for the hover. A
+    /// plain cartesian Scatter (lines), so it composes with the typed subplot grid and static
+    /// image export.
+    Lorenz {
+        pop:   Vec<f64>,
+        share: Vec<f64>,
+        gini:  f64,
+        label: String,
+    },
     /// 2D density contour of the most strongly correlated numeric pair — used INSTEAD of
     /// `ScatterPair` for large datasets (>= `SMART_CONTOUR_MIN_POINTS`), where a scatter overplots.
     /// Carries the precomputed bin-center axes and count grid so the render loop stays pure.
@@ -10994,13 +11096,12 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
 /// so it catches snake_case, spaced, and camelCase names alike while NOT suppressing genuinely
 /// intensive fields that merely embed the letters, e.g. `discount_pct`, `account_score`,
 /// `county_index`.
-fn is_intensive_measure(label: &str, field: &str) -> bool {
+/// Tokenize `"<label> <field>"` on non-alphanumeric boundaries AND lower/digit -> upper
+/// (camelCase/PascalCase) transitions, lower-cased, so a token is recognized in `order_count`,
+/// `Order Count`, and `reviewScoreCount` alike — without matching the substring inside
+/// `discount`/`account`/`county`.
+fn field_name_tokens(label: &str, field: &str) -> Vec<String> {
     let raw = format!("{label} {field}");
-    let hay = raw.to_ascii_lowercase();
-    // Tokenize on non-alphanumeric boundaries AND lower/digit -> upper (camelCase/PascalCase)
-    // transitions so a count token is recognized in `order_count`, `Order Count`, and
-    // `reviewScoreCount` alike — without matching the `count` substring inside
-    // `discount`/`account`/`county`.
     let mut tokens: Vec<String> = Vec::new();
     let mut cur = String::new();
     let mut prev_lower_or_digit = false;
@@ -11021,6 +11122,28 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     if !cur.is_empty() {
         tokens.push(cur);
     }
+    tokens
+}
+
+/// True when the column's NAME marks it as an identifier/code/key rather than a distributable
+/// amount — an `id`/`code`/`key`/`uuid`/`guid`/`identifier` token (`customer_id`, `productCode`,
+/// `order_key`, …). Token-boundary matched (see `field_name_tokens`) so `grid`, `medicaid`,
+/// `decode`, and `county` don't trip it. A trailing digit run is stripped per token first, so
+/// numbered twins (`customer_id2`, `code1`, `productCode2` → `id`/`code`) are caught too. Used on
+/// the stats-only inequality path to keep a skewed numeric ID/code out of the Lorenz overview (a
+/// dictionary-routed measure bypasses this).
+fn is_identifier_name(label: &str, field: &str) -> bool {
+    field_name_tokens(label, field).iter().any(|t| {
+        matches!(
+            t.trim_end_matches(|c: char| c.is_ascii_digit()),
+            "id" | "ids" | "code" | "codes" | "key" | "keys" | "uuid" | "guid" | "identifier"
+        )
+    })
+}
+
+fn is_intensive_measure(label: &str, field: &str) -> bool {
+    let hay = format!("{label} {field}").to_ascii_lowercase();
+    let tokens = field_name_tokens(label, field);
     let is_count = tokens
         .iter()
         .any(|t| matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally"))
@@ -12993,6 +13116,53 @@ fn box_shape_hint(s: &crate::cmd::stats::StatsData) -> Option<String> {
     }
 }
 
+/// Minimum Gini coefficient for an additive measure to earn a dedicated Lorenz-curve panel.
+/// 0.5 matches `scoresql`'s "high inequality" line and comfortably catches the flagship cases
+/// (US income ≈ 0.45–0.5, wealth 0.6–0.8). Safe at 0.5 — lower than `box_shape_hint`'s cosmetic
+/// `GINI_MIN` of 0.6 — because a candidate must ALSO be an additive amount, so a merely skewed
+/// intensive column can't trip it; a dedicated inequality panel that skipped income would miss
+/// the point.
+const LORENZ_GINI_MIN: f64 = 0.5;
+
+/// Cap on how many Lorenz-curve panels a single smart dashboard adds (strongest Gini first), so a
+/// wide finance table can't spawn a full-width overview panel — and a data pass — per column.
+const LORENZ_MAX_PANELS: usize = 3;
+
+/// Vertex cap for a rendered Lorenz curve. The cumulative curve is computed EXACTLY over every
+/// non-null value (so its shape matches the cached Gini); only the finished, monotone curve is
+/// then thinned (via `downsample_pair`, endpoints kept) to bound HTML size — thinning vertices of
+/// an already-computed convex curve leaves its area, hence its visual Gini, essentially unchanged.
+const LORENZ_CURVE_MAX_POINTS: usize = 2000;
+
+/// Whether a column is a good candidate for an inequality (Lorenz-curve) panel: an ADDITIVE
+/// measure — revenue/population/income/wealth, NOT an intensive rate/ratio/index/temperature that
+/// can't meaningfully be "distributed" — whose cached Gini coefficient clears `LORENZ_GINI_MIN`.
+///
+/// The Gini value is produced only by `--smarter` (moarstats `--advanced`), so without it this is
+/// always false and plain `viz smart` is unchanged. `gini_coefficient.is_some()` already implies a
+/// non-negative column (the `qsv-stats` `gini` returns `None` for any negative value — Gini is
+/// undefined there), exactly the domain a Lorenz curve needs. The additive test uses the
+/// dictionary's aggregation verdict when present (`Agg::Sum` = additive amount, `Agg::Mean` =
+/// intensive ratio) and falls back to the field/label name heuristic (`is_intensive_measure`)
+/// when no dictionary routed the column.
+fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData) -> bool {
+    let additive = match sem.agg {
+        // dictionary-tagged additive amount/count (revenue, population, …)
+        Some(Agg::Sum) => true,
+        // dictionary-tagged intensive/other aggregation (ratio/rate/index) → not distributable
+        Some(Agg::Mean | Agg::Count | Agg::Min | Agg::Max) => false,
+        // no dictionary signal: fall back to the field/label name test. Exclude intensive
+        // (rate/ratio/index) names AND identifier/code/key names — without a dictionary, a
+        // skewed near-unique numeric ID/code would otherwise clear the Gini gate and get a
+        // prominent Lorenz overview (`classify` skips such near-unique integers as unchartable,
+        // but the Lorenz filter runs independently of `classify`).
+        None => {
+            !is_intensive_measure(&sem.label, &s.field) && !is_identifier_name(&sem.label, &s.field)
+        },
+    };
+    additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
+}
+
 /// APPROXIMATE share of the most frequent value, reconstructed entirely from the stats cache:
 /// `mode_occurrences / record_count`, where the record count is recovered as
 /// `cardinality / uniqueness_ratio` (its defining ratio) so no data pass is needed.
@@ -13496,6 +13666,84 @@ fn build_timeseries_panel(
             ))
         },
     }
+}
+
+/// Read one additive-measure column in full, compute its EXACT Lorenz curve (via `lorenz_curve`),
+/// and build a `Lorenz` overview panel labeled with the CACHED Gini (`gini`, never recomputed — so
+/// the picture and the number agree with the box hint / pivotp / scoresql). Only non-negative
+/// finite values are kept, matching the domain moarstats' Gini was computed over. Returns `None`
+/// for a degenerate column (see `lorenz_curve`).
+fn build_lorenz_panel(
+    args: &Args,
+    sems: &[ColSemantics],
+    idx: usize,
+    gini: f64,
+) -> CliResult<Option<Panel>> {
+    let (mut rdr, headers, nh) = reader_and_headers(args)?;
+    let label = sems
+        .get(idx)
+        .map(|s| s.label.as_str())
+        .filter(|l| !l.is_empty())
+        .map_or_else(|| col_label(&headers, idx, nh), ToString::to_string);
+
+    let mut values: Vec<f64> = Vec::new();
+    let mut record = csv::ByteRecord::new();
+    while rdr.read_byte_record(&mut record)? {
+        // non-negative finite values only: a Lorenz curve is defined on a non-negative
+        // distribution (the same set moarstats' Gini was computed over); nulls/blanks and any
+        // stray negative are skipped.
+        if let Some(v) = parse_f64(record.get(idx)).filter(|v| v.is_finite() && *v >= 0.0) {
+            values.push(v);
+        }
+    }
+
+    let Some((pop, share)) = lorenz_curve(values) else {
+        return Ok(None);
+    };
+
+    Ok(Some(Panel::new(
+        format!("{label} \u{2014} Lorenz curve (Gini {gini:.2})"),
+        PanelKind::Lorenz {
+            pop,
+            share,
+            gini,
+            label,
+        },
+    )))
+}
+
+/// Compute the exact Lorenz curve for a set of non-negative values: sort ascending, then return
+/// the cumulative population fraction (`x`, `k/n`) and cumulative value share (`y`, `Σv[0..k]/Σv`)
+/// as row-aligned vectors, both led by the `(0,0)` origin so the curve starts on the equality
+/// diagonal and ending at `(1,1)`. Returns `None` for a degenerate distribution (fewer than two
+/// values, or a non-positive total — nothing a Gini of ~0 doesn't already say). The finished
+/// monotone curve is thinned (endpoints kept, via `downsample_pair`) to `LORENZ_CURVE_MAX_POINTS`
+/// vertices to bound embedded-HTML size; dropping vertices of an already-computed convex curve
+/// leaves its area — the visual Gini — essentially unchanged.
+fn lorenz_curve(mut values: Vec<f64>) -> Option<(Vec<f64>, Vec<f64>)> {
+    if values.len() < 2 {
+        return None;
+    }
+    values.sort_unstable_by(f64::total_cmp);
+    let sum: f64 = values.iter().sum();
+    if sum <= 0.0 {
+        return None;
+    }
+    let n = values.len();
+    #[allow(clippy::cast_precision_loss)]
+    let n_f = n as f64;
+    let mut pop = Vec::with_capacity(n + 1);
+    let mut share = Vec::with_capacity(n + 1);
+    pop.push(0.0);
+    share.push(0.0);
+    let mut cum = 0.0_f64;
+    for (k, v) in values.iter().enumerate() {
+        cum += *v;
+        #[allow(clippy::cast_precision_loss)]
+        pop.push((k + 1) as f64 / n_f);
+        share.push(cum / sum);
+    }
+    Some(downsample_pair(&pop, &share, LORENZ_CURVE_MAX_POINTS))
 }
 
 /// How `viz smart` should treat the `--slider` flag: whether to auto-animate an eligible panel.
@@ -17215,6 +17463,7 @@ fn build_smart(
                     // in `value_log`.
                     let would_log = box_panel_logs(
                         log_scale,
+                        s,
                         parse_stat_f64(s.min.as_deref()),
                         parse_stat_f64(s.max.as_deref()),
                     );
@@ -17305,12 +17554,13 @@ fn build_smart(
                 // min/max are at hand (frequency bars decide from their counts at render time)
                 let value_log = match &kind {
                     PanelKind::BoxStats { lower, upper, .. } => {
-                        box_panel_logs(log_scale, *lower, *upper)
+                        box_panel_logs(log_scale, s, *lower, *upper)
                     },
                     PanelKind::BoxRaw { .. }
                     | PanelKind::BoxOutliers { .. }
                     | PanelKind::Violin { .. } => box_panel_logs(
                         log_scale,
+                        s,
                         parse_stat_f64(s.min.as_deref()),
                         parse_stat_f64(s.max.as_deref()),
                     ),
@@ -17878,6 +18128,49 @@ fn build_smart(
         }
     }
 
+    // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
+    // Gini — populated only under --smarter), add the plot whose geometry IS the Gini: cumulative
+    // population share vs cumulative value share, against the equality diagonal. Capped at
+    // LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a data pass)
+    // per column. Near-unique measures are deliberately allowed — a whole-dollar income or integer
+    // population column is often near-unique yet is the flagship inequality case (`classify` skips
+    // near-unique integers as IDs, so the Lorenz filter runs independently to surface them).
+    // ID/code columns are instead kept out by name: `is_inequality_candidate` excludes
+    // intensive- AND identifier-named columns on the stats-only path (the high-Gini gate alone
+    // would not).
+    {
+        let mut lorenz_candidates: Vec<(usize, f64)> = stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                !is_map_col(*i)
+                    && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
+                    && matches!(s.r#type.as_str(), "Integer" | "Float")
+                    && s.cardinality > 1
+                    && is_inequality_candidate(&col_sems[*i], s)
+            })
+            .map(|(i, s)| (i, s.gini_coefficient.unwrap_or_default()))
+            .collect();
+        // strongest inequality first, then keep at most LORENZ_MAX_PANELS
+        lorenz_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+        let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
+        lorenz_candidates.truncate(LORENZ_MAX_PANELS);
+        if dropped > 0 {
+            viz_note(&format!(
+                "viz smart: {dropped} additional high-inequality measure(s) not shown as Lorenz \
+                 curves (cap {LORENZ_MAX_PANELS})"
+            ));
+        }
+        // insert weakest-first so the strongest inequality ends up topmost among them
+        for (idx, gini) in lorenz_candidates.into_iter().rev() {
+            match build_lorenz_panel(args, &col_sems, idx, gini) {
+                Ok(Some(panel)) => panels.insert(0, panel),
+                Ok(None) => {},
+                Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
+            }
+        }
+    }
+
     // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
     // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
     // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
@@ -18223,6 +18516,7 @@ fn build_smart(
             | PanelKind::AnimatedGeo { .. }
             | PanelKind::AnimatedBubble { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::Lorenz { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::Histogram { .. }
@@ -18492,6 +18786,27 @@ fn build_smart(
     }
 }
 
+/// The equality-diagonal reference line for a `Lorenz` panel: a muted, dotted (0,0)→(1,1) line the
+/// caller pushes as a SECOND trace right after the curve (both bound to the same subplot axes when
+/// `axes` is `Some`). A perfectly equal distribution would trace this diagonal; the gap below it is
+/// the inequality the Gini measures. `HoverInfo::Skip` keeps it out of the hover, and the global
+/// `show_legend(false)` keeps it off the legend.
+fn lorenz_diagonal_trace(axes: Option<(String, String)>) -> Box<dyn Trace> {
+    let mut d = Scatter::new(vec![0.0_f64, 1.0], vec![0.0_f64, 1.0])
+        .mode(Mode::Lines)
+        .name("equality")
+        .line(
+            Line::new()
+                .color(MUTED_COLOR)
+                .dash(plotly::common::DashType::Dot),
+        )
+        .hover_info(HoverInfo::Skip);
+    if let Some((x, y)) = &axes {
+        d = d.x_axis(x.clone()).y_axis(y.clone());
+    }
+    d
+}
+
 /// Build the plotly trace for one smart-dashboard panel. `axes` carries the subplot axis refs
 /// when rendering into the typed grid; pass `None` for a standalone inline-div plot (which uses
 /// the default x/y axes). Returns the trace plus, for bar panels, the tallest bar value (used
@@ -18546,13 +18861,17 @@ fn panel_trace(
                 b = b.x_axis(x.clone()).y_axis(y.clone());
             }
             if let Some(l) = lower {
-                b = b.lower_fence(vec![*l]);
+                // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219)
+                b = b.lower_fence(vec![log_safe_lower_fence(log_y, *l, *q1)]);
             }
             if let Some(u) = upper {
                 b = b.upper_fence(vec![*u]);
             }
             if let Some(m) = mean {
                 b = b.mean(vec![*m]);
+            }
+            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+                b = b.fill_color(fill).line(Line::new().color(outline));
             }
             b
         },
@@ -18572,6 +18891,9 @@ fn panel_trace(
                 .hover_info(HoverInfo::Y);
             if let Some((x, y)) = &axes {
                 b = b.x_axis(x.clone()).y_axis(y.clone());
+            }
+            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+                b = b.fill_color(fill).line(Line::new().color(outline));
             }
             b
         },
@@ -18600,6 +18922,9 @@ fn panel_trace(
                 .hover_info(HoverInfo::Y);
             if let Some((x, y)) = &axes {
                 v = v.x_axis(x.clone()).y_axis(y.clone());
+            }
+            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+                v = v.fill_color(fill).line(Line::new().color(outline));
             }
             v
         },
@@ -18642,7 +18967,10 @@ fn panel_trace(
             log_y = panel.value_log;
             let stats = outliers.get(idx);
             let pts = stats.map(|o| o.outliers.clone()).unwrap_or_default();
-            let whisker_low = stats.map_or(*q1, |o| o.whisker_low);
+            // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219), else the
+            // log-undefined fence breaks the box and only the outlier points survive
+            let whisker_low =
+                log_safe_lower_fence(log_y, stats.map_or(*q1, |o| o.whisker_low), *q1);
             let whisker_high = stats.map_or(*q3, |o| o.whisker_high);
             let mut b = BoxPlot::<f64, Vec<f64>>::new(vec![pts])
                 .name(panel.name.clone())
@@ -18661,6 +18989,9 @@ fn panel_trace(
             }
             if let Some((x, y)) = &axes {
                 b = b.x_axis(x.clone()).y_axis(y.clone());
+            }
+            if let Some((fill, outline)) = log_distribution_body_cue(log_y) {
+                b = b.fill_color(fill).line(Line::new().color(outline));
             }
             b
         },
@@ -18776,6 +19107,31 @@ fn panel_trace(
                 .marker(marker)
                 .hover_text_array(hover)
                 .hover_info(HoverInfo::Text);
+            if let Some((x, y)) = &axes {
+                t = t.x_axis(x.clone()).y_axis(y.clone());
+            }
+            t
+        },
+        PanelKind::Lorenz {
+            pop,
+            share,
+            gini,
+            label,
+        } => {
+            // the cumulative curve; the muted equality diagonal is a SECOND trace added by the
+            // caller (grid + inline) right after this one. The hover leads with the (cached) Gini
+            // and states the concentration in plain terms: the bottom X% of records hold Y% of the
+            // total.
+            let hover = format!(
+                "{} (Gini {gini:.2})<br>bottom %{{x:.0%}} of records hold \
+                 %{{y:.0%}}<extra></extra>",
+                escape_hover(label)
+            );
+            let mut t = Scatter::new(pop.clone(), share.clone())
+                .mode(Mode::Lines)
+                .name(panel.name.clone())
+                .line(Line::new().color(color))
+                .hover_template(hover);
             if let Some((x, y)) = &axes {
                 t = t.x_axis(x.clone()).y_axis(y.clone());
             }
@@ -18988,6 +19344,7 @@ fn smart_grid_parts(
             | PanelKind::FreqBar { .. }
             | PanelKind::TimeSeries { .. }
             | PanelKind::ScatterPair { .. }
+            | PanelKind::Lorenz { .. }
             | PanelKind::ContourPair { .. }
             | PanelKind::Scatter3D { .. }
             | PanelKind::MeasureByDim { .. }
@@ -19359,6 +19716,11 @@ fn smart_grid_parts(
             log_scale,
         );
         traces.push(trace);
+        // a Lorenz panel needs its equality-diagonal reference line as a second trace, bound to
+        // this cell's axes.
+        if matches!(panel.kind, PanelKind::Lorenz { .. }) {
+            traces.push(lorenz_diagonal_trace(Some((xref.clone(), yref.clone()))));
+        }
 
         // build this subplot's styled, domain-positioned, cross-anchored axes and add its title
         // above the cell. x-axis anchors to its paired y-axis and vice versa.
@@ -20589,6 +20951,10 @@ fn smart_inline_panel_plot(
 
     let mut plot = Plot::new();
     plot.add_trace(trace);
+    // a Lorenz panel needs its equality-diagonal reference line as a second trace (default axes).
+    if matches!(panel.kind, PanelKind::Lorenz { .. }) {
+        plot.add_trace(lorenz_diagonal_trace(None));
+    }
 
     // correlation cells need extra left room for tick labels and right room for the colorbar;
     // the horizontal Top Relationships lollipop needs left room for its (truncated) pair labels;
@@ -21015,6 +21381,21 @@ fn freq_bar_pattern_shapes(bars: &[FreqBar], log_y: bool) -> Option<Vec<PatternS
             })
             .collect(),
     )
+}
+
+/// Body styling cue for a box/violin distribution panel drawn on a log value axis:
+/// `Some((fill_color, outline_color))` = a faint grey wash + grey outline, the redundant
+/// "this axis is log" signal analogous to the freq bar's hatch (`freq_bar_pattern_shapes`).
+/// Plotly's box/violin traces support neither a fill pattern (hatch) nor a dashed line — only
+/// `fillcolor`, `line.color`, and `line.width` render on the body — so a muted fill + outline
+/// is the strongest cue available on these trace types. Returns `None` on a linear axis, so the
+/// panel keeps its own palette color and the trace is built exactly as before.
+const fn log_distribution_body_cue(log_y: bool) -> Option<(&'static str, &'static str)> {
+    if log_y {
+        Some((LOG_DISTRIB_FILL, MUTED_COLOR))
+    } else {
+        None
+    }
 }
 
 /// Build the "(dominated by X, NN%)" title hint for a frequency bar panel whose single most
@@ -21892,6 +22273,7 @@ fn is_overview_panel(kind: &PanelKind) -> bool {
         | PanelKind::AssocHeatmap { .. }
         | PanelKind::TopRelationships { .. }
         | PanelKind::ScatterPair { .. }
+        | PanelKind::Lorenz { .. }
         | PanelKind::ContourPair { .. }
         | PanelKind::Scatter3D { .. }
         | PanelKind::MeasureByDim { .. }
@@ -23295,6 +23677,149 @@ mod tests {
     }
 
     #[test]
+    fn lorenz_curve_all_equal_is_diagonal() {
+        // a perfectly equal distribution traces the equality diagonal: share == pop at every point
+        let (pop, share) = lorenz_curve(vec![5.0; 4]).unwrap();
+        assert_eq!(pop.len(), share.len());
+        for (p, s) in pop.iter().zip(&share) {
+            assert!(
+                (p - s).abs() < 1e-12,
+                "equal dist should lie on the diagonal"
+            );
+        }
+        assert_eq!((pop[0], share[0]), (0.0, 0.0));
+        assert!((pop.last().unwrap() - 1.0).abs() < 1e-12);
+        assert!((share.last().unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lorenz_curve_max_inequality_hugs_axis() {
+        // one entity holds everything: the bottom (n-1)/n of records hold 0% of the total, so the
+        // curve hugs the x-axis then jumps to (1,1) — maximal inequality. Zeros are legitimate.
+        let (pop, share) = lorenz_curve(vec![0.0, 0.0, 0.0, 100.0]).unwrap();
+        let last = share.len() - 1;
+        assert_eq!(share[last - 1], 0.0);
+        assert!((share[last] - 1.0).abs() < 1e-12);
+        assert!((pop[last] - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn lorenz_curve_rejects_degenerate() {
+        assert!(lorenz_curve(vec![]).is_none());
+        assert!(lorenz_curve(vec![42.0]).is_none()); // a single value can't form a curve
+        assert!(lorenz_curve(vec![0.0, 0.0, 0.0]).is_none()); // zero total
+    }
+
+    #[test]
+    fn lorenz_curve_thins_to_cap() {
+        // a large column is thinned to at most LORENZ_CURVE_MAX_POINTS vertices, endpoints kept
+        let values: Vec<f64> = (1..=(LORENZ_CURVE_MAX_POINTS as u32 * 3))
+            .map(f64::from)
+            .collect();
+        let (pop, share) = lorenz_curve(values).unwrap();
+        assert!(pop.len() <= LORENZ_CURVE_MAX_POINTS);
+        assert_eq!((pop[0], share[0]), (0.0, 0.0));
+        assert!((pop.last().unwrap() - 1.0).abs() < 1e-12);
+        assert!((share.last().unwrap() - 1.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn is_inequality_candidate_gates() {
+        let stat = |field: &str, gini: Option<f64>| crate::cmd::stats::StatsData {
+            r#type: "Float".to_string(),
+            field: field.to_string(),
+            cardinality: 100,
+            gini_coefficient: gini,
+            ..Default::default()
+        };
+        let sem = |agg: Option<Agg>, label: &str| ColSemantics {
+            route: Route::Measure,
+            agg,
+            label: label.to_string(),
+            ..Default::default()
+        };
+
+        // dictionary additive amount + high Gini -> candidate
+        assert!(is_inequality_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", Some(0.62))
+        ));
+        // dictionary intensive (ratio -> Mean) -> never a candidate, whatever the Gini
+        assert!(!is_inequality_candidate(
+            &sem(Some(Agg::Mean), "growth_rate"),
+            &stat("growth_rate", Some(0.90))
+        ));
+        // no dictionary: additive-looking field name + high Gini -> candidate
+        assert!(is_inequality_candidate(
+            &sem(None, ""),
+            &stat("net_worth", Some(0.75))
+        ));
+        // no dictionary: intensive field name (temperature) -> not a candidate
+        assert!(!is_inequality_candidate(
+            &sem(None, ""),
+            &stat("avg_temperature", Some(0.75))
+        ));
+        // Gini below the threshold -> not a candidate
+        assert!(!is_inequality_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", Some(0.40))
+        ));
+        // Gini absent (plain viz smart, no --smarter) -> never a candidate
+        assert!(!is_inequality_candidate(
+            &sem(Some(Agg::Sum), "revenue"),
+            &stat("revenue", None)
+        ));
+
+        // no dictionary: a skewed near-unique numeric ID/code must NOT get a Lorenz panel even at
+        // high Gini (the id/code/key NAME excludes it — the Gini gate alone would not).
+        assert!(!is_inequality_candidate(
+            &sem(None, ""),
+            &stat("customer_id", Some(0.72))
+        ));
+        assert!(!is_inequality_candidate(
+            &sem(None, ""),
+            &stat("productCode", Some(0.72))
+        ));
+        // FLAGSHIP (must not regress): a non-id-named additive amount with high Gini stays a
+        // candidate on the stats-only path even though such a column is typically near-unique.
+        assert!(is_inequality_candidate(
+            &sem(None, ""),
+            &stat("population", Some(0.60))
+        ));
+        // a dictionary-tagged additive measure is NEVER excluded by the id-name heuristic (the
+        // name guard is stats-only): an explicit Agg::Sum wins even with an id-ish name.
+        assert!(is_inequality_candidate(
+            &sem(Some(Agg::Sum), "grant_id"),
+            &stat("grant_id", Some(0.60))
+        ));
+    }
+
+    #[test]
+    fn is_identifier_name_token_boundary() {
+        // id/code/key/uuid tokens (incl. camelCase + suffixes) are identifiers
+        assert!(is_identifier_name("", "customer_id"));
+        assert!(is_identifier_name("Customer ID", "customerId"));
+        assert!(is_identifier_name("", "product_code"));
+        assert!(is_identifier_name("", "order_key"));
+        assert!(is_identifier_name("", "record_uuid"));
+        assert!(is_identifier_name("", "guid"));
+        // numbered twins: a trailing digit run is stripped per token before matching
+        assert!(is_identifier_name("", "customer_id2"));
+        assert!(is_identifier_name("", "code1"));
+        assert!(is_identifier_name("", "productCode2"));
+        assert!(is_identifier_name("", "order_key3"));
+        // substrings inside real words must NOT trip it (token-boundary, not substring)
+        assert!(!is_identifier_name("", "grid"));
+        assert!(!is_identifier_name("", "medicaid_payment"));
+        assert!(!is_identifier_name("", "decode_ratio"));
+        assert!(!is_identifier_name("County", "county"));
+        assert!(!is_identifier_name("", "population"));
+        assert!(!is_identifier_name("Net Worth", "net_worth"));
+        // a digit-suffixed non-identifier token must still be admitted (co2 -> "co", not an id)
+        assert!(!is_identifier_name("", "co2_emissions"));
+    }
+
+    #[test]
     fn select_map_identifier_dictionary_beats_stats() {
         // idx0 has an id.* concept; idx3 is a near-unique String. The dictionary concept wins.
         let stats = vec![
@@ -24620,6 +25145,18 @@ mod tests {
     }
 
     #[test]
+    fn log_distribution_body_cue_only_on_log() {
+        // linear box/violin panels keep their palette color -> no cue
+        assert!(log_distribution_body_cue(false).is_none());
+
+        // a log panel gets the faint grey wash + muted grey outline (plotly box/violin can't be
+        // hatched or dashed, so this fill+outline pair is the log cue)
+        let (fill, outline) = log_distribution_body_cue(true).expect("log panel should get a cue");
+        assert_eq!(fill, LOG_DISTRIB_FILL);
+        assert_eq!(outline, MUTED_COLOR);
+    }
+
+    #[test]
     fn finalize_freq_bars_respects_opt_out_flags() {
         let counts: Vec<(String, u64)> = (0..12)
             .map(|i| (((b'a' + i) as char).to_string(), (100 - i as u64)))
@@ -24807,17 +25344,103 @@ mod tests {
 
     #[test]
     fn box_panel_logs_requires_positive_values_and_range() {
-        // Auto: needs min > 0 and max/min >= LOG_SCALE_MIN_RATIO
-        assert!(box_panel_logs(LogScale::Auto, Some(1.0), Some(100.0)));
-        assert!(!box_panel_logs(LogScale::Auto, Some(1.0), Some(10.0)));
-        assert!(!box_panel_logs(LogScale::Auto, Some(0.0), Some(1000.0))); // zero -> linear
-        assert!(!box_panel_logs(LogScale::Auto, Some(-5.0), Some(1000.0))); // negatives -> linear
-        assert!(!box_panel_logs(LogScale::Auto, None, Some(1000.0)));
-        // On: forces log, but never on a column log can't render
-        assert!(box_panel_logs(LogScale::On, Some(2.0), Some(3.0)));
-        assert!(!box_panel_logs(LogScale::On, Some(0.0), Some(3.0)));
+        // no skew signals in a default stats cache => only the strictly-positive fast path applies
+        let s = crate::cmd::stats::StatsData::default();
+        // Auto: fast path needs min > 0 and max/min >= LOG_SCALE_MIN_RATIO
+        assert!(box_panel_logs(LogScale::Auto, &s, Some(1.0), Some(100.0)));
+        assert!(!box_panel_logs(LogScale::Auto, &s, Some(1.0), Some(10.0)));
+        // min <= 0 with no skew signals => the fallback declines => linear
+        assert!(!box_panel_logs(LogScale::Auto, &s, Some(0.0), Some(1000.0)));
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &s,
+            Some(-5.0),
+            Some(1000.0)
+        ));
+        assert!(!box_panel_logs(LogScale::Auto, &s, None, Some(1000.0)));
+        // On: forces log on a strictly-positive column, but a zero-min column with no skew
+        // signals still can't render on log
+        assert!(box_panel_logs(LogScale::On, &s, Some(2.0), Some(3.0)));
+        assert!(!box_panel_logs(LogScale::On, &s, Some(0.0), Some(3.0)));
         // Off: always linear
-        assert!(!box_panel_logs(LogScale::Off, Some(1.0), Some(1e9)));
+        assert!(!box_panel_logs(LogScale::Off, &s, Some(1.0), Some(1e9)));
+    }
+
+    #[test]
+    fn box_log_skew_fallback_rescues_skewed_positive_columns() {
+        // mirrors CMS medical_payment: 7 zeros in ~1.24M values, q1 well above 0, max ~76M, strong
+        // right skew — a linear box/violin needles, so the fallback takes a log axis (issue #4219).
+        let skewed = crate::cmd::stats::StatsData {
+            n_negative: Some(0),
+            n_zero: Some(7),
+            n_positive: Some(1_235_750),
+            q1: Some(10_000.0),
+            max: Some("76000000".to_string()),
+            pearson_skewness: Some(3.0),
+            ..Default::default()
+        };
+        // min == 0 (fast path declines), but negligible zeros + wide right-skewed range => log
+        assert!(box_panel_logs(
+            LogScale::Auto,
+            &skewed,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+
+        // negative control 1 — zero-inflated (CPDB-like): >5% non-positive keeps it LINEAR
+        let zero_inflated = crate::cmd::stats::StatsData {
+            n_zero: Some(600_000),
+            n_positive: Some(635_757),
+            ..skewed.clone()
+        };
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &zero_inflated,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+
+        // negative control 2 — weak skew stays linear
+        let mild = crate::cmd::stats::StatsData {
+            pearson_skewness: Some(0.2),
+            ..skewed.clone()
+        };
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &mild,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+
+        // negative control 3 — box body not positive (q1 == 0) can't render on log
+        let q1_zero = crate::cmd::stats::StatsData {
+            q1: Some(0.0),
+            ..skewed.clone()
+        };
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &q1_zero,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+
+        // negative control 4 — narrow positive range: Auto declines (max/q1 = 38 < 50), On forces
+        let narrow = crate::cmd::stats::StatsData {
+            q1: Some(2_000_000.0),
+            ..skewed.clone()
+        };
+        assert!(!box_panel_logs(
+            LogScale::Auto,
+            &narrow,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
+        assert!(box_panel_logs(
+            LogScale::On,
+            &narrow,
+            Some(0.0),
+            Some(76_000_000.0)
+        ));
     }
 
     #[test]

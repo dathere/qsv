@@ -11096,13 +11096,12 @@ fn guardrail(mut sem: ColSemantics, s: &crate::cmd::stats::StatsData) -> ColSema
 /// so it catches snake_case, spaced, and camelCase names alike while NOT suppressing genuinely
 /// intensive fields that merely embed the letters, e.g. `discount_pct`, `account_score`,
 /// `county_index`.
-fn is_intensive_measure(label: &str, field: &str) -> bool {
+/// Tokenize `"<label> <field>"` on non-alphanumeric boundaries AND lower/digit -> upper
+/// (camelCase/PascalCase) transitions, lower-cased, so a token is recognized in `order_count`,
+/// `Order Count`, and `reviewScoreCount` alike — without matching the substring inside
+/// `discount`/`account`/`county`.
+fn field_name_tokens(label: &str, field: &str) -> Vec<String> {
     let raw = format!("{label} {field}");
-    let hay = raw.to_ascii_lowercase();
-    // Tokenize on non-alphanumeric boundaries AND lower/digit -> upper (camelCase/PascalCase)
-    // transitions so a count token is recognized in `order_count`, `Order Count`, and
-    // `reviewScoreCount` alike — without matching the `count` substring inside
-    // `discount`/`account`/`county`.
     let mut tokens: Vec<String> = Vec::new();
     let mut cur = String::new();
     let mut prev_lower_or_digit = false;
@@ -11123,6 +11122,26 @@ fn is_intensive_measure(label: &str, field: &str) -> bool {
     if !cur.is_empty() {
         tokens.push(cur);
     }
+    tokens
+}
+
+/// True when the column's NAME marks it as an identifier/code/key rather than a distributable
+/// amount — an `id`/`code`/`key`/`uuid`/`guid`/`identifier` token (`customer_id`, `productCode`,
+/// `order_key`, …). Token-boundary matched (see `field_name_tokens`) so `grid`, `medicaid`,
+/// `decode`, and `county` don't trip it. Used on the stats-only inequality path to keep a skewed
+/// numeric ID/code out of the Lorenz overview (a dictionary-routed measure bypasses this).
+fn is_identifier_name(label: &str, field: &str) -> bool {
+    field_name_tokens(label, field).iter().any(|t| {
+        matches!(
+            t.as_str(),
+            "id" | "ids" | "code" | "codes" | "key" | "keys" | "uuid" | "guid" | "identifier"
+        )
+    })
+}
+
+fn is_intensive_measure(label: &str, field: &str) -> bool {
+    let hay = format!("{label} {field}").to_ascii_lowercase();
+    let tokens = field_name_tokens(label, field);
     let is_count = tokens
         .iter()
         .any(|t| matches!(t.as_str(), "count" | "counts" | "cnt" | "num" | "tally"))
@@ -13130,8 +13149,14 @@ fn is_inequality_candidate(sem: &ColSemantics, s: &crate::cmd::stats::StatsData)
         Some(Agg::Sum) => true,
         // dictionary-tagged intensive/other aggregation (ratio/rate/index) → not distributable
         Some(Agg::Mean | Agg::Count | Agg::Min | Agg::Max) => false,
-        // no dictionary signal: fall back to the field/label name test
-        None => !is_intensive_measure(&sem.label, &s.field),
+        // no dictionary signal: fall back to the field/label name test. Exclude intensive
+        // (rate/ratio/index) names AND identifier/code/key names — without a dictionary, a
+        // skewed near-unique numeric ID/code would otherwise clear the Gini gate and get a
+        // prominent Lorenz overview (`classify` skips such near-unique integers as unchartable,
+        // but the Lorenz filter runs independently of `classify`).
+        None => {
+            !is_intensive_measure(&sem.label, &s.field) && !is_identifier_name(&sem.label, &s.field)
+        },
     };
     additive && s.gini_coefficient.is_some_and(|g| g >= LORENZ_GINI_MIN)
 }
@@ -18105,9 +18130,12 @@ fn build_smart(
     // Gini — populated only under --smarter), add the plot whose geometry IS the Gini: cumulative
     // population share vs cumulative value share, against the equality diagonal. Capped at
     // LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a data pass)
-    // per column. Near-unique measures are deliberately allowed — an income/wealth column is often
-    // near-unique yet is the flagship inequality case (mirroring the time-series y-selection); the
-    // additive + high-Gini gates (see `is_inequality_candidate`) keep ID/code columns out.
+    // per column. Near-unique measures are deliberately allowed — a whole-dollar income or integer
+    // population column is often near-unique yet is the flagship inequality case (`classify` skips
+    // near-unique integers as IDs, so the Lorenz filter runs independently to surface them).
+    // ID/code columns are instead kept out by name: `is_inequality_candidate` excludes
+    // intensive- AND identifier-named columns on the stats-only path (the high-Gini gate alone
+    // would not).
     {
         let mut lorenz_candidates: Vec<(usize, f64)> = stats
             .iter()
@@ -23739,6 +23767,47 @@ mod tests {
             &sem(Some(Agg::Sum), "revenue"),
             &stat("revenue", None)
         ));
+
+        // no dictionary: a skewed near-unique numeric ID/code must NOT get a Lorenz panel even at
+        // high Gini (the id/code/key NAME excludes it — the Gini gate alone would not).
+        assert!(!is_inequality_candidate(
+            &sem(None, ""),
+            &stat("customer_id", Some(0.72))
+        ));
+        assert!(!is_inequality_candidate(
+            &sem(None, ""),
+            &stat("productCode", Some(0.72))
+        ));
+        // FLAGSHIP (must not regress): a non-id-named additive amount with high Gini stays a
+        // candidate on the stats-only path even though such a column is typically near-unique.
+        assert!(is_inequality_candidate(
+            &sem(None, ""),
+            &stat("population", Some(0.60))
+        ));
+        // a dictionary-tagged additive measure is NEVER excluded by the id-name heuristic (the
+        // name guard is stats-only): an explicit Agg::Sum wins even with an id-ish name.
+        assert!(is_inequality_candidate(
+            &sem(Some(Agg::Sum), "grant_id"),
+            &stat("grant_id", Some(0.60))
+        ));
+    }
+
+    #[test]
+    fn is_identifier_name_token_boundary() {
+        // id/code/key/uuid tokens (incl. camelCase + suffixes) are identifiers
+        assert!(is_identifier_name("", "customer_id"));
+        assert!(is_identifier_name("Customer ID", "customerId"));
+        assert!(is_identifier_name("", "product_code"));
+        assert!(is_identifier_name("", "order_key"));
+        assert!(is_identifier_name("", "record_uuid"));
+        assert!(is_identifier_name("", "guid"));
+        // substrings inside real words must NOT trip it (token-boundary, not substring)
+        assert!(!is_identifier_name("", "grid"));
+        assert!(!is_identifier_name("", "medicaid_payment"));
+        assert!(!is_identifier_name("", "decode_ratio"));
+        assert!(!is_identifier_name("County", "county"));
+        assert!(!is_identifier_name("", "population"));
+        assert!(!is_identifier_name("Net Worth", "net_worth"));
     }
 
     #[test]

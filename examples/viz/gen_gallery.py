@@ -57,6 +57,7 @@ SMART_IFRAME = {
     "smart dashboard (--smarter, curated --dictionary, region-code zip choropleth)": "smart_allegheny_dogs.html",
     "smart dashboard (animated geo, world events)":   "smart_world_events.html",
     "smart dashboard (Gapminder bubble, regions growth)": "smart_regions_growth.html",
+    "smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)": "smart_cms_medicare.html",
 }
 
 # Iframe artifacts that depend on a live LLM (`--dictionary infer` calls describegpt against a
@@ -468,6 +469,16 @@ FIGURES = [
      "plot would hide its two peaks), and the skewed account_age_days box is annotated with its "
      "skew direction and outlier share.",
      True, ["smart", "customer_spend.csv", "--smarter", "--max-charts", "8"]),
+    ("smart dashboard (--smarter, Gini/Lorenz inequality + log-skew boxes)",
+     "<b>Medicare payments to individual practitioners</b> (CMS &mdash; a 30k sample), with "
+     "<code>medical_payment</code> and <code>total_patients</code> per provider. These are additive "
+     "amounts across <i>comparable</i> units, so <code>--smarter</code> recognizes them as inequality "
+     "measures and adds a <b>Lorenz curve</b> for each (Gini 0.65 / 0.61) &mdash; the further the "
+     "curve bows below the diagonal, the more concentrated the payments. The distribution boxes are "
+     "<b>skew-aware</b>: a heavily right-skewed money column would squash a linear box into a sliver "
+     "against its largest values, so <code>viz smart</code> draws it on a <b>log axis</b> instead, "
+     "keeping the median and quartiles legible.",
+     True, ["smart", "cms_medicare_providers.csv", "--smarter"]),
     ("bar", "Revenue by region (aggregated sum).",
      False, ["bar", "sales_sample.csv", "--x", "region", "--y", "revenue", "--agg", "sum"]),
     ("bar (animated slider)",

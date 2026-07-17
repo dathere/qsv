@@ -1071,7 +1071,7 @@ fn summarize_run<R: std::io::Read, W: std::io::Write>(
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(DEFAULT_SUMMARIZE_CACHE_TTL_SECS);
         let mut dc_builder = RedbCache::builder("apply-summarize")
-            .disk_directory(&cache_dir)
+            .disk_dir(&cache_dir)
             .durable(true);
         // A QSV_DISKCACHE_TTL_SECS of 0 disables time-based expiration (entries
         // are cached indefinitely). v3's RedbCache builder rejects .ttl(0), so

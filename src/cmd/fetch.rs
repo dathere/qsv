@@ -1144,7 +1144,7 @@ fn cross_session_cache_key(
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let mut diskcache_builder = RedbCache::builder("fetch")
-            .disk_directory(cache_dir)
+            .disk_dir(cache_dir)
             .refresh_on_hit(diskcache_config.ttl_refresh)
             .durable(false);
         // A zero TTL disables time-based expiration (entries are cached

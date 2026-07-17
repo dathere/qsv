@@ -1780,7 +1780,7 @@ async fn run_opencage(args: Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliR
         None
     } else {
         let mut cache_builder = RedbCache::builder("geocode-opencage")
-            .disk_directory(cache_dir)
+            .disk_dir(cache_dir)
             .refresh_on_hit(false)
             // preserve v2/sled non-durable behavior: OpenCage responses are
             // recomputable external-API results, and fsync-per-write on the
@@ -2016,7 +2016,7 @@ fn run_cache_mgmt(args: &Args, mode: GeocodeSubCmd, cache_dir: &Path) -> CliResu
     // remove_expired_entries). v3's RedbCache builder rejects a zero TTL, and TTL
     // is optional, so only set it for prune; clear/info open the cache without one.
     let mut builder = RedbCache::builder(OPENCAGE_CACHE_NAME)
-        .disk_directory(cache_dir)
+        .disk_dir(cache_dir)
         .refresh_on_hit(false);
     if mode == GeocodeSubCmd::CachePrune {
         // run() guarantees --older-than is present & valid for cache-prune

@@ -2999,7 +2999,7 @@ fn invalidate_prompt_validity_flag(args: &Args, prompt_content: Option<&String>)
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let mut diskcache_builder = RedbCache::builder("describegpt")
-            .disk_directory(cache_dir)
+            .disk_dir(cache_dir)
             .refresh_on_hit(diskcache_config.ttl_refresh)
             .durable(true);
         // A zero TTL disables time-based expiration (entries are cached
@@ -3085,7 +3085,7 @@ fn get_redis_completion(
         let cache_dir = DISKCACHE_DIR.get().unwrap();
         let diskcache_config = DISKCACHECONFIG.get().unwrap();
         let mut diskcache_builder = RedbCache::builder("describegpt_analysis")
-            .disk_directory(cache_dir)
+            .disk_dir(cache_dir)
             .refresh_on_hit(diskcache_config.ttl_refresh)
             .durable(true);
         // A zero TTL disables time-based expiration (entries are cached

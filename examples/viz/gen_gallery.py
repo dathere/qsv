@@ -530,31 +530,31 @@ FIGURES = [
     ("ohlc", "Open-high-low-close bars.",
      False, ["ohlc", "stock_prices.csv", "--x", "date", "--ohlc-open", "open",
              "--high", "high", "--low", "low", "--close", "close"]),
-    ("sankey", "Web session funnel (duplicate edges aggregated).",
-     False, ["sankey", "web_flows.csv", "--source", "source", "--target", "target", "--value", "sessions"]),
     ("radar", "Multi-axis brand comparison (per-axis mean per series).",
      False, ["radar", "product_ratings.csv", "--cols", "battery,camera,performance,display,value,design",
              "--series", "brand"]),
+    ("sankey", "Web session funnel (duplicate edges aggregated).",
+     True, ["sankey", "web_flows.csv", "--source", "source", "--target", "target", "--value", "sessions"]),
     ("treemap", "Part-to-whole spend by plan then region, sized by summed monthly_spend. Rounded "
      "tiles + white separators come from the treemap-specific marker; non-numeric/negative measure "
      "cells are rejected so proportions can't silently misstate.",
-     False, ["treemap", "customer_spend.csv", "--cols", "plan,region", "--value", "monthly_spend",
+     True, ["treemap", "customer_spend.csv", "--cols", "plan,region", "--value", "monthly_spend",
              "--agg", "sum"]),
     ("sunburst", "Three-level hierarchy (region -> product_category -> payment_method) as concentric "
      "rings, sized by row count; inner rings are parents, outer rings their children. Opens at two "
      "rings (maxdepth) so labels stay legible instead of crowding a ~100-sector outer ring; click a "
      "sector to drill in and the deeper ring's labels grow back. Hover always shows value + percent.",
-     False, ["sunburst", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+     True, ["sunburst", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("icicle", "Same three-level hierarchy (region -> product_category -> payment_method) as a rectangular "
      "icicle: parents on the left, children fanning right, each rectangle sized by row count. The flat "
      "left-to-right layout keeps deep labels readable where a sunburst's outer ring would crowd; click a "
      "rectangle to zoom into that branch. Hover shows label + value + percent of parent.",
-     False, ["icicle", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+     True, ["icicle", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("splom", "Scatter-plot matrix of four numeric columns (units_sold, revenue, discount_pct, "
      "profit_margin_pct): every pairwise scatter in an N x N grid with shared axes, so correlation "
      "structure is legible at a glance. viz smart auto-adds this panel when 3+ correlated numeric "
      "columns exist, capped at 6 dims selected by correlation participation.",
-     False, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
+     True, ["splom", "sales_sample.csv", "--cols", "units_sold,revenue,discount_pct,profit_margin_pct"]),
     ("parcats", "Parallel-categories flow over three categorical columns (region -> product_category "
      "-> payment_method): each ribbon is a category combination, sized by how many rows share it, so "
      "co-occurrence between the dimensions is visible without implying a part-to-whole nesting. "
@@ -563,11 +563,14 @@ FIGURES = [
      "axis between frequency and alphabetical order. viz "
      "smart auto-adds this panel for 3-4 associated many-to-many categoricals (and suppresses the "
      "hierarchy on the same columns); genuine rollup trees still auto-select a treemap/sunburst.",
-     False, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
+     True, ["parcats", "sales_sample.csv", "--cols", "region,product_category,payment_method"]),
     ("map", "Earthquake points on token-free OpenStreetMap tiles; marker color = magnitude, size = depth.",
      False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude", "--size", "depth_km"]),
-    ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap.",
-     False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--density", "--style", "carto-positron"]),
+    ("map (density)", "DensityMap heatmap of the same points on a light Carto basemap, "
+     "<b>weighted by magnitude</b> (via <code>--color</code>) so stronger quakes glow hotter "
+     "&mdash; hovering a point shows its magnitude, not just the coordinates.",
+     False, ["map", "quakes.csv", "--lat", "lat", "--lon", "lon", "--density", "--color", "magnitude",
+             "--style", "carto-positron"]),
     ("geo", "Same earthquakes on an offline natural-earth projection (no tiles, no token); marker "
      "color = magnitude. viz smart auto-uses this projection for global-extent coordinates.",
      False, ["geo", "quakes.csv", "--lat", "lat", "--lon", "lon", "--color", "magnitude",

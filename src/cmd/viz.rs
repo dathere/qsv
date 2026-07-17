@@ -264,13 +264,14 @@ viz options:
                            each row counts as a flow of 1. For treemap/sunburst:
                            a numeric measure summed per sector (when omitted, each
                            row counts as 1).
-    --sankey-snap-order    Render sankey nodes in plotly's crossing-minimizing "snap"
-                           order. By DEFAULT nodes are ordered by total flow (largest
-                           at the top of each column); this opts out of that initial
-                           ordering. Either way the rendered chart carries an on-screen
-                           "node order" button to flip between the two layouts, and link
-                           ribbons are always colored by their source node. Applies to
-                           the `sankey` chart and the `smart` dashboard flow panel.
+    --sankey-value-order   Order sankey nodes by total flow (largest at the top of each
+                           column). By DEFAULT nodes use plotly's crossing-minimizing
+                           "snap" order, which packs the diagram more compactly; this
+                           opts into the flow-ranked initial ordering instead. Either way
+                           the rendered chart carries an on-screen "node order" button to
+                           flip between the two layouts, and link ribbons are always
+                           colored by their source node. Applies to the `sankey` chart
+                           and the `smart` dashboard flow panel.
     --bins <n>             Number of bins. For histogram: bins along the x-axis
                            (default: auto). For contour: the per-axis resolution of
                            the density grid (default: 20).
@@ -1361,7 +1362,7 @@ struct Args {
     flag_source:             Option<SelectColumns>,
     flag_target:             Option<SelectColumns>,
     flag_value:              Option<SelectColumns>,
-    flag_sankey_snap_order:  bool,
+    flag_sankey_value_order: bool,
     // map columns/options
     flag_lat:                Option<SelectColumns>,
     flag_lon:                Option<SelectColumns>,
@@ -2080,7 +2081,7 @@ fn read_xy(args: &Args) -> CliResult<XyData> {
 fn build_xy_traces(args: &Args, kind: Chart) -> CliResult<(Vec<Box<dyn Trace>>, String, String)> {
     let data = read_xy(args)?;
     let agg = parse_agg(args.flag_agg.as_deref())?;
-    let traces = xy_groups_to_traces(data.groups, kind, agg, true);
+    let traces = xy_groups_to_traces(data.groups, kind, agg, true, None);
     if traces.is_empty() {
         return fail_clierror!("No plottable rows found (is --y numeric?).");
     }
@@ -2117,6 +2118,7 @@ fn xy_groups_to_traces(
     kind: Chart,
     agg: Option<Agg>,
     allow_bar_labels: bool,
+    bar_colors: Option<&HashMap<String, &'static str>>,
 ) -> Vec<Box<dyn Trace>> {
     // value labels only make sense for a single-series bar chart with a modest bar count
     let single_series = groups.len() == 1;
@@ -2127,9 +2129,34 @@ fn xy_groups_to_traces(
         match kind {
             Chart::Bar => {
                 let show_labels = allow_bar_labels && single_series && ys.len() <= LABEL_MAX_BARS;
+                // per-category bar colors (single-series only): each bar gets a distinct,
+                // category-keyed color so an animated (--slider) bar chart reads as bars
+                // growing/shrinking in place rather than one monochrome block whose bars
+                // appear to slide between columns between frames
+                let bar_marker = single_series.then_some(bar_colors).flatten().map(|cmap| {
+                    let colors: Vec<&'static str> = xs
+                        .iter()
+                        .map(|x| cmap.get(x).copied().unwrap_or(PALETTE[0]))
+                        .collect();
+                    Marker::new().color_array(colors)
+                });
+                // stable per-bar ids (the category value) for object constancy across animation
+                // frames — plotly's `ids` is the `animation_group` mechanism. WITHOUT it, plotly
+                // matches bars between frames by ARRAY INDEX, so if a frame's rows arrive in a
+                // different order the bar at index 0 tweens from one category's slot to another's
+                // and visibly slides between columns. Keyed on the category, each bar transitions
+                // in place (its category-axis slot is pinned), which is the actual fix for the
+                // "bars moving between columns" illusion (color alone only made them identifiable).
+                let bar_ids = bar_marker.is_some().then(|| xs.clone());
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
                     t = t.name(name);
+                }
+                if let Some(m) = bar_marker {
+                    t = t.marker(m);
+                }
+                if let Some(ids) = bar_ids {
+                    t = t.ids(ids);
                 }
                 if show_labels {
                     // SI-formatted value labels above each bar ("258k", "1.05M");
@@ -2380,8 +2407,31 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
 
     let mut plot = Plot::new();
 
+    // For a single-series categorical bar animation, give each bar a distinct, category-keyed
+    // color so the same category keeps its color across every frame. Without this, a monochrome
+    // bar chart animating over --slider looks like the bars are sliding between columns instead
+    // of growing/shrinking in place. Only single-series bars (no --series) with a pinned
+    // categorical x-axis qualify; --series bars are already colored per series.
+    let bar_colors: Option<HashMap<String, &'static str>> =
+        if matches!(kind, Chart::Bar) && args.flag_series.is_none() {
+            data.x_categories.as_ref().map(|cats| {
+                cats.iter()
+                    .enumerate()
+                    .map(|(i, c)| (c.clone(), PALETTE[i % PALETTE.len()]))
+                    .collect()
+            })
+        } else {
+            None
+        };
+
     // base = frame 0's traces; every frame carries the same trace count/order
-    let base = xy_groups_to_traces(data.frames[0].clone(), kind, agg, false);
+    let base = xy_groups_to_traces(
+        data.frames[0].clone(),
+        kind,
+        agg,
+        false,
+        bar_colors.as_ref(),
+    );
     let n_traces = base.len();
     for t in base {
         plot.add_trace(t);
@@ -2392,7 +2442,7 @@ fn build_slider_xy_plot(args: &Args, kind: Chart, slider_col: &SelectColumns) ->
 
     // one animation frame per slider value
     for (fkey, groups) in data.frame_values.iter().zip(data.frames.iter()) {
-        let traces = xy_groups_to_traces(groups.clone(), kind, agg, false);
+        let traces = xy_groups_to_traces(groups.clone(), kind, agg, false, bar_colors.as_ref());
         let mut td = Traces::new();
         for t in traces {
             td.push(t);
@@ -3038,25 +3088,86 @@ fn lon_center_and_span(lons: &[f64], trim_frac: f64) -> (f64, f64) {
     }
 }
 
-/// Build a markers-mode `ScatterMap` point trace with the given marker (and optional per-point
-/// hover text), mirroring `scatter_with_marker` for the cartesian scatter path.
+/// Build per-point hover text for a `viz geo` / `viz map` point trace: the labeled `--color` and
+/// `--size` values (and any `--text` label) shown alongside the coordinates, so hovering a point
+/// surfaces the values that drive it instead of only its bare lat/lon. Returns `None` when there
+/// is nothing to add beyond the coordinates (no `--color`/`--size`/`--text`), leaving the trace on
+/// plotly's default lon/lat hover. `color`/`size` are `(column label, row-aligned values)`; the
+/// values arrays are the same length as `lats`/`lons` (a row is kept only when every requested
+/// encoding is present). `texts` are already `escape_hover`-ed at read time.
+fn geo_point_hover(
+    lats: &[f64],
+    lons: &[f64],
+    color: Option<(&str, &[f64])>,
+    size: Option<(&str, &[f64])>,
+    texts: &[String],
+) -> Option<Vec<String>> {
+    if color.is_none() && size.is_none() && texts.is_empty() {
+        return None;
+    }
+    let cl = color.map(|(l, _)| escape_hover(l));
+    let sl = size.map(|(l, _)| escape_hover(l));
+    let hover = (0..lats.len())
+        .map(|p| {
+            let mut h = String::new();
+            // the --text label heads the tooltip as the point's name
+            if let Some(t) = texts.get(p) {
+                h.push_str(t);
+                h.push_str("<br>");
+            }
+            // coordinates, matching the density path's `%{lat:.5f}, %{lon:.5f}` precision
+            h.push_str(&format!("{:.5}, {:.5}", lats[p], lons[p]));
+            if let (Some(cl), Some((_, cv))) = (cl.as_ref(), color) {
+                h.push_str(&format!("<br>{cl}: {}", fmt_measure(cv[p])));
+            }
+            if let (Some(sl), Some((_, sv))) = (sl.as_ref(), size) {
+                h.push_str(&format!("<br>{sl}: {}", fmt_measure(sv[p])));
+            }
+            h
+        })
+        .collect();
+    Some(hover)
+}
+
+/// Per-point hover for a `--series` geo/map trace (and its animated `--slider` frames): the
+/// series/category value (the trace `name`) plus the coordinates — and any `--text` label — so a
+/// point's tooltip identifies which category it belongs to instead of showing only its bare
+/// lat/lon. `texts` is honored only when it is row-aligned with `lats` (i.e. `--text` was given).
+fn geo_series_hover(name: &str, lats: &[f64], lons: &[f64], texts: &[String]) -> Vec<String> {
+    let has_text = texts.len() == lats.len();
+    let ename = escape_hover(name);
+    (0..lats.len())
+        .map(|p| {
+            let mut h = String::new();
+            if has_text {
+                h.push_str(&texts[p]);
+                h.push_str("<br>");
+            }
+            if !ename.is_empty() {
+                h.push_str(&ename);
+                h.push_str("<br>");
+            }
+            h.push_str(&format!("{:.5}, {:.5}", lats[p], lons[p]));
+            h
+        })
+        .collect()
+}
+
 fn scatter_map_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
     marker: Marker,
-    text: Option<Vec<String>>,
+    hover: Option<Vec<String>>,
 ) -> Box<dyn Trace> {
     let mut t = ScatterMap::new(lats, lons)
         .mode(Mode::Markers)
         .marker(marker);
-    if let Some(text) = text {
-        t = t.text_array(text);
+    if let Some(hover) = hover {
+        t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
     }
     t
 }
 
-/// Split row-aligned coordinates into one `ScatterMap` trace per `--series` category,
-/// preserving first-seen category order. `texts` is applied as per-point hover text when present.
 fn map_series_traces(
     lats: Vec<f64>,
     lons: Vec<f64>,
@@ -3082,10 +3193,10 @@ fn map_series_traces(
         .into_iter()
         .map(|name| {
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
+            // hover names the series/category (and any --text label) beside the coordinates
+            let hover = geo_series_hover(&name, &la, &lo, &tx);
             let mut t = ScatterMap::new(la, lo).mode(Mode::Markers).name(name);
-            if !tx.is_empty() {
-                t = t.text_array(tx);
-            }
+            t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
         })
@@ -3259,20 +3370,28 @@ fn build_map_plot(args: &Args, out_format: OutFormat) -> CliResult<Plot> {
             plot.add_trace(trace);
         }
     } else {
+        let color_label = color_idx.map(|i| col_label(&headers, i, nh));
+        let size_label = size_idx.map(|i| col_label(&headers, i, nh));
+        // build the enriched hover BEFORE the encoding arrays are moved into the marker
+        let hover = geo_point_hover(
+            &lats,
+            &lons,
+            color_label.as_deref().map(|l| (l, colors.as_slice())),
+            size_label.as_deref().map(|l| (l, sizes.as_slice())),
+            &texts,
+        );
         let mut marker = Marker::new();
         if !sizes.is_empty() {
             marker = marker.size_array(scale_bubble_sizes(&sizes));
         }
         if !colors.is_empty() {
-            let color_label = col_label(&headers, color_idx.unwrap(), nh);
             marker = marker
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label));
+                .color_bar(ColorBar::new().title(color_label.unwrap_or_default()));
         }
-        let text = (!texts.is_empty()).then_some(texts);
-        plot.add_trace(scatter_map_with_marker(lats, lons, marker, text));
+        plot.add_trace(scatter_map_with_marker(lats, lons, marker, hover));
     }
 
     // MapLibre `map` subplot: all bundled styles render token-free, so no access token is embedded.
@@ -3320,25 +3439,21 @@ fn parse_projection(name: &str) -> CliResult<ProjectionType> {
     Ok(projection)
 }
 
-/// Build a markers-mode `ScatterGeo` point trace with the given marker (and optional per-point
-/// hover text), mirroring `scatter_map_with_marker` for the projection-basemap path.
 fn scatter_geo_with_marker(
     lats: Vec<f64>,
     lons: Vec<f64>,
     marker: Marker,
-    text: Option<Vec<String>>,
+    hover: Option<Vec<String>>,
 ) -> Box<dyn Trace> {
     let mut t = ScatterGeo::new(lats, lons)
         .mode(Mode::Markers)
         .marker(marker);
-    if let Some(text) = text {
-        t = t.text_array(text);
+    if let Some(hover) = hover {
+        t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
     }
     t
 }
 
-/// Split row-aligned coordinates into one `ScatterGeo` trace per `--series` category, preserving
-/// first-seen category order. `texts` is applied as per-point hover text when present.
 fn geo_series_traces(
     lats: Vec<f64>,
     lons: Vec<f64>,
@@ -3364,10 +3479,10 @@ fn geo_series_traces(
         .into_iter()
         .map(|name| {
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
+            // hover names the series/category (and any --text label) beside the coordinates
+            let hover = geo_series_hover(&name, &la, &lo, &tx);
             let mut t = ScatterGeo::new(la, lo).mode(Mode::Markers).name(name);
-            if !tx.is_empty() {
-                t = t.text_array(tx);
-            }
+            t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
         })
@@ -3484,20 +3599,28 @@ fn build_geo_plot(args: &Args) -> CliResult<Plot> {
             plot.add_trace(trace);
         }
     } else {
+        let color_label = color_idx.map(|i| col_label(&headers, i, nh));
+        let size_label = size_idx.map(|i| col_label(&headers, i, nh));
+        // build the enriched hover BEFORE the encoding arrays are moved into the marker
+        let hover = geo_point_hover(
+            &lats,
+            &lons,
+            color_label.as_deref().map(|l| (l, colors.as_slice())),
+            size_label.as_deref().map(|l| (l, sizes.as_slice())),
+            &texts,
+        );
         let mut marker = Marker::new();
         if !sizes.is_empty() {
             marker = marker.size_array(scale_bubble_sizes(&sizes));
         }
         if !colors.is_empty() {
-            let color_label = col_label(&headers, color_idx.unwrap(), nh);
             marker = marker
                 .color_array(colors)
                 .color_scale(ColorScale::Palette(ColorScalePalette::Viridis))
                 .show_scale(true)
-                .color_bar(ColorBar::new().title(color_label));
+                .color_bar(ColorBar::new().title(color_label.unwrap_or_default()));
         }
-        let text = (!texts.is_empty()).then_some(texts);
-        plot.add_trace(scatter_geo_with_marker(lats, lons, marker, text));
+        plot.add_trace(scatter_geo_with_marker(lats, lons, marker, hover));
     }
 
     let layout = geo_base_layout(args, series_idx.is_some())?;
@@ -3627,18 +3750,19 @@ fn read_geo_slider(args: &Args, slider_col: &SelectColumns) -> CliResult<GeoSlid
     })
 }
 
-/// One `ScatterGeo` trace per `(series, lats, lons, texts)` group. Empty groups still emit an empty
-/// trace so a frame's trace count/indices stay constant (matching the base plot).
 fn geo_frame_traces(groups: &[(String, Vec<f64>, Vec<f64>, Vec<String>)]) -> Vec<Box<dyn Trace>> {
     groups
         .iter()
         .map(|(name, la, lo, tx)| {
-            let mut t = ScatterGeo::new(la.clone(), lo.clone()).mode(Mode::Markers);
+            // hover names the series/category (and any --text label) beside the coordinates, so an
+            // animated point identifies its region/category instead of showing only lat/lon
+            let hover = geo_series_hover(name, la, lo, tx);
+            let mut t = ScatterGeo::new(la.clone(), lo.clone())
+                .mode(Mode::Markers)
+                .hover_text_array(hover)
+                .hover_info(HoverInfo::Text);
             if !name.is_empty() {
                 t = t.name(name.clone());
-            }
-            if !tx.is_empty() && tx.len() == la.len() {
-                t = t.text_array(tx.clone());
             }
             let trace: Box<dyn Trace> = t;
             trace
@@ -7119,8 +7243,9 @@ fn build_sankey(args: &Args) -> CliResult<(Box<dyn Trace>, Option<UpdateMenu>)> 
         targets.push(ti);
         values.push(links[&(si, ti)]);
     }
-    // value-order is the DEFAULT; `--sankey-snap-order` opts into plotly's crossing-min layout.
-    let value_order = !args.flag_sankey_snap_order;
+    // snap (plotly's crossing-min layout) is the DEFAULT; `--sankey-value-order` opts into the
+    // flow-ranked node ordering.
+    let value_order = args.flag_sankey_value_order;
     let positions = sankey_value_positions(node_labels.len(), &sources, &targets, &values);
     let trace = sankey_trace(
         &node_labels,
@@ -10117,7 +10242,7 @@ fn sankey_panel(
             link_source,
             link_target,
             link_value,
-            value_order: !args.flag_sankey_snap_order,
+            value_order: args.flag_sankey_value_order,
         },
     );
     Ok(Some((panel, (s_idx, t_idx))))

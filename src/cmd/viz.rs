@@ -11128,12 +11128,14 @@ fn field_name_tokens(label: &str, field: &str) -> Vec<String> {
 /// True when the column's NAME marks it as an identifier/code/key rather than a distributable
 /// amount — an `id`/`code`/`key`/`uuid`/`guid`/`identifier` token (`customer_id`, `productCode`,
 /// `order_key`, …). Token-boundary matched (see `field_name_tokens`) so `grid`, `medicaid`,
-/// `decode`, and `county` don't trip it. Used on the stats-only inequality path to keep a skewed
-/// numeric ID/code out of the Lorenz overview (a dictionary-routed measure bypasses this).
+/// `decode`, and `county` don't trip it. A trailing digit run is stripped per token first, so
+/// numbered twins (`customer_id2`, `code1`, `productCode2` → `id`/`code`) are caught too. Used on
+/// the stats-only inequality path to keep a skewed numeric ID/code out of the Lorenz overview (a
+/// dictionary-routed measure bypasses this).
 fn is_identifier_name(label: &str, field: &str) -> bool {
     field_name_tokens(label, field).iter().any(|t| {
         matches!(
-            t.as_str(),
+            t.trim_end_matches(|c: char| c.is_ascii_digit()),
             "id" | "ids" | "code" | "codes" | "key" | "keys" | "uuid" | "guid" | "identifier"
         )
     })
@@ -23801,6 +23803,11 @@ mod tests {
         assert!(is_identifier_name("", "order_key"));
         assert!(is_identifier_name("", "record_uuid"));
         assert!(is_identifier_name("", "guid"));
+        // numbered twins: a trailing digit run is stripped per token before matching
+        assert!(is_identifier_name("", "customer_id2"));
+        assert!(is_identifier_name("", "code1"));
+        assert!(is_identifier_name("", "productCode2"));
+        assert!(is_identifier_name("", "order_key3"));
         // substrings inside real words must NOT trip it (token-boundary, not substring)
         assert!(!is_identifier_name("", "grid"));
         assert!(!is_identifier_name("", "medicaid_payment"));
@@ -23808,6 +23815,8 @@ mod tests {
         assert!(!is_identifier_name("County", "county"));
         assert!(!is_identifier_name("", "population"));
         assert!(!is_identifier_name("Net Worth", "net_worth"));
+        // a digit-suffixed non-identifier token must still be admitted (co2 -> "co", not an id)
+        assert!(!is_identifier_name("", "co2_emissions"));
     }
 
     #[test]

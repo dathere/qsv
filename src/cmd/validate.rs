@@ -1745,15 +1745,23 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             },
         };
 
+        // `output_base` is only used (and its parent dirs only created) in --split-ragged mode;
+        // computing it unconditionally would create stray directories on the normal validate path.
         // stdin ("-"), snappy-decompressed, and zip-extracted inputs are materialized inside
         // `tmpdir`, which is removed on exit — writing split files next to them would silently
-        // lose them. For those, write the split files under the input's file name in the current
-        // directory instead (so stdin lands on `stdin.csv.valid` etc., like schema mode).
-        let output_base = if input_path.starts_with(tmpdir.path()) {
-            input_path.file_name().map_or_else(
-                || "stdin.csv".to_string(),
-                |n| n.to_string_lossy().to_string(),
-            )
+        // lose them. For those, write the split files under the input's tmpdir-*relative* subpath
+        // in the current directory (creating parent dirs as needed). Preserving the subpath keeps
+        // stdin on `stdin.csv.*` while avoiding collisions between distinct entries that share a
+        // base name (e.g. a zip's `a/data.csv` and `b/data.csv`).
+        let output_base = if !split_ragged {
+            String::new()
+        } else if let Ok(rel) = input_path.strip_prefix(tmpdir.path()) {
+            if let Some(parent) = rel.parent()
+                && !parent.as_os_str().is_empty()
+            {
+                std::fs::create_dir_all(parent)?;
+            }
+            rel.to_string_lossy().to_string()
         } else {
             input_path.to_string_lossy().to_string()
         };
@@ -1948,9 +1956,18 @@ fn validate_single_file_rfc4180(
         let valid_tmp = tempfile::Builder::new()
             .prefix(".qsv-validate-")
             .tempfile_in(&valid_dir)?;
-        // clone the temp file's handle so `valid_tmp` still owns the NamedTempFile for persist()
-        let mut valid_wtr =
-            Config::new(Some(&valid_path)).from_writer(valid_tmp.as_file().try_clone()?);
+        // clone the temp file's handle so `valid_tmp` still owns the NamedTempFile for persist().
+        // Mirror Config::writer()'s io_writer(): snappy-compress the temp when the final path is
+        // `.sz` (e.g. `--valid csv.sz`), so the valid output stays consistent with the invalid
+        // writer (which goes through Config::writer()).
+        let valid_cfg = Config::new(Some(&valid_path));
+        let valid_handle = valid_tmp.as_file().try_clone()?;
+        let valid_sink: Box<dyn std::io::Write + 'static> = if valid_cfg.is_snappy() {
+            Box::new(snap::write::FrameEncoder::new(valid_handle))
+        } else {
+            Box::new(valid_handle)
+        };
+        let mut valid_wtr = valid_cfg.from_writer(valid_sink);
         if has_headers {
             valid_wtr.write_byte_record(&header_record)?;
         }

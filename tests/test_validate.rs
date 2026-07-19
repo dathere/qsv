@@ -474,6 +474,60 @@ fn validate_split_ragged_explicit_stdin() {
 }
 
 #[test]
+fn validate_split_ragged_snappy_input() {
+    // a snappy-compressed input is materialized under a tempdir; its split output must land in
+    // the cwd under the input's (relative) name, not be lost in the tempdir (roborev #3706)
+    let wrk = Workdir::new("validate_split_ragged_snappy_input").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3"]],
+    );
+
+    // compress data.csv -> data.csv.sz
+    let mut compress = wrk.command("snappy");
+    compress
+        .arg("compress")
+        .arg("data.csv")
+        .args(["--output", "data.csv.sz"]);
+    wrk.assert_success(&mut compress);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv.sz");
+    wrk.assert_err(&mut cmd);
+
+    let valid: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    assert_eq!(valid, vec![svec!["1", "2"]]);
+    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid, "x,y\n3\n");
+}
+
+#[test]
+fn validate_split_ragged_compressed_valid_suffix() {
+    // a `.sz` custom --valid suffix must produce a genuinely snappy-compressed file, consistent
+    // with the invalid writer's Config::writer() path (roborev #3706)
+    let wrk = Workdir::new("validate_split_ragged_compressed_valid_suffix").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3"]],
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .args(["--valid", "csv.sz"])
+        .arg("data.csv");
+    wrk.assert_err(&mut cmd);
+
+    // the valid output is <input>.<suffix> = data.csv.csv.sz and is snappy-framed
+    let bytes = std::fs::read(wrk.path("data.csv.csv.sz")).unwrap();
+    // the snappy stream identifier starts with 0xFF and carries the ascii "sNaPpY"
+    assert_eq!(bytes[0], 0xFF, "valid output was not snappy-compressed");
+    assert!(
+        bytes.windows(6).any(|w| w == b"sNaPpY"),
+        "valid output is missing the snappy stream identifier"
+    );
+}
+
+#[test]
 fn validate_bad_csv_prettyjson() {
     let wrk = Workdir::new("validate_bad_csv_prettyjson").flexible(true);
     wrk.create(

@@ -196,6 +196,338 @@ Use `qsv fixlengths` to fix record length issues.
 }
 
 #[test]
+fn validate_split_ragged_rfc4180() {
+    let wrk = Workdir::new("validate_split_ragged_rfc4180").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["title", "name", "age"],
+            svec!["Professor", "Xaviers", "60"],
+            svec!["Magneto", "90"], // ragged: too few
+            svec!["First Class Student", "Iceman", "14"],
+            svec!["Extra", "Field", "Here", "Boom"], // ragged: too many
+        ],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv");
+
+    // ragged rows quarantined -> non-zero exit
+    wrk.assert_err(&mut cmd);
+
+    // well-formed rows go to .valid
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    assert_eq!(
+        valid_records,
+        vec![
+            svec!["Professor", "Xaviers", "60"],
+            svec!["First Class Student", "Iceman", "14"],
+        ]
+    );
+
+    // ragged rows go to .invalid (read as text since widths vary)
+    let invalid_output = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(
+        invalid_output,
+        "title,name,age\nMagneto,90\nExtra,Field,Here,Boom\n"
+    );
+
+    // report lists the ragged rows with 1-based data-row numbers
+    let errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert_eq!(
+        errors,
+        "row_number\tfield\terror\n2\t<RECORD>\tfound 2 fields, but expected \
+         3\n4\t<RECORD>\tfound 4 fields, but expected 3\n"
+    );
+}
+
+#[test]
+fn validate_split_ragged_no_headers() {
+    let wrk = Workdir::new("validate_split_ragged_no_headers").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b", "c"], // first data row -> defines width 3
+            svec!["d", "e"],      // ragged
+            svec!["f", "g", "h"],
+        ],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .arg("--no-headers")
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+
+    // no spurious header line: the first row is data (read raw, since read_csv would treat the
+    // first data row as a header)
+    let valid_output = wrk.read_to_string("data.csv.valid").unwrap();
+    assert_eq!(valid_output, "a,b,c\nf,g,h\n");
+
+    let invalid_output = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid_output, "d,e\n");
+
+    let errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert_eq!(
+        errors,
+        "row_number\tfield\terror\n2\t<RECORD>\tfound 2 fields, but expected 3\n"
+    );
+}
+
+#[test]
+fn validate_split_ragged_all_valid() {
+    let wrk = Workdir::new("validate_split_ragged_all_valid").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3", "4"]],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv");
+
+    // no ragged rows -> success, and no output files at all (consistent with JSON Schema mode)
+    wrk.assert_success(&mut cmd);
+    assert!(!wrk.path("data.csv.valid").exists());
+    assert!(!wrk.path("data.csv.invalid").exists());
+    assert!(!wrk.path("data.csv.validation-errors.tsv").exists());
+}
+
+#[test]
+fn validate_split_ragged_custom_suffixes() {
+    let wrk = Workdir::new("validate_split_ragged_custom_suffixes").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["a", "b"],
+            svec!["1", "2"],
+            svec!["3"], // ragged
+        ],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .args(["--valid", "good"])
+        .args(["--invalid", "bad"])
+        .arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.good");
+    assert_eq!(valid_records, vec![svec!["1", "2"]]);
+
+    let invalid_output = wrk.read_to_string("data.csv.bad").unwrap();
+    assert_eq!(invalid_output, "a,b\n3\n");
+}
+
+#[test]
+fn validate_split_ragged_off_still_aborts() {
+    // regression: without the flag, a ragged row still aborts (no split files produced)
+    let wrk = Workdir::new("validate_split_ragged_off_still_aborts").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["a", "b"], svec!["1", "2"], svec!["3"]],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    assert!(!wrk.path("data.csv.valid").exists());
+    assert!(!wrk.path("data.csv.invalid").exists());
+}
+
+#[test]
+fn validate_split_ragged_schema() {
+    let wrk = Workdir::new("validate_split_ragged_schema").flexible(true);
+    // permissive all-string schema so ONLY ragged rows are quarantined (deterministic)
+    wrk.create_from_string(
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "id": { "type": "string" },
+                "val": { "type": "string" }
+            }
+        }"#,
+    );
+    wrk.create(
+        "data.csv",
+        vec![
+            svec!["id", "val"],
+            svec!["1", "apple"],
+            svec!["2"],                    // ragged: too few (would panic without the fix)
+            svec!["3", "cherry", "extra"], // ragged: too many
+            svec!["4", "date"],
+        ],
+    );
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv").arg("schema.json");
+
+    wrk.assert_err(&mut cmd);
+
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    assert_eq!(valid_records, vec![svec!["1", "apple"], svec!["4", "date"]]);
+
+    let invalid_output = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid_output, "id,val\n2\n3,cherry,extra\n");
+
+    let errors = wrk
+        .read_to_string("data.csv.validation-errors.tsv")
+        .unwrap();
+    assert_eq!(
+        errors,
+        "row_number\tfield\terror\n2\t<RECORD>\tfound 1 fields, but expected \
+         2\n3\t<RECORD>\tfound 3 fields, but expected 2\n"
+    );
+}
+
+#[test]
+fn validate_split_ragged_aborts_on_bad_utf8() {
+    // scope boundary: --split-ragged only diverts column-count mismatches; non-UTF-8 still aborts
+    let wrk = Workdir::new("validate_split_ragged_aborts_on_bad_utf8").flexible(true);
+    // write a CSV with a non-UTF-8 byte (0xFF) in a data cell
+    std::fs::write(wrk.path("data.csv"), b"a,b\n1,2\n3,\xFF\n").unwrap();
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv");
+
+    wrk.assert_err(&mut cmd);
+    let stderr = wrk.output_stderr(&mut cmd);
+    assert!(stderr.contains("non-utf8"), "stderr was: {stderr}");
+}
+
+#[test]
+fn validate_split_ragged_multifile() {
+    let wrk = Workdir::new("validate_split_ragged_multifile").flexible(true);
+    wrk.create("clean.csv", vec![svec!["a", "b"], svec!["1", "2"]]);
+    wrk.create(
+        "ragged.csv",
+        vec![svec!["a", "b"], svec!["1", "2"], svec!["3"]],
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("clean.csv").arg("ragged.csv");
+
+    // one file has ragged rows -> overall non-zero exit
+    wrk.assert_err(&mut cmd);
+
+    // the clean file is untouched (no split files)
+    assert!(!wrk.path("clean.csv.valid").exists());
+    assert!(!wrk.path("clean.csv.invalid").exists());
+
+    // the ragged file is split
+    let valid_records: Vec<Vec<String>> = wrk.read_csv("ragged.csv.valid");
+    assert_eq!(valid_records, vec![svec!["1", "2"]]);
+    let invalid_output = wrk.read_to_string("ragged.csv.invalid").unwrap();
+    assert_eq!(invalid_output, "a,b\n3\n");
+}
+
+#[test]
+fn validate_split_ragged_preserves_existing_valid_on_clean() {
+    // a clean run must NOT truncate/delete a pre-existing `.valid` file (roborev #3705)
+    let wrk =
+        Workdir::new("validate_split_ragged_preserves_existing_valid_on_clean").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3", "4"]],
+    );
+    wrk.create_from_string("data.csv.valid", "PRECIOUS-USER-DATA\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+    // the pre-existing file is untouched, and no `.invalid` is produced
+    let preserved = wrk.read_to_string("data.csv.valid").unwrap();
+    assert_eq!(preserved, "PRECIOUS-USER-DATA\n");
+    assert!(!wrk.path("data.csv.invalid").exists());
+}
+
+#[test]
+fn validate_split_ragged_explicit_stdin() {
+    // explicit stdin ("-") must write split files to the cwd, not into a tempdir that vanishes
+    // (roborev #3705)
+    use std::io::Write;
+    let wrk = Workdir::new("validate_split_ragged_explicit_stdin").flexible(true);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("-");
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin_handle = child.stdin.take().unwrap();
+        stdin_handle.write_all(b"a,b\n1,2\n3\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    // ragged row -> non-zero exit
+    assert!(!output.status.success());
+
+    // split files land on stdin.csv.* in the working directory
+    let valid = wrk.read_to_string("stdin.csv.valid").unwrap();
+    assert_eq!(valid, "a,b\n1,2\n");
+    let invalid = wrk.read_to_string("stdin.csv.invalid").unwrap();
+    assert_eq!(invalid, "a,b\n3\n");
+}
+
+#[test]
+fn validate_split_ragged_snappy_input() {
+    // a snappy-compressed input is materialized under a tempdir; its split output must land in
+    // the cwd under the input's (relative) name, not be lost in the tempdir (roborev #3706)
+    let wrk = Workdir::new("validate_split_ragged_snappy_input").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3"]],
+    );
+
+    // compress data.csv -> data.csv.sz
+    let mut compress = wrk.command("snappy");
+    compress
+        .arg("compress")
+        .arg("data.csv")
+        .args(["--output", "data.csv.sz"]);
+    wrk.assert_success(&mut compress);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv.sz");
+    wrk.assert_err(&mut cmd);
+
+    let valid: Vec<Vec<String>> = wrk.read_csv("data.csv.valid");
+    assert_eq!(valid, vec![svec!["1", "2"]]);
+    let invalid = wrk.read_to_string("data.csv.invalid").unwrap();
+    assert_eq!(invalid, "x,y\n3\n");
+}
+
+#[test]
+fn validate_split_ragged_compressed_valid_suffix() {
+    // a `.sz` custom --valid suffix must produce a genuinely snappy-compressed file, consistent
+    // with the invalid writer's Config::writer() path (roborev #3706)
+    let wrk = Workdir::new("validate_split_ragged_compressed_valid_suffix").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3"]],
+    );
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged")
+        .args(["--valid", "csv.sz"])
+        .arg("data.csv");
+    wrk.assert_err(&mut cmd);
+
+    // the valid output is <input>.<suffix> = data.csv.csv.sz and is snappy-framed
+    let bytes = std::fs::read(wrk.path("data.csv.csv.sz")).unwrap();
+    // the snappy stream identifier starts with 0xFF and carries the ascii "sNaPpY"
+    assert_eq!(bytes[0], 0xFF, "valid output was not snappy-compressed");
+    assert!(
+        bytes.windows(6).any(|w| w == b"sNaPpY"),
+        "valid output is missing the snappy stream identifier"
+    );
+}
+
+#[test]
 fn validate_bad_csv_prettyjson() {
     let wrk = Workdir::new("validate_bad_csv_prettyjson").flexible(true);
     wrk.create(

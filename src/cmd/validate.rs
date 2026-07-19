@@ -1680,8 +1680,7 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
     let flag_json = args.flag_json || args.flag_pretty_json;
     let flag_pretty_json = args.flag_pretty_json;
 
-    // --split-ragged output naming: valid/invalid suffixes and whether input came from stdin
-    // (in which case the split files use a "stdin.csv" base in the current dir, like schema mode)
+    // --split-ragged output naming: valid/invalid suffixes
     let split_ragged = args.flag_split_ragged;
     let valid_suffix = args
         .flag_valid
@@ -1691,7 +1690,6 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
         .flag_invalid
         .clone()
         .unwrap_or_else(|| "invalid".to_string());
-    let is_stdin_input = args.arg_input.is_empty();
 
     let mut all_valid = true;
     let mut total_files = 0;
@@ -1747,8 +1745,15 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             },
         };
 
-        let output_base = if is_stdin_input {
-            "stdin.csv".to_string()
+        // stdin ("-"), snappy-decompressed, and zip-extracted inputs are materialized inside
+        // `tmpdir`, which is removed on exit — writing split files next to them would silently
+        // lose them. For those, write the split files under the input's file name in the current
+        // directory instead (so stdin lands on `stdin.csv.valid` etc., like schema mode).
+        let output_base = if input_path.starts_with(tmpdir.path()) {
+            input_path.file_name().map_or_else(
+                || "stdin.csv".to_string(),
+                |n| n.to_string_lossy().to_string(),
+            )
         } else {
             input_path.to_string_lossy().to_string()
         };
@@ -1926,11 +1931,26 @@ fn validate_single_file_rfc4180(
             ByteRecord::new()
         };
 
-        // `.valid` is written by streaming; if no ragged rows are found we delete it at EOF so a
-        // clean file produces no output files (matching JSON Schema mode). The `.invalid` writer
-        // and error report are created lazily, only once the first ragged row is seen.
+        // Stream valid rows to a temp file in the target directory, then rename it into
+        // `<output_base>.<valid_suffix>` only if we actually quarantine a ragged row. This way a
+        // clean file never truncates or deletes a pre-existing `.valid` file (matching JSON Schema
+        // mode's "no output when all valid"), and an aborted run leaves no stray files — the
+        // NamedTempFile removes itself on drop. The `.invalid` writer and error report are likewise
+        // created lazily, only once the first ragged row is seen.
         let valid_path = format!("{output_base}.{valid_suffix}");
-        let mut valid_wtr = Config::new(Some(&valid_path)).writer()?;
+        let valid_dir = std::path::Path::new(&valid_path)
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .map_or_else(
+                || std::path::PathBuf::from("."),
+                std::path::Path::to_path_buf,
+            );
+        let valid_tmp = tempfile::Builder::new()
+            .prefix(".qsv-validate-")
+            .tempfile_in(&valid_dir)?;
+        // clone the temp file's handle so `valid_tmp` still owns the NamedTempFile for persist()
+        let mut valid_wtr =
+            Config::new(Some(&valid_path)).from_writer(valid_tmp.as_file().try_clone()?);
         if has_headers {
             valid_wtr.write_byte_record(&header_record)?;
         }
@@ -1996,13 +2016,17 @@ fn validate_single_file_rfc4180(
             }
         }
 
+        valid_wtr.flush()?;
+        drop(valid_wtr); // release the cloned handle before persisting/dropping the temp (Windows)
         if split_count == 0 {
-            // clean file: drop the writer (closing the file handle) and remove `.valid` so a
-            // fully valid file produces no output, consistent with JSON Schema mode
-            drop(valid_wtr);
-            let _ = std::fs::remove_file(&valid_path);
+            // clean file: drop the temp (NamedTempFile removes it) so no output is produced and
+            // any pre-existing `.valid` file is left untouched, consistent with JSON Schema mode
+            drop(valid_tmp);
         } else {
-            valid_wtr.flush()?;
+            // rename the temp into place atomically; only now does `.valid` appear/get replaced
+            valid_tmp
+                .persist(&valid_path)
+                .map_err(|e| CliError::Other(format!("Cannot write {valid_path}: {e}")))?;
             if let Some(mut w) = invalid_wtr {
                 w.flush()?;
             }

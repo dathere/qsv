@@ -424,6 +424,56 @@ fn validate_split_ragged_multifile() {
 }
 
 #[test]
+fn validate_split_ragged_preserves_existing_valid_on_clean() {
+    // a clean run must NOT truncate/delete a pre-existing `.valid` file (roborev #3705)
+    let wrk =
+        Workdir::new("validate_split_ragged_preserves_existing_valid_on_clean").flexible(true);
+    wrk.create(
+        "data.csv",
+        vec![svec!["x", "y"], svec!["1", "2"], svec!["3", "4"]],
+    );
+    wrk.create_from_string("data.csv.valid", "PRECIOUS-USER-DATA\n");
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("data.csv");
+
+    wrk.assert_success(&mut cmd);
+    // the pre-existing file is untouched, and no `.invalid` is produced
+    let preserved = wrk.read_to_string("data.csv.valid").unwrap();
+    assert_eq!(preserved, "PRECIOUS-USER-DATA\n");
+    assert!(!wrk.path("data.csv.invalid").exists());
+}
+
+#[test]
+fn validate_split_ragged_explicit_stdin() {
+    // explicit stdin ("-") must write split files to the cwd, not into a tempdir that vanishes
+    // (roborev #3705)
+    use std::io::Write;
+    let wrk = Workdir::new("validate_split_ragged_explicit_stdin").flexible(true);
+
+    let mut cmd = wrk.command("validate");
+    cmd.arg("--split-ragged").arg("-");
+    cmd.stdin(std::process::Stdio::piped());
+    cmd.stdout(std::process::Stdio::piped());
+    cmd.stderr(std::process::Stdio::piped());
+
+    let mut child = cmd.spawn().unwrap();
+    {
+        let mut stdin_handle = child.stdin.take().unwrap();
+        stdin_handle.write_all(b"a,b\n1,2\n3\n").unwrap();
+    }
+    let output = child.wait_with_output().unwrap();
+    // ragged row -> non-zero exit
+    assert!(!output.status.success());
+
+    // split files land on stdin.csv.* in the working directory
+    let valid = wrk.read_to_string("stdin.csv.valid").unwrap();
+    assert_eq!(valid, "a,b\n1,2\n");
+    let invalid = wrk.read_to_string("stdin.csv.invalid").unwrap();
+    assert_eq!(invalid, "a,b\n3\n");
+}
+
+#[test]
 fn validate_bad_csv_prettyjson() {
     let wrk = Workdir::new("validate_bad_csv_prettyjson").flexible(true);
     wrk.create(

@@ -183,6 +183,13 @@ If all records are valid, no output files are produced.
 qsv validate data.csv
 ```
 
+> Quarantine rows with the wrong number of columns instead of aborting.
+> Well-formed rows go to data.csv.valid; ragged rows go to data.csv.invalid.
+
+```console
+qsv validate --split-ragged data.csv
+```
+
 > Validate a TSV file against a JSON Schema
 
 ```console
@@ -243,6 +250,7 @@ qsv validate --help
 | &nbsp;`‑‑fail‑fast`&nbsp; | flag | Stops on first error. |  |
 | &nbsp;`‑‑valid`&nbsp; | string | Valid record output file suffix. | `valid` |
 | &nbsp;`‑‑invalid`&nbsp; | string | Invalid record output file suffix. | `invalid` |
+| &nbsp;`‑‑split‑ragged`&nbsp; | flag | Opt-in mode: instead of aborting on the first row with the wrong number of columns (a "ragged" row), write well-formed rows to the '<input>.<valid>' file and the ragged rows to the '<input>.<invalid>' file, with a report appended to '<input>.validation-errors.tsv'. Returns a non-zero exit code when any ragged row is found. Only column-count mismatches are diverted; malformed quoting and non-UTF-8 data still abort validation. Works in both RFC 4180 and JSON Schema validation modes. The split files are written next to each input file, so this is intended for on-disk file input(s). |  |
 | &nbsp;`‑‑json`&nbsp; | flag | When validating without a JSON Schema, return the RFC 4180 check as a JSON file instead of a message. |  |
 | &nbsp;`‑‑pretty‑json`&nbsp; | flag | Same as --json, but pretty printed. |  |
 | &nbsp;`‑‑valid‑output`&nbsp; | string | Change validation mode behavior so if ALL rows are valid, to pass it to output, return exit code 1, and set stderr to the number of valid rows. Setting this will override the default behavior of creating a valid file only when there are invalid records. To send valid records to stdout, use `-` as the filename. |  |

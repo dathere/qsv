@@ -161,8 +161,12 @@ If all records are valid, no output files are produced.
 
 Examples:
 
-  # Validate a CSV file. Use this to check if a CSV file is readable by qsv. 
+  # Validate a CSV file. Use this to check if a CSV file is readable by qsv.
   qsv validate data.csv
+
+  # Quarantine rows with the wrong number of columns instead of aborting.
+  # Well-formed rows go to data.csv.valid; ragged rows go to data.csv.invalid.
+  qsv validate --split-ragged data.csv
 
   # Validate a TSV file against a JSON Schema
   qsv validate data.tsv schema.json
@@ -206,6 +210,15 @@ Validate options:
     --fail-fast                Stops on first error.
     --valid <suffix>           Valid record output file suffix. [default: valid]
     --invalid <suffix>         Invalid record output file suffix. [default: invalid]
+    --split-ragged             Opt-in mode: instead of aborting on the first row with the wrong
+                               number of columns (a "ragged" row), write well-formed rows to the
+                               '<input>.<valid>' file and the ragged rows to the '<input>.<invalid>'
+                               file, with a report appended to '<input>.validation-errors.tsv'.
+                               Returns a non-zero exit code when any ragged row is found.
+                               Only column-count mismatches are diverted; malformed quoting and
+                               non-UTF-8 data still abort validation. Works in both RFC 4180 and
+                               JSON Schema validation modes. The split files are written next to
+                               each input file, so this is intended for on-disk file input(s).
     --json                     When validating without a JSON Schema, return the RFC 4180 check
                                as a JSON file instead of a message.
     --pretty-json              Same as --json, but pretty printed.
@@ -364,6 +377,7 @@ struct Args {
     flag_fail_fast:            bool,
     flag_valid:                Option<String>,
     flag_invalid:              Option<String>,
+    flag_split_ragged:         bool,
     flag_json:                 bool,
     flag_pretty_json:          bool,
     flag_valid_output:         Option<String>,
@@ -1235,6 +1249,13 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // don't panic; first-call value wins, which is fine for a single-shot command.
     let _ = DELIMITER.set(args.flag_delimiter);
 
+    // in --split-ragged mode, read flexibly so ragged rows don't abort; we detect and
+    // quarantine them ourselves. rconfig stays flexible so split_invalid_records' re-read
+    // (which demuxes the same ragged rows) also tolerates them.
+    if args.flag_split_ragged {
+        rconfig = rconfig.flexible(true);
+    }
+
     let mut rdr = rconfig.reader()?;
 
     // prep progress bar
@@ -1248,7 +1269,8 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // for full row count, prevent CSV reader from aborting on inconsistent column count
     rconfig = rconfig.flexible(true);
     let record_count = util::count_rows(&rconfig)?;
-    rconfig = rconfig.flexible(false);
+    // keep flexible in --split-ragged mode so split_invalid_records' re-read tolerates ragged rows
+    rconfig = rconfig.flexible(args.flag_split_ragged);
 
     #[cfg(any(feature = "feature_capable", feature = "lite"))]
     if show_progress {
@@ -1422,6 +1444,7 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
     let mut validation_error_messages: Vec<String> = Vec::with_capacity(50);
     let flag_trim = args.flag_trim;
     let flag_fail_fast = args.flag_fail_fast;
+    let split_ragged = args.flag_split_ragged;
     let mut itoa_buffer = itoa::Buffer::new();
     let batch_pariter_min_len = batch_size / num_jobs;
 
@@ -1463,6 +1486,24 @@ Try running `qsv validate schema {}` to check the JSON Schema file.", json_schem
             .par_iter()
             .with_min_len(batch_pariter_min_len)
             .map(|record| {
+                // --split-ragged: a ragged row has a field count != header_len. Because we append
+                // the row number as an extra field, a well-formed row here has exactly
+                // header_len + 1 fields. Ragged rows are always marked invalid (quarantined) and
+                // skip schema validation entirely (which would otherwise silently zip to the
+                // shorter length and possibly pass). The reader is only flexible when
+                // --split-ragged is set, so this never fires otherwise.
+                if split_ragged && record.len() != header_len + 1 {
+                    std::hint::cold_path();
+                    // the row number is always the last appended field, regardless of raggedness
+                    // safety: row number was appended via itoa, so it is always valid ASCII
+                    let row_number_string =
+                        simdutf8::basic::from_utf8(&record[record.len() - 1]).unwrap();
+                    return Some(format!(
+                        "{row_number_string}\t<RECORD>\tfound {} fields, but expected {header_len}",
+                        record.len() - 1
+                    ));
+                }
+
                 // convert CSV record to JSON instance
                 let json_instance = match to_json_instance(&header_types, header_len, record) {
                     Ok(obj) => obj,
@@ -1639,9 +1680,23 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
     let flag_json = args.flag_json || args.flag_pretty_json;
     let flag_pretty_json = args.flag_pretty_json;
 
+    // --split-ragged output naming: valid/invalid suffixes and whether input came from stdin
+    // (in which case the split files use a "stdin.csv" base in the current dir, like schema mode)
+    let split_ragged = args.flag_split_ragged;
+    let valid_suffix = args
+        .flag_valid
+        .clone()
+        .unwrap_or_else(|| "valid".to_string());
+    let invalid_suffix = args
+        .flag_invalid
+        .clone()
+        .unwrap_or_else(|| "invalid".to_string());
+    let is_stdin_input = args.arg_input.is_empty();
+
     let mut all_valid = true;
     let mut total_files = 0;
     let mut valid_files = 0;
+    let mut total_split_count: u64 = 0;
 
     for input_path in processed_inputs {
         total_files += 1;
@@ -1660,6 +1715,11 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
 
         if args.flag_delimiter.is_some() {
             rconfig = rconfig.delimiter(args.flag_delimiter);
+        }
+
+        // in --split-ragged mode, read flexibly so ragged rows are diverted rather than aborting
+        if split_ragged {
+            rconfig = rconfig.flexible(true);
         }
 
         let mut rdr = match rconfig.reader() {
@@ -1687,6 +1747,12 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             },
         };
 
+        let output_base = if is_stdin_input {
+            "stdin.csv".to_string()
+        } else {
+            input_path.to_string_lossy().to_string()
+        };
+
         // Validate the file
         let validation_result = validate_single_file_rfc4180(
             &mut rdr,
@@ -1694,11 +1760,23 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
             flag_json,
             flag_pretty_json,
             args.flag_quiet,
+            split_ragged,
+            &valid_suffix,
+            &invalid_suffix,
+            &output_base,
         );
 
         match validation_result {
-            Ok(()) => {
+            Ok(0) => {
                 valid_files += 1;
+            },
+            Ok(n) => {
+                // --split-ragged: n ragged rows were quarantined into this file's .invalid output
+                all_valid = false;
+                total_split_count += n;
+                if !args.flag_quiet && input_count > 1 {
+                    woutinfo!("⚠ {}: {n} ragged row(s) quarantined", input_path.display());
+                }
             },
             Err(e) => {
                 all_valid = false;
@@ -1728,6 +1806,13 @@ fn validate_rfc4180_mode(args: &Args) -> CliResult<()> {
 
     if all_valid {
         Ok(())
+    } else if total_split_count > 0 {
+        // --split-ragged: split files were produced; return non-zero with the quarantine count
+        fail_clierror!(
+            "{} ragged row(s) quarantined across {} file(s).",
+            HumanCount(total_split_count),
+            total_files
+        )
     } else if input_count > 1 {
         fail_clierror!(
             "{} out of {} files failed validation",
@@ -1747,7 +1832,11 @@ fn validate_single_file_rfc4180(
     flag_json: bool,
     flag_pretty_json: bool,
     quiet: bool,
-) -> CliResult<()> {
+    split_ragged: bool,
+    valid_suffix: &str,
+    invalid_suffix: &str,
+    output_base: &str,
+) -> CliResult<u64> {
     // first, let's validate the header row
     let mut header_msg = String::new();
     let mut header_len = 0_usize;
@@ -1822,6 +1911,143 @@ fn validate_single_file_rfc4180(
                 return fail_clierror!("Header Validation error: {e}.");
             },
         }
+    }
+
+    // --split-ragged: stream rows, routing well-formed rows to `<output_base>.<valid_suffix>`
+    // and ragged rows (wrong column count) to `<output_base>.<invalid_suffix>`, with a report
+    // appended to `<output_base>.validation-errors.tsv`, instead of aborting on the first ragged
+    // row. Genuine parse errors (bad quoting) and non-UTF-8 data still abort. The reader is only
+    // flexible when --split-ragged is set, so ragged rows arrive here instead of erroring.
+    if split_ragged {
+        let has_headers = !rconfig.no_headers;
+        let header_record = if has_headers {
+            rdr.byte_headers()?.clone()
+        } else {
+            ByteRecord::new()
+        };
+
+        // `.valid` is written by streaming; if no ragged rows are found we delete it at EOF so a
+        // clean file produces no output files (matching JSON Schema mode). The `.invalid` writer
+        // and error report are created lazily, only once the first ragged row is seen.
+        let valid_path = format!("{output_base}.{valid_suffix}");
+        let mut valid_wtr = Config::new(Some(&valid_path)).writer()?;
+        if has_headers {
+            valid_wtr.write_byte_record(&header_record)?;
+        }
+        let mut invalid_wtr: Option<csv::Writer<Box<dyn std::io::Write + 'static>>> = None;
+
+        // expected width = header count, or (with --no-headers) the first data record's width
+        let mut expected_len = header_len; // 0 until first record sets it when --no-headers
+        let mut split_count: u64 = 0;
+        let mut data_row_num: u64 = 0;
+        let mut error_messages: Vec<String> = Vec::new();
+        let mut record = ByteRecord::new();
+
+        loop {
+            match rdr.read_byte_record(&mut record) {
+                Ok(false) => break,
+                Ok(true) => {
+                    data_row_num += 1;
+                    // non-UTF-8 still aborts (--split-ragged only diverts column-count mismatches)
+                    if simdutf8::basic::from_utf8(record.as_slice()).is_err() {
+                        return fail_encoding_clierror!(
+                            "non-utf8 sequence at record {data_row_num}.\nInvalid record: \
+                             {record:?}\nUse `qsv input` to fix formatting and to handle non-utf8 \
+                             sequences.\nAlternatively, transcode your data to UTF-8 first using \
+                             `iconv` or `recode`."
+                        );
+                    }
+                    if expected_len == 0 {
+                        // --no-headers: the first data record defines the expected width
+                        expected_len = record.len();
+                    }
+                    if record.len() == expected_len {
+                        valid_wtr.write_byte_record(&record)?;
+                    } else {
+                        split_count += 1;
+                        // lazily create the invalid writer on the first ragged row; it must be
+                        // flexible since ragged rows vary in width
+                        if invalid_wtr.is_none() {
+                            let mut w =
+                                Config::new(Some(&format!("{output_base}.{invalid_suffix}")))
+                                    .flexible(true)
+                                    .writer()?;
+                            if has_headers {
+                                w.write_byte_record(&header_record)?;
+                            }
+                            invalid_wtr = Some(w);
+                        }
+                        // safety: just ensured Some above
+                        invalid_wtr.as_mut().unwrap().write_byte_record(&record)?;
+                        error_messages.push(format!(
+                            "{data_row_num}\t<RECORD>\tfound {} fields, but expected \
+                             {expected_len}",
+                            record.len()
+                        ));
+                    }
+                },
+                Err(e) => {
+                    // with a flexible reader, UnequalLengths never fires; any error here is a
+                    // genuine, non-recoverable parse error — still abort.
+                    return fail_clierror!(
+                        "Validation error: {e}.\nLast valid record: {data_row_num}"
+                    );
+                },
+            }
+        }
+
+        if split_count == 0 {
+            // clean file: drop the writer (closing the file handle) and remove `.valid` so a
+            // fully valid file produces no output, consistent with JSON Schema mode
+            drop(valid_wtr);
+            let _ = std::fs::remove_file(&valid_path);
+        } else {
+            valid_wtr.flush()?;
+            if let Some(mut w) = invalid_wtr {
+                w.flush()?;
+            }
+            write_error_report(output_base, error_messages)?;
+        }
+
+        if !quiet {
+            if flag_json {
+                let summary = json!({
+                    "split_ragged": {
+                        "valid_records": data_row_num - split_count,
+                        "quarantined_records": split_count,
+                        "valid_file": if split_count > 0 { json!(valid_path) } else { json!(null) },
+                        "invalid_file": if split_count > 0 {
+                            json!(format!("{output_base}.{invalid_suffix}"))
+                        } else {
+                            json!(null)
+                        },
+                        "error_report": if split_count > 0 {
+                            json!(format!("{output_base}.validation-errors.tsv"))
+                        } else {
+                            json!(null)
+                        },
+                    }
+                });
+                let out = if flag_pretty_json {
+                    // safety: summary is valid JSON by construction
+                    simd_json::to_string_pretty(&summary).unwrap()
+                } else {
+                    summary.to_string()
+                };
+                woutinfo!("{out}");
+            } else if split_count == 0 {
+                woutinfo!("Valid: {header_msg} No ragged rows found.");
+            } else {
+                woutinfo!(
+                    "{} ragged row(s) quarantined out of {} data row(s).\nWrote \
+                     {output_base}.{invalid_suffix} and {output_base}.validation-errors.tsv",
+                    HumanCount(split_count),
+                    HumanCount(data_row_num)
+                );
+            }
+        }
+
+        return Ok(split_count);
     }
 
     // Now, let's validate the rest of the records the fastest way possible.
@@ -1951,7 +2177,8 @@ Alternatively, transcode your data to UTF-8 first using `iconv` or `recode`."
         woutinfo!("{msg}");
     }
 
-    Ok(())
+    // if we're here, the CSV is valid (no ragged rows to split out)
+    Ok(0)
 }
 
 /// Re-reads the input CSV and demuxes records into `.valid` / `.invalid` files.
@@ -1982,8 +2209,11 @@ fn split_invalid_records(
         Config::new(Some(input_path.to_owned() + "." + valid_suffix).as_ref()).writer()?;
     valid_wtr.write_byte_record(headers)?;
 
-    let mut invalid_wtr =
-        Config::new(Some(input_path.to_owned() + "." + invalid_suffix).as_ref()).writer()?;
+    // the invalid writer must be flexible when quarantining ragged rows (--split-ragged),
+    // since those rows have field counts that differ from the header width.
+    let mut invalid_wtr = Config::new(Some(input_path.to_owned() + "." + invalid_suffix).as_ref())
+        .flexible(rconfig.flexible)
+        .writer()?;
     invalid_wtr.write_byte_record(headers)?;
 
     let mut rdr = rconfig.reader()?;

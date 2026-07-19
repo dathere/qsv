@@ -1962,11 +1962,14 @@ fn validate_single_file_rfc4180(
         // writer (which goes through Config::writer()).
         let valid_cfg = Config::new(Some(&valid_path));
         let valid_handle = valid_tmp.as_file().try_clone()?;
-        let valid_sink: Box<dyn std::io::Write + 'static> = if valid_cfg.is_snappy() {
-            Box::new(snap::write::FrameEncoder::new(valid_handle))
-        } else {
-            Box::new(valid_handle)
-        };
+        // use the unconditional `is_snappy_extension` helper rather than `Config::is_snappy()`,
+        // which is `#[cfg(feature = "polars")]`-gated and would break non-polars builds (qsvlite).
+        let valid_sink: Box<dyn std::io::Write + 'static> =
+            if crate::config::is_snappy_extension(std::path::Path::new(&valid_path)) {
+                Box::new(snap::write::FrameEncoder::new(valid_handle))
+            } else {
+                Box::new(valid_handle)
+            };
         let mut valid_wtr = valid_cfg.from_writer(valid_sink);
         if has_headers {
             valid_wtr.write_byte_record(&header_record)?;

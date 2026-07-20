@@ -153,7 +153,7 @@ bytemuck = { version = "1.24", features = [
 ], optional = true }
 byteorder = "1.5"
 bytes = "1"
-cached = { version = "=3.0.0-rc.8", features = [
+cached = { version = "=3.0.0-rc.9", features = [
     "ahash",
     "redb_store",
     "redis_store",

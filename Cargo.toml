@@ -411,7 +411,7 @@ tokio = { version = "1", features = ["parking_lot", "rt-multi-thread"] }
 unicode-width = { version = "0.2", optional = true }
 uuid = { version = "1", features = ["v4", "v7"] }
 url = "2.5"
-webdriver-downloader = { version = "0.16", optional = true }
+webdriver-downloader = { version = "0.17", optional = true }
 whatlang = { version = "0.18", optional = true }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 zip = "8"
@@ -458,15 +458,16 @@ csvs_convert = { git = "https://github.com/jqnatividad/csvs_convert", branch = "
 # use our patched fork of whatlang to bump hashbrown until our PR is merged
 whatlang = { git = "https://github.com/jqnatividad/whatlang-rs", branch = "bump-hashbrown-to-16" }
 
-# Pinned to our stacked feature branch `feature/splom-parcats-traces` (PR
-# https://github.com/plotly/plotly.rs/pull/425), a strict superset of the earlier pins:
+# Pinned to our stacked branch `deps/webdriver-downloader-0.17` (PR
+# https://github.com/plotly/plotly.rs/pull/428), a strict superset of the earlier pins:
 #   - MapLibre `map`-subplot traces qsv's `viz` maps use (ChoroplethMap, DensityMap,
 #     ScatterMap; upstream PRs #406/#410/#415/#416) — now merged into plotly:main
 #   - plotly.js 3.7 attribute backfill (legendrank/zorder/fillgradient/... ; PR #421)
 #   - new trace types Indicator, Histogram2d, Icicle + layout-level `uirevision` (PR #423)
 #   - new trace types Splom, Parcats (PR #425) — used by qsv `viz splom`/`viz parcats`
-# When #421/#423/#425 merge upstream, repoint this to a plotly.rs release/main rev.
-plotly = { git = "https://github.com/dathere/plotly", branch = "feature/splom-parcats-traces" }
+#   - webdriver-downloader 0.17 (PR #427) — used by qsv `viz_static` for headless Chromium/Firefox export
+# When #421/#423/#425/#428 merge upstream, repoint this to a plotly.rs release/main rev.
+plotly = { git = "https://github.com/dathere/plotly", branch = "deps/webdriver-downloader-0.17" }
 
 # TRACKING: remove this patch when upstream resolves it (see exit conditions below).
 #
@@ -502,10 +503,6 @@ object_store = { git = "https://github.com/kdn36/arrow-rs-object-store", rev = "
 
 # use our patched fork until our PR is merged with bumped deps and quick-xml RUSTSEC fixes
 spreadsheet-ods = { git = "https://github.com/jqnatividad/spreadsheet-ods", branch = "deps-bump-202607" }
-
-# use our patched fork of webdriver-downloader until our PR is merged fixing
-# RUSTSEC-2025-0134: rustls-pemfile is unmaintained
-webdriver-downloader = { git = "https://github.com/jqnatividad/webdriver-downloader", branch = "bump-reqwest-and-fantocinni-to-remove-rustls-pemfile-advisory" }
 
 # Polars has a much higher release tempo for its Python bindings compared
 # to its underlying Rust library. See https://github.com/pola-rs/polars/releases

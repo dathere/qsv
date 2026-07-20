@@ -6,9 +6,10 @@ so charts work offline; map basemaps fetch their tiles over the network at view 
 unless the `white-bg` style is used). Set the QSV_VIZ_CDN environment variable to load
 plotly.js from its CDN instead, shrinking the page by ~1.9MB at the cost of needing
 network access to view it. By default the embedded plotly.js is gzip-compressed
-(~1.9MB vs ~4.8MB) and inflated in-browser, which requires a 2023+ browser with the
-DecompressionStream API; set QSV_VIZ_NO_COMPRESS for plain-text, uncompressed HTML
-that also works on older browsers.
+(~1.9MB vs ~4.8MB) and inflated in-browser, which requires a browser with
+DecompressionStream support (Chrome/Edge 80+, Firefox 113+, or Safari 16.4+);
+set QSV_VIZ_NO_COMPRESS for plain-text, uncompressed HTML that also works on
+older browsers.
 Titles and labels are rendered as plain text - LaTeX (e.g. `$\alpha$`) is not typeset.
 With a qsv build that includes the `viz_static` feature, charts can also be exported as
 static PNG/SVG/PDF/JPEG/WebP images (this requires a Chromium/Firefox browser at

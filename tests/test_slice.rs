@@ -276,6 +276,37 @@ fn slice_negative_with_len_json() {
 }
 
 #[test]
+fn slice_json_escapes_keys() {
+    // regression: JSON object keys were interpolated raw, so a header
+    // containing a double quote or backslash emitted invalid JSON.
+    let wrk = Workdir::new("slice_json_escapes_keys");
+    wrk.create(
+        "data.csv",
+        vec![
+            svec![r#"he said "hi""#, r"back\slash"],
+            svec!["a", "b"],
+            svec!["c", "d"],
+        ],
+    );
+    let mut cmd = wrk.command("slice");
+    cmd.arg("data.csv").args(["--start", "0"]).arg("--json");
+
+    let got: String = wrk.stdout(&mut cmd);
+    let parsed: serde_json::Value = serde_json::from_str(&got)
+        .unwrap_or_else(|e| panic!("output is not valid JSON: {e}\ngot: {got}"));
+    let obj = &parsed[0];
+    assert_eq!(
+        obj[r#"he said "hi""#],
+        serde_json::Value::String("a".to_string())
+    );
+    assert_eq!(
+        obj[r"back\slash"],
+        serde_json::Value::String("b".to_string())
+    );
+    wrk.assert_success(&mut cmd);
+}
+
+#[test]
 fn slice_index() {
     test_index("slice_index", 1, "b", true, false);
 }

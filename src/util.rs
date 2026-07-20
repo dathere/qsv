@@ -2881,15 +2881,19 @@ pub fn write_json(
 ) -> CliResult<()> {
     let mut json_wtr = create_json_writer(output, config::DEFAULT_WTR_BUFFER_CAPACITY * 4)?;
 
+    // keys are escaped once here, per JSON spec. Note that the escaped form
+    // returned by serde_json includes the enclosing double quotes, so the
+    // format string below must NOT add its own quotes around the key.
     let header_vec: Vec<String> = headers
         .iter()
         .enumerate()
         .map(|(col_idx, b)| {
-            if no_headers {
+            let key = if no_headers {
                 col_idx.to_string()
             } else {
                 bytes_to_cow_str(b).into_owned()
-            }
+            };
+            serde_json::Value::String(key).to_string()
         })
         .collect();
 
@@ -2933,7 +2937,7 @@ pub fn write_json(
             } else {
                 write!(&mut json_wtr, ",")?;
             }
-            write!(&mut json_wtr, r#""{key}":{temp_val}"#)?;
+            write!(&mut json_wtr, r#"{key}:{temp_val}"#)?;
         }
         write!(json_wtr, "}}")?;
     }
@@ -2958,15 +2962,19 @@ pub fn write_json_record<W: std::io::Write>(
     record: &csv::ByteRecord,
     is_first: &mut bool,
 ) -> std::io::Result<()> {
+    // keys are escaped once here, per JSON spec. Note that the escaped form
+    // returned by serde_json includes the enclosing double quotes, so the
+    // format strings below must NOT add their own quotes around the key.
     let header_vec: Vec<String> = headers
         .iter()
         .enumerate()
         .map(|(col_idx, b)| {
-            if no_headers {
+            let key = if no_headers {
                 col_idx.to_string()
             } else {
                 bytes_to_cow_str(b).into_owned()
-            }
+            };
+            serde_json::Value::String(key).to_string()
         })
         .collect();
 
@@ -2993,7 +3001,7 @@ pub fn write_json_record<W: std::io::Write>(
             unsafe {
                 write!(
                     json_wtr,
-                    r#""{key}":{value},"#,
+                    r#"{key}:{value},"#,
                     key = header_vec.get_unchecked(idx),
                     value = temp_val
                 )?;
@@ -3002,7 +3010,7 @@ pub fn write_json_record<W: std::io::Write>(
             unsafe {
                 write!(
                     json_wtr,
-                    r#""{key}":{value}"#,
+                    r#"{key}:{value}"#,
                     key = header_vec.get_unchecked(idx),
                     value = temp_val
                 )?;

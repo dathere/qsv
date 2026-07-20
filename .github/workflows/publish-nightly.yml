@@ -70,7 +70,7 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install libwayland-dev
-    - uses: actions/setup-python@v6.2.0
+    - uses: actions/setup-python@v7
       with:
         python-version: '3.13'
     # actions-rs/cargo is archived/Node20-deprecated (qsv #4002), so invoke cargo directly.

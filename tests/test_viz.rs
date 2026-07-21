@@ -10913,3 +10913,52 @@ fn viz_smart_headered_run_is_unaffected_by_a_prior_custom_delimiter_run() {
          html: {html}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn viz_smart_symlinked_input_is_unaffected_by_a_prior_no_headers_run() {
+    // REGRESSION (roborev 3756): the JSONL stats cache is looked up beside the CANONICALIZED
+    // input, but the `stats` subprocess is invoked with the original path and writes its
+    // `<input>.stats.csv.json` metadata beside the SYMLINK. A guard that only consults the
+    // canonical location finds no metadata there, waves the cache through, and the mismatched-
+    // parsing-options bug returns via a symlink.
+    let wrk = Workdir::new("viz_smart_symlinked_input_is_unaffected_by_a_prior_no_headers_run");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    let mut csv = String::from("region,amount\n");
+    for (i, region) in ["north", "south", "east"]
+        .iter()
+        .cycle()
+        .take(30)
+        .enumerate()
+    {
+        csv.push_str(&format!("{region},{}\n", 10 + (i * 7) % 53));
+    }
+    std::fs::write(wrk.path("sub/target.csv"), &csv).unwrap();
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let render = |name: &str| {
+        let out = wrk.path(name).to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "link.csv", "-o", &out]);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(name).unwrap()
+    };
+
+    let before = render("a.html");
+    assert!(
+        before.contains("region"),
+        "baseline via symlink should name the real columns; html: {before}"
+    );
+
+    let out_b = wrk.path("b.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "link.csv", "--no-headers", "-o", &out_b]);
+    wrk.assert_success(&mut cmd);
+
+    let after = render("c.html");
+    assert!(
+        after.contains("region"),
+        "a prior --no-headers run through the SAME symlink must not leave a cache that renames \
+         columns positionally; html: {after}"
+    );
+}

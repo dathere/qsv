@@ -3160,18 +3160,33 @@ fn stats_cache_parsing_opts_match(
 /// (`get_stats_records_readonly` still fails closed on missing metadata: it returns an `Option`
 /// its callers treat as a best-effort accelerator, so refusing costs nothing there.)
 fn stats_cache_parsing_opts_conflict(
+    input_path: &Path,
     canonical_input_path: &Path,
     no_headers: bool,
     delimiter: Option<Delimiter>,
 ) -> bool {
-    let metadata_path = canonical_input_path.with_extension("stats.csv.json");
-    let Ok(text) = std::fs::read_to_string(&metadata_path) else {
-        return false;
-    };
-    let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&text) else {
-        return false;
-    };
-    !stats_cache_parsing_opts_match(&metadata, canonical_input_path, no_headers, delimiter)
+    // Both locations must be checked, because for a SYMLINKED input they differ: the JSONL cache
+    // is looked up beside the canonicalized target, but the `stats` subprocess is invoked with the
+    // original path and writes its `<input>.stats.csv.json` beside the symlink. Looking only
+    // beside the canonical target finds no metadata there and waves the cache through — which
+    // reopened the exact mismatch this guard exists to catch, via a symlink.
+    //
+    // Delimiter resolution uses `input_path`, the path actually parsed: `Config` resolves an unset
+    // delimiter from that path's extension, so a `link.csv -> target.tsv` symlink must be judged
+    // by the extension the reader used, not the target's.
+    for meta_base in [input_path, canonical_input_path] {
+        let metadata_path = meta_base.with_extension("stats.csv.json");
+        let Ok(text) = std::fs::read_to_string(&metadata_path) else {
+            continue;
+        };
+        let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        if !stats_cache_parsing_opts_match(&metadata, input_path, no_headers, delimiter) {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn get_stats_records(
@@ -3232,6 +3247,7 @@ pub fn get_stats_records(
             // cache written by an earlier run with a different --no-headers/--delimiter would
             // otherwise be reused here and describe a different logical CSV.
             if stats_cache_parsing_opts_conflict(
+                Path::new(input_path),
                 &canonical_input_path,
                 args.flag_no_headers,
                 args.flag_delimiter,
@@ -5007,24 +5023,60 @@ mod tests {
         let input = dir.path().join("data.csv");
         // No sidecar at all: NOT a conflict. `moarstats` writes the JSONL cache without one, and
         // rejecting those would discard a rich cache and regenerate a leaner one.
-        assert!(!stats_cache_parsing_opts_conflict(&input, false, None));
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
         // Present but unparseable: same — decline to judge rather than discard.
         std::fs::write(dir.path().join("data.stats.csv.json"), b"{not json").unwrap();
-        assert!(!stats_cache_parsing_opts_conflict(&input, false, None));
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
         // Readable and matching: no conflict.
         std::fs::write(
             dir.path().join("data.stats.csv.json"),
             br#"{"flag_no_headers": false, "flag_delimiter": ","}"#,
         )
         .unwrap();
-        assert!(!stats_cache_parsing_opts_conflict(&input, false, None));
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
         // Readable and mismatched: the case this exists to catch.
         std::fs::write(
             dir.path().join("data.stats.csv.json"),
             br#"{"flag_no_headers": true, "flag_delimiter": ","}"#,
         )
         .unwrap();
-        assert!(stats_cache_parsing_opts_conflict(&input, false, None));
+        assert!(stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_conflict_sees_the_sidecar_beside_a_symlink() {
+        // For a symlinked input the JSONL cache is looked up beside the canonical TARGET, but the
+        // `stats` subprocess writes its metadata beside the SYMLINK. Checking only the canonical
+        // location finds nothing and waves a mismatched cache through.
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("link.csv");
+        let canonical = dir.path().join("target.csv");
+        // metadata exists ONLY beside the "symlink" path, and it disagrees on --no-headers
+        std::fs::write(
+            dir.path().join("link.stats.csv.json"),
+            br#"{"flag_no_headers": true, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(stats_cache_parsing_opts_conflict(
+            &link, &canonical, false, None
+        ));
+        // and the agreeing case is still not a conflict
+        std::fs::write(
+            dir.path().join("link.stats.csv.json"),
+            br#"{"flag_no_headers": false, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(!stats_cache_parsing_opts_conflict(
+            &link, &canonical, false, None
+        ));
     }
 
     #[cfg(test)]

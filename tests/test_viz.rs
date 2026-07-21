@@ -10962,3 +10962,56 @@ fn viz_smart_symlinked_input_is_unaffected_by_a_prior_no_headers_run() {
          columns positionally; html: {after}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn viz_smart_direct_read_is_unaffected_by_a_prior_symlink_no_headers_run() {
+    // REGRESSION (roborev 3760): `get_stats_records` writes the JSONL cache at the CANONICAL path
+    // but the `stats` subprocess writes its metadata sidecar beside the path it was GIVEN. Mixed
+    // direct/symlink access therefore desynced them: a direct run left a headered canonical
+    // sidecar, a `--no-headers` run through the symlink replaced the canonical JSONL underneath
+    // it, and the next direct run read stale-but-matching metadata and reused the no-headers
+    // cache -- the very mismatch the guard exists to prevent.
+    let wrk = Workdir::new("viz_smart_direct_read_is_unaffected_by_a_prior_symlink_no_headers_run");
+    std::fs::create_dir_all(wrk.path("sub")).unwrap();
+    let mut csv = String::from("region,amount\n");
+    for (i, region) in ["north", "south", "east"]
+        .iter()
+        .cycle()
+        .take(30)
+        .enumerate()
+    {
+        csv.push_str(&format!("{region},{}\n", 10 + (i * 7) % 53));
+    }
+    std::fs::write(wrk.path("sub/target.csv"), &csv).unwrap();
+    std::os::unix::fs::symlink(wrk.path("sub/target.csv"), wrk.path("link.csv")).unwrap();
+
+    let render_direct = |name: &str| {
+        let out = wrk.path(name).to_string_lossy().to_string();
+        let mut cmd = wrk.command("viz");
+        cmd.args(["smart", "sub/target.csv", "-o", &out]);
+        wrk.assert_success(&mut cmd);
+        wrk.read_to_string(name).unwrap()
+    };
+
+    // 1. direct headered run -> leaves a headered canonical metadata sidecar
+    let before = render_direct("a.html");
+    assert!(
+        before.contains("region"),
+        "baseline direct run should name the real columns; html: {before}"
+    );
+
+    // 2. --no-headers run through the SYMLINK -> rewrites the canonical JSONL
+    let out_b = wrk.path("b.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args(["smart", "link.csv", "--no-headers", "-o", &out_b]);
+    wrk.assert_success(&mut cmd);
+
+    // 3. the identical direct run must not read the no-headers cache
+    let after = render_direct("c.html");
+    assert!(
+        after.contains("region"),
+        "a prior --no-headers run through a SYMLINK to this file must not leave a cache the \
+         direct read accepts; html: {after}"
+    );
+}

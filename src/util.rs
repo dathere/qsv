@@ -3534,6 +3534,38 @@ pub fn get_stats_records(
             b',',
         )?;
 
+        // Keep the metadata sidecar beside the JSONL we just wrote in sync with it.
+        //
+        // We write the JSONL at the CANONICAL path, but the `stats` subprocess writes its
+        // `<input>.stats.csv.json` args sidecar beside the path it was GIVEN. Those coincide for
+        // an ordinary input and diverge for a symlink — and a divergence is not merely a missing
+        // sidecar: an earlier direct run on the target leaves a canonical sidecar that keeps
+        // describing itself as current while this run replaces the canonical JSONL underneath it.
+        // A later direct run then reads stale-but-matching metadata and reuses a cache built with
+        // different parsing options. Copy the sidecar that actually describes this JSONL over it.
+        let subprocess_metadata = Path::new(input_path).with_extension("stats.csv.json");
+        let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
+        // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
+        // file via a relative and an absolute path, and `fs::copy` onto itself truncates it —
+        // which corrupts the very metadata this is meant to keep trustworthy.
+        let same_file = match (
+            subprocess_metadata.canonicalize(),
+            canonical_metadata.canonicalize(),
+        ) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        };
+        if !same_file && subprocess_metadata.exists() {
+            // best-effort: a stale sidecar is only a cache-reuse hint, never required for
+            // correctness of THIS run, so a copy failure must not fail the stats load
+            if let Err(e) = std::fs::copy(&subprocess_metadata, &canonical_metadata) {
+                log::warn!(
+                    "could not sync stats cache metadata to {}: {e}",
+                    canonical_metadata.display()
+                );
+            }
+        }
+
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);
 

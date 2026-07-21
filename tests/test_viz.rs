@@ -6795,9 +6795,24 @@ fn viz_cdn_replaces_embedded_bundle() {
             .and_then(|rest| rest.split_once("</script>"))
             .map(|(tag, _)| tag.to_string())
             .unwrap_or_default();
+        // a non-empty, well-formed digest — `sha384-` alone would satisfy a prefix check while
+        // the browser blocks the script. NOT the literal value: pinning it here would force a
+        // test edit on every plotly.rs bump, and the value itself is asserted at its source.
+        let digest = cdn_tag
+            .split_once(r#"integrity="sha384-"#)
+            .and_then(|(_, rest)| rest.split_once('"'))
+            .map(|(d, _)| d)
+            .unwrap_or_default();
+        assert_eq!(
+            digest.len(),
+            64,
+            "{subcmd}: sha384 digest should be 64 base64 chars, got {digest:?}"
+        );
         assert!(
-            cdn_tag.contains(r#"integrity="sha384-"#),
-            "{subcmd}: CDN tag is missing its SRI hash: {cdn_tag}"
+            digest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
+            "{subcmd}: SRI digest is not base64: {digest:?}"
         );
         assert!(
             cdn_tag.contains(r#"crossorigin="anonymous""#),

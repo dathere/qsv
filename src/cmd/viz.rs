@@ -2162,7 +2162,7 @@ fn xy_groups_to_traces(
                 let bar_ids = bar_marker.is_some().then(|| xs.clone());
                 let mut t = Bar::new(xs, ys);
                 if !name.is_empty() {
-                    t = t.name(name);
+                    t = t.name(escape_hover(&name));
                 }
                 if let Some(m) = bar_marker {
                     t = t.marker(m);
@@ -2609,13 +2609,13 @@ fn scatter_trace(name: &str, xs: Vec<String>, ys: Vec<f64>, mode: Mode) -> Box<d
     if let Some(xn) = xn {
         let mut t = Scatter::new(xn, ys).mode(mode);
         if !name.is_empty() {
-            t = t.name(name);
+            t = t.name(escape_hover(name));
         }
         t
     } else {
         let mut t = Scatter::new(xs, ys).mode(mode);
         if !name.is_empty() {
-            t = t.name(name);
+            t = t.name(escape_hover(name));
         }
         t
     }
@@ -3207,7 +3207,9 @@ fn map_series_traces(
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
             // hover names the series/category (and any --text label) beside the coordinates
             let hover = geo_series_hover(&name, &la, &lo, &tx);
-            let mut t = ScatterMap::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterMap::new(la, lo)
+                .mode(Mode::Markers)
+                .name(escape_hover(&name));
             t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
@@ -3493,7 +3495,9 @@ fn geo_series_traces(
             let (la, lo, tx) = groups.remove(&name).unwrap_or_default();
             // hover names the series/category (and any --text label) beside the coordinates
             let hover = geo_series_hover(&name, &la, &lo, &tx);
-            let mut t = ScatterGeo::new(la, lo).mode(Mode::Markers).name(name);
+            let mut t = ScatterGeo::new(la, lo)
+                .mode(Mode::Markers)
+                .name(escape_hover(&name));
             t = t.hover_text_array(hover).hover_info(HoverInfo::Text);
             let trace: Box<dyn Trace> = t;
             trace
@@ -3774,7 +3778,7 @@ fn geo_frame_traces(groups: &[(String, Vec<f64>, Vec<f64>, Vec<String>)]) -> Vec
                 .hover_text_array(hover)
                 .hover_info(HoverInfo::Text);
             if !name.is_empty() {
-                t = t.name(name.clone());
+                t = t.name(escape_hover(name));
             }
             let trace: Box<dyn Trace> = t;
             trace
@@ -5780,7 +5784,7 @@ fn scatter3d_series_traces(
             let (a, b, c) = groups.remove(&name).unwrap_or_default();
             let trace: Box<dyn Trace> = Scatter3D::new(a, b, c)
                 .mode(Mode::Markers)
-                .name(name)
+                .name(escape_hover(&name))
                 .hover_template(hover);
             trace
         })
@@ -7405,7 +7409,7 @@ fn build_radar(args: &Args) -> CliResult<Vec<Box<dyn Trace>>> {
             .hover_text_array(hover)
             .hover_info(HoverInfo::Text);
         if !series.is_empty() {
-            t = t.name(series);
+            t = t.name(escape_hover(&series));
         }
         traces.push(t);
     }
@@ -10438,7 +10442,9 @@ impl Panel {
                 MUTED_COLOR,
                 html_escape(sub)
             ),
-            None => format!("{}{icon_sfx}", self.name),
+            // escape here too, NOT at the source: `name` must stay plain (it also feeds trace
+            // names and stderr status messages), so both arms escape at this render sink.
+            None => format!("{}{icon_sfx}", html_escape(&self.name)),
         }
     }
 }
@@ -14526,7 +14532,10 @@ fn read_entity_bucket_agg(
     let x_range = padded_range(&xv);
     let y_range = padded_range(&yv);
     Ok(Some(EntityBucketAgg {
-        entities: surviving,
+        // `entities` is display-only downstream (legend name + hover), never a key again — the
+        // `acc` lookups above are done — so escape once here, matching the read-time escaping of
+        // the other hover-bound cell values. plotly renders both sinks as pseudo-HTML.
+        entities: surviving.iter().map(|e| escape_hover(e)).collect(),
         xs,
         ys,
         sizes,
@@ -20994,12 +21003,20 @@ fn smart_inline_panel_plot(
             };
             Scatter::new(pxv, pyv)
                 .mode(Mode::Markers)
+                // already `escape_hover`d at read time; the legend renders markup but treats `%`
+                // literally, so it needs no further escaping here
                 .name(entities[e].clone())
                 .marker(Marker::new().size(size_px(sz)).opacity(MAP_POINT_OPACITY))
+                // a hovertemplate additionally parses `%{...}`, so every interpolated string needs
+                // its literal `%` doubled. The entity is already markup-escaped (do NOT escape it
+                // twice -> "&amp;amp;"); the three labels are raw column headers, so they take the
+                // full escape_template_pct(escape_hover(..)) composition.
                 .hover_template(format!(
-                    "{}<br>{x_label}: %{{x}}<br>{y_label}: %{{y}}<br>{size_label}: \
-                     {size_disp}<extra></extra>",
-                    entities[e]
+                    "{}<br>{}: %{{x}}<br>{}: %{{y}}<br>{}: {size_disp}<extra></extra>",
+                    escape_template_pct(&entities[e]),
+                    escape_template_pct(&escape_hover(x_label)),
+                    escape_template_pct(&escape_hover(y_label)),
+                    escape_template_pct(&escape_hover(size_label)),
                 ))
         };
         let mut plot = Plot::new();
@@ -25655,6 +25672,73 @@ mod tests {
             Some(0.0),
             Some(76_000_000.0)
         ));
+    }
+
+    #[test]
+    fn escape_template_pct_doubles_literal_percent() {
+        // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
+        // doubled or plotly swallows the following text as a data token
+        assert_eq!(escape_template_pct("50% of total"), "50%% of total");
+        assert_eq!(escape_template_pct("Pct % complete"), "Pct %% complete");
+        // a value that already looks like a token is neutralized rather than honored
+        assert_eq!(escape_template_pct("%{x}"), "%%{x}");
+        // no-op on percent-free text
+        assert_eq!(escape_template_pct("plain label"), "plain label");
+        assert_eq!(escape_template_pct(""), "");
+    }
+
+    #[test]
+    fn escape_composition_is_once_per_sink() {
+        // the two helpers compose in one fixed order for template sinks (see the choropleth hover
+        // and the AnimatedBubble template); markup first, then `%`-doubling
+        let nasty = "R&D <b>50%</b>";
+        let composed = escape_template_pct(&escape_hover(nasty));
+        assert_eq!(composed, "R&amp;D &lt;b&gt;50%%&lt;/b&gt;");
+        // a legend name renders markup but does NOT parse `%`, so it takes escape_hover ALONE —
+        // `%`-doubling there would surface a literal "%%" to the reader
+        assert_eq!(escape_hover(nasty), "R&amp;D &lt;b&gt;50%&lt;/b&gt;");
+        // escaping twice is the bug this ordering guards against
+        assert_ne!(escape_hover(&escape_hover(nasty)), escape_hover(nasty));
+        assert!(escape_hover(&escape_hover(nasty)).contains("&amp;amp;"));
+    }
+
+    #[test]
+    fn panel_title_escapes_markup_with_and_without_subtitle() {
+        // a hostile column header must not reach plotly's markup renderer as live markup on
+        // EITHER branch — the no-subtitle branch is the default (no --dictionary) path
+        let hostile = "<a href=\"https://evil.example\">Revenue</a>";
+        let bare = Panel::new(
+            hostile.to_string(),
+            PanelKind::BoxRaw {
+                idx:    0,
+                points: BoxPoints::Outliers,
+            },
+        );
+        let title = bare.display_title();
+        assert!(
+            !title.contains("<a href"),
+            "raw anchor markup leaked into the panel title: {title}"
+        );
+        assert!(
+            title.contains("&lt;a href"),
+            "expected escaped markup: {title}"
+        );
+
+        // with a subtitle, the title line is still escaped and the subtitle keeps its own escaping
+        let with_sub = Panel::new(
+            hostile.to_string(),
+            PanelKind::BoxRaw {
+                idx:    0,
+                points: BoxPoints::Outliers,
+            },
+        )
+        .with_subtitle(Some("R&D <b>label</b>".to_string()));
+        let title = with_sub.display_title();
+        assert!(!title.contains("<a href"));
+        assert!(title.contains("&lt;a href"));
+        assert!(title.contains("R&amp;D &lt;b&gt;label&lt;/b&gt;"));
+        // the styling markup the title itself emits must survive as real markup
+        assert!(title.contains("<br><span style="));
     }
 
     #[test]

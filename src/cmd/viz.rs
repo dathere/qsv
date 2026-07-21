@@ -17951,13 +17951,31 @@ struct SmartCtx<'a> {
     progress:   &'a ProgressBar,
 
     stats:          Vec<crate::cmd::stats::StatsData>,
+    col_sems:       Vec<ColSemantics>,
     dict_data:      Option<DictData>,
     dict_json_text: Option<String>,
+    twin_suppress:  std::collections::HashSet<usize>,
+
+    /// the geographic overview panels, built up front and prepended last so they lead the
+    /// dashboard and survive the panel cap.
+    map_panel:         Option<(Panel, (usize, usize))>,
+    choropleth_panel:  Option<Panel>,
+    summary_choros:    Option<(Vec<Panel>, usize)>,
+    map_cols:          Option<(usize, usize)>,
+    summary_choro_col: Option<usize>,
+
+    /// the source→target pair claimed by the directed-flow (Sankey) panel, if one was built —
+    /// keeps the 2-level hierarchy mutually exclusive with it.
+    sankey_pair:    Option<(usize, usize)>,
+    /// at most ONE animated panel is shown; precedence is T3 (bubble) > T2 (geo) > T1 (scatter).
+    bubble_panel:   Option<Panel>,
+    geo_anim_panel: Option<Panel>,
 
     explicit_box_points: Option<BoxPoints>,
     count_conf:          Config,
     nrows:               Option<u64>,
     log_scale:           LogScale,
+    violin_mode:         ViolinMode,
 
     panels:  Vec<Panel>,
     skipped: Vec<String>,
@@ -17980,6 +17998,392 @@ impl SmartCtx<'_> {
             nrows, count_conf, ..
         } = self;
         *nrows.get_or_insert_with(|| util::count_rows(count_conf).unwrap_or(0))
+    }
+
+    /// A column consumed by the point map (lat/lon) OR by the summary choropleth (region key) is
+    /// suppressed from the per-column distribution panels and the correlation/bivariate pools.
+    fn is_map_col(&self, idx: usize) -> bool {
+        self.map_cols.is_some_and(|(la, lo)| idx == la || idx == lo)
+            || self.summary_choro_col == Some(idx)
+    }
+
+    /// `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
+    /// per-field lookups share `dict_info_for_field`.
+    fn dict_icons(&self) -> Option<&DictData> {
+        (self.args.flag_dict_info && matches!(self.out_format, OutFormat::Html))
+            .then_some(self.dict_data.as_ref())
+            .flatten()
+    }
+
+    /// Under `--dict-info`, the geographic overview panels anchor their info icon on the driving
+    /// coordinate column's dictionary entry (lat first) — the natural place a map reader looks for
+    /// the coordinates' provenance and caveats.
+    fn geo_dict_info(&self) -> Option<(String, String)> {
+        self.map_cols.and_then(|(la, lo)| {
+            dict_info_for_field(self.dict_icons(), &self.stats[la].field)
+                .or_else(|| dict_info_for_field(self.dict_icons(), &self.stats[lo].field))
+        })
+    }
+
+    /// Prepend the cross-column overview panels: the winning animated panel, measure-by-dimension,
+    /// grouped violin, Lorenz curves, parcats, hierarchy, time-series, cyclic profile, and finally
+    /// the geographic panels. Each is `insert(0, ..)`-ed, so the LAST one inserted leads the
+    /// dashboard — the order of these blocks IS the final top-to-bottom order.
+    fn add_overview_panels(&mut self) -> CliResult<()> {
+        // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
+        // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
+        // violin / hierarchy `insert(0, ..)` overview panels below) lands it among the correlation
+        // drill-downs, just like the T1 slot it supersedes.
+        if let Some(winner) = self.bubble_panel.take().or(self.geo_anim_panel.take()) {
+            self.panels.insert(0, winner);
+        }
+
+        // prepend a "measure by dimension" bar when a low-cardinality categorical dimension
+        // strongly explains one of the numeric measures (correlation ratio η² above the gate) —
+        // e.g. mean amount by region. The panel builder does one extra data pass to compute η² and
+        // the per-group aggregates.
+        //
+        // Measure candidates are computed separately from `numeric_indices` (the correlation list):
+        // a genuine per-row measure like revenue/amount is often near-unique, and the correlation
+        // list drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique
+        // columns ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a
+        // column the dictionary explicitly routes as `Measure` qualifies regardless of uniqueness —
+        // mirroring the time-series panel, which deliberately allows near-unique measures.
+        let measure_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                let route = self.col_sems[*i].route;
+                !self.is_map_col(*i)
+                    && matches!(route, Route::Defer | Route::Measure)
+                    && matches!(s.r#type.as_str(), "Integer" | "Float")
+                    && s.cardinality > 1
+                    && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
+            })
+            .map(|(i, _)| i)
+            .collect();
+        let dim_indices: Vec<usize> = self
+            .stats
+            .iter()
+            .enumerate()
+            .filter(|(i, s)| {
+                !self.is_map_col(*i)
+                    && !self.twin_suppress.contains(i)
+                    && matches!(self.col_sems[*i].route, Route::Defer | Route::Dimension)
+                    && s.r#type.as_str() == "String"
+                    && s.cardinality >= 2
+                    && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if !measure_indices.is_empty() && !dim_indices.is_empty() {
+            let top_n = self.args.flag_limit.max(1);
+            // bound the immutable borrows of `self` to this statement so the insert below can take
+            // `&mut self.panels`
+            let built = measure_by_dim_panel(
+                self.args,
+                &self.stats,
+                &self.col_sems,
+                &measure_indices,
+                &dim_indices,
+                top_n,
+            );
+            match built {
+                Ok(Some(panel)) => self.panels.insert(0, panel),
+                Ok(None) => {},
+                Err(e) => {
+                    viz_note(&format!(
+                        "viz smart: measure-by-dimension panel skipped ({e})"
+                    ));
+                },
+            }
+        }
+
+        // prepend a grouped-violin panel — the distribution of the primary measure split by the
+        // coarsest categorical dimension (one violin per category) — whenever a categorical
+        // dimension and a numeric measure both exist. Inserted here (after the measure-by-dim bar,
+        // before the hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin →
+        // measure-by-dim: part-to-whole counts, then distribution-by-category, then the aggregate.
+        // A plain cartesian Violin::new_xy, so (unlike the hierarchy) it composes with the typed
+        // grid and static export.
+        if let Some(&m_idx) = measure_indices.first()
+            && !dim_indices.is_empty()
+        {
+            let top_n = self.args.flag_limit.max(1);
+            // the measure's non-null count drives the collection stride so the pass never buffers
+            // more than ~VIOLIN_SAMPLE_MAX values (the same per-violin budget as the single-column
+            // violin, which tiers on `n - nullcount`). Row count is pulled once from the
+            // stats/index cache (shared with the box-points heuristic's lazy fetch).
+            let n = self.row_count();
+            let measure_nonnull = n.saturating_sub(self.stats[m_idx].nullcount);
+            let built = grouped_violin_panel(
+                self.args,
+                &self.stats,
+                &self.col_sems,
+                &measure_indices,
+                &dim_indices,
+                top_n,
+                self.violin_mode,
+                measure_nonnull,
+                self.explicit_box_points.as_ref(),
+            );
+            match built {
+                Ok(Some(panel)) => self.panels.insert(0, panel),
+                Ok(None) => {},
+                Err(e) => {
+                    viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
+                },
+            }
+        }
+
+        // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
+        // Gini — populated only under --smarter), add the plot whose geometry IS the Gini:
+        // cumulative population share vs cumulative value share, against the equality diagonal.
+        // Capped at LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a
+        // data pass) per column. Near-unique measures are deliberately allowed — a whole-dollar
+        // income or integer population column is often near-unique yet is the flagship inequality
+        // case (`classify` skips near-unique integers as IDs, so the Lorenz filter runs
+        // independently to surface them). ID/code columns are instead kept out by name:
+        // `is_inequality_candidate` excludes intensive- AND identifier-named columns on the
+        // stats-only path (the high-Gini gate alone would not).
+        {
+            let mut lorenz_candidates: Vec<(usize, f64)> = self
+                .stats
+                .iter()
+                .enumerate()
+                .filter(|(i, s)| {
+                    !self.is_map_col(*i)
+                        && matches!(self.col_sems[*i].route, Route::Defer | Route::Measure)
+                        && matches!(s.r#type.as_str(), "Integer" | "Float")
+                        && s.cardinality > 1
+                        && is_inequality_candidate(&self.col_sems[*i], s)
+                })
+                .map(|(i, s)| (i, s.gini_coefficient.unwrap_or_default()))
+                .collect();
+            // strongest inequality first, then keep at most LORENZ_MAX_PANELS
+            lorenz_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+            let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
+            lorenz_candidates.truncate(LORENZ_MAX_PANELS);
+            if dropped > 0 {
+                viz_note(&format!(
+                    "viz smart: {dropped} additional high-inequality measure(s) not shown as \
+                     Lorenz curves (cap {LORENZ_MAX_PANELS})"
+                ));
+            }
+            // insert weakest-first so the strongest inequality ends up topmost among them
+            for (idx, gini) in lorenz_candidates.into_iter().rev() {
+                let built = build_lorenz_panel(self.args, &self.col_sems, idx, gini);
+                match built {
+                    Ok(Some(panel)) => self.panels.insert(0, panel),
+                    Ok(None) => {},
+                    Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
+                }
+            }
+        }
+
+        // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
+        // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
+        // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
+        // claims (a ribbon flow conveys the same 3-4-way relationship without implying a
+        // part-to-whole nesting). HTML-only, like the hierarchy/Sankey panels.
+        // An explicit `--hierarchy-style treemap|sunburst|icicle` is a deliberate request for the
+        // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the
+        // nested view) and, below, bypasses the hierarchy's independence/Sankey screens.
+        let explicit_hierarchy_style = matches!(
+            self.args
+                .flag_hierarchy_style
+                .as_deref()
+                .map(str::to_ascii_lowercase)
+                .as_deref(),
+            Some("treemap" | "sunburst" | "icicle")
+        );
+        let mut parcats_dims: Option<Vec<usize>> = None;
+        if !self.out_format.is_image() && !explicit_hierarchy_style {
+            // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel
+            // nests (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on
+            // a shared pool and neither flows a near-constant (mostly-empty / single-value) column.
+            let n = self.row_count();
+            let parcats_eligible =
+                eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n);
+            let built = parcats_panel(self.args, parcats_eligible);
+            match built {
+                Ok(Some((panel, dim_idxs))) => {
+                    parcats_dims = Some(dim_idxs);
+                    self.panels.insert(0, panel);
+                },
+                Ok(None) => {},
+                Err(e) => viz_note(&format!(
+                    "viz smart: parallel-categories (parcats) panel skipped ({e})"
+                )),
+            }
+        }
+
+        // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
+        // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with
+        // the typed x/y subplot grid, so it forces the inline render path. The chosen dimensions
+        // also keep their individual frequency-bar panels — the hierarchy is a cross-dimensional
+        // overview, not a replacement. The chart type is auto-selected by depth (treemap for
+        // shallow, sunburst for deep) unless --hierarchy-style forces one. Prepended so it survives
+        // the panel cap.
+        if !self.out_format.is_image() {
+            // eligible dims = genuine categorical (String) freq-bar columns with enough distinct
+            // values to be worth nesting (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).
+            // Restricting to String type excludes numeric codes (low-card Integer/Float also become
+            // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
+            // ascending by cardinality so the coarsest grouping is the outermost level/ring.
+            let n = self.row_count();
+            let mut dims = eligible_categorical_dims(&self.panels, &self.stats, &self.col_sems, n);
+            if dims.len() >= HIER_MIN_DIMS {
+                dims.sort_by_key(|&(idx, card, _)| (card, idx));
+                dims.truncate(HIER_MAX_DEPTH);
+                let depth = dims.len();
+                let style =
+                    resolve_hierarchy_style(self.args.flag_hierarchy_style.as_deref(), depth)?;
+                let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
+                let title = dims
+                    .iter()
+                    .map(|(.., name)| name.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" › ");
+                // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
+                // bypasses both the independence screen and the Sankey mutual-exclusion below
+                // (computed once above, before the parcats panel).
+                let explicit_style = explicit_hierarchy_style;
+                // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of
+                // exactly the pair already drawn as a Sankey is redundant, so skip it (the flow
+                // view conveys that many-to-many relationship better). Deeper 3-level sunbursts are
+                // unaffected. Checked BEFORE the hierarchy's own data pass so the pass is never
+                // wasted.
+                let sankey_owns_pair = depth == 2
+                    && !explicit_style
+                    && self
+                        .sankey_pair
+                        .is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
+                // Mutual exclusivity with the parallel-categories (parcats) panel: parcats owns 3-4
+                // associated dimensions, so if it already claimed these columns, skip the
+                // hierarchy — the ribbon flow shows the same relationship without implying
+                // part-to-whole nesting.
+                let parcats_owns = !explicit_style
+                    && parcats_dims
+                        .as_ref()
+                        .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
+                if parcats_owns {
+                    viz_note(&format!(
+                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
+                         already shown as a parallel-categories (parcats) panel."
+                    ));
+                } else if sankey_owns_pair {
+                    viz_note(&format!(
+                        "viz smart: skipping the '{title}' hierarchy panel — its two dimensions \
+                         are already shown as a directed-flow (Sankey) panel, which conveys their \
+                         many-to-many relationship better."
+                    ));
+                } else {
+                    // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
+                    // independent categoricals just replicates each level's marginal at every
+                    // branch, conveying nothing the separate frequency bars don't already show more
+                    // legibly. The association is read off the joint counts already in hand (no
+                    // re-scan).
+                    let leaves = collect_hierarchy_counts(self.args, &dim_idxs, None)?;
+                    let assoc = max_pairwise_cramers_v(&leaves, depth);
+                    if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
+                        viz_note(&format!(
+                            "viz smart: skipping the '{title}' hierarchy panel — its dimensions \
+                             are statistically independent (max Cramér's V={assoc:.2} < \
+                             {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
+                             convey the same information. Use --hierarchy-style \
+                             treemap|sunburst|icicle to force it."
+                        ));
+                    } else if let Some((labels, parents, values, ids)) = hierarchy_arrays(
+                        &leaves,
+                        depth,
+                        HIER_TOP_N_PER_LEVEL,
+                        HIER_MAX_NODES,
+                        "All",
+                    ) {
+                        self.panels.insert(
+                            0,
+                            Panel::new(
+                                title,
+                                PanelKind::Hierarchy {
+                                    style,
+                                    labels,
+                                    parents,
+                                    values,
+                                    ids,
+                                },
+                            ),
+                        );
+                    }
+                }
+            }
+        }
+
+        // prepend a time-series trend panel when the data has a date/datetime column and a
+        // continuous numeric column. Like the correlation panel, it does one extra data pass and
+        // is prepended so it survives the panel cap.
+        // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
+        // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so
+        // the effective preference is the env flag. Parse dates the same way here so
+        // DMY-formatted dates are ordered correctly rather than misparsed/dropped.
+        let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
+        let built = {
+            let grain = self.dict_data.as_ref().and_then(|d| d.grain.as_deref());
+            build_timeseries_panel(
+                self.args,
+                &self.stats,
+                prefer_dmy,
+                self.map_cols,
+                &self.col_sems,
+                grain,
+                self.dict_icons(),
+            )?
+        };
+        if let Some(panel) = built {
+            self.panels.insert(0, panel);
+        }
+
+        // prepend a cyclic-seasonality polar panel (volume by hour-of-day / weekday / month) when a
+        // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
+        // so it can't be statically exported — build it for HTML only.
+        if !self.out_format.is_image() {
+            let built = build_cyclic_panel(
+                self.args,
+                &self.stats,
+                prefer_dmy,
+                self.map_cols,
+                &self.col_sems,
+                self.dict_icons(),
+            )?;
+            if let Some(panel) = built {
+                self.panels.insert(0, panel);
+            }
+        }
+
+        // prepend the geographic overview panels (built up front, above) so they lead the dashboard
+        // and survive the panel cap. Insert the per-country choropleth first, then the point map at
+        // index 0, yielding [map, choropleth, ...] — the point map for spatial detail, the
+        // choropleth beside it for the per-jurisdiction aggregate.
+        if let Some(mut panel) = self.choropleth_panel.take() {
+            panel.dict_info = self.geo_dict_info();
+            self.panels.insert(0, panel);
+        } else if let Some((sc_panels, region_idx)) = self.summary_choros.take() {
+            // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth
+            // companion. No coordinate column drives them, so anchor --dict-info on the region key
+            // column instead of geo_dict_info() (which is None here). Insert in reverse so the
+            // leading dashboard order is [count, median, …].
+            let info = dict_info_for_field(self.dict_icons(), &self.stats[region_idx].field);
+            for mut panel in sc_panels.into_iter().rev() {
+                panel.dict_info = info.clone();
+                self.panels.insert(0, panel);
+            }
+        }
+        if let Some((mut panel, _)) = self.map_panel.take() {
+            panel.dict_info = self.geo_dict_info();
+            self.panels.insert(0, panel);
+        }
+        Ok(())
     }
 
     /// Decide the render path, apply the `--max-charts` interest ranking, and emit the deferred
@@ -19362,341 +19766,28 @@ fn build_smart(
         }
     }
 
-    // ARBITRATION (§5): insert the single winning animated panel — T3 (bubble) first, else T2
-    // (geo) — as a leading overview row. Prepending here (before the measure-by-dim / grouped-
-    // violin / hierarchy `insert(0, ..)` overview panels below) lands it among the correlation
-    // drill-downs, just like the T1 slot it supersedes.
-    if let Some(winner) = bubble_panel.or(geo_anim_panel) {
-        panels.insert(0, winner);
-    }
-
-    // prepend a "measure by dimension" bar when a low-cardinality categorical dimension strongly
-    // explains one of the numeric measures (correlation ratio η² above the gate) — e.g. mean amount
-    // by region. The panel builder does one extra data pass to compute η² and the per-group
-    // aggregates.
-    //
-    // Measure candidates are computed separately from `numeric_indices` (the correlation list): a
-    // genuine per-row measure like revenue/amount is often near-unique, and the correlation list
-    // drops near-unique columns to keep IDs out of the matrix. Here we exclude near-unique columns
-    // ONLY for untagged (`Defer`) stats-only columns (the same ID-safety heuristic); a column the
-    // dictionary explicitly routes as `Measure` qualifies regardless of uniqueness — mirroring the
-    // time-series panel, which deliberately allows near-unique measures.
-    let measure_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            let route = col_sems[*i].route;
-            !is_map_col(*i)
-                && matches!(route, Route::Defer | Route::Measure)
-                && matches!(s.r#type.as_str(), "Integer" | "Float")
-                && s.cardinality > 1
-                && (route == Route::Measure || !s.uniqueness_ratio.is_some_and(|r| r > 0.95))
-        })
-        .map(|(i, _)| i)
-        .collect();
-    let dim_indices: Vec<usize> = stats
-        .iter()
-        .enumerate()
-        .filter(|(i, s)| {
-            !is_map_col(*i)
-                && !twin_suppress.contains(i)
-                && matches!(col_sems[*i].route, Route::Defer | Route::Dimension)
-                && s.r#type.as_str() == "String"
-                && s.cardinality >= 2
-                && s.cardinality <= CATEGORICAL_MAX_CARDINALITY
-        })
-        .map(|(i, _)| i)
-        .collect();
-    if !measure_indices.is_empty() && !dim_indices.is_empty() {
-        let top_n = args.flag_limit.max(1);
-        match measure_by_dim_panel(
-            args,
-            &stats,
-            &col_sems,
-            &measure_indices,
-            &dim_indices,
-            top_n,
-        ) {
-            Ok(Some(panel)) => panels.insert(0, panel),
-            Ok(None) => {},
-            Err(e) => {
-                viz_note(&format!(
-                    "viz smart: measure-by-dimension panel skipped ({e})"
-                ));
-            },
-        }
-    }
-
-    // prepend a grouped-violin panel — the distribution of the primary measure split by the
-    // coarsest categorical dimension (one violin per category) — whenever a categorical dimension
-    // and a numeric measure both exist. Inserted here (after the measure-by-dim bar, before the
-    // hierarchy) so the final top-to-bottom order is hierarchy → grouped-violin → measure-by-dim:
-    // part-to-whole counts, then distribution-by-category, then the aggregate. A plain cartesian
-    // Violin::new_xy, so (unlike the hierarchy) it composes with the typed grid and static export.
-    if let Some(&m_idx) = measure_indices.first()
-        && !dim_indices.is_empty()
-    {
-        let top_n = args.flag_limit.max(1);
-        // the measure's non-null count drives the collection stride so the pass never buffers more
-        // than ~VIOLIN_SAMPLE_MAX values (the same per-violin budget as the single-column violin,
-        // which tiers on `n - nullcount`). Row count is pulled once from the stats/index cache
-        // (shared with the box-points heuristic's lazy fetch).
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let measure_nonnull = n.saturating_sub(stats[m_idx].nullcount);
-        match grouped_violin_panel(
-            args,
-            &stats,
-            &col_sems,
-            &measure_indices,
-            &dim_indices,
-            top_n,
-            violin_mode,
-            measure_nonnull,
-            explicit_box_points.as_ref(),
-        ) {
-            Ok(Some(panel)) => panels.insert(0, panel),
-            Ok(None) => {},
-            Err(e) => {
-                viz_note(&format!("viz smart: grouped-violin panel skipped ({e})"));
-            },
-        }
-    }
-
-    // prepend Lorenz inequality curves: for the most unequal ADDITIVE measures (highest cached
-    // Gini — populated only under --smarter), add the plot whose geometry IS the Gini: cumulative
-    // population share vs cumulative value share, against the equality diagonal. Capped at
-    // LORENZ_MAX_PANELS so a wide finance table can't spawn a full-width panel (and a data pass)
-    // per column. Near-unique measures are deliberately allowed — a whole-dollar income or integer
-    // population column is often near-unique yet is the flagship inequality case (`classify` skips
-    // near-unique integers as IDs, so the Lorenz filter runs independently to surface them).
-    // ID/code columns are instead kept out by name: `is_inequality_candidate` excludes
-    // intensive- AND identifier-named columns on the stats-only path (the high-Gini gate alone
-    // would not).
-    {
-        let mut lorenz_candidates: Vec<(usize, f64)> = stats
-            .iter()
-            .enumerate()
-            .filter(|(i, s)| {
-                !is_map_col(*i)
-                    && matches!(col_sems[*i].route, Route::Defer | Route::Measure)
-                    && matches!(s.r#type.as_str(), "Integer" | "Float")
-                    && s.cardinality > 1
-                    && is_inequality_candidate(&col_sems[*i], s)
-            })
-            .map(|(i, s)| (i, s.gini_coefficient.unwrap_or_default()))
-            .collect();
-        // strongest inequality first, then keep at most LORENZ_MAX_PANELS
-        lorenz_candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
-        let dropped = lorenz_candidates.len().saturating_sub(LORENZ_MAX_PANELS);
-        lorenz_candidates.truncate(LORENZ_MAX_PANELS);
-        if dropped > 0 {
-            viz_note(&format!(
-                "viz smart: {dropped} additional high-inequality measure(s) not shown as Lorenz \
-                 curves (cap {LORENZ_MAX_PANELS})"
-            ));
-        }
-        // insert weakest-first so the strongest inequality ends up topmost among them
-        for (idx, gini) in lorenz_candidates.into_iter().rev() {
-            match build_lorenz_panel(args, &col_sems, idx, gini) {
-                Ok(Some(panel)) => panels.insert(0, panel),
-                Ok(None) => {},
-                Err(e) => viz_note(&format!("viz smart: Lorenz panel skipped ({e})")),
-            }
-        }
-    }
-
-    // prepend a parallel-categories (parcats) overview when 3-4 associated low-cardinality
-    // categorical dimensions exist. Reserved for 3-4 dims: 2-dim relationships are shown as a
-    // directed Sankey, and the hierarchy panel below is suppressed on any dimension set parcats
-    // claims (a ribbon flow conveys the same 3-4-way relationship without implying a part-to-whole
-    // nesting). HTML-only, like the hierarchy/Sankey panels.
-    // An explicit `--hierarchy-style treemap|sunburst|icicle` is a deliberate request for the
-    // part-to-whole hierarchy panel, so it suppresses parcats entirely (the user chose the nested
-    // view) and, below, bypasses the hierarchy's independence/Sankey screens.
-    let explicit_hierarchy_style = matches!(
-        args.flag_hierarchy_style
-            .as_deref()
-            .map(str::to_ascii_lowercase)
-            .as_deref(),
-        Some("treemap" | "sunburst" | "icicle")
-    );
-    let mut parcats_dims: Option<Vec<usize>> = None;
-    if !out_format.is_image() && !explicit_hierarchy_style {
-        // eligible dims = the same non-degenerate String freq-bar columns the hierarchy panel nests
-        // (see `eligible_categorical_dims`), so the two panels stay mutually exclusive on a shared
-        // pool and neither flows a near-constant (mostly-empty / single-value) column.
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let parcats_eligible = eligible_categorical_dims(&panels, &stats, &col_sems, n);
-        match parcats_panel(args, parcats_eligible) {
-            Ok(Some((panel, dim_idxs))) => {
-                parcats_dims = Some(dim_idxs);
-                panels.insert(0, panel);
-            },
-            Ok(None) => {},
-            Err(e) => viz_note(&format!(
-                "viz smart: parallel-categories (parcats) panel skipped ({e})"
-            )),
-        }
-    }
-
-    // prepend a categorical part-to-whole hierarchy (treemap/sunburst) when 2+ low-cardinality
-    // dimensions exist. HTML-only: like Scatter3D/Map, a domain-based trace can't compose with the
-    // typed x/y subplot grid, so it forces the inline render path. The chosen dimensions also keep
-    // their individual frequency-bar panels — the hierarchy is a cross-dimensional overview, not a
-    // replacement. The chart type is auto-selected by depth (treemap for shallow, sunburst for
-    // deep) unless --hierarchy-style forces one. Prepended so it survives the panel cap.
-    if !out_format.is_image() {
-        // eligible dims = genuine categorical (String) freq-bar columns with enough distinct
-        // values to be worth nesting (HIER_MIN_DIM_CARDINALITY..=CATEGORICAL_MAX_CARDINALITY).
-        // Restricting to String type excludes numeric codes (low-card Integer/Float also become
-        // freq bars) and booleans, which make poor — and surprising — hierarchy levels. Sort
-        // ascending by cardinality so the coarsest grouping is the outermost level/ring.
-        let n = *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-        let mut dims = eligible_categorical_dims(&panels, &stats, &col_sems, n);
-        if dims.len() >= HIER_MIN_DIMS {
-            dims.sort_by_key(|&(idx, card, _)| (card, idx));
-            dims.truncate(HIER_MAX_DEPTH);
-            let depth = dims.len();
-            let style = resolve_hierarchy_style(args.flag_hierarchy_style.as_deref(), depth)?;
-            let dim_idxs: Vec<usize> = dims.iter().map(|&(idx, ..)| idx).collect();
-            let title = dims
-                .iter()
-                .map(|(.., name)| name.as_str())
-                .collect::<Vec<_>>()
-                .join(" › ");
-            // An explicit `--hierarchy-style treemap|sunburst` is a deliberate request that
-            // bypasses both the independence screen and the Sankey mutual-exclusion below
-            // (computed once above, before the parcats panel).
-            let explicit_style = explicit_hierarchy_style;
-            // Mutual exclusivity with the directed-flow Sankey panel: a 2-level treemap of exactly
-            // the pair already drawn as a Sankey is redundant, so skip it (the flow view conveys
-            // that many-to-many relationship better). Deeper 3-level sunbursts are unaffected.
-            // Checked BEFORE the hierarchy's own data pass so the pass is never wasted.
-            let sankey_owns_pair = depth == 2
-                && !explicit_style
-                && sankey_pair.is_some_and(|(a, b)| dim_idxs.contains(&a) && dim_idxs.contains(&b));
-            // Mutual exclusivity with the parallel-categories (parcats) panel: parcats owns 3-4
-            // associated dimensions, so if it already claimed these columns, skip the hierarchy —
-            // the ribbon flow shows the same relationship without implying part-to-whole nesting.
-            let parcats_owns = !explicit_style
-                && parcats_dims
-                    .as_ref()
-                    .is_some_and(|pd| dim_idxs.iter().all(|i| pd.contains(i)));
-            if parcats_owns {
-                viz_note(&format!(
-                    "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                     already shown as a parallel-categories (parcats) panel."
-                ));
-            } else if sankey_owns_pair {
-                viz_note(&format!(
-                    "viz smart: skipping the '{title}' hierarchy panel — its two dimensions are \
-                     already shown as a directed-flow (Sankey) panel, which conveys their \
-                     many-to-many relationship better."
-                ));
-            } else {
-                // Don't AUTO-nest statistically independent dimensions: a treemap/sunburst of
-                // independent categoricals just replicates each level's marginal at every branch,
-                // conveying nothing the separate frequency bars don't already show more legibly.
-                // The association is read off the joint counts already in hand (no re-scan).
-                let leaves = collect_hierarchy_counts(args, &dim_idxs, None)?;
-                let assoc = max_pairwise_cramers_v(&leaves, depth);
-                if !explicit_style && assoc < HIER_MIN_ASSOCIATION_CRAMERS_V {
-                    viz_note(&format!(
-                        "viz smart: skipping the '{title}' hierarchy panel — its dimensions are \
-                         statistically independent (max Cramér's V={assoc:.2} < \
-                         {HIER_MIN_ASSOCIATION_CRAMERS_V:.2}); the per-column frequency bars \
-                         convey the same information. Use --hierarchy-style \
-                         treemap|sunburst|icicle to force it."
-                    ));
-                } else if let Some((labels, parents, values, ids)) =
-                    hierarchy_arrays(&leaves, depth, HIER_TOP_N_PER_LEVEL, HIER_MAX_NODES, "All")
-                {
-                    panels.insert(
-                        0,
-                        Panel::new(
-                            title,
-                            PanelKind::Hierarchy {
-                                style,
-                                labels,
-                                parents,
-                                values,
-                                ids,
-                            },
-                        ),
-                    );
-                }
-            }
-        }
-    }
-
-    // prepend a time-series trend panel when the data has a date/datetime column and a
-    // continuous numeric column. Like the correlation panel, it does one extra data pass and
-    // is prepended so it survives the panel cap.
-    // mirror the DMY preference stats used to infer dates: `viz smart` builds stats with
-    // flag_prefer_dmy = false, and stats itself ORs in QSV_PREFER_DMY (see `cmd::stats`), so the
-    // effective preference is the env flag. Parse dates the same way here so DMY-formatted dates
-    // are ordered correctly rather than misparsed/dropped.
-    let prefer_dmy = util::get_envvar_flag("QSV_PREFER_DMY");
-    let grain = dict_data.as_ref().and_then(|d| d.grain.as_deref());
-    if let Some(panel) = build_timeseries_panel(
-        args, &stats, prefer_dmy, map_cols, &col_sems, grain, dict_icons,
-    )? {
-        panels.insert(0, panel);
-    }
-
-    // prepend a cyclic-seasonality polar panel (volume by hour-of-day / weekday / month) when a
-    // date column has periodicity worth showing. Polar is non-cartesian (like Scatter3D/map),
-    // so it can't be statically exported — build it for HTML only.
-    if !out_format.is_image()
-        && let Some(panel) =
-            build_cyclic_panel(args, &stats, prefer_dmy, map_cols, &col_sems, dict_icons)?
-    {
-        panels.insert(0, panel);
-    }
-
-    // prepend the geographic overview panels (built up front, above) so they lead the dashboard and
-    // survive the panel cap. Insert the per-country choropleth first, then the point map at index
-    // 0, yielding [map, choropleth, ...] — the point map for spatial detail, the choropleth
-    // beside it for the per-jurisdiction aggregate.
-    // Under --dict-info, the geographic overview panels anchor their info icon on the driving
-    // coordinate column's dictionary entry (lat first) — the natural place a map reader looks
-    // for the coordinates' provenance and caveats.
-    let geo_dict_info = || {
-        map_cols.and_then(|(la, lo)| {
-            dict_info_for_field(dict_icons, &stats[la].field)
-                .or_else(|| dict_info_for_field(dict_icons, &stats[lo].field))
-        })
-    };
-    if let Some(mut panel) = choropleth_panel {
-        panel.dict_info = geo_dict_info();
-        panels.insert(0, panel);
-    } else if let Some((sc_panels, region_idx)) = summary_choros {
-        // the region-code summary choropleth(s) replace the (absent) lat/lon choropleth companion.
-        // No coordinate column drives them, so anchor --dict-info on the region key column instead
-        // of geo_dict_info() (which is None here). Insert in reverse so the leading dashboard order
-        // is [count, median, …].
-        let info = dict_info_for_field(dict_icons, &stats[region_idx].field);
-        for mut panel in sc_panels.into_iter().rev() {
-            panel.dict_info = info.clone();
-            panels.insert(0, panel);
-        }
-    }
-    if let Some((mut panel, _)) = map_panel {
-        panel.dict_info = geo_dict_info();
-        panels.insert(0, panel);
-    }
-
     let mut ctx = SmartCtx {
         args,
         out_format,
         progress,
         stats,
+        col_sems,
         dict_data,
         dict_json_text,
+        twin_suppress,
+        map_panel,
+        choropleth_panel,
+        summary_choros,
+        map_cols,
+        summary_choro_col,
+        sankey_pair,
+        bubble_panel,
+        geo_anim_panel,
         explicit_box_points,
         count_conf,
         nrows,
         log_scale,
+        violin_mode,
         panels,
         skipped,
         sentinel_suspects,
@@ -19704,6 +19795,7 @@ fn build_smart(
         nonnumeric_measures,
         inline: false,
     };
+    ctx.add_overview_panels()?;
     ctx.finalize_panels()?;
     let panel_data = ctx.gather_panel_data()?;
     ctx.render(panel_data)

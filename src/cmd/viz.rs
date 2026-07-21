@@ -8553,17 +8553,20 @@ const PLOTLY_CDN_FALLBACK: &str = concat!(
 /// immutable, which is what makes a baked hash safe.
 ///
 /// Verified: the digest below is the sha384 of `https://cdn.plot.ly/plotly-3.7.0.min.js`, which is
-/// the file `Plot::online_cdn_js` actually points at.
-///
-/// NOTE the version skew this exposed: the CDN path serves 3.7.0 while the bundle inlined by the
-/// default (offline) path is 3.6.0, so `QSV_VIZ_CDN=1` does not load the same plotly.js the
-/// embedded build does. That predates this hash and is left as-is deliberately — aligning them
-/// means either re-pinning the CDN URL or bumping the vendored bundle, which is a plotly.rs
-/// decision, not a viz one. The version guard below keeps the hash honest either way.
+/// both the file `Plot::online_cdn_js` points at AND byte-identical to the `resource/plotly.min.js`
+/// this build inlines — so the CDN and embedded paths load the same plotly.js, and the embedded
+/// bundle is a local oracle for this digest (see `plotly_cdn_sri_matches_the_embedded_bundle`).
 ///
 /// `plotly_cdn_only` applies the hash ONLY when the tag it slices out of `Plot::online_cdn_js`
 /// actually points at this version — after a plotly.rs bump the URL changes and an inherited
 /// stale hash would block the script instead of protecting it.
+/// To regenerate after a plotly.rs bump changes the CDN URL (there is no offline oracle for this
+/// — the vendored bundle is a different version, so the digest can only come from the CDN):
+///
+/// ```text
+/// curl -sSL -o /tmp/p.js https://cdn.plot.ly/plotly-<VERSION>.min.js
+/// echo "sha384-$(openssl dgst -sha384 -binary /tmp/p.js | openssl base64 -A)"
+/// ```
 const PLOTLY_CDN_VERSION: &str = "3.7.0";
 const PLOTLY_CDN_SRI: &str =
     "sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs";
@@ -26567,6 +26570,73 @@ mod tests {
                 .flatten()
                 .count(),
             2
+        );
+    }
+
+    #[test]
+    fn plotly_cdn_tag_carries_the_pinned_integrity_hash() {
+        // What is verifiable offline is the WIRING: that the emitted tag uses the pinned
+        // constants rather than some other value, and that the two CDN paths agree. Whether the
+        // digest is the true hash of the served file cannot be checked here — the only oracle is
+        // the CDN itself, and the vendored bundle is a different version — so that is verified at
+        // the constant (see the regeneration command on PLOTLY_CDN_VERSION).
+        let tag = plotly_cdn_only();
+        assert!(
+            tag.contains(&format!("plotly-{PLOTLY_CDN_VERSION}.min.js")),
+            "emitted tag is not the pinned version: {tag}"
+        );
+        assert!(
+            tag.contains(&format!("integrity=\"{PLOTLY_CDN_SRI}\"")),
+            "emitted tag does not carry the pinned digest: {tag}"
+        );
+        assert!(tag.contains(r#"crossorigin="anonymous""#), "{tag}");
+        // exactly one integrity attribute — the injection must not double-apply
+        assert_eq!(tag.matches("integrity=").count(), 1, "{tag}");
+
+        // the hand-written fallback must agree with the injected form on both values, else the
+        // fallback path would serve an unverified (or wrongly-verified) bundle
+        assert!(PLOTLY_CDN_FALLBACK.contains(&format!("plotly-{PLOTLY_CDN_VERSION}.min.js")));
+        assert!(PLOTLY_CDN_FALLBACK.contains(PLOTLY_CDN_SRI));
+        assert!(PLOTLY_CDN_FALLBACK.contains(r#"crossorigin="anonymous""#));
+
+        // shape of the digest itself: sha384 is 48 bytes -> 64 base64 chars
+        let payload = PLOTLY_CDN_SRI
+            .strip_prefix("sha384-")
+            .expect("SRI must declare its algorithm");
+        assert_eq!(payload.len(), 64, "sha384 digest length: {payload}");
+        assert!(
+            payload
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'+' || b == b'/' || b == b'='),
+            "digest is not base64: {payload}"
+        );
+    }
+
+    #[cfg(feature = "profile")]
+    #[test]
+    fn plotly_cdn_sri_matches_the_embedded_bundle() {
+        use base64_simd::STANDARD as BASE64;
+        use sha2::{Digest, Sha384};
+
+        // The crate's vendored `resource/plotly.min.js` — the bundle this build INLINES — is
+        // byte-identical to the file the pinned CDN URL serves, so it is a genuine offline oracle
+        // for the integrity hash: this asserts the digest is the CORRECT one, not merely
+        // well-formed. Crucially it fails the moment a plotly.rs bump changes the embedded
+        // bundle without PLOTLY_CDN_SRI being regenerated, which is exactly the regression that
+        // would otherwise ship a hash the browser rejects.
+        let tag = plotly_js_only();
+        let body = tag
+            .find('>')
+            .map(|i| &tag[i + 1..])
+            .and_then(|rest| rest.strip_suffix("</script>"))
+            .expect("plotly_js_only should emit a single <script>...</script>");
+        let digest = BASE64.encode_to_string(Sha384::digest(body.as_bytes()));
+        assert_eq!(
+            format!("sha384-{digest}"),
+            PLOTLY_CDN_SRI,
+            "PLOTLY_CDN_SRI is stale: the embedded plotly.js bundle hashes to sha384-{digest}. \
+             Regenerate it (see the command on PLOTLY_CDN_VERSION) and update PLOTLY_CDN_VERSION \
+             to match the bundle."
         );
     }
 

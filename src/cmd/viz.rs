@@ -1484,6 +1484,14 @@ pub fn run(argv: &[&str]) -> CliResult<()> {
     // GeoJSON choropleth panel, so the universal constraints are validated here — before dispatch —
     // rather than only on the command path. Otherwise the smart path would silently clamp
     // negatives, accept a non-finite NaN/inf, or ignore the --no-snap conflict. The "only
+    // --y-range is purely syntactic, so validate it HERE rather than in build_layout, which every
+    // cartesian chart reaches only after its trace builder has already streamed the whole input:
+    // `--y-range 5:1` on a large file otherwise aggregates for minutes before rejecting the flag.
+    // The later call sites keep parsing it (cheap, and infallible once this has passed).
+    if let Some(spec) = args.flag_y_range.as_deref() {
+        parse_y_range(spec)?;
+    }
+
     // applies to point-in-polygon binning" guard stays path-specific (build_choropleth_plot).
     if let Some(km) = args.flag_snap_max_dist {
         if args.flag_no_snap {
@@ -4002,6 +4010,21 @@ fn ring_planar_area(ring: &serde_json::Value) -> f64 {
     if pts.len() < 3 {
         return 0.0;
     }
+    // `windows(2)` covers the closing edge only when the ring is already closed (last == first).
+    // GeoJSON rings SHOULD be closed but this codebase explicitly tolerates unclosed ones
+    // (geojson_rings_to_closed appends the first vertex when missing), and dropping the closing
+    // term makes the shoelace sum arbitrarily wrong for a ring offset from the origin — which can
+    // rank a hole above its exterior in repair_polygon_rings and hand plotly the inverted ring
+    // order that sanitize_geojson_for_render exists to prevent.
+    let mut closed;
+    let pts = if pts.first() == pts.last() {
+        &pts[..]
+    } else {
+        closed = Vec::with_capacity(pts.len() + 1);
+        closed.extend_from_slice(&pts);
+        closed.push(pts[0]);
+        &closed[..]
+    };
     let mut a = 0.0;
     for w in pts.windows(2) {
         let [(x0, y0), (x1, y1)] = w else {
@@ -7187,6 +7210,10 @@ fn build_heatmap_correlation(
         );
     }
     let matrix = pearson_matrix(&columns);
+    // uniquify: plotly keys heatmap axes by CATEGORY, so two identically-named columns (CSV
+    // headers are not required to be unique) collapse onto one axis slot and one set of cells is
+    // silently hidden. The `viz smart` correlation path already routes through this helper.
+    let labels = truncate_labels_unique(&labels, CORR_LABEL_MAX_CHARS);
     Ok((corr_heatmap_trace(labels, matrix, None, true), None, None))
 }
 
@@ -15423,6 +15450,7 @@ fn match_region_code(
     raw: &str,
     feature_ids: &std::collections::HashSet<&str>,
     numeric_id_widths: &[usize],
+    lowercased_ids: &std::collections::HashMap<String, String>,
 ) -> Option<String> {
     let raw = raw.trim();
     if raw.is_empty() {
@@ -15446,7 +15474,11 @@ fn match_region_code(
             }
         }
     }
-    None
+    // Last resort: ASCII-case-insensitive. Alphabetic region codes routinely differ in case
+    // between a CSV column and the boundary file ("Ca"/"ca" vs STUSPS "CA"), which otherwise
+    // matched nothing at all and silently cost the panel. Canonicalize to the FEATURE's spelling
+    // so the returned key still indexes the GeoJSON.
+    lowercased_ids.get(&raw.to_ascii_lowercase()).cloned()
 }
 
 /// Build `viz smart` summary choropleth panel(s) keyed off a region-code DIMENSION column (e.g. a
@@ -15540,6 +15572,13 @@ fn build_smart_summary_choropleth_panels(
         w.dedup();
         w
     };
+    // lower-cased id -> canonical feature id, for the case-insensitive fallback in
+    // `match_region_code`. Ambiguous collisions (two ids differing only by case) keep the first
+    // seen, which is no worse than the exact-match behaviour that precedes it.
+    let lowercased_ids: std::collections::HashMap<String, String> = feature_ids
+        .iter()
+        .map(|id| ((*id).to_ascii_lowercase(), (*id).to_string()))
+        .collect();
 
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
@@ -15582,7 +15621,8 @@ fn build_smart_summary_choropleth_panels(
             total_rows[ci] += 1;
             // key aggregates under the matched geojson feature id; an unmatched value still counts
             // toward total_rows so a poorly-overlapping column scores low.
-            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths) else {
+            let Some(k) = match_region_code(raw, &feature_ids, &numeric_id_widths, &lowercased_ids)
+            else {
                 continue;
             };
             matched_rows[ci] += 1;
@@ -17303,6 +17343,11 @@ fn kpi_number_format(value: f64) -> String {
         ".3~s".to_string()
     } else if value.fract() == 0.0 {
         ",.0f".to_string()
+    } else if a < 0.01 && a > 0.0 {
+        // ",.2f" renders anything under 0.005 as a flat "0.00" — a dictionary-tagged ratio with
+        // gauge_range [0, 0.01] and mean 0.0004 showed the headline "0.00" beside a needle
+        // sitting at 4% of its scale. Use significant digits instead of fixed decimals.
+        ".3~g".to_string()
     } else {
         ",.2f".to_string()
     }
@@ -19196,13 +19241,22 @@ fn build_smart(
             "<tr><td class=\"qsv-viz-meta-k\">Compiled:</td><td>{}</td></tr>\n",
             chrono::Utc::now().format("%Y-%m-%d %H:%M UTC")
         ));
-        // PID: a clickable link, only when --dataset-pid is set. The value is used verbatim as the
-        // href (a full URL such as a DOI is expected); both href and text are escaped.
+        // PID: a clickable link, only when --dataset-pid is set. A full URL such as a DOI is
+        // expected. The TEXT is html-escaped and the HREF additionally goes through
+        // `sanitize_url` — html-escaping alone leaves `javascript:` intact, and this page may be
+        // generated by a service and viewed by someone other than whoever passed the flag. A
+        // rejected scheme still shows the value as plain text rather than dropping it silently.
         if let Some(pid) = args.flag_dataset_pid.as_deref() {
             let pid_esc = html_escape(pid);
+            let cell = match sanitize_url(pid) {
+                Some(href) => format!(
+                    "<a href=\"{}\" target=\"_blank\" rel=\"noopener noreferrer\">{pid_esc}</a>",
+                    html_escape(&href)
+                ),
+                None => pid_esc,
+            };
             rows.push_str(&format!(
-                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td><a \
-                 href=\"{pid_esc}\">{pid_esc}</a></td></tr>\n"
+                "<tr><td class=\"qsv-viz-meta-k\">PID:</td><td>{cell}</td></tr>\n"
             ));
         }
         Some(format!("<table class=\"qsv-viz-meta\">\n{rows}</table>"))
@@ -26051,6 +26105,73 @@ mod tests {
     }
 
     #[test]
+    fn ring_planar_area_includes_the_closing_edge() {
+        let ring = |pts: &[[f64; 2]]| serde_json::json!(pts);
+        // a 10x10 square offset from the origin, written UNCLOSED: dropping the closing term
+        // makes the shoelace sum wildly wrong (it used to compute 950 instead of 100)
+        let unclosed = ring(&[
+            [100.0, 100.0],
+            [110.0, 100.0],
+            [110.0, 110.0],
+            [100.0, 110.0],
+        ]);
+        assert!((ring_planar_area(&unclosed) - 100.0).abs() < 1e-9);
+        // the already-closed spelling must give the same answer
+        let closed = ring(&[
+            [100.0, 100.0],
+            [110.0, 100.0],
+            [110.0, 110.0],
+            [100.0, 110.0],
+            [100.0, 100.0],
+        ]);
+        assert!((ring_planar_area(&closed) - ring_planar_area(&unclosed)).abs() < 1e-9);
+        // and an unclosed exterior must still out-rank a genuine hole, which is what
+        // repair_polygon_rings orders on
+        let hole = ring(&[
+            [102.0, 102.0],
+            [105.0, 102.0],
+            [105.0, 105.0],
+            [102.0, 105.0],
+        ]);
+        assert!(ring_planar_area(&unclosed) > ring_planar_area(&hole));
+        // degenerate rings stay zero
+        assert!((ring_planar_area(&ring(&[[0.0, 0.0], [1.0, 1.0]])) - 0.0).abs() < 1e-12);
+    }
+
+    #[test]
+    fn kpi_number_format_keeps_small_magnitudes_visible() {
+        // a ratio like 0.0004 rendered as a flat "0.00" next to a gauge needle at 4% of scale
+        assert_eq!(kpi_number_format(0.0004), ".3~g");
+        assert_eq!(kpi_number_format(-0.0004), ".3~g");
+        // the existing bands are untouched
+        assert_eq!(kpi_number_format(0.25), ",.2f");
+        assert_eq!(kpi_number_format(42.0), ",.0f");
+        assert_eq!(kpi_number_format(1_250_000.0), ".3~s");
+        // exact zero is a whole number, not a small magnitude
+        assert_eq!(kpi_number_format(0.0), ",.0f");
+    }
+
+    #[test]
+    fn match_region_code_falls_back_to_case_insensitive() {
+        let ids: std::collections::HashSet<&str> = ["CA", "NY", "06075"].into_iter().collect();
+        let widths = vec![5_usize];
+        let lower: std::collections::HashMap<String, String> = ids
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
+        let m = |raw: &str| match_region_code(raw, &ids, &widths, &lower);
+        // exact still wins
+        assert_eq!(m("CA").as_deref(), Some("CA"));
+        // differently-cased alphabetic codes now match, canonicalized to the FEATURE's spelling
+        assert_eq!(m("ca").as_deref(), Some("CA"));
+        assert_eq!(m("Ca").as_deref(), Some("CA"));
+        // numeric zero-padding is unaffected and still preferred
+        assert_eq!(m("6075").as_deref(), Some("06075"));
+        // a genuine non-member still misses
+        assert!(m("ZZ").is_none());
+    }
+
+    #[test]
     fn escape_template_pct_doubles_literal_percent() {
         // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
         // doubled or plotly swallows the following text as a data token
@@ -28317,51 +28438,62 @@ mod tests {
             .into_iter()
             .collect();
         let widths = numeric_widths(&ids);
+        let lower_ids: std::collections::HashMap<String, String> = ids
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
 
         // exact 5-digit match, with surrounding whitespace trimmed
         assert_eq!(
-            match_region_code(" 15129 ", &ids, &widths).as_deref(),
+            match_region_code(" 15129 ", &ids, &widths, &lower_ids).as_deref(),
             Some("15129")
         );
         // short all-digit code left-padded to 5 to match a zero-padded id
         assert_eq!(
-            match_region_code("7936", &ids, &widths).as_deref(),
+            match_region_code("7936", &ids, &widths, &lower_ids).as_deref(),
             Some("07936")
         );
         // non-numeric code matched verbatim
         assert_eq!(
-            match_region_code("BAKERSTOWN", &ids, &widths).as_deref(),
+            match_region_code("BAKERSTOWN", &ids, &widths, &lower_ids).as_deref(),
             Some("BAKERSTOWN")
         );
         // empty / whitespace-only -> no match
-        assert_eq!(match_region_code("   ", &ids, &widths), None);
+        assert_eq!(match_region_code("   ", &ids, &widths, &lower_ids), None);
         // a value absent from the boundary set -> no match (counts against overlap ratio)
-        assert_eq!(match_region_code("99999", &ids, &widths), None);
+        assert_eq!(match_region_code("99999", &ids, &widths, &lower_ids), None);
         // a short code whose padded form is absent -> no match (not blindly padded-and-kept)
-        assert_eq!(match_region_code("123", &ids, &widths), None);
+        assert_eq!(match_region_code("123", &ids, &widths, &lower_ids), None);
 
         // non-zip widths: the code is padded to whatever numeric feature-id widths exist, not a
         // hardcoded 5. State FIPS (2-wide) and county FIPS (3-wide) both resolve.
         let fips: std::collections::HashSet<&str> =
             ["01", "06", "003", "037", "42003"].into_iter().collect();
         let fips_widths = numeric_widths(&fips);
+        let lower_fips: std::collections::HashMap<String, String> = fips
+            .iter()
+            .map(|i| ((*i).to_ascii_lowercase(), (*i).to_string()))
+            .collect();
         // state FIPS 1 -> 01 (2-wide id)
         assert_eq!(
-            match_region_code("1", &fips, &fips_widths).as_deref(),
+            match_region_code("1", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("01")
         );
         // county FIPS 3 -> 003 (3-wide id), preferring the shortest viable width first
         assert_eq!(
-            match_region_code("3", &fips, &fips_widths).as_deref(),
+            match_region_code("3", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("003")
         );
         // already-wide numeric id matches exactly
         assert_eq!(
-            match_region_code("42003", &fips, &fips_widths).as_deref(),
+            match_region_code("42003", &fips, &fips_widths, &lower_fips).as_deref(),
             Some("42003")
         );
         // a width with no matching padded form -> no match
-        assert_eq!(match_region_code("9", &fips, &fips_widths), None);
+        assert_eq!(
+            match_region_code("9", &fips, &fips_widths, &lower_fips),
+            None
+        );
     }
 
     #[test]

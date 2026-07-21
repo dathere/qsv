@@ -3567,10 +3567,33 @@ fn viz_smart_metadata_pid_link() {
     wrk.assert_success(&mut cmd);
 
     let html = wrk.read_to_string("dash.html").unwrap();
-    // the PID value is used verbatim as the href.
+    // an http(s) PID becomes a link, opened safely in a new tab.
     assert!(html.contains(
-        r#"<td class="qsv-viz-meta-k">PID:</td><td><a href="https://doi.org/10.1234/abc">https://doi.org/10.1234/abc</a></td>"#
+        r#"<td class="qsv-viz-meta-k">PID:</td><td><a href="https://doi.org/10.1234/abc" target="_blank" rel="noopener noreferrer">https://doi.org/10.1234/abc</a></td>"#
     ));
+}
+
+#[test]
+fn viz_smart_metadata_pid_rejects_dangerous_scheme() {
+    let wrk = Workdir::new("viz_smart_metadata_pid_rejects_dangerous_scheme");
+    wrk.create_from_string("data.csv", "amount,quarter\n1000,Q1\n2000,Q2\n3000,Q1\n");
+    let out_html = wrk.path("dash.html").to_string_lossy().to_string();
+    let mut cmd = wrk.command("viz");
+    cmd.args([
+        "smart",
+        "data.csv",
+        "-o",
+        &out_html,
+        "--dataset-pid",
+        "javascript:alert(1)",
+    ]);
+    wrk.assert_success(&mut cmd);
+
+    let html = wrk.read_to_string("dash.html").unwrap();
+    // a non-http(s) scheme is never turned into an href; the value still shows as plain text
+    // rather than being silently dropped.
+    assert!(!html.contains(r#"href="javascript:"#));
+    assert!(html.contains(r#"<td class="qsv-viz-meta-k">PID:</td><td>javascript:alert(1)</td>"#));
 }
 
 #[test]

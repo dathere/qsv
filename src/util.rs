@@ -3100,6 +3100,95 @@ fn stats_satisfy_mode(stats: &[StatsData], mode: StatsMode) -> bool {
     has_mode && (!has_numeric || has_quartiles)
 }
 
+/// Do the parsing options recorded in a stats cache's `<input>.stats.csv.json` metadata match the
+/// options the consuming command is using?
+///
+/// The cache is located by input path and validated by mtime, NOT by parsing options — so a cache
+/// built under a different `--no-headers` / `--delimiter` can pass every freshness check while
+/// describing a DIFFERENT logical CSV: field names become positional (`0`, `1`, …), the header row
+/// is counted as data, and the column count can change entirely. Reusing it silently yields wrong
+/// stats, or a hard failure downstream when the column count disagrees.
+///
+/// Shared by `get_stats_records` and `get_stats_records_readonly` deliberately: those two drifted
+/// (only the latter validated this), which is precisely how the mismatch became reachable.
+///
+/// Returns `false` when the metadata is missing or unreadable, so callers regenerate rather than
+/// trust a cache they cannot verify.
+fn stats_cache_parsing_opts_match(
+    metadata: &serde_json::Value,
+    input_path: &Path,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> bool {
+    // --no-headers determines whether the header row is part of the data (and therefore whether
+    // field names are real or positional), so it must match the consuming command.
+    if metadata
+        .get("flag_no_headers")
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+        != no_headers
+    {
+        return false;
+    }
+
+    // The effective delimiter must match. Both the cache and the command resolve an unset
+    // delimiter from the same file path, so compare resolved bytes: an explicit recorded/passed
+    // delimiter is a single ASCII byte, otherwise the extension default.
+    let ext_delim = {
+        let (_, d, _) = get_delim_by_extension(input_path, b',');
+        d
+    };
+    let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
+        Some(s) if !s.is_empty() => s.as_bytes()[0],
+        _ => ext_delim,
+    };
+    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
+    cache_delim == cmd_delim
+}
+
+/// Does a stats cache's metadata sidecar record parsing options that CONFLICT with the consuming
+/// command's? Only a positive, readable mismatch counts as a conflict.
+///
+/// Absent or unparseable metadata is deliberately NOT a conflict. `moarstats` writes the
+/// `.stats.csv.data.jsonl` cache without a companion `.stats.csv.json`, and treating those as
+/// unusable would silently discard a rich externally-built cache and regenerate a leaner one —
+/// downgrading consumers (e.g. `pivotp --agg smart` loses the `sort_order` it decides on). The
+/// mismatch this guards against always writes a sidecar, since it goes through the `stats`
+/// subprocess, so declining to judge a sidecar-less cache leaves the pre-existing status quo
+/// rather than a new hole.
+///
+/// (`get_stats_records_readonly` still fails closed on missing metadata: it returns an `Option`
+/// its callers treat as a best-effort accelerator, so refusing costs nothing there.)
+fn stats_cache_parsing_opts_conflict(
+    input_path: &Path,
+    canonical_input_path: &Path,
+    no_headers: bool,
+    delimiter: Option<Delimiter>,
+) -> bool {
+    // Both locations must be checked, because for a SYMLINKED input they differ: the JSONL cache
+    // is looked up beside the canonicalized target, but the `stats` subprocess is invoked with the
+    // original path and writes its `<input>.stats.csv.json` beside the symlink. Looking only
+    // beside the canonical target finds no metadata there and waves the cache through — which
+    // reopened the exact mismatch this guard exists to catch, via a symlink.
+    //
+    // Delimiter resolution uses `input_path`, the path actually parsed: `Config` resolves an unset
+    // delimiter from that path's extension, so a `link.csv -> target.tsv` symlink must be judged
+    // by the extension the reader used, not the target's.
+    for meta_base in [input_path, canonical_input_path] {
+        let metadata_path = meta_base.with_extension("stats.csv.json");
+        let Ok(text) = std::fs::read_to_string(&metadata_path) else {
+            continue;
+        };
+        let Ok(metadata) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
+        if !stats_cache_parsing_opts_match(&metadata, input_path, no_headers, delimiter) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn get_stats_records(
     args: &SchemaArgs,
     requested_mode: StatsMode,
@@ -3154,8 +3243,24 @@ pub fn get_stats_records(
         let statsdata_mtime = FileTime::from_last_modification_time(&statsdata_metadata);
         let input_mtime = FileTime::from_last_modification_time(&input_metadata);
         if statsdata_mtime > input_mtime {
-            info!("Valid stats.csv.data.jsonl file found!");
-            true
+            // mtime alone is not sufficient: the cache is NOT keyed by parsing options, so a
+            // cache written by an earlier run with a different --no-headers/--delimiter would
+            // otherwise be reused here and describe a different logical CSV.
+            if stats_cache_parsing_opts_conflict(
+                Path::new(input_path),
+                &canonical_input_path,
+                args.flag_no_headers,
+                args.flag_delimiter,
+            ) {
+                info!(
+                    "stats.csv.data.jsonl file was built with different parsing options \
+                     (--no-headers/--delimiter). Regenerating stats jsonl."
+                );
+                false
+            } else {
+                info!("Valid stats.csv.data.jsonl file found!");
+                true
+            }
         } else {
             info!("stats.csv.data.jsonl file is older than input file. Regenerating stats jsonl.");
             false
@@ -3429,6 +3534,38 @@ pub fn get_stats_records(
             b',',
         )?;
 
+        // Keep the metadata sidecar beside the JSONL we just wrote in sync with it.
+        //
+        // We write the JSONL at the CANONICAL path, but the `stats` subprocess writes its
+        // `<input>.stats.csv.json` args sidecar beside the path it was GIVEN. Those coincide for
+        // an ordinary input and diverge for a symlink — and a divergence is not merely a missing
+        // sidecar: an earlier direct run on the target leaves a canonical sidecar that keeps
+        // describing itself as current while this run replaces the canonical JSONL underneath it.
+        // A later direct run then reads stale-but-matching metadata and reuses a cache built with
+        // different parsing options. Copy the sidecar that actually describes this JSONL over it.
+        let subprocess_metadata = Path::new(input_path).with_extension("stats.csv.json");
+        let canonical_metadata = canonical_input_path.with_extension("stats.csv.json");
+        // Compare RESOLVED paths, not the raw ones: for an ordinary input these name the same
+        // file via a relative and an absolute path, and `fs::copy` onto itself truncates it —
+        // which corrupts the very metadata this is meant to keep trustworthy.
+        let same_file = match (
+            subprocess_metadata.canonicalize(),
+            canonical_metadata.canonicalize(),
+        ) {
+            (Ok(a), Ok(b)) => a == b,
+            _ => false,
+        };
+        if !same_file && subprocess_metadata.exists() {
+            // best-effort: a stale sidecar is only a cache-reuse hint, never required for
+            // correctness of THIS run, so a copy failure must not fail the stats load
+            if let Err(e) = std::fs::copy(&subprocess_metadata, &canonical_metadata) {
+                log::warn!(
+                    "could not sync stats cache metadata to {}: {e}",
+                    canonical_metadata.display()
+                );
+            }
+        }
+
         let statsdatajson_rdr =
             BufReader::with_capacity(DEFAULT_RDR_BUFFER_CAPACITY, File::open(statsdatajson_path)?);
 
@@ -3530,29 +3667,14 @@ pub fn get_stats_records_readonly(
     if metadata.get("flag_select").and_then(|v| v.as_str()) != Some("<All>") {
         return None;
     }
-    // --no-headers determines whether the header row is part of the data that
-    // sort_order was computed over, so it must match the consuming command
-    if metadata
-        .get("flag_no_headers")
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-        != no_headers
-    {
-        return None;
-    }
-    // the effective delimiter must match. Both the cache and the command resolve an
-    // unset delimiter from the same file path, so compare resolved bytes: an explicit
-    // recorded/passed delimiter is a single ASCII byte, otherwise the extension default.
-    let ext_delim = {
-        let (_, d, _) = get_delim_by_extension(Path::new(&input_path_owned), b',');
-        d
-    };
-    let cache_delim = match metadata.get("flag_delimiter").and_then(|v| v.as_str()) {
-        Some(s) if !s.is_empty() => s.as_bytes()[0],
-        _ => ext_delim,
-    };
-    let cmd_delim = delimiter.map_or(ext_delim, |d| d.as_byte());
-    if cache_delim != cmd_delim {
+    // --no-headers and the effective delimiter must match the consuming command; shared with
+    // `get_stats_records` so the two cannot drift apart again.
+    if !stats_cache_parsing_opts_match(
+        &metadata,
+        Path::new(&input_path_owned),
+        no_headers,
+        delimiter,
+    ) {
         return None;
     }
 
@@ -4872,6 +4994,122 @@ mod tests {
     use tempfile::NamedTempFile;
 
     use super::*;
+
+    // A stats cache is located by input path and validated by mtime, NOT by parsing options, so
+    // these two fields are the only thing standing between a `--no-headers` (or differently
+    // delimited) cache and a headered consumer silently reading positional field names.
+    #[test]
+    fn stats_cache_parsing_opts_match_rejects_mismatched_no_headers() {
+        let input = Path::new("data.csv");
+        let meta = serde_json::json!({"flag_no_headers": true, "flag_delimiter": ","});
+        // cache built headerless, consumer wants headers -> reject
+        assert!(!stats_cache_parsing_opts_match(&meta, input, false, None));
+        // same setting on both sides -> accept
+        assert!(stats_cache_parsing_opts_match(&meta, input, true, None));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_match_rejects_mismatched_delimiter() {
+        let input = Path::new("data.csv");
+        let meta = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ";"});
+        // cache built semicolon-delimited, consumer resolves ',' from the .csv extension
+        assert!(!stats_cache_parsing_opts_match(&meta, input, false, None));
+        assert!(stats_cache_parsing_opts_match(
+            &meta,
+            input,
+            false,
+            Some(Delimiter(b';'))
+        ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_match_resolves_unset_delimiter_from_extension() {
+        // an unset delimiter on BOTH sides resolves from the file extension, so a cache whose
+        // recorded delimiter is empty still matches a consumer that passed none
+        let meta = serde_json::json!({"flag_no_headers": false, "flag_delimiter": ""});
+        assert!(stats_cache_parsing_opts_match(
+            &meta,
+            Path::new("data.csv"),
+            false,
+            None
+        ));
+        // ... and a .tsv input resolves to tab on both sides
+        assert!(stats_cache_parsing_opts_match(
+            &meta,
+            Path::new("data.tsv"),
+            false,
+            None
+        ));
+        // but an explicit comma against a .tsv input is a genuine mismatch
+        assert!(!stats_cache_parsing_opts_match(
+            &meta,
+            Path::new("data.tsv"),
+            false,
+            Some(Delimiter(b','))
+        ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_conflict_only_on_a_readable_mismatch() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("data.csv");
+        // No sidecar at all: NOT a conflict. `moarstats` writes the JSONL cache without one, and
+        // rejecting those would discard a rich cache and regenerate a leaner one.
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
+        // Present but unparseable: same — decline to judge rather than discard.
+        std::fs::write(dir.path().join("data.stats.csv.json"), b"{not json").unwrap();
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
+        // Readable and matching: no conflict.
+        std::fs::write(
+            dir.path().join("data.stats.csv.json"),
+            br#"{"flag_no_headers": false, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(!stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
+        // Readable and mismatched: the case this exists to catch.
+        std::fs::write(
+            dir.path().join("data.stats.csv.json"),
+            br#"{"flag_no_headers": true, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(stats_cache_parsing_opts_conflict(
+            &input, &input, false, None
+        ));
+    }
+
+    #[test]
+    fn stats_cache_parsing_opts_conflict_sees_the_sidecar_beside_a_symlink() {
+        // For a symlinked input the JSONL cache is looked up beside the canonical TARGET, but the
+        // `stats` subprocess writes its metadata beside the SYMLINK. Checking only the canonical
+        // location finds nothing and waves a mismatched cache through.
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("link.csv");
+        let canonical = dir.path().join("target.csv");
+        // metadata exists ONLY beside the "symlink" path, and it disagrees on --no-headers
+        std::fs::write(
+            dir.path().join("link.stats.csv.json"),
+            br#"{"flag_no_headers": true, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(stats_cache_parsing_opts_conflict(
+            &link, &canonical, false, None
+        ));
+        // and the agreeing case is still not a conflict
+        std::fs::write(
+            dir.path().join("link.stats.csv.json"),
+            br#"{"flag_no_headers": false, "flag_delimiter": ","}"#,
+        )
+        .unwrap();
+        assert!(!stats_cache_parsing_opts_conflict(
+            &link, &canonical, false, None
+        ));
+    }
 
     #[cfg(test)]
     fn write_test_zip(path: &Path, entries: &[(&str, &[u8])]) {

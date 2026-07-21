@@ -33,8 +33,11 @@ fn pragmastat_onesample_basic() {
     assert_eq!(lat_row[3], "0.0259"); // spread
     assert_eq!(lat_row[4], "42.3272"); // center_lower (deterministic)
     assert_eq!(lat_row[5], "42.3503"); // center_upper (deterministic)
-    // spread_lower/upper are randomized — verify bounds are valid and straddle spread
-    let spread: f64 = lat_row[3].parse().unwrap();
+    // spread bounds are randomized (time-seeded RNG) and are a distribution-free interval
+    // for the TRUE parameter, not for the sample point estimate. They are order statistics
+    // of a random disjoint pairing (n/2 diffs), while spread is the Shamos estimator over
+    // all C(n,2) diffs — so the interval is NOT guaranteed to contain spread. Only assert
+    // what the algorithm actually guarantees.
     let spread_lower: f64 = lat_row[6]
         .parse()
         .expect("spread_lower should be non-empty");
@@ -42,12 +45,12 @@ fn pragmastat_onesample_basic() {
         .parse()
         .expect("spread_upper should be non-empty");
     assert!(
-        spread_lower <= spread,
-        "spread_lower ({spread_lower}) should be <= spread ({spread})"
+        spread_lower <= spread_upper,
+        "spread_lower ({spread_lower}) should be <= spread_upper ({spread_upper})"
     );
     assert!(
-        spread_upper >= spread,
-        "spread_upper ({spread_upper}) should be >= spread ({spread})"
+        spread_lower >= 0.0 && spread_upper.is_finite(),
+        "spread bounds should be non-negative and finite ({spread_lower}, {spread_upper})"
     );
 
     // Verify longitude: deterministic center bounds, randomized spread bounds
@@ -57,7 +60,6 @@ fn pragmastat_onesample_basic() {
     assert_eq!(lon_row[3], "0.0249"); // spread
     assert_eq!(lon_row[4], "-71.0814"); // center_lower (deterministic)
     assert_eq!(lon_row[5], "-71.0587"); // center_upper (deterministic)
-    let lon_spread: f64 = lon_row[3].parse().unwrap();
     let lon_spread_lower: f64 = lon_row[6]
         .parse()
         .expect("spread_lower should be non-empty");
@@ -65,12 +67,12 @@ fn pragmastat_onesample_basic() {
         .parse()
         .expect("spread_upper should be non-empty");
     assert!(
-        lon_spread_lower <= lon_spread,
-        "spread_lower ({lon_spread_lower}) should be <= spread ({lon_spread})"
+        lon_spread_lower <= lon_spread_upper,
+        "spread_lower ({lon_spread_lower}) should be <= spread_upper ({lon_spread_upper})"
     );
     assert!(
-        lon_spread_upper >= lon_spread,
-        "spread_upper ({lon_spread_upper}) should be >= spread ({lon_spread})"
+        lon_spread_lower >= 0.0 && lon_spread_upper.is_finite(),
+        "spread bounds should be non-negative and finite ({lon_spread_lower}, {lon_spread_upper})"
     );
 
     // Non-numeric columns should have n=0 and empty estimator cells
@@ -210,8 +212,9 @@ fn pragmastat_twosample_basic() {
     // ratio bounds are empty (ratio was empty)
     assert!(row[9].is_empty(), "ratio_lower should be empty");
     assert!(row[10].is_empty(), "ratio_upper should be empty");
-    // disparity_lower/upper are randomized — verify bounds are valid and straddle disparity
-    let disparity: f64 = row[6].parse().unwrap();
+    // disparity bounds are randomized (time-seeded RNG) and bound the TRUE parameter, not
+    // the sample point estimate — so they are NOT guaranteed to contain `disparity`.
+    // Only assert what the algorithm actually guarantees.
     let disparity_lower: f64 = row[11]
         .parse()
         .expect("disparity_lower should be non-empty");
@@ -219,12 +222,12 @@ fn pragmastat_twosample_basic() {
         .parse()
         .expect("disparity_upper should be non-empty");
     assert!(
-        disparity_lower <= disparity,
-        "disparity_lower ({disparity_lower}) should be <= disparity ({disparity})"
+        disparity_lower <= disparity_upper,
+        "disparity_lower ({disparity_lower}) should be <= disparity_upper ({disparity_upper})"
     );
     assert!(
-        disparity_upper >= disparity,
-        "disparity_upper ({disparity_upper}) should be >= disparity ({disparity})"
+        disparity_lower.is_finite() && disparity_upper.is_finite(),
+        "disparity bounds should be finite ({disparity_lower}, {disparity_upper})"
     );
 }
 

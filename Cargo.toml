@@ -371,7 +371,10 @@ rmp-serde = { version = "1.3", optional = true }
 rust_decimal = { version = "1.42", default-features = false }
 sanitize-filename = { version = "0.6", optional = true }
 simd-json = "0.17"
-self_update = { version = "1.0.0-rc.4", features = [
+# pinned to git master for check_interval::UpdateCheckGuard, which is not yet in a
+# published release (still declared 1.0.0-rc.6 upstream). Switch back to the crates.io
+# version once an rc/stable ships check_interval.
+self_update = { git = "https://github.com/jaemk/self_update", rev = "91b0531a22b76cabf46152fd2aae0b34a75c177e", features = [
     "archive-zip",
     "compression-zip-deflate",
     "github",

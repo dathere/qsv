@@ -18029,6 +18029,239 @@ impl SmartCtx<'_> {
         })
     }
 
+    /// Classify each column into a dashboard panel, accumulating the panel set, the skipped-column
+    /// list, and the three deferred sentinel/measure diagnostics.
+    ///
+    /// Destructures the context up front so the loop can push to `panels` while iterating `stats`
+    /// and still reach the lazy `nrows` row-count -- disjoint field borrows the borrow checker
+    /// accepts, where `&mut self` method calls would not.
+    fn classify_columns(&mut self) {
+        let Self {
+            args,
+            out_format,
+            stats,
+            col_sems,
+            dict_data,
+            twin_suppress,
+            map_cols,
+            summary_choro_col,
+            explicit_box_points,
+            count_conf,
+            nrows,
+            log_scale,
+            violin_mode,
+            panels,
+            skipped,
+            sentinel_suspects,
+            sentinel_hints,
+            nonnumeric_measures,
+            ..
+        } = self;
+        let (args, out_format, log_scale, violin_mode) =
+            (*args, *out_format, *log_scale, *violin_mode);
+        let (map_cols, summary_choro_col) = (*map_cols, *summary_choro_col);
+        // the same two derived values `SmartCtx::is_map_col` / `dict_icons` compute; recreated as
+        // locals here because `self` is destructured for the duration of the loop.
+        let is_map_col = |idx: usize| {
+            map_cols.is_some_and(|(la, lo)| idx == la || idx == lo)
+                || summary_choro_col == Some(idx)
+        };
+        let dict_icons: Option<&DictData> = (args.flag_dict_info
+            && matches!(out_format, OutFormat::Html))
+        .then_some(dict_data.as_ref())
+        .flatten();
+
+        for (idx, s) in stats.iter().enumerate() {
+            if is_map_col(idx) {
+                continue;
+            }
+            let sem = &col_sems[idx];
+            // the panel title is the raw field name (or a positional name when headerless); the
+            // dictionary's human label becomes a subtitle beneath it, dropped when it's empty or
+            // just echoes the header.
+            let name = if s.field.is_empty() {
+                format!("col {}", idx + 1)
+            } else {
+                s.field.clone()
+            };
+            let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
+                .then(|| sem.label.clone());
+            // --dict-info: the column's dictionary description + pre-computed anchor.
+            let dict_info = dict_info_for_field(dict_icons, &s.field);
+            // a code/key twin (e.g. subject_code beside subject) is redundant with its label
+            // sibling
+            if twin_suppress.contains(&idx) {
+                skipped.push(name);
+                continue;
+            }
+            // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed
+            // off a region CODE puts no coordinates on screen, so a projected coord is
+            // still worth charting.
+            match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
+                Some(mut kind) => {
+                    // a cache-only quartile box becomes a raw box (with an overlay mode) when the
+                    // explicit flag or the size heuristic calls for points (<=
+                    // SMART_BOX_OUTLIERS_MAX rows). Above that, a column that
+                    // HAS Tukey outliers becomes a `BoxOutliers` (precomputed
+                    // box + native outlier-point overlay via a single fence-filtered
+                    // pass); a column with no outliers stays a cheap cache-only `BoxStats` (no
+                    // pass).
+                    if let PanelKind::BoxStats {
+                        q1,
+                        median,
+                        q3,
+                        lower,
+                        upper,
+                        mean,
+                    } = kind
+                    {
+                        let n =
+                            *nrows.get_or_insert_with(|| util::count_rows(count_conf).unwrap_or(0));
+                        // tier on the column's actual point count, not the dataset row count:
+                        // only the non-null values are collected, embedded and rendered, so a
+                        // mostly-null column shouldn't be denied an overlay tier (or the raw
+                        // pass) by rows it doesn't have.
+                        let n_points = n.saturating_sub(s.nullcount);
+                        // the violin verdict needs the panel's value-axis log verdict (a KDE and a
+                        // log axis mix poorly); it is recomputed cheaply below when the panel bakes
+                        // in `value_log`.
+                        let would_log = box_panel_logs(
+                            log_scale,
+                            s,
+                            parse_stat_f64(s.min.as_deref()),
+                            parse_stat_f64(s.max.as_deref()),
+                        );
+                        if let Some(points) =
+                            smart_box_points(explicit_box_points.as_ref(), n_points)
+                        {
+                            // the raw values will be collected in full — exact violin (the default
+                            // representation; see `wants_violin`) or raw box.
+                            kind = if wants_violin(violin_mode, s, would_log, n_points) {
+                                // the KDE silhouette already shows what a full point cloud would,
+                                // so the size-based `all` upgrade (valuable on a box, whose five
+                                // numbers hide the distribution) is redundant clutter on a violin:
+                                // only an explicit --box-points mode overlays more than the
+                                // outliers, which the KDE's smoothed tail can't show individually.
+                                let points = if explicit_box_points.is_some() {
+                                    points
+                                } else {
+                                    BoxPoints::Outliers
+                                };
+                                PanelKind::Violin {
+                                    idx,
+                                    points,
+                                    sample_stride: 1,
+                                }
+                            } else {
+                                PanelKind::BoxRaw { idx, points }
+                            };
+                        } else if wants_violin(violin_mode, s, would_log, n_points) {
+                            // `smart_box_points` returned None for one of two reasons, and a violin
+                            // still renders in both: an explicit `--box-points none` only means "no
+                            // point overlay" (a violin's KDE doesn't need points; the cache-only
+                            // escape hatch for that flag is `--violin off`), or the column has too
+                            // many values to embed exactly — a violin doesn't need them all: draw
+                            // the KDE + inner box from a deterministic stride sample (at most
+                            // VIOLIN_SAMPLE_MAX values), with no point overlay either way (a
+                            // strided sample misses the true extremes, so sampled "outliers"
+                            // would mislead).
+                            #[allow(clippy::cast_possible_truncation)]
+                            let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
+                                n_points.div_ceil(*VIOLIN_SAMPLE_MAX).max(1) as usize
+                            } else {
+                                1
+                            };
+                            kind = PanelKind::Violin {
+                                idx,
+                                points: BoxPoints::False,
+                                sample_stride,
+                            };
+                        } else if explicit_box_points.is_none()
+                            && n_points > SMART_BOX_OUTLIERS_MAX
+                            && let Some((fence_low, fence_high)) = box_fences(s)
+                            && (lower.is_some_and(|lo| lo < fence_low)
+                                || upper.is_some_and(|hi| hi > fence_high))
+                        {
+                            // `lower`/`upper` are the column's observed min/max — outside the
+                            // Tukey fences means real outliers exist, so overlay them.
+                            kind = PanelKind::BoxOutliers {
+                                idx,
+                                q1,
+                                median,
+                                q3,
+                                mean,
+                                fence_low,
+                                fence_high,
+                            };
+                        }
+                    }
+                    // for box/histogram panels, append cache-derived shape hints (null/zero share,
+                    // skew direction, outlier share, …) to the panel title when notable.
+                    // Cache-only, no cost; when nothing is notable the hint is
+                    // None and the title is unchanged.
+                    let name = match &kind {
+                        PanelKind::BoxStats { .. }
+                        | PanelKind::BoxRaw { .. }
+                        | PanelKind::BoxOutliers { .. }
+                        | PanelKind::Violin { .. }
+                        | PanelKind::Histogram { .. } => match box_shape_hint(s) {
+                            Some(hint) => format!("{name} {hint}"),
+                            None => name,
+                        },
+                        _ => name,
+                    };
+                    // an honesty cue for violins drawn from a stride sample rather than every value
+                    let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
+                    {
+                        format!("{name} (sampled)")
+                    } else {
+                        name
+                    };
+                    // box panels resolve their value-axis log verdict now, while the cached
+                    // observed min/max are at hand (frequency bars decide from
+                    // their counts at render time)
+                    let value_log = match &kind {
+                        PanelKind::BoxStats { lower, upper, .. } => {
+                            box_panel_logs(log_scale, s, *lower, *upper)
+                        },
+                        PanelKind::BoxRaw { .. }
+                        | PanelKind::BoxOutliers { .. }
+                        | PanelKind::Violin { .. } => box_panel_logs(
+                            log_scale,
+                            s,
+                            parse_stat_f64(s.min.as_deref()),
+                            parse_stat_f64(s.max.as_deref()),
+                        ),
+                        _ => false,
+                    };
+                    let interest = panel_interest(s, &kind);
+                    panels.push(
+                        Panel::new(name, kind)
+                            .with_subtitle(subtitle)
+                            .with_dict_info(dict_info)
+                            .with_value_log(value_log)
+                            .with_interest(interest)
+                            .with_stat_idx(idx),
+                    );
+                },
+                None => {
+                    if s.r#type == "String" {
+                        // exactly one parsing endpoint => a numeric range interrupted by a token
+                        let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
+                            != parse_stat_f64(s.max.as_deref()).is_some();
+                        match (sem.route, one_endpoint_parses) {
+                            (Route::Measure, true) => sentinel_suspects.push(name.clone()),
+                            (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
+                            (Route::Defer, true) => sentinel_hints.push(name.clone()),
+                            _ => {},
+                        }
+                    }
+                    skipped.push(name);
+                },
+            }
+        }
+    }
+
     /// Build the relationship panels: the `--bivariate` association/Sankey set, the animated
     /// panels (T2 geo, T3 bubble), and the correlation heatmap with its scatter/contour/3D
     /// drill-downs.
@@ -19578,12 +19811,6 @@ fn build_smart(
     };
     let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
 
-    // a column consumed by the point map (lat/lon) OR by the summary choropleth (region key) is
-    // suppressed from the per-column distribution panels and the correlation/bivariate pools.
-    let is_map_col = |idx: usize| {
-        map_cols.is_some_and(|(la, lo)| idx == la || idx == lo) || summary_choro_col == Some(idx)
-    };
-
     // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
     // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw box
     // (one extra batched pass, below) so plotly can draw true Tukey whiskers and the sample points.
@@ -19597,224 +19824,11 @@ fn build_smart(
     let count_conf = Config::new(args.arg_input.as_ref())
         .delimiter(args.flag_delimiter)
         .no_headers_flag(args.flag_no_headers);
-    let mut nrows: Option<u64> = None;
+    let nrows: Option<u64> = None;
     // resolved here (not at render time) because box panels bake their value-axis log verdict
     // into the Panel during classification below.
     let log_scale = parse_log_scale(&args.flag_log_scale)?;
     let violin_mode = parse_violin_mode(&args.flag_violin)?;
-
-    // `--dict-info` icons are HTML-gated at build time (image exports never grow them); the
-    // per-field lookups below and in the overview-panel builders share `dict_info_for_field`.
-    let dict_icons: Option<&DictData> = (args.flag_dict_info
-        && matches!(out_format, OutFormat::Html))
-    .then_some(dict_data.as_ref())
-    .flatten();
-
-    // classify each column into a dashboard panel
-    let mut panels: Vec<Panel> = Vec::new();
-    let mut skipped: Vec<String> = Vec::new();
-    // Columns the dictionary declares a `measure` but stats typed `String`. `classify_measure`
-    // drops them for want of quartiles, which is correct but indistinguishable from an ID-like
-    // skip in the summary note below, so name them separately.
-    //
-    // Split by the stats min/max endpoints, which already discriminate the two causes without a
-    // rescan: a numeric column interrupted by a null sentinel has ONE parsing endpoint (e.g.
-    // min=`1`, max=`NULL` — letters sort after digits), while genuinely non-numeric content has
-    // neither (min=`10:00:00 AM`, max=`NULL`: a time column the LLM mis-roled). Reporting the
-    // second group as a sentinel problem would send the user hunting for a value that isn't there.
-    // (Zero-padded numeric codes parse at BOTH endpoints, but `guardrail` already routes them to
-    // Dimension, so they never reach here.)
-    let mut sentinel_suspects: Vec<String> = Vec::new();
-    let mut nonnumeric_measures: Vec<String> = Vec::new();
-    // Same endpoint signal, but for columns with NO dictionary verdict (`Route::Defer`),
-    // where `classify` dropped them as high-cardinality text. Without a dictionary calling
-    // the column a measure, one parsing endpoint is suggestive but NOT proof - an address
-    // column holding a cell `1` and a cell `Zoo` produces it too. So these are never
-    // diagnosed per-column; they only trigger a pointer to `qsv denull`, which decides
-    // exactly by scanning the values.
-    let mut sentinel_hints: Vec<String> = Vec::new();
-    for (idx, s) in stats.iter().enumerate() {
-        if is_map_col(idx) {
-            continue;
-        }
-        let sem = &col_sems[idx];
-        // the panel title is the raw field name (or a positional name when headerless); the
-        // dictionary's human label becomes a subtitle beneath it, dropped when it's empty or
-        // just echoes the header.
-        let name = if s.field.is_empty() {
-            format!("col {}", idx + 1)
-        } else {
-            s.field.clone()
-        };
-        let subtitle = (!sem.label.is_empty() && !sem.label.eq_ignore_ascii_case(&name))
-            .then(|| sem.label.clone());
-        // --dict-info: the column's dictionary description + pre-computed anchor.
-        let dict_info = dict_info_for_field(dict_icons, &s.field);
-        // a code/key twin (e.g. subject_code beside subject) is redundant with its label sibling
-        if twin_suppress.contains(&idx) {
-            skipped.push(name);
-            continue;
-        }
-        // `map_cols` (the resolved lat/lon pair), NOT `is_map_col` — a summary choropleth keyed off
-        // a region CODE puts no coordinates on screen, so a projected coord is still worth
-        // charting.
-        match classify_with_semantics(idx, s, sem, map_cols.is_some()) {
-            Some(mut kind) => {
-                // a cache-only quartile box becomes a raw box (with an overlay mode) when the
-                // explicit flag or the size heuristic calls for points (<= SMART_BOX_OUTLIERS_MAX
-                // rows). Above that, a column that HAS Tukey outliers becomes a `BoxOutliers`
-                // (precomputed box + native outlier-point overlay via a single fence-filtered
-                // pass); a column with no outliers stays a cheap cache-only `BoxStats` (no pass).
-                if let PanelKind::BoxStats {
-                    q1,
-                    median,
-                    q3,
-                    lower,
-                    upper,
-                    mean,
-                } = kind
-                {
-                    let n =
-                        *nrows.get_or_insert_with(|| util::count_rows(&count_conf).unwrap_or(0));
-                    // tier on the column's actual point count, not the dataset row count:
-                    // only the non-null values are collected, embedded and rendered, so a
-                    // mostly-null column shouldn't be denied an overlay tier (or the raw
-                    // pass) by rows it doesn't have.
-                    let n_points = n.saturating_sub(s.nullcount);
-                    // the violin verdict needs the panel's value-axis log verdict (a KDE and a
-                    // log axis mix poorly); it is recomputed cheaply below when the panel bakes
-                    // in `value_log`.
-                    let would_log = box_panel_logs(
-                        log_scale,
-                        s,
-                        parse_stat_f64(s.min.as_deref()),
-                        parse_stat_f64(s.max.as_deref()),
-                    );
-                    if let Some(points) = smart_box_points(explicit_box_points.as_ref(), n_points) {
-                        // the raw values will be collected in full — exact violin (the default
-                        // representation; see `wants_violin`) or raw box.
-                        kind = if wants_violin(violin_mode, s, would_log, n_points) {
-                            // the KDE silhouette already shows what a full point cloud would,
-                            // so the size-based `all` upgrade (valuable on a box, whose five
-                            // numbers hide the distribution) is redundant clutter on a violin:
-                            // only an explicit --box-points mode overlays more than the
-                            // outliers, which the KDE's smoothed tail can't show individually.
-                            let points = if explicit_box_points.is_some() {
-                                points
-                            } else {
-                                BoxPoints::Outliers
-                            };
-                            PanelKind::Violin {
-                                idx,
-                                points,
-                                sample_stride: 1,
-                            }
-                        } else {
-                            PanelKind::BoxRaw { idx, points }
-                        };
-                    } else if wants_violin(violin_mode, s, would_log, n_points) {
-                        // `smart_box_points` returned None for one of two reasons, and a violin
-                        // still renders in both: an explicit `--box-points none` only means "no
-                        // point overlay" (a violin's KDE doesn't need points; the cache-only
-                        // escape hatch for that flag is `--violin off`), or the column has too
-                        // many values to embed exactly — a violin doesn't need them all: draw
-                        // the KDE + inner box from a deterministic stride sample (at most
-                        // VIOLIN_SAMPLE_MAX values), with no point overlay either way (a
-                        // strided sample misses the true extremes, so sampled "outliers"
-                        // would mislead).
-                        #[allow(clippy::cast_possible_truncation)]
-                        let sample_stride = if n_points > SMART_BOX_OUTLIERS_MAX {
-                            n_points.div_ceil(*VIOLIN_SAMPLE_MAX).max(1) as usize
-                        } else {
-                            1
-                        };
-                        kind = PanelKind::Violin {
-                            idx,
-                            points: BoxPoints::False,
-                            sample_stride,
-                        };
-                    } else if explicit_box_points.is_none()
-                        && n_points > SMART_BOX_OUTLIERS_MAX
-                        && let Some((fence_low, fence_high)) = box_fences(s)
-                        && (lower.is_some_and(|lo| lo < fence_low)
-                            || upper.is_some_and(|hi| hi > fence_high))
-                    {
-                        // `lower`/`upper` are the column's observed min/max — outside the
-                        // Tukey fences means real outliers exist, so overlay them.
-                        kind = PanelKind::BoxOutliers {
-                            idx,
-                            q1,
-                            median,
-                            q3,
-                            mean,
-                            fence_low,
-                            fence_high,
-                        };
-                    }
-                }
-                // for box/histogram panels, append cache-derived shape hints (null/zero share,
-                // skew direction, outlier share, …) to the panel title when notable. Cache-only,
-                // no cost; when nothing is notable the hint is None and the title is unchanged.
-                let name = match &kind {
-                    PanelKind::BoxStats { .. }
-                    | PanelKind::BoxRaw { .. }
-                    | PanelKind::BoxOutliers { .. }
-                    | PanelKind::Violin { .. }
-                    | PanelKind::Histogram { .. } => match box_shape_hint(s) {
-                        Some(hint) => format!("{name} {hint}"),
-                        None => name,
-                    },
-                    _ => name,
-                };
-                // an honesty cue for violins drawn from a stride sample rather than every value
-                let name = if matches!(&kind, PanelKind::Violin { sample_stride, .. } if *sample_stride > 1)
-                {
-                    format!("{name} (sampled)")
-                } else {
-                    name
-                };
-                // box panels resolve their value-axis log verdict now, while the cached observed
-                // min/max are at hand (frequency bars decide from their counts at render time)
-                let value_log = match &kind {
-                    PanelKind::BoxStats { lower, upper, .. } => {
-                        box_panel_logs(log_scale, s, *lower, *upper)
-                    },
-                    PanelKind::BoxRaw { .. }
-                    | PanelKind::BoxOutliers { .. }
-                    | PanelKind::Violin { .. } => box_panel_logs(
-                        log_scale,
-                        s,
-                        parse_stat_f64(s.min.as_deref()),
-                        parse_stat_f64(s.max.as_deref()),
-                    ),
-                    _ => false,
-                };
-                let interest = panel_interest(s, &kind);
-                panels.push(
-                    Panel::new(name, kind)
-                        .with_subtitle(subtitle)
-                        .with_dict_info(dict_info)
-                        .with_value_log(value_log)
-                        .with_interest(interest)
-                        .with_stat_idx(idx),
-                );
-            },
-            None => {
-                if s.r#type == "String" {
-                    // exactly one parsing endpoint => a numeric range interrupted by a token
-                    let one_endpoint_parses = parse_stat_f64(s.min.as_deref()).is_some()
-                        != parse_stat_f64(s.max.as_deref()).is_some();
-                    match (sem.route, one_endpoint_parses) {
-                        (Route::Measure, true) => sentinel_suspects.push(name.clone()),
-                        (Route::Measure, false) => nonnumeric_measures.push(name.clone()),
-                        (Route::Defer, true) => sentinel_hints.push(name.clone()),
-                        _ => {},
-                    }
-                }
-                skipped.push(name);
-            },
-        }
-    }
 
     let mut ctx = SmartCtx {
         args,
@@ -19839,13 +19853,14 @@ fn build_smart(
         nrows,
         log_scale,
         violin_mode,
-        panels,
-        skipped,
-        sentinel_suspects,
-        sentinel_hints,
-        nonnumeric_measures,
+        panels: Vec::new(),
+        skipped: Vec::new(),
+        sentinel_suspects: Vec::new(),
+        sentinel_hints: Vec::new(),
+        nonnumeric_measures: Vec::new(),
         inline: false,
     };
+    ctx.classify_columns();
     ctx.add_relationship_panels()?;
     ctx.add_overview_panels()?;
     ctx.finalize_panels()?;

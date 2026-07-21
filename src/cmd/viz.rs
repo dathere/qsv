@@ -693,6 +693,7 @@ use plotly::{
     treemap::{BranchValues, Marker as TreemapMarker, Pad},
     violin::{MeanLine, SpanMode, ViolinBox, ViolinPoints},
 };
+use rayon::prelude::*;
 use serde::Deserialize;
 
 use crate::{
@@ -4323,10 +4324,28 @@ impl PipFeature {
     /// features are tested at the raw longitude only.
     fn candidate_lons(&self, lon: f64) -> [Option<f64>; 2] {
         if self.wraps_antimeridian {
-            [Some(lon), Some(lon + 360.0)]
-        } else {
-            [Some(lon), None]
+            return [Some(lon), Some(lon + 360.0)];
         }
+        // A feature can sit ADJACENT to the antimeridian without crossing it (e.g. spanning
+        // 179.5..180.0), in which case it carries no wrap flag — but a query just the other side
+        // of the seam is still only a fraction of a degree away going east, while the raw
+        // subtraction measures it as ~359.5 degrees the long way round. Distances are computed in
+        // raw degree space, so without a second probe such a point measures ~40,000 km, exceeds
+        // any snap cap, and is silently dropped as "outside every region".
+        //
+        // Only offer the alternate when the raw longitude gap already exceeds 180 degrees — i.e.
+        // the short way round is genuinely the other direction. That is exactly the seam case, so
+        // ordinary features pay one comparison and containment cannot gain a false positive (the
+        // shifted query only enters the feature's span when the true angular distance is small).
+        let (west, east) = (self.bbox[0], self.bbox[2]);
+        let alt = if lon < west - 180.0 {
+            Some(lon + 360.0)
+        } else if lon > east + 180.0 {
+            Some(lon - 360.0)
+        } else {
+            None
+        };
+        [Some(lon), alt]
     }
 }
 
@@ -6728,7 +6747,16 @@ fn read_numeric_columns(
 ) -> CliResult<(Vec<String>, Vec<Vec<f64>>, Vec<usize>)> {
     use std::hash::{Hash, Hasher};
 
-    let mut raw: Vec<Vec<Option<f64>>> = vec![Vec::new(); candidates.len()];
+    // NaN is the missing sentinel rather than `Option<f64>`: `parse_f64` accepts only FINITE
+    // values, so NaN can never be a legitimate reading, and this halves the buffer from 16 to 8
+    // bytes per row per candidate — the dominant memory cost when `--cols` is omitted and every
+    // column is a candidate.
+    //
+    // Deliberately NOT sampled: deciding the majority-numeric keep-set from the first N rows
+    // would let us skip buffering the rest, but a column that reads as text early and numeric
+    // later would be dropped on evidence the full pass contradicts. The verdict has to see every
+    // row, and the reader is a single-pass stream (stdin included), so the values must be held.
+    let mut raw: Vec<Vec<f64>> = vec![Vec::new(); candidates.len()];
     let mut nonempty = vec![0_usize; candidates.len()];
     let mut parsed = vec![0_usize; candidates.len()];
     // distinct hashes of the raw bytes of numeric cells per candidate — populated only when we
@@ -6757,7 +6785,7 @@ fn read_numeric_columns(
                     }
                 }
             }
-            raw[k].push(v);
+            raw[k].push(v.unwrap_or(f64::NAN));
         }
     }
     // keep majority-numeric columns (drops text/ID/date columns from an all-columns default)
@@ -6797,13 +6825,13 @@ fn read_numeric_columns(
         .map(|&k| col_label(headers, candidates[k], nh))
         .collect();
     let n_rows = raw[0].len();
-    let kept: Vec<&Vec<Option<f64>>> = keep.iter().map(|&k| &raw[k]).collect();
+    let kept: Vec<&Vec<f64>> = keep.iter().map(|&k| &raw[k]).collect();
     let mut columns: Vec<Vec<f64>> = vec![Vec::new(); kept.len()];
     // transpose the kept columns, dropping any row where a kept column is non-numeric/empty
     for r in 0..n_rows {
-        if kept.iter().all(|col| col[r].is_some()) {
+        if kept.iter().all(|col| !col[r].is_nan()) {
             for (out, col) in columns.iter_mut().zip(&kept) {
-                out.push(col[r].expect("checked is_some above"));
+                out.push(col[r]);
             }
         }
     }
@@ -6935,10 +6963,48 @@ fn most_associated_third(matrix: &[Vec<f64>], i: usize, j: usize) -> Option<usiz
 fn pearson_matrix(columns: &[Vec<f64>]) -> Vec<Vec<f64>> {
     let n = columns.len();
     let mut m = vec![vec![f64::NAN; n]; n];
-    for i in 0..n {
-        m[i][i] = pearson(&columns[i], &columns[i]);
-        for j in (i + 1)..n {
-            let r = pearson(&columns[i], &columns[j]);
+    if n == 0 {
+        return m;
+    }
+    // Calling `pearson` per pair re-derived BOTH column means and both variances every time —
+    // ~5 passes per pair, with each column's statistics recomputed N times. Centre each column
+    // once (O(N * rows)), after which a pair is a single dot product. The centred values and the
+    // mul_add accumulation order match `pearson` exactly, so results are unchanged.
+    let len = columns.iter().map(Vec::len).min().unwrap_or(0);
+    if len < 2 {
+        return m;
+    }
+    let centered: Vec<(Vec<f64>, f64)> = columns
+        .iter()
+        .map(|c| {
+            let mean = c[..len].iter().sum::<f64>() / len as f64;
+            let cv: Vec<f64> = c[..len].iter().map(|v| v - mean).collect();
+            let var = cv.iter().fold(0.0, |acc, d| d.mul_add(*d, acc));
+            (cv, var.sqrt())
+        })
+        .collect();
+    let dot = |a: &[f64], b: &[f64]| -> f64 {
+        let mut cov = 0.0;
+        for k in 0..len {
+            cov = a[k].mul_add(b[k], cov);
+        }
+        cov
+    };
+    let corr = |i: usize, j: usize| -> f64 {
+        let den = centered[i].1 * centered[j].1;
+        if den == 0.0 || !den.is_finite() {
+            f64::NAN
+        } else {
+            (dot(&centered[i].0, &centered[j].0) / den).clamp(-1.0, 1.0)
+        }
+    };
+    // one row of the upper triangle per task; the matrix is filled symmetrically afterwards
+    let rows: Vec<(usize, Vec<(usize, f64)>)> = (0..n)
+        .into_par_iter()
+        .map(|i| (i, (i..n).map(|j| (j, corr(i, j))).collect()))
+        .collect();
+    for (i, cells) in rows {
+        for (j, r) in cells {
             m[i][j] = r;
             m[j][i] = r;
         }
@@ -16251,6 +16317,7 @@ fn build_map_panel(
     // raw bubble-size measure per in-range point, row-aligned with lats/lons; left empty unless a
     // map measure was found. A missing/non-numeric value is NaN (drawn at the smallest size).
     let mut sizes_raw: Vec<f64> = Vec::new();
+    let build_dataset_lines = id_idx.is_some() || !extra_idxs.is_empty();
     let mut record = csv::ByteRecord::new();
     while rdr.read_byte_record(&mut record)? {
         let (Some(lat), Some(lon)) = (
@@ -16353,10 +16420,12 @@ fn build_map_panel(
     } else {
         vec![f64::NAN; core_lats.len()]
     };
+    // move the lines in rather than cloning the whole set: `core_lines` is rebuilt from the
+    // downsampled result below, so the original vector is dead after this
     let core_packed: Vec<(f64, String, f64)> = core_lons
         .iter()
         .copied()
-        .zip(core_lines.iter().cloned())
+        .zip(core_lines)
         .zip(core_sizes_raw.iter().copied())
         .map(|((lo, line), sz)| (lo, line, sz))
         .collect();
@@ -22254,8 +22323,12 @@ fn accumulate_hierarchy_counts(
     let mut valid_values = 0_usize;
     let mut invalid_values = 0_usize;
     let mut record = csv::ByteRecord::new();
+    // reused across rows: the path is only cloned into the map on a genuine MISS, so a
+    // low-cardinality hierarchy (the common case) stops allocating almost entirely after the
+    // first few rows instead of building dims.len() Strings for every row.
+    let mut path: Vec<String> = Vec::with_capacity(dims.len());
     while rdr.read_byte_record(&mut record)? {
-        let mut path = Vec::with_capacity(dims.len());
+        path.clear();
         for &d in dims {
             let seg = match record.get(d) {
                 Some(cell) => {
@@ -22272,7 +22345,13 @@ fn accumulate_hierarchy_counts(
         }
         match value_idx {
             // count mode: every row contributes 1 to its leaf.
-            None => *leaves.entry(path).or_insert(0.0) += 1.0,
+            None => {
+                if let Some(v) = leaves.get_mut(path.as_slice()) {
+                    *v += 1.0;
+                } else {
+                    leaves.insert(path.clone(), 1.0);
+                }
+            },
             // value mode: sum a finite, non-negative measure. An empty cell is a benign missing
             // measure (skipped, no leaf created); a non-numeric / negative / non-finite cell can't
             // size an area/angle, so it's tallied and the pass errors afterwards. This avoids
@@ -22292,7 +22371,11 @@ fn accumulate_hierarchy_counts(
                 {
                     Some(v) if v.is_finite() && v >= 0.0 => {
                         valid_values += 1;
-                        *leaves.entry(path).or_insert(0.0) += v;
+                        if let Some(acc) = leaves.get_mut(path.as_slice()) {
+                            *acc += v;
+                        } else {
+                            leaves.insert(path.clone(), v);
+                        }
                     },
                     _ => invalid_values += 1,
                 }
@@ -26335,6 +26418,107 @@ mod tests {
         // enough single-point buckets exceed even the default budget on repetition alone
         let many: Vec<Vec<f64>> = (0..700).map(|_| vec![0.0; 1]).collect();
         assert!(cumulative_embedded_points(&many) > 150_000);
+    }
+
+    #[test]
+    fn pearson_matrix_matches_pairwise_pearson() {
+        // the precomputed/parallel form must agree with the per-pair reference exactly, including
+        // its NaN semantics for degenerate columns
+        let cols = vec![
+            vec![1.0, 2.0, 3.0, 4.0, 5.0],
+            vec![2.0, 4.1, 5.9, 8.2, 9.8], // near-linear
+            vec![5.0, 3.0, 4.0, 1.0, 2.0], // negatively related
+            vec![7.0, 7.0, 7.0, 7.0, 7.0], // constant -> undefined
+        ];
+        let m = pearson_matrix(&cols);
+        for i in 0..cols.len() {
+            for j in 0..cols.len() {
+                let want = pearson(&cols[i], &cols[j]);
+                let got = m[i][j];
+                assert_eq!(
+                    want.is_nan(),
+                    got.is_nan(),
+                    "NaN disagreement at ({i},{j}): want {want} got {got}"
+                );
+                if !want.is_nan() {
+                    assert!(
+                        (want - got).abs() < 1e-12,
+                        "({i},{j}): want {want} got {got}"
+                    );
+                }
+            }
+        }
+        // symmetry and the self-correlation diagonal
+        assert!((m[0][0] - 1.0).abs() < 1e-12);
+        assert!(m[3][3].is_nan(), "constant column diagonal must stay NaN");
+        assert!((m[0][2] - m[2][0]).abs() < 1e-12);
+        // degenerate shapes
+        assert!(pearson_matrix(&[]).is_empty());
+        let single = pearson_matrix(&[vec![1.0]]);
+        assert!(single[0][0].is_nan(), "n<2 observations is undefined");
+    }
+
+    #[test]
+    fn candidate_lons_probes_across_the_seam_for_adjacent_features() {
+        // a feature hugging the dateline WITHOUT crossing it carries no wrap flag, but a query
+        // just the other side is a fraction of a degree away going east — measured raw it reads
+        // as ~359.5 degrees and the point is dropped as "outside every region".
+        let near_seam = PipFeature {
+            id:                 "S".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [179.5, -1.0, 180.0, 1.0],
+            wraps_antimeridian: false,
+        };
+        let lons: Vec<f64> = near_seam
+            .candidate_lons(-179.999)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert!(
+            lons.iter().any(|l| (*l - 180.001).abs() < 1e-9),
+            "expected a +360 probe, got {lons:?}"
+        );
+        // an ordinary interior feature gets no second probe (it would only cost time)
+        let interior = PipFeature {
+            id:                 "I".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [-75.0, 39.0, -74.0, 41.0],
+            wraps_antimeridian: false,
+        };
+        let lons: Vec<f64> = interior
+            .candidate_lons(-74.5)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert_eq!(lons.len(), 1, "interior features need only the raw probe");
+        // ... and a query far to the EAST of a western feature probes -360
+        let lons: Vec<f64> = interior
+            .candidate_lons(179.0)
+            .into_iter()
+            .flatten()
+            .collect();
+        assert!(
+            lons.iter().any(|l| (*l - (-181.0)).abs() < 1e-9),
+            "expected a -360 probe, got {lons:?}"
+        );
+        // a genuinely wrapping feature keeps its existing both-representations behaviour
+        let wrapping = PipFeature {
+            id:                 "W".to_string(),
+            name:               None,
+            polygons:           Vec::new(),
+            bbox:               [179.5, -1.0, 180.5, 1.0],
+            wraps_antimeridian: true,
+        };
+        assert_eq!(
+            wrapping
+                .candidate_lons(-179.0)
+                .into_iter()
+                .flatten()
+                .count(),
+            2
+        );
     }
 
     #[test]

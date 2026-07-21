@@ -1198,14 +1198,21 @@ def main():
         + JUMP_JS + "\n"
         + "</body></html>\n"
     )
-    # The reused scaffold carries its own plotly CDN <script> tag, which therefore never updates:
-    # it stayed pinned to an old version with no Subresource Integrity even after `qsv viz` began
-    # emitting a version-pinned, SRI-protected tag. Re-derive it from what viz ACTUALLY emitted
-    # into the dashboards this run, so the gallery frame and its iframes always agree and the
-    # single source of truth stays qsv itself rather than a second hardcoded version here.
+    # Keep every plotly CDN <script> tag on this page — the gallery frame AND all embedded
+    # dashboards — identical to what `qsv viz` emits today, which is version-pinned and carries
+    # Subresource Integrity.
+    #
+    # Two things drift here. The gallery's <head> is reused verbatim across runs, so its own tag
+    # never updated. And the LLM-backed dashboards are reused verbatim by design, so they keep
+    # whatever tag they were generated with — leaving embedded pages loading plotly from a CDN with
+    # no integrity check, which is exactly the exposure the SRI work closed for the regenerated
+    # ones. Normalize both from viz's own output rather than hardcoding a second copy of the
+    # version/digest in this script.
+    CDN_TAG_RE = r'<script src="https://cdn\.plot\.ly/[^>]*></script>'
+
     def _emitted_cdn_tag():
-        # only REGENERATED dashboards: the pre-generated LLM ones are reused verbatim and so
-        # predate whatever viz emits today (that is exactly the staleness being corrected here)
+        # from a REGENERATED dashboard: those came from the qsv binary in this very run, so they
+        # are the authority. The pre-generated ones are precisely what may be stale.
         for name in SMART_IFRAME.values():
             if name in pregenerated:
                 continue
@@ -1213,17 +1220,47 @@ def main():
             if not os.path.exists(path):
                 continue
             with open(path, encoding="utf-8") as fh:
-                m = re.search(r'<script src="https://cdn\.plot\.ly/[^>]*></script>', fh.read())
+                m = re.search(CDN_TAG_RE, fh.read())
             if m:
                 return m.group(0)
         return None
 
     emitted_tag = _emitted_cdn_tag()
     if emitted_tag:
-        body, n = re.subn(
-            r'<script src="https://cdn\.plot\.ly/[^>]*></script>', emitted_tag, body, count=1)
+        # the gallery frame itself
+        body, n = re.subn(CDN_TAG_RE, emitted_tag, body, count=1)
         if n:
             sys.stderr.write(f"scaffold plotly tag synced to viz output: {emitted_tag}\n")
+        # every embedded dashboard, including the reused LLM-backed ones. Only the <script> tag is
+        # touched — figure content, themes and layout are left exactly as generated.
+        for name in sorted(set(SMART_IFRAME.values())):
+            path = os.path.join(VIZ_DIR, name)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8") as fh:
+                html = fh.read()
+            patched, n = re.subn(CDN_TAG_RE, emitted_tag, html, count=1)
+            if n and patched != html:
+                with open(path, "w", encoding="utf-8") as fh:
+                    fh.write(patched)
+                sys.stderr.write(f"synced plotly CDN tag in {name}\n")
+
+    # Fail closed: never commit a page that pulls plotly from a CDN without integrity. This catches
+    # a dashboard added to SMART_IFRAME but never regenerated, and any future path that bypasses
+    # the sync above.
+    unprotected = []
+    for label, html in [("gallery.html", body)] + [
+        (name, open(os.path.join(VIZ_DIR, name), encoding="utf-8").read())
+        for name in sorted(set(SMART_IFRAME.values()))
+        if os.path.exists(os.path.join(VIZ_DIR, name))
+    ]:
+        for tag in re.findall(CDN_TAG_RE, html):
+            if "integrity=" not in tag or "crossorigin=" not in tag:
+                unprotected.append(f"{label}: {tag}")
+    if unprotected:
+        raise SystemExit(
+            "refusing to write the gallery: these pages load plotly from the CDN without "
+            "Subresource Integrity:\n  " + "\n  ".join(unprotected))
 
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)

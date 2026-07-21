@@ -17993,7 +17993,260 @@ struct SmartCtx<'a> {
     inline: bool,
 }
 
-impl SmartCtx<'_> {
+impl<'a> SmartCtx<'a> {
+    /// Load the dataset's statistics and optional data dictionary, derive per-column semantics,
+    /// and build the geographic panels up front (the map panel's resolved lat/lon pair decides
+    /// which columns the per-column phases must skip).
+    fn new(
+        prep: &'a SmartPrep,
+        out_format: OutFormat,
+        progress: &'a ProgressBar,
+        loaded_geojson: Option<&serde_json::Value>,
+    ) -> CliResult<Self> {
+        let args = &prep.args;
+
+        let schema_args = util::SchemaArgs {
+            flag_enum_threshold:  0,
+            flag_ignore_case:     false,
+            flag_strict_dates:    false,
+            flag_strict_formats:  false,
+            flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
+            flag_dates_whitelist: "sniff".to_string(),
+            flag_prefer_dmy:      false,
+            flag_force:           prep.force_stats_regen,
+            flag_stdout:          false,
+            flag_jobs:            None,
+            flag_polars:          false,
+            flag_no_headers:      args.flag_no_headers,
+            flag_delimiter:       args.flag_delimiter,
+            arg_input:            Some(prep.input.clone()),
+            flag_memcheck:        false,
+            flag_output:          None,
+        };
+
+        // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
+        // captured subprocess, so nothing here writes to the terminal to clash with the bar.
+        progress.set_message("Loading statistics…");
+        let (_headers, mut stats) =
+            util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
+        if stats.is_empty() {
+            return fail_clierror!(
+                "Could not compute statistics for `viz smart`. The input must be a regular \
+                 CSV/TSV file (not stdin or a compressed/special format)."
+            );
+        }
+
+        // Plain `viz smart` (no `--smarter`): the stats cache has `skewness` but not the
+        // moarstats-only `kurtosis`/`bimodality_coefficient`, so a bimodal column would
+        // render as a box plot that hides its peaks. Compute Sarle's bimodality coefficient
+        // in one streaming pass so `classify_measure` can upgrade such a column to a
+        // histogram WITHOUT requiring `--smarter`. No-op (and no pass) when moarstats
+        // already enriched the cache or no column qualifies. Soft-fail to a box plot.
+        if let Err(e) = enrich_bimodality(args, &mut stats) {
+            viz_note(&format!(
+                "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
+                 plots. Use --smarter for moarstats-based enrichment."
+            ));
+        }
+
+        // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts
+        // (concept -> role -> content_type -> stats) that override the statistical guess
+        // for the cases they speak to. When --dictionary is absent, dict_data is None and
+        // every column's route resolves to Defer, so classification is identical to today's
+        // stats-only behavior. Keep the spinner live during describegpt (the slowest
+        // phase): its output is captured by run_qsv_cmd, and load_dictionary_semantics
+        // suspends the bar only around its own messages.
+        progress.set_message("Inferring data dictionary…");
+        let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
+            Some((data, json_text)) => (Some(data), Some(json_text)),
+            None => (None, None),
+        };
+        let col_sems: Vec<ColSemantics> = stats
+            .iter()
+            .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
+            .collect();
+
+        // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on
+        // a dictionary being present so a stats-only dashboard is byte-identical; timezone
+        // twins and IDs are already de-duplicated by the Temporal/Skip routing above.
+        let twin_suppress = if dict_data.is_some() {
+            dimension_code_twins(&stats, &col_sems)
+        } else {
+            std::collections::HashSet::new()
+        };
+
+        // Build the geographic map panel up front (one data pass) so we can learn which lat/lon
+        // columns it ACTUALLY consumed. Those columns are charted on the map only —
+        // excluded from per-column distribution panels, the correlation matrix, and the
+        // time-series y so a map dashboard doesn't redundantly box/histogram its
+        // coordinates or plot e.g. latitude vs time.
+        //
+        // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
+        // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
+        // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
+        // `viz geo` command exports images). So for image output a local-extent `Map` panel is
+        // coerced to the `Geo` form, fit to the data's extent (see `geo_framing`). When
+        // build_map_panel returns None (no usable lat/lon pair), map_cols stays None and
+        // those columns are charted normally. (map_panel, choropleth_panel): the point map
+        // plus an optional geocode-derived per-country choropleth overview. The choropleth
+        // is non-cartesian and HTML-only, so it's dropped for image export; the point map
+        // is coerced from Map -> Geo for image export (only the offline ScatterGeo basemap
+        // can be statically exported).
+        let (map_panel, choropleth_panel) = {
+            // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
+            // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
+            let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
+            let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
+            progress.set_message("Building map panel…");
+            match build_map_panel(
+                args,
+                &stats,
+                &col_sems,
+                dict_data.as_ref(),
+                coord_hint,
+                cluster_mode,
+                loaded_geojson,
+            )? {
+                None => (None, None),
+                Some((p, choro, cols, mappable_count)) => {
+                    if out_format.is_image() {
+                        let kind = match p.kind {
+                            PanelKind::Map {
+                                lats,
+                                lons,
+                                outlier_lats,
+                                outlier_lons,
+                                hover_text,
+                                outlier_hover_text,
+                                sizes,
+                                ..
+                            } => PanelKind::Geo {
+                                lats,
+                                lons,
+                                outlier_lats,
+                                outlier_lons,
+                                hover_text,
+                                outlier_hover_text,
+                                sizes,
+                            },
+                            other => other,
+                        };
+                        let p = Panel {
+                            name: p.name,
+                            // the coerced Geo renders MARKERS, never a density heatmap, so the
+                            // sampling subtitle's "aggregating" verb (chosen by `sample_note` for
+                            // the HTML DensityMap render) must follow the actual render mode.
+                            subtitle: p.subtitle.map(|s| match s.strip_prefix("aggregating ") {
+                                Some(rest) => format!("showing {rest}"),
+                                None => s,
+                            }),
+                            kind,
+                            value_log: p.value_log,
+                            interest: p.interest,
+                            dict_info: p.dict_info,
+                            stat_idx: p.stat_idx,
+                            #[cfg(feature = "geocode")]
+                            geo_meta: p.geo_meta,
+                            geojson_overlay: p.geojson_overlay,
+                        };
+                        (Some((p, cols)), None)
+                    } else {
+                        // HTML output: a local-extent density panel actually renders as a
+                        // DensityMap here (global extents are `Geo`
+                        // markers, image export was coerced above), so this
+                        // is the point at which the heatmap/cluster note is truthful. Report
+                        // `mappable_count` (the full source count that drove the density decision),
+                        // not the panel's downsampled/outlier-excluded
+                        // `lats`.
+                        if matches!(p.kind, PanelKind::Map { density: true, .. }) {
+                            viz_note(&format!(
+                                "viz smart: map has {mappable_count} mappable points (>= \
+                                 --heatmap-density {}); drawing the core as a density heatmap \
+                                 with per-point hover. Set --heatmap-density 0 (the default) to \
+                                 draw interactive clustered markers instead.",
+                                args.flag_heatmap_density
+                            ));
+                        } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
+                            viz_note(&format!(
+                                "viz smart: map has {mappable_count} mappable points; the core \
+                                 opens as individual points with a \"Clusters/Points\" toggle \
+                                 (click it to collapse dense areas into native MapLibre count \
+                                 bubbles that expand again on zoom-in). Set --cluster off to omit \
+                                 the toggle, or --heatmap-density <n> to draw a density heatmap \
+                                 at or above <n> points instead."
+                            ));
+                        }
+                        (Some((p, cols)), choro)
+                    }
+                },
+            }
+        };
+        let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
+
+        // region-code summary choropleth(s): drive per-region aggregates (count + median measure)
+        // directly from a geo dimension column (e.g. a zip column), independent of lat/lon. Only
+        // when build_map_panel emitted no choropleth companion (avoid two competing region
+        // fills), and never for image output (choropleths are HTML-only, like the PIP
+        // companion above).
+        let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
+            build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
+        } else {
+            None
+        };
+        let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
+
+        // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
+        // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw
+        // box (one extra batched pass, below) so plotly can draw true Tukey whiskers and
+        // the sample points. The overlay mode is the user's explicit `--box-points` when
+        // given, otherwise a size-based heuristic decides per the dataset's row count (see
+        // `smart_box_points`). The row count is pulled once from the stats/index cache, and
+        // only when the first box panel actually needs it.
+        let explicit_box_points: Option<BoxPoints> = match args.flag_box_points.as_deref() {
+            Some(s) => Some(parse_box_points(Some(s))?),
+            None => None,
+        };
+        let count_conf = Config::new(args.arg_input.as_ref())
+            .delimiter(args.flag_delimiter)
+            .no_headers_flag(args.flag_no_headers);
+        let nrows: Option<u64> = None;
+        // resolved here (not at render time) because box panels bake their value-axis log verdict
+        // into the Panel during classification below.
+        let log_scale = parse_log_scale(&args.flag_log_scale)?;
+        let violin_mode = parse_violin_mode(&args.flag_violin)?;
+
+        Ok(SmartCtx {
+            args,
+            out_format,
+            progress,
+            stats,
+            col_sems,
+            dict_data,
+            dict_json_text,
+            twin_suppress,
+            map_panel,
+            choropleth_panel,
+            summary_choros,
+            map_cols,
+            summary_choro_col,
+            bivariate_sidecar_fresh: prep.bivariate_sidecar_fresh,
+            sankey_pair: None,
+            bubble_panel: None,
+            geo_anim_panel: None,
+            explicit_box_points,
+            count_conf,
+            nrows,
+            log_scale,
+            violin_mode,
+            panels: Vec::new(),
+            skipped: Vec::new(),
+            sentinel_suspects: Vec::new(),
+            sentinel_hints: Vec::new(),
+            nonnumeric_measures: Vec::new(),
+            inline: false,
+        })
+    }
+
     /// The dataset's row count, pulled once from the stats/index cache and memoized — the lazy
     /// fetch shared by the box-points heuristic, the metadata table and the panel builders.
     fn row_count(&mut self) -> u64 {
@@ -19619,247 +19872,8 @@ fn build_smart(
     show_progress: bool,
     loaded_geojson: Option<&serde_json::Value>,
 ) -> CliResult<SmartRender> {
-    let SmartPrep {
-        args,
-        input,
-        force_stats_regen,
-        bivariate_sidecar_fresh,
-    } = smart_prepare(args, progress, show_progress)?;
-    let args = &args;
-
-    let schema_args = util::SchemaArgs {
-        flag_enum_threshold:  0,
-        flag_ignore_case:     false,
-        flag_strict_dates:    false,
-        flag_strict_formats:  false,
-        flag_pattern_columns: SelectColumns::parse("").expect("empty selection is valid"),
-        flag_dates_whitelist: "sniff".to_string(),
-        flag_prefer_dmy:      false,
-        flag_force:           force_stats_regen,
-        flag_stdout:          false,
-        flag_jobs:            None,
-        flag_polars:          false,
-        flag_no_headers:      args.flag_no_headers,
-        flag_delimiter:       args.flag_delimiter,
-        arg_input:            Some(input),
-        flag_memcheck:        false,
-        flag_output:          None,
-    };
-
-    // Keep the spinner live: get_stats_records reuses the cache or runs `qsv stats` as a
-    // captured subprocess, so nothing here writes to the terminal to clash with the bar.
-    progress.set_message("Loading statistics…");
-    let (_headers, mut stats) =
-        util::get_stats_records(&schema_args, util::StatsMode::ProfileSchema)?;
-    if stats.is_empty() {
-        return fail_clierror!(
-            "Could not compute statistics for `viz smart`. The input must be a regular CSV/TSV \
-             file (not stdin or a compressed/special format)."
-        );
-    }
-
-    // Plain `viz smart` (no `--smarter`): the stats cache has `skewness` but not the moarstats-only
-    // `kurtosis`/`bimodality_coefficient`, so a bimodal column would render as a box plot that
-    // hides its peaks. Compute Sarle's bimodality coefficient in one streaming pass so
-    // `classify_measure` can upgrade such a column to a histogram WITHOUT requiring
-    // `--smarter`. No-op (and no pass) when moarstats already enriched the cache or no column
-    // qualifies. Soft-fail to a box plot.
-    if let Err(e) = enrich_bimodality(args, &mut stats) {
-        viz_note(&format!(
-            "viz smart: bimodality detection failed ({e}); bimodal columns may render as box \
-             plots. Use --smarter for moarstats-based enrichment."
-        ));
-    }
-
-    // Optional describegpt Data Dictionary (--dictionary): per-column semantic verdicts (concept ->
-    // role -> content_type -> stats) that override the statistical guess for the cases they speak
-    // to. When --dictionary is absent, dict_data is None and every column's route resolves to
-    // Defer, so classification is identical to today's stats-only behavior.
-    // Keep the spinner live during describegpt (the slowest phase): its output is captured by
-    // run_qsv_cmd, and load_dictionary_semantics suspends the bar only around its own messages.
-    progress.set_message("Inferring data dictionary…");
-    let (dict_data, dict_json_text) = match load_dictionary_semantics(args)? {
-        Some((data, json_text)) => (Some(data), Some(json_text)),
-        None => (None, None),
-    };
-    let col_sems: Vec<ColSemantics> = stats
-        .iter()
-        .map(|s| derive_semantics(s, dict_data.as_ref().and_then(|d| d.rows.get(&s.field))))
-        .collect();
-
-    // De-duplicate code/label twins (subject + subject_code -> chart only "subject"). Gated on a
-    // dictionary being present so a stats-only dashboard is byte-identical; timezone twins and IDs
-    // are already de-duplicated by the Temporal/Skip routing above.
-    let twin_suppress = if dict_data.is_some() {
-        dimension_code_twins(&stats, &col_sems)
-    } else {
-        std::collections::HashSet::new()
-    };
-
-    // Build the geographic map panel up front (one data pass) so we can learn which lat/lon columns
-    // it ACTUALLY consumed. Those columns are charted on the map only — excluded from per-column
-    // distribution panels, the correlation matrix, and the time-series y so a map dashboard doesn't
-    // redundantly box/histogram its coordinates or plot e.g. latitude vs time.
-    //
-    // The map panel is built for BOTH HTML and static image output. The MapLibre tile basemap
-    // (ScatterMap/DensityMap) needs a live browser + network tiles, so it can't be statically
-    // exported — but the offline `ScatterGeo` projection basemap CAN (it's how the standalone
-    // `viz geo` command exports images). So for image output a local-extent `Map` panel is coerced
-    // to the `Geo` form, fit to the data's extent (see `geo_framing`). When build_map_panel returns
-    // None (no usable lat/lon pair), map_cols stays None and those columns are charted normally.
-    // (map_panel, choropleth_panel): the point map plus an optional geocode-derived per-country
-    // choropleth overview. The choropleth is non-cartesian and HTML-only, so it's dropped for image
-    // export; the point map is coerced from Map -> Geo for image export (only the offline
-    // ScatterGeo basemap can be statically exported).
-    let (map_panel, choropleth_panel) = {
-        // prefer dictionary geo.latitude/geo.longitude (handles non-standard coord names like
-        // `X Coordinate`/`Y Coordinate`), falling back to the header-name heuristic.
-        let coord_hint = dict_data.as_ref().and_then(|d| semantic_latlon(&stats, d));
-        let cluster_mode = parse_cluster_mode(&args.flag_cluster)?;
-        progress.set_message("Building map panel…");
-        match build_map_panel(
-            args,
-            &stats,
-            &col_sems,
-            dict_data.as_ref(),
-            coord_hint,
-            cluster_mode,
-            loaded_geojson,
-        )? {
-            None => (None, None),
-            Some((p, choro, cols, mappable_count)) => {
-                if out_format.is_image() {
-                    let kind = match p.kind {
-                        PanelKind::Map {
-                            lats,
-                            lons,
-                            outlier_lats,
-                            outlier_lons,
-                            hover_text,
-                            outlier_hover_text,
-                            sizes,
-                            ..
-                        } => PanelKind::Geo {
-                            lats,
-                            lons,
-                            outlier_lats,
-                            outlier_lons,
-                            hover_text,
-                            outlier_hover_text,
-                            sizes,
-                        },
-                        other => other,
-                    };
-                    let p = Panel {
-                        name: p.name,
-                        // the coerced Geo renders MARKERS, never a density heatmap, so the
-                        // sampling subtitle's "aggregating" verb (chosen by `sample_note` for
-                        // the HTML DensityMap render) must follow the actual render mode.
-                        subtitle: p.subtitle.map(|s| match s.strip_prefix("aggregating ") {
-                            Some(rest) => format!("showing {rest}"),
-                            None => s,
-                        }),
-                        kind,
-                        value_log: p.value_log,
-                        interest: p.interest,
-                        dict_info: p.dict_info,
-                        stat_idx: p.stat_idx,
-                        #[cfg(feature = "geocode")]
-                        geo_meta: p.geo_meta,
-                        geojson_overlay: p.geojson_overlay,
-                    };
-                    (Some((p, cols)), None)
-                } else {
-                    // HTML output: a local-extent density panel actually renders as a DensityMap
-                    // here (global extents are `Geo` markers, image export was coerced above), so
-                    // this is the point at which the heatmap/cluster note is truthful. Report
-                    // `mappable_count` (the full source count that drove the density decision), not
-                    // the panel's downsampled/outlier-excluded `lats`.
-                    if matches!(p.kind, PanelKind::Map { density: true, .. }) {
-                        viz_note(&format!(
-                            "viz smart: map has {mappable_count} mappable points (>= \
-                             --heatmap-density {}); drawing the core as a density heatmap with \
-                             per-point hover. Set --heatmap-density 0 (the default) to draw \
-                             interactive clustered markers instead.",
-                            args.flag_heatmap_density
-                        ));
-                    } else if matches!(p.kind, PanelKind::Map { cluster: true, .. }) {
-                        viz_note(&format!(
-                            "viz smart: map has {mappable_count} mappable points; the core opens \
-                             as individual points with a \"Clusters/Points\" toggle (click it to \
-                             collapse dense areas into native MapLibre count bubbles that expand \
-                             again on zoom-in). Set --cluster off to omit the toggle, or \
-                             --heatmap-density <n> to draw a density heatmap at or above <n> \
-                             points instead."
-                        ));
-                    }
-                    (Some((p, cols)), choro)
-                }
-            },
-        }
-    };
-    let map_cols = map_panel.as_ref().map(|(_, cols)| *cols);
-
-    // region-code summary choropleth(s): drive per-region aggregates (count + median measure)
-    // directly from a geo dimension column (e.g. a zip column), independent of lat/lon. Only when
-    // build_map_panel emitted no choropleth companion (avoid two competing region fills), and never
-    // for image output (choropleths are HTML-only, like the PIP companion above).
-    let summary_choros = if choropleth_panel.is_none() && !out_format.is_image() {
-        build_smart_summary_choropleth_panels(args, &stats, &col_sems, loaded_geojson)?
-    } else {
-        None
-    };
-    let summary_choro_col = summary_choros.as_ref().map(|(_, c)| *c);
-
-    // Box-points handling for `viz smart`. A continuous-numeric column is normally a cache-only
-    // quartile box (no data re-scan). When points should be overlaid, it instead becomes a raw box
-    // (one extra batched pass, below) so plotly can draw true Tukey whiskers and the sample points.
-    // The overlay mode is the user's explicit `--box-points` when given, otherwise a size-based
-    // heuristic decides per the dataset's row count (see `smart_box_points`). The row count is
-    // pulled once from the stats/index cache, and only when the first box panel actually needs it.
-    let explicit_box_points: Option<BoxPoints> = match args.flag_box_points.as_deref() {
-        Some(s) => Some(parse_box_points(Some(s))?),
-        None => None,
-    };
-    let count_conf = Config::new(args.arg_input.as_ref())
-        .delimiter(args.flag_delimiter)
-        .no_headers_flag(args.flag_no_headers);
-    let nrows: Option<u64> = None;
-    // resolved here (not at render time) because box panels bake their value-axis log verdict
-    // into the Panel during classification below.
-    let log_scale = parse_log_scale(&args.flag_log_scale)?;
-    let violin_mode = parse_violin_mode(&args.flag_violin)?;
-
-    let mut ctx = SmartCtx {
-        args,
-        out_format,
-        progress,
-        stats,
-        col_sems,
-        dict_data,
-        dict_json_text,
-        twin_suppress,
-        map_panel,
-        choropleth_panel,
-        summary_choros,
-        map_cols,
-        summary_choro_col,
-        bivariate_sidecar_fresh,
-        sankey_pair: None,
-        bubble_panel: None,
-        geo_anim_panel: None,
-        explicit_box_points,
-        count_conf,
-        nrows,
-        log_scale,
-        violin_mode,
-        panels: Vec::new(),
-        skipped: Vec::new(),
-        sentinel_suspects: Vec::new(),
-        sentinel_hints: Vec::new(),
-        nonnumeric_measures: Vec::new(),
-        inline: false,
-    };
+    let prep = smart_prepare(args, progress, show_progress)?;
+    let mut ctx = SmartCtx::new(&prep, out_format, progress, loaded_geojson)?;
     ctx.classify_columns();
     ctx.add_relationship_panels()?;
     ctx.add_overview_panels()?;

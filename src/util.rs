@@ -1686,6 +1686,52 @@ pub fn qsv_check_for_update(_check_only: bool, _no_confirm: bool) -> Result<bool
     Err("Self-update is disabled in this build.".to_string())
 }
 
+// how often a background (non-flag) update check is allowed to hit GitHub: ~twice a month
+#[cfg(feature = "self_update")]
+const UPDATE_CHECK_INTERVAL: Duration = Duration::from_secs(15 * 24 * 60 * 60);
+
+/// Background update check, throttled to at most twice a month via a persisted stamp file.
+///
+/// Used by the no-command screen and the `help` command so they don't hit GitHub on every
+/// invocation. The explicit `--update`/`--updatenow` flags bypass this and call
+/// `qsv_check_for_update` directly. Best-effort: all errors are swallowed.
+#[cfg(feature = "self_update")]
+pub fn qsv_check_for_update_throttled() {
+    // honor the opt-out BEFORE touching the filesystem
+    if get_envvar_flag("QSV_NO_UPDATE") {
+        return;
+    }
+
+    // stamp lives in the qsv cache dir: QSV_CACHE_DIR override, else ~/.qsv-cache
+    let raw = std::env::var("QSV_CACHE_DIR")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "~/.qsv-cache".to_string());
+    let Some(cache_dir) = expand_tilde(&raw) else {
+        return; // can't resolve home; skip silently
+    };
+
+    // create the parent dir so record_check() can persist. If it can't, should_check()
+    // would return Ok(true) forever => a check on EVERY startup (worse than no throttle).
+    if fs::create_dir_all(&cache_dir).is_err() {
+        return;
+    }
+
+    let stamp_path = cache_dir.join(".last_update_check");
+    let guard =
+        self_update::check_interval::UpdateCheckGuard::new(stamp_path, UPDATE_CHECK_INTERVAL);
+
+    // on a genuine IO error reading the stamp, DON'T check (avoid hammering GitHub);
+    // a missing/corrupt stamp already yields Ok(true), so first run still checks.
+    if guard.should_check().unwrap_or(false) {
+        _ = qsv_check_for_update(true, false); // best-effort; ignore network errors
+        _ = guard.record_check(); // record regardless of outcome => real throttle
+    }
+}
+
+#[cfg(not(feature = "self_update"))]
+pub fn qsv_check_for_update_throttled() {}
+
 // the qsv hwsurvey allows us to keep a better
 // track of qsv's usage in the wild, so we can do a
 // better job of prioritizing platforms/features we support
@@ -3840,9 +3886,10 @@ pub fn optimal_batch_size(rconfig: &Config, batch_size: usize, num_jobs: usize) 
 }
 
 /// Expand the tilde (`~`) from within the provided path.
-// only consumed by non-lite commands (describegpt, fetchpost, geocode) and the
-// `get`/diskcache subsystem, none of which are in qsvlite
-#[cfg(not(feature = "lite"))]
+// consumed by non-lite commands (describegpt, fetchpost, geocode) and the
+// `get`/diskcache subsystem (none of which are in qsvlite), plus the throttled
+// self-update check - which can be enabled alongside `lite`, hence the extra gate.
+#[cfg(any(not(feature = "lite"), feature = "self_update"))]
 pub fn expand_tilde(path: impl AsRef<Path>) -> Option<PathBuf> {
     let p = path.as_ref();
 
@@ -4847,6 +4894,20 @@ mod tests {
             is_ascii,
             ..Default::default()
         }
+    }
+
+    #[cfg(feature = "self_update")]
+    #[test]
+    fn update_check_guard_throttles() {
+        let dir = tempfile::tempdir().unwrap();
+        let stamp = dir.path().join(".last_update_check");
+        let guard =
+            self_update::check_interval::UpdateCheckGuard::new(&stamp, Duration::from_secs(3600));
+        // no stamp yet => a check is due
+        assert!(guard.should_check().unwrap());
+        // after recording, the interval throttles the next check
+        guard.record_check().unwrap();
+        assert!(!guard.should_check().unwrap());
     }
 
     #[test]

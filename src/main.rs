@@ -2,7 +2,6 @@ use std::{env, io, time::Instant};
 
 extern crate qsv_docopt as docopt;
 use docopt::Docopt;
-use rand::RngExt;
 use serde::Deserialize;
 
 use crate::{
@@ -354,11 +353,8 @@ fn main() -> QsvExitCode {
                  following {num_commands} commands:\n{enabled_commands}\n\n{SPONSOR_MESSAGE}"
             );
 
-            // if no command is specified, auto-check for updates 50% of the time
-            let mut rng = rand::rng(); //DevSkim: ignore DS148264
-            if rng.random_range(0..2) == 0 {
-                _ = util::qsv_check_for_update(true, false);
-            }
+            // if no command is specified, auto-check for updates (throttled to twice a month)
+            util::qsv_check_for_update_throttled();
             util::log_end(qsv_args, now);
             QsvExitCode::Good
         },
@@ -605,7 +601,7 @@ impl Command {
             Command::Headers => cmd::headers::run(argv),
             Command::Help => {
                 wout!("{USAGE}\n\n{SPONSOR_MESSAGE}");
-                util::qsv_check_for_update(true, false)?;
+                util::qsv_check_for_update_throttled();
                 Ok(())
             },
             Command::Implode => cmd::implode::run(argv),

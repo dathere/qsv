@@ -397,7 +397,7 @@ impl Command {
             Command::Headers => cmd::headers::run(argv),
             Command::Help => {
                 wout!("{USAGE}\n\n{SPONSOR_MESSAGE}");
-                util::qsv_check_for_update(true, false)?;
+                util::qsv_check_for_update_throttled();
                 Ok(())
             },
             Command::Index => cmd::index::run(argv),

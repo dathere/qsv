@@ -521,9 +521,10 @@ smart options:
                            Only affects `smart`.
     --dataset-pid <value>  A persistent identifier (PID) for the dataset - typically a full
                            URL such as a DOI (https://doi.org/10.1234/abc) or other citable
-                           link. When set, a clickable "PID" row is added to the metadata
-                           table at the top of the dashboard, using the value verbatim as the
-                           link target. HTML output only. Only affects `smart`.
+                           link. When set, a "PID" row is added to the metadata table at the
+                           top of the dashboard. http(s) and mailto values become a clickable
+                           link (opened in a new tab); any other scheme is shown as plain text
+                           rather than linked. HTML output only. Only affects `smart`.
     --bivariate            Add two pairwise-association overview panels driven by
                            `qsv moarstats --bivariate`: a normalized mutual information (NMI)
                            heatmap over every column pair (works for numeric AND categorical
@@ -6013,18 +6014,14 @@ fn build_scatter3d_plot(args: &Args) -> CliResult<Plot> {
         ) else {
             continue;
         };
-        // --color/--size only need to parse when they are actually RENDERED. In series mode the
-        // marker encodings are discarded below (one trace per series, uniform markers), so
-        // dropping rows for an unparseable encoding silently deleted data for no benefit — a
-        // half-empty --size column halved the visible points and changed nothing else.
-        let color = match color_idx.filter(|_| series_idx.is_none()) {
+        let color = match color_idx {
             Some(i) => match parse_f64(record.get(i)) {
                 Some(v) => Some(v),
                 None => continue,
             },
             None => None,
         };
-        let size = match size_idx.filter(|_| series_idx.is_none()) {
+        let size = match size_idx {
             Some(i) => match parse_f64(record.get(i)) {
                 Some(v) => Some(v),
                 None => continue,
@@ -14618,11 +14615,30 @@ fn read_geo_anim(
     // ~15x), which is how a nominal 150k-point dashboard grew to tens of MB of HTML.
     let embedded = cumulative_embedded_points(&bucket_lats);
     if embedded > *MAX_SMART_POINTS {
-        // a uniform stride shrinks every bucket, and so the cumulative expansion, proportionally
-        let stride = embedded.div_ceil(*MAX_SMART_POINTS);
-        for (la, lo) in bucket_lats.iter_mut().zip(bucket_lons.iter_mut()) {
-            *la = la.iter().copied().step_by(stride).collect();
-            *lo = lo.iter().copied().step_by(stride).collect();
+        // A uniform per-bucket stride does NOT shrink the total proportionally: `step_by` keeps
+        // the first element of every bucket, so a long sparse timeline (many buckets smaller than
+        // the stride) can stay above the cap no matter how large the stride gets. Re-measure and
+        // escalate until the cumulative embedded count is actually met, and stop if a round makes
+        // no further progress (every bucket down to its single kept point).
+        // Re-derive from the ORIGINALS each round so `stride` stays an absolute sampling rate;
+        // striding the already-strided buckets would compound unpredictably.
+        let (src_lats, src_lons) = (bucket_lats.clone(), bucket_lons.clone());
+        let mut stride = embedded.div_ceil(*MAX_SMART_POINTS).max(2);
+        loop {
+            for (i, (la, lo)) in bucket_lats
+                .iter_mut()
+                .zip(bucket_lons.iter_mut())
+                .enumerate()
+            {
+                *la = src_lats[i].iter().copied().step_by(stride).collect();
+                *lo = src_lons[i].iter().copied().step_by(stride).collect();
+            }
+            if cumulative_embedded_points(&bucket_lats) <= *MAX_SMART_POINTS
+                || bucket_lats.iter().all(|b| b.len() <= 1)
+            {
+                break;
+            }
+            stride = stride.saturating_mul(2);
         }
     }
 
@@ -15429,7 +15445,7 @@ fn build_smart_pip_choropleth_panel(
             feature_id_key: feature_id_key.to_string(),
             hover_text,
             center_lon: (min_lon + max_lon) / 2.0,
-            center_lat: (min_lat + max_lat) / 2.0,
+            center_lat: mercator_lat_center(min_lat, max_lat),
             zoom: f64::from(fitbounds_zoom(
                 min_lat,
                 max_lat,
@@ -15591,12 +15607,31 @@ fn build_smart_summary_choropleth_panels(
         w
     };
     // lower-cased id -> canonical feature id, for the case-insensitive fallback in
-    // `match_region_code`. Ambiguous collisions (two ids differing only by case) keep the first
-    // seen, which is no worse than the exact-match behaviour that precedes it.
-    let lowercased_ids: std::collections::HashMap<String, String> = feature_ids
-        .iter()
-        .map(|id| ((*id).to_ascii_lowercase(), (*id).to_string()))
-        .collect();
+    // `match_region_code`. Built from the ORDERED feature list, not the HashSet: iterating the set
+    // would pick an arbitrary winner when two ids differ only by case, so the same input could
+    // aggregate under a different region between runs. A folded key that maps to more than one
+    // distinct id is genuinely ambiguous, so it is REMOVED rather than resolved — exact and
+    // zero-padded matching still run first, so this only forfeits the fuzzy fallback.
+    let lowercased_ids: std::collections::HashMap<String, String> = {
+        let mut m: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for f in &features {
+            let folded = f.id.to_ascii_lowercase();
+            match m.get(&folded) {
+                Some(existing) if *existing != f.id => {
+                    ambiguous.insert(folded);
+                },
+                Some(_) => {},
+                None => {
+                    m.insert(folded, f.id.clone());
+                },
+            }
+        }
+        for k in ambiguous {
+            m.remove(&k);
+        }
+        m
+    };
 
     // optional measure column to color the second panel: prefer a MAP_MEASURE_CONCEPTS concept,
     // else any `role=measure` column (catches an untagged-concept amount like PRICE whose
@@ -15734,7 +15769,7 @@ fn build_smart_summary_choropleth_panels(
                 feature_id_key: feature_id_key.to_string(),
                 hover_text,
                 center_lon: (min_lon + max_lon) / 2.0,
-                center_lat: (min_lat + max_lat) / 2.0,
+                center_lat: mercator_lat_center(min_lat, max_lat),
                 zoom: f64::from(fitbounds_zoom(
                     min_lat,
                     max_lat,
@@ -17499,6 +17534,9 @@ fn build_kpi_row(
         let row = dict.and_then(|d| d.rows.get(&s.field));
         let label = match row {
             Some(r) if !r.label.is_empty() => r.label.clone(),
+            // headerless input has an empty `field`, which would render a bare "Total " — fall
+            // back to the same positional name the panel itself uses.
+            _ if s.field.is_empty() => format!("col {}", p.stat_idx.map_or(0, |i| i + 1)),
             _ => s.field.clone(),
         };
         // A `gauge_range` describes a bounded per-record quantity (a 0–5 rating, a 0–1 ratio), so
@@ -19530,7 +19568,11 @@ fn panel_trace(
             // renders the box but drops the points.
             log_y = panel.value_log;
             let stats = outliers.get(idx);
-            let pts = stats.map(|o| o.outliers.clone()).unwrap_or_default();
+            // the precomputed whisker is clamped below, but these are raw VALUES handed to
+            // plotly — a column granted a log axis by box_log_skew_fallback can carry
+            // zero/negative outliers, which are log-undefined exactly like the BoxRaw/Violin
+            // case (issue #4219).
+            let pts = log_safe_values(log_y, stats.map(|o| o.outliers.clone()).unwrap_or_default());
             // clamp a non-positive lower whisker up to q1 on a log axis (issue #4219), else the
             // log-undefined fence breaks the box and only the outlier points survive
             let whisker_low =
@@ -20989,9 +21031,11 @@ fn smart_inline_panel_plot(
                 .hover_template(hover),
         );
         let scene = LayoutScene::new()
-            .x_axis(Axis::new().title(Title::with_text(x_label.clone())))
-            .y_axis(Axis::new().title(Title::with_text(y_label.clone())))
-            .z_axis(Axis::new().title(Title::with_text(z_label.clone())));
+            // axis titles render plotly pseudo-HTML just like hovers and panel titles, and
+            // these labels are raw CSV headers
+            .x_axis(Axis::new().title(Title::with_text(escape_hover(x_label))))
+            .y_axis(Axis::new().title(Title::with_text(escape_hover(y_label))))
+            .z_axis(Axis::new().title(Title::with_text(escape_hover(z_label))));
         let mut layout = Layout::new()
             .show_legend(false)
             .height(row_height)
@@ -21380,10 +21424,11 @@ fn smart_inline_panel_plot(
         }
         // pin axes globally so bubbles don't reframe as they move
         let x_axis = Axis::new()
-            .title(Title::with_text(x_label.clone()))
+            // axis titles are a plotly markup sink; these labels are raw CSV headers
+            .title(Title::with_text(escape_hover(x_label)))
             .range(vec![x_range.0, x_range.1]);
         let y_axis = Axis::new()
-            .title(Title::with_text(y_label.clone()))
+            .title(Title::with_text(escape_hover(y_label)))
             .range(vec![y_range.0, y_range.1]);
         let mut layout = Layout::new()
             .show_legend(true)
@@ -21476,10 +21521,11 @@ fn smart_inline_panel_plot(
         }
         // pin axes globally so the cloud doesn't reframe as points accumulate
         let x_axis = Axis::new()
-            .title(Title::with_text(x_label.clone()))
+            // axis titles are a plotly markup sink; these labels are raw CSV headers
+            .title(Title::with_text(escape_hover(x_label)))
             .range(vec![x_range.0, x_range.1]);
         let y_axis = Axis::new()
-            .title(Title::with_text(y_label.clone()))
+            .title(Title::with_text(escape_hover(y_label)))
             .range(vec![y_range.0, y_range.1]);
         let mut layout = Layout::new()
             .show_legend(false)
@@ -26207,6 +26253,72 @@ mod tests {
     }
 
     #[test]
+    fn match_region_code_drops_ambiguous_case_folds() {
+        // two feature ids differing only by case make the folded key ambiguous: resolving it from
+        // HashSet iteration order would aggregate the same CSV value under a different region
+        // between runs, so the fuzzy fallback is forfeited instead (exact matching still works).
+        let ids: std::collections::HashSet<&str> = ["CA", "ca", "NY"].into_iter().collect();
+        let widths: Vec<usize> = Vec::new();
+        let mut lower: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+        let mut ambiguous: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for id in ["CA", "ca", "NY"] {
+            let f = id.to_ascii_lowercase();
+            match lower.get(&f) {
+                Some(e) if e != id => {
+                    ambiguous.insert(f);
+                },
+                Some(_) => {},
+                None => {
+                    lower.insert(f, id.to_string());
+                },
+            }
+        }
+        for k in ambiguous {
+            lower.remove(&k);
+        }
+        // exact matches are unaffected by the ambiguity
+        assert_eq!(
+            match_region_code("CA", &ids, &widths, &lower).as_deref(),
+            Some("CA")
+        );
+        assert_eq!(
+            match_region_code("ca", &ids, &widths, &lower).as_deref(),
+            Some("ca")
+        );
+        // but a case that matches NEITHER exactly has no deterministic answer, so none is given
+        assert!(match_region_code("Ca", &ids, &widths, &lower).is_none());
+        // an unambiguous id still folds
+        assert_eq!(
+            match_region_code("ny", &ids, &widths, &lower).as_deref(),
+            Some("NY")
+        );
+    }
+
+    #[test]
+    fn cumulative_embedded_points_budget_converges_on_sparse_buckets() {
+        // `step_by` keeps the first element of EVERY bucket, so with many near-empty buckets a
+        // single stride pass cannot reach the cap however large the stride is. This models that
+        // shape: 400 buckets of 1 point each embeds 400 + ~80k, far above a small cap.
+        let sparse: Vec<Vec<f64>> = (0..400).map(|_| vec![0.0; 1]).collect();
+        let embedded = cumulative_embedded_points(&sparse);
+        assert!(
+            embedded > 400,
+            "cumulative repetition dominates: {embedded}"
+        );
+        // striding cannot shrink single-point buckets at all, which is why the production loop
+        // also has to stop on the all-buckets-<=1 condition rather than spinning
+        let strided: Vec<Vec<f64>> = sparse
+            .iter()
+            .map(|b| b.iter().copied().step_by(1000).collect())
+            .collect();
+        assert_eq!(
+            cumulative_embedded_points(&strided),
+            embedded,
+            "single-point buckets are irreducible by striding"
+        );
+    }
+
+    #[test]
     fn escape_template_pct_doubles_literal_percent() {
         // a hovertemplate parses `%{...}`, so a literal `%` in an interpolated label must be
         // doubled or plotly swallows the following text as a data token
@@ -28079,8 +28191,15 @@ mod tests {
                     (center_lon - (-74.0)).abs() < 1e-9,
                     "center_lon = {center_lon}"
                 );
+                // the centre latitude is the MERCATOR midpoint (the zoom is fitted in Mercator
+                // y, so the centre must be taken in the same space or the box is not actually
+                // centred). Over a 0.05-degree box that is ~5e-6 from the arithmetic mean.
                 assert!(
-                    (center_lat - 40.725).abs() < 1e-9,
+                    (center_lat - 40.725).abs() < 1e-4,
+                    "center_lat = {center_lat}"
+                );
+                assert!(
+                    (center_lat - mercator_lat_center(40.70, 40.75)).abs() < 1e-9,
                     "center_lat = {center_lat}"
                 );
                 // a ~0.1 deg metro box zooms in well past the world view, within the fit clamp.

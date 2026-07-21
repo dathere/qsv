@@ -104,7 +104,18 @@ run_case allegheny   smart allegheny_dog_licenses.csv --smarter --bivariate --di
                            --feature-id-key properties.ZIP
 run_case worldevents smart world_events_dated.csv
 run_case regions     smart regions_growth.csv
-run_case headerless  smart sales_sample.csv --no-headers
+# --no-headers runs against a PRIVATE COPY, never the shared fixture. `viz smart` forces the stats
+# cache to regenerate under non-default parsing, but `get_stats_records` keys that cache on mtime
+# and stat sufficiency -- NOT on parsing options -- so a headerless run over sales_sample.csv leaves
+# a headerless cache that later HEADERED runs silently reuse (columns become "0,1,2...", and e.g.
+# the KPI row disappears). That poisons the other cases here and anything run afterwards, including
+# examples/viz/gen_gallery.py. Copying gives this case its own cache key.
+# The copy lives in a scratch dir, not $OUT, so its stats-cache sidecars (which embed absolute
+# paths and are not byte-stable) stay out of the compared output set.
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "$SCRATCH"' EXIT
+cp "$FIX/sales_sample.csv" "$SCRATCH/headerless_input.csv"
+run_case headerless  smart "$SCRATCH/headerless_input.csv" --no-headers
 run_case img_sales   smart sales_sample.csv
 # cyclic-seasonality (polar) panel -- no examples/viz fixture has the hour-of-day periodicity that
 # `build_cyclic_panel` needs, so this one ships with the harness.

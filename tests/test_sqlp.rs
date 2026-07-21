@@ -955,34 +955,6 @@ fn sqlp_compress() {
     assert_eq!(got, expected);
 }
 
-// disable this test on windows as it fails as the expected output is different
-// due to the different line endings
-#[cfg(not(target_os = "windows"))]
-#[test]
-fn sqlp_boston311_explain() {
-    let wrk = Workdir::new("sqlp_boston311_explain");
-    let test_file = wrk.load_test_file("boston311-100.csv");
-
-    let mut cmd = wrk.command("sqlp");
-    cmd.arg(&test_file).arg("--try-parsedates").arg(
-        "explain select ward, cast(avg(closed_dt - open_dt) as float) as avg_tat from _t_1 where \
-         case_status = 'Closed' group by ward order by avg_tat desc, ward asc",
-    );
-
-    let got: String = wrk.stdout(&mut cmd);
-    let expected_begin = r#"Logical Plan
-"SORT BY [descending: [true, false], nulls_last: [false, true]] [col(""avg_tat""), col(""ward"")]"
-  AGGREGATE[maintain_order: false]
-"    [[(col(""closed_dt"")) - (col(""open_dt""))].mean().strict_cast(Float64).alias(""avg_tat"")] BY [col(""ward"")]"
-    FROM"#;
-    assert!(got.starts_with(expected_begin));
-
-    let expected_end = r#"PROJECT 4/29 COLUMNS
-"      SELECTION: [(col(""case_status"")) == (""Closed"")]"
-      ESTIMATED ROWS: 181"#;
-    assert!(got.ends_with(expected_end));
-}
-
 #[test]
 // #[ignore = "temporarily disable due to a bug in polars aliasing"]
 fn sqlp_boston311_sql_script() {

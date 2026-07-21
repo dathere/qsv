@@ -17756,6 +17756,23 @@ fn smart_prepare(args: &Args, progress: &ProgressBar, show_progress: bool) -> Cl
             "`viz smart` cannot read from stdin; pass a CSV/TSV file path."
         );
     }
+    // A dictionary is keyed by COLUMN NAME (`dict.rows.get(&s.field)`), but under `--no-headers`
+    // the fields are positional (`0`, `1`, ...), so no entry can ever match: no semantic routing,
+    // no KPI tiles, no dict subtitles. Say so and drop the flag, rather than let it look applied.
+    // Dropping it matters beyond the notice — `--dictionary infer` would otherwise pay for a full
+    // (LLM-backed) describegpt pass whose every verdict is then discarded.
+    //
+    // A notice rather than an error, matching the dictionary loader's fail-to-stats philosophy:
+    // the dashboard still renders from stats alone (see
+    // `viz_smart_bivariate_soft_fails_with_no_headers`).
+    if args.flag_no_headers && args.flag_dictionary.is_some() {
+        viz_note(
+            "viz smart --dictionary: a data dictionary maps entries by column name, but \
+             --no-headers names columns positionally (0, 1, 2, ...), so no entry can match. \
+             Ignoring --dictionary and charting from statistics alone.",
+        );
+        args.flag_dictionary = None;
+    }
 
     // `--bivariate` blows up combinatorially with wide datasets (50 choose 2 = 1,225 pairs at the
     // cap), and can't be honored at all under non-default parsing (its moarstats subprocess is

@@ -1198,6 +1198,33 @@ def main():
         + JUMP_JS + "\n"
         + "</body></html>\n"
     )
+    # The reused scaffold carries its own plotly CDN <script> tag, which therefore never updates:
+    # it stayed pinned to an old version with no Subresource Integrity even after `qsv viz` began
+    # emitting a version-pinned, SRI-protected tag. Re-derive it from what viz ACTUALLY emitted
+    # into the dashboards this run, so the gallery frame and its iframes always agree and the
+    # single source of truth stays qsv itself rather than a second hardcoded version here.
+    def _emitted_cdn_tag():
+        # only REGENERATED dashboards: the pre-generated LLM ones are reused verbatim and so
+        # predate whatever viz emits today (that is exactly the staleness being corrected here)
+        for name in SMART_IFRAME.values():
+            if name in pregenerated:
+                continue
+            path = os.path.join(VIZ_DIR, name)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8") as fh:
+                m = re.search(r'<script src="https://cdn\.plot\.ly/[^>]*></script>', fh.read())
+            if m:
+                return m.group(0)
+        return None
+
+    emitted_tag = _emitted_cdn_tag()
+    if emitted_tag:
+        body, n = re.subn(
+            r'<script src="https://cdn\.plot\.ly/[^>]*></script>', emitted_tag, body, count=1)
+        if n:
+            sys.stderr.write(f"scaffold plotly tag synced to viz output: {emitted_tag}\n")
+
     with open(GALLERY, "w", encoding="utf-8") as fh:
         fh.write(body)
     cleanup_sidecars()

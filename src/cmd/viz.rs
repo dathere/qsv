@@ -8537,8 +8537,36 @@ fn plotly_js_only() -> String {
 /// Fallback plotly.js CDN tag, used only if `Plot::online_cdn_js` stops emitting a recognizable
 /// `cdn.plot.ly` script tag. Keep the version in sync with the crate's vendored
 /// `resource/plotly.min.js` (the bundle `plotly_js_only` would otherwise inline).
-const PLOTLY_CDN_FALLBACK: &str =
-    r#"<script src="https://cdn.plot.ly/plotly-3.6.0.min.js" charset="utf-8"></script>"#;
+const PLOTLY_CDN_FALLBACK: &str = concat!(
+    r#"<script src="https://cdn.plot.ly/plotly-"#,
+    "3.7.0",
+    r#".min.js" charset="utf-8" integrity=""#,
+    "sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs",
+    r#"" crossorigin="anonymous"></script>"#
+);
+
+/// The plotly.js version this file's CDN integrity hash was computed for, and that hash.
+///
+/// Under `QSV_VIZ_CDN=1` the emitted page executes plotly.js straight from `cdn.plot.ly`, so
+/// without Subresource Integrity a compromised or tampered CDN response is arbitrary script
+/// execution in every viewer of a published dashboard. The URL is version-pinned and therefore
+/// immutable, which is what makes a baked hash safe.
+///
+/// Verified: the digest below is the sha384 of `https://cdn.plot.ly/plotly-3.7.0.min.js`, which is
+/// the file `Plot::online_cdn_js` actually points at.
+///
+/// NOTE the version skew this exposed: the CDN path serves 3.7.0 while the bundle inlined by the
+/// default (offline) path is 3.6.0, so `QSV_VIZ_CDN=1` does not load the same plotly.js the
+/// embedded build does. That predates this hash and is left as-is deliberately — aligning them
+/// means either re-pinning the CDN URL or bumping the vendored bundle, which is a plotly.rs
+/// decision, not a viz one. The version guard below keeps the hash honest either way.
+///
+/// `plotly_cdn_only` applies the hash ONLY when the tag it slices out of `Plot::online_cdn_js`
+/// actually points at this version — after a plotly.rs bump the URL changes and an inherited
+/// stale hash would block the script instead of protecting it.
+const PLOTLY_CDN_VERSION: &str = "3.7.0";
+const PLOTLY_CDN_SRI: &str =
+    "sha384-l4G4qURPwALv583BKlynU/4LiUx0rk9jcTX58Aq+Jc+jgWb52zeH2geZkSS3UPPs";
 
 /// The plotly.js CDN `<script src>` tag, sliced out of `Plot::online_cdn_js` so the pinned
 /// version can never drift from the bundle we would otherwise embed.
@@ -8553,7 +8581,21 @@ fn plotly_cdn_only() -> String {
     if let Some(start) = full.find(OPEN)
         && let Some(end) = full[start..].find(CLOSE)
     {
-        return full[start..start + end + CLOSE.len()].to_string();
+        let tag = &full[start..start + end + CLOSE.len()];
+        // add integrity only when this really is the version the hash was computed for; a
+        // plotly.rs bump changes the URL, and a stale hash would block the script outright
+        let versioned = format!("plotly-{PLOTLY_CDN_VERSION}.min.js");
+        if tag.contains(&versioned)
+            && !tag.contains("integrity=")
+            && let Some(close_angle) = tag.rfind("></script>")
+        {
+            return format!(
+                "{} integrity=\"{PLOTLY_CDN_SRI}\" crossorigin=\"anonymous\"{}",
+                &tag[..close_angle],
+                &tag[close_angle..]
+            );
+        }
+        return tag.to_string();
     }
     // shape changed unexpectedly — fall back to our own pinned tag rather than emit the
     // MathJax tag (or nothing) and leave `Plotly` undefined.

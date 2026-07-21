@@ -4141,16 +4141,42 @@ fn resolve_and_validate_geojson(args: &mut Args, feature_id_key_explicit: bool) 
 /// Load a GeoJSON FeatureCollection from a local file path or an http(s) URL into a JSON value.
 fn load_geojson(spec: &str) -> CliResult<serde_json::Value> {
     let bytes = if spec.starts_with("http://") || spec.starts_with("https://") {
-        let resp = reqwest::blocking::get(spec)
+        use std::io::Read as _;
+
+        // reqwest's default client has NO connect or read timeout, so a server that accepts the
+        // connection and then stalls hangs qsv indefinitely with no way out. Honors QSV_TIMEOUT.
+        let timeout = std::time::Duration::from_secs(
+            util::timeout_secs(GEOJSON_FETCH_TIMEOUT_SECS).map_err(crate::CliError::Other)?,
+        );
+        let client = reqwest::blocking::Client::builder()
+            .timeout(timeout)
+            .connect_timeout(timeout)
+            .build()
+            .map_err(|e| crate::CliError::Other(format!("Could not build HTTP client: {e}")))?;
+        let mut resp = client
+            .get(spec)
+            .send()
             .and_then(reqwest::blocking::Response::error_for_status)
             .map_err(|e| {
                 crate::CliError::Other(format!("Failed to fetch --geojson URL '{spec}': {e}"))
             })?;
-        resp.bytes()
+        // read through a bounded `take` rather than `bytes()`: an endless (or merely enormous)
+        // body would otherwise be buffered into memory unchecked. Read one byte past the cap so
+        // exceeding it is distinguishable from exactly reaching it.
+        let mut buf: Vec<u8> = Vec::new();
+        resp.by_ref()
+            .take(GEOJSON_MAX_BYTES as u64 + 1)
+            .read_to_end(&mut buf)
             .map_err(|e| {
                 crate::CliError::Other(format!("Failed to read --geojson body from '{spec}': {e}"))
-            })?
-            .to_vec()
+            })?;
+        if buf.len() > GEOJSON_MAX_BYTES {
+            return Err(crate::CliError::Other(format!(
+                "--geojson '{spec}' exceeds the {} MB download limit.",
+                GEOJSON_MAX_BYTES / 1_000_000
+            )));
+        }
+        buf
     } else {
         std::fs::read(spec).map_err(|e| {
             crate::CliError::Other(format!("Failed to read --geojson '{spec}': {e}"))
@@ -4612,12 +4638,14 @@ fn build_pip_features(
     feature_id_key: &str,
     feature_name_key: Option<&str>,
 ) -> CliResult<Vec<PipFeature>> {
-    let fc =
-        serde_json::from_value::<geojson::FeatureCollection>(geojson.clone()).map_err(|e| {
-            crate::CliError::Other(format!(
-                "--geojson is not a valid GeoJSON FeatureCollection: {e}"
-            ))
-        })?;
+    // deserialize from a REFERENCE: `from_value` needs an owned `Value`, so it would deep-clone
+    // every feature, property map and coordinate array first — doubling peak memory on a large
+    // boundary file for no benefit. `&Value` implements `Deserializer`, so this borrows instead.
+    let fc = geojson::FeatureCollection::deserialize(geojson).map_err(|e| {
+        crate::CliError::Other(format!(
+            "--geojson is not a valid GeoJSON FeatureCollection: {e}"
+        ))
+    })?;
     // Resolve the name key once: an explicit --feature-name-key, else auto-detect by probing common
     // name properties on the FIRST feature (a heterogeneous collection whose first feature lacks
     // the property won't auto-detect — use --feature-name-key to force it).
@@ -15505,6 +15533,14 @@ fn build_smart_summary_choropleth_panels(
 /// Max `--geojson` features to label on a map overlay. Above this, the region boundaries are still
 /// drawn but the per-region text labels are suppressed to avoid a cluttered map.
 const GEOJSON_OVERLAY_LABEL_MAX: usize = 60;
+
+/// Remote `--geojson` fetch guards. reqwest's default blocking client has no timeout at all and
+/// `Response::bytes()` buffers the whole body unchecked, so a stalling server hangs qsv forever
+/// and an endless body drives it to OOM. The timeout is a `util::timeout_secs` default (so
+/// QSV_TIMEOUT overrides it); the size cap is a safety CEILING, not a target — real boundary
+/// files (e.g. census tracts) legitimately run to a few hundred MB.
+const GEOJSON_FETCH_TIMEOUT_SECS: u16 = 30;
+const GEOJSON_MAX_BYTES: usize = 512_000_000;
 
 /// Outline color for `--geojson` region boundaries overlaid on a smart map. A teal, distinct from
 /// the warm data points, the purple core-extent box, and the magenta full-extent box.
